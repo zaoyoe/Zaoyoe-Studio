@@ -199,7 +199,7 @@ function response() {
     };
 }
 
-function createHandlers({ live, overrides = {}, confirmFailuresRemaining = 0, claimError = null, webhookAdapter = {} } = {}) {
+function createHandlers({ live, overrides = {}, confirmFailuresRemaining = 0, claimError = null, webhookAdapter = {}, env = ENV } = {}) {
     const rows = makeRows(overrides);
     const supabase = createSupabase(rows, { confirmFailuresRemaining, claimError });
     let providerQueries = 0;
@@ -218,7 +218,7 @@ function createHandlers({ live, overrides = {}, confirmFailuresRemaining = 0, cl
             async queryGuestPayment() { providerQueries += 1; return clone(live); },
             ...webhookAdapter
         },
-        env: ENV
+        env
     });
     const req = (method = 'GET', body = null) => ({
         method,
@@ -552,4 +552,91 @@ test('batch webhook rejects a wrong signature or amount without confirming payme
     assert.equal(fixture.rows.batch.payment_status, 'pending');
     assert.equal(fixture.supabase.calls.length, 0);
     assert.equal(fixture.supabase.tables.guest_shop_payment_events.length, 0);
+});
+
+test('checkoutBatches enforces email and orderPassword when buyer credentials are enabled', async () => {
+    const credEnv = {
+        ...ENV,
+        GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+        GUEST_SHOP_CONTACT_HASH_PEPPER: 'guest-contact-hash-pepper-0123456789-abcdefghijklmnopqrstuvwx',
+        GUEST_SHOP_REQUEST_HASH_PEPPER: 'guest-request-hash-pepper-0123456789-abcdefghijklmnopqrstuvwx'
+    };
+    const fixture = createHandlers({ env: credEnv });
+    const validItem = {
+        productId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        skuId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        quantity: 1
+    };
+
+    // 1. Missing email
+    const reqNoEmail = {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+            site: 'cn',
+            provider: 'zpay',
+            channel: 'alipay',
+            items: [validItem],
+            idempotencyKey: 'idem-batch-cred-1'
+        })
+    };
+    const resNoEmail = response();
+    await fixture.handlers.checkoutBatches(reqNoEmail, resNoEmail);
+    assert.equal(resNoEmail.statusCode, 400);
+    assert.equal(resNoEmail.payload.code, 'guest_email_required');
+
+    // 2. Invalid email
+    const reqInvalidEmail = {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+            site: 'cn',
+            provider: 'zpay',
+            channel: 'alipay',
+            items: [validItem],
+            idempotencyKey: 'idem-batch-cred-2',
+            email: 'not-an-email'
+        })
+    };
+    const resInvalidEmail = response();
+    await fixture.handlers.checkoutBatches(reqInvalidEmail, resInvalidEmail);
+    assert.equal(resInvalidEmail.statusCode, 400);
+    assert.equal(resInvalidEmail.payload.code, 'guest_email_invalid');
+
+    // 3. Missing order password
+    const reqNoPass = {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+            site: 'cn',
+            provider: 'zpay',
+            channel: 'alipay',
+            items: [validItem],
+            idempotencyKey: 'idem-batch-cred-3',
+            email: 'buyer@example.com'
+        })
+    };
+    const resNoPass = response();
+    await fixture.handlers.checkoutBatches(reqNoPass, resNoPass);
+    assert.equal(resNoPass.statusCode, 400);
+    assert.equal(resNoPass.payload.code, 'guest_password_weak');
+
+    // 4. Weak order password
+    const reqWeakPass = {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+            site: 'cn',
+            provider: 'zpay',
+            channel: 'alipay',
+            items: [validItem],
+            idempotencyKey: 'idem-batch-cred-4',
+            email: 'buyer@example.com',
+            orderPassword: '123'
+        })
+    };
+    const resWeakPass = response();
+    await fixture.handlers.checkoutBatches(reqWeakPass, resWeakPass);
+    assert.equal(resWeakPass.statusCode, 400);
+    assert.equal(resWeakPass.payload.code, 'guest_password_weak');
 });

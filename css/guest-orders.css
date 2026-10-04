@@ -21,13 +21,15 @@
     --go-input-bg: #ffffff;
     --go-accent: #7eb8ef;
     --go-accent-text: #ffffff;
+    --go-control-color: #111111;
+    --go-focus-border: rgba(71, 85, 105, .62);
     --go-danger: #b91c1c;
     --go-danger-bg: rgba(254, 226, 226, .7);
     --go-danger-border: rgba(248, 113, 113, .5);
     --go-ok: #15803d;
     --go-warn: #b45309;
     --go-code-bg: #f1f5f9;
-    --go-shadow: 0 18px 44px rgba(15, 23, 42, .08);
+    --go-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
 }
 
 html[data-theme="dark"] {
@@ -40,16 +42,25 @@ html[data-theme="dark"] {
     --go-input-bg: rgba(2, 6, 23, .55);
     --go-accent: #7eb8ef;
     --go-accent-text: #04101f;
+    --go-control-color: #ffffff;
+    --go-focus-border: rgba(226, 232, 240, .38);
     --go-danger: #fca5a5;
     --go-danger-bg: rgba(127, 29, 29, .28);
     --go-danger-border: rgba(248, 113, 113, .35);
     --go-ok: #86efac;
     --go-warn: #fcd34d;
     --go-code-bg: rgba(0, 0, 0, .32);
-    --go-shadow: 0 22px 60px rgba(0, 0, 0, .5);
+    --go-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
 }
 
 * { box-sizing: border-box; }
+
+/* Author rules below intentionally set display for cards, lists, empty states,
+   and pagination. Keep the HTML hidden contract authoritative so a previous
+   state cannot remain visible alongside the current result. */
+body.guest-orders-page [hidden] {
+    display: none !important;
+}
 
 body.guest-orders-page {
     margin: 0;
@@ -64,7 +75,7 @@ body.guest-orders-page {
     width: min(920px, 100% - 32px);
     margin: 0 auto;
     min-height: 100vh;
-    padding: 28px 0 32px;
+    padding: calc(var(--nav-height, 61px) + 28px) 0 32px;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -73,24 +84,25 @@ body.guest-orders-page {
 /* --- header ------------------------------------------------------------- */
 .guest-orders-header {
     display: flex;
+    text-align: left;
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
     flex-wrap: wrap;
 }
 
-.guest-orders-heading { display: flex; align-items: center; gap: 14px; }
+.guest-orders-heading { position: relative; display: flex; align-items: center; gap: 14px; text-align: left; justify-content: flex-start; }
 
 .guest-orders-heading-icon {
     width: 44px; height: 44px; flex: 0 0 44px;
     display: grid; place-items: center;
     border-radius: 14px;
-    background: color-mix(in srgb, var(--go-accent) 16%, transparent);
-    color: var(--go-accent);
+    background: color-mix(in srgb, var(--go-control-color) 10%, transparent);
+    color: var(--go-control-color);
     font-size: 19px;
 }
 
-.guest-orders-heading h1 { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: .2px; }
+.guest-orders-heading h1 { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: .2px; color: #1c2024 !important; }
 .guest-orders-heading p { margin: 4px 0 0; font-size: 13px; color: var(--go-muted); }
 
 .guest-orders-back {
@@ -103,13 +115,60 @@ body.guest-orders-page {
 }
 .guest-orders-back:hover { border-color: var(--go-accent); color: var(--go-accent); }
 
+/* Secondary navigation action: quiet outlined capsule, aligned to the header. */
+body.guest-orders-page .guest-orders-header .guest-orders-back-shop-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 34px;
+    padding: 6px 12px;
+    border: 1px solid var(--go-border);
+    border-radius: 999px;
+    background: var(--go-card);
+    color: var(--go-muted);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    text-decoration: none;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+    white-space: nowrap;
+    transition: border-color .18s ease, background-color .18s ease, color .18s ease, transform .18s ease;
+}
+body.guest-orders-page .guest-orders-header .guest-orders-back-shop-btn i {
+    color: var(--go-control-color);
+    font-size: 12px;
+}
+body.guest-orders-page .guest-orders-header .guest-orders-back-shop-btn:hover {
+    border-color: var(--go-control-color);
+    background: color-mix(in srgb, var(--go-control-color) 6%, var(--go-card));
+    color: var(--go-control-color);
+}
+body.guest-orders-page .guest-orders-header .guest-orders-back-shop-btn:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--go-accent) 55%, transparent);
+    outline-offset: 2px;
+}
+body.guest-orders-page .guest-orders-header .guest-orders-back-shop-btn:active {
+    transform: translateY(1px);
+}
+
+/* Keep the service gate stable while the capability probe is in flight. */
+.guest-orders-gate[data-state="loading"] {
+    min-height: 74px;
+}
+.guest-orders-gate[data-state="loading"] h2,
+.guest-orders-gate[data-state="loading"] p {
+    opacity: .72;
+}
+
 /* --- cards -------------------------------------------------------------- */
 .guest-orders-card {
     border: 1px solid var(--go-border);
-    border-radius: 18px;
+    border-radius: 16px;
     background: var(--go-card);
     box-shadow: var(--go-shadow);
-    padding: 20px;
+    padding: 20px 20px 28px;
+    overflow: hidden;
 }
 
 .guest-orders-gate {
@@ -136,24 +195,28 @@ body.guest-orders-page {
 .guest-orders-result-head .guest-orders-card-title { margin-bottom: 0; }
 .guest-orders-result-head { margin-bottom: 14px; }
 
-/* --- saved credential hint ---------------------------------------------- */
-.guest-orders-saved {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    flex-wrap: wrap;
-    padding: 11px 16px;
-    border: 1px solid var(--go-border);
-    border-radius: 14px;
-    background: var(--go-card-alt);
-    font-size: 13px; color: var(--go-muted);
+/* Keep the local-credential notice visually separated from the query card. */
+#guestOrdersProtectedContent {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
 }
-.guest-orders-saved i { color: var(--go-accent); margin-right: 4px; }
+#guestOrdersProtectedContent[hidden] { display: none !important; }
 
 /* --- query form: 4 columns, single column on mobile ---------------------- */
 .guest-orders-form {
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.35fr) minmax(0, 1fr) auto;
     gap: 12px;
     align-items: end;
+}
+
+/* Keep the two credentials visually grouped on wide query cards while
+   preserving the existing order-number and action columns. */
+@media (min-width: 901px) {
+    .guest-orders-query-form .guest-orders-credential-field {
+        min-width: 0;
+    }
 }
 
 .guest-orders-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -171,24 +234,144 @@ body.guest-orders-page {
     font: inherit;
     font-size: 14px;
 }
-.guest-orders-field input:focus {
-    outline: none;
-    border-color: var(--go-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--go-accent) 22%, transparent);
+
+/* Keep helper copy quiet so the actual labels and entered values lead the
+   form. The explicit selector also wins over the site's global input rules. */
+body.guest-orders-page .guest-orders-field input::placeholder {
+    color: var(--go-muted);
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+    font-weight: 400;
+    letter-spacing: 0;
+    opacity: .62;
 }
 
-.guest-orders-password-row { display: flex; gap: 8px; align-items: stretch; }
-.guest-orders-password-row input { flex: 1; min-width: 0; }
+/* Keep the Chromium/WebKit fallback separate: an unsupported vendor
+   pseudo-element in a combined selector can make the whole rule disappear. */
+body.guest-orders-page .guest-orders-field input::-webkit-input-placeholder {
+    color: var(--go-muted);
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+    font-weight: 400;
+    letter-spacing: 0;
+    opacity: .62;
+}
 
+body.guest-orders-page .guest-orders-field input::-moz-placeholder {
+    color: var(--go-muted);
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+    font-weight: 400;
+    letter-spacing: 0;
+    opacity: .62;
+}
+
+body.guest-orders-page .guest-orders-field input:-ms-input-placeholder {
+    color: var(--go-muted);
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+    font-weight: 400;
+    letter-spacing: 0;
+    opacity: .62;
+}
+
+.guest-orders-field input:focus,
+.guest-orders-field input:focus-visible,
+body.guest-orders-page input[type="email"]:focus,
+body.guest-orders-page input[type="email"]:focus-visible,
+body.guest-orders-page input[type="password"]:focus,
+body.guest-orders-page input[type="password"]:focus-visible,
+body.guest-orders-page input[type="text"]:focus,
+body.guest-orders-page input[type="text"]:focus-visible {
+    outline: none !important;
+    border-color: var(--go-focus-border) !important;
+    box-shadow: none !important;
+}
+
+/* Keep typed and browser-autofilled fields on the same clean surface. */
+body.guest-orders-page input:-webkit-autofill,
+body.guest-orders-page input:-webkit-autofill:hover,
+body.guest-orders-page input:-webkit-autofill:focus,
+body.guest-orders-page input:-webkit-autofill:active {
+    -webkit-text-fill-color: var(--go-text) !important;
+    caret-color: var(--go-text) !important;
+    -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+    box-shadow: 0 0 0 1000px #ffffff inset !important;
+    background-color: #ffffff !important;
+    transition: background-color 999999s ease-out 0s !important;
+}
+
+html[data-theme="dark"] body.guest-orders-page input:-webkit-autofill,
+html[data-theme="dark"] body.guest-orders-page input:-webkit-autofill:hover,
+html[data-theme="dark"] body.guest-orders-page input:-webkit-autofill:focus,
+html[data-theme="dark"] body.guest-orders-page input:-webkit-autofill:active {
+    -webkit-text-fill-color: #e2e8f0 !important;
+    caret-color: #e2e8f0 !important;
+    -webkit-box-shadow: 0 0 0 1000px #070d1e inset !important;
+    box-shadow: 0 0 0 1000px #070d1e inset !important;
+    background-color: #070d1e !important;
+    transition: background-color 999999s ease-out 0s !important;
+}
+
+body.guest-orders-page input:-moz-autofill,
+body.guest-orders-page input:-moz-autofill:focus {
+    box-shadow: 0 0 0 1000px #ffffff inset !important;
+    -moz-text-fill-color: var(--go-text) !important;
+}
+html[data-theme="dark"] body.guest-orders-page input:-moz-autofill,
+html[data-theme="dark"] body.guest-orders-page input:-moz-autofill:focus {
+    box-shadow: 0 0 0 1000px #070d1e inset !important;
+    -moz-text-fill-color: #e2e8f0 !important;
+}
+
+body.guest-orders-page .guest-orders-field input:read-only,
+body.guest-orders-page .guest-orders-field input[readonly] {
+    background-color: var(--go-input-bg) !important;
+    color: var(--go-text) !important;
+}
+html[data-theme="dark"] body.guest-orders-page .guest-orders-field input:read-only,
+html[data-theme="dark"] body.guest-orders-page .guest-orders-field input[readonly] {
+    background-color: rgba(2, 6, 23, .55) !important;
+    color: #e2e8f0 !important;
+}
+
+.guest-orders-password-row { display: block; }
+.guest-orders-password-control {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+.guest-orders-password-control input {
+    display: block;
+    width: 100%;
+    padding-right: 48px;
+}
 .guest-orders-icon-btn {
-    flex: 0 0 44px; width: 44px; height: 44px;
-    border: 1px solid var(--go-border);
-    border-radius: 12px;
-    background: var(--go-card-alt);
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    z-index: 1;
+    width: 30px;
+    height: 30px;
+    transform: translateY(-50%);
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
     color: var(--go-muted);
     cursor: pointer;
+    transition: color 150ms ease, background-color 150ms ease;
 }
-.guest-orders-icon-btn:hover { color: var(--go-accent); border-color: var(--go-accent); }
+.guest-orders-icon-btn:hover {
+    color: var(--go-control-color);
+    background: color-mix(in srgb, var(--go-control-color) 8%, transparent);
+}
+.guest-orders-icon-btn:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--go-focus-border) 70%, transparent);
+    outline-offset: 1px;
+}
 
 .guest-orders-primary-btn {
     height: 44px;
@@ -203,6 +386,125 @@ body.guest-orders-page {
 }
 .guest-orders-primary-btn:hover { filter: brightness(1.06); }
 .guest-orders-primary-btn:disabled { opacity: .6; cursor: progress; }
+
+/* The main query action uses a neutral black treatment so it follows the
+   black page heading instead of inheriting the guest-order accent blue. */
+body.guest-orders-page #guestOrdersSubmitBtn {
+    height: 42px;
+    min-height: 42px;
+    width: 78px;
+    min-width: 78px;
+    max-width: 78px;
+    padding: 8px 0;
+    border: 0 !important;
+    border-radius: 999px;
+    background: #111827 !important;
+    background-color: #111827 !important;
+    color: #ffffff !important;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    box-shadow: none;
+    filter: none;
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms ease, color 150ms ease, opacity 150ms ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    box-sizing: border-box;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+body.guest-orders-page #guestOrdersSubmitBtn:hover:not(:disabled) {
+    background: #111827 !important;
+    background-color: #111827 !important;
+    color: #ffffff !important;
+    transform: translateY(0.75px);
+    filter: none;
+}
+body.guest-orders-page #guestOrdersSubmitBtn:active:not(:disabled) {
+    background: #111827 !important;
+    background-color: #111827 !important;
+    color: #ffffff !important;
+    transform: translateY(1px);
+}
+body.guest-orders-page #guestOrdersSubmitBtn:focus-visible {
+    outline: 2px solid rgba(17, 24, 39, .22);
+    outline-offset: 2px;
+}
+
+body.guest-orders-page #guestOrdersSubmitBtn.is-loading,
+body.guest-orders-page #guestOrdersSubmitBtn:disabled {
+    cursor: wait;
+    opacity: 0.92;
+}
+
+/* Match the exact text slot width (28px) so neither button nor inner slot shifts */
+body.guest-orders-page #guestOrdersSubmitBtn .guest-orders-submit-text {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    white-space: nowrap;
+}
+body.guest-orders-page #guestOrdersSubmitBtn .guest-orders-submit-dots {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 28px;
+    height: 14px;
+}
+
+/* Hide text when loading, reveal bouncing dots within the exact same 28px slot */
+body.guest-orders-page #guestOrdersSubmitBtn.is-loading .guest-orders-submit-text {
+    display: none;
+}
+body.guest-orders-page #guestOrdersSubmitBtn.is-loading .guest-orders-submit-dots {
+    display: inline-flex;
+}
+
+/* 3 Bouncing Dots: white in light mode, dark ink in dark mode */
+body.guest-orders-page #guestOrdersSubmitBtn .guest-orders-submit-dots span {
+    width: 4.5px;
+    height: 4.5px;
+    border-radius: 50%;
+    background-color: #ffffff;
+    display: inline-block;
+    animation: guestOrdersDotBounce 0.9s ease-in-out infinite;
+}
+body.guest-orders-page #guestOrdersSubmitBtn .guest-orders-submit-dots span:nth-child(2) {
+    animation-delay: 0.16s;
+}
+body.guest-orders-page #guestOrdersSubmitBtn .guest-orders-submit-dots span:nth-child(3) {
+    animation-delay: 0.32s;
+}
+
+/* Match the storefront purchase control in dark mode: light capsule with dark ink. */
+html[data-theme="dark"] body.guest-orders-page #guestOrdersSubmitBtn,
+html[data-theme="dark"] body.guest-orders-page #guestOrdersSubmitBtn:hover:not(:disabled),
+html[data-theme="dark"] body.guest-orders-page #guestOrdersSubmitBtn:active:not(:disabled) {
+    background: #f4f4f5 !important;
+    background-color: #f4f4f5 !important;
+    color: #0a0a0a !important;
+}
+html[data-theme="dark"] body.guest-orders-page #guestOrdersSubmitBtn:focus-visible {
+    outline-color: rgba(244, 244, 245, .28);
+}
+html[data-theme="dark"] body.guest-orders-page #guestOrdersSubmitBtn .guest-orders-submit-dots span {
+    background-color: #0a0a0a;
+}
+
+@keyframes guestOrdersDotBounce {
+    0%, 80%, 100% {
+        transform: translateY(0);
+        opacity: 0.32;
+    }
+    40% {
+        transform: translateY(-3.5px);
+        opacity: 1;
+    }
+}
 
 .guest-orders-secondary-btn {
     padding: 9px 16px;
@@ -222,6 +524,22 @@ body.guest-orders-page {
     font: inherit; font-size: 12.5px;
     text-decoration: underline; cursor: pointer;
 }
+#guestOrdersBackToListBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: transform 0.15s ease, opacity 0.15s ease, color 0.15s ease;
+}
+#guestOrdersBackToListBtn:hover {
+    text-decoration: none;
+    transform: translateY(1px);
+    opacity: 0.88;
+}
+#guestOrdersBackToListBtn:active {
+    transform: translateY(1.5px);
+}
 
 .guest-orders-tip { margin: 12px 0 0; font-size: 12px; line-height: 1.7; color: var(--go-muted); }
 
@@ -232,8 +550,7 @@ body.guest-orders-page {
     border: 1px solid var(--go-danger-border);
     color: var(--go-danger);
 }
-.guest-orders-loading { margin-top: 14px; font-size: 13px; color: var(--go-muted); }
-.guest-orders-loading i { margin-right: 6px; color: var(--go-accent); }
+.guest-orders-loading { display: none !important; }
 
 /* --- empty state -------------------------------------------------------- */
 .guest-orders-empty {
@@ -247,26 +564,97 @@ body.guest-orders-page {
 .guest-orders-empty small { font-size: 12px; line-height: 1.7; max-width: 460px; }
 
 /* --- order cards -------------------------------------------------------- */
-.guest-orders-list { display: flex; flex-direction: column; gap: 12px; }
+.guest-orders-list { display: flex; flex-direction: column; gap: 14px; }
 
 .guest-orders-item {
     border: 1px solid var(--go-border);
     border-radius: 14px;
     background: var(--go-card-alt);
-    padding: 14px 16px;
+    padding: 16px 18px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 160ms ease, background-color 160ms ease, transform 120ms ease;
+}
+.guest-orders-item:hover {
+    border-color: rgba(15, 23, 42, 0.45);
+    background-color: color-mix(in srgb, var(--go-card-alt) 97%, var(--go-text) 3%);
+}
+html[data-theme="dark"] .guest-orders-item:hover {
+    border-color: rgba(226, 232, 240, 0.38);
+}
+.guest-orders-item:active {
+    transform: scale(0.998);
+}
+.guest-orders-item:focus-visible {
+    outline: 2px solid var(--go-focus-border);
+    outline-offset: 2px;
 }
 
-.guest-orders-item-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.guest-orders-item-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-bottom: 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--go-border) 60%, transparent);
+}
+.guest-orders-item-left {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
 .guest-orders-item-no {
     font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase;
     color: var(--go-muted); overflow-wrap: anywhere;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-.guest-orders-item-amount { font-size: 18px; font-weight: 700; }
-.guest-orders-item-amount small { font-size: 12px; font-weight: 500; color: var(--go-muted); margin-left: 3px; }
+.guest-orders-item-no.is-copyable,
+.guest-orders-detail-rows dd.is-copyable {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: fit-content;
+    padding: 2px 6px;
+    margin: -2px -6px;
+    border-radius: 6px;
+    transition: color 150ms ease, background-color 150ms ease;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.guest-orders-item-no.is-copyable:hover,
+.guest-orders-detail-rows dd.is-copyable:hover {
+    color: var(--go-text);
+    background-color: color-mix(in srgb, var(--go-text) 6%, transparent);
+}
+.guest-orders-item-no.is-copyable:active,
+.guest-orders-detail-rows dd.is-copyable:active {
+    transform: scale(0.98);
+}
+.guest-orders-item-no-copy-icon {
+    font-size: 11px;
+    opacity: 0.55;
+    transition: opacity 150ms ease, transform 150ms ease, color 150ms ease;
+}
+.guest-orders-item-no.is-copyable:hover .guest-orders-item-no-copy-icon,
+.guest-orders-detail-rows dd.is-copyable:hover .guest-orders-item-no-copy-icon {
+    opacity: 0.95;
+    transform: scale(1.1);
+}
+.guest-orders-item-no.is-copied,
+.guest-orders-detail-rows dd.is-copied {
+    color: var(--go-ok, #15803d);
+}
+.guest-orders-item-no.is-copied .guest-orders-item-no-copy-icon,
+.guest-orders-detail-rows dd.is-copied .guest-orders-item-no-copy-icon {
+    color: var(--go-ok, #15803d);
+    opacity: 1;
+}
 
 /* Discount lines: A2 ships the container, L1/L2 fill it. Both stay empty until
    the server returns a non-null coupon_discount / promo_discount, so nothing
@@ -276,7 +664,14 @@ body.guest-orders-page {
 .guest-orders-discount-line { font-size: 12px; color: #e11d48; }
 html[data-theme="dark"] .guest-orders-discount-line { color: #fb7185; }
 
-.guest-orders-item-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 12px; color: var(--go-muted); }
+.guest-orders-item-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+}
+
 .guest-orders-badge {
     display: inline-flex; align-items: center; gap: 5px;
     padding: 3px 10px; border-radius: 999px;
@@ -284,12 +679,147 @@ html[data-theme="dark"] .guest-orders-discount-line { color: #fb7185; }
     background: var(--go-card);
     font-size: 11.5px; font-weight: 600;
     color: var(--go-muted);
+    flex-shrink: 0;
 }
 .guest-orders-badge[data-tone="ok"] { color: var(--go-ok); border-color: color-mix(in srgb, var(--go-ok) 40%, transparent); }
 .guest-orders-badge[data-tone="warn"] { color: var(--go-warn); border-color: color-mix(in srgb, var(--go-warn) 40%, transparent); }
 .guest-orders-badge[data-tone="danger"] { color: var(--go-danger); border-color: var(--go-danger-border); }
 
-.guest-orders-item-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.guest-orders-payment-badge {
+    color: var(--go-text);
+}
+.guest-orders-payment-badge .fa-alipay {
+    color: #1677ff;
+}
+.guest-orders-payment-badge .fa-weixin {
+    color: #07c160;
+}
+.guest-orders-payment-badge .fa-coins {
+    color: #f59e0b;
+}
+
+/* Main product preview row */
+.guest-orders-item-body {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+}
+
+.guest-orders-item-thumb {
+    width: 48px;
+    height: 48px;
+    flex: 0 0 48px;
+    border-radius: 10px;
+    background: var(--go-input-bg);
+    border: 1px solid var(--go-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    color: var(--go-muted);
+}
+.guest-orders-item-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.guest-orders-item-thumb-icon {
+    font-size: 20px;
+    color: var(--go-muted);
+}
+
+.guest-orders-item-content {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.guest-orders-item-product-name {
+    margin: 0;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--go-text);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.guest-orders-item-meta-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    font-size: 12px;
+    color: var(--go-muted);
+}
+
+.guest-orders-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.guest-orders-meta-item i {
+    font-size: 11px;
+    opacity: .8;
+}
+.guest-orders-meta-dot {
+    opacity: .45;
+}
+.guest-orders-meta-hint {
+    color: var(--go-muted);
+    font-size: 11.5px;
+    opacity: 0.85;
+    transition: color 150ms ease, opacity 150ms ease;
+}
+.guest-orders-item:hover .guest-orders-meta-hint {
+    color: var(--go-text);
+    opacity: 1;
+}
+
+.guest-orders-item-price-col {
+    flex: 0 0 auto;
+    text-align: right;
+    margin-left: auto;
+}
+.guest-orders-item-amount {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--go-text);
+    font-variant-numeric: tabular-nums;
+}
+.guest-orders-item-amount small { font-size: 12px; font-weight: 500; color: var(--go-muted); margin-left: 3px; }
+
+.guest-orders-item-pending-notice {
+    padding-top: 2px;
+}
+
+@media (max-width: 600px) {
+    .guest-orders-item {
+        padding: 14px;
+        gap: 10px;
+    }
+    .guest-orders-item-body {
+        align-items: flex-start;
+        gap: 12px;
+    }
+    .guest-orders-item-thumb {
+        width: 44px;
+        height: 44px;
+        flex: 0 0 44px;
+    }
+    .guest-orders-item-product-name {
+        font-size: 13.5px;
+    }
+    .guest-orders-item-meta-row {
+        font-size: 11.5px;
+    }
+    .guest-orders-item-amount {
+        font-size: 16px;
+    }
+}
 
 /* --- pagination --------------------------------------------------------- */
 .guest-orders-pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 16px; }
@@ -307,15 +837,27 @@ html[data-theme="dark"] .guest-orders-discount-line { color: #fb7185; }
 .guest-orders-detail-rows dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
 .guest-orders-detail-rows dd.is-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 
-.guest-orders-delivery { margin-top: 16px; }
-.guest-orders-delivery-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 650; color: var(--go-ok); }
-.guest-orders-delivery-content {
-    max-height: 280px; margin: 10px 0;
-    padding: 12px; border-radius: 12px;
-    background: var(--go-code-bg);
-    color: var(--go-text);
-    white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere;
-    font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
+.guest-orders-detail {
+    padding-bottom: 6px;
+}
+
+.guest-orders-delivery { margin-top: 18px; }
+.guest-orders-delivery-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    margin-bottom: 8px;
+}
+.guest-orders-delivery-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 650;
+    color: var(--go-ok);
+    margin-bottom: 0;
 }
 
 /* --- §10.5 one-time reset link (A3) ------------------------------------- */
@@ -351,9 +893,912 @@ html[data-theme="dark"] .guest-orders-discount-line { color: #fb7185; }
 /* --- mobile: the 4-column grid collapses to one column ------------------- */
 @media (max-width: 600px) {
     .guest-orders-shell { width: min(100% - 24px, 920px); padding-top: 20px; }
-    .guest-orders-card { padding: 16px; border-radius: 16px; }
+    .guest-orders-card { padding: 16px 16px 26px; border-radius: 24px; }
     .guest-orders-form { grid-template-columns: minmax(0, 1fr); }
     .guest-orders-field-action .guest-orders-primary-btn { width: 100%; }
+    body.guest-orders-page #guestOrdersSubmitBtn { width: 100% !important; max-width: 100% !important; min-width: 0 !important; }
     .guest-orders-heading h1 { font-size: 19px; }
     .guest-orders-back { padding: 7px 12px; }
+    .guest-orders-back-shop-btn { align-self: flex-start; }
+}
+
+/* The shared fixed nav owns the top edge on this page as it does on the shop. */
+body.guest-orders-page .framer-nav { z-index: 1200; }
+@media (max-width: 600px) {
+    .guest-orders-shell { padding-top: calc(var(--nav-height, 61px) + 20px); }
+}
+
+body.guest-orders-page .nav-actions { display: flex; align-items: center; gap: 12px; }
+body.guest-orders-page #auth-container { display: flex; align-items: center; min-height: var(--nav-auth-slot-size, 44px); }
+body.guest-orders-page #auth-container .nav-auth-button,
+body.guest-orders-page #auth-container .nav-user-avatar,
+body.guest-orders-page #auth-container .auth-avatar { visibility: visible; opacity: 1; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+body.guest-orders-page .guest-orders-header .guest-orders-heading h1,
+body.guest-orders-page .guest-orders-header .guest-orders-heading h1:hover,
+body.guest-orders-page .guest-orders-header .guest-orders-heading h1:visited,
+body.guest-orders-page .guest-orders-header .guest-orders-heading h1:focus {
+    color: #1c2024 !important;
+    -webkit-text-fill-color: #1c2024 !important;
+    background: none !important;
+    background-image: none !important;
+    -webkit-background-clip: border-box !important;
+    text-shadow: none !important;
+}
+
+html[data-theme="dark"] body.guest-orders-page .guest-orders-header .guest-orders-heading h1,
+html[data-theme="dark"] body.guest-orders-page .guest-orders-header .guest-orders-heading h1:hover,
+html[data-theme="dark"] body.guest-orders-page .guest-orders-header .guest-orders-heading h1:visited,
+html[data-theme="dark"] body.guest-orders-page .guest-orders-header .guest-orders-heading h1:focus {
+    color: #f8fafc !important;
+    -webkit-text-fill-color: #f8fafc !important;
+    text-shadow: none !important;
+}
+
+
+/* Match the desktop list-catalog card surface and shadow in shop-list-layout.css. */
+html:not([data-theme="dark"]) body.guest-orders-page .guest-orders-card {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    background-image: none !important;
+    border: 1px solid #e0e1e6 !important;
+    border-radius: 24px !important;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.05) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="dark"] body.guest-orders-page .guest-orders-card {
+    background: #171d28 !important;
+    background-color: #171d28 !important;
+    background-image: none !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    border-radius: 24px !important;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+/* Keep the original return capsule; share only the query button's hover/press motion. */
+body.guest-orders-page .guest-orders-header .guest-orders-back-shop-btn {
+    min-height: 34px;
+    padding: 6px 12px;
+    border: 1px solid var(--go-border) !important;
+    border-radius: 999px;
+    background: var(--go-card) !important;
+    color: var(--go-muted) !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+    transform: translateY(0);
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+body.guest-orders-page .guest-orders-header .guest-orders-back-shop-btn:hover {
+    border-color: color-mix(in srgb, var(--go-control-color) 58%, var(--go-border)) !important;
+    background: var(--go-card) !important;
+    color: var(--go-muted) !important;
+    transform: translateY(0.75px);
+}
+body.guest-orders-page .guest-orders-header .guest-orders-back-shop-btn:active {
+    transform: translateY(1px);
+}
+
+/* --- Unified Delivery List Styles (.guest-orders-delivery-*) ------------- */
+.guest-orders-delivery-scroll {
+    overflow-y: auto;
+    overscroll-behavior: auto;
+    overscroll-behavior-y: auto;
+    max-height: min(70vh, 640px);
+    -webkit-overflow-scrolling: touch;
+}
+
+.guest-orders-delivery-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    padding-right: 2px;
+}
+
+.guest-orders-delivery-list::-webkit-scrollbar {
+    width: 6px;
+}
+.guest-orders-delivery-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+.guest-orders-delivery-list::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--go-muted) 30%, transparent);
+    border-radius: 999px;
+}
+
+/* --- Top Actions Bar ("复制所有卡密") ------------------------------------ */
+.guest-orders-delivery-actions-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    margin-bottom: 0;
+}
+
+.guest-orders-delivery-copy-all-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 11px;
+    border-radius: 8px;
+    border: 1px solid rgba(49, 80, 111, 0.18);
+    background: #ffffff;
+    color: #31506f;
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    transition: border-color 0.14s ease, background-color 0.14s ease, color 0.14s ease;
+}
+
+.guest-orders-delivery-copy-all-btn:hover {
+    border-color: rgba(49, 80, 111, 0.32);
+    background: #f8fafc;
+    color: #1e3a5f;
+}
+
+.guest-orders-delivery-copy-all-btn.is-copied {
+    border-color: rgba(5, 150, 105, 0.35);
+    background: #ecfdf5;
+    color: #047857;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-copy-all-btn {
+    border-color: rgba(148, 163, 184, 0.28);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(241, 245, 249, 0.9);
+    box-shadow: none;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-copy-all-btn:hover {
+    border-color: rgba(52, 211, 153, 0.55);
+    background: rgba(52, 211, 153, 0.14);
+    color: #a7f3d0;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-copy-all-btn.is-copied {
+    border-color: rgba(16, 185, 129, 0.5);
+    background: rgba(16, 185, 129, 0.22);
+    color: #bbf7d0;
+}
+
+/* --- Item Card ----------------------------------------------------------- */
+.guest-orders-delivery-item {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 18px;
+    background: #ffffff;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    box-shadow: none;
+    text-align: left;
+    transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-item {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: none;
+}
+
+.guest-orders-delivery-surface {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    cursor: pointer;
+    border-radius: 14px;
+    user-select: none;
+    outline: none;
+    transition: background-color 0.18s ease;
+}
+
+.guest-orders-delivery-surface:hover {
+    transform: none;
+}
+
+.guest-orders-delivery-surface:focus-visible {
+    box-shadow: 0 0 0 2px var(--go-accent);
+}
+
+.guest-orders-delivery-header {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+}
+
+.guest-orders-delivery-heading {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.guest-orders-delivery-icon {
+    width: 58px;
+    height: 58px;
+    border-radius: 14px;
+    flex: 0 0 58px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #fff7ed;
+    border: 1px solid rgba(245, 158, 11, 0.24);
+    color: #d97706;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    font-size: 28px;
+}
+
+.guest-orders-delivery-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    border-radius: inherit;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-icon {
+    background: rgba(255, 214, 102, 0.12);
+    border-color: rgba(255, 214, 102, 0.16);
+    color: #ffd45d;
+    box-shadow: 0 12px 22px rgba(255, 214, 102, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.guest-orders-delivery-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    padding: 1px 0 2px;
+}
+
+.guest-orders-delivery-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.guest-orders-delivery-product-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.24;
+    color: #172033;
+    word-break: break-word;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-product-title {
+    color: #ffffff;
+}
+
+.guest-orders-delivery-quantity-row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    margin-top: -1px;
+}
+
+.guest-orders-delivery-quantity-row .guest-orders-delivery-tag--quantity {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    min-height: 18px;
+    padding: 0 7px;
+    font-size: 9px;
+}
+
+.guest-orders-delivery-tag--quantity {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 18px;
+    padding: 0 7px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    border: 1px solid rgba(251, 191, 36, 0.16);
+    background: rgba(251, 191, 36, 0.08);
+    color: #b45309;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-tag--quantity {
+    color: rgba(255, 243, 205, 0.92);
+    border-color: rgba(251, 191, 36, 0.16);
+    background: rgba(251, 191, 36, 0.08);
+}
+
+.guest-orders-delivery-reveal-label {
+    display: inline-flex;
+    align-items: center;
+    margin-top: auto;
+    padding-top: 6px;
+}
+
+.guest-orders-delivery-reveal-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    transition: color 0.16s ease;
+}
+
+.guest-orders-delivery-surface:hover .guest-orders-delivery-reveal-btn {
+    color: #172033;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-reveal-btn {
+    color: rgba(191, 212, 255, 0.88);
+}
+html[data-theme="dark"] .guest-orders-delivery-surface:hover .guest-orders-delivery-reveal-btn {
+    color: rgba(224, 234, 255, 0.98);
+}
+
+.guest-orders-delivery-item.is-content-expanded .guest-orders-delivery-reveal-label {
+    display: none !important;
+}
+
+/* --- Header Toolbar (Right side: capsules, copy button, time) ----------- */
+.guest-orders-delivery-actions {
+    flex: 0 0 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: space-between;
+    align-self: stretch;
+    gap: 6px;
+    margin-left: 12px;
+}
+
+.guest-orders-delivery-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-wrap: wrap;
+    min-height: 26px;
+}
+
+/* Guidance toggle capsules (Notice & Usage) - Delicate & compact (10px font) */
+button.guest-orders-delivery-tag {
+    appearance: none;
+    cursor: pointer;
+    font: inherit;
+    height: 26px;
+    min-height: 26px;
+    flex: 0 0 auto;
+    align-self: center;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 10px !important;
+    line-height: 1;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    background: transparent;
+    transition: transform 0.14s ease, border-color 0.14s ease, background-color 0.14s ease, color 0.14s ease;
+    user-select: none;
+}
+
+.guest-orders-delivery-tag-label {
+    display: inline-block;
+    font-size: 10px !important;
+    line-height: 1;
+    font-weight: inherit;
+    letter-spacing: 0;
+    white-space: nowrap;
+}
+
+button.guest-orders-delivery-tag:hover {
+    transform: none;
+}
+
+button.guest-orders-delivery-tag:focus-visible {
+    outline: none;
+}
+
+.guest-orders-delivery-tag--notice {
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #92400e;
+    background: transparent;
+}
+
+.guest-orders-delivery-tag--notice:hover,
+.guest-orders-delivery-tag--notice.is-active {
+    border-color: rgba(245, 158, 11, 0.42);
+    background: #fff7ed;
+    color: #92400e;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-tag--notice {
+    color: #ffd78f;
+    border: 1px solid rgba(255, 214, 102, 0.22);
+    background: transparent;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-tag--notice:hover,
+html[data-theme="dark"] .guest-orders-delivery-tag--notice.is-active {
+    border-color: rgba(255, 214, 102, 0.35);
+    background: rgba(255, 214, 102, 0.14);
+    color: #ffd78f;
+}
+
+.guest-orders-delivery-tag--usage {
+    border: 1px solid rgba(16, 185, 129, 0.28);
+    color: #047857;
+    background: transparent;
+}
+
+.guest-orders-delivery-tag--usage:hover,
+.guest-orders-delivery-tag--usage.is-active {
+    border-color: rgba(16, 185, 129, 0.38);
+    background: #ecfdf5;
+    color: #047857;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-tag--usage {
+    color: rgba(187, 247, 208, 0.96);
+    border: 1px solid rgba(74, 222, 128, 0.22);
+    background: transparent;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-tag--usage:hover,
+html[data-theme="dark"] .guest-orders-delivery-tag--usage.is-active {
+    border-color: rgba(74, 222, 128, 0.35);
+    background: rgba(34, 197, 94, 0.14);
+    color: rgba(187, 247, 208, 0.96);
+}
+
+/* Item copy button (square button) */
+.guest-orders-delivery-item-copy-btn {
+    width: 26px;
+    height: 26px;
+    flex: 0 0 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    border: 1px solid rgba(49, 80, 111, 0.18);
+    background: #f8fafc;
+    color: #31506f;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    transition: transform 0.14s ease, border-color 0.14s ease, background-color 0.14s ease, color 0.14s ease;
+    font-size: 12px;
+}
+
+.guest-orders-delivery-item-copy-btn:hover {
+    border-color: rgba(49, 80, 111, 0.32);
+    background: #eef5fb;
+    color: #1e3a5f;
+}
+
+.guest-orders-delivery-item-copy-btn.is-copied {
+    border-color: rgba(5, 150, 105, 0.35);
+    background: #ecfdf5;
+    color: #047857;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-item-copy-btn {
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(241, 245, 249, 0.9);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .guest-orders-delivery-item-copy-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+html[data-theme="dark"] .guest-orders-delivery-item-copy-btn.is-copied {
+    border-color: rgba(52, 211, 153, 0.55);
+    background: rgba(52, 211, 153, 0.18);
+    color: #a7f3d0;
+}
+
+/* Timestamp */
+.guest-orders-delivery-time {
+    font-size: 10px;
+    line-height: 1.35;
+    color: #64748b;
+    text-align: right;
+    margin-top: auto;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-time {
+    color: rgba(148, 163, 184, 0.6);
+}
+
+/* --- Card Key Box (Clean full-width box, clickable, matches Image 3) --- */
+.guest-orders-delivery-card-key {
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    background: #ffffff;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 3px 10px rgba(15, 23, 42, 0.04);
+    transition: border-color 0.16s ease, background-color 0.16s ease;
+    -webkit-user-select: none;
+    user-select: none;
+    overflow: hidden;
+}
+
+.guest-orders-delivery-card-key:hover {
+    border-color: rgba(148, 163, 184, 0.45);
+    background: #ffffff;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-card-key {
+    background: rgba(10, 14, 20, 0.42);
+    border-color: rgba(134, 239, 172, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 24px rgba(0, 0, 0, 0.12);
+}
+
+html[data-theme="dark"] .guest-orders-delivery-card-key:hover {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(12, 18, 26, 0.5);
+}
+
+.guest-orders-delivery-card-key-box {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.guest-orders-delivery-card-key-text {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #1e293b;
+    word-break: break-all;
+    white-space: pre-wrap;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-card-key-text {
+    color: #d8ffe4;
+}
+
+/* --- Disclosures & Panels ------------------------------------------------ */
+.guest-orders-delivery-body {
+    min-width: 0;
+}
+
+.guest-orders-delivery-disclosures {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.guest-orders-delivery-content-panel {
+    display: none;
+    animation: guestOrdersFadeIn 0.2s ease forwards;
+}
+
+.guest-orders-delivery-item.is-content-expanded .guest-orders-delivery-content-panel {
+    display: block;
+}
+
+@keyframes guestOrdersFadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.guest-orders-delivery-content-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+/* Guidance Panels (Notice & Usage) */
+.guest-orders-delivery-guidance-panel {
+    position: relative;
+    max-height: min(34vh, 260px);
+    overflow: hidden;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    background: #ffffff;
+    color: #1e293b;
+    animation: guestOrdersFadeIn 0.2s ease forwards;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-guidance-panel {
+    background: rgba(12, 18, 26, 0.26);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: rgba(226, 232, 240, 0.88);
+}
+
+.guest-orders-delivery-guidance-copy {
+    position: absolute;
+    top: 9px;
+    right: 9px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid rgba(49, 80, 111, 0.16);
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #31506f;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease;
+    font-size: 12px;
+}
+
+.guest-orders-delivery-guidance-copy:hover {
+    border-color: rgba(49, 80, 111, 0.3);
+    background: #eef5fb;
+    color: #1e3a5f;
+}
+
+.guest-orders-delivery-guidance-copy.is-copied {
+    border-color: rgba(5, 150, 105, 0.35);
+    background: #ecfdf5;
+    color: #047857;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-guidance-copy {
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(226, 232, 240, 0.78);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="dark"] .guest-orders-delivery-guidance-copy:hover {
+    border-color: rgba(107, 158, 206, 0.42);
+    background: rgba(107, 158, 206, 0.16);
+    color: #dbeafe;
+}
+
+html[data-theme="dark"] .guest-orders-delivery-guidance-copy.is-copied {
+    border-color: rgba(34, 197, 94, 0.28);
+    background: rgba(220, 252, 231, 0.9);
+    color: #047857;
+}
+
+.guest-orders-delivery-guidance-content {
+    box-sizing: border-box;
+    min-height: 28px;
+    max-height: calc(min(34vh, 260px) - 20px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: auto;
+    overscroll-behavior-y: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding-right: 36px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: inherit;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.guest-orders-delivery-guidance-content::-webkit-scrollbar {
+    width: 6px;
+}
+.guest-orders-delivery-guidance-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+.guest-orders-delivery-guidance-content::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.4);
+    border-radius: 999px;
+}
+
+.guest-orders-delivery-empty {
+    padding: 24px 16px;
+    text-align: center;
+    color: var(--go-muted);
+    font-size: 13.5px;
+    border-radius: 14px;
+    border: 1px dashed var(--go-border);
+}
+
+/* --- Global Shop / Guest Orders Success Toast (Matching Image 3) --------- */
+.shop-success-toast[data-shop-toast-global="1"] {
+    position: fixed;
+    left: 50%;
+    bottom: max(80px, calc(env(safe-area-inset-bottom) + 80px));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: max-content;
+    max-width: min(560px, calc(100vw - 32px));
+    min-height: 44px;
+    padding: 12px 24px;
+    border-radius: 50px;
+    border: 1px solid rgba(16, 185, 129, 0.26);
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow:
+        0 18px 42px rgba(15, 23, 42, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.88);
+    color: #172033;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: 0.3px;
+    text-align: center;
+    pointer-events: none;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+    transition:
+        opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+        transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+        border-color 0.2s ease;
+    z-index: 999999;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+}
+
+.shop-success-toast[data-shop-toast-global="1"]::before {
+    content: '✓';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    margin-right: 2px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.shop-success-toast[data-shop-toast-global="1"].is-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+html[data-theme="dark"] .shop-success-toast[data-shop-toast-global="1"] {
+    background: rgba(20, 20, 20, 0.92);
+    color: #ffffff;
+    border-color: #10b981;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+@media (max-width: 640px) {
+    .shop-success-toast[data-shop-toast-global="1"] {
+        bottom: max(80px, calc(env(safe-area-inset-bottom) + 80px));
+        max-width: calc(100vw - 28px);
+        padding: 10px 20px;
+        font-size: 13.5px;
+    }
+}
+
+/* Mobile responsive */
+@media (max-width: 600px) {
+    .guest-orders-delivery-scroll {
+        max-height: none;
+        overflow-y: visible;
+        overscroll-behavior: auto;
+    }
+    .guest-orders-delivery-item {
+        padding: 10px 12px;
+        border-radius: 14px;
+        gap: 8px;
+    }
+    .guest-orders-delivery-header {
+        flex-direction: row;
+        align-items: stretch;
+        justify-content: space-between;
+        gap: 8px;
+    }
+    .guest-orders-delivery-heading {
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+    .guest-orders-delivery-icon {
+        width: 48px;
+        height: 48px;
+        flex: 0 0 48px;
+        border-radius: 12px;
+        font-size: 22px;
+    }
+    .guest-orders-delivery-copy {
+        gap: 4px;
+        padding: 0;
+        justify-content: center;
+    }
+    .guest-orders-delivery-product-title {
+        font-size: 13.5px;
+        line-height: 1.28;
+    }
+    .guest-orders-delivery-reveal-btn {
+        font-size: 10.5px;
+    }
+    .guest-orders-delivery-actions {
+        flex: 0 0 auto;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 4px;
+        margin-left: 8px;
+        align-self: stretch;
+    }
+    .guest-orders-delivery-toolbar {
+        min-height: 24px;
+        gap: 4px;
+    }
+    button.guest-orders-delivery-tag {
+        height: 24px;
+        min-height: 24px;
+        padding: 0 8px;
+        font-size: 9.5px !important;
+    }
+    .guest-orders-delivery-tag-label {
+        font-size: 9.5px !important;
+    }
+    .guest-orders-delivery-item-copy-btn {
+        width: 24px;
+        height: 24px;
+        flex: 0 0 24px;
+        border-radius: 8px;
+        font-size: 11px;
+    }
+    .guest-orders-delivery-time {
+        font-size: 9px;
+        color: #94a3b8;
+    }
+    .guest-orders-delivery-card-key {
+        padding: 8px 12px;
+        border-radius: 8px;
+    }
+    .guest-orders-delivery-card-key-text {
+        font-size: 12px;
+        line-height: 1.5;
+    }
+    .guest-orders-delivery-guidance-panel {
+        padding: 8px 12px;
+        border-radius: 10px;
+    }
+    .guest-orders-delivery-guidance-content {
+        font-size: 12px;
+        line-height: 1.5;
+        padding-right: 32px;
+    }
+    .guest-orders-delivery-guidance-copy {
+        width: 24px;
+        height: 24px;
+        font-size: 11px;
+        top: 6px;
+        right: 6px;
+    }
 }

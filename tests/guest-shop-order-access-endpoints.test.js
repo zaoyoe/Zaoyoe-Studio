@@ -785,6 +785,54 @@ test('pagination and order_no filters are clamped, not trusted', async () => {
     assert.equal(filtered.payload.pagination.total, 0);
 });
 
+test('the same credential group returns every historical order across pages', async () => {
+    const orders = [
+        makeOrderRow({
+            order_no: 'GS20260921-000003',
+            created_at: '2026-09-23T00:00:00.000Z',
+            total_amount: '30.00',
+            unit_amount: '30.00'
+        }),
+        makeOrderRow({
+            order_no: 'GS20260921-000002',
+            created_at: '2026-09-22T00:00:00.000Z',
+            total_amount: '20.00',
+            unit_amount: '20.00'
+        }),
+        makeOrderRow({
+            order_no: 'GS20260921-000001',
+            created_at: '2026-09-21T00:00:00.000Z'
+        })
+    ];
+    const { handlers } = createHarness({ state: { orders } });
+    const header = { 'x-guest-order-credential': credentialHeader() };
+
+    const all = createResponse();
+    await handlers.orders(getReq('/api/shop/guest/orders', { page: 1, pageSize: 10 }, header), all);
+    assert.equal(all.statusCode, 200);
+    assert.equal(all.payload.pagination.total, 3);
+    assert.deepEqual(all.payload.orders.map((order) => order.order_no), [
+        'GS20260921-000003',
+        'GS20260921-000002',
+        'GS20260921-000001'
+    ]);
+
+    const firstPage = createResponse();
+    await handlers.orders(getReq('/api/shop/guest/orders', { page: 1, pageSize: 2 }, header), firstPage);
+    assert.deepEqual(firstPage.payload.pagination, { page: 1, page_size: 2, total: 3 });
+    assert.deepEqual(firstPage.payload.orders.map((order) => order.order_no), [
+        'GS20260921-000003',
+        'GS20260921-000002'
+    ]);
+
+    const secondPage = createResponse();
+    await handlers.orders(getReq('/api/shop/guest/orders', { page: 2, pageSize: 2 }, header), secondPage);
+    assert.deepEqual(secondPage.payload.pagination, { page: 2, page_size: 2, total: 3 });
+    assert.deepEqual(secondPage.payload.orders.map((order) => order.order_no), [
+        'GS20260921-000001'
+    ]);
+});
+
 test('delivery is gated on confirmed payment AND delivered fulfillment', async () => {
     const header = { 'x-guest-order-credential': credentialHeader() };
     const cases = [

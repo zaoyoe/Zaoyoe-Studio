@@ -69,7 +69,7 @@
     const QUANTITY_PREVIEW_DEBOUNCE_MS = 400;
     // Outer bound only (promo.GUEST_MAX_QUANTITY_CEILING). The cap that actually
     // applies arrives as preview.quantity_cap and is 1 while the switches are off.
-    const QUANTITY_HARD_CEILING = 5;
+    const QUANTITY_HARD_CEILING = 99;
 
     const state = {
         preview: null,
@@ -814,6 +814,11 @@
             if (index === activeIndex) step.setAttribute('aria-current', 'step');
             else step.removeAttribute('aria-current');
         });
+        if (phase === 'delivery' || (phase === 'payment' && !state.paymentCreationUnknown && !state.pendingCreateAttempt?.unresolved && Boolean(state.orderNo || state.checkout))) {
+            setHidden('guestCashConfigurePanel', true);
+        } else if (phase === 'configure' && !state.orderNo) {
+            setHidden('guestCashConfigurePanel', false);
+        }
     }
 
     function paymentMethodLabel(provider, channel) {
@@ -1322,7 +1327,7 @@
         if (!node) return;
         const displayValue = loading ? AMOUNT_LOADING_PLACEHOLDER : value;
         const numericValue = displayValue === '-' ? '-' : displayValue.replace(/^[￥¥]/u, '');
-        const hasCurrency = numericValue !== '-';
+        const hasCurrency = loading || numericValue !== '-';
         const wasPlaceholder = node.classList.contains('is-amount-placeholder');
         let digits = node.querySelector('.guest-amount-digits');
         let currency = node.querySelector('.guest-amount-currency');
@@ -1331,9 +1336,11 @@
             if (typeof document.createElement === 'function' && typeof node.appendChild === 'function') {
                 currency = document.createElement('span');
                 currency.className = 'guest-amount-currency';
+                currency.classList?.add('guest-amount-currency');
                 currency.textContent = hasCurrency ? '￥' : '';
                 digits = document.createElement('span');
                 digits.className = 'guest-amount-digits';
+                digits.classList?.add('guest-amount-digits');
                 node.appendChild(currency);
                 node.appendChild(digits);
             } else {
@@ -1344,13 +1351,34 @@
         const changed = digits.textContent !== numericValue;
         node.classList.remove('is-loading', 'is-amount-placeholder', 'is-amount-revealing');
         node.setAttribute('aria-busy', loading ? 'true' : 'false');
-        node.dataset.loadingAmount = '0.00';
+        node.dataset.loadingAmount = '';
         if (currency) currency.textContent = hasCurrency ? '￥' : '';
-        digits.textContent = numericValue;
         if (loading) {
             node.classList.add('is-amount-placeholder');
+            if (typeof digits.querySelector !== 'function' || !digits.querySelector('.guest-amount-dots')) {
+                if (typeof document.createElement === 'function' && typeof digits.appendChild === 'function') {
+                    digits.textContent = '';
+                    const dots = document.createElement('span');
+                    dots.className = 'guest-amount-dots';
+                    dots.classList?.add('guest-amount-dots');
+                    dots.setAttribute('aria-hidden', 'true');
+                    for (let i = 0; i < 3; i++) {
+                        const dot = document.createElement('span');
+                        dots.appendChild(dot);
+                    }
+                    digits.appendChild(dots);
+                    const sr = document.createElement('span');
+                    sr.className = 'guest-amount-value-sr';
+                    sr.classList?.add('guest-amount-value-sr');
+                    sr.textContent = '0.00';
+                    digits.appendChild(sr);
+                } else {
+                    digits.textContent = '0.00';
+                }
+            }
             return;
         }
+        digits.textContent = numericValue;
         // The CSS keeps the zero-value placeholder visible through the dialog's
         // 300ms entrance, then rolls the quoted amount upward into place.
         if ((wasPlaceholder || changed) && displayValue !== '-') {
@@ -1485,6 +1513,17 @@
         renderPayableSummary();
     }
 
+
+    function clearConfirmationLoadingMarker() {
+        const modal = getModal();
+        if (!modal || modal.hidden || state.status !== 'configure') return;
+        if (!state.previewPending
+            && !(state.batchMode && state.batchTotal === null)
+            && !(state.listSubtotal === null && !state.orderNo)) {
+            modal.removeAttribute('data-confirmation-loading');
+        }
+    }
+
     function renderPayableSummary({ forceLoading = false } = {}) {
         const pricing = state.confirmedPricing || computePreviewPricing();
         const breakdown = state.amountBreakdown && typeof state.amountBreakdown === 'object'
@@ -1507,7 +1546,11 @@
         // anyway so a future server field lights it up with no markup change.
         const discountAmount = roundMoneyAmount(breakdown?.discount_amount);
         const promoAmount = roundMoneyAmount(breakdown?.promo_amount);
+        const singleItemMissingQuote = !state.orderNo && !state.batchMode && !state.previewError
+            && state.status === 'configure'
+            && (state.listSubtotal === null && pricing?.payableAmount == null);
         const amountLoading = forceLoading || Boolean(state.previewPending
+            || singleItemMissingQuote
             || (state.batchMode && state.batchTotal === null && state.status === 'configure'));
         setAmountValue('guestCashProductAmount', formatAmount(productAmount), { loading: amountLoading });
         setAmountValue('guestCashPrice', formatAmount(pricing?.payableAmount), { loading: amountLoading });
@@ -1520,6 +1563,7 @@
         setText('guestCashPromoAmount', promoAmount > 0 ? `-${formatAmount(promoAmount)}` : '-');
         setHidden('guestCashPromoRow', !(promoAmount > 0));
         renderQuantityFact();
+        if (!forceLoading) clearConfirmationLoadingMarker();
     }
 
     function handlePaymentChannelChange() {
@@ -1584,6 +1628,33 @@
         syncOrderPasswordChecks();
     }
 
+    let lastKnownCredentialRequired = null;
+
+    function lastKnownBuyerCredentialRequired() {
+        if (typeof lastKnownCredentialRequired === 'boolean') {
+            return lastKnownCredentialRequired;
+        }
+        try {
+            const stored = window.sessionStorage?.getItem('zaoyoe_guest_buyer_credential_required');
+            if (stored === 'true') {
+                lastKnownCredentialRequired = true;
+                return true;
+            }
+            if (stored === 'false') {
+                lastKnownCredentialRequired = false;
+                return false;
+            }
+        } catch (_) {}
+        return true;
+    }
+
+    function recordBuyerCredentialRequired(required) {
+        lastKnownCredentialRequired = Boolean(required);
+        try {
+            window.sessionStorage?.setItem('zaoyoe_guest_buyer_credential_required', lastKnownCredentialRequired ? 'true' : 'false');
+        } catch (_) {}
+    }
+
     function syncBuyerCredentialUi() {
         const required = state.buyerCredentialRequired;
         const pendingIntentRequiresEmail = Boolean(
@@ -1633,7 +1704,7 @@
             // Copied to the clipboard because §6.1.3 decouples "strong" from
             // "must be memorised"; the plaintext is never persisted anywhere.
             await copyText(generated, button);
-            setOrderPasswordNote('已生成并复制到剪贴板，请妥善保存。本站不保存明文，关闭页面后无法找回。');
+            setOrderPasswordNote('');
         } catch (error) {
             state.generatedOrderPassword = '';
             setOrderPasswordNote(normalizeText(error?.message, 200) || '无法生成查询密码，请手动设置一个');
@@ -1650,7 +1721,7 @@
         const input = orderPasswordInput();
         const current = foldQueryPassword(input?.value || '');
         if (!current || current !== state.generatedOrderPassword) {
-            setOrderPasswordNote('该查询密码强度不足，请点击「帮我生成」换一个。');
+            setOrderPasswordNote('该查询密码强度不足，请点击「帮我生成」换一个。请妥善保存后再次点击付款方式。');
             syncOrderPasswordChecks();
             return;
         }
@@ -1662,7 +1733,7 @@
             state.generatedOrderPassword = next;
             syncOrderPasswordChecks();
             await copyText(next);
-            setOrderPasswordNote('已重新生成并复制查询密码，请妥善保存后再次点击付款方式。');
+            setOrderPasswordNote('');
         } catch (_) {
             setOrderPasswordNote('无法重新生成查询密码，请手动设置一个。');
         }
@@ -2061,6 +2132,7 @@
         // credential switch is on. Reading it here (and nowhere else) keeps the
         // switch-off checkout byte-identical to today.
         state.buyerCredentialRequired = preview?.buyer_credential_required === true;
+        recordBuyerCredentialRequired(state.buyerCredentialRequired);
         syncBuyerCredentialUi();
         // L1/L2 runs BEFORE the cache key is written: syncPromoUi may clamp (or
         // adopt) state.quantity, the key includes the quantity, and a key written
@@ -2188,7 +2260,9 @@
                 acknowledge: request.forceRefresh !== true
             });
             const result = availabilitySnapshot(
-                available ? 'available' : 'unavailable',
+                available ? 'available' : (normalizePaymentOptions(payload?.payment_channels).length === 0
+                    ? 'payment_channel_unavailable'
+                    : 'unavailable'),
                 available
             );
             availabilityCache.set(context.contextKey, result);
@@ -2500,7 +2574,9 @@
         state.batchPreviewPricing = null;
         state.amountBreakdown = null;
         state.preview = { payment_channels: options };
+        state.buyerCredentialRequired = lastKnownBuyerCredentialRequired();
         resetOrderUi();
+        syncBuyerCredentialUi();
         renderPaymentOptions(options);
         setText('guestCashProductName', '购物车批量结算');
         setText('guestCashSkuName', `${normalized.length} 件商品，共 ${normalized.reduce((sum, item) => sum + item.quantity, 0)} 件`);
@@ -2536,6 +2612,9 @@
                 }
                 return total + Math.round(amount * 100);
             }, 0);
+            state.buyerCredentialRequired = quotes.some((q) => q?.buyer_credential_required === true);
+            recordBuyerCredentialRequired(state.buyerCredentialRequired);
+            syncBuyerCredentialUi();
             state.batchTotal = cents / 100;
             state.listSubtotal = state.batchTotal;
             state.preview.payment_providers = quotes[0]?.payment_providers || {};
@@ -2572,21 +2651,43 @@
             setStateMessage('购物车批量支付信息不完整，请重新打开购物车结算。', 'error');
             return;
         }
+        const email = normalizeText(element('guestCashContact')?.value, 160);
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
+            setStateMessage('邮箱格式不正确', 'error');
+            return;
+        }
+        let orderPassword = '';
+        if (state.buyerCredentialRequired) {
+            if (!email) {
+                setStateMessage('请填写邮箱，用于查询订单', 'error');
+                return;
+            }
+            const passwordFailure = orderPasswordPolicyFailure();
+            if (passwordFailure) {
+                syncOrderPasswordChecks();
+                setStateMessage(orderPasswordPolicyMessage(passwordFailure), 'error');
+                return;
+            }
+            orderPassword = foldQueryPassword(orderPasswordInput()?.value || '');
+        }
         state.requestInFlight = true;
         state.status = 'creating';
         setStateMessage('', 'creating');
         renderGuestActions();
         try {
+            const requestBody = {
+                site: normalizeSite(window.SiteConfig?.site),
+                provider: payment.provider,
+                channel: payment.channel,
+                items: entries.map(({ productId, skuId, quantity }) => ({ productId, skuId, quantity })),
+                idempotencyKey: batchIdempotencyKey()
+            };
+            if (email) requestBody.email = email;
+            if (orderPassword) requestBody.orderPassword = orderPassword;
             const payload = await requestJson(BATCH_ENDPOINT, {
                 method: 'POST',
                 credentials: 'same-origin',
-                body: JSON.stringify({
-                    site: normalizeSite(window.SiteConfig?.site),
-                    provider: payment.provider,
-                    channel: payment.channel,
-                    items: entries.map(({ productId, skuId, quantity }) => ({ productId, skuId, quantity })),
-                    idempotencyKey: batchIdempotencyKey()
-                })
+                body: JSON.stringify(requestBody)
             });
             const batch = payload?.batch || {};
             const orderNo = normalizeText(payload?.order_no || batch.batch_no, 200);
@@ -2601,6 +2702,7 @@
             state.paymentConfirmed = String(batch.payment_status || '').toLowerCase() === 'confirmed';
             state.status = state.paymentConfirmed ? 'confirmed' : 'awaiting_payment';
             state.checkout = payload?.checkout ? checkoutDetails(payload.checkout) : null;
+            clearOrderPassword();
             persistCheckoutRecord({
                 orderNo,
                 site: state.site,
@@ -2623,6 +2725,7 @@
             setStateMessage(state.paymentConfirmed ? '支付已确认，正在等待整批发货。' : '请完成批量支付，支付后将一次性发货。', state.paymentConfirmed ? 'confirmed' : 'awaiting_payment');
             startPolling();
         } catch (error) {
+            if (error?.code === 'guest_password_weak') void refreshRejectedOrderPassword();
             setStateMessage(error?.message || '购物车批量结算失败，请清理库存不足商品后重试。', 'error');
         } finally {
             state.requestInFlight = false;
@@ -3484,6 +3587,27 @@
             clearPendingDiscountHandoff(pendingDiscountHandoff);
         }
         if (context) {
+            // A standalone product click must take ownership before any fresh
+            // preview is scheduled. An unstarted cart draft has no server-owned
+            // state, so it is safe to discard even while its batch quote is
+            // resolving; otherwise batchMode makes the single-item preview
+            // fail closed and the caller reports a false cash-checkout error.
+            if (state.batchMode && !state.orderNo && !state.checkout
+                && !state.requestInFlight && !state.cancelRequestInFlight
+                && !state.paymentCreationUnknown && !state.pendingCreateAttempt) {
+                invalidateView();
+                invalidatePreviewQuote();
+                state.batchMode = false;
+                state.batchEntries = [];
+                state.batchTotal = null;
+                state.batchPreviewPricing = null;
+                state.preview = null;
+                state.previewPending = false;
+                state.previewError = false;
+                state.confirmedPricing = null;
+                state.amountBreakdown = null;
+            }
+            discardIdleBatchDraftForSingleContext(context);
             resetActiveOrderForContext(context);
             if (context.contextKey !== state.contextKey) {
                 // A different product/SKU has its own quantity cap, tier rules,
@@ -3510,25 +3634,33 @@
         if (state.orderNo || state.checkout) {
             clearPendingDiscountHandoff();
         }
+        const freshConfirmation = !state.orderNo && !state.checkout && state.status === 'configure';
+        if (freshConfirmation) {
+            modal.setAttribute('data-confirmation-loading', 'true');
+            if (!state.buyerCredentialRequired && lastKnownBuyerCredentialRequired()) {
+                state.buyerCredentialRequired = true;
+            }
+            syncBuyerCredentialUi();
+            renderPayableSummary({ forceLoading: true });
+        } else {
+            modal.removeAttribute('data-confirmation-loading');
+        }
         modal.hidden = false;
         modal.setAttribute('aria-hidden', 'false');
         syncSessionStorageWarning();
-        const freshConfirmation = !state.orderNo && !state.checkout && state.status === 'configure';
-        // A direct purchase can already have a cached availability quote before
-        // this dialog opens. Stage its amount as zero anyway, then reveal the
-        // quote after the overlay is active; otherwise cached and batch flows
-        // would have visibly different entrances.
-        if (freshConfirmation) renderPayableSummary({ forceLoading: true });
         // Finish all first-frame DOM work before the overlay starts its scale
         // transition. Batch checkout needs this because its fixed amount values
         // are present while several item quotes are still in flight.
-        syncStepState(state.status === 'delivered'
+        const currentPhase = state.status === 'delivered'
             ? 'delivery'
-            : (state.orderNo || state.checkout ? 'payment' : 'configure'));
+            : (state.orderNo || state.checkout ? 'payment' : 'configure');
+        syncStepState(currentPhase);
         syncOrderMeta(state.status);
         setHidden('guestCashDeliveryPanel', state.status !== 'delivered');
         setHidden('guestCashCheckoutPanel', !state.checkout || state.status === 'delivered');
-        setHidden('guestCashConfigurePanel', Boolean(state.checkout) && state.status !== 'delivered');
+        const hideConfigure = state.status === 'delivered'
+            || (Boolean(state.orderNo || state.checkout) && !state.paymentCreationUnknown && !state.pendingCreateAttempt);
+        setHidden('guestCashConfigurePanel', hideConfigure);
         // A resumed order arrives without a fresh preview, so re-derive the promo
         // controls from state instead of leaving whatever the last render did.
         syncQuantityUi();
@@ -3564,6 +3696,7 @@
             showOrderNo('');
             setHidden('guestCashCheckStatusBtn', true);
             setStateMessage('', 'configure');
+            state.previewPending = true;
             void inspectCheckoutIntent(context || getPurchaseContext(), { operation: inspectOperation })
                 .then((attempt) => {
                     if (attempt) {
@@ -3596,7 +3729,7 @@
         modal.classList.add('active');
         // A cached single-item quote becomes a gentle roll-in after activation;
         // an in-flight batch quote calls the same renderer when it resolves.
-        if (freshConfirmation && !state.previewPending) renderPayableSummary();
+        if (freshConfirmation && !state.previewPending && state.listSubtotal !== null) renderPayableSummary();
         focusGuestModal();
     }
 
@@ -3866,7 +3999,7 @@
         state.lastStatusQueryTime = null;
         state.preview = null;
         state.previewError = false;
-        state.buyerCredentialRequired = false;
+        state.buyerCredentialRequired = lastKnownBuyerCredentialRequired();
         if (previousContextKey !== context.contextKey) resetPromoSelection();
         else invalidatePreviewQuote();
         state.site = context.site;
@@ -4306,6 +4439,7 @@
             // and POST /guest/claim returns the server fulfillment timestamp.
             setHidden('guestCashDeliveryPanel', false);
             setHidden('guestCashCheckoutPanel', true);
+            setHidden('guestCashConfigurePanel', true);
             setHidden('guestCashCheckStatusBtn', true);
             // The delivery card and rail already communicate the completed
             // phase; avoid repeating a separate success sentence above them.
@@ -4843,7 +4977,8 @@
             || state.cancelRequestInFlight
             || state.checkoutIntentInspectInFlight
             || state.paymentCreationUnknown
-            || state.pendingCreateAttempt) {
+            || state.pendingCreateAttempt
+            || state.status !== 'configure') {
             return false;
         }
 
@@ -4967,6 +5102,7 @@
         state.quantityCap = Number.isInteger(Number(availability.quantityCap))
             ? Math.max(1, Math.min(QUANTITY_HARD_CEILING, Number(availability.quantityCap)))
             : state.quantityCap;
+        state.previewPending = true;
         openGuestModal(context, {
             deferScrollLock,
             initialQuantity: requestedQuantityValue(quantity)

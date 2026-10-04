@@ -1849,7 +1849,10 @@ function createGuestShopHandlers({
         if (!(await limit(req, res, 'checkout-batches', { limit: 12 }))) return;
         try {
             const body = await parseJson(req);
-            const allowed = new Set(['site', 'provider', 'channel', 'items', 'idempotencyKey', 'idempotency_key']);
+            const allowed = new Set([
+                'site', 'provider', 'channel', 'items', 'idempotencyKey', 'idempotency_key',
+                'email', 'orderPassword', 'order_password'
+            ]);
             const discountKeys = new Set([
                 'discountCode', 'discount_code', 'discountAmount', 'discount_amount',
                 'finalTotal', 'final_total', 'appliedDiscount', 'applied_discount'
@@ -1880,6 +1883,53 @@ function createGuestShopHandlers({
                 return { productId, skuId, quantity };
             });
             const idempotencyKey = security.normalizeGuestIdempotencyKey(body.idempotencyKey || body.idempotency_key);
+            const credentialEnabled = defaultBuyerCredentials.isBuyerCredentialEnabled(env);
+            const rawEmail = typeof body.email === 'string' ? body.email.trim() : '';
+            const rawOrderPassword = typeof body.orderPassword === 'string'
+                ? body.orderPassword
+                : (typeof body.order_password === 'string' ? body.order_password : '');
+            let buyerContactHash = null;
+            let buyerId = null;
+            let normalizedEmail = '';
+            if (credentialEnabled) {
+                normalizedEmail = String(rawEmail || '').trim().toLowerCase();
+                if (!normalizedEmail) {
+                    throw new security.GuestShopSecurityError('请填写邮箱', {
+                        statusCode: 400, code: 'guest_email_required', field: 'email'
+                    });
+                }
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(normalizedEmail)) {
+                    throw new security.GuestShopSecurityError('邮箱格式不正确', {
+                        statusCode: 400, code: 'guest_email_invalid', field: 'email'
+                    });
+                }
+                defaultBuyerCredentials.assertBuyerQueryPasswordStrength(rawOrderPassword, {
+                    security, env, email: normalizedEmail, field: 'orderPassword'
+                });
+                buyerContactHash = security.hashGuestContact(normalizedEmail, { env, strict: true });
+                const ipHash = hashRequestAttribute(resolveClientIp(req, { env }));
+                const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
+                const resolved = await defaultBuyerCredentials.resolveBuyerGroupForOrder({
+                    supabase: getSupabase(),
+                    security,
+                    env,
+                    site: siteName,
+                    email: normalizedEmail,
+                    password: rawOrderPassword,
+                    contactHash: buyerContactHash,
+                    ipHash,
+                    deviceHash
+                });
+                buyerId = resolved.buyerId;
+            } else if (rawEmail) {
+                normalizedEmail = String(rawEmail || '').trim().toLowerCase();
+                if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(normalizedEmail)) {
+                    throw new security.GuestShopSecurityError('邮箱格式不正确', {
+                        statusCode: 400, code: 'guest_email_invalid', field: 'email'
+                    });
+                }
+                buyerContactHash = hashContact(normalizedEmail);
+            }
             const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ site: siteName, provider, channel, items }), 'utf8').digest('hex');
             const claimSecret = security.deriveClaimSecretFromIdempotencyKey(idempotencyKey, { site: siteName, env });
             const claimHash = security.hashClaimSecret(claimSecret, { env });
@@ -1913,6 +1963,33 @@ function createGuestShopHandlers({
             const row = batchRows(created.data)[0];
             if (!row?.batch_id || !row?.merchant_order_no) throw guestDatabaseUnavailableError();
             const batch = await loadCheckoutBatch(row.batch_no);
+            if (batch.metadata?.buyer_id && buyerId && String(batch.metadata.buyer_id) !== String(buyerId)) {
+                throw new security.GuestShopSecurityError('购物车结算内容冲突，请重新打开结算', {
+                    statusCode: 409,
+                    code: 'guest_idempotency_conflict'
+                });
+            }
+            if (buyerId || normalizedEmail) {
+                const currentMeta = batch.metadata && typeof batch.metadata === 'object' ? batch.metadata : {};
+                const nextMetadata = {
+                    ...currentMeta,
+                    ...(buyerId ? { buyer_id: buyerId, buyer_contact_hash: buyerContactHash } : {}),
+                    ...(normalizedEmail ? { email: normalizedEmail } : {})
+                };
+                try {
+                    const metaUpdated = await db.from('guest_shop_checkout_batches').update({
+                        metadata: nextMetadata,
+                        updated_at: new Date().toISOString()
+                    }).eq('id', batch.id).select('metadata').maybeSingle();
+                    if (metaUpdated?.data?.metadata) {
+                        batch.metadata = metaUpdated.data.metadata;
+                    } else {
+                        batch.metadata = nextMetadata;
+                    }
+                } catch (_) {
+                    batch.metadata = nextMetadata;
+                }
+            }
             let payment = await loadCheckoutBatchPayment(batch);
             let checkout = null;
             let paymentPricing = batchPaymentPricingSnapshot(batch, payment);
@@ -3002,6 +3079,9 @@ function responseOrder(order, extras = {}) {
             currency: order.currency,
             expires_at: order.expires_at
         };
+        if (order.provider && !snapshot.provider) snapshot.provider = order.provider;
+        if (order.channel && !snapshot.channel) snapshot.channel = order.channel;
+        if (Array.isArray(order.items)) snapshot.items = order.items;
         const paymentPricing = storedGuestPaymentPricing(order, extras.payment, extras.computed);
         if (paymentPricing) snapshot.payment_pricing = paymentPricing;
         // Promo L1/L2, same rule as responseOrder: echoed only when the committed
@@ -4152,6 +4232,37 @@ function responseOrder(order, extras = {}) {
             expose: false
         });
 
+        if (order?.is_batch) {
+            if (typeof db.rpc === 'function') {
+                const claimed = await db.rpc('fn_guest_shop_claim_checkout_batch', { p_batch_id: order.id });
+                if (claimed?.error) throw mapDeliveredContentError(claimed.error);
+                const rows = Array.isArray(claimed.data) ? claimed.data : [];
+                const guidance = await loadGuestProductGuidance(rows.map((item) => item.product_id), order.site);
+                const items = rows.map((item) => {
+                    const productGuidance = guidance.get(String(item.product_id || '').trim()) || {};
+                    return {
+                        ...item,
+                        purchase_notes: productGuidance.purchaseNotes || '',
+                        usage_instructions: productGuidance.usageInstructions || ''
+                    };
+                });
+                const grouped = {};
+                for (const item of items) {
+                    const key = `${item.product_name}${item.sku_name ? ` (${item.sku_name})` : ''}`;
+                    (grouped[key] ||= []).push(item.content);
+                }
+                const joinedContent = rows.map((r) => r.content).filter(Boolean).join('\n\n');
+                return {
+                    card_secret: joinedContent,
+                    card_secrets: rows.map((r) => r.content).filter(Boolean),
+                    items,
+                    fulfillment: Object.entries(grouped).map(([key, content]) => ({ key, content })),
+                    purchase_notes: items.map((i) => i.purchase_notes).filter(Boolean).join('\n') || '',
+                    usage_instructions: items.map((i) => i.usage_instructions).filter(Boolean).join('\n') || ''
+                };
+            }
+        }
+
         // The worker already uses this service-role RPC to atomically verify
         // the consumed reservation and sold, non-shared inventory. Reusing it
         // here collapses the old reservation-read + inventory-read sequence
@@ -4887,8 +4998,60 @@ function responseOrder(order, extras = {}) {
             .eq('buyer_id', String(buyerId))
             .maybeSingle();
         if (result?.error) throw result.error;
-        if (!result?.data) throw guestOrderNotFoundError();
-        return result.data;
+        if (result?.data) return result.data;
+
+        try {
+            const batchResult = await db.from('guest_shop_checkout_batches').select('*')
+                .eq('batch_no', normalized)
+                .maybeSingle();
+            const batch = batchResult?.data;
+            if (batch && String(batch.metadata?.buyer_id || '') === String(buyerId)) {
+                let items = [];
+                try {
+                    const itemsResult = await db.from('guest_shop_checkout_items').select('*')
+                        .eq('batch_id', batch.id)
+                        .order('item_index');
+                    items = itemsResult?.data || [];
+                } catch (_) {}
+                const firstItem = items[0] || {};
+                const totalQuantity = items.reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
+                const payment = await loadCheckoutBatchPayment(batch).catch(() => null);
+                return {
+                    id: batch.id,
+                    order_no: batch.batch_no,
+                    batch_no: batch.batch_no,
+                    is_batch: true,
+                    site: batch.site,
+                    currency: batch.currency,
+                    total_amount: batch.total_amount,
+                    unit_amount: null,
+                    quantity: totalQuantity || 1,
+                    product_id: firstItem.product_id || null,
+                    sku_id: firstItem.sku_id || null,
+                    snapshot_product_name: items.length > 1 ? `购物车多件商品（共 ${items.length} 种）` : (firstItem.snapshot_product_name || '购物车商品'),
+                    snapshot_sku_name: items.length > 1 ? `共 ${totalQuantity} 件` : (firstItem.snapshot_sku_name || ''),
+                    payment_status: batch.payment_status,
+                    fulfillment_status: batch.fulfillment_status,
+                    refund_status: batch.refund_status,
+                    expires_at: batch.expires_at,
+                    created_at: batch.created_at,
+                    fulfilled_at: batch.fulfilled_at,
+                    provider: payment?.provider || batch.provider,
+                    channel: payment?.channel || batch.channel,
+                    items: items.map((it) => ({
+                        product_id: it.product_id,
+                        sku_id: it.sku_id,
+                        quantity: it.quantity,
+                        snapshot_product_name: it.snapshot_product_name,
+                        snapshot_sku_name: it.snapshot_sku_name,
+                        unit_amount: it.unit_amount,
+                        subtotal: it.subtotal
+                    }))
+                };
+            }
+        } catch (_) {}
+
+        throw guestOrderNotFoundError();
     }
 
     /**
@@ -5070,9 +5233,57 @@ function responseOrder(order, extras = {}) {
             }
             const result = await query;
             if (result?.error) throw result.error;
-            const rows = Array.isArray(result?.data) ? result.data : [];
-            const total = Number.isFinite(Number(result?.count)) && result?.count !== null
+            let rows = Array.isArray(result?.data) ? [...result.data] : [];
+            let total = Number.isFinite(Number(result?.count)) && result?.count !== null
                 ? Number(result.count) : rows.length;
+
+            if (orderNo && rows.length === 0) {
+                try {
+                    const ownedBatch = await loadOwnedGuestOrder(auth.buyerId, orderNo);
+                    if (ownedBatch) {
+                        rows = [ownedBatch];
+                        total = 1;
+                    }
+                } catch (_) {}
+            } else if (!orderNo) {
+                try {
+                    let batchQuery = db.from('guest_shop_checkout_batches')
+                        .select('id,batch_no,site,currency,total_amount,payment_status,fulfillment_status,refund_status,expires_at,created_at,metadata,provider,channel');
+                    if (typeof batchQuery.contains === 'function') {
+                        batchQuery = batchQuery.contains('metadata', { buyer_id: String(auth.buyerId) });
+                        if (typeof batchQuery.order === 'function') {
+                            batchQuery = batchQuery.order('created_at', { ascending: false });
+                        }
+                        const batchResult = await batchQuery;
+                        if (Array.isArray(batchResult?.data) && batchResult.data.length > 0) {
+                            const mappedBatches = batchResult.data.map((b) => ({
+                                order_no: b.batch_no,
+                                site: b.site,
+                                total_amount: b.total_amount,
+                                currency: b.currency,
+                                quantity: 1,
+                                unit_amount: null,
+                                list_unit_amount: null,
+                                discount_amount: null,
+                                discount_code: null,
+                                payment_fee_amount: null,
+                                payment_status: b.payment_status,
+                                fulfillment_status: b.fulfillment_status,
+                                refund_status: b.refund_status,
+                                expires_at: b.expires_at,
+                                created_at: b.created_at,
+                                provider: b.provider,
+                                channel: b.channel,
+                                is_batch: true
+                            }));
+                            rows = [...rows, ...mappedBatches];
+                            rows.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+                            total += mappedBatches.length;
+                        }
+                    }
+                } catch (_) {}
+            }
+
             return sendJson(res, 200, {
                 success: true,
                 orders: rows.map(guestOrderListSnapshot),

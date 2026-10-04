@@ -193,7 +193,7 @@ const GUEST_SHOP_RUNTIME_SETTINGS = Object.freeze({
     // min(this value, shop_product_skus.guest_max_quantity,
     // shop_products.guest_max_quantity, shop_products.max_purchase_quantity, 5)
     // and the smallest of them wins, so an operator raising this number can
-    // never widen a per-SKU ceiling. max is pinned to 5 because that is the
+    // never widen a per-SKU ceiling. max is pinned to 99 because that is the
     // guest_shop_orders_quantity_check hard bound in
     // supabase/migrations/20260923_guest_shop_promo_l1l2.sql §1; a value above
     // it would be a write error, not a larger order.
@@ -207,7 +207,7 @@ const GUEST_SHOP_RUNTIME_SETTINGS = Object.freeze({
         type: 'integer',
         defaultValue: 1,
         min: 1,
-        max: 5,
+        max: 99,
         label: '游客单笔购买数量上限'
     })
 });

@@ -807,6 +807,42 @@ const ShopClient = {
         return this.normalizePurchaseQuantityCap(this.currentPurchase.maxQuantity);
     },
 
+    getKnownPurchaseStockCount: function (product = null, skuId = '') {
+        const candidateProduct = product || this.getCachedProductById(this.currentPurchase?.productId);
+        if (!candidateProduct || typeof candidateProduct !== 'object') {
+            return null;
+        }
+
+        const normalizedSkuId = String(skuId || this.currentPurchase?.productSkuId || '').trim();
+        const selectedSku = normalizedSkuId
+            ? this.getProductSkusForPurchase(candidateProduct)
+                .find((sku) => String(sku?.id || '').trim() === normalizedSkuId)
+            : null;
+        // A caller that names a SKU must never fall back to the product-level
+        // stock row when that SKU is absent from the current catalog snapshot.
+        // The product row may represent a different inventory pool, so using it
+        // here can incorrectly cap (or open) the quantity for the selected SKU.
+        if (normalizedSkuId && !selectedSku) {
+            return null;
+        }
+        const candidate = selectedSku || candidateProduct;
+        if (!candidate || candidate.__shopStockCountKnown === false) {
+            return null;
+        }
+
+        const hasStockField = Object.prototype.hasOwnProperty.call(candidate, 'stock_count')
+            || Object.prototype.hasOwnProperty.call(candidate, 'stockCount');
+        if (!hasStockField) {
+            return null;
+        }
+
+        const rawStockCount = candidate.stock_count ?? candidate.stockCount;
+        const parsedStockCount = Number(rawStockCount);
+        return Number.isFinite(parsedStockCount)
+            ? Math.max(0, Math.trunc(parsedStockCount))
+            : null;
+    },
+
     getGuestCashQuantityCap: function () {
         const probe = this.guestCashEntryProbe;
         const selection = this.getGuestCashEntrySelection();
@@ -817,9 +853,26 @@ const ShopClient = {
             return 1;
         }
         const parsed = Number.parseInt(String(probe.quantityCap ?? ''), 10);
-        return Number.isFinite(parsed) && parsed >= 1
+        const probeCap = Number.isFinite(parsed) && parsed >= 1
             ? this.normalizePurchaseQuantityCap(parsed)
             : 1;
+        const product = this.getCachedProductById(selection.productId);
+        const selectedSku = product
+            ? this.getProductSkusForPurchase(product).find((sku) => String(sku?.id || '').trim() === selection.skuId)
+            : null;
+        const configuredCap = this.normalizePurchaseQuantityCap(
+            selectedSku?.max_purchase_quantity
+                ?? product?.max_purchase_quantity
+                ?? this.currentPurchase?.configuredMaxQuantity
+        );
+        const knownStockCount = this.getKnownPurchaseStockCount(product, selection.skuId);
+
+        // The probe, configured ordinary purchase limit and confirmed inventory
+        // are all upper bounds. Never let a large stock count bypass the ordinary
+        // single-purchase limit configured in Admin Studio.
+        const caps = [probeCap, configuredCap];
+        if (knownStockCount !== null && knownStockCount > 0) caps.push(knownStockCount);
+        return Math.max(1, Math.min(...caps));
     },
 
     setCurrentPurchaseQuantityCap: function (maxQuantity, { unlimited = false, refreshDiscountAssets = true } = {}) {
@@ -1104,9 +1157,19 @@ const ShopClient = {
         this.currentPurchase.manualDelivery = manualDelivery;
         this.currentPurchase.soldOut = !manualDelivery && this.getShopSkuStockCount(sku) <= 0;
 
-        const quantityCap = this.getPurchaseQuantityCapForProduct(product, this.currentPurchase.configuredMaxQuantity, {
-            skuId: normalizedSkuId
-        });
+        const guestCashContext = this.isGuestCashEntryCandidate();
+        // Invalidate any in-flight guest probe for the previous SKU before
+        // changing the selection. Its result must never cap the new SKU.
+        if (guestCashContext) {
+            this.guestCashEntryProbeToken = Number(this.guestCashEntryProbeToken || 0) + 1;
+            this.guestCashEntryProbe = null;
+            this.guestCashEntryProbedKey = '';
+        }
+        const quantityCap = guestCashContext
+            ? this.getGuestCashQuantityCap()
+            : this.getPurchaseQuantityCapForProduct(product, this.currentPurchase.configuredMaxQuantity, {
+                skuId: normalizedSkuId
+            });
         this.setCurrentPurchaseQuantityCap(quantityCap, {
             unlimited: this.currentPurchase.unlimitedPurchases === true,
             refreshDiscountAssets: false
@@ -1131,6 +1194,13 @@ const ShopClient = {
         });
         this.renderPurchaseSkuSelector();
         this.setPurchaseStage('configure');
+        if (guestCashContext) {
+            // A guest item has no authenticated coupon-assets request. Keep the
+            // cash entry usable while the server-side availability probe runs;
+            // the bridge performs the authoritative preview check again when
+            // the order flow is opened.
+            this.maybeProbeGuestCashEntry();
+        }
         if (manualDelivery || this.currentPurchase.soldOut) {
             this.currentPurchase.availableDiscountAssets = [];
             this.currentPurchase.claimableDiscounts = [];
@@ -1863,13 +1933,11 @@ const ShopClient = {
     },
 
     formatPurchaseModalAmount: function (value) {
-        return this.isGuestPurchasePriceDisplay()
-            ? this.formatPurchasePriceDisplay(value)
-            : this.formatShopPointValue(value);
+        return this.formatPurchasePriceDisplay(value);
     },
 
     syncPurchaseAmountUnitLabels: function () {
-        const hidden = this.isGuestPurchasePriceDisplay();
+        const hidden = true;
         ['modalUnitPriceUnit', 'modalTotalPriceUnit'].forEach((id) => {
             const element = document.getElementById(id);
             if (element) element.hidden = hidden;
@@ -3607,9 +3675,12 @@ const ShopClient = {
             return;
         }
 
-        const quantityCap = this.getPurchaseQuantityCapForProduct(liveProduct, liveProduct.max_purchase_quantity, {
-            skuId: selectedSkuId
-        });
+        const guestCashActive = this.isGuestCashEntryCandidate();
+        const quantityCap = guestCashActive
+            ? this.getGuestCashQuantityCap()
+            : this.getPurchaseQuantityCapForProduct(liveProduct, liveProduct.max_purchase_quantity, {
+                skuId: selectedSkuId
+            });
         this.currentPurchase.productSkus = liveSkus;
         this.currentPurchase.manualDelivery = this.resolveShopProductSelectionManualDelivery(liveProduct, this.currentPurchase.productSkuId || '');
         this.currentPurchase.soldOut = !this.currentPurchase.manualDelivery
@@ -3864,16 +3935,21 @@ const ShopClient = {
         }
 
         const isEn = this.isEnglishShopLocale();
-        const fallbackPointsLabel = pointsLabel || this.getShopPointsLabel({ lowercaseEnglish: isEn });
         const title = this.trShop('tieredPriceRulesLabel', isEn ? 'Tiered pricing rules' : '阶梯定价规则');
         const helpLabel = this.trShop('tieredPriceRulesHelp', isEn ? 'View tiered pricing rules' : '查看阶梯定价规则');
-        const rulesHtml = rules.map((rule) => `
-            <span class="shop-tier-rules-popover__rule">${this.escapeHtml(this.trShop('tieredPriceRuleInline', isEn ? '{qty}+ {price} {unit}' : '满 {qty} 件 {price} {unit}', {
-                qty: rule.qty,
-                price: this.formatShopPointValue(rule.price),
-                unit: fallbackPointsLabel
-            }))}</span>
-        `).join('');
+        const rulesHtml = rules.map((rule) => {
+            const formattedPrice = this.formatPurchasePriceDisplay(rule.price);
+            const inlineText = this.trShop(
+                'tieredPriceRuleInline',
+                isEn ? '{qty}+ {price}' : '满 {qty} 件 {price}',
+                {
+                    qty: rule.qty,
+                    price: formattedPrice,
+                    unit: ''
+                }
+            ).trim();
+            return `<span class="shop-tier-rules-popover__rule">${this.escapeHtml(inlineText)}</span>`;
+        }).join('');
 
         return `
             <span class="shop-tier-rules-popover-wrap">
@@ -4264,6 +4340,15 @@ const ShopClient = {
         }, 1800);
     },
 
+    showGuestDiscountUnavailableToast: function () {
+        this.showShopToast(
+            this.trShop('guestDiscountUnavailable', this.isEnglishShopLocale()
+                ? 'Discount codes are not available for this guest item.'
+                : '当前商品暂未开放游客优惠码。'),
+            'info'
+        );
+    },
+
     getCachedProductById: function (productId) {
         const normalizedId = String(productId || '').trim();
         if (!normalizedId) return null;
@@ -4366,16 +4451,17 @@ const ShopClient = {
         const selectedSku = selectedSkuId
             ? this.getProductSkusForPurchase(product).find((sku) => String(sku.id || '').trim() === selectedSkuId)
             : null;
+        const configuredCap = this.normalizePurchaseQuantityCap(
+            fallbackMaxQuantity != null && String(fallbackMaxQuantity).trim() !== ''
+                ? fallbackMaxQuantity
+                : selectedSku?.max_purchase_quantity ?? product?.max_purchase_quantity
+        );
         const stockCount = Number((selectedSku || product)?.stock_count ?? product?.stockCount ?? 0);
         if (Number.isFinite(stockCount) && stockCount > 0) {
-            return Math.max(1, Math.min(99, Math.trunc(stockCount)));
+            return Math.max(1, Math.min(configuredCap, Math.trunc(stockCount)));
         }
 
-        if (fallbackMaxQuantity != null && String(fallbackMaxQuantity).trim() !== '') {
-            return this.normalizePurchaseQuantityCap(fallbackMaxQuantity);
-        }
-
-        return this.normalizePurchaseQuantityCap(product?.max_purchase_quantity);
+        return configuredCap;
     },
 
     restoreCartState: function () {
@@ -6547,7 +6633,7 @@ const ShopClient = {
                 html: `
                     <span class="shop-purchase-price-note__original">
                         ${this.escapeHtml(originalLabel)}
-                        <span>${this.escapeHtml(this.formatShopPointValue(flashSalePricing.flashSaleOriginalPrice))} ${this.escapeHtml(pointsLabel)}</span>
+                        <span>${this.escapeHtml(this.formatPurchasePriceDisplay(flashSalePricing.flashSaleOriginalPrice))}</span>
                     </span>
                 `
             };
@@ -6569,7 +6655,7 @@ const ShopClient = {
                 html: `
                     <span class="shop-purchase-price-note__original">
                         ${this.escapeHtml(originalLabel)}
-                        <span>${this.escapeHtml(this.formatShopPointValue(tieredPricing.basePrice))} ${this.escapeHtml(pointsLabel)}</span>
+                        <span>${this.escapeHtml(this.formatPurchasePriceDisplay(tieredPricing.basePrice))}</span>
                     </span>
                     <span class="shop-purchase-price-note__tier-row">
                         <span class="shop-purchase-price-note__tier">${this.escapeHtml(tieredLabel)}</span>
@@ -6676,8 +6762,7 @@ const ShopClient = {
         }
         if (discountAmountEl) {
             const discountDisplay = this.formatPurchaseModalAmount(discountAmount);
-            const discountUnit = this.isGuestPurchasePriceDisplay() ? '' : ` ${pointsLabel}`;
-            discountAmountEl.textContent = `-${discountDisplay}${discountUnit}`;
+            discountAmountEl.textContent = `-${discountDisplay}`;
         }
     },
 
@@ -6741,12 +6826,7 @@ const ShopClient = {
                 if (discountInput) discountInput.value = '';
                 this.currentPurchase.guestCashDiscountCode = '';
                 this.currentPurchase.guestCashDiscountCodeFormatValid = false;
-                this.setDiscountMessage(
-                    this.trShop('guestDiscountUnavailable', this.isEnglishShopLocale()
-                        ? 'Discount codes are not available for this guest item.'
-                        : '当前商品暂未开放游客优惠码。'),
-                    { variant: 'info' }
-                );
+                this.setDiscountMessage('');
             }
         } else if (guestProbePending) {
             document.querySelectorAll('#shopPurchaseModal .shop-purchase-stage-quantity').forEach((element) => {
@@ -6759,12 +6839,10 @@ const ShopClient = {
             if (discountInput) discountInput.value = '';
             this.currentPurchase.guestCashDiscountCode = '';
             this.currentPurchase.guestCashDiscountCodeFormatValid = false;
-            this.setDiscountMessage(
-                this.trShop('guestDiscountChecking', this.isEnglishShopLocale()
-                    ? 'Checking guest purchase discounts...'
-                    : '正在检查游客优惠码…'),
-                { variant: 'info' }
-            );
+            // Availability and discount eligibility are separate gates. An
+            // unresolved availability probe must not present an empty coupon
+            // spinner or make the primary purchase action look unavailable.
+            this.setDiscountMessage('', { variant: 'info' });
         } else {
             discountStage?.removeAttribute('aria-busy');
             this.setElementHidden(document.getElementById('purchaseDiscountAssetsPanel'), false);
@@ -6860,6 +6938,8 @@ const ShopClient = {
                 control.setAttribute('aria-disabled', control.disabled ? 'true' : 'false');
             }
         });
+        const discountInputWrap = document.querySelector('#shopPurchaseModal .shop-purchase-discount__input-wrap');
+        discountInputWrap?.classList.toggle('is-guest-promo-locked', Boolean(guestPromoLocked));
         if (!guestProbePending) discountStage?.removeAttribute('aria-busy');
         this.maybeProbeGuestCashEntry();
     },
@@ -8311,9 +8391,7 @@ const ShopClient = {
             this.currentPurchase.discountAmount = discountAmount;
             this.currentPurchase.discountFinalTotal = finalTotal;
             document.getElementById('modalTotalPrice').textContent = this.formatShopPointValue(finalTotal);
-            if (this.isGuestPurchasePriceDisplay()) {
-                document.getElementById('modalTotalPrice').textContent = this.formatPurchasePriceDisplay(finalTotal);
-            }
+            document.getElementById('modalTotalPrice').textContent = this.formatPurchaseModalAmount(finalTotal);
         } else {
             ({ discountAmount, finalTotal } = this.syncDiscountedTotal());
         }
@@ -9361,6 +9439,12 @@ const ShopClient = {
         this.bindShopMobileTapFallback(document.getElementById('applyDiscountBtn'), 'purchase-discount-code', () => {
             void this.applyDiscount();
         });
+        const discountInputWrap = modal.querySelector('.shop-purchase-discount__input-wrap');
+        this.bindShopMobileTapFallback(discountInputWrap, 'purchase-discount-input-wrap', () => {
+            if (this.isGuestCashEntryActive() && this.guestCashEntryProbe?.discountEnabled !== true) {
+                this.showGuestDiscountUnavailableToast();
+            }
+        });
         this.bindShopMobileTapFallback(document.getElementById('purchaseNotesToggle'), 'purchase-notes-toggle', () => {
             this.togglePurchaseNotesVisibility();
         });
@@ -9769,6 +9853,19 @@ const ShopClient = {
                 }
             }
         });
+
+        const handleDiscountInteraction = () => {
+            if (this.isGuestCashEntryActive() && this.guestCashEntryProbe?.discountEnabled !== true) {
+                this.showGuestDiscountUnavailableToast();
+            }
+        };
+
+        const discountInputEl = document.getElementById('purchaseDiscountCode');
+        discountInputEl?.addEventListener('focus', handleDiscountInteraction);
+        discountInputEl?.addEventListener('click', handleDiscountInteraction);
+
+        const discountInputWrap = document.querySelector('#shopPurchaseModal .shop-purchase-discount__input-wrap');
+        discountInputWrap?.addEventListener('click', handleDiscountInteraction);
 
         this.staticUiBindingsBound = true;
     },
@@ -10725,6 +10822,11 @@ const ShopClient = {
                                 <div class="shop-success-item__title-row">
                                     <h3 class="shop-success-item__title">${this.escapeHtml(normalizedItem.displayName)}</h3>
                                 </div>
+                                ${quantityLabel ? `
+                                    <div class="shop-success-item__quantity-row">
+                                        <span class="shop-success-item__tag shop-success-item__tag--quantity">${this.escapeHtml(quantityLabel)}</span>
+                                    </div>
+                                ` : ''}
                                 <div class="shop-success-item__footer-meta">
                                     <div class="shop-success-item__submeta">
                                         <button
@@ -10739,11 +10841,6 @@ const ShopClient = {
                                             <span class="shop-success-item__submeta-label">${this.escapeHtml(revealContentLabel)}</span>
                                         </button>
                                     </div>
-                                    ${quantityLabel ? `
-                                        <div class="shop-success-item__meta shop-success-item__meta--inline">
-                                            <span class="shop-success-item__tag shop-success-item__tag--quantity">${this.escapeHtml(quantityLabel)}</span>
-                                        </div>
-                                    ` : ''}
                                 </div>
                             </div>
                         </div>
@@ -13818,16 +13915,24 @@ const ShopClient = {
     // ---- New Purchase Flow via Modal ----
 
     syncPurchaseAccessAfterOpen: async function (productId, quantityCap) {
+        const purchase = this.currentPurchase;
+        const modalGeneration = Number(this.guestCashModalGeneration || 0);
+        const selectedSkuId = String(purchase?.productSkuId || '').trim();
+        const guestCashContext = this.isGuestCashEntryCandidate();
         try {
             const purchaseAccess = await this.loadCurrentUserPurchaseAccess();
-            if (this.currentPurchase?.productId !== productId) return;
+            if (this.currentPurchase !== purchase
+                || this.currentPurchase?.productId !== productId
+                || String(this.currentPurchase?.productSkuId || '').trim() !== selectedSkuId
+                || modalGeneration !== Number(this.guestCashModalGeneration || 0)) return;
 
             this.currentPurchase.unlimitedPurchases = purchaseAccess.unlimitedShopPurchases === true;
-            const selectedSkuId = String(this.currentPurchase?.productSkuId || '').trim();
             const liveProduct = this.getCachedProductById(productId);
-            const resolvedQuantityCap = this.getPurchaseQuantityCapForProduct(liveProduct, quantityCap, {
-                skuId: selectedSkuId
-            });
+            const resolvedQuantityCap = guestCashContext
+                ? this.getGuestCashQuantityCap()
+                : this.getPurchaseQuantityCapForProduct(liveProduct, quantityCap, {
+                    skuId: selectedSkuId
+                });
             this.currentPurchase.configuredMaxQuantity = resolvedQuantityCap;
             this.setCurrentPurchaseQuantityCap(resolvedQuantityCap, {
                 unlimited: this.currentPurchase.unlimitedPurchases
@@ -14308,6 +14413,9 @@ const ShopClient = {
             if (!guestGateEnabled) {
                 if (codeInputElem) codeInputElem.value = '';
                 this.setDiscountMessage('');
+                if (!silent) {
+                    this.showGuestDiscountUnavailableToast();
+                }
                 return;
             }
             if (!normalizedCode) {
@@ -14391,6 +14499,22 @@ const ShopClient = {
         }
     },
 
+    showGuestQuantityLimitToast: function (quantityCap) {
+        const cap = Math.max(1, Number.parseInt(String(quantityCap || 1), 10) || 1);
+        const message = this.isEnglishShopLocale()
+            ? `Guest checkout is limited to ${cap} item${cap === 1 ? '' : 's'} per order. Log in to purchase more.`
+            : `游客单次限购 ${cap} 件；登录后可单次购买更多件。`;
+        this.showShopToast(message, 'error');
+    },
+
+    showPurchaseQuantityLimitToast: function (quantityCap) {
+        const cap = Math.max(1, Number.parseInt(String(quantityCap || 1), 10) || 1);
+        const message = this.isEnglishShopLocale()
+            ? `This product allows up to ${cap} item${cap === 1 ? '' : 's'} per order. Contact support for special requests.`
+            : `该商品单次最高可购 ${cap} 件，特殊需求请联系客服。`;
+        this.showShopToast(message, 'error');
+    },
+
     adjustQuantity: function (delta) {
         const numericDelta = Number.parseInt(String(delta ?? '0'), 10) || 0;
         const isManualDelivery = typeof this.isShopCurrentPurchaseManualDelivery === 'function'
@@ -14409,11 +14533,26 @@ const ShopClient = {
             Number.parseInt(String(this.currentPurchase?.quantity ?? '1'), 10) || 1
         );
         let newQty = currentQuantity + numericDelta;
+        const exceedsQuantityCap = newQty > quantityCap;
         if (newQty < 1) newQty = 1;
-        if (newQty > quantityCap) newQty = quantityCap;
+        if (exceedsQuantityCap) newQty = quantityCap;
 
         if (newQty === currentQuantity) {
+            if (numericDelta > 0 && currentQuantity >= quantityCap) {
+                if (this.isGuestCashEntryActive()) {
+                    this.showGuestQuantityLimitToast(quantityCap);
+                } else {
+                    this.showPurchaseQuantityLimitToast(quantityCap);
+                }
+            }
             return;
+        }
+        if (exceedsQuantityCap) {
+            if (this.isGuestCashEntryActive()) {
+                this.showGuestQuantityLimitToast(quantityCap);
+            } else {
+                this.showPurchaseQuantityLimitToast(quantityCap);
+            }
         }
 
         this.currentPurchase.quantity = newQty;
@@ -14431,7 +14570,15 @@ const ShopClient = {
             : this.getCurrentPurchaseQuantityCap();
         let val = parseInt(input.value, 10);
         if (isNaN(val) || val < 1) val = 1;
-        if (val > quantityCap) val = quantityCap;
+        const exceedsQuantityCap = val > quantityCap;
+        if (exceedsQuantityCap) val = quantityCap;
+        if (exceedsQuantityCap) {
+            if (this.isGuestCashEntryActive()) {
+                this.showGuestQuantityLimitToast(quantityCap);
+            } else {
+                this.showPurchaseQuantityLimitToast(quantityCap);
+            }
+        }
 
         this.currentPurchase.quantity = val;
         input.value = String(val);
@@ -14796,9 +14943,24 @@ const ShopClient = {
                 if (!guestEntry.started
                     && guestEntry.reason !== 'source_stale'
                     && guestEntry.reason !== 'discount_format_not_checked') {
-                    this.showShopToast(this.isEnglishShopLocale()
-                        ? 'This guest item is temporarily unavailable for cash checkout.'
-                        : '该游客商品暂时无法现金结算，请稍后重试。', 'error');
+                    console.warn('[GuestCash] checkout start failed', {
+                        reason: guestEntry.reason || 'unknown',
+                        productId: this.currentPurchase?.productId || '',
+                        skuId: this.currentPurchase?.productSkuId || ''
+                    });
+                    const reason = guestEntry.reason || '';
+                    const message = reason === 'payment_channel_unavailable'
+                        ? (this.isEnglishShopLocale()
+                            ? 'No guest payment method is configured for this item.'
+                            : '该游客商品未配置可用的游客支付方式。')
+                        : reason === 'bridge_unavailable'
+                            ? (this.isEnglishShopLocale()
+                                ? 'Guest checkout is still loading. Please refresh and try again.'
+                                : '游客购买模块尚未加载完成，请刷新页面后重试。')
+                            : this.isEnglishShopLocale()
+                                ? 'This guest item is temporarily unavailable for cash checkout.'
+                                : '该游客商品暂时无法现金结算，请稍后重试。';
+                    this.showShopToast(message, 'error');
                 }
                 return;
             }

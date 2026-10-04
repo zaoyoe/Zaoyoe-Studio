@@ -390,6 +390,9 @@ function createRuntime({
         },
         navigator,
         crypto: {
+            getRandomValues(buffer) {
+                return require('node:crypto').getRandomValues(buffer);
+            },
             randomUUID() {
                 uuidSequence += 1;
                 return `00000000-0000-4000-8000-${String(uuidSequence).padStart(12, '0')}`;
@@ -426,6 +429,9 @@ function createRuntime({
     window.globalThis = window;
     if (qrcodeFactory !== false) window.qrcode = qrcodeFactory;
 
+    const QUERY_PASSWORD_PATH = path.resolve(__dirname, '../js/guest-query-password.js');
+    const QUERY_PASSWORD_SOURCE = fs.readFileSync(QUERY_PASSWORD_PATH, 'utf8');
+    vm.runInNewContext(QUERY_PASSWORD_SOURCE, window, { filename: QUERY_PASSWORD_PATH });
     vm.runInNewContext(CLIENT_SOURCE, window, { filename: CLIENT_PATH });
 
     return {
@@ -745,6 +751,60 @@ test('an unstarted cart batch draft yields to a different standalone guest check
     assert.ok(previewProducts.includes(purchaseB.productId));
     assert.equal(runtime.element('guestCashProductName').textContent, purchaseB.productName);
     assert.equal(runtime.element('guestCashSkuName').textContent, purchaseB.productSkuName);
+});
+
+test('single-item checkout reserves fee row and renders bouncing dots before quote resolves', async () => {
+    const currentPurchase = purchase({
+        productId: 'product-single',
+        productSkuId: 'sku-single',
+        productName: 'Single Product',
+        productSkuName: 'SKU Single'
+    });
+    const pendingQuote = deferred();
+    let previewCount = 0;
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) {
+                previewCount += 1;
+                if (previewCount > 1) return pendingQuote.promise;
+                return jsonResponse({
+                    ...previewPayload(currentPurchase),
+                    price: { quantity: 1, amount: 0.01, subtotal: 0.01 },
+                    payment_channels: ['zpay:alipay'],
+                    payment_providers: { zpay: { surcharge_rate: 0.01, surcharge_label: '通道手续费' } }
+                });
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    const opening = runtime.window.GuestShopCheckout.startGuestCheckout(contextFor(currentPurchase));
+    await waitFor(() => runtime.element('guestCashPurchaseModal').hidden === false);
+
+    assert.equal(runtime.element('guestCashFeeRow').hidden, false);
+    assert.equal(runtime.element('guestCashPrice').classList.contains('is-amount-placeholder'), true);
+    assert.equal(runtime.element('guestCashProductAmount').classList.contains('is-amount-placeholder'), true);
+    assert.equal(runtime.element('guestCashFeeAmount').classList.contains('is-amount-placeholder'), true);
+    assert.ok(runtime.element('guestCashPrice').querySelector('.guest-amount-dots'));
+    assert.ok(runtime.element('guestCashProductAmount').querySelector('.guest-amount-dots'));
+    assert.ok(runtime.element('guestCashFeeAmount').querySelector('.guest-amount-dots'));
+    assert.equal(runtime.element('guestCashPrice').querySelector('.guest-amount-currency').textContent, '￥');
+
+    pendingQuote.resolve(jsonResponse({
+        ...previewPayload(currentPurchase),
+        price: { quantity: 1, amount: 0.01, subtotal: 0.01 },
+        payment_channels: ['zpay:alipay'],
+        payment_providers: { zpay: { surcharge_rate: 0.01, surcharge_label: '通道手续费' } }
+    }));
+    await flushEventLoop();
+
+    assert.equal(runtime.element('guestCashFeeRow').hidden, false);
+    assert.equal(runtime.element('guestCashPrice').classList.contains('is-amount-placeholder'), false);
+    assert.equal(runtime.element('guestCashProductAmount').textContent, '￥0.01');
+    assert.equal(runtime.element('guestCashFeeAmount').textContent, '￥0.01');
+    assert.equal(runtime.element('guestCashPrice').textContent, '￥0.02');
 });
 
 test('cart batch quote failure keeps payment disabled and explains the missing amount', async () => {
@@ -2267,4 +2327,126 @@ test('closing delivered content asks before discarding un-copied delivery conten
 
     assert.equal(runtime.element('guestCashPurchaseModal').hidden, false);
     assert.match(runtime.confirmMessages.at(-1), /发货内容尚未复制/);
+});
+
+test('cart batch checkout requires email and password when buyer_credential_required is true', async () => {
+    const orderNo = 'GCB-20261003180000-A1B2C3D4E5F6';
+    let batchRequestBody = null;
+    const runtime = createRuntime({
+        purchase: purchase(),
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) {
+                const quote = cartBatchPreview(parsed);
+                quote.buyer_credential_required = true;
+                return jsonResponse(quote);
+            }
+            if (parsed.pathname.endsWith('/checkout-batches')) {
+                batchRequestBody = JSON.parse(options.body || '{}');
+                return jsonResponse({
+                    success: true,
+                    order_no: orderNo,
+                    batch: {
+                        batch_no: orderNo,
+                        total_amount: 0.03,
+                        expires_at: FUTURE_EXPIRY,
+                        payment_status: 'created',
+                        payment_pricing: { base_amount: 0.02, payment_fee_amount: 0.01, payable_amount: 0.03 }
+                    },
+                    checkout: { provider: 'zpay', channel: 'alipay', qrcode_url: 'https://pay.example.test/qr' }
+                }, { status: 201 });
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    const checkoutPromise = runtime.window.GuestShopCheckout.startGuestBatchCheckout(cartBatchEntries());
+
+    // Synchronously before quotes resolve: email and password components appear together
+    assert.equal(runtime.element('guestCashOrderPasswordField').hidden, false);
+    assert.equal(runtime.element('guestCashContactHint').textContent, '必填');
+
+    await checkoutPromise;
+
+    // Click payment without credentials: fails client-side
+    clickPaymentOption(runtime);
+    assert.equal(batchRequestBody, null);
+    assert.match(runtime.element('guestCashState').textContent, /请填写邮箱/);
+
+    // Provide invalid email
+    runtime.element('guestCashContact').value = 'not-an-email';
+    clickPaymentOption(runtime);
+    assert.equal(batchRequestBody, null);
+    assert.match(runtime.element('guestCashState').textContent, /邮箱格式不正确/);
+
+    // Provide valid email, but missing password
+    runtime.element('guestCashContact').value = 'buyer@example.com';
+    clickPaymentOption(runtime);
+    assert.equal(batchRequestBody, null);
+    assert.match(runtime.element('guestCashState').textContent, /请填写查询密码/);
+
+    // Provide weak password
+    runtime.element('guestCashOrderPassword').value = '123456';
+    clickPaymentOption(runtime);
+    assert.equal(batchRequestBody, null);
+    assert.match(runtime.element('guestCashState').textContent, /查询密码/);
+
+    // Provide strong password
+    runtime.element('guestCashOrderPassword').value = 'Ab3!xY9#';
+    clickPaymentOption(runtime);
+    await waitFor(() => batchRequestBody !== null);
+
+    assert.equal(batchRequestBody.email, 'buyer@example.com');
+    assert.equal(batchRequestBody.orderPassword, 'Ab3!xY9#');
+    assert.equal(batchRequestBody.items.length, 2);
+});
+
+test('configure panel stays strictly hidden during payment and delivery phases', async () => {
+    const currentPurchase = purchase();
+    const pendingStatus = deferred();
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        qrcodeFactory: false,
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
+            if (parsed.pathname.endsWith('/orders')) return jsonResponse(createOrderPayload('test-order-001', currentPurchase), { status: 201 });
+            if (parsed.pathname.endsWith('/status')) return pendingStatus.promise;
+            if (parsed.pathname.endsWith('/claim')) {
+                return jsonResponse({
+                    success: true,
+                    fulfilled_at: '2026-10-03T12:00:00Z',
+                    content: 'CARD-SECRET-123456'
+                });
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    // In configure phase: configure panel must be visible
+    assert.equal(runtime.element('guestCashConfigurePanel').hidden, false);
+
+    // Click to create order and enter payment phase
+    clickPaymentOption(runtime);
+    await waitFor(() => runtime.element('guestCashOrderNo').textContent === 'test-order-001');
+    await flushEventLoop();
+
+    // In payment phase: configure panel MUST be hidden
+    assert.equal(runtime.element('guestCashConfigurePanel').hidden, true);
+    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, false);
+
+    // Resolve status as confirmed and delivered
+    pendingStatus.resolve(jsonResponse(statusPayload('test-order-001', currentPurchase, {
+        payment_status: 'confirmed',
+        fulfillment_status: 'delivered'
+    })));
+    await waitFor(() => runtime.element('guestCashState').dataset.state === 'delivered');
+    await flushEventLoop();
+
+    // In delivery phase: configure panel MUST stay hidden
+    assert.equal(runtime.element('guestCashDeliveryPanel').hidden, false);
+    assert.equal(runtime.element('guestCashConfigurePanel').hidden, true);
+    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
+    assert.match(runtime.element('guestCashDeliveredContent').textContent, /CARD-SECRET-123456/);
 });

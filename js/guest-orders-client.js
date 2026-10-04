@@ -9,10 +9,10 @@
  *     `Authorization:` header. The query credential travels in the dedicated
  *     X-Guest-Order-Credential header (§7.1) or in the server-issued HttpOnly
  *     session cookie, never in a URL.
- *   - §7.2 storage ladder: memory -> sessionStorage -> a ONE-TIME localStorage
- *     migration that reads and immediately removes. This file never writes to
- *     localStorage, which is why the read is an explicit window property lookup
- *     and the contract test forbids `localStorage.setItem`.
+ *   - §7.2 storage ladder is scoped to the current page: the live credential
+ *     stays in memory while the page is open, and any sessionStorage/legacy
+ *     localStorage copy is removed at fresh initialization instead of being
+ *     restored into the query form. This file never writes to localStorage.
  *   - no Math.random, no innerHTML for server data: every order field is
  *     rendered through textContent so a poisoned product name cannot execute.
  */
@@ -35,7 +35,7 @@
     const PAYMENT_LABELS = Object.freeze({
         pending: { text: '待支付', tone: 'warn' },
         created: { text: '待支付', tone: 'warn' },
-        confirmed: { text: '已支付', tone: 'ok' },
+        confirmed: { text: '已完成', tone: 'ok' },
         partial: { text: '部分支付', tone: 'warn' },
         overpaid: { text: '多付待核', tone: 'warn' },
         amount_mismatch: { text: '金额不符', tone: 'danger' },
@@ -62,7 +62,13 @@
         pagination: null,
         page: 1,
         orderNoFilter: '',
+        // Monotonic list request token prevents a slower, older response from
+        // replacing the newest credential result or a detail view.
+        ordersRequestSerial: 0,
+        detailRequestSerial: 0,
+        deliveryRequestSerial: 0,
         detail: null,
+        delivery: null,
         busy: false,
         // A3 §10.5: the one-time link token lives in MEMORY ONLY. It is read out
         // of the URL once during init(), the URL parameter is deleted before any
@@ -106,6 +112,22 @@
         if (node) node.textContent = normalizeText(value, 2000);
     }
 
+    function togglePasswordVisibility(button, inputId = 'guestOrdersPassword', label = '查询密码') {
+        const target = element(inputId);
+        if (!target || !button) return;
+        const visible = target.type === 'text';
+        target.type = visible ? 'password' : 'text';
+        button.setAttribute('aria-pressed', String(!visible));
+        button.setAttribute('aria-label', `${visible ? '显示' : '隐藏'}${label}`);
+        button.title = `${visible ? '显示' : '隐藏'}${label}`;
+        const icon = button.querySelector('i');
+        if (icon) {
+            icon.classList.toggle('fa-eye', visible);
+            icon.classList.toggle('fa-eye-slash', !visible);
+        }
+        // Keep focus on the toggle; refocusing the input causes its focus border to repaint.
+    }
+
     function showError(message) {
         const node = element('guestOrdersError');
         if (!node) return;
@@ -115,23 +137,27 @@
 
     function setOrderAccessPageAvailable(available, message = '') {
         state.pageAvailable = available === true;
-        setHidden('guestOrdersFeatureGate', state.pageAvailable);
         setHidden('guestOrdersProtectedContent', !state.pageAvailable);
+        setHidden('guestOrdersFeatureGate', state.pageAvailable);
         setHidden('guestOrdersFeatureRetryBtn', state.pageAvailable);
         if (!state.pageAvailable) {
-            setText('guestOrdersFeatureGateTitle', '邮箱密码查询暂未开放');
-            setText(
-                'guestOrdersFeatureGateMessage',
-                message || '邮箱 + 查询密码订单查询暂未开放，请稍后重试或联系客服。'
-            );
+            // Keep every protected/reset surface closed while availability is
+            // unknown or unavailable. This also preserves a reset token in
+            // memory without exposing the reset form before a successful retry.
+            setHidden('guestOrdersResetCard', true);
+            setText('guestOrdersFeatureGateMessage', message || '查询服务暂不可用，请稍后重试。');
         }
     }
 
     function setBusy(busy) {
         state.busy = Boolean(busy);
         const button = element('guestOrdersSubmitBtn');
-        if (button) button.disabled = state.busy;
-        setHidden('guestOrdersLoading', !state.busy);
+        if (button) {
+            button.disabled = state.busy;
+            button.classList.toggle('is-loading', state.busy);
+            button.setAttribute('aria-busy', state.busy ? 'true' : 'false');
+        }
+        setHidden('guestOrdersLoading', true);
         if (state.busy) showError('');
     }
 
@@ -232,12 +258,6 @@
         } catch (_) { /* ignore */ }
     }
 
-    function syncSavedHint() {
-        const saved = loadSavedAuth();
-        setHidden('guestOrdersSavedHint', !saved);
-        if (saved) setText('guestOrdersSavedEmail', saved.email);
-    }
-
     // ------------------------------------------------------------------
     // Transport
     // ------------------------------------------------------------------
@@ -294,7 +314,7 @@
             // A static page can be cached or linked before the matching Verify
             // Server release exists. Keep it visibly unavailable instead of
             // rendering a credential form that only fails after submission.
-            setOrderAccessPageAvailable(false);
+            setOrderAccessPageAvailable(false, '查询服务暂不可用，请稍后重试。');
             return false;
         }
     }
@@ -379,56 +399,511 @@
         return wrap;
     }
 
+    const orderDetailsCache = new Map();
+    let catalogProductsMap = new Map();
+    let catalogLoadingPromise = null;
+
+    function isShopImageSource(url) {
+        if (!url || typeof url !== 'string') return false;
+        const trimmed = url.trim();
+        return trimmed.startsWith('http://')
+            || trimmed.startsWith('https://')
+            || trimmed.startsWith('/')
+            || trimmed.startsWith('./')
+            || trimmed.startsWith('data:image/');
+    }
+
+    function escapeCssSelector(str) {
+        if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+            return CSS.escape(str);
+        }
+        return String(str || '').replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+    }
+
+    async function loadShopCatalog() {
+        if (catalogProductsMap.size > 0) return catalogProductsMap;
+        if (catalogLoadingPromise) return catalogLoadingPromise;
+        catalogLoadingPromise = (async () => {
+            try {
+                const site = currentSite();
+                const response = await fetch(`/api/shop/catalog?site=${encodeURIComponent(site)}`, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json' }
+                });
+                const payload = await response.json().catch(() => ({}));
+                const products = Array.isArray(payload?.products)
+                    ? payload.products
+                    : (Array.isArray(payload?.data?.products) ? payload.data.products : []);
+                for (const product of products) {
+                    if (product?.id) {
+                        catalogProductsMap.set(String(product.id).trim(), product);
+                    }
+                    if (product?.name) {
+                        catalogProductsMap.set(String(product.name).trim(), product);
+                    }
+                }
+            } catch (_) {}
+            return catalogProductsMap;
+        })();
+        return catalogLoadingPromise;
+    }
+
+    async function fetchOrderDetailForList(orderNo) {
+        const key = normalizeText(orderNo, 200);
+        if (!key) return null;
+        if (orderDetailsCache.has(key)) return orderDetailsCache.get(key);
+        try {
+            const payload = await requestJson(
+                `${DETAIL_ENDPOINT}?${buildQuery({ order_no: key })}`,
+                { headers: credentialHeaders() }
+            );
+            if (payload?.order) {
+                orderDetailsCache.set(key, payload.order);
+                return payload.order;
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    function resolvePaymentMethod(order, detail) {
+        const channel = normalizeText(
+            order?.channel || detail?.channel || detail?.payment_channel || order?.payment_channel
+        ).toLowerCase();
+        const provider = normalizeText(
+            order?.provider || detail?.provider || detail?.payment_provider || order?.payment_provider
+        ).toLowerCase();
+        const feeLabel = normalizeText(detail?.payment_pricing?.payment_fee_label || order?.payment_pricing?.payment_fee_label);
+
+        if (channel.includes('alipay') || provider.includes('alipay') || feeLabel.includes('支付宝')) {
+            return { label: '支付宝', icon: 'fa-brands fa-alipay', key: 'alipay' };
+        }
+        if (channel.includes('wx') || channel.includes('wechat') || provider.includes('wx') || feeLabel.includes('微信')) {
+            return { label: '微信支付', icon: 'fa-brands fa-weixin', key: 'wxpay' };
+        }
+        if (channel.includes('qq') || provider.includes('qq')) {
+            return { label: 'QQ钱包', icon: 'fa-brands fa-qq', key: 'qqpay' };
+        }
+        if (channel.includes('usdt') || channel.includes('crypto') || provider.includes('nowpayments') || feeLabel.includes('加密')) {
+            return { label: 'USDT / 加密货币', icon: 'fa-solid fa-coins', key: 'crypto' };
+        }
+        if (normalizeSite(order?.site || detail?.site) === 'intl' || normalizeText(order?.currency || detail?.currency).toUpperCase() === 'USD') {
+            return { label: '加密货币', icon: 'fa-solid fa-coins', key: 'crypto' };
+        }
+        return { label: '支付宝', icon: 'fa-brands fa-alipay', key: 'alipay' };
+    }
+
+    function resolveProductInfo(order, detail) {
+        const items = (Array.isArray(detail?.items) && detail.items.length > 0)
+            ? detail.items
+            : (Array.isArray(order?.items) && order.items.length > 0 ? order.items : null);
+
+        if (items && items.length > 1) {
+            const firstItem = items[0];
+            const firstName = normalizeText(
+                firstItem.snapshot_product_name
+                || firstItem.product_name
+                || firstItem.name
+                || ''
+            );
+            const firstProductId = normalizeText(
+                firstItem.product_id
+                || firstItem.productId
+                || ''
+            );
+
+            let catalogProduct = null;
+            if (firstProductId && catalogProductsMap.has(firstProductId)) {
+                catalogProduct = catalogProductsMap.get(firstProductId);
+            } else if (firstName && catalogProductsMap.has(firstName)) {
+                catalogProduct = catalogProductsMap.get(firstName);
+            }
+
+            const totalCount = items.reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
+            const baseTitle = firstName || catalogProduct?.name || '商品';
+            const countText = totalCount > items.length
+                ? `${items.length} 种共 ${totalCount} 件`
+                : `${items.length} 件`;
+            const displayName = `${baseTitle} 等共 ${countText}商品`;
+
+            let imageUrl = null;
+            if (catalogProduct) {
+                const assets = catalogProduct.image_assets || catalogProduct.imageAssets;
+                imageUrl = assets?.card?.url
+                    || assets?.original?.url
+                    || assets?.thumbnail?.url
+                    || null;
+                if (!imageUrl && catalogProduct.icon_url && isShopImageSource(catalogProduct.icon_url)) {
+                    imageUrl = catalogProduct.icon_url;
+                }
+            }
+
+            const iconClass = (catalogProduct?.icon_url && catalogProduct.icon_url.startsWith('fa'))
+                ? catalogProduct.icon_url
+                : null;
+
+            return {
+                title: displayName,
+                imageUrl,
+                iconClass
+            };
+        }
+
+        const singleItem = (items && items.length === 1) ? items[0] : null;
+        const productName = normalizeText(
+            singleItem?.snapshot_product_name
+            || singleItem?.product_name
+            || detail?.snapshot_product_name
+            || detail?.product_name
+            || order?.snapshot_product_name
+            || order?.product_name
+            || ''
+        );
+        const skuName = normalizeText(
+            singleItem?.snapshot_sku_name
+            || singleItem?.sku_name
+            || detail?.snapshot_sku_name
+            || detail?.sku_name
+            || order?.snapshot_sku_name
+            || order?.sku_name
+            || ''
+        );
+        const productId = normalizeText(
+            singleItem?.product_id
+            || detail?.product_id
+            || order?.product_id
+            || ''
+        );
+        const quantity = Number(singleItem?.quantity || detail?.quantity || order?.quantity) || 1;
+
+        let catalogProduct = null;
+        if (productId && catalogProductsMap.has(productId)) {
+            catalogProduct = catalogProductsMap.get(productId);
+        } else if (productName && catalogProductsMap.has(productName)) {
+            catalogProduct = catalogProductsMap.get(productName);
+        }
+
+        let displayName = productName
+            ? (skuName ? `${productName} / ${skuName}` : productName)
+            : (catalogProduct?.name ? (skuName ? `${catalogProduct.name} / ${skuName}` : catalogProduct.name) : '已购商品');
+
+        if (quantity > 1) {
+            displayName += ` ×${quantity}`;
+        }
+
+        let imageUrl = null;
+        if (catalogProduct) {
+            const assets = catalogProduct.image_assets || catalogProduct.imageAssets;
+            imageUrl = assets?.card?.url
+                || assets?.original?.url
+                || assets?.thumbnail?.url
+                || null;
+            if (!imageUrl && catalogProduct.icon_url && isShopImageSource(catalogProduct.icon_url)) {
+                imageUrl = catalogProduct.icon_url;
+            }
+        }
+
+        const iconClass = (catalogProduct?.icon_url && catalogProduct.icon_url.startsWith('fa'))
+            ? catalogProduct.icon_url
+            : null;
+
+        return {
+            title: displayName,
+            imageUrl,
+            iconClass
+        };
+    }
+
+    function renderThumbnailNode(container, info) {
+        container.textContent = '';
+        if (info.imageUrl) {
+            const img = document.createElement('img');
+            img.className = 'guest-orders-item-thumb-img';
+            img.src = info.imageUrl;
+            img.alt = info.title || '商品预览';
+            img.loading = 'lazy';
+            img.decoding = 'async';
+            img.onerror = () => {
+                img.remove();
+                const fallback = document.createElement('i');
+                fallback.className = 'fas fa-box guest-orders-item-thumb-icon';
+                fallback.setAttribute('aria-hidden', 'true');
+                container.appendChild(fallback);
+            };
+            container.appendChild(img);
+        } else if (info.iconClass) {
+            const icon = document.createElement('i');
+            icon.className = `${info.iconClass} guest-orders-item-thumb-icon`;
+            icon.setAttribute('aria-hidden', 'true');
+            container.appendChild(icon);
+        } else {
+            const defIcon = document.createElement('i');
+            defIcon.className = 'fas fa-box guest-orders-item-thumb-icon';
+            defIcon.setAttribute('aria-hidden', 'true');
+            container.appendChild(defIcon);
+        }
+    }
+
+    function resolveDeliveryProductInfo(item, detail) {
+        const productId = normalizeText(item?.productId || detail?.product_id || '', 200);
+        const productName = normalizeText(item?.productName || detail?.snapshot_product_name || detail?.product_name || '', 200);
+
+        let catalogProduct = null;
+        if (productId && catalogProductsMap.has(productId)) {
+            catalogProduct = catalogProductsMap.get(productId);
+        } else if (productName && catalogProductsMap.has(productName)) {
+            catalogProduct = catalogProductsMap.get(productName);
+        }
+
+        let imageUrl = null;
+        if (catalogProduct) {
+            const assets = catalogProduct.image_assets || catalogProduct.imageAssets;
+            imageUrl = assets?.card?.url
+                || assets?.original?.url
+                || assets?.thumbnail?.url
+                || null;
+            if (!imageUrl && catalogProduct.icon_url && isShopImageSource(catalogProduct.icon_url)) {
+                imageUrl = catalogProduct.icon_url;
+            }
+        }
+
+        const iconClass = (catalogProduct?.icon_url && catalogProduct.icon_url.startsWith('fa'))
+            ? catalogProduct.icon_url
+            : null;
+
+        return {
+            title: item?.productName || '商品图片',
+            imageUrl,
+            iconClass
+        };
+    }
+
+    function renderDeliveryThumbnailNode(container, info) {
+        container.textContent = '';
+        if (info && info.imageUrl) {
+            const img = document.createElement('img');
+            img.className = 'guest-orders-delivery-thumb-img';
+            img.src = info.imageUrl;
+            img.alt = info.title || '商品图片';
+            img.loading = 'lazy';
+            img.decoding = 'async';
+            img.onerror = () => {
+                img.remove();
+                const fallback = document.createElement('i');
+                fallback.className = 'fas fa-box';
+                fallback.setAttribute('aria-hidden', 'true');
+                container.appendChild(fallback);
+            };
+            container.appendChild(img);
+        } else if (info && info.iconClass) {
+            const icon = document.createElement('i');
+            icon.className = info.iconClass;
+            icon.setAttribute('aria-hidden', 'true');
+            container.appendChild(icon);
+        } else {
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-box';
+            icon.setAttribute('aria-hidden', 'true');
+            container.appendChild(icon);
+        }
+    }
+
+    function createPaymentBadge(payment) {
+        const badge = createNode('span', 'guest-orders-badge guest-orders-payment-badge');
+        const icon = document.createElement('i');
+        icon.className = payment.icon;
+        icon.setAttribute('aria-hidden', 'true');
+        badge.appendChild(icon);
+        const label = createNode('span', 'guest-orders-payment-badge-label', payment.label);
+        badge.appendChild(label);
+        return badge;
+    }
+
     function renderOrders() {
         const list = element('guestOrdersList');
         if (!list) return;
         list.textContent = '';
         const orders = Array.isArray(state.orders) ? state.orders : [];
-        setHidden('guestOrdersEmpty', orders.length > 0);
-        for (const order of orders) {
-            const item = createNode('article', 'guest-orders-item');
+        // The empty state belongs to the result card, not to a single render
+        // pass. Keep it hidden while a detail view is active even if a stale
+        // list render happens to run afterwards.
+        setHidden('guestOrdersEmpty', Boolean(state.detail) || orders.length > 0);
 
+        const currentSerial = state.ordersRequestSerial;
+
+        for (const order of orders) {
+            const orderNo = normalizeText(order.order_no, 200);
+            const cachedDetail = orderDetailsCache.get(orderNo) || null;
+            const productInfo = resolveProductInfo(order, cachedDetail);
+            const payment = resolvePaymentMethod(order, cachedDetail);
+
+            const item = createNode('article', 'guest-orders-item');
+            item.dataset.orderNo = orderNo;
+
+            // 1. Top row: Order number on left, badges on right (Payment method + Status)
             const top = createNode('div', 'guest-orders-item-top');
-            const left = createNode('div');
-            left.appendChild(createNode('div', 'guest-orders-item-no', order.order_no || '-'));
+            const left = createNode('div', 'guest-orders-item-left');
+            const noEl = createNode('div', 'guest-orders-item-no', orderNo || '-');
+            if (orderNo && orderNo !== '-') {
+                noEl.classList.add('is-copyable');
+                noEl.title = '点击复制订单号';
+                noEl.setAttribute('role', 'button');
+                noEl.setAttribute('tabindex', '0');
+                noEl.setAttribute('aria-label', `复制订单号 ${orderNo}`);
+
+                const copyIcon = document.createElement('i');
+                copyIcon.className = 'far fa-copy guest-orders-item-no-copy-icon';
+                copyIcon.setAttribute('aria-hidden', 'true');
+                noEl.appendChild(copyIcon);
+
+                const handleCopyOrderNo = (e) => {
+                    e.stopPropagation();
+                    if (window.getSelection) {
+                        try { window.getSelection().removeAllRanges(); } catch (_) {}
+                    }
+                    void handleCopyText(orderNo, noEl);
+                };
+
+                noEl.addEventListener('click', handleCopyOrderNo);
+                noEl.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleCopyOrderNo(e);
+                    }
+                });
+            }
+            left.appendChild(noEl);
             left.appendChild(createDiscountLines(order));
-            const amount = createNode('div', 'guest-orders-item-amount', formatAmount(order.amount));
-            if (Number(order.quantity) > 1) amount.appendChild(createNode('small', '', `× ${Number(order.quantity)}`));
             top.appendChild(left);
-            top.appendChild(amount);
+
+            const badges = createNode('div', 'guest-orders-item-badges');
+            badges.appendChild(createPaymentBadge(payment));
+            badges.appendChild(createBadge(PAYMENT_LABELS, order.payment_status));
+            top.appendChild(badges);
+
             item.appendChild(top);
 
-            const meta = createNode('div', 'guest-orders-item-meta');
-            meta.appendChild(createBadge(PAYMENT_LABELS, order.payment_status));
-            meta.appendChild(createBadge(FULFILLMENT_LABELS, order.fulfillment_status));
-            meta.appendChild(createNode('span', '', `下单时间 ${formatTime(order.created_at)}`));
-            item.appendChild(meta);
+            // 2. Main body row: Thumbnail + Product Name & Meta Info + Price
+            const body = createNode('div', 'guest-orders-item-body');
 
-            const actions = createNode('div', 'guest-orders-item-actions');
-            const detailButton = createNode('button', 'guest-orders-secondary-btn', '查看详情');
-            detailButton.type = 'button';
-            detailButton.addEventListener('click', () => { void openDetail(normalizeText(order.order_no, 200)); });
-            actions.appendChild(detailButton);
-            if (isDeliverable(order)) {
-                const deliveryButton = createNode('button', 'guest-orders-secondary-btn', '查看发货内容');
-                deliveryButton.type = 'button';
-                deliveryButton.addEventListener('click', () => {
-                    void openDetail(normalizeText(order.order_no, 200), { loadDelivery: true });
-                });
-                actions.appendChild(deliveryButton);
-            } else if (normalizeText(order.payment_status).toLowerCase() === 'pending'
+            // Thumbnail
+            const thumb = createNode('div', 'guest-orders-item-thumb');
+            renderThumbnailNode(thumb, productInfo);
+            body.appendChild(thumb);
+
+            // Content (Title + Meta)
+            const content = createNode('div', 'guest-orders-item-content');
+            const titleEl = createNode('h3', 'guest-orders-item-product-name', productInfo.title);
+            content.appendChild(titleEl);
+
+            const metaRow = createNode('div', 'guest-orders-item-meta-row');
+
+            // 下单时间
+            const timeEl = createNode('span', 'guest-orders-meta-item');
+            const clockIcon = document.createElement('i');
+            clockIcon.className = 'far fa-clock';
+            clockIcon.setAttribute('aria-hidden', 'true');
+            timeEl.appendChild(clockIcon);
+            const timeText = createNode('span', 'guest-orders-meta-time', formatTime(order.created_at));
+            timeEl.appendChild(timeText);
+            metaRow.appendChild(timeEl);
+
+            // Separator
+            metaRow.appendChild(createNode('span', 'guest-orders-meta-dot', '·'));
+
+            // 提示：点击查看订单详情
+            metaRow.appendChild(createNode('span', 'guest-orders-meta-item guest-orders-meta-hint', '点击查看订单详情'));
+
+            content.appendChild(metaRow);
+            body.appendChild(content);
+
+            // Price / 实付金额
+            const priceCol = createNode('div', 'guest-orders-item-price-col');
+            const amountEl = createNode('div', 'guest-orders-item-amount', formatAmount(order.amount));
+            priceCol.appendChild(amountEl);
+            body.appendChild(priceCol);
+
+            item.appendChild(body);
+
+            // Warning hint if order is still pending/created
+            if (normalizeText(order.payment_status).toLowerCase() === 'pending'
                 || normalizeText(order.payment_status).toLowerCase() === 'created') {
-                actions.appendChild(createNode(
+                const pendingNotice = createNode('div', 'guest-orders-item-pending-notice');
+                pendingNotice.appendChild(createNode(
                     'span',
                     'guest-orders-item-no',
                     '订单仍待支付：请勿重复下单或付款；如需继续处理，请联系支持'
                 ));
+                item.appendChild(pendingNotice);
             }
-            item.appendChild(actions);
+
+            // Click entire item to open details
+            item.setAttribute('role', 'button');
+            item.setAttribute('tabindex', '0');
+            item.setAttribute('aria-label', `查看订单 ${orderNo} 详情`);
+            item.addEventListener('click', (event) => {
+                if (event.target && event.target.closest('a, button, .guest-orders-item-no')) return;
+                void openDetail(orderNo);
+            });
+            item.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    if (event.target && event.target.closest('.guest-orders-item-no')) return;
+                    event.preventDefault();
+                    void openDetail(orderNo);
+                }
+            });
 
             list.appendChild(item);
         }
         renderPagination(orders.length);
+
+        // Async enrichment for visible orders
+        void enrichOrdersList(orders, currentSerial);
+    }
+
+    async function enrichOrdersList(orders, expectedSerial) {
+        if (!Array.isArray(orders) || orders.length === 0) return;
+
+        await loadShopCatalog();
+        if (expectedSerial !== state.ordersRequestSerial) return;
+
+        for (const order of orders) {
+            const orderNo = normalizeText(order.order_no, 200);
+            if (!orderNo) continue;
+            let detail = orderDetailsCache.get(orderNo);
+            if (!detail) {
+                detail = await fetchOrderDetailForList(orderNo);
+                if (expectedSerial !== state.ordersRequestSerial) return;
+            }
+            if (!detail) continue;
+
+            const list = element('guestOrdersList');
+            if (!list) return;
+            const itemEl = list.querySelector(`.guest-orders-item[data-order-no="${escapeCssSelector(orderNo)}"]`);
+            if (!itemEl) continue;
+
+            const productInfo = resolveProductInfo(order, detail);
+            const payment = resolvePaymentMethod(order, detail);
+
+            const titleEl = itemEl.querySelector('.guest-orders-item-product-name');
+            if (titleEl && productInfo.title) {
+                titleEl.textContent = productInfo.title;
+            }
+
+            const thumbEl = itemEl.querySelector('.guest-orders-item-thumb');
+            if (thumbEl) {
+                renderThumbnailNode(thumbEl, productInfo);
+            }
+
+            const paymentLabelEl = itemEl.querySelector('.guest-orders-payment-badge-label');
+            const paymentIconEl = itemEl.querySelector('.guest-orders-payment-badge i');
+            if (paymentLabelEl && payment.label) {
+                paymentLabelEl.textContent = payment.label;
+            }
+            if (paymentIconEl && payment.icon) {
+                paymentIconEl.className = payment.icon;
+            }
+        }
     }
 
     function isDeliverable(order) {
@@ -456,7 +931,11 @@
         const detail = state.detail;
         setHidden('guestOrdersDetail', !detail);
         setHidden('guestOrdersList', Boolean(detail));
-        setHidden('guestOrdersEmpty', Boolean(detail));
+        // Empty-state visibility is derived from the same result set as the
+        // list. A detail deep-link has no list rows to show, so it also hides
+        // the empty state while the detail card is active.
+        const hasOrders = Array.isArray(state.orders) && state.orders.length > 0;
+        setHidden('guestOrdersEmpty', Boolean(detail) || hasOrders);
         setHidden('guestOrdersPagination', Boolean(detail));
         setHidden('guestOrdersBackToListBtn', !detail);
         const rows = element('guestOrdersDetailRows');
@@ -465,33 +944,590 @@
         const fields = [
             ['订单号', detail.order_no || '-', true],
             ['金额', formatAmount(detail.amount), false],
-            ['数量', String(Number(detail.quantity) || 1), false],
-            ['支付状态', statusLabel(PAYMENT_LABELS, detail.payment_status).text, false],
-            ['发货状态', statusLabel(FULFILLMENT_LABELS, detail.fulfillment_status).text, false],
-            ['下单时间', formatTime(detail.created_at), false],
-            ['支付截止', formatTime(detail.expires_at), false]
+            ['支付状态', statusLabel(PAYMENT_LABELS, detail.payment_status).text, false]
         ];
         if (normalizeText(detail.refund_status) && normalizeText(detail.refund_status) !== 'none') {
-            fields.splice(5, 0, ['退款状态', normalizeText(detail.refund_status, 40), false]);
+            fields.push(['退款状态', normalizeText(detail.refund_status, 40), false]);
         }
         for (const [label, value, mono] of fields) {
             const row = document.createElement('div');
             row.appendChild(createNode('dt', '', label));
-            row.appendChild(createNode('dd', mono ? 'is-mono' : '', value));
+            const dd = createNode('dd', mono ? 'is-mono' : '', value);
+            if (label === '订单号' && value && value !== '-') {
+                dd.classList.add('is-copyable');
+                dd.title = '点击复制订单号';
+                dd.setAttribute('role', 'button');
+                dd.setAttribute('tabindex', '0');
+                dd.setAttribute('aria-label', `复制订单号 ${value}`);
+
+                const copyIcon = document.createElement('i');
+                copyIcon.className = 'far fa-copy guest-orders-item-no-copy-icon';
+                copyIcon.setAttribute('aria-hidden', 'true');
+                dd.appendChild(copyIcon);
+
+                const handleCopyDetailNo = (e) => {
+                    e.stopPropagation();
+                    if (window.getSelection) {
+                        try { window.getSelection().removeAllRanges(); } catch (_) {}
+                    }
+                    void handleCopyText(value, dd);
+                };
+                dd.addEventListener('click', handleCopyDetailNo);
+                dd.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleCopyDetailNo(e);
+                    }
+                });
+            }
+            row.appendChild(dd);
             rows.appendChild(row);
         }
 
         const deliverable = isDeliverable(detail);
-        setHidden('guestOrdersLoadDeliveryBtn', !deliverable);
+        if (!deliverable) {
+            clearDelivery();
+            const hint = element('guestOrdersDeliveryHint');
+            if (hint) {
+                hint.textContent = '订单完成支付并发货后，这里会显示卡密内容。当前状态不会展示发货内容。';
+                hint.hidden = false;
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Delivery Rendering & Interactions (Safe DOM & Multi-item Support)
+    // ------------------------------------------------------------------
+    function clearDelivery() {
+        state.delivery = null;
+        const list = element('guestOrdersDeliveryList');
+        if (list) list.textContent = '';
+        const actionsBar = element('guestOrdersDeliveryActionsBar');
+        if (actionsBar) actionsBar.textContent = '';
         setHidden('guestOrdersDeliveryPanel', true);
-        setText('guestOrdersDeliveryContent', '');
         const hint = element('guestOrdersDeliveryHint');
         if (hint) {
-            hint.textContent = deliverable
-                ? ''
-                : '订单完成支付并发货后，这里会显示卡密内容。当前状态不会展示发货内容。';
-            hint.hidden = deliverable;
+            hint.textContent = '';
+            hint.hidden = true;
         }
+    }
+
+    function splitDeliveryContent(raw) {
+        const text = String(raw || '').trim();
+        if (!text) return [];
+        if (/\n\s*----\s*\n/.test(text)) {
+            return text.split(/\n\s*----\s*\n/).map((s) => s.trim()).filter(Boolean);
+        }
+        if (/\n\n+/.test(text)) {
+            return text.split(/\n\n+/).map((s) => s.trim()).filter(Boolean);
+        }
+        return [text];
+    }
+
+    function showShopToast(message, variant = 'success') {
+        const normalizedMessage = String(message || '').trim();
+        if (!normalizedMessage) return;
+
+        let toast = element('shopStorefrontToast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'shopStorefrontToast';
+            toast.className = 'shop-success-toast';
+            toast.dataset.shopToastGlobal = '1';
+            toast.setAttribute('aria-live', 'polite');
+            toast.setAttribute('aria-atomic', 'true');
+            toast.setAttribute('role', 'status');
+            document.body.appendChild(toast);
+        }
+
+        toast.textContent = normalizedMessage;
+        toast.dataset.variant = variant;
+        toast.classList.add('is-visible');
+
+        if (toast.__hideTimer) {
+            clearTimeout(toast.__hideTimer);
+        }
+        toast.__hideTimer = setTimeout(() => {
+            toast.classList.remove('is-visible');
+        }, 1800);
+    }
+
+    function formatItemTimestamp(timestamp) {
+        const normalizedTimestamp = String(timestamp || '').trim();
+        if (!normalizedTimestamp) return '';
+
+        const parsed = new Date(normalizedTimestamp);
+        if (Number.isNaN(parsed.getTime())) {
+            return normalizedTimestamp;
+        }
+
+        return new Intl.DateTimeFormat('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        }).format(parsed);
+    }
+
+    function normalizeDeliveryItems(payload, detail) {
+        if (Array.isArray(payload?.items) && payload.items.length > 0) {
+            const groups = new Map();
+            for (const item of payload.items) {
+                const productName = normalizeText(
+                    item.product_name || item.name || item.displayName || detail?.snapshot_product_name || detail?.product_name || '商品',
+                    200
+                );
+                const skuName = normalizeText(
+                    item.sku_name || item.sku || detail?.snapshot_sku_name || detail?.sku_name || '',
+                    100
+                );
+                const productId = String(item.product_id || item.productId || detail?.product_id || '').trim();
+                const skuId = String(item.sku_id || item.skuId || detail?.product_sku_id || detail?.sku_id || '').trim();
+                const key = `${productId}|${skuId}|${productName}|${skuName}`;
+
+                const rawContent = item.contentSegments || item.content || '';
+                const segments = Array.isArray(rawContent)
+                    ? rawContent.map((s) => String(s || '').trim()).filter(Boolean)
+                    : splitDeliveryContent(rawContent);
+
+                const itemQuantity = Number(item.quantity);
+                const qty = Number.isFinite(itemQuantity) && itemQuantity > 0
+                    ? itemQuantity
+                    : (payload.items.length === 1 && Number(detail?.quantity) > 0 ? Number(detail.quantity) : 1);
+
+                const notes = normalizeText(item.purchase_notes || item.purchaseNotes || detail?.purchase_notes || '', 2000);
+                const usage = normalizeText(item.usage_instructions || item.usageInstructions || detail?.usage_instructions || '', 2000);
+                const createdAt = item.created_at || detail?.paid_at || detail?.created_at || payload?.created_at || '';
+
+                if (groups.has(key)) {
+                    const existing = groups.get(key);
+                    existing.quantity += qty;
+                    if (segments.length > 0) {
+                        existing.contentSegments.push(...segments);
+                    }
+                    if (!existing.purchaseNotes && notes) existing.purchaseNotes = notes;
+                    if (!existing.usageInstructions && usage) existing.usageInstructions = usage;
+                    if (!existing.createdAt && createdAt) existing.createdAt = createdAt;
+                } else {
+                    groups.set(key, {
+                        productId,
+                        skuId,
+                        productName,
+                        skuName,
+                        quantity: qty,
+                        contentSegments: [...segments],
+                        purchaseNotes: notes,
+                        usageInstructions: usage,
+                        createdAt
+                    });
+                }
+            }
+
+            return Array.from(groups.values()).map((g) => {
+                if (g.contentSegments.length === 0) {
+                    g.contentSegments = ['（暂无卡密内容）'];
+                }
+                return g;
+            });
+        }
+
+        const rawContent = payload?.content || '';
+        const segments = splitDeliveryContent(rawContent);
+        return [{
+            productId: String(detail?.product_id || '').trim(),
+            skuId: String(detail?.product_sku_id || detail?.sku_id || '').trim(),
+            productName: normalizeText(detail?.snapshot_product_name || detail?.product_name || detail?.name || '已购商品', 200),
+            skuName: normalizeText(detail?.snapshot_sku_name || detail?.sku_name || detail?.sku || '', 100),
+            quantity: Math.max(1, Number(detail?.quantity || 0) || segments.length || 1),
+            contentSegments: segments.length > 0 ? segments : ['（暂无卡密内容）'],
+            purchaseNotes: normalizeText(detail?.purchase_notes || '', 2000),
+            usageInstructions: normalizeText(detail?.usage_instructions || '', 2000),
+            createdAt: detail?.paid_at || detail?.created_at || payload?.created_at || ''
+        }];
+    }
+
+    function renderDelivery(payload, detail) {
+        const list = element('guestOrdersDeliveryList');
+        if (!list) return;
+        list.textContent = '';
+        const actionsBar = element('guestOrdersDeliveryActionsBar');
+        if (actionsBar) actionsBar.textContent = '';
+
+        const items = normalizeDeliveryItems(payload, detail);
+        if (items.length === 0) {
+            list.appendChild(createNode('div', 'guest-orders-delivery-empty', '暂无可展示的发货内容'));
+            return;
+        }
+
+        const allSegments = items.flatMap((it) => it.contentSegments).filter((s) => s && s !== '（暂无卡密内容）');
+        if (allSegments.length > 0) {
+            const targetBar = actionsBar || createNode('div', 'guest-orders-delivery-actions-bar');
+            const copyAllBtn = createNode('button', 'guest-orders-delivery-copy-all-btn');
+            copyAllBtn.type = 'button';
+            copyAllBtn.dataset.action = 'copy-all';
+            copyAllBtn.dataset.allContent = allSegments.join('\n----\n');
+            copyAllBtn.title = '复制所有卡密';
+            copyAllBtn.setAttribute('aria-label', '复制所有卡密');
+            const copyAllIcon = document.createElement('i');
+            copyAllIcon.className = 'fas fa-copy';
+            copyAllIcon.setAttribute('aria-hidden', 'true');
+            copyAllBtn.appendChild(copyAllIcon);
+            const copyAllLabel = createNode('span', '', '复制所有卡密');
+            copyAllBtn.appendChild(copyAllLabel);
+            targetBar.appendChild(copyAllBtn);
+            if (!actionsBar) list.appendChild(targetBar);
+        }
+
+        items.forEach((item, index) => {
+            const itemEl = createNode('article', 'guest-orders-delivery-item');
+            itemEl.dataset.itemIndex = String(index);
+
+            const surface = createNode('div', 'guest-orders-delivery-surface');
+            surface.setAttribute('role', 'button');
+            surface.setAttribute('tabindex', '0');
+            surface.setAttribute('aria-expanded', 'false');
+            surface.dataset.action = 'toggle-item-content';
+
+            const header = createNode('div', 'guest-orders-delivery-header');
+            const heading = createNode('div', 'guest-orders-delivery-heading');
+
+            const icon = createNode('div', 'guest-orders-delivery-icon');
+            const info = resolveDeliveryProductInfo(item, detail);
+            renderDeliveryThumbnailNode(icon, info);
+            heading.appendChild(icon);
+
+            const copy = createNode('div', 'guest-orders-delivery-copy');
+            const titleRow = createNode('div', 'guest-orders-delivery-title-row');
+            const displayName = item.skuName ? `${item.productName} / ${item.skuName}` : item.productName;
+            const title = createNode('h3', 'guest-orders-delivery-product-title', displayName);
+            titleRow.appendChild(title);
+            copy.appendChild(titleRow);
+
+            if (item.quantity > 1) {
+                const qtyRow = createNode('div', 'guest-orders-delivery-quantity-row');
+                const qtyTag = createNode('span', 'guest-orders-delivery-tag guest-orders-delivery-tag--quantity', `数量 ${item.quantity}`);
+                qtyRow.appendChild(qtyTag);
+                copy.appendChild(qtyRow);
+            }
+
+            const revealLabel = createNode('div', 'guest-orders-delivery-reveal-label');
+            const revealBtn = createNode('span', 'guest-orders-delivery-reveal-btn', '点击查看卡密');
+            revealLabel.appendChild(revealBtn);
+            copy.appendChild(revealLabel);
+
+            heading.appendChild(copy);
+            header.appendChild(heading);
+
+            const actions = createNode('div', 'guest-orders-delivery-actions');
+            const toolbar = createNode('div', 'guest-orders-delivery-toolbar');
+
+            if (item.purchaseNotes) {
+                const notesBtn = createNode('button', 'guest-orders-delivery-tag guest-orders-delivery-tag--notice');
+                notesBtn.type = 'button';
+                notesBtn.dataset.action = 'toggle-notes';
+                notesBtn.setAttribute('aria-expanded', 'false');
+                const notesLabel = createNode('span', 'guest-orders-delivery-tag-label', '注意事项');
+                notesBtn.appendChild(notesLabel);
+                toolbar.appendChild(notesBtn);
+            }
+
+            if (item.usageInstructions) {
+                const usageBtn = createNode('button', 'guest-orders-delivery-tag guest-orders-delivery-tag--usage');
+                usageBtn.type = 'button';
+                usageBtn.dataset.action = 'toggle-usage';
+                usageBtn.setAttribute('aria-expanded', 'false');
+                const usageLabel = createNode('span', 'guest-orders-delivery-tag-label', '使用说明');
+                usageBtn.appendChild(usageLabel);
+                toolbar.appendChild(usageBtn);
+            }
+
+            const itemCopyBtn = createNode('button', 'guest-orders-delivery-item-copy-btn');
+            itemCopyBtn.type = 'button';
+            itemCopyBtn.dataset.action = 'copy-item';
+            itemCopyBtn.dataset.itemContent = item.contentSegments.join('\n');
+            itemCopyBtn.title = '复制该商品卡密';
+            itemCopyBtn.setAttribute('aria-label', '复制该商品卡密');
+            const itemCopyIcon = document.createElement('i');
+            itemCopyIcon.className = 'fas fa-copy';
+            itemCopyIcon.setAttribute('aria-hidden', 'true');
+            itemCopyBtn.appendChild(itemCopyIcon);
+            toolbar.appendChild(itemCopyBtn);
+
+            actions.appendChild(toolbar);
+
+            const formattedCreatedAt = formatItemTimestamp(item.createdAt);
+            if (formattedCreatedAt) {
+                const timeEl = createNode('div', 'guest-orders-delivery-time', formattedCreatedAt);
+                actions.appendChild(timeEl);
+            }
+
+            header.appendChild(actions);
+            surface.appendChild(header);
+            itemEl.appendChild(surface);
+
+            const body = createNode('div', 'guest-orders-delivery-body');
+            const disclosures = createNode('div', 'guest-orders-delivery-disclosures');
+
+            const contentPanel = createNode('section', 'guest-orders-delivery-content-panel');
+            contentPanel.setAttribute('aria-hidden', 'true');
+            const grid = createNode('div', 'guest-orders-delivery-content-grid');
+
+            item.contentSegments.forEach((segment) => {
+                const card = createNode('div', 'guest-orders-delivery-card-key');
+                card.dataset.action = 'copy-card';
+                card.dataset.cardContent = segment;
+                card.title = '点击复制';
+
+                const cardBox = createNode('div', 'guest-orders-delivery-card-key-box');
+                const cardText = createNode('div', 'guest-orders-delivery-card-key-text', segment);
+                cardBox.appendChild(cardText);
+                card.appendChild(cardBox);
+
+                grid.appendChild(card);
+            });
+
+            contentPanel.appendChild(grid);
+            disclosures.appendChild(contentPanel);
+
+            if (item.purchaseNotes) {
+                const notesPanel = createNode('section', 'guest-orders-delivery-guidance-panel guest-orders-delivery-guidance-panel--notice');
+                notesPanel.hidden = true;
+
+                const copyGuidanceBtn = createNode('button', 'guest-orders-delivery-guidance-copy');
+                copyGuidanceBtn.type = 'button';
+                copyGuidanceBtn.dataset.action = 'copy-guidance';
+                copyGuidanceBtn.dataset.guidanceContent = item.purchaseNotes;
+                copyGuidanceBtn.title = '复制注意事项';
+                copyGuidanceBtn.setAttribute('aria-label', '复制注意事项');
+                const copyGIcon = document.createElement('i');
+                copyGIcon.className = 'fas fa-copy';
+                copyGIcon.setAttribute('aria-hidden', 'true');
+                copyGuidanceBtn.appendChild(copyGIcon);
+                notesPanel.appendChild(copyGuidanceBtn);
+
+                const notesContent = createNode('div', 'guest-orders-delivery-guidance-content', item.purchaseNotes);
+                notesPanel.appendChild(notesContent);
+                disclosures.appendChild(notesPanel);
+            }
+
+            if (item.usageInstructions) {
+                const usagePanel = createNode('section', 'guest-orders-delivery-guidance-panel guest-orders-delivery-guidance-panel--usage');
+                usagePanel.hidden = true;
+
+                const copyUsageBtn = createNode('button', 'guest-orders-delivery-guidance-copy');
+                copyUsageBtn.type = 'button';
+                copyUsageBtn.dataset.action = 'copy-guidance';
+                copyUsageBtn.dataset.guidanceContent = item.usageInstructions;
+                copyUsageBtn.title = '复制使用说明';
+                copyUsageBtn.setAttribute('aria-label', '复制使用说明');
+                const copyUIcon = document.createElement('i');
+                copyUIcon.className = 'fas fa-copy';
+                copyUIcon.setAttribute('aria-hidden', 'true');
+                copyUsageBtn.appendChild(copyUIcon);
+                usagePanel.appendChild(copyUsageBtn);
+
+                const usageContent = createNode('div', 'guest-orders-delivery-guidance-content', item.usageInstructions);
+                usagePanel.appendChild(usageContent);
+                disclosures.appendChild(usagePanel);
+            }
+
+            body.appendChild(disclosures);
+            itemEl.appendChild(body);
+            list.appendChild(itemEl);
+        });
+    }
+
+    function toggleItemContent(surface) {
+        const item = surface.closest('.guest-orders-delivery-item');
+        if (!item) return;
+        const panel = item.querySelector('.guest-orders-delivery-content-panel');
+        const isExpanded = item.classList.contains('is-content-expanded');
+        const nextExpanded = !isExpanded;
+
+        item.classList.toggle('is-content-expanded', nextExpanded);
+        surface.setAttribute('aria-expanded', String(nextExpanded));
+        if (panel) {
+            panel.setAttribute('aria-hidden', String(!nextExpanded));
+        }
+    }
+
+    function toggleGuidance(button, type) {
+        const item = button.closest('.guest-orders-delivery-item');
+        if (!item) return;
+        const panel = item.querySelector(`.guest-orders-delivery-guidance-panel--${type}`);
+        if (!panel) return;
+
+        const isExpanded = button.getAttribute('aria-expanded') === 'true';
+        const nextExpanded = !isExpanded;
+
+        if (nextExpanded) {
+            item.querySelectorAll('[data-action="toggle-notes"], [data-action="toggle-usage"]').forEach((toggle) => {
+                if (toggle !== button) {
+                    toggle.setAttribute('aria-expanded', 'false');
+                    toggle.classList.remove('is-active');
+                }
+            });
+            item.querySelectorAll('.guest-orders-delivery-guidance-panel').forEach((candidate) => {
+                if (candidate !== panel) {
+                    candidate.hidden = true;
+                }
+            });
+        }
+
+        button.setAttribute('aria-expanded', String(nextExpanded));
+        button.classList.toggle('is-active', nextExpanded);
+        panel.hidden = !nextExpanded;
+    }
+
+    async function writeClipboardText(text) {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch (_) {}
+        }
+        try {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            const success = document.execCommand('copy');
+            document.body.removeChild(textarea);
+            if (success) return true;
+        } catch (_) {}
+        return false;
+    }
+
+    async function handleCopyText(text, triggerButton) {
+        if (!text) return;
+        const success = await writeClipboardText(text);
+        if (!success) {
+            showError('当前浏览器不允许自动复制，请手动选择内容复制');
+            return;
+        }
+
+        showShopToast('已复制');
+
+        if (triggerButton) {
+            triggerButton.classList.add('is-copied');
+            const icon = triggerButton.querySelector('.guest-orders-item-no-copy-icon');
+            if (icon) {
+                icon.className = 'fas fa-check guest-orders-item-no-copy-icon';
+            }
+            window.setTimeout(() => {
+                triggerButton.classList.remove('is-copied');
+                if (icon) {
+                    icon.className = 'far fa-copy guest-orders-item-no-copy-icon';
+                }
+            }, 1500);
+        }
+    }
+
+    function bindDeliveryDelegation() {
+        const list = element('guestOrdersDeliveryList');
+        if (!list || list.dataset.delegationBound) return;
+        list.dataset.delegationBound = 'true';
+
+        list.addEventListener('click', (event) => {
+            const target = event.target;
+            if (!target) return;
+
+            const copyAllBtn = target.closest('[data-action="copy-all"]');
+            if (copyAllBtn) {
+                event.stopPropagation();
+                const content = copyAllBtn.dataset.allContent || '';
+                void handleCopyText(content, copyAllBtn);
+                return;
+            }
+
+            const itemCopyBtn = target.closest('[data-action="copy-item"]');
+            if (itemCopyBtn) {
+                event.stopPropagation();
+                const content = itemCopyBtn.dataset.itemContent || '';
+                void handleCopyText(content, itemCopyBtn);
+                return;
+            }
+
+            const guidanceBtn = target.closest('[data-action="copy-guidance"]');
+            if (guidanceBtn) {
+                event.stopPropagation();
+                const content = guidanceBtn.dataset.guidanceContent || '';
+                void handleCopyText(content, guidanceBtn);
+                return;
+            }
+
+            const notesToggle = target.closest('[data-action="toggle-notes"]');
+            if (notesToggle) {
+                event.stopPropagation();
+                toggleGuidance(notesToggle, 'notice');
+                return;
+            }
+
+            const usageToggle = target.closest('[data-action="toggle-usage"]');
+            if (usageToggle) {
+                event.stopPropagation();
+                toggleGuidance(usageToggle, 'usage');
+                return;
+            }
+
+            const cardKey = target.closest('[data-action="copy-card"]');
+            if (cardKey) {
+                event.stopPropagation();
+                if (window.getSelection) {
+                    try {
+                        window.getSelection().removeAllRanges();
+                    } catch (_) {}
+                }
+                const content = cardKey.dataset.cardContent || cardKey.querySelector('.guest-orders-delivery-card-key-text')?.textContent || '';
+                void handleCopyText(content);
+                return;
+            }
+
+            const surface = target.closest('[data-action="toggle-item-content"]');
+            if (surface) {
+                toggleItemContent(surface);
+                return;
+            }
+        });
+
+        list.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                const surface = event.target.closest('[data-action="toggle-item-content"]');
+                if (surface && event.target === surface) {
+                    event.preventDefault();
+                    toggleItemContent(surface);
+                }
+            }
+        });
+
+        list.addEventListener('wheel', (event) => {
+            const deltaY = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+            if (deltaY === 0) return;
+
+            const guidanceContent = event.target ? event.target.closest('.guest-orders-delivery-guidance-content') : null;
+            if (guidanceContent && guidanceContent.scrollHeight > guidanceContent.clientHeight + 1) {
+                const canScrollUp = deltaY < 0 && guidanceContent.scrollTop > 0;
+                const canScrollDown = deltaY > 0 && (guidanceContent.scrollTop + guidanceContent.clientHeight < guidanceContent.scrollHeight - 1);
+                if (canScrollUp || canScrollDown) {
+                    return;
+                }
+            }
+
+            const canScrollList = list.scrollHeight > list.clientHeight + 1;
+            if (canScrollList) {
+                const canScrollUp = deltaY < 0 && list.scrollTop > 0;
+                const canScrollDown = deltaY > 0 && (list.scrollTop + list.clientHeight < list.scrollHeight - 1);
+                if (canScrollUp || canScrollDown) {
+                    return;
+                }
+            }
+
+            window.scrollBy({ top: deltaY, behavior: 'auto' });
+        }, { passive: true });
     }
 
     // ------------------------------------------------------------------
@@ -519,58 +1555,96 @@
             password,
             site: currentSite()
         });
-        syncSavedHint();
     }
 
     async function loadOrders(page = 1) {
+        const requestSerial = ++state.ordersRequestSerial;
         const payload = await requestJson(
             `${LIST_ENDPOINT}?${buildQuery({ page, pageSize: PAGE_SIZE, order_no: state.orderNoFilter })}`,
             { headers: credentialHeaders() }
         );
+        // Pagination clicks and a fresh credential lookup can overlap. Only
+        // the newest response may mutate the rendered result.
+        if (requestSerial !== state.ordersRequestSerial) return;
         state.orders = Array.isArray(payload?.orders) ? payload.orders : [];
         state.pagination = payload?.pagination || null;
         state.page = Number(state.pagination?.page) || page;
         state.detail = null;
+        state.detailRequestSerial += 1;
+        state.deliveryRequestSerial += 1;
+        clearDelivery();
         setHidden('guestOrdersResultCard', false);
         renderDetail();
         renderOrders();
     }
 
-    async function openDetail(orderNo, { loadDelivery = false } = {}) {
-        if (!orderNo || state.busy) return;
+    async function openDetail(orderNo) {
+        if (!orderNo) return;
+        const detailSerial = ++state.detailRequestSerial;
+        const deliverySerial = ++state.deliveryRequestSerial;
+        state.ordersRequestSerial += 1;
+
+        clearDelivery();
         setBusy(true);
         try {
             const payload = await requestJson(
                 `${DETAIL_ENDPOINT}?${buildQuery({ order_no: orderNo })}`,
                 { headers: credentialHeaders() }
             );
+            if (detailSerial !== state.detailRequestSerial) return;
             state.detail = payload?.order || null;
+            if (payload?.order) {
+                const orderKey = normalizeText(orderNo, 200);
+                if (orderKey) {
+                    orderDetailsCache.set(orderKey, payload.order);
+                }
+            }
             setHidden('guestOrdersResultCard', false);
             renderDetail();
             syncDetailUrl(orderNo);
-            if (loadDelivery) await showDelivery(orderNo);
+            if (isDeliverable(state.detail)) {
+                await loadDelivery(orderNo, deliverySerial);
+            }
         } catch (error) {
-            showError(describeError(error));
+            if (detailSerial === state.detailRequestSerial) {
+                showError(describeError(error));
+            }
         } finally {
-            setBusy(false);
+            if (detailSerial === state.detailRequestSerial) {
+                setBusy(false);
+            }
         }
     }
 
-    async function showDelivery(orderNo) {
-        const button = element('guestOrdersLoadDeliveryBtn');
-        if (button) button.disabled = true;
+    async function loadDelivery(orderNo, deliverySerial) {
+        const hint = element('guestOrdersDeliveryHint');
+        if (hint) {
+            hint.textContent = '正在获取发货内容...';
+            hint.hidden = false;
+        }
         try {
-            const payload = await requestJson(
-                `${DELIVERY_ENDPOINT}?${buildQuery({ order_no: orderNo })}`,
-                { headers: credentialHeaders() }
-            );
-            setText('guestOrdersDeliveryContent', payload?.content || '');
+            const [payload] = await Promise.all([
+                requestJson(
+                    `${DELIVERY_ENDPOINT}?${buildQuery({ order_no: orderNo })}`,
+                    { headers: credentialHeaders() }
+                ),
+                loadShopCatalog().catch(() => null)
+            ]);
+            if (deliverySerial !== state.deliveryRequestSerial) return;
+            state.delivery = payload || null;
+            renderDelivery(payload, state.detail);
             setHidden('guestOrdersDeliveryPanel', false);
-            setHidden('guestOrdersLoadDeliveryBtn', true);
+            if (hint) {
+                hint.textContent = '';
+                hint.hidden = true;
+            }
         } catch (error) {
+            if (deliverySerial !== state.deliveryRequestSerial) return;
+            if (hint) {
+                hint.textContent = '暂无法获取发货内容，请稍后刷新重试。';
+                hint.hidden = false;
+            }
             showError(describeError(error));
-        } finally {
-            if (button) button.disabled = false;
         }
     }
 
@@ -584,12 +1658,113 @@
         } catch (_) { /* file:// or a locked-down history API */ }
     }
 
+    function consumeUrlResetToken() {
+        try {
+            const url = new URL(window.location.href);
+            const token = normalizeText(url.searchParams.get('reset'), 500);
+            const site = normalizeSite(url.searchParams.get('site'));
+            if (!token) return;
+            url.searchParams.delete('reset');
+            url.searchParams.delete('site');
+            window.history.replaceState({}, '', url.toString());
+            state.resetToken = token;
+            state.resetSite = site;
+        } catch (_) { /* file:// or a locked-down history API */ }
+    }
+
     function readUrlOrderNo() {
         try {
             return normalizeText(new URL(window.location.href).searchParams.get('order_no'), 200);
         } catch (_) {
             return '';
         }
+    }
+
+    /**
+     * Query credentials are intentionally session-only. A fresh page load must
+     * start with empty fields; neither this page nor a password manager should
+     * silently repopulate the live order credential.
+     */
+    function clearQueryCredentialFields() {
+        for (const id of ['guestOrdersEmail', 'guestOrdersPassword']) {
+            const input = element(id);
+            if (input) input.value = '';
+        }
+    }
+
+    /**
+     * Browser password managers can ignore autocomplete=off and restore a
+     * credential after the page script has run. Keep the live lookup fields
+     * readonly until the buyer explicitly interacts with each field. This
+     * blocks silent autofill while preserving normal mouse, touch, and
+     * keyboard entry.
+     */
+    function unlockQueryCredentialField(event) {
+        const input = event?.currentTarget;
+        if (!input || input.readOnly !== true) return;
+        input.readOnly = false;
+        input.removeAttribute('readonly');
+    }
+
+    function lockQueryCredentialFields() {
+        for (const id of ['guestOrdersEmail', 'guestOrdersPassword']) {
+            const input = element(id);
+            if (!input) continue;
+            input.value = '';
+            input.readOnly = true;
+            input.setAttribute('readonly', '');
+        }
+        const orderNoInput = element('guestOrdersOrderNo');
+        if (orderNoInput) {
+            orderNoInput.value = '';
+        }
+    }
+
+    function bindQueryCredentialAutofillGuard() {
+        for (const id of ['guestOrdersEmail', 'guestOrdersPassword']) {
+            const input = element(id);
+            if (!input || input.dataset.autofillGuardBound === 'true') continue;
+            input.dataset.autofillGuardBound = 'true';
+            // pointerdown runs before focus, so a real click unlocks the field
+            // before the browser can apply its focus-time autofill heuristic.
+            input.addEventListener('pointerdown', unlockQueryCredentialField);
+            input.addEventListener('touchstart', unlockQueryCredentialField, { passive: true });
+            input.addEventListener('keydown', unlockQueryCredentialField);
+            // Keyboard users can reach the field with Tab rather than a
+            // pointer. The focus is still a user-visible interaction.
+            input.addEventListener('focus', unlockQueryCredentialField);
+        }
+    }
+
+    function foldPassword(input) {
+        const raw = typeof input === 'string' ? input : String(input?.value ?? '');
+        const module = globalThis.GuestQueryPassword || null;
+        const value = module && typeof module.foldFullwidth === 'function'
+            ? module.foldFullwidth(raw).slice(0, 64)
+            : raw.slice(0, 64);
+        if (input && typeof input === 'object' && 'value' in input && value !== raw) input.value = value;
+        return value;
+    }
+
+    function showFormMessage(id, message, tone = 'danger') {
+        const node = element(id);
+        if (!node) return;
+        node.textContent = normalizeText(message, 300);
+        node.dataset.tone = message ? tone : '';
+        node.hidden = !message;
+    }
+
+    function syncPolicyLine(noteId, password, confirm) {
+        const failure = policyFailure(password);
+        const mismatch = password !== confirm ? '两次输入的查询密码不一致。' : '';
+        const message = failure || mismatch;
+        showFormMessage(noteId, message, message ? 'danger' : 'ok');
+        return !message;
+    }
+
+    function policyFailure(value) {
+        const module = globalThis.GuestQueryPassword || null;
+        return module && typeof module.policyFailure === 'function' ? module.policyFailure(value) : null;
     }
 
     function readForm() {
@@ -639,164 +1814,6 @@
         }
     }
 
-    async function handleClearSaved() {
-        clearSavedAuth();
-        syncSavedHint();
-        const passwordInput = element('guestOrdersPassword');
-        if (passwordInput) passwordInput.value = '';
-        state.orders = [];
-        state.detail = null;
-        state.pagination = null;
-        state.orderNoFilter = '';
-        setHidden('guestOrdersResultCard', true);
-        syncDetailUrl('');
-        try {
-            // Best effort: dropping the local copy is what matters, the server
-            // cookie expires on its own and logout is never switch-gated.
-            await requestJson(LOGOUT_ENDPOINT, { method: 'POST', body: JSON.stringify({ site: currentSite() }) });
-        } catch (_) { /* ignore */ }
-        showError('');
-    }
-
-    /**
-     * Shared by the lookup field and the two A3 credential forms. `inputId` and
-     * `label` default to the lookup field so the original call site is unchanged.
-     */
-    function togglePasswordVisibility(button, inputId = 'guestOrdersPassword', label = '查询密码') {
-        const input = element(inputId);
-        if (!input || !button) return;
-        const wasRevealed = input.type === 'text';
-        input.type = wasRevealed ? 'password' : 'text';
-        button.setAttribute('aria-pressed', wasRevealed ? 'false' : 'true');
-        button.title = wasRevealed ? '显示密码' : '隐藏密码';
-        button.setAttribute('aria-label', wasRevealed ? `显示${label}` : `隐藏${label}`);
-        const icon = button.querySelector('i');
-        if (icon) icon.className = wasRevealed ? 'fas fa-eye' : 'fas fa-eye-slash';
-    }
-
-    // ------------------------------------------------------------------
-    // Order Access 2.0 (A3) — §10.5 one-time reset link
-    // ------------------------------------------------------------------
-
-    /**
-     * Read the one-time token out of the address bar and DELETE the parameter
-     * before anything else happens.
-     *
-     * The token is a BEARER credential: anyone holding it plus the buyer's email
-     * can set a new query password. Left in the URL it would survive in browser
-     * history, in the Referer header of every later navigation, in any support
-     * screenshot the buyer takes, and in the server access log. Deleting it on
-     * arrival shrinks that window to one page load, and keeping it in `state`
-     * (memory only) is what §7.2's storage ladder already requires for the
-     * password itself.
-     */
-    function consumeUrlResetToken() {
-        try {
-            const url = new URL(window.location.href);
-            const token = normalizeText(url.searchParams.get('reset'), 200);
-            const site = normalizeSite(url.searchParams.get('site'));
-            if (!token) return { token: '', site: '' };
-            url.searchParams.delete('reset');
-            url.searchParams.delete('site');
-            window.history.replaceState({}, '', url.toString());
-            state.resetToken = token;
-            state.resetSite = site;
-            return { token, site };
-        } catch (_) {
-            return { token: '', site: '' };
-        }
-    }
-
-    const POLICY_MESSAGES = Object.freeze({
-        P1: '请填写查询密码（至少 8 位）',
-        P2: '查询密码必须同时包含大写字母、小写字母、数字和标点',
-        P7: '查询密码过于简单，请点击「帮我生成一个强密码」重新设置',
-        P9: '查询密码不能有太长的重复字符，请点击「帮我生成一个强密码」',
-        P10: '查询密码用到的字符种类太少，请点击「帮我生成一个强密码」'
-    });
-
-    function policyMessage(failure) {
-        if (!failure) return '';
-        const rule = String(failure.rule || '');
-        if (POLICY_MESSAGES[rule]) return POLICY_MESSAGES[rule];
-        if (rule.startsWith('P2')) return POLICY_MESSAGES.P2;
-        if (rule.startsWith('P7')) return POLICY_MESSAGES.P7;
-        return '查询密码强度不足，请点击「帮我生成一个强密码」重新设置';
-    }
-
-    /**
-     * §6.1.2: fold fullwidth characters before comparing or sending, so a Chinese
-     * IME cannot turn a working credential into a 403. The folded value is echoed
-     * back into the field so what the buyer sees is what was sent.
-     */
-    function foldPassword(input) {
-        if (!input) return '';
-        const module = globalThis.GuestQueryPassword || null;
-        const raw = String(input.value ?? '');
-        const folded = module ? module.foldFullwidth(raw).slice(0, 64) : raw.slice(0, 64);
-        if (folded !== raw) input.value = folded;
-        return folded;
-    }
-
-    /**
-     * Advisory mirror of the server's K26 rules. The server re-checks everything;
-     * without the shared module loaded we send the password anyway rather than
-     * blocking the buyer on a missing script.
-     */
-    function localPolicyFailure(rawPassword) {
-        const value = String(rawPassword ?? '');
-        if (!value) return { rule: 'P1', reason: 'missing' };
-        const module = globalThis.GuestQueryPassword || null;
-        return module ? module.policyFailure(value) : null;
-    }
-
-    /**
-     * Render the inline policy line and report whether the form may submit.
-     * `confirmValue === undefined` means the form has no confirm field.
-     */
-    function syncPolicyLine(nodeId, password, confirmValue) {
-        const node = element(nodeId);
-        const failure = localPolicyFailure(password);
-        const mismatch = confirmValue !== undefined && confirmValue !== password;
-        if (!password && !mismatch) {
-            if (node) { node.hidden = true; node.textContent = ''; node.removeAttribute('data-tone'); }
-            return false;
-        }
-        const ok = !failure && !mismatch;
-        if (node) {
-            node.hidden = false;
-            if (ok) {
-                node.dataset.tone = 'ok';
-                node.textContent = '密码强度符合要求';
-            } else {
-                node.dataset.tone = 'danger';
-                node.textContent = failure ? policyMessage(failure) : '两次输入的查询密码不一致';
-            }
-        }
-        return ok;
-    }
-
-    function showFormMessage(nodeId, message, tone) {
-        const node = element(nodeId);
-        if (!node) return;
-        if (!message) {
-            node.hidden = true;
-            node.textContent = '';
-            node.removeAttribute('data-tone');
-            return;
-        }
-        node.hidden = false;
-        if (tone) node.dataset.tone = tone;
-        else node.removeAttribute('data-tone');
-        node.textContent = normalizeText(message, 400);
-    }
-
-    /**
-     * Mint a K26-compliant password and copy it to the clipboard. Both new
-     * credential forms get one because K26 (upper + lower + digit + punctuation,
-     * no weak pattern) is genuinely hard to satisfy by hand, and a buyer who
-     * cannot get past the local check never reaches their order.
-     */
     async function generateIntoFields(button, passwordId, confirmId, noteId) {
         const module = globalThis.GuestQueryPassword || null;
         const input = element(passwordId);
@@ -850,7 +1867,6 @@
      */
     async function finishCredentialSetup(email, password, site) {
         persistAuth({ email, password, site });
-        syncSavedHint();
         setHidden('guestOrdersResetCard', true);
         setHidden('guestOrdersQueryCard', false);
         const emailInput = element('guestOrdersEmail');
@@ -948,21 +1964,17 @@
     function initializeOrderAccessFeatures() {
         if (state.orderAccessInitialized) return;
         state.orderAccessInitialized = true;
-        syncSavedHint();
-        const saved = loadSavedAuth();
-        if (saved) {
-            const emailInput = element('guestOrdersEmail');
-            const passwordInput = element('guestOrdersPassword');
-            if (emailInput && !emailInput.value) emailInput.value = saved.email;
-            if (passwordInput && !passwordInput.value) passwordInput.value = saved.password;
-        }
         element('guestOrdersQueryForm')?.addEventListener('submit', handleSubmit);
-        element('guestOrdersClearSavedBtn')?.addEventListener('click', () => { void handleClearSaved(); });
+        bindQueryCredentialAutofillGuard();
         element('guestOrdersTogglePasswordBtn')?.addEventListener('click', (event) => {
             togglePasswordVisibility(event.currentTarget);
         });
+        bindDeliveryDelegation();
         element('guestOrdersBackToListBtn')?.addEventListener('click', () => {
             state.detail = null;
+            state.detailRequestSerial += 1;
+            state.deliveryRequestSerial += 1;
+            clearDelivery();
             syncDetailUrl('');
             renderDetail();
             renderOrders();
@@ -971,23 +1983,6 @@
             if (state.page > 1) void loadOrders(state.page - 1);
         });
         element('guestOrdersNextBtn')?.addEventListener('click', () => { void loadOrders(state.page + 1); });
-        element('guestOrdersLoadDeliveryBtn')?.addEventListener('click', () => {
-            const orderNo = normalizeText(state.detail?.order_no, 200);
-            if (orderNo) void showDelivery(orderNo);
-        });
-        element('guestOrdersCopyDeliveryBtn')?.addEventListener('click', async (event) => {
-            const button = event.currentTarget;
-            const text = element('guestOrdersDeliveryContent')?.textContent || '';
-            if (!text) return;
-            try {
-                await navigator.clipboard.writeText(text);
-                const original = button.textContent;
-                button.textContent = '已复制';
-                window.setTimeout(() => { button.textContent = original; }, 1600);
-            } catch (_) {
-                showError('当前浏览器不允许自动复制，请手动选择内容复制');
-            }
-        });
         // --- A3 §10.5 one-time reset link ---------------------------------
         element('guestOrdersResetForm')?.addEventListener('submit', handleResetSubmit);
         element('guestOrdersResetToggleBtn')?.addEventListener('click', (event) => {
@@ -1011,30 +2006,23 @@
         // this still works after one or more failed availability probes.
         if (state.resetToken) activateResetCard(state.resetToken, state.resetSite);
         const deepLinkOrderNo = state.resetToken ? '' : readUrlOrderNo();
+        const orderNoInput = element('guestOrdersOrderNo');
+        if (orderNoInput) {
+            orderNoInput.value = '';
+        }
         if (deepLinkOrderNo) {
-            const orderNoInput = element('guestOrdersOrderNo');
-            if (orderNoInput) orderNoInput.value = deepLinkOrderNo;
-            // A deep link is explicit intent, so run the query immediately when
-            // a credential is already saved; otherwise wait for the buyer.
-            if (saved) void handleSubmit(null);
+            syncDetailUrl('');
         }
     }
 
     async function initializeOrderAccessPage() {
         if (state.orderAccessInitialized || state.availabilityLoading) return;
         state.availabilityLoading = true;
-        const retryButton = element('guestOrdersFeatureRetryBtn');
-        if (retryButton) retryButton.disabled = true;
         try {
-            // The static document is deliberately shipped with its credential
-            // forms hidden. Only the matching runtime switch may reveal them; an
-            // old static asset paired with a rolled-back API therefore stays
-            // controlled instead of accepting a password and failing on submit.
-            if (!(await loadOrderAccessAvailability())) return;
-            initializeOrderAccessFeatures();
+            const available = await loadOrderAccessAvailability();
+            if (available) initializeOrderAccessFeatures();
         } finally {
             state.availabilityLoading = false;
-            if (retryButton) retryButton.disabled = false;
         }
     }
 
@@ -1042,6 +2030,19 @@
         // FIRST, before any request or rendering: scrub the one-time bearer from
         // the address bar and retain it only in memory for a possible retry.
         consumeUrlResetToken();
+        // Clear both application storage and any browser-restored values before
+        // the availability probe can leave the visible form on screen.
+        clearSavedAuth();
+        lockQueryCredentialFields();
+        bindQueryCredentialAutofillGuard();
+        window.setTimeout(lockQueryCredentialFields, 0);
+        if (typeof window.addEventListener === 'function') {
+            window.addEventListener('pageshow', () => {
+                // bfcache restores can happen after the initial load and may also
+                // reapply a browser-managed credential. Re-lock and clear again.
+                lockQueryCredentialFields();
+            });
+        }
         bindBaseListeners();
         await initializeOrderAccessPage();
     }

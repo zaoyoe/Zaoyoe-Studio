@@ -249,6 +249,8 @@ test('quantity stepper keeps working at boundaries and only blocks forbidden sta
         currentPurchase: { quantity: 3 },
         purchaseProcessing: false,
         isGuestCashEntryActive: () => true,
+        showGuestQuantityLimitToast: () => {},
+        showPurchaseQuantityLimitToast: () => {},
         getGuestCashQuantityCap: () => 3,
         isShopCurrentPurchaseManualDelivery: () => false,
         isShopCurrentPurchaseSoldOut: () => false,
@@ -312,4 +314,101 @@ test('partial realtime inventory snapshots do not mark the active SKU sold out',
     assert.equal(stageCalls, 0);
     assert.equal(client.currentPurchase.soldOut, false);
     assert.equal(client.currentPurchase.quantity, 3);
+});
+
+test('guest discount unavailable notice does not prompt automatically and pops up on interaction', () => {
+    // 1. Confirm renderPurchaseModal does not automatically set inline notice when !guestDiscountEnabled
+    assert.doesNotMatch(
+        source,
+        /if \(!guestDiscountEnabled\) \{[\s\S]*?setDiscountMessage\([\s\S]*?guestDiscountUnavailable/
+    );
+
+    // 2. Confirm showGuestDiscountUnavailableToast is defined and uses info variant
+    assert.match(
+        source,
+        /showGuestDiscountUnavailableToast: function \(\) \{[\s\S]*?this\.showShopToast\([\s\S]*?guestDiscountUnavailable[\s\S]*?'info'\s*\);/
+    );
+
+    // 3. Confirm applyDiscount triggers the toast when guest discount is disabled
+    assert.match(
+        source,
+        /if \(!guestGateEnabled\) \{[\s\S]*?this\.setDiscountMessage\(''\);[\s\S]*?if \(!silent\) \{[\s\S]*?this\.showGuestDiscountUnavailableToast\(\);/
+    );
+
+    // 4. Confirm focus and click interactions trigger the toast
+    assert.match(
+        source,
+        /const handleDiscountInteraction = \(\) => \{[\s\S]*?this\.isGuestCashEntryActive\(\) && this\.guestCashEntryProbe\?\.discountEnabled !== true[\s\S]*?this\.showGuestDiscountUnavailableToast\(\);/
+    );
+    assert.match(
+        source,
+        /discountInputEl\?\.addEventListener\('focus', handleDiscountInteraction\);[\s\S]*?discountInputEl\?\.addEventListener\('click', handleDiscountInteraction\);/
+    );
+    assert.match(
+        source,
+        /discountInputWrap\?\.addEventListener\('click', handleDiscountInteraction\);/
+    );
+});
+
+test('guest orders copy-all button is right aligned with delivery title and configure panel has hidden protection', () => {
+    const ordersCss = fs.readFileSync(path.resolve(__dirname, '../css/guest-orders.css'), 'utf8');
+    assert.match(
+        ordersCss,
+        /\.guest-orders-delivery-header-bar\s*\{[\s\S]*?justify-content:\s*space-between;[\s\S]*?align-items:\s*center;/
+    );
+    assert.match(
+        ordersCss,
+        /\.guest-orders-delivery-actions-bar\s*\{[\s\S]*?justify-content:\s*flex-end;/
+    );
+
+    const ordersHtml = fs.readFileSync(path.resolve(__dirname, '../guest-orders.html'), 'utf8');
+    assert.match(
+        ordersHtml,
+        /<div class="guest-orders-delivery-header-bar">[\s\S]*?guest-orders-delivery-title[\s\S]*?guestOrdersDeliveryActionsBar[\s\S]*?<\/div>/
+    );
+
+    const shopCss = fs.readFileSync(path.resolve(__dirname, '../css/shop-page.css'), 'utf8');
+    assert.match(
+        shopCss,
+        /\.guest-shop-modal__configure-panel\[hidden\][\s\S]*?display:\s*none !important;/
+    );
+});
+
+test('light mode payment option loading dots color and back to list button text decoration', () => {
+    const shopCss = fs.readFileSync(path.resolve(__dirname, '../css/shop-page.css'), 'utf8');
+    assert.match(
+        shopCss,
+        /html:not\(\[data-theme="dark"\]\)[^}]*?\.guest-shop-modal__payment-option\.is-loading\s+\.guest-shop-modal__payment-loading\s*\{[\s\S]*?color:\s*#1e293b;/
+    );
+
+    const ordersCss = fs.readFileSync(path.resolve(__dirname, '../css/guest-orders.css'), 'utf8');
+    assert.match(
+        ordersCss,
+        /#guestOrdersBackToListBtn\s*\{[\s\S]*?font-weight:\s*600;[\s\S]*?text-decoration:\s*none;/
+    );
+    assert.match(
+        ordersCss,
+        /#guestOrdersBackToListBtn:hover\s*\{[\s\S]*?transform:\s*translateY\(1px\);/
+    );
+});
+
+test('modal amounts always include currency symbol and tiered rules popover shows currency instead of points', () => {
+    // 1. Confirm formatPurchaseModalAmount unconditionally uses formatPurchasePriceDisplay
+    assert.match(
+        source,
+        /formatPurchaseModalAmount: function \(value\) \{[\s\S]*?return this\.formatPurchasePriceDisplay\(value\);/
+    );
+
+    // 2. Confirm tiered pricing rules popover formats rule price with formatPurchasePriceDisplay
+    assert.match(
+        source,
+        /buildTieredPricingRulesHelpHtml: function[\s\S]*?const formattedPrice = this\.formatPurchasePriceDisplay\(rule\.price\);/
+    );
+
+    // 3. Confirm locale files tieredPriceRuleInline do not reference {unit}
+    const zhLocale = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../lang/zh.json'), 'utf8'));
+    assert.equal(zhLocale.shop.tieredPriceRuleInline, '满 {qty} 件 {price}');
+
+    const enLocale = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../lang/en.json'), 'utf8'));
+    assert.equal(enLocale.shop.tieredPriceRuleInline, '{qty}+ {price}');
 });

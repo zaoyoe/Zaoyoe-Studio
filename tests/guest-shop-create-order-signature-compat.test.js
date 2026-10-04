@@ -262,8 +262,8 @@ test('omitting p_quantity/p_discount_code keeps the pre-L1/L2 behaviour instead 
     assert.match(l1l2Sql, /RAISE EXCEPTION 'guest_invalid_quantity';/u);
     assert.match(l1l2Sql, /RAISE EXCEPTION 'guest_quantity_not_allowed';/u);
     assert.match(l1l2Sql, /RAISE EXCEPTION 'guest_invalid_discount_code';/u);
-    // 数量上限必须在锁行之后用商品/SKU 配置再夹一次，硬顶 5。
-    assert.match(l1l2Sql, /v_guest_quantity_cap := LEAST\(\s*5,/u);
+    // 数量上限必须在锁行之后用商品/SKU 配置再夹一次，硬顶 99。
+    assert.match(l1l2Sql, /v_guest_quantity_cap := LEAST\(\s*99,/u);
 });
 
 test('the legacy 13-parameter signature is dropped exactly by the L1/L2 migration', () => {

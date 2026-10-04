@@ -348,7 +348,7 @@
         "originalPrice": "Original",
         "flashSalePrice": "Flash sale price",
         "tieredPrice": "Tiered price",
-        "tieredPriceRuleInline": "{qty}+ {price} {unit}",
+        "tieredPriceRuleInline": "{qty}+ {price}",
         "tieredPriceRulesLabel": "Tiered pricing rules",
         "tieredPriceRulesHelp": "View tiered pricing rules",
         "calculating": "Calculating...",

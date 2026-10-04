@@ -86,8 +86,8 @@ WITH target AS (
            t.def IS NOT NULL
                AND t.def NOT ILIKE '%quantity <> 1%'
                AND t.def ILIKE '%quantity < 1%'
-               AND t.def ILIKE '%quantity > 5%',
-           'no single-item rejection; order quantity is bounded to 1..5'
+               AND t.def ILIKE '%quantity > 99%',
+           'no single-item rejection; order quantity is bounded to 1..99'
     FROM target t
 
     UNION ALL

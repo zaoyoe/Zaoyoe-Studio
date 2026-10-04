@@ -159,21 +159,21 @@ test('guest site and order input validation is strict and server-bindable', () =
     // L1: quantityMax is clamped by the hard ceiling before the RPC sees it, so
     // a mis-set GUEST_SHOP_MAX_QUANTITY can never ask for a quantity that
     // guest_shop_orders_quantity_check would reject.
-    assert.equal(GUEST_QUANTITY_HARD_CEILING, 5);
+    assert.equal(GUEST_QUANTITY_HARD_CEILING, 99);
     expectGuestShopError(() => normalizeGuestOrderInput({
         productId: PRODUCT_ID,
         skuId: SKU_ID,
-        quantity: 6,
+        quantity: 100,
         site: 'cn',
         idempotencyKey: 'guest-order-00000009'
-    }, { site: 'cn', quantityMax: 50 }), 'invalid_quantity', 400);
+    }, { site: 'cn', quantityMax: 99 }), 'invalid_quantity', 400);
     assert.equal(normalizeGuestOrderInput({
         productId: PRODUCT_ID,
         skuId: SKU_ID,
-        quantity: 5,
+        quantity: 99,
         site: 'cn',
         idempotencyKey: 'guest-order-00000010'
-    }, { site: 'cn', quantityMax: 50 }).quantity, 5);
+    }, { site: 'cn', quantityMax: 99 }).quantity, 99);
 });
 
 test('integer-cent money parser rejects floating point ambiguity and unsafe values', () => {

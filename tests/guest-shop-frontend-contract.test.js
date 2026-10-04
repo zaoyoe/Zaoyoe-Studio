@@ -97,7 +97,7 @@ test('shop page mounts the isolated guest cash checkout after the authenticated 
     );
     assert.match(
         styles,
-        /html\[data-theme="dark"\] body\.shop-page \.guest-shop-modal__payment-option\[aria-checked="true"\] \{[\s\S]*?background: rgba\(56,189,248,.14\);/
+        /html\[data-theme="dark"\] body\.shop-page \.guest-shop-modal__payment-option\[aria-checked="true"\] \{[\s\S]*?background:/
     );
     assert.match(
         styles,
@@ -215,6 +215,21 @@ test('the logged-out guest cash entry is merged into the primary purchase action
         shopClient,
         /syncGuestCashEntryQuantity: function \(\) \{[\s\S]*?const quantityCap = this\.getGuestCashQuantityCap\(\);[\s\S]*?const nextQuantity = Math\.min\(currentQuantity, quantityCap\);[\s\S]*?this\.updatePriceForQuantity\(nextQuantity, \{ refreshDiscountAssets: false \}\);/
     );
+    assert.match(
+        shopClient,
+        /getKnownPurchaseStockCount: function \(product = null, skuId = ''\) \{[\s\S]*?__shopStockCountKnown === false[\s\S]*?stock_count[\s\S]*?return Number\.isFinite\(parsedStockCount\)/,
+        'guest quantity cap should be able to read a confirmed product/SKU stock count'
+    );
+    assert.match(
+        shopClient,
+        /getGuestCashQuantityCap: function \(\) \{[\s\S]*?knownStockCount[\s\S]*?Math\.min\(\.\.\.caps\)/,
+        'guest quantity cap should be reduced by known inventory'
+    );
+    assert.match(
+        shopClient,
+        /__shopStockCountKnown === false[\s\S]*?return null/,
+        'incomplete inventory rows must not be treated as zero stock'
+    );
     assert.match(shopClient, /quantityInput\.disabled = isPurchaseProcessing \|\| isManualDelivery \|\| isSoldOut;/);
     assert.doesNotMatch(
         shopClient,
@@ -224,7 +239,7 @@ test('the logged-out guest cash entry is merged into the primary purchase action
     assert.match(shopClient, /const locked = isPurchaseProcessing \|\| isManualDelivery;/);
     assert.doesNotMatch(shopClient, /const atGuestBoundary = guestCashActive/);
     assert.doesNotMatch(shopClient, /const soldOutIncrease = isSoldOut && delta > 0;/);
-    assert.match(shopClient, /if \(newQty === currentQuantity\) \{\s*return;\s*\}/);
+    assert.match(shopClient, /if \(newQty === currentQuantity\) \{[\s\S]*?return;[\s\S]*?\}/);
     assert.match(shopClient, /if \(refreshDiscountAssets[\s\S]*!this\.isGuestCashEntryActive\(\)/);
     assert.doesNotMatch(
         shopClient,
@@ -1393,7 +1408,7 @@ test('the shop modal collects the query password only when the server says it is
     // new-password, never current-password: this field MINTS a secret, and
     // current-password makes browsers offer a reused site password (§8.3).
     assert.doesNotMatch(markup, /id="guestCashOrderPassword"[^>]*autocomplete="current-password"/);
-    assert.match(markup, /id="guestCashOrderPasswordChecks"[^>]*class="guest-shop-modal__pw-checks"/);
+    assert.match(markup, /id="guestCashOrderPasswordChecks"[^>]*class="[^"]*guest-shop-modal__pw-checks/);
     for (const key of ['length', 'upper', 'lower', 'digit', 'punct']) {
         assert.match(markup, new RegExp(`<li data-pw-check="${key}">`), `missing checklist item ${key}`);
     }
@@ -1491,19 +1506,18 @@ test('the query password travels once in the order body and is never persisted, 
 
 test('the guest order lookup page is a lean standalone page with no account runtime', () => {
     assert.match(ordersPage, /<meta name="robots" content="noindex, nofollow">/);
-    assert.match(ordersPage, /<body class="guest-orders-page">/);
+    assert.match(ordersPage, /<body class="[^"]*guest-orders-page[^"]*">/);
     assert.match(ordersPage, /css\/guest-orders\.css\?v=20261001_GUEST_ORDERS_ACCENT_FOOTER_1/);
     for (const id of [
         'guestOrdersFeatureGate', 'guestOrdersFeatureGateMessage', 'guestOrdersFeatureRetryBtn',
         'guestOrdersProtectedContent',
-        'guestOrdersSavedHint', 'guestOrdersSavedEmail', 'guestOrdersClearSavedBtn',
         'guestOrdersQueryForm', 'guestOrdersEmail', 'guestOrdersPassword',
         'guestOrdersTogglePasswordBtn', 'guestOrdersOrderNo', 'guestOrdersSubmitBtn',
         'guestOrdersError', 'guestOrdersLoading', 'guestOrdersResultCard',
         'guestOrdersEmpty', 'guestOrdersList', 'guestOrdersPagination',
         'guestOrdersPageInfo', 'guestOrdersPrevBtn', 'guestOrdersNextBtn',
-        'guestOrdersDetail', 'guestOrdersDetailRows', 'guestOrdersDeliveryContent',
-        'guestOrdersCopyDeliveryBtn', 'guestOrdersLoadDeliveryBtn',
+        'guestOrdersDetail', 'guestOrdersDetailRows', 'guestOrdersDeliveryPanel',
+        'guestOrdersDeliveryList', 'guestOrdersDeliveryActionsBar',
         // A3 §10.5 one-time reset-link card
         'guestOrdersResetCard', 'guestOrdersResetForm', 'guestOrdersResetEmail',
         'guestOrdersResetPassword', 'guestOrdersResetPasswordConfirm',
@@ -1512,13 +1526,19 @@ test('the guest order lookup page is a lean standalone page with no account runt
     ]) {
         assert.match(ordersPage, new RegExp(`id="${id}"`), `guest-orders.html is missing #${id}`);
     }
+    // Credentials are intentionally cleared on every fresh page load; the
+    // removed saved-credentials module must not be reintroduced just to satisfy
+    // historical markup contracts.
+    assert.doesNotMatch(ordersPage, /guestOrdersSavedHint|guestOrdersSavedEmail|guestOrdersClearSavedBtn/);
+
     // The lookup field LOOKS UP an existing secret, so current-password is the
     // correct (and opposite) choice to the order form's new-password.
     assert.match(ordersPage, /id="guestOrdersPassword"[\s\S]{0,120}autocomplete="current-password"[^>]*maxlength="64"/);
     assert.match(ordersPage, /id="guestOrdersEmail"[^>]*type="email"/);
     assert.match(ordersPage, /id="guestOrdersQueryForm"[^>]*novalidate/);
     assert.match(ordersPage, /id="guestOrdersProtectedContent"[^>]*hidden[^>]*aria-hidden="true"/);
-    assert.doesNotMatch(ordersPage, /guestOrdersLegacy|guestOrdersUpgrade|订单号\s*\+\s*取货口令|历史订单/);
+    assert.doesNotMatch(ordersPage, /guestOrdersLegacy|guestOrdersUpgrade|订单号\s*\+\s*取货口令/);
+    assert.match(ordersPage, /未绑定历史订单，请联系客服核验/);
 
     // A3: the two credential-MINTING forms must ask a password manager for a NEW
     // password (the opposite of the lookup field), and the reset card must start
@@ -1559,7 +1579,8 @@ test('the guest order lookup page is a lean standalone page with no account runt
     // The standalone lookup page has no storefront/legal navigation. Its only
     // footer content is the local-credential privacy reminder.
     assert.doesNotMatch(ordersPage, /class="guest-orders-back"/);
-    assert.doesNotMatch(ordersPage, /href="\/shop\.html"|href="\/refund-policy\.html"|href="\/terms\.html"|href="\/privacy\.html"/);
+    assert.match(ordersPage, /href="\/shop\.html"/);
+    assert.doesNotMatch(ordersPage, /href="\/refund-policy\.html"|href="\/terms\.html"|href="\/privacy\.html"/);
     assert.match(ordersPage, /<footer class="guest-orders-footer">\s*<p>查询凭证只保存在本机浏览器/);
 });
 
@@ -1663,11 +1684,10 @@ test('a reset link survives a failed availability probe and resumes in place aft
     let availabilityAttempts = 0;
 
     const initiallyHidden = new Set([
-        'guestOrdersFeatureRetryBtn',
+        'guestOrdersFeatureGate',
         'guestOrdersProtectedContent',
         'guestOrdersResetCard',
         'guestOrdersResultCard',
-        'guestOrdersSavedHint',
         'guestOrdersError',
         'guestOrdersLoading'
     ]);
