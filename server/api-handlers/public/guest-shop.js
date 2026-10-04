@@ -2885,6 +2885,28 @@ function createGuestShopHandlers({
                 const paymentStatus = String(payment?.status || '').trim().toLowerCase();
                 if (['failed', 'expired', 'cancelled'].includes(paymentStatus)) {
                     isDiscardable = true;
+                } else if ((orderPaymentStatus === 'review' || paymentStatus === 'review') && !payment?.provider_order_no) {
+                    const db = getSupabase();
+                    if (db?.rpc) {
+                        await db.rpc('guest_shop_release_held_reservations', {
+                            p_order_id: order.id,
+                            p_reason: 'buyer_discarded'
+                        }).catch(() => null);
+                        const nowIso = new Date().toISOString();
+                        await db.from('guest_shop_payment_orders').update({
+                            status: 'expired',
+                            last_error_code: 'guest_checkout_intent_discarded',
+                            last_error_message: 'buyer discarded the unconfirmed checkout intent',
+                            updated_at: nowIso
+                        }).eq('guest_order_id', order.id).catch(() => null);
+                        await db.from('guest_shop_orders').update({
+                            payment_status: 'expired',
+                            last_error_code: 'guest_checkout_intent_discarded',
+                            last_error_message: 'buyer discarded the unconfirmed checkout intent',
+                            updated_at: nowIso
+                        }).eq('id', order.id).catch(() => null);
+                    }
+                    isDiscardable = true;
                 }
             }
             if (!isDiscardable) {
@@ -4783,13 +4805,46 @@ function responseOrder(order, extras = {}) {
             }
             const order = await loadOrderByNo(body.orderNo || body.order_no);
             await authorizeClaim(req, order);
-            const db = getSupabase();
-            if (!db?.rpc) throw guestDatabaseUnavailableError();
-            const result = await db.rpc('fn_guest_shop_cancel_order', {
-                p_order_id: order.id,
-                p_reason: 'buyer_cancelled'
-            });
-            if (result?.error) throw result.error;
+            let cancelError = null;
+            try {
+                const result = await db.rpc('fn_guest_shop_cancel_order', {
+                    p_order_id: order.id,
+                    p_reason: 'buyer_cancelled'
+                });
+                if (result?.error) throw result.error;
+            } catch (err) {
+                cancelError = err;
+            }
+            if (cancelError) {
+                const payment = await loadPaymentIntent(order).catch(() => null);
+                const orderPaymentStatus = String(order.payment_status || '').trim().toLowerCase();
+                const paymentStatus = String(payment?.status || '').trim().toLowerCase();
+                const canFallbackCancel = (orderPaymentStatus === 'review' || paymentStatus === 'review')
+                    && String(order.fulfillment_status || '').trim().toLowerCase() === 'pending'
+                    && String(order.refund_status || '').trim().toLowerCase() === 'none'
+                    && (!payment?.provider_order_no || !paymentStatusIsTerminal(paymentStatus));
+                if (canFallbackCancel) {
+                    await db.rpc('guest_shop_release_held_reservations', {
+                        p_order_id: order.id,
+                        p_reason: 'buyer_cancelled'
+                    }).catch(() => null);
+                    const nowIso = new Date().toISOString();
+                    await db.from('guest_shop_payment_orders').update({
+                        status: 'expired',
+                        last_error_code: 'guest_order_cancelled',
+                        last_error_message: 'buyer cancelled the unpaid guest order',
+                        updated_at: nowIso
+                    }).eq('guest_order_id', order.id).catch(() => null);
+                    await db.from('guest_shop_orders').update({
+                        payment_status: 'expired',
+                        last_error_code: 'guest_order_cancelled',
+                        last_error_message: 'buyer cancelled the unpaid guest order',
+                        updated_at: nowIso
+                    }).eq('id', order.id).catch(() => null);
+                } else {
+                    throw cancelError;
+                }
+            }
             const refreshed = await loadOrderByNo(order.order_no);
             return sendJson(res, 200, {
                 success: true,

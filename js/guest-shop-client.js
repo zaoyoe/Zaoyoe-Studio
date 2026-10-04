@@ -3339,7 +3339,20 @@
                     : '上一笔订单创建结果待确认。请点击“确认原订单结果”；系统不会创建新订单。')),
             'payment_creation_unknown'
         );
+        state.previewPending = false;
+        renderPayableSummary();
         renderGuestActions();
+        if (attempt.context && (!state.preview || state.productId !== attempt.context.productId || state.skuId !== attempt.context.skuId)) {
+            void loadPreview(attempt.context).then((result) => {
+                if (result?.product?.name) setText('guestCashProductName', result.product.name);
+                if (result?.product?.sku_name) setText('guestCashSkuName', result.product.sku_name);
+                state.previewPending = false;
+                renderPayableSummary();
+            }).catch(() => {
+                state.previewPending = false;
+                renderPayableSummary();
+            });
+        }
         return true;
     }
 
@@ -3464,6 +3477,7 @@
             state.status = 'configure';
             setStateMessage('本次恢复已取消。未创建新订单，也未产生付款。请选择支付方式重新开始。', 'configure');
             renderGuestActions();
+            closeGuestModal();
             return;
         }
         const confirmed = typeof window.confirm !== 'function' || window.confirm(
@@ -3492,6 +3506,7 @@
             setStateMessage('本次恢复已取消。未创建新订单，也未产生付款。请选择支付方式重新开始。', 'configure');
             const context = getPurchaseContext();
             if (context) void loadPreview(context);
+            closeGuestModal();
         } catch (error) {
             if (['guest_checkout_intent_invalid', 'guest_checkout_intent_missing', 'guest_checkout_intent_expired'].includes(error?.code)) {
                 // A stale selector can race a cookie rotation. Re-read the
@@ -3503,6 +3518,7 @@
                     state.paymentCreationUnknown = false;
                     state.status = 'configure';
                     setStateMessage('本次恢复已取消。未创建新订单，也未产生付款。请选择支付方式重新开始。', 'configure');
+                    closeGuestModal();
                 } else if (refreshed !== selector) {
                     try {
                         await requestJson(ORDER_ENDPOINT, {
@@ -3513,6 +3529,7 @@
                         state.paymentCreationUnknown = false;
                         state.status = 'configure';
                         setStateMessage('本次恢复已取消。未创建新订单，也未产生付款。请选择支付方式重新开始。', 'configure');
+                        closeGuestModal();
                     } catch (retryError) {
                         setStateMessage(normalizeText(retryError?.message, 300) || '取消本次恢复失败，请稍后重试。', 'payment_creation_unknown');
                     }
@@ -3755,6 +3772,9 @@
                 .then((attempt) => {
                     if (attempt) {
                         clearPendingDiscountHandoff(pendingDiscountHandoff);
+                        state.previewPending = false;
+                        renderPayableSummary();
+                        renderGuestActions();
                         return;
                     }
                     if (!isCurrentAction(inspectOperation) || state.orderNo
@@ -4329,6 +4349,7 @@
             clearOrderPassword();
             resetOrderUi();
             showOrderNo(orderNo);
+            state.previewPending = false;
             applyServerPricing(order);
             const checkoutReady = !replayNeedsReview && payload.checkout
                 ? renderCheckout(payload.checkout, { autoLaunch: true })
