@@ -95,8 +95,8 @@ const UNIT_VECTORS = [
     // 默认 SKU 回退商品级阶梯
     { id: 'A22', desc: '默认 SKU 用商品阶梯', input: { site: 'cn', skuPricePoints: 12.34, skuIsDefault: true, skuQuantityRules: null, productQuantityRules: [{ qty: 1, price: 11 }] }, expected: 11 },
     { id: 'A23', desc: '非默认 SKU 忽略商品阶梯', input: { site: 'cn', skuPricePoints: 12.34, skuIsDefault: false, skuQuantityRules: null, productQuantityRules: [{ qty: 1, price: 11 }] }, expected: 12.34 },
-    // INTL 营销数据回落
-    { id: 'A24', desc: 'INTL 无自有阶梯回落 CN 阶梯', input: { site: 'intl', skuPricePointsIntl: null, skuPricePoints: 12.34, skuQuantityRulesIntl: null, skuQuantityRules: [{ qty: 1, price: 9.5 }, { qty: 2, price: 7 }], quantity: 2 }, expected: 7 },
+    // INTL 营销数据隔离
+    { id: 'A24', desc: 'INTL 无自有阶梯不回落 CN 阶梯', input: { site: 'intl', skuPricePointsIntl: null, skuPricePoints: 12.34, skuQuantityRulesIntl: null, skuQuantityRules: [{ qty: 1, price: 9.5 }, { qty: 2, price: 7 }], quantity: 2 }, expected: 12.34 },
     { id: 'A25', desc: 'INTL 自有阶梯优先', input: { site: 'intl', skuPricePointsIntl: 20, skuPricePoints: 12.34, skuQuantityRulesIntl: [{ qty: 1, price: 18 }], skuQuantityRules: [{ qty: 1, price: 9.5 }] }, expected: 18 },
     // quantity 越界（resolver 自带 1..99 边界）
     { id: 'A26', desc: 'qty0 拒绝', input: { site: 'cn', skuPricePoints: 12.34, quantity: 0 }, expected: null },

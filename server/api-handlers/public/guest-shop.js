@@ -932,7 +932,12 @@ function providerQuoteChecks(provider, normalized, expected, security = defaultS
     const receivedQuote = normalizeObservedAmount(normalized?.price_amount ?? normalized?.paid_amount ?? normalized?.amount);
     const quoteCurrency = String(metadata.price_currency || '').trim().toLowerCase();
     const receivedQuoteCurrency = String(normalized?.provider_currency || normalized?.currency || '').trim().toLowerCase();
-    if (!(expectedQuote > 0) || !(receivedQuote > 0) || !quoteCurrency || receivedQuoteCurrency !== quoteCurrency
+    const isUsdtFamily = (c) => ['usdt', 'usdtbsc'].includes(c);
+    const quoteCurrencyMatches = Boolean(quoteCurrency) && (
+        quoteCurrency === receivedQuoteCurrency
+        || (isUsdtFamily(quoteCurrency) && isUsdtFamily(receivedQuoteCurrency))
+    );
+    if (!(expectedQuote > 0) || !(receivedQuote > 0) || !quoteCurrency || !quoteCurrencyMatches
         || !amountMinorMatches(security, expectedQuote, receivedQuote, quoteCurrency)) {
         failures.push('quote');
     }
@@ -2870,11 +2875,25 @@ function createGuestShopHandlers({
             });
         }
         if (order) {
-            return sendJson(res, 409, {
-                success: false,
-                code: 'guest_checkout_intent_order_exists',
-                message: '已找到原订单，请点击“确认原订单结果”继续恢复。'
-            });
+            let isDiscardable = false;
+            const orderPaymentStatus = String(order.payment_status || '').trim().toLowerCase();
+            const reservationStatus = String(order.reservation_status || '').trim().toLowerCase();
+            if (['failed', 'expired', 'cancelled'].includes(orderPaymentStatus) || reservationStatus === 'released') {
+                isDiscardable = true;
+            } else {
+                const payment = await loadPaymentIntent(order).catch(() => null);
+                const paymentStatus = String(payment?.status || '').trim().toLowerCase();
+                if (['failed', 'expired', 'cancelled'].includes(paymentStatus)) {
+                    isDiscardable = true;
+                }
+            }
+            if (!isDiscardable) {
+                return sendJson(res, 409, {
+                    success: false,
+                    code: 'guest_checkout_intent_order_exists',
+                    message: '已找到原订单，请点击“确认原订单结果”继续恢复。'
+                });
+            }
         }
         clearCheckoutIntentCookie(res);
         return sendJson(res, 200, { success: true, discarded: true });
@@ -2965,7 +2984,7 @@ function createGuestShopHandlers({
                 || (payAmountText && !storedNumericPayAmount)
                 || (payAmountText && !decimalEqual(payAmountText, metadata.pay_amount))
                 || payCurrency !== NOWPAYMENTS_GUEST_PAY_CURRENCY
-                || !priceAmountSnapshot || !['cny', 'usd'].includes(priceCurrency)) return null;
+                || !priceAmountSnapshot || !['cny', 'usd', 'usdt', 'usdtbsc'].includes(priceCurrency)) return null;
             const payAmount = payAmountSnapshot.numeric;
             const priceAmount = priceAmountSnapshot.amount;
             return {
@@ -4034,6 +4053,7 @@ function responseOrder(order, extras = {}) {
                     if (definitive) {
                         await markPaymentCreationFailed(order, creationLease, code || 'guest_provider_create_failed', '支付通道拒绝创建');
                         await releaseCreatedReservation(`payment_create_failed:${code || 'provider_rejected'}`);
+                        clearCheckoutIntentCookie(res);
                     } else {
                         await markPaymentCreationReview(order, 'payment_creation_unknown', '支付创建结果未知，请对账确认', creationLease);
                     }

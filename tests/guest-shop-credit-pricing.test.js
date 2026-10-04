@@ -96,13 +96,13 @@ test('intl guest credit pricing reuses CN SKU points when intl points are missin
     assert.equal(price({ site: 'intl', skuPricePointsIntl: null, skuPricePoints: null }), null);
 });
 
-test('intl guest credit pricing reuses CN qty=1 and flash when intl marketing is missing', () => {
+test('intl guest credit pricing does not reuse CN quantity rules when intl marketing is missing', () => {
     assert.equal(price({
         site: 'intl',
         skuPricePointsIntl: null,
         skuQuantityRulesIntl: null,
         skuQuantityRules: [{ qty: 1, price: 9.5 }, { qty: 2, price: 7 }]
-    }), 9.5);
+    }), 12.34);
     assert.equal(price({
         site: 'intl',
         skuPricePointsIntl: null,
@@ -163,15 +163,14 @@ test('guest credit pricing applies tier rules and default-SKU product fallback',
         site: 'intl',
         skuQuantityRulesIntl: [{ qty: 1, price: 18 }]
     }), 18);
-    // INTL reuses the CN ladder when it has no site-specific marketing data,
-    // at any quantity (L1).
+    // INTL does not reuse the CN ladder when it has no site-specific marketing data
     assert.equal(price({
         site: 'intl',
         skuPricePointsIntl: null,
         skuQuantityRulesIntl: null,
         skuQuantityRules: [{ qty: 1, price: 9.5 }, { qty: 2, price: 7 }],
         quantity: 2
-    }), 7);
+    }), 12.34);
 });
 
 test('scheduled flash price starts inclusively and ends exclusively', () => {

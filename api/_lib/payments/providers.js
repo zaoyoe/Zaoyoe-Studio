@@ -487,7 +487,7 @@ function getDefaultPaymentChannelsConfig(options = {}) {
             display_name: 'USDT-BEP20',
             api_base_url: 'https://api.nowpayments.io',
             pay_currency: 'usdtbsc',
-            price_currency: 'usd',
+            price_currency: 'usdtbsc',
             network_name: 'BNB Smart Chain',
             cny_to_usd_rate: Number(process.env.NOWPAYMENTS_CNY_TO_USD_RATE || '') || 0.14,
             pay_amount_precision: Number.isFinite(Number(process.env.NOWPAYMENTS_PAY_AMOUNT_PRECISION))

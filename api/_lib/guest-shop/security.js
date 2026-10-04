@@ -498,13 +498,15 @@ async function readJsonBodyWithLimit(req, options = {}) {
     return returnRaw ? { body: parsed, rawBody } : parsed;
 }
 
+const SUPPORTED_CURRENCIES = Object.freeze(['CNY', 'USD', 'USDT', 'USDTBSC']);
+
 function normalizeCurrency(currency, field = 'currency') {
-    const normalized = normalizeBoundedString(currency, field, 3, {
+    const normalized = normalizeBoundedString(currency, field, 16, {
         minLength: 3,
         ascii: true,
         lowercase: true
     }).toUpperCase();
-    if (!['CNY', 'USD'].includes(normalized)) {
+    if (!SUPPORTED_CURRENCIES.includes(normalized)) {
         fail(`${field} 不支持`, { field, code: 'unsupported_currency' });
     }
     return normalized;

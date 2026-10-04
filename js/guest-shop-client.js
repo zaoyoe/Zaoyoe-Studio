@@ -2187,6 +2187,10 @@
     let previewQueue = Promise.resolve();
 
     function capturePreviewRequest(context) {
+        const rawQuantity = requestedQuantityValue(state.quantity);
+        if (state.quantityCap < rawQuantity) {
+            state.quantityCap = rawQuantity;
+        }
         const quantity = normalizeQuantity(state.quantity);
         return {
             contextKey: normalizeText(context?.contextKey, 200),
@@ -2231,6 +2235,10 @@
         if (!isCurrentPreviewRequest(request)) return { available: false, reason: 'stale' };
         const cacheKey = request.cacheKey;
         if (request.forceRefresh !== true && state.previewKey === cacheKey && state.preview) {
+            state.previewPending = false;
+            renderPayableSummary();
+            renderGuestActions();
+            clearConfirmationLoadingMarker();
             return availabilitySnapshot(
                 state.previewError ? 'unavailable' : 'available',
                 !state.previewError
@@ -2483,7 +2491,8 @@
             address: normalizeText(source.pay_address || source.qr_data || source.address, 240),
             payAmount: normalizeText(source.pay_amount_text || source.pay_amount || source.payAmount, 80),
             payCurrency: normalizeText(source.pay_currency || source.payCurrency, 40).toUpperCase(),
-            network: normalizeText(source.network_name || 'BNB Smart Chain', 80)
+            network: normalizeText(source.network_name || 'BNB Smart Chain', 80),
+            quoteExpiresAt: normalizeText(source.quote_expires_at || source.expiration_estimate_date || source.quoteExpiresAt, 80)
         };
     }
 
@@ -2753,10 +2762,10 @@
         // A countdown belongs only to the currently bound ZPay order. The
         // configure/create/cancel transitions can briefly reuse the status
         // node while the previous order handle is being cleared; without the
-        // order/provider guard, that old timer leaks into the next phase.
         const active = state.status === 'awaiting_payment'
             && Boolean(state.orderNo)
-            && normalizeText(state.provider || state.checkout?.provider, 80).toLowerCase() === 'zpay'
+            && (normalizeText(state.provider || state.checkout?.provider, 80).toLowerCase() === 'zpay'
+                || normalizeText(state.provider || state.checkout?.provider, 80).toLowerCase() === 'nowpayments')
             && Boolean(state.zpayCountdownText);
         if (countdown) {
             countdown.hidden = !active;
@@ -2842,7 +2851,8 @@
         stopZpayCountdown();
         const countdown = element('guestCashZpayCountdown');
         const valueEl = element('guestCashZpayCountdownValue');
-        const expiresAtMs = Date.parse(String(state.expiresAt || '').trim());
+        const candidate = state.checkout?.quoteExpiresAt || state.expiresAt;
+        const expiresAtMs = Date.parse(String(candidate || '').trim());
         if (!countdown || !valueEl || !Number.isFinite(expiresAtMs)) {
             if (countdown) countdown.hidden = true;
             return;
@@ -2854,7 +2864,12 @@
             if (valueEl && !expired) valueEl.textContent = state.zpayCountdownText;
             syncPaymentCountdownState();
             if (expired) {
-                presentZpayTimeout({ pendingConfirmation: true });
+                const provider = normalizeText(state.provider || state.checkout?.provider, 80).toLowerCase();
+                if (provider === 'nowpayments') {
+                    setStateMessage('付款有效期已结束，如已转账请保持页面打开并点击“查询支付状态”。', 'awaiting_payment');
+                } else {
+                    presentZpayTimeout({ pendingConfirmation: true });
+                }
                 stopZpayCountdown();
             }
         };
@@ -3059,14 +3074,34 @@
         if (details.provider === 'zpay') {
             stopZpayQrRetry();
             presentZpayHostedQr(details, { autoLaunch });
+        } else if (details.provider === 'nowpayments') {
+            resetZpayHostedQr();
+            startZpayCountdown();
         } else {
             resetZpayHostedQr();
         }
         setText('guestCashNowNetwork', details.network);
+        const displayCurrency = /^usdt/i.test(details.payCurrency)
+            ? 'USDT'
+            : (details.payCurrency || '');
         setText('guestCashNowAmount', details.payAmount && details.payCurrency
-            ? `${details.payAmount} ${details.payCurrency}`
+            ? `${details.payAmount} ${displayCurrency}`
             : '-');
         setText('guestCashNowAddress', details.address || '-');
+        const nowQrImage = element('guestCashNowQrImage');
+        if (nowQrImage) {
+            const qrSource = details.address || details.qrcodeUrl || '';
+            const qrDataUrl = qrSource ? buildQrImageUrl(qrSource, 240) : '';
+            if (qrDataUrl) {
+                nowQrImage.src = qrDataUrl;
+                nowQrImage.hidden = false;
+                setHidden('guestCashNowQrHost', false);
+            } else {
+                nowQrImage.removeAttribute('src');
+                nowQrImage.hidden = true;
+                setHidden('guestCashNowQrHost', true);
+            }
+        }
         return true;
     }
 
@@ -3076,6 +3111,12 @@
         setHidden('guestCashZpayPanel', true);
         setHidden('guestCashNowpaymentsPanel', true);
         resetZpayHostedQr();
+        const nowQrImage = element('guestCashNowQrImage');
+        if (nowQrImage) {
+            nowQrImage.removeAttribute('src');
+            nowQrImage.hidden = true;
+        }
+        setHidden('guestCashNowQrHost', true);
         setText('guestCashNowAmount', '-');
         setText('guestCashNowAddress', '');
     }
@@ -3539,7 +3580,7 @@
         state.fallbackModalScrollLock = false;
     }
 
-    function openGuestModal(context, { deferScrollLock = false, initialQuantity = null } = {}) {
+    function openGuestModal(context, { deferScrollLock = false, initialQuantity = null, initialQuantityCap = null } = {}) {
         const modal = getModal();
         if (!modal) return;
         if (modal.hidden) {
@@ -3617,8 +3658,21 @@
                 // buyer should never get that far).
                 resetPromoSelection();
             }
-            if (!state.orderNo && !state.checkout && initialQuantity != null) {
-                state.quantity = requestedQuantityValue(initialQuantity);
+            const cachedAvailability = availabilityCache.get(context.contextKey);
+            const knownCap = Number.isInteger(Number(initialQuantityCap))
+                ? Number(initialQuantityCap)
+                : (Number.isInteger(Number(cachedAvailability?.quantityCap))
+                    ? Number(cachedAvailability.quantityCap)
+                    : null);
+            if (knownCap && knownCap >= 1) {
+                state.quantityCap = Math.min(knownCap, QUANTITY_HARD_CEILING);
+            }
+            if (!state.orderNo && !state.checkout && (initialQuantity != null || context?.quantity != null)) {
+                const targetQuantity = requestedQuantityValue(initialQuantity ?? context.quantity);
+                state.quantity = targetQuantity;
+                if (state.quantityCap < targetQuantity) {
+                    state.quantityCap = targetQuantity;
+                }
                 syncQuantityUi();
                 renderQuantityFact();
             }
@@ -3717,7 +3771,17 @@
                         if (useFreshPreview && !result.available) {
                             clearPendingDiscountHandoff(pendingDiscountHandoff);
                         }
+                    }).catch(() => {
+                        // Prevent modal loading state from sticking indefinitely on network issues
+                    }).finally(() => {
+                        state.previewPending = false;
+                        renderPayableSummary();
+                        renderGuestActions();
                     });
+                }).catch(() => {
+                    state.previewPending = false;
+                    renderPayableSummary();
+                    renderGuestActions();
                 });
         }
         if (state.orderNo) {
@@ -3880,6 +3944,7 @@
         // countdown no longer describes an actionable payment screen.
         stopZpayCountdown();
         setStateMessage('正在取消订单并释放库存...', 'awaiting_payment');
+        let shouldCloseModal = false;
         try {
             await requestJson(isBatchOrder(orderNo) ? BATCH_CANCEL_ENDPOINT : CANCEL_ENDPOINT, {
                 method: 'POST',
@@ -3924,6 +3989,7 @@
             setStateMessage('订单已取消，库存已释放。请重新选择支付方式创建新订单。', 'configure');
             const context = getPurchaseContext();
             if (context && !state.batchMode) void loadPreview(context);
+            shouldCloseModal = true;
         } catch (error) {
             if (state.orderNo === orderNo) {
                 if (error?.code === 'guest_checkout_batch_confirmation_failed') {
@@ -3949,6 +4015,9 @@
             if (cancelTimeout) window.clearTimeout(cancelTimeout);
             state.cancelRequestInFlight = false;
             renderGuestActions();
+            if (shouldCloseModal) {
+                closeGuestModal();
+            }
         }
     }
 
@@ -5084,7 +5153,14 @@
         // Carry the quantity selected in the shared product modal into the
         // isolated cash flow. The next preview re-quotes this exact quantity;
         // the server remains authoritative if the cap or stock changed.
-        state.quantity = normalizeQuantity(quantity);
+        const targetQuantity = requestedQuantityValue(quantity);
+        const resolvedCap = Number.isInteger(Number(availability?.quantityCap))
+            ? Math.max(1, Math.min(QUANTITY_HARD_CEILING, Number(availability.quantityCap)))
+            : null;
+        state.quantityCap = resolvedCap
+            ? Math.max(resolvedCap, targetQuantity)
+            : Math.max(1, targetQuantity);
+        state.quantity = targetQuantity;
         invalidatePreviewQuote();
         clearPendingDiscountHandoff();
         const input = discountCodeInput();
@@ -5099,13 +5175,11 @@
                 generation: ++state.discountHandoffGeneration
             };
         }
-        state.quantityCap = Number.isInteger(Number(availability.quantityCap))
-            ? Math.max(1, Math.min(QUANTITY_HARD_CEILING, Number(availability.quantityCap)))
-            : state.quantityCap;
         state.previewPending = true;
         openGuestModal(context, {
             deferScrollLock,
-            initialQuantity: requestedQuantityValue(quantity)
+            initialQuantity: targetQuantity,
+            initialQuantityCap: state.quantityCap
         });
         if (state.orderNo || state.checkout) clearPendingDiscountHandoff();
         return { started: true, reason: 'available' };
