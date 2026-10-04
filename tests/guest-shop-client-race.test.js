@@ -2450,3 +2450,59 @@ test('configure panel stays strictly hidden during payment and delivery phases',
     assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
     assert.match(runtime.element('guestCashDeliveredContent').textContent, /CARD-SECRET-123456/);
 });
+
+test('opening guest checkout with quantity 2 preserves quantity 2 across fresh context handoff and quotes quantity 2', async () => {
+    const currentPurchase = purchase({ quantity: 2 });
+    const previewRequests = [];
+    const createBodies = [];
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        qrcodeFactory: false,
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) {
+                const requestedQty = Number.parseInt(parsed.searchParams.get('quantity') || '1', 10);
+                previewRequests.push({ quantity: requestedQty });
+                return jsonResponse({
+                    ...previewPayload(currentPurchase),
+                    quantity_cap: 5,
+                    price: {
+                        quantity: requestedQty,
+                        subtotal: requestedQty * 10,
+                        payable_amount: requestedQty * 10
+                    }
+                });
+            }
+            if (parsed.pathname.endsWith('/orders')) {
+                const body = JSON.parse(options.body || '{}');
+                createBodies.push(body);
+                return jsonResponse(createOrderPayload('test-order-qty-2', currentPurchase), { status: 201 });
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    const context = contextFor(currentPurchase);
+    context.quantity = 2;
+    const result = await runtime.window.GuestShopCheckout.startGuestCheckout(context, {
+        quantity: 2
+    });
+    assert.equal(result.started, true);
+    await flushEventLoop();
+
+    // Verify quantity input and fact reflect 2, not reset to 1
+    assert.equal(runtime.element('guestCashQuantity').value, '2');
+    assert.equal(runtime.element('guestCashQuantityValue').textContent, '2');
+
+    // Verify preview was requested for quantity 2
+    const finalPreview = previewRequests[previewRequests.length - 1];
+    assert.equal(finalPreview.quantity, 2);
+
+    // Click payment option to create order and verify quantity sent in prepare/commit
+    clickPaymentOption(runtime);
+    await waitFor(() => runtime.checkoutActions().some((item) => item.action === 'prepare'));
+    const prepareAction = runtime.checkoutActions().find((item) => item.action === 'prepare');
+    assert.equal(prepareAction.body.quantity, 2);
+});
+
+

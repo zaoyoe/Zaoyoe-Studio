@@ -114,7 +114,9 @@ function normalizeNowpaymentsConfig({
     channelConfig = {},
     secretValues = {},
     requestOrigin = '',
-    env = process.env
+    env = process.env,
+    priceCurrency: optionPriceCurrency,
+    price_currency: optionPriceCurrencySnake
 } = {}) {
     const apiKey = sanitizeText(
         secretValues.nowpayments_api_key
@@ -140,7 +142,10 @@ function normalizeNowpaymentsConfig({
         NOWPAYMENTS_DEFAULT_PAY_CURRENCY
     );
     const priceCurrency = normalizeCurrencyTicker(
-        channelConfig.price_currency || env?.NOWPAYMENTS_PRICE_CURRENCY,
+        optionPriceCurrency
+        || optionPriceCurrencySnake
+        || channelConfig.price_currency
+        || env?.NOWPAYMENTS_PRICE_CURRENCY,
         NOWPAYMENTS_DEFAULT_PRICE_CURRENCY
     );
     const ipnCallbackUrl = rewriteManagedUrlForOrigin(
@@ -174,7 +179,7 @@ function normalizeNowpaymentsConfig({
     if (!apiKey) missingFields.push('api_key');
     if (!ipnSecret) missingFields.push('ipn_secret');
     if (!ipnCallbackUrl) missingFields.push('ipn_callback_url');
-    if (priceCurrency === 'usd' && !cnyToUsdRate) missingFields.push('cny_to_usd_rate');
+    if (['usd', 'usdt', 'usdtbsc', 'usdc', 'busd'].includes(priceCurrency) && !cnyToUsdRate) missingFields.push('cny_to_usd_rate');
 
     return {
         apiKey,
@@ -190,8 +195,8 @@ function normalizeNowpaymentsConfig({
         cnyToUsdRate,
         quoteTtlSeconds,
         payAmountPrecision: 2,
-        isFixedRate: coerceBoolean(channelConfig.is_fixed_rate, true),
-        isFeePaidByUser: coerceBoolean(channelConfig.is_fee_paid_by_user, true),
+        isFixedRate: coerceBoolean(channelConfig.is_fixed_rate, false),
+        isFeePaidByUser: coerceBoolean(channelConfig.is_fee_paid_by_user, false),
         missingFields,
         createReady: missingFields.length === 0
     };
@@ -230,7 +235,7 @@ function convertCnyAmountToPriceAmount(localAmount, config = {}) {
     }
 
     const priceCurrency = normalizeCurrencyTicker(config.priceCurrency, NOWPAYMENTS_DEFAULT_PRICE_CURRENCY);
-    if (priceCurrency === 'usd') {
+    if (['usd', 'usdt', 'usdtbsc', 'usdc', 'busd'].includes(priceCurrency) || priceCurrency === normalizeCurrencyTicker(config.payCurrency)) {
         return roundUpCurrency(normalizedAmount * Number(config.cnyToUsdRate || 0), null);
     }
 

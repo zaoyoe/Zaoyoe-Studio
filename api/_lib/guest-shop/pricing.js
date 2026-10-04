@@ -142,7 +142,8 @@ function resolveGuestCreditUnitAmount(input = {}) {
     let flashEnd;
     if (site === 'intl') {
         base = firstPositiveAmount(input.skuPricePointsIntl, input.skuPricePoints);
-        quantityRules = firstDefined(intlQuantityRules, cnQuantityRules);
+        // If INTL does not set quantity rules, do not inherit CN quantity rules.
+        quantityRules = intlQuantityRules || null;
         const hasIntlFlash = input.productFlashSalePriceIntl != null
             || (input.productFlashSaleEndIntl != null && String(input.productFlashSaleEndIntl).trim() !== '');
         flashPrice = hasIntlFlash

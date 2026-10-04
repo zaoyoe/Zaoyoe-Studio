@@ -864,7 +864,12 @@
                       never be written into the address node itself.
                     -->
                     <div id="guestCashNowpaymentsPanel" class="guest-shop-modal__crypto" hidden>
-                        <p class="guest-shop-modal__hint">请使用钱包向以下地址支付指定金额，仅支持 USDT-BEP20。</p>
+                        <div id="guestCashNowQrHost" class="guest-shop-modal__qr" hidden>
+                            <div id="guestCashNowQrCard" class="guest-shop-modal__qr-card">
+                                <img id="guestCashNowQrImage" class="guest-shop-modal__qr-image" alt="USDT-BEP20 收款地址二维码" hidden loading="eager" decoding="async">
+                            </div>
+                        </div>
+                        <p class="guest-shop-modal__hint">请使用钱包向以下地址支付指定金额，仅支持 USDT-BEP20（扫码自动识别收款地址）。</p>
                         <div class="guest-shop-modal__crypto-list">
                             <div class="guest-shop-modal__crypto-row">
                                 <span class="guest-shop-modal__crypto-label">网络</span>
@@ -876,12 +881,12 @@
                             </div>
                             <div class="guest-shop-modal__crypto-row">
                                 <span class="guest-shop-modal__crypto-label">付款地址</span>
-                                <code id="guestCashNowAddress" class="guest-shop-modal__crypto-value guest-shop-modal__crypto-address"></code>
+                                <div class="guest-shop-modal__crypto-address-wrap">
+                                    <code id="guestCashNowAddress" class="guest-shop-modal__crypto-value guest-shop-modal__crypto-address"></code>
+                                    <button id="guestCashNowCopyAddressBtn" type="button" class="shop-btn shop-btn-secondary guest-shop-modal__crypto-copy" title="复制钱包地址" aria-label="复制钱包地址"><i class="fas fa-copy" aria-hidden="true"></i></button>
+                                    <span id="guestCashNowCopyFeedback" class="guest-shop-modal__copy-feedback" role="status" hidden>已复制</span>
+                                </div>
                             </div>
-                        </div>
-                        <div class="guest-shop-modal__crypto-actions">
-                            <button id="guestCashNowCopyAddressBtn" type="button" class="shop-btn shop-btn-secondary guest-shop-modal__crypto-copy">复制钱包地址</button>
-                            <span id="guestCashNowCopyFeedback" class="guest-shop-modal__copy-feedback" role="status" hidden>已复制</span>
                         </div>
                     </div>
                 </section>

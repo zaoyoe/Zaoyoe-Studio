@@ -470,6 +470,101 @@ test('NOWPayments intl checkout still settles CNY and converts the credit price 
     assert.equal(body.pay_currency, 'usdtbsc');
 });
 
+test('NOWPayments small-amount checkout quotes in USDTBSC crypto to support micro transactions', async () => {
+    let request;
+    const adapter = makeAdapter(nowpaymentsConfig({
+        pay_currency: 'usdtbsc',
+        price_currency: 'usdtbsc',
+        cny_to_usd_rate: 0.15
+    }), {
+        nowpayments_api_key: NOWPAYMENTS_API_KEY,
+        nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET
+    }, async (url, options) => {
+        request = { url, options };
+        return responseJson({
+            payment_id: 'NP-PAYMENT-MICRO-1',
+            order_id: 'GS20261004-000001',
+            pay_address: '0x1234567890abcdef1234567890abcdef12345678',
+            pay_amount: 1.52,
+            pay_currency: 'usdtbsc',
+            price_amount: 1.52,
+            price_currency: 'usdtbsc',
+            expiration_estimate_date: '2026-10-04T12:00:00Z'
+        });
+    });
+    const result = await adapter.createGuestPayment({
+        order: makeOrder({
+            order_no: 'GS20261004-000001',
+            total_amount: '10.10',
+            provider: 'nowpayments',
+            channel: 'nowpayments',
+            site: 'intl',
+            currency: 'CNY'
+        }),
+        provider: 'nowpayments',
+        channel: 'nowpayments',
+        site: 'intl',
+        amount: '10.10',
+        allowedChannels: ['nowpayments']
+    });
+
+    assert.equal(result.currency, 'CNY');
+    assert.equal(result.checkout.currency, 'CNY');
+    assert.equal(result.pay_currency, 'usdtbsc');
+    assert.equal(result.provider_metadata.price_currency, 'usdtbsc');
+    assert.equal(result.provider_metadata.price_amount, 1.52);
+    assert.equal(result.provider_metadata.local_amount, 10.10);
+    assert.equal(result.provider_metadata.cny_to_usd_rate, 0.15);
+    const body = JSON.parse(request.options.body);
+    assert.equal(body.price_amount, '1.52');
+    assert.equal(body.price_currency, 'usdtbsc');
+    assert.equal(body.pay_currency, 'usdtbsc');
+});
+
+test('NOWPayments checkout with price_currency usd defaults to usdtbsc for USDTBSC payments', async () => {
+    let request;
+    const adapter = makeAdapter(nowpaymentsConfig({
+        pay_currency: 'usdtbsc',
+        price_currency: 'usd',
+        cny_to_usd_rate: 0.15
+    }), {
+        nowpayments_api_key: NOWPAYMENTS_API_KEY,
+        nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET
+    }, async (url, options) => {
+        request = { url, options };
+        return responseJson({
+            payment_id: 'NP-PAYMENT-MICRO-2',
+            order_id: 'GS20261004-000002',
+            pay_address: '0x1234567890abcdef1234567890abcdef12345678',
+            pay_amount: 1.52,
+            pay_currency: 'usdtbsc',
+            price_amount: 1.52,
+            price_currency: 'usdtbsc',
+            expiration_estimate_date: '2026-10-04T12:00:00Z'
+        });
+    });
+    const result = await adapter.createGuestPayment({
+        order: makeOrder({
+            order_no: 'GS20261004-000002',
+            total_amount: '10.10',
+            provider: 'nowpayments',
+            channel: 'nowpayments',
+            site: 'intl',
+            currency: 'CNY'
+        }),
+        provider: 'nowpayments',
+        channel: 'nowpayments',
+        site: 'intl',
+        amount: '10.10',
+        allowedChannels: ['nowpayments']
+    });
+
+    const body = JSON.parse(request.options.body);
+    assert.equal(body.price_amount, '1.52');
+    assert.equal(body.price_currency, 'usdtbsc');
+    assert.equal(result.provider_metadata.price_currency, 'usdtbsc');
+});
+
 test('NOWPayments 4xx amount too small is a definitive create rejection', async () => {
     const adapter = makeAdapter(nowpaymentsConfig(), {
         nowpayments_api_key: NOWPAYMENTS_API_KEY,
@@ -656,7 +751,7 @@ test('NOWPayments finished callbacks require explicit actually_paid and actually
     const missingCurrency = await adapter.parseGuestWebhook({
         provider: 'nowpayments',
         site: 'cn',
-        payload: { ...base, actually_paid: '1.73' }
+        payload: { ...base, pay_currency: '', actually_paid: '1.73' }
     });
     assert.equal(missingCurrency.actually_paid, 1.73);
     assert.equal(missingCurrency.paid_currency, '');
@@ -672,14 +767,33 @@ test('NOWPayments finished callbacks require explicit actually_paid and actually
     assert.equal(wrongCurrency.status, 'wrong_asset');
     assert.equal(wrongCurrency.network_verified, false);
 
-    const valid = await adapter.parseGuestWebhook({
+    const wrongPayCurrency = await adapter.parseGuestWebhook({
+        provider: 'nowpayments',
+        site: 'cn',
+        payload: { ...base, pay_currency: 'usdttrc20', actually_paid: '1.73' }
+    });
+    assert.equal(wrongPayCurrency.actual_payment_verified, false);
+    assert.equal(wrongPayCurrency.status, 'wrong_asset');
+    assert.equal(wrongPayCurrency.network_verified, false);
+
+    const validSynthetic = await adapter.parseGuestWebhook({
         provider: 'nowpayments',
         site: 'cn',
         payload: { ...base, actually_paid: '1.73', actually_paid_currency: 'usdtbsc' }
     });
-    assert.equal(valid.actual_payment_verified, true);
-    assert.equal(valid.status, 'paid');
-    assert.equal(valid.network_verified, true);
+    assert.equal(validSynthetic.actual_payment_verified, true);
+    assert.equal(validSynthetic.status, 'paid');
+    assert.equal(validSynthetic.network_verified, true);
+
+    const validOfficial = await adapter.parseGuestWebhook({
+        provider: 'nowpayments',
+        site: 'cn',
+        payload: { ...base, actually_paid: '1.73' }
+    });
+    assert.equal(validOfficial.actual_payment_verified, true);
+    assert.equal(validOfficial.status, 'paid');
+    assert.equal(validOfficial.network_verified, true);
+    assert.equal(validOfficial.paid_currency, 'usdtbsc');
 });
 
 test('NOWPayments settlement preserves decimal text and rejects malformed amounts', async () => {

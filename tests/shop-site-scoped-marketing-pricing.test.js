@@ -34,7 +34,7 @@ test('admin product editor keeps product-level tier pricing out of the modal and
     );
     assert.match(
         source,
-        /payload\[marketingFields\.flashSalePrice\] = parseInt\(flashPriceRaw\);[\s\S]*payload\[marketingFields\.flashSaleEnd\] = new Date\(flashEndRaw\)\.toISOString\(\);/,
+        /payload\[marketingFields\.flashSalePrice\] = parsedFlashPrice;[\s\S]*payload\[marketingFields\.flashSaleEnd\] = new Date\(flashEndRaw\)\.toISOString\(\);/,
         'saving flash pricing should still write through the site-scoped field map'
     );
     assert.match(
@@ -259,7 +259,7 @@ test('SKU tier pricing is selected and persisted independently from product tier
     );
     assert.match(
         adminSource,
-        /if \(this\.productModalDirty\) \{[\s\S]*this\.editingProductSnapshot = data;[\s\S]*if \(this\.productSkuEditorLoading\) \{[\s\S]*this\.renderProductSkuEditorFromProductData\(data\);[\s\S]*return;[\s\S]*\}[\s\S]*this\.fillProductModalFromData\(data\);/,
+        /if \(this\.productModalDirty\) \{[\s\S]*?this\.editingProductSnapshot = data;[\s\S]*?if \(this\.productSkuEditorLoading\) \{[\s\S]*?this\.renderProductSkuEditorFromProductData\(data\);[\s\S]*?\}[\s\S]*?return;[\s\S]*?\}[\s\S]*?this\.fillProductModalFromData\(data\);/,
         'late product detail responses should not overwrite SKU price edits already typed into the modal'
     );
     assert.match(

@@ -10475,8 +10475,8 @@ Example output format:
         }
 
         if (upsertPayload.price_points == null) {
-            const fallbackPrice = Number.parseInt(snapshot?.price_points, 10);
-            if (Number.isFinite(fallbackPrice) && fallbackPrice >= 0) {
+            const fallbackPrice = this.normalizeProductPriceDraftValue(snapshot?.price_points);
+            if (fallbackPrice !== null && fallbackPrice >= 0) {
                 upsertPayload.price_points = fallbackPrice;
             } else if (editSite !== 'intl') {
                 throw new Error('缺少商品基础价格，无法保存现有商品');
@@ -11570,7 +11570,15 @@ Example output format:
 
             const flashPriceRaw = document.getElementById('prodFlashSalePrice').value.trim();
             if (flashPriceRaw !== '') {
-                payload[marketingFields.flashSalePrice] = parseInt(flashPriceRaw);
+                const parsedFlashPrice = this.normalizeProductPriceDraftValue(flashPriceRaw);
+                if (parsedFlashPrice !== null) {
+                    payload[marketingFields.flashSalePrice] = parsedFlashPrice;
+                } else {
+                    const message = '秒杀特价必须为有效非负数字';
+                    failSaveFeedback();
+                    this.setProductSaveInlineError(message);
+                    return;
+                }
             }
 
             const flashStartRaw = document.getElementById('prodFlashSaleStart').value;

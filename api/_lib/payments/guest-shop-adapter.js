@@ -91,7 +91,7 @@ function mapNowpaymentsCreateError(error) {
     if (error instanceof GuestShopPaymentError) return error;
     if (!isDefinitiveNowpaymentsCreateRejection(error)) return error;
     const rawMessage = String(error?.message || '').trim();
-    const message = /amountto is too small/i.test(rawMessage)
+    const message = /amount(to|from) is too small/i.test(rawMessage)
         ? '金额低于 NOWPayments 最低限额，无法创建支付'
         : (rawMessage || 'NOWPayments 拒绝创建支付');
     const status = Number(error?.statusCode || 0);
@@ -559,10 +559,22 @@ function normalizeNowpaymentsCurrency(value) {
 }
 
 function getNowpaymentsActuallyPaidCurrency(payload = {}) {
-    // pay_currency is the requested asset, not the settled asset.  Never
-    // substitute it for actually_paid_currency during verification.
-    if (!Object.prototype.hasOwnProperty.call(payload, 'actually_paid_currency')) return '';
-    return normalizeNowpaymentsCurrency(payload.actually_paid_currency);
+    // 1. Explicit actually_paid_currency takes highest precedence if provided (e.g. tests or custom extensions)
+    if (Object.prototype.hasOwnProperty.call(payload, 'actually_paid_currency') && payload.actually_paid_currency) {
+        return normalizeNowpaymentsCurrency(payload.actually_paid_currency);
+    }
+    // 2. Official NOWPayments IPN and status query responses provide outcome_currency and pay_currency.
+    // We only resolve paidCurrency from these fields if funds were actually paid.
+    const actuallyPaid = getNowpaymentsActuallyPaid(payload);
+    if (actuallyPaid !== null) {
+        if (Object.prototype.hasOwnProperty.call(payload, 'outcome_currency') && payload.outcome_currency) {
+            return normalizeNowpaymentsCurrency(payload.outcome_currency);
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'pay_currency') && payload.pay_currency) {
+            return normalizeNowpaymentsCurrency(payload.pay_currency);
+        }
+    }
+    return '';
 }
 
 function normalizeNowpaymentsSettlement(payload = {}, status = 'unknown') {
@@ -591,8 +603,7 @@ function nowpaymentsSettlementFailureReason(payload = {}, settlement, status = '
     if (status !== 'paid') return '';
     if (!Object.prototype.hasOwnProperty.call(payload, 'actually_paid')) return 'missing_actually_paid';
     if (!(settlement?.actuallyPaid > 0) || !settlement?.actuallyPaidText) return 'invalid_actually_paid';
-    if (!Object.prototype.hasOwnProperty.call(payload, 'actually_paid_currency')) return 'missing_actually_paid_currency';
-    if (!settlement?.paidCurrency) return 'invalid_actually_paid_currency';
+    if (!settlement?.paidCurrency) return 'missing_actually_paid_currency';
     if (!settlement.networkVerified) return 'wrong_asset';
     return '';
 }
@@ -1086,11 +1097,22 @@ function createGuestShopPaymentAdapter({
         }
 
         let priceAmount;
-        const priceCurrency = normalizeCurrency(context.integration.priceCurrency).toLowerCase();
-        if (priceCurrency === 'usd') {
-            // Guest settlement is always CNY. NOWPayments quotes in USD on both
+        const configuredPriceCurrency = normalizeCurrency(context.integration.priceCurrency).toLowerCase();
+        // If configured as 'usd' and pay currency is 'usdtbsc', or configured as 'usdtbsc'/'usdt':
+        // USDT is pegged 1:1 to USD, and quoting in crypto (usdtbsc) avoids NOWPayments'
+        // fiat-to-crypto liquidity engine which enforces a ~$18.57 USD minimum.
+        const isUsdPegged = ['usd', 'usdt', 'usdtbsc', 'usdc', 'busd'].includes(configuredPriceCurrency);
+        const priceCurrency = (configuredPriceCurrency === 'usd' && context.integration.payCurrency === 'usdtbsc')
+            ? 'usdtbsc'
+            : configuredPriceCurrency;
+
+        if (isUsdPegged || priceCurrency === 'usdtbsc' || priceCurrency === 'usdt') {
+            // Guest settlement is always CNY. NOWPayments quotes in USD or crypto on both
             // sites using the same recharge conversion path.
-            priceAmount = convertCnyAmountToPriceAmount(amountSnapshot.amount, context.integration);
+            priceAmount = convertCnyAmountToPriceAmount(amountSnapshot.amount, {
+                ...context.integration,
+                priceCurrency
+            });
         } else if (priceCurrency === currency.toLowerCase()) {
             priceAmount = amountSnapshot.amount;
         } else {
@@ -1110,6 +1132,7 @@ function createGuestShopPaymentAdapter({
         try {
             result = await createNowpaymentsPayment({
                 channelConfig: context.channelConfig,
+                priceCurrency,
                 secretValues: context.secretValues,
                 requestOrigin: context.origin,
                 orderId: providerOrderNo,
@@ -1131,11 +1154,13 @@ function createGuestShopPaymentAdapter({
             });
         }
         const payAmountText = formatNowpaymentsPayAmount(payAmountRaw, context.integration.payAmountPrecision || 2);
-        const quoteExpiresAt = text(
+        const officialExpiresAt = text(
             payload.expiration_estimate_date || payload.expiration_date || payload.valid_until || payload.quote_expires_at,
             '',
             80
-        ) || null;
+        );
+        const quoteExpiresAt = officialExpiresAt
+            || new Date(Date.now() + (context.integration.quoteTtlSeconds || 1200) * 1000).toISOString();
         const metadata = buildSafeMetadata('nowpayments', {
             provider_order_no: providerOrderNo,
             payment_id: paymentId,
