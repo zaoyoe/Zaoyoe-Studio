@@ -42,7 +42,7 @@ const FALSE_VALUES = new Set(['0', 'false', 'no', 'n', 'off', 'disabled']);
 
 // Hard ceiling from guest_shop_orders_quantity_check (§1 of the migration).
 // Raising it is a database migration, never an env change.
-const GUEST_MAX_QUANTITY_CEILING = 5;
+const GUEST_MAX_QUANTITY_CEILING = 99;
 const GUEST_DEFAULT_QUANTITY = 1;
 
 function parseGuestDiscountSwitch(env = {}) {

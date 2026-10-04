@@ -1825,6 +1825,7 @@ const PRODUCT_SCHEMA_COMPATIBILITY_FIELDS = [
     'webhook_target',
     'manual_delivery',
     'allow_guest_purchase',
+    'guest_max_quantity',
     'guest_cash_price_cny',
     'guest_cash_price_intl',
     'guest_payment_channels',
@@ -1994,12 +1995,14 @@ function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missin
 
     if (hasMissing(
         'allow_guest_purchase',
+        'guest_max_quantity',
         'guest_cash_price_cny',
         'guest_cash_price_intl',
         'guest_payment_channels'
     )) {
         removeFields([
             'allow_guest_purchase',
+            'guest_max_quantity',
             'guest_cash_price_cny',
             'guest_cash_price_intl',
             'guest_payment_channels'
@@ -2150,8 +2153,16 @@ function prepareProductPayloadForWritableSite(payload = {}, { productId = '', si
         nextPayload.allow_guest_purchase = normalizeBoolean(nextPayload.allow_guest_purchase, false);
     }
 
+    if (Object.prototype.hasOwnProperty.call(nextPayload, 'guest_max_quantity')) {
+        const normalizedGuestMaxQuantity = normalizePositiveInteger(nextPayload.guest_max_quantity);
+        if (normalizedGuestMaxQuantity !== null) {
+            nextPayload.guest_max_quantity = normalizedGuestMaxQuantity;
+        }
+    }
+
     const guestFieldPresent = [
         'allow_guest_purchase',
+        'guest_max_quantity',
         'guest_cash_price_cny',
         'guest_cash_price_intl',
         'guest_payment_channels'
@@ -2236,6 +2247,7 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
     const webhookTarget = normalizeText(safePayload.webhook_target, 2000);
     const isActive = normalizeBoolean(safePayload.is_active, true);
     const maxPurchaseQuantity = normalizePositiveInteger(safePayload.max_purchase_quantity);
+    const guestMaxQuantity = normalizePositiveInteger(safePayload.guest_max_quantity);
     const purchaseLimit24hQuantity = normalizePositiveInteger(safePayload.purchase_limit_24h_quantity);
     const purchaseLimitWindowQuantity = normalizePositiveInteger(safePayload.purchase_limit_window_quantity);
     const purchaseLimitWindowMinutes = normalizePositiveInteger(safePayload.purchase_limit_window_minutes);
@@ -2261,6 +2273,18 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
 
     if (!category) {
         appendProductValidationIssue(blockingIssues, 'blocking', 'category_required', '请选择商品分类。', 'category');
+    }
+
+    if (Object.prototype.hasOwnProperty.call(safePayload, 'guest_max_quantity')) {
+        if (guestMaxQuantity === null || guestMaxQuantity < 1 || guestMaxQuantity > 99) {
+            appendProductValidationIssue(
+                blockingIssues,
+                'blocking',
+                'guest_max_quantity_invalid',
+                '游客单次限购必须是 1 到 99 之间的整数。',
+                'guest_max_quantity'
+            );
+        }
     }
 
     if (

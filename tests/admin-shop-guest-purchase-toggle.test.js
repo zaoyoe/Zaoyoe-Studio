@@ -22,6 +22,8 @@ test('admin product editor exposes a guest purchase toggle in the existing setti
     assert.match(section, /允许游客购买/);
     assert.match(section, /toggle-switch/);
     assert.match(section, /id="guestPurchaseWrapper"/);
+    assert.match(section, /id="prodGuestMaxPurchaseQuantity"/);
+    assert.match(section, /仅游客购买生效/);
     assert.doesNotMatch(section, /id="prodGuestCashPriceCny"/);
     assert.doesNotMatch(section, /id="prodGuestCashPriceIntl"/);
     assert.match(section, /id="prodGuestChannelZpay"/);
@@ -42,7 +44,7 @@ test('admin product editor saves guest purchase only on the product payload', ()
 
     assert.match(
         adminSource,
-        /collectGuestPurchasePayload: function[\s\S]*allow_guest_purchase:[\s\S]*guest_cash_price_cny:[\s\S]*guest_payment_channels:/,
+        /collectGuestPurchasePayload: function[\s\S]*allow_guest_purchase:[\s\S]*guest_max_quantity:[\s\S]*guest_cash_price_cny:[\s\S]*guest_payment_channels:/,
         'the product modal should serialize guest purchase settings from the existing form controls'
     );
     assert.match(
@@ -69,7 +71,7 @@ test('admin product editor saves guest purchase only on the product payload', ()
     );
     assert.match(
         mutateSource,
-        /PRODUCT_SCHEMA_COMPATIBILITY_FIELDS[\s\S]*allow_guest_purchase[\s\S]*guest_cash_price_cny[\s\S]*guest_payment_channels/,
+        /PRODUCT_SCHEMA_COMPATIBILITY_FIELDS[\s\S]*allow_guest_purchase[\s\S]*guest_max_quantity[\s\S]*guest_cash_price_cny[\s\S]*guest_payment_channels/,
         'admin mutations should treat guest purchase columns as optional schema fields'
     );
     assert.match(
@@ -91,7 +93,22 @@ test('admin product editor saves guest purchase only on the product payload', ()
     );
     assert.match(
         productsSource,
-        /getFullSelectAttempts[\s\S]*allow_guest_purchase[\s\S]*guest_cash_price_cny[\s\S]*guest_payment_channels/,
+        /getFullSelectAttempts[\s\S]*allow_guest_purchase[\s\S]*guest_max_quantity[\s\S]*guest_cash_price_cny[\s\S]*guest_payment_channels/,
         'admin product reads should include guest purchase fields in the explicit fallback select'
+    );
+    assert.match(
+        adminSource,
+        /fillProductModalFromData: function[\s\S]*guest_max_quantity/,
+        'editing a product should restore the explicit guest quantity cap'
+    );
+    assert.match(
+        adminSource,
+        /guest_max_quantity: normalizedGuestMaxPurchaseQuantity/,
+        'saving a product should persist the explicit guest quantity cap'
+    );
+    assert.match(
+        mutateSource,
+        /guest_max_quantity_invalid[\s\S]*游客单次限购必须是 1 到 99 之间的整数/,
+        'admin mutations should validate the guest quantity cap'
     );
 });

@@ -1074,6 +1074,13 @@
             flex: 1 1 auto;
         }
 
+        .shop-success-item__quantity-row {
+            display: flex;
+            align-items: center;
+            min-width: 0;
+            margin-top: -1px;
+        }
+
         .shop-success-item__footer-meta {
             display: flex;
             flex-wrap: wrap;
@@ -1264,7 +1271,10 @@
             background: rgba(251, 191, 36, 0.08);
         }
 
-        .shop-success-item__meta--inline .shop-success-item__tag--quantity {
+        .shop-success-item__meta--inline .shop-success-item__tag--quantity,
+        .shop-success-item__quantity-row .shop-success-item__tag--quantity {
+            flex: 0 0 auto;
+            white-space: nowrap;
             min-height: 18px;
             padding: 0 7px;
             font-size: 9px;
@@ -6485,6 +6495,16 @@
     outline: none !important;
 }
 
+#shopPurchaseModal .shop-purchase-discount__input[data-guest-promo-locked="1"],
+#shopPurchaseModal .shop-purchase-discount__action[data-guest-promo-locked="1"] {
+    pointer-events: none;
+}
+
+#shopPurchaseModal .shop-purchase-discount__input-wrap:has([data-guest-promo-locked="1"]),
+#shopPurchaseModal .shop-purchase-discount__input-wrap.is-guest-promo-locked {
+    cursor: pointer;
+}
+
 .shop-purchase-discount__action {
     position: relative;
     z-index: 1;
@@ -8641,6 +8661,7 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 .guest-shop-modal__state-countdown.is-expired strong { color: #fecaca; }
 .guest-shop-modal__state[data-state="error"], .guest-shop-modal__state[data-state="manual_review"] { color: #fecaca; border-color: rgba(248,113,113,.35); }
 .guest-shop-modal__summary, .guest-shop-modal__panel { margin-top: 14px; padding: 14px; border: 1px solid rgba(255,255,255,.09); border-radius: 12px; background: rgba(255,255,255,.045); }
+.guest-shop-modal__summary { min-height: 124px; box-sizing: border-box; }
 .guest-shop-modal__order-overview { display: grid; gap: 14px; margin-top: 14px; }
 .guest-shop-modal__order-overview > .guest-shop-modal__summary,
 .guest-shop-modal__order-overview > .guest-shop-modal__amount { margin-top: 0; }
@@ -8648,6 +8669,7 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     .guest-shop-modal__order-overview {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         align-items: stretch;
+        min-height: 124px;
     }
 }
 .guest-shop-modal__summary-row + .guest-shop-modal__summary-row { margin-top: 9px; }
@@ -8667,6 +8689,8 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     border: 1px solid rgba(255,255,255,.09);
     border-radius: 12px;
     background: rgba(255,255,255,.045);
+    min-height: 124px;
+    box-sizing: border-box;
 }
 .guest-shop-modal__amount-header {
     display: flex;
@@ -8685,16 +8709,82 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     letter-spacing: -.01em;
     overflow-wrap: anywhere;
     text-align: right;
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: flex-end;
 }
 .guest-shop-modal__amount-value,
 .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong {
     font-variant-numeric: tabular-nums;
 }
+.guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: flex-end;
+}
+.guest-amount-currency {
+    display: inline-block;
+    flex: 0 0 auto;
+    margin-right: 0.12em;
+}
 .guest-shop-modal__amount-value.is-amount-placeholder,
 .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong.is-amount-placeholder {
     color: rgba(226,232,240,.46);
 }
+.is-amount-placeholder .guest-amount-currency {
+    color: inherit;
+    opacity: 0.85;
+}
 .guest-amount-digits { display: inline-block; }
+.is-amount-placeholder .guest-amount-digits {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.4ch;
+    box-sizing: content-box;
+}
+.guest-amount-value-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+}
+.guest-amount-dots {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.18em;
+    vertical-align: middle;
+}
+.guest-amount-dots span {
+    display: inline-block;
+    width: 0.22em;
+    height: 0.22em;
+    border-radius: 50%;
+    background-color: currentColor;
+    opacity: 0.35;
+    animation: guestAmountDotBounce 0.9s ease-in-out infinite;
+}
+.guest-amount-dots span:nth-child(2) {
+    animation-delay: 0.16s;
+}
+.guest-amount-dots span:nth-child(3) {
+    animation-delay: 0.32s;
+}
+@keyframes guestAmountDotBounce {
+    0%, 80%, 100% {
+        transform: translateY(0);
+        opacity: 0.35;
+    }
+    40% {
+        transform: translateY(-0.2em);
+        opacity: 0.95;
+    }
+}
 /* Keep the zero-value placeholder in view during the overlay's 300ms entrance.
    The real quote then cross-fades at exactly the same position, so currency
    symbols and digits do not slide as the amount becomes available. */
@@ -8724,6 +8814,11 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     to { opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
+    .guest-amount-dots span {
+        animation: none;
+        opacity: 0.7;
+        transform: none;
+    }
     #guestCashPurchaseModal.active .guest-shop-modal__amount-value.is-amount-revealing .guest-amount-digits,
     #guestCashPurchaseModal.active .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong.is-amount-revealing .guest-amount-digits {
         animation: none;
@@ -8733,7 +8828,7 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
         display: none;
     }
 }
-.guest-shop-modal__amount-rows { display: grid; gap: 8px; margin-top: 14px; }
+.guest-shop-modal__amount-rows { display: grid; gap: 8px; margin-top: 14px; min-height: 42px; }
 /* Rows keep the modal's shared __summary-row idiom, but inside the breakdown
    card the stack is driven by grid gap, not by the sibling margin. */
 .guest-shop-modal__amount-rows .guest-shop-modal__summary-row + .guest-shop-modal__summary-row { margin-top: 0; }
@@ -8743,6 +8838,34 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 .guest-shop-modal__amount-footer { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.09); }
 .guest-shop-modal__amount-footer .guest-shop-modal__hint { margin-top: 0; }
 .guest-shop-modal__amount-footer[hidden] { display: none !important; }
+.guest-shop-modal__panel[hidden],
+.guest-shop-modal__configure-panel[hidden],
+#guestCashConfigurePanel[hidden] {
+    display: none !important;
+}
+/* Keep the required guest checkout credentials side by side on wide
+   confirmation dialogs. The compact layout remains stacked for narrow views. */
+@media (min-width: 900px) {
+    .guest-shop-modal__configure-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        column-gap: 14px;
+        align-items: start;
+    }
+    .guest-shop-modal__configure-panel[hidden] {
+        display: none !important;
+    }
+    .guest-shop-modal__configure-panel > .guest-shop-modal__credential-field {
+        min-width: 0;
+    }
+    .guest-shop-modal__configure-panel > .guest-shop-modal__payment-field {
+        grid-column: 1 / -1;
+    }
+    .guest-shop-modal__configure-panel > #guestCashDiscountCode {
+        grid-column: 1 / -1;
+    }
+}
+
 .guest-shop-modal__field { display: grid; gap: 7px; margin-bottom: 13px; color: rgba(226,232,240,.82); font-size: 13px; }
 .guest-shop-modal__field input, .guest-shop-modal__field select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid rgba(255,255,255,.14); border-radius: 9px; background: rgba(15,23,42,.55); color: inherit; }
 
@@ -8750,8 +8873,13 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 .guest-shop-modal__payment-field > span { font-weight: 600; }
 .guest-shop-modal__payment-options {
     display: flex;
+    flex: 0 0 auto;
     flex-wrap: wrap;
+    align-items: flex-start;
+    align-content: flex-start;
     gap: 8px;
+    width: max-content;
+    max-width: 100%;
 }
 .guest-shop-modal__payment-option {
     display: inline-flex;
@@ -8771,9 +8899,9 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 }
 .guest-shop-modal__payment-option:hover { border-color: rgba(148,163,184,.5); transform: translateY(-1px); }
 .guest-shop-modal__payment-option[aria-checked="true"] {
-    border-color: rgba(125,211,252,.72);
-    background: rgba(56,189,248,.14);
-    box-shadow: inset 0 0 0 1px rgba(125,211,252,.18), 0 3px 10px rgba(14,165,233,.14);
+    border-color: #7eb8ef;
+    background: rgba(126,184,239,.12);
+    box-shadow: none;
 }
 .guest-shop-modal__payment-option:focus-visible { outline: 3px solid rgba(125,211,252,.5); outline-offset: 2px; }
 .guest-shop-modal__payment-option:disabled { cursor: not-allowed; opacity: .55; transform: none; }
@@ -8896,8 +9024,20 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 /* Order Access 2.0 (A2): reveal / generate buttons beside the query-password
    input, and the additive entry link into /guest-orders.html. Both live in
    markup that stays hidden while the buyer-credential switch is off. */
-.guest-shop-modal__password-actions { display: flex; gap: 8px; margin-top: 8px; }
-.guest-shop-modal__pw-btn { flex: 0 0 auto; width: auto; min-width: 36px; height: 32px; padding: 0 12px; font-size: 12px; line-height: 1; }
+.guest-shop-modal__password-input-wrap { position: relative; display: block; }
+.guest-shop-modal__password-input-wrap > input { padding-right: 154px !important; }
+.guest-shop-modal__password-inline-actions {
+    position: absolute; inset: 0 7px 0 auto; display: inline-flex; align-items: center; gap: 5px;
+}
+.guest-shop-modal__pw-btn { flex: 0 0 auto; width: auto; min-width: 36px; height: 30px; padding: 0 9px; font-size: 12px; line-height: 1; }
+.guest-shop-modal__pw-eye-btn { width: 30px; min-width: 30px; padding: 0; }
+.guest-shop-modal__password-inline-actions .guest-shop-modal__pw-btn {
+    border-color: rgba(148,163,184,.3); background: rgba(148,163,184,.08);
+}
+.guest-shop-modal__password-inline-actions .guest-shop-modal__pw-btn:hover {
+    border-color: rgba(96,165,250,.65);
+}
+
 /* §11.3 live checklist: the four-class rule is only usable if the buyer can see
    which class is still missing, so each item flips to a tick as it is met. */
 .guest-shop-modal__pw-checks { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 0; padding: 0; list-style: none; font-size: 11px; color: rgba(226,232,240,.6); }
@@ -8960,7 +9100,9 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 .guest-shop-modal__delivery-fact + .guest-shop-modal__delivery-fact { margin-top: 4px; }
 .guest-shop-modal__delivery-fact span::after { content: "\FF1A"; }
 .guest-shop-modal__delivery-fact strong { color: rgba(226,232,240,.82); font-size: 12px; font-weight: 600; letter-spacing: .015em; font-variant-numeric: tabular-nums; }
-.guest-shop-modal__delivery-content { display: grid; gap: 8px; max-height: 260px; margin: 12px 0; padding: 10px; border-radius: 10px; background: rgba(15,23,42,.12); color: rgba(248,250,252,.92); overflow: auto; }
+/* Keep delivery headers the same width when expanded cards add a scrollbar. */
+.guest-shop-modal__content[data-phase="delivery"] { scrollbar-gutter: stable; }
+.guest-shop-modal__delivery-content { display: grid; gap: 8px; max-height: 260px; margin: 12px 0; padding: 10px; border-radius: 10px; background: rgba(15,23,42,.12); color: rgba(248,250,252,.92); overflow: auto; scrollbar-gutter: stable; }
 .guest-shop-modal__delivery-group { display: grid; gap: 8px; }
 .guest-shop-modal__delivery-group + .guest-shop-modal__delivery-group { margin-top: 6px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.12); }
 .guest-shop-modal__delivery-group-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding: 2px 2px 0; }
@@ -9122,6 +9264,15 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 }
 
 
+html[data-theme="dark"] body.shop-page .guest-shop-modal__field input:focus,
+html[data-theme="dark"] body.shop-page .guest-shop-modal__field input:focus-visible,
+html[data-theme="dark"] body.shop-page .guest-shop-modal__field select:focus,
+html[data-theme="dark"] body.shop-page .guest-shop-modal__field select:focus-visible {
+    border-color: #7eb8ef !important;
+    outline: none;
+    box-shadow: none !important;
+}
+
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__content {
     background: rgba(255, 255, 255, 0.96) !important;
     color: var(--shop-light-text);
@@ -9147,16 +9298,40 @@ html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field select {
     caret-color: #172033 !important;
     opacity: 1 !important;
 }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input:-webkit-autofill,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input:-webkit-autofill:hover,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input:-webkit-autofill:focus,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input:-webkit-autofill:active {
+    -webkit-text-fill-color: #172033 !important;
+    -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
+    box-shadow: 0 0 0 1000px #fff inset !important;
+    background-color: #fff !important;
+    transition: background-color 9999s ease-out 0s !important;
+}
+
+html[data-theme="dark"] body.shop-page .guest-shop-modal__field input:-webkit-autofill,
+html[data-theme="dark"] body.shop-page .guest-shop-modal__field input:-webkit-autofill:hover,
+html[data-theme="dark"] body.shop-page .guest-shop-modal__field input:-webkit-autofill:focus,
+html[data-theme="dark"] body.shop-page .guest-shop-modal__field input:-webkit-autofill:active {
+    -webkit-text-fill-color: rgba(226,232,240,.92) !important;
+    -webkit-box-shadow: 0 0 0 1000px rgba(15,23,42,.55) inset !important;
+    box-shadow: 0 0 0 1000px rgba(15,23,42,.55) inset !important;
+    background-color: rgba(15,23,42,.55) !important;
+    transition: background-color 9999s ease-out 0s !important;
+}
+
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input::placeholder {
     color: #94a3b8 !important;
     -webkit-text-fill-color: #94a3b8 !important;
     opacity: 1;
 }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input:focus,
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field select:focus {
-    border-color: #60a5fa;
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input:focus-visible,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field select:focus,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field select:focus-visible {
+    border-color: #6b9ece !important;
     outline: none;
-    box-shadow: 0 0 0 3px rgba(59,130,246,.14);
+    box-shadow: none !important;
 }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input:disabled,
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field select:disabled {
@@ -9174,9 +9349,9 @@ html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-option:h
     background: #f8fafc;
 }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-option[aria-checked="true"] {
-    border-color: rgba(59,130,246,.58);
-    background: #eff6ff;
-    box-shadow: inset 0 0 0 1px rgba(59,130,246,.14), 0 4px 12px rgba(59,130,246,.08);
+    border-color: #6b9ece;
+    background: rgba(107,158,206,.08);
+    box-shadow: none;
 }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-option:focus-visible {
     outline-color: rgba(37,99,235,.62);
@@ -9204,9 +9379,9 @@ html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option:hover:n
     background: rgba(51,65,85,.96);
 }
 html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option[aria-checked="true"] {
-    border-color: rgba(125,211,252,.72);
-    background: rgba(56,189,248,.14);
-    box-shadow: inset 0 0 0 1px rgba(125,211,252,.18), 0 3px 10px rgba(14,165,233,.14);
+    border-color: #7eb8ef;
+    background: rgba(126,184,239,.12);
+    box-shadow: none;
 }
 html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option:focus-visible { outline-color: rgba(125,211,252,.5); }
 html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option:disabled {
@@ -10660,6 +10835,9 @@ body.shop-page #shopPurchaseModal #nextPurchaseStepBtn.shop-purchase-sold-out-bt
     margin: 0;
     color: #f8fafc;
 }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading .guest-shop-modal__payment-loading {
+    color: #1e293b;
+}
 #guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading:disabled {
     opacity: 1;
 }
@@ -10739,4 +10917,24 @@ body.shop-page #shopPurchaseModal #nextPurchaseStepBtn.shop-purchase-sold-out-bt
         opacity: 1 !important;
         transform: translate3d(0, 0, 0) !important;
     }
+}
+
+/* Keep the confirmation modal's first frame dimensionally stable while the
+   preview quote is resolving. Async amount/credential updates replace content
+   inside these reserved areas instead of moving the modal vertically. */
+#guestCashPurchaseModal[data-confirmation-loading] .guest-shop-modal__order-overview,
+#guestCashPurchaseModal[data-confirmation-loading="true"] .guest-shop-modal__order-overview {
+    min-height: 124px;
+}
+#guestCashPurchaseModal[data-confirmation-loading] .guest-shop-modal__amount,
+#guestCashPurchaseModal[data-confirmation-loading="true"] .guest-shop-modal__amount {
+    min-height: 124px;
+}
+#guestCashPurchaseModal[data-confirmation-loading] .guest-shop-modal__configure-panel,
+#guestCashPurchaseModal[data-confirmation-loading="true"] .guest-shop-modal__configure-panel {
+    min-height: 196px;
+}
+#guestCashPurchaseModal[data-confirmation-loading] .guest-shop-modal__amount-rows,
+#guestCashPurchaseModal[data-confirmation-loading="true"] .guest-shop-modal__amount-rows {
+    min-height: 42px;
 }

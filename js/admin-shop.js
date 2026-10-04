@@ -10167,6 +10167,12 @@ Example output format:
         document.getElementById('prodMaxPurchaseQuantity').value = data.max_purchase_quantity != null
             ? data.max_purchase_quantity
             : '';
+        const guestMaxPurchaseQuantityInput = document.getElementById('prodGuestMaxPurchaseQuantity');
+        if (guestMaxPurchaseQuantityInput) {
+            guestMaxPurchaseQuantityInput.value = data.guest_max_quantity != null
+                ? data.guest_max_quantity
+                : '1';
+        }
         this.setOptionalInputValue(
             'prodPurchaseLimit24hQuantity',
             data.purchase_limit_24h_quantity != null ? data.purchase_limit_24h_quantity : ''
@@ -10216,6 +10222,7 @@ Example output format:
             allow_guest_purchase: data.allow_guest_purchase === true || String(data.allow_guest_purchase || '').toLowerCase() === 'true',
             guest_cash_price_cny: data.guest_cash_price_cny,
             guest_cash_price_intl: data.guest_cash_price_intl,
+            guest_max_quantity: data.guest_max_quantity,
             guest_payment_channels: data.guest_payment_channels
         });
 
@@ -10369,8 +10376,13 @@ Example output format:
         if (document.getElementById('prodGuestChannelNowpayments')?.checked) {
             channels.push('nowpayments');
         }
+        const guestMaxQuantityRaw = (document.getElementById('prodGuestMaxPurchaseQuantity')?.value || '').trim();
+        const guestMaxQuantity = guestMaxQuantityRaw === ''
+            ? 1
+            : Number.parseInt(guestMaxQuantityRaw, 10);
         return {
             allow_guest_purchase: document.getElementById('prodAllowGuestPurchase')?.checked === true,
+            guest_max_quantity: Number.isFinite(guestMaxQuantity) ? guestMaxQuantity : guestMaxQuantityRaw,
             guest_cash_price_cny: null,
             guest_cash_price_intl: null,
             guest_payment_channels: channels
@@ -10428,6 +10440,12 @@ Example output format:
         const checkbox = document.getElementById('prodAllowGuestPurchase');
         if (checkbox) {
             checkbox.checked = allowGuestPurchase;
+        }
+        const guestMaxQuantityInput = document.getElementById('prodGuestMaxPurchaseQuantity');
+        if (guestMaxQuantityInput) {
+            guestMaxQuantityInput.value = state.guest_max_quantity != null && state.guest_max_quantity !== ''
+                ? String(state.guest_max_quantity)
+                : '1';
         }
         const channels = this.normalizeGuestPaymentChannelTokens(state.guest_payment_channels);
         const zpay = document.getElementById('prodGuestChannelZpay');
@@ -10862,6 +10880,7 @@ Example output format:
                 allow_guest_purchase: false,
                 guest_cash_price_cny: '',
                 guest_cash_price_intl: '',
+                guest_max_quantity: 1,
                 guest_payment_channels: []
             });
 
@@ -11039,11 +11058,13 @@ Example output format:
             const parsedSort = Number.parseInt(sortInput, 10);
             const normalizedSort = Number.isFinite(parsedSort) ? parsedSort : 0;
             const maxPurchaseQuantityRaw = (document.getElementById('prodMaxPurchaseQuantity').value || '').trim();
+            const guestMaxPurchaseQuantityRaw = (document.getElementById('prodGuestMaxPurchaseQuantity')?.value || '').trim();
             const purchaseLimit24hQuantityRaw = (document.getElementById('prodPurchaseLimit24hQuantity')?.value || '').trim();
             const purchaseLimitWindowQuantityRaw = (document.getElementById('prodPurchaseLimitWindowQuantity')?.value || '').trim();
             const purchaseLimitWindowMinutesRaw = (document.getElementById('prodPurchaseLimitWindowMinutes')?.value || '').trim();
             const perAccountPurchaseLimitRaw = (document.getElementById('prodPerAccountPurchaseLimit')?.value || '').trim();
             let normalizedMaxPurchaseQuantity = null;
+            let normalizedGuestMaxPurchaseQuantity = 1;
             let normalizedPurchaseLimit24hQuantity = null;
             let normalizedPurchaseLimitWindowQuantity = null;
             let normalizedPurchaseLimitWindowMinutes = null;
@@ -11111,6 +11132,18 @@ Example output format:
                 normalizedMaxPurchaseQuantity = parsedMaxPurchaseQuantity;
             }
 
+            if (guestMaxPurchaseQuantityRaw !== '') {
+                const parsedGuestMaxPurchaseQuantity = Number.parseInt(guestMaxPurchaseQuantityRaw, 10);
+                if (!Number.isFinite(parsedGuestMaxPurchaseQuantity) || parsedGuestMaxPurchaseQuantity < 1 || parsedGuestMaxPurchaseQuantity > 99) {
+                    const failureMessage = '游客单次限购必须是 1 到 99 之间的整数';
+                    failSaveFeedback();
+                    this.setProductSaveInlineError(failureMessage);
+                    this.showActionToast(failureMessage, 'warning');
+                    return;
+                }
+                normalizedGuestMaxPurchaseQuantity = parsedGuestMaxPurchaseQuantity;
+            }
+
             try {
                 normalizedPurchaseLimit24hQuantity = parseOptionalPositiveInteger(purchaseLimit24hQuantityRaw, '24小时累计上限');
                 normalizedPerAccountPurchaseLimit = parseOptionalPositiveInteger(perAccountPurchaseLimitRaw, '每账号仅限购数量');
@@ -11132,6 +11165,10 @@ Example output format:
             document.getElementById('prodMaxPurchaseQuantity').value = normalizedMaxPurchaseQuantity == null
                 ? ''
                 : String(normalizedMaxPurchaseQuantity);
+            this.setOptionalInputValue(
+                'prodGuestMaxPurchaseQuantity',
+                String(normalizedGuestMaxPurchaseQuantity)
+            );
             this.setOptionalInputValue(
                 'prodPurchaseLimit24hQuantity',
                 normalizedPurchaseLimit24hQuantity == null ? '' : String(normalizedPurchaseLimit24hQuantity)
@@ -11475,6 +11512,7 @@ Example output format:
                 category: document.getElementById('prodCategory').value,
                 display_order: normalizedSort,
                 max_purchase_quantity: normalizedMaxPurchaseQuantity,
+                guest_max_quantity: normalizedGuestMaxPurchaseQuantity,
                 purchase_limit_24h_quantity: normalizedPurchaseLimit24hQuantity,
                 purchase_limit_window_quantity: normalizedPurchaseLimitWindowQuantity,
                 purchase_limit_window_minutes: normalizedPurchaseLimitWindowMinutes,

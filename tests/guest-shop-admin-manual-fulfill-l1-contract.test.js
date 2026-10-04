@@ -47,7 +47,7 @@ test('L1 manual fulfillment handles the whole reservation set atomically', () =>
     const manual = functionBlock(readSql(MIGRATION_PATH));
 
     assert.doesNotMatch(manual, /quantity\s*<>\s*1/i);
-    assert.match(manual, /quantity\s*<\s*1\s+OR\s+v_order\.quantity\s*>\s*5/i);
+    assert.match(manual, /quantity\s*<\s*1\s+OR\s+v_order\.quantity\s*>\s*99/i);
     assert.match(manual, /v_res_total\s*<>\s*v_order\.quantity/i);
     assert.match(manual, /guest_reservation_count_mismatch/i);
     assert.match(manual, /ORDER\s+BY\s+r\.created_at\s+ASC,\s*r\.id\s+ASC\s*\n?\s*FOR\s+UPDATE/i);

@@ -37,11 +37,11 @@ const HEX_64_PATTERN = /^[0-9a-f]{64}$/i;
 // accepted here can never be rejected later by the database for its shape.
 const GUEST_DISCOUNT_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_-]{0,49}$/u;
 const GUEST_DISCOUNT_CODE_MAX_LENGTH = 50;
-// Promo L1. guest_shop_orders_quantity_check pins quantity BETWEEN 1 AND 5.
+// Promo L1. guest_shop_orders_quantity_check pins quantity BETWEEN 1 AND 99.
 // The per-order ceiling an operator actually gets is far lower (usually 1); see
 // promo.resolveGuestQuantityCap. This constant is only the outer bound that
 // stops a mis-set GUEST_SHOP_MAX_QUANTITY from ever reaching the RPC.
-const GUEST_QUANTITY_HARD_CEILING = 5;
+const GUEST_QUANTITY_HARD_CEILING = 99;
 
 const SENSITIVE_KEY_PATTERN = /(?:authorization|cookie|set-cookie|password|passwd|secret|token|recovery[_-]?code|api[_-]?key|service[_-]?role|refresh[_-]?token|access[_-]?token|claim|credential|query[_-]?password|signature|(?:^|[_-])sign(?:ature)?$|raw[_-]?body|card|inventory|delivery|content|private[_-]?key|merchant[_-]?secret|webhook[_-]?secret)/i;
 const SENSITIVE_VALUE_PATTERN = /(?:bearer\s+[a-z0-9._~+\/-]+=*|eyj[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+|sk-[a-z0-9_-]{12,}|sb_(?:secret|publishable)_[a-z0-9_-]+|gAAAA[a-z0-9_=-]{20,})/i;

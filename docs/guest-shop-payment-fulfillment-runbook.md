@@ -78,7 +78,7 @@ total_amount = unit_amount * quantity + payment_fee_amount      <-- 买家实付
 `discount_enabled` 由 preview 接口下发，取值是
 `GUEST_SHOP_DISCOUNT_ENABLED && GUEST_SHOP_BUYER_CREDENTIAL_ENABLED`；
 `quantity_cap` 是
-`min(GUEST_SHOP_MAX_QUANTITY, sku.guest_max_quantity, product.guest_max_quantity, product.max_purchase_quantity, 5)` 的**生效值**。
+`min(GUEST_SHOP_MAX_QUANTITY, sku.guest_max_quantity, product.guest_max_quantity, product.max_purchase_quantity, 99)` 的**生效值**。
 前端只按这两个值显隐控件，**不做任何金额计算**。
 
 ### 促销 / 多件扩展启用前置清单（按顺序，缺一不可）

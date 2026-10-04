@@ -314,6 +314,8 @@ const BUYER_GROUP_UPSERT_VERIFY_PROHIBITIONS = Object.freeze([
 // asserts against the live database.
 // ---------------------------------------------------------------------------
 const PROMO_MIGRATION = 'supabase/migrations/20260923_guest_shop_promo_l1l2.sql';
+const QUANTITY_CEILING_MIGRATION = 'supabase/migrations/20261004_guest_shop_quantity_ceiling_99.sql';
+const QUANTITY_CEILING_VERIFY_MIGRATION = 'supabase/migrations/20261004_verify_guest_shop_quantity_ceiling_99.sql';
 const PROMO_VERIFY_MIGRATION = 'supabase/migrations/20260923_verify_guest_shop_promo_l1l2.sql';
 
 const PROMO_MIGRATION_REQUIREMENTS = Object.freeze([
@@ -323,7 +325,7 @@ const PROMO_MIGRATION_REQUIREMENTS = Object.freeze([
     ['orders-discount-snapshot-column', /ADD COLUMN IF NOT EXISTS discount_snapshot JSONB/u, 'guest_shop_orders.discount_snapshot 不可变审计快照列'],
     ['orders-payment-fee-column', /ADD COLUMN IF NOT EXISTS payment_fee_amount NUMERIC\(14,2\) NOT NULL DEFAULT 0/u, 'guest_shop_orders.payment_fee_amount 通道费独立列'],
     ['orders-amount-check', /guest_shop_orders_amount_check/u, '订单金额 CHECK（total_amount = unit_amount*quantity + payment_fee_amount）'],
-    ['orders-quantity-ceiling', /guest_shop_orders_quantity_check[\s\S]{0,80}CHECK \(quantity >= 1 AND quantity <= 5\)/u, '订单数量硬顶 CHECK(quantity BETWEEN 1 AND 5)'],
+    ['orders-quantity-ceiling', /guest_shop_orders_quantity_check[\s\S]{0,80}CHECK \(quantity >= 1 AND quantity <= 99\)/u, '订单数量硬顶 CHECK(quantity BETWEEN 1 AND 99)'],
     ['orders-discount-code-shape', /ADD CONSTRAINT guest_shop_orders_discount_code_check/u, '券码字符集 CHECK（大写白名单）'],
     ['zero-purchase-floor', /discount_amount < ROUND\(list_unit_amount \* quantity, 2\)/u, '零元购地板：折扣必须严格小于折前总额（永不产生 0 元单）'],
     ['discount-half-cap', /discount_amount <= ROUND\(list_unit_amount \* quantity \* 0\.5, 2\)/u, '折扣硬顶：单笔最多折 50%（数据库层地板价）'],
@@ -1662,8 +1664,12 @@ function inspectPromo(env, production, repoRoot = REPO_ROOT) {
     const read = (relativePath) => readRepoFile(repoRoot, relativePath);
     const rawMigration = read(PROMO_MIGRATION);
     const rawVerify = read(PROMO_VERIFY_MIGRATION);
+    const rawQuantityCeilingMigration = read(QUANTITY_CEILING_MIGRATION);
+    const rawQuantityCeilingVerify = read(QUANTITY_CEILING_VERIFY_MIGRATION);
     const migration = stripSqlComments(rawMigration);
     const verify = stripSqlComments(rawVerify);
+    const quantityCeilingMigration = stripSqlComments(rawQuantityCeilingMigration);
+    const quantityCeilingVerify = stripSqlComments(rawQuantityCeilingVerify);
 
     if (!rawMigration) {
         checks.push(invalidCheck('promo', 'migration-file', `${PROMO_MIGRATION} 缺失；游客阶梯价/闪购/优惠码没有任何数据库授权，L1+L2 不得发布。`, {
@@ -1720,11 +1726,23 @@ function inspectPromo(env, production, repoRoot = REPO_ROOT) {
         }
     }
 
+    checks.push(rawQuantityCeilingMigration
+        ? buildCheck('promo', 'quantity-ceiling-migration-file', true, 'present', `${QUANTITY_CEILING_MIGRATION} 已存在，现行硬顶迁移纳入候选。`, { relative_path: QUANTITY_CEILING_MIGRATION, blocking: false, severity: 'info' })
+        : invalidCheck('promo', 'quantity-ceiling-migration-file', `${QUANTITY_CEILING_MIGRATION} 缺失；应用层上限与数据库约束无法形成同一发布单元。`, { relative_path: QUANTITY_CEILING_MIGRATION }));
+    checks.push(rawQuantityCeilingVerify
+        && /quantity <= 99/u.test(quantityCeilingVerify)
+        && /quantity <= 99/u.test(quantityCeilingMigration)
+        && /fn_guest_shop_admin_manual_fulfill/u.test(quantityCeilingMigration)
+        && /quantity > 99/u.test(quantityCeilingMigration)
+        && /quantity > 99/u.test(migration)
+        ? buildCheck('promo', 'quantity-ceiling-verify-file', true, 'present', `${QUANTITY_CEILING_VERIFY_MIGRATION} 已包含 99 上限校验。`, { relative_path: QUANTITY_CEILING_VERIFY_MIGRATION, blocking: false, severity: 'info' })
+        : invalidCheck('promo', 'quantity-ceiling-verify-file', `${QUANTITY_CEILING_VERIFY_MIGRATION} 缺失或未覆盖 99 上限。`, { relative_path: QUANTITY_CEILING_VERIFY_MIGRATION }));
+
     // ---- Database facts: explicit operator checks -------------------------
     // 23 行是 verify 脚本自己的行数，不能写成 PROMO_VERIFY_REQUIREMENTS.length：
     // 后者是本脚本对 verify 文本做的静态断言条数（现在 31 条），两者不是一回事，
     // 混用会让运维照着错误的数字去核对报告。
-    checks.push(manualCheck('promo', 'promo-schema-applied', `必须在目标 Supabase 中、于 ${'supabase/migrations/20260922_guest_shop_access_resets.sql'} 之后执行 ${PROMO_MIGRATION}，并运行 ${PROMO_VERIFY_MIGRATION} 确认 23 行报告里第 1-22 行全部 PASS（含零元购地板、50% 折扣硬顶、促销函数唯一重载与仅 service_role 可执行、evaluate 只读、历史行满足新 CHECK、无副作用），第 23 行 operator_state_review 为 PASS 或 REVIEW：REVIEW 表示需要人工确认列出的游客商品/SKU/优惠码都是有意开启的，它不是迁移失败。Codex 不执行 SQL；本脚本不连接数据库。`, {
+    checks.push(manualCheck('promo', 'promo-schema-applied', `必须在目标 Supabase 中、于 ${'supabase/migrations/20260922_guest_shop_access_resets.sql'} 之后执行 ${PROMO_MIGRATION}，再执行 ${QUANTITY_CEILING_MIGRATION} 并运行 ${PROMO_VERIFY_MIGRATION}、${QUANTITY_CEILING_VERIFY_MIGRATION} 确认 23 行报告里第 1-22 行全部 PASS（含零元购地板、50% 折扣硬顶、促销函数唯一重载与仅 service_role 可执行、evaluate 只读、历史行满足新 CHECK、无副作用），第 23 行 operator_state_review 为 PASS 或 REVIEW：REVIEW 表示需要人工确认列出的游客商品/SKU/优惠码都是有意开启的，它不是迁移失败。Codex 不执行 SQL；本脚本不连接数据库。`, {
         relative_path: PROMO_VERIFY_MIGRATION,
         severity: discount.enabled ? 'critical' : 'high'
     }));

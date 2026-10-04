@@ -172,6 +172,7 @@ function getFullSelectAttempts() {
             'webhook_target',
             'manual_delivery',
             'allow_guest_purchase',
+            'guest_max_quantity',
             'guest_cash_price_cny',
             'guest_cash_price_intl',
             'guest_payment_channels',

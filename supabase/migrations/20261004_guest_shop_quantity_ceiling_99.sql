@@ -1,24 +1,25 @@
--- Guest Shop admin manual fulfillment for L1 multi-quantity orders.
---
--- Codex does not execute this file. Run it in the target Supabase SQL editor
--- only after 20260923_guest_shop_promo_l1l2.sql and the admin-ops migrations,
--- then run 20260927_verify_guest_shop_admin_manual_fulfill_l1.sql.
---
--- The earlier admin RPC rejected quantity <> 1. L1 orders can contain multiple reservation rows, and a paid order can lose one or more held cards
--- before the worker claims them. This replacement keeps the original
--- signature/return type for PostgREST compatibility and makes the write
--- atomic across the whole reservation set:
---   * lock order, then every reservation in stable order;
---   * preserve already consumed sold/non-shared cards;
---   * replace only released (or still-held) rows with matching available
---     non-shared inventory, one row at a time;
---   * roll the whole transaction back on any stock shortfall;
---   * mark the order delivered only after every reservation is consumed.
---
--- The SQL return column inventory_id is retained because PostgreSQL cannot
--- change a function's OUT record type with CREATE OR REPLACE. It is returned
--- as NULL; the HTTP handler already strips this column and never returns card
--- content, claim secrets, recovery codes, or inventory identifiers.
+-- Guest Shop forward migration: raise the L1 quantity hard ceiling to 99.
+-- Codex does not execute this file. Apply it in the target Supabase SQL editor,
+-- then run 20261004_verify_guest_shop_quantity_ceiling_99.sql and archive the
+-- result. This migration is forward-only and does not enable guest checkout.
+
+ALTER TABLE public.guest_shop_orders
+    DROP CONSTRAINT IF EXISTS guest_shop_orders_quantity_check;
+ALTER TABLE public.guest_shop_orders
+    ADD CONSTRAINT guest_shop_orders_quantity_check
+    CHECK (quantity >= 1 AND quantity <= 99);
+
+ALTER TABLE public.guest_shop_discount_redemptions
+    DROP CONSTRAINT IF EXISTS guest_shop_discount_redemptions_qty_check;
+ALTER TABLE public.guest_shop_discount_redemptions
+    ADD CONSTRAINT guest_shop_discount_redemptions_qty_check
+    CHECK (quantity >= 1 AND quantity <= 99);
+
+-- The canonical L1/L2 migration carries the create/evaluate/reserve guards;
+-- this forward migration updates the remaining pre-L1 manual-fulfillment guard
+-- without changing its signature or creating an overload. It is intentionally
+-- a full function replacement so the live database cannot retain an old lower
+-- reject after the 99-item order path is released.
 
 CREATE OR REPLACE FUNCTION public.fn_guest_shop_admin_manual_fulfill(
     p_order_id UUID,
@@ -265,3 +266,4 @@ GRANT EXECUTE ON FUNCTION public.fn_guest_shop_admin_manual_fulfill(UUID, TEXT, 
 
 COMMENT ON FUNCTION public.fn_guest_shop_admin_manual_fulfill(UUID, TEXT, UUID, TEXT) IS
     'Atomic L1 admin fulfillment: preserve consumed cards and replace all missing reservations before delivery.';
+

@@ -348,7 +348,7 @@
         "originalPrice": "原价",
         "flashSalePrice": "秒杀价",
         "tieredPrice": "阶梯价",
-        "tieredPriceRuleInline": "满 {qty} 件 {price} {unit}",
+        "tieredPriceRuleInline": "满 {qty} 件 {price}",
         "tieredPriceRulesLabel": "阶梯定价规则",
         "tieredPriceRulesHelp": "查看阶梯定价规则",
         "calculating": "计算中...",

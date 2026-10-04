@@ -126,7 +126,7 @@ ALTER TABLE public.guest_shop_orders
     );
 
 -- L1 hard quantity ceiling. The application clamp is
--- min(GUEST_SHOP_MAX_QUANTITY, guest_max_quantity, max_purchase_quantity, 5);
+-- min(GUEST_SHOP_MAX_QUANTITY, guest_max_quantity, max_purchase_quantity, 99);
 -- this CHECK is the outer bound that survives a mis-set environment variable.
 -- Existing rows are all quantity = 1, so validation passes. Raising the ceiling
 -- later is a deliberate migration, never an env change.
@@ -134,7 +134,7 @@ ALTER TABLE public.guest_shop_orders
     DROP CONSTRAINT IF EXISTS guest_shop_orders_quantity_check;
 ALTER TABLE public.guest_shop_orders
     ADD CONSTRAINT guest_shop_orders_quantity_check
-    CHECK (quantity >= 1 AND quantity <= 5);
+    CHECK (quantity >= 1 AND quantity <= 99);
 
 ALTER TABLE public.guest_shop_orders
     DROP CONSTRAINT IF EXISTS guest_shop_orders_discount_code_check;
@@ -192,7 +192,7 @@ ALTER TABLE public.guest_shop_inventory_reservations
 -- single-column index would survive and the intended (order_id, created_at, id)
 -- ordering index would never exist, with no error to tell anybody. So the
 -- composite gets its own name and the P0 index is left in place, because other
--- queries filter on order_id without an ordering need. At most five rows exist
+-- queries filter on order_id without an ordering need. At most the hard-ceiling number of rows exist
 -- per order, so keeping both costs nothing measurable.
 CREATE INDEX IF NOT EXISTS idx_guest_shop_inventory_reservations_order_claim
     ON public.guest_shop_inventory_reservations (order_id, created_at, id);
@@ -249,7 +249,7 @@ CREATE TABLE IF NOT EXISTS public.guest_shop_discount_redemptions (
     CONSTRAINT guest_shop_discount_redemptions_hash_check
         CHECK (buyer_contact_hash ~ '^[0-9a-f]{64}$'),
     CONSTRAINT guest_shop_discount_redemptions_qty_check
-        CHECK (quantity >= 1 AND quantity <= 5),
+        CHECK (quantity >= 1 AND quantity <= 99),
     CONSTRAINT guest_shop_discount_redemptions_amount_check CHECK (
         list_amount > 0
         AND discount_amount > 0
@@ -982,7 +982,7 @@ BEGIN
     -- selects the cheapest rule whose qty is <= p_quantity, so relaxing this
     -- guard is what turns on tiered pricing for guests; the flash-sale branch
     -- above already ignores quantity. Bounds are checked here and the outer cap
-    -- (<= 5) is enforced by the caller and by the guest_shop_orders CHECK.
+    -- (<= 99) is enforced by the caller and by the guest_shop_orders CHECK.
     IF p_quantity IS NULL OR p_quantity < 1 OR p_quantity > 99 THEN
         RETURN NULL;
     END IF;
@@ -1214,7 +1214,7 @@ BEGIN
         );
     END IF;
 
-    IF v_quantity < 1 OR v_quantity > 5 THEN
+    IF v_quantity < 1 OR v_quantity > 99 THEN
         RETURN jsonb_build_object('success', false, 'code', 'guest_invalid_quantity', 'message', '购买数量超出游客允许范围');
     END IF;
 
@@ -1790,11 +1790,11 @@ BEGIN
         RAISE EXCEPTION 'guest_invalid_order_ttl';
     END IF;
 
-    -- L1: bound the raw quantity before it can influence anything. 5 is the hard
+    -- L1: bound the raw quantity before it can influence anything. 99 is the hard
     -- ceiling and matches the guest_shop_orders CHECK; the product/SKU ceilings
     -- are applied further down, after those rows are locked.
     v_quantity := COALESCE(p_quantity, 1);
-    IF v_quantity < 1 OR v_quantity > 5 THEN
+    IF v_quantity < 1 OR v_quantity > 99 THEN
         RAISE EXCEPTION 'guest_invalid_quantity';
     END IF;
 
@@ -1929,16 +1929,16 @@ BEGIN
     END IF;
 
     -- L1 cap: three independent ceilings, smallest wins.
-    --   * 5                      hard DB bound (§1 CHECK)
+    --   * 99                     hard DB bound (§1 CHECK)
     --   * guest_max_quantity     operator's per-SKU/per-product guest ceiling
     --   * max_purchase_quantity  operator's general per-order ceiling, which an
     --                            anonymous buyer must not be able to bypass
     -- A guest is therefore never able to buy more per order than a logged-in
     -- buyer could, even if the guest ceiling is misconfigured upwards.
     v_guest_quantity_cap := LEAST(
-        5,
+        99,
         GREATEST(1, COALESCE(v_sku.guest_max_quantity, v_product.guest_max_quantity, 1)),
-        GREATEST(1, COALESCE(v_product.max_purchase_quantity, 5))
+        GREATEST(1, COALESCE(v_product.max_purchase_quantity, 99))
     );
     IF v_quantity > v_guest_quantity_cap THEN
         RAISE EXCEPTION 'guest_quantity_not_allowed';
@@ -2323,7 +2323,7 @@ $$;
 --
 --    P0 reserved exactly one card per guest order, so every state function read
 --    a single reservation row with SELECT ... INTO and treated that row as the
---    whole order. L1 lets one order hold up to five cards, which makes every one
+--    whole order. L1 lets one order hold multiple cards, which makes every one
 --    of those reads wrong in a way that loses money or stock:
 --
 --      * confirm would look at ONE arbitrary row and could mark a 3-card order

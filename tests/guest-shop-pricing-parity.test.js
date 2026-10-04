@@ -274,22 +274,24 @@ const BREAKDOWN_VECTORS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Group D —— 件数上限（env 与 DB 上限取 min，越界/非法一律降级到 1，绝不放大）。
-// 覆盖 §9.5「quantity 1~5」的闸门侧，并固化「out-of-range env → 1」的 fail-closed。
+// Group D —— 件数上限（env 与 DB 上限取 min，非法值降级到 1）。
+// 覆盖 §9.5「quantity 1~99」的闸门侧，并固化「非法 env → 1」的 fail-closed。
 // ---------------------------------------------------------------------------
 const QUANTITY_VECTORS = [
     { id: 'D01', desc: '默认上限 1', call: () => resolveGuestQuantityCap({ env: {} }), expected: 1 },
     { id: 'D02', desc: 'env3 + sku5 + purchase5 → 3', call: () => resolveGuestQuantityCap({ env: { GUEST_SHOP_MAX_QUANTITY: '3' }, skuGuestMaxQuantity: 5, productMaxPurchaseQuantity: 5 }), expected: 3 },
-    { id: 'D03', desc: 'env10 超上限 → 降级 1（绝不放大到 5）', call: () => resolveGuestQuantityCap({ env: { GUEST_SHOP_MAX_QUANTITY: '10' }, skuGuestMaxQuantity: 5, productMaxPurchaseQuantity: 5 }), expected: 1 },
+    { id: 'D03', desc: 'env10 与商品上限 5 取最小值', call: () => resolveGuestQuantityCap({ env: { GUEST_SHOP_MAX_QUANTITY: '10' }, skuGuestMaxQuantity: 5, productMaxPurchaseQuantity: 5 }), expected: 5 },
     { id: 'D04', desc: 'env 非法 → 降级 1', call: () => resolveGuestQuantityCap({ env: { GUEST_SHOP_MAX_QUANTITY: 'abc' }, skuGuestMaxQuantity: 5, productMaxPurchaseQuantity: 5 }), expected: 1 },
     { id: 'D05', desc: 'env5 合法 + sku5 → 5（DB 天花板）', call: () => resolveGuestQuantityCap({ env: { GUEST_SHOP_MAX_QUANTITY: '5' }, skuGuestMaxQuantity: 5, productMaxPurchaseQuantity: 5 }), expected: 5 },
     { id: 'D06', desc: 'sku1 收紧到 1（即便 env3）', call: () => resolveGuestQuantityCap({ env: { GUEST_SHOP_MAX_QUANTITY: '3' }, skuGuestMaxQuantity: 1, productMaxPurchaseQuantity: 5 }), expected: 1 },
-    { id: 'D07', desc: 'normalize undefined → 1', call: () => normalizeGuestQuantity(undefined, { cap: 1 }), expected: 1 },
-    { id: 'D08', desc: 'normalize 3 超 cap1 → null', call: () => normalizeGuestQuantity(3, { cap: 1 }), expected: null },
-    { id: 'D09', desc: "normalize '2' cap3 → 2", call: () => normalizeGuestQuantity('2', { cap: 3 }), expected: 2 },
-    { id: 'D10', desc: 'normalize 0 → null', call: () => normalizeGuestQuantity(0, { cap: 3 }), expected: null },
-    { id: 'D11', desc: 'normalize 负 → null', call: () => normalizeGuestQuantity(-1, { cap: 3 }), expected: null },
-    { id: 'D12', desc: 'normalize 6 超 DB 天花板5 → null', call: () => normalizeGuestQuantity(6, { cap: GUEST_MAX_QUANTITY_CEILING }), expected: null }
+    { id: 'D07', desc: '产品游客上限 12 在 env12 下允许 12 件', call: () => resolveGuestQuantityCap({ env: { GUEST_SHOP_MAX_QUANTITY: '12' }, productGuestMaxQuantity: 12, productMaxPurchaseQuantity: 12 }), expected: 12 },
+    { id: 'D08', desc: '产品游客上限 3 在 env5 下允许 3 件', call: () => resolveGuestQuantityCap({ env: { GUEST_SHOP_MAX_QUANTITY: '5' }, productGuestMaxQuantity: 3, productMaxPurchaseQuantity: 12 }), expected: 3 },
+    { id: 'D09', desc: 'normalize undefined → 1', call: () => normalizeGuestQuantity(undefined, { cap: 1 }), expected: 1 },
+    { id: 'D10', desc: 'normalize 3 超 cap1 → null', call: () => normalizeGuestQuantity(3, { cap: 1 }), expected: null },
+    { id: 'D11', desc: "normalize '2' cap3 → 2", call: () => normalizeGuestQuantity('2', { cap: 3 }), expected: 2 },
+    { id: 'D12', desc: 'normalize 0 → null', call: () => normalizeGuestQuantity(0, { cap: 3 }), expected: null },
+    { id: 'D13', desc: 'normalize 负 → null', call: () => normalizeGuestQuantity(-1, { cap: 3 }), expected: null },
+    { id: 'D14', desc: 'normalize 100 超 DB 天花板99 → null', call: () => normalizeGuestQuantity(100, { cap: GUEST_MAX_QUANTITY_CEILING }), expected: null }
 ];
 
 // ---------------------------------------------------------------------------
@@ -365,7 +367,7 @@ test('红线：resolver 镜像从不算折扣——折扣类入参被完全忽�
 
 test('红线：resolver 镜像的 quantity 天花板与 SQL 边界一致（99）', () => {
     assert.equal(GUEST_QUANTITY_CEILING, 99);
-    assert.equal(GUEST_MAX_QUANTITY_CEILING, 5);
+    assert.equal(GUEST_MAX_QUANTITY_CEILING, 99);
 });
 
 test('§9.5 配套 SQL parity 文件存在且覆盖全部 group A fixture id（防漂移）', () => {

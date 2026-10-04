@@ -659,7 +659,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /getPurchaseQuantityCapForProduct: function \(product, fallbackMaxQuantity = null, options = \{\}\) \{[\s\S]*selectedSku[\s\S]*stockCount[\s\S]*Math\.min\(99,\s*Math\.trunc\(stockCount\)\)/s,
+        /getPurchaseQuantityCapForProduct: function \(product, fallbackMaxQuantity = null, options = \{\}\) \{[\s\S]*selectedSku[\s\S]*stockCount[\s\S]*Math\.min\(configuredCap,\s*Math\.trunc\(stockCount\)\)/s,
         'purchase modals should derive their quantity cap from live stock when stock is available'
     );
     assert.match(
