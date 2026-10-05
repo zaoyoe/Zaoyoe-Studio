@@ -4059,3 +4059,179 @@ html body.shop-page .shop-main.shop-layout--list .list-aside .filter-tab:active 
         box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.055) !important;
     }
 }
+
+/* ==========================================================================
+   Shop List View - Flash Sale Enhancements
+   ========================================================================== */
+
+/* Flash sale row subtle accent in dark/light themes */
+html body.shop-page .shop-main.shop-layout--list .list-row.is-flash-sale {
+    border-color: rgba(239, 68, 68, 0.22);
+    background: linear-gradient(90deg, rgba(254, 242, 242, 0.65) 0%, rgba(255, 255, 255, 0.96) 22%);
+}
+
+html[data-theme="dark"] body.shop-page .shop-main.shop-layout--list .list-row.is-flash-sale {
+    border-color: rgba(239, 68, 68, 0.28);
+    background: linear-gradient(90deg, rgba(239, 68, 68, 0.08) 0%, rgba(32, 35, 38, 0.98) 22%);
+}
+
+@media (hover: hover) {
+    html body.shop-page .shop-main.shop-layout--list .list-row.is-flash-sale:hover {
+        border-color: rgba(239, 68, 68, 0.4);
+        box-shadow: 0 4px 18px rgba(239, 68, 68, 0.09);
+    }
+
+    html[data-theme="dark"] body.shop-page .shop-main.shop-layout--list .list-row.is-flash-sale:hover {
+        border-color: rgba(239, 68, 68, 0.45);
+        box-shadow: 0 4px 22px rgba(239, 68, 68, 0.15);
+    }
+}
+
+/* Thumbnail Flash Badge Tag */
+.list-thumb {
+    position: relative;
+}
+
+.list-thumb__flash-tag {
+    position: absolute;
+    top: -5px;
+    left: -5px;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #ef4444, #f97316);
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8.5px;
+    box-shadow: 0 2px 6px rgba(239, 68, 68, 0.45);
+    z-index: 2;
+    animation: flashThumbPulse 2.2s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes flashThumbPulse {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 2px 6px rgba(239, 68, 68, 0.45);
+    }
+    50% {
+        transform: scale(1.12);
+        box-shadow: 0 2px 10px rgba(239, 68, 68, 0.7);
+    }
+}
+
+/* Semantic Flash Sale Chip in List and Grid Views */
+html body.shop-page .list-chip--flash {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    background: #fff1f0 !important;
+    color: #cf1322 !important;
+    border: 1px solid rgba(255, 77, 79, 0.3) !important;
+    box-shadow: 0 1px 3px rgba(239, 68, 68, 0.08);
+}
+
+html[data-theme="dark"] body.shop-page .list-chip--flash {
+    background: rgba(255, 77, 79, 0.16) !important;
+    color: #ffa39e !important;
+    border: 1px solid rgba(255, 77, 79, 0.35) !important;
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.16);
+}
+
+html body.shop-page .list-chip--flash .list-chip--flash__icon {
+    font-size: 9.5px;
+    color: #f5222d;
+    animation: flashIconFlicker 1.5s ease-in-out infinite alternate;
+}
+
+html[data-theme="dark"] body.shop-page .list-chip--flash .list-chip--flash__icon {
+    color: #ff7875;
+}
+
+@keyframes flashIconFlicker {
+    from {
+        opacity: 0.85;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1.1);
+        filter: drop-shadow(0 0 3px rgba(255, 77, 79, 0.8));
+    }
+}
+
+html body.shop-page .list-chip--flash .countdown-timer {
+    font-variant-numeric: tabular-nums;
+    font-family: 'Outfit', 'Monaco', monospace, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+/* Strikethrough Original Price in List View */
+.list-price__original {
+    font-size: 11px;
+    color: #94a3b8;
+    text-decoration: line-through;
+    text-decoration-color: #ef4444;
+    margin-right: 5px;
+    font-weight: 500;
+    opacity: 0.82;
+    display: inline-block;
+}
+
+html[data-theme="dark"] .list-price__original {
+    color: #64748b;
+    text-decoration-color: #f87171;
+}
+
+/* Highlighting the flash price in list metrics and inline */
+html body.shop-page .shop-main.shop-layout--list .list-price--flash .list-price__value {
+    color: #dc2626 !important;
+    -webkit-text-fill-color: #dc2626 !important;
+    font-weight: 800 !important;
+}
+
+html[data-theme="dark"] body.shop-page .shop-main.shop-layout--list .list-price--flash .list-price__value {
+    color: #f87171 !important;
+    -webkit-text-fill-color: #f87171 !important;
+}
+
+/* Mobile inline price flash chip variant */
+html body.shop-page .shop-main.shop-layout--list .list-price--inline.list-price--flash {
+    background: #fff1f0 !important;
+    color: #dc2626 !important;
+    border: 1px solid rgba(239, 68, 68, 0.22);
+}
+
+html[data-theme="dark"] body.shop-page .shop-main.shop-layout--list .list-price--inline.list-price--flash {
+    background: rgba(239, 68, 68, 0.16) !important;
+    color: #f87171 !important;
+    border-color: rgba(239, 68, 68, 0.32);
+}
+
+/* Narrow window / mobile: flash sale products only show red flash price, hide original price */
+html body.shop-page .shop-main.shop-layout--list .list-price--inline .list-price__original,
+html body.shop-page .shop-main.shop-layout--list .list-price--inline.list-price--flash .list-price__original,
+html body.shop-page .shop-main.shop-layout--list .list-price--flash .list-price--inline .list-price__original {
+    display: none !important;
+}
+
+@media (max-width: 820px) {
+    html body.shop-page .shop-main.shop-layout--list .list-price--flash .list-price__original,
+    html body.shop-page .shop-main.shop-layout--list .list-price--inline .list-price__original,
+    html body.shop-page .shop-main.shop-layout--grid .shop-card-original-price--flash,
+    html body.shop-page .shop-main.shop-layout--grid .shop-card.flash-sale-card .shop-card-original-price {
+        display: none !important;
+    }
+}
+
+body[data-layout-mode="mobile"] .shop-main.shop-layout--list .list-price--flash .list-price__original,
+body[data-layout-mode="mobile"] .shop-main.shop-layout--list .list-price--inline .list-price__original,
+body[data-layout-mode="mobile"] .shop-main.shop-layout--grid .shop-card-original-price--flash,
+body[data-layout-mode="mobile"] .shop-main.shop-layout--grid .shop-card.flash-sale-card .shop-card-original-price {
+    display: none !important;
+}
+

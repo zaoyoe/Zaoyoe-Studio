@@ -808,15 +808,18 @@ const ShopClient = {
     },
 
     getKnownPurchaseStockCount: function (product = null, skuId = '') {
-        const candidateProduct = product || this.getCachedProductById(this.currentPurchase?.productId);
+        const candidateProduct = product || this.currentPurchase?.product || this.getCachedProductById(this.currentPurchase?.productId);
         if (!candidateProduct || typeof candidateProduct !== 'object') {
             return null;
         }
 
         const normalizedSkuId = String(skuId || this.currentPurchase?.productSkuId || '').trim();
+        const availableSkus = this.getProductSkusForPurchase(candidateProduct);
+        const skuPool = availableSkus.length > 0
+            ? availableSkus
+            : (Array.isArray(this.currentPurchase?.productSkus) ? this.currentPurchase.productSkus : []);
         const selectedSku = normalizedSkuId
-            ? this.getProductSkusForPurchase(candidateProduct)
-                .find((sku) => String(sku?.id || '').trim() === normalizedSkuId)
+            ? skuPool.find((sku) => String(sku?.id || '').trim() === normalizedSkuId)
             : null;
         // A caller that names a SKU must never fall back to the product-level
         // stock row when that SKU is absent from the current catalog snapshot.
@@ -1151,9 +1154,11 @@ const ShopClient = {
         this.currentPurchase.basePrice = basePrice;
         this.currentPurchase.unitPrice = basePrice;
         this.currentPurchase.rules = this.resolveQuantityPricingRulesForSku(product, sku);
-        this.currentPurchase.hasFlashSale = pricing.hasFlashSale === true;
-        this.currentPurchase.flashSalePrice = pricing.hasFlashSale ? pricing.currentPrice : null;
-        this.currentPurchase.flashSaleOriginalPrice = pricing.hasFlashSale ? pricing.originalPrice : null;
+        const flashSalePricing = this.getActiveFlashSalePricingContext(productForPricing, basePrice);
+        this.currentPurchase.hasFlashSale = flashSalePricing.hasFlashSale === true;
+        this.currentPurchase.flashSalePrice = flashSalePricing.hasFlashSale ? flashSalePricing.flashSalePrice : null;
+        this.currentPurchase.flashSaleOriginalPrice = flashSalePricing.hasFlashSale ? flashSalePricing.flashSaleOriginalPrice : null;
+        this.currentPurchase.flashSaleEnd = flashSalePricing.hasFlashSale ? (product?.flash_sale_end || null) : null;
         this.currentPurchase.manualDelivery = manualDelivery;
         this.currentPurchase.soldOut = !manualDelivery && this.getShopSkuStockCount(sku) <= 0;
 
@@ -3786,6 +3791,7 @@ const ShopClient = {
         if (hasValidFlashWindow
             && (!hasFlashStart || flashStart <= now)
             && flashEnd > now
+            && flashSalePrice < currentPrice
             && !hasAgentPrice) {
             originalPrice = currentPrice;
             currentPrice = flashSalePrice;
@@ -3813,8 +3819,31 @@ const ShopClient = {
         return {
             hasFlashSale,
             flashSalePrice: hasFlashSale ? flashSalePrice : null,
-            flashSaleOriginalPrice: hasFlashSale ? flashSaleOriginalPrice : null
+            flashSaleOriginalPrice: hasFlashSale ? flashSaleOriginalPrice : null,
+            flashSaleEnd: hasFlashSale ? (product?.flash_sale_end || null) : null
         };
+    },
+
+    formatFlashSaleRemainingTime: function (diffMs) {
+        if (!Number.isFinite(diffMs) || diffMs <= 0) return '00:00';
+        const totalSeconds = Math.floor(diffMs / 1000);
+        const s = totalSeconds % 60;
+        const totalMinutes = Math.floor(totalSeconds / 60);
+        const m = totalMinutes % 60;
+        const totalHours = Math.floor(totalMinutes / 60);
+        const h = totalHours % 24;
+        const d = Math.floor(totalHours / 24);
+
+        const pad = (n) => String(n).padStart(2, '0');
+        const dayLabel = window.i18n?.t('shop.flashSaleDay') || '天';
+
+        if (d > 0) {
+            return `${d}${dayLabel} ${pad(h)}:${pad(m)}:${pad(s)}`;
+        }
+        if (totalHours > 0) {
+            return `${pad(totalHours)}:${pad(m)}:${pad(s)}`;
+        }
+        return `${pad(m)}:${pad(s)}`;
     },
 
     getFlashSaleBadgeLabel: function () {
@@ -4021,7 +4050,7 @@ const ShopClient = {
 
         if (pricing.originalPrice != null && pricing.hasFlashSale && !agentBadgeHtml) {
             originalPriceHtml = `<span class="shop-card-original-price shop-card-original-price--flash">${formattedOriginalPrice}</span>`;
-            flashSaleBadgeHtml = this.buildFlashSaleBadgeHtml(product.flash_sale_end);
+            flashSaleBadgeHtml = '';
             flashShadowClass = 'flash-sale-card';
         }
 
@@ -4044,6 +4073,7 @@ const ShopClient = {
             currentPrice,
             priceHtml: `${originalPriceHtml}${formattedCurrentPrice}`,
             flashSaleBadgeHtml,
+            hasFlashSale: Boolean(pricing.hasFlashSale),
             flashSaleScheduleMarkerHtml,
             flashShadowClass,
             tieredPricingBadgeHtml,
@@ -4072,6 +4102,7 @@ const ShopClient = {
         this.currentPurchase.hasFlashSale = flashSalePricing.hasFlashSale;
         this.currentPurchase.flashSalePrice = flashSalePricing.flashSalePrice;
         this.currentPurchase.flashSaleOriginalPrice = flashSalePricing.flashSaleOriginalPrice;
+        this.currentPurchase.flashSaleEnd = flashSalePricing.hasFlashSale ? (liveProduct?.flash_sale_end || null) : null;
 
         if (nextBasePrice === currentBasePrice) {
             this.renderPurchaseUnitPrice(this.currentPurchase.unitPrice);
@@ -6567,7 +6598,8 @@ const ShopClient = {
 
         return {
             flashSaleOriginalPrice,
-            flashSalePrice
+            flashSalePrice,
+            flashSaleEnd: this.currentPurchase?.flashSaleEnd || null
         };
     },
 
@@ -6686,12 +6718,20 @@ const ShopClient = {
             const amount = this.formatPurchaseModalAmount(normalizedUnitPrice);
             if (flashSalePricing) {
                 unitPriceEl.textContent = `${this.trShop('flashSalePrice', this.isEnglishShopLocale() ? 'Flash sale price' : '秒杀价')} ${amount}`;
+                unitPriceEl.classList.add('is-flash-sale');
+                unitPriceEl.parentElement?.classList.add('is-flash-sale');
             } else if (tieredPricing?.activeRule) {
                 unitPriceEl.textContent = `${this.getTieredPricingLabel()} ${amount}`;
+                unitPriceEl.classList.remove('is-flash-sale');
+                unitPriceEl.parentElement?.classList.remove('is-flash-sale');
             } else {
                 unitPriceEl.textContent = amount;
+                unitPriceEl.classList.remove('is-flash-sale');
+                unitPriceEl.parentElement?.classList.remove('is-flash-sale');
             }
         }
+
+        this.renderPurchaseModalFlashSaleBanner();
 
         const priceContextNoteEl = document.getElementById('modalPriceContextNote');
         if (!priceContextNoteEl) {
@@ -6709,6 +6749,43 @@ const ShopClient = {
         priceContextNoteEl.className = `shop-purchase-price-note shop-purchase-price-note--${this.escapeAttribute(note.variant || 'default')}`;
         priceContextNoteEl.innerHTML = note.html;
         priceContextNoteEl.hidden = false;
+    },
+
+    renderPurchaseModalFlashSaleBanner: function () {
+        const bannerEl = document.getElementById('modalFlashSaleBanner');
+        if (!bannerEl) return;
+
+        const isConfigStage = (this.currentPurchase?.stage || 'configure') === 'configure';
+        const flashSalePricing = this.getCurrentPurchaseFlashSalePricingContext();
+        const liveProduct = this.getCachedProductById(this.currentPurchase?.productId);
+        const activeContext = this.getActiveFlashSalePricingContext(liveProduct, this.currentPurchase?.unitPrice);
+        const hasFlash = Boolean(this.currentPurchase?.hasFlashSale && flashSalePricing && activeContext?.hasFlashSale);
+        const endTimeStr = activeContext?.flashSaleEnd || flashSalePricing?.flashSaleEnd || this.currentPurchase?.flashSaleEnd;
+        const endTime = endTimeStr ? Date.parse(endTimeStr) : null;
+        const now = Date.now();
+
+        if (!isConfigStage || !hasFlash || !Number.isFinite(endTime) || now >= endTime) {
+            bannerEl.hidden = true;
+            bannerEl.style.display = 'none';
+            bannerEl.style.setProperty('display', 'none', 'important');
+            bannerEl.removeAttribute('data-endtime');
+            const timerEl = bannerEl.querySelector('.countdown-timer');
+            if (timerEl) {
+                timerEl.textContent = '';
+            }
+            return;
+        }
+
+        bannerEl.hidden = false;
+        bannerEl.style.removeProperty('display');
+        bannerEl.style.display = '';
+        bannerEl.dataset.endtime = endTimeStr;
+        const diff = endTime - now;
+        const timerEl = bannerEl.querySelector('.countdown-timer');
+        if (timerEl) {
+            timerEl.textContent = this.formatFlashSaleRemainingTime(diff);
+        }
+        this.startFlashSaleTimer();
     },
 
     renderPurchaseConfirmationStage: function () {
@@ -6942,6 +7019,7 @@ const ShopClient = {
         discountInputWrap?.classList.toggle('is-guest-promo-locked', Boolean(guestPromoLocked));
         if (!guestProbePending) discountStage?.removeAttribute('aria-busy');
         this.maybeProbeGuestCashEntry();
+        this.renderPurchaseModalFlashSaleBanner();
     },
 
     proceedPurchaseConfirmation: function () {
@@ -11899,6 +11977,13 @@ const ShopClient = {
         const labels = this.getShopProductCardChipCopy();
         const stock = this.getShopProductCardStockChipMeta(product, fulfillmentState);
         const chips = [];
+        const flashContext = this.getActiveFlashSalePricingContext(product, pricingState?.currentPrice);
+        const hasFlash = Boolean(pricingState?.hasFlashSale || flashContext?.hasFlashSale);
+        const flashSaleEnd = product?.flash_sale_end || '';
+        const flashEndMs = flashSaleEnd ? Date.parse(flashSaleEnd) : null;
+        if (hasFlash && Number.isFinite(flashEndMs) && Date.now() < flashEndMs) {
+            chips.push(`<span class="list-chip list-chip--flash"><i class="fas fa-bolt-lightning list-chip--flash__icon" aria-hidden="true"></i><span class="flash-sale-badge__label">${this.escapeHtml(this.getFlashSaleBadgeLabel())}</span></span>`);
+        }
         if (product?.allow_guest_purchase === true) {
             chips.push(`<span class="list-chip list-chip--guest-purchase">${this.escapeHtml(labels.guestPurchase)}</span>`);
         }
@@ -12032,7 +12117,6 @@ const ShopClient = {
             <div class="${breatheFrameClass}"${breatheFrameStyleAttr}>
                 <div class="shop-card-breathe-shell">
                     <div class="shop-card-image">
-                        ${pricingState.flashSaleBadgeHtml}
                         ${pricingState.flashSaleScheduleMarkerHtml}
                         ${displayHtml}
                         ${pricingState.agentBadgeHtml}
@@ -13293,8 +13377,18 @@ const ShopClient = {
             let scheduledOrActiveFlashSales = 0;
             let shouldRefreshCatalog = false;
             const now = Date.now();
-            document.querySelectorAll('.flash-sale-badge, [data-shop-card-flash-schedule="true"]').forEach(element => {
+            document.querySelectorAll('.flash-sale-badge, [data-shop-card-flash-schedule="true"], [data-shop-modal-flash-timer="true"], [data-shop-list-flash-badge="true"]').forEach(element => {
                 if (element.closest('.shop-grid-transition-layer')) return;
+                if (element.hidden || element.closest('[hidden]') || element.style.display === 'none') return;
+                if (element.matches('[data-shop-modal-flash-timer="true"]') || element.id === 'modalFlashSaleBanner') {
+                    if (this.currentPurchase?.hasFlashSale !== true) {
+                        element.hidden = true;
+                        element.style.display = 'none';
+                        element.style.setProperty('display', 'none', 'important');
+                        element.removeAttribute('data-endtime');
+                        return;
+                    }
+                }
                 const startTime = element.dataset.starttime ? Date.parse(element.dataset.starttime) : null;
                 const endTime = Date.parse(element.dataset.endtime || '');
                 if (!Number.isFinite(endTime)) return;
@@ -13303,20 +13397,21 @@ const ShopClient = {
                     return;
                 }
                 if (now >= endTime) {
+                    if (element.matches('[data-shop-modal-flash-timer="true"]') || element.id === 'modalFlashSaleBanner') {
+                        const timerSpan = element.querySelector('.countdown-timer');
+                        if (timerSpan) {
+                            timerSpan.textContent = window.i18n?.t('shop.flashSaleEnded') || '秒杀已结束';
+                        }
+                    }
                     shouldRefreshCatalog = true;
                     return;
                 }
                 scheduledOrActiveFlashSales++;
-                if (element.matches('.flash-sale-badge')) {
+                if (element.matches('.flash-sale-badge, [data-shop-modal-flash-timer="true"], [data-shop-list-flash-badge="true"]')) {
                     const diff = endTime - now;
-                    const h = Math.floor(diff / (1000 * 60 * 60));
-                    const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                    const s = Math.floor((diff % (1000 * 60)) / 1000);
                     const timerSpan = element.querySelector('.countdown-timer');
                     if (timerSpan) {
-                        timerSpan.textContent = h > 0
-                            ? `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
-                            : `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                        timerSpan.textContent = this.formatFlashSaleRemainingTime(diff);
                     }
                 }
             });
@@ -13978,6 +14073,22 @@ const ShopClient = {
     },
 
     openPurchaseModal: function (productId, productName, productNameEn, price, rules, maxPurchaseQuantity = 99, purchaseNotes = '', usageInstructions = '', options = {}) {
+        const flashBanner = document.getElementById('modalFlashSaleBanner');
+        if (flashBanner) {
+            flashBanner.hidden = true;
+            flashBanner.style.display = 'none';
+            flashBanner.style.setProperty('display', 'none', 'important');
+            flashBanner.removeAttribute('data-endtime');
+            const timerEl = flashBanner.querySelector('.countdown-timer');
+            if (timerEl) {
+                timerEl.textContent = '';
+            }
+        }
+        const unitPriceEl = document.getElementById('modalUnitPrice');
+        if (unitPriceEl) {
+            unitPriceEl.classList.remove('is-flash-sale');
+            unitPriceEl.parentElement?.classList.remove('is-flash-sale');
+        }
         const unlimitedPurchases = options?.unlimitedPurchases === true;
         const liveProductForPricing = this.getCachedProductById(productId);
         const purchaseSkus = this.getProductSkusForPurchase(liveProductForPricing);
@@ -14091,6 +14202,7 @@ const ShopClient = {
             hasFlashSale: flashSalePricing.hasFlashSale,
             flashSalePrice: flashSalePricing.flashSalePrice,
             flashSaleOriginalPrice: flashSalePricing.flashSaleOriginalPrice,
+            flashSaleEnd: flashSalePricing.hasFlashSale ? (liveProductForPricing?.flash_sale_end || null) : null,
             quantity: initialQuantity,
             orderId: null,
             createdAt: null,
@@ -14499,16 +14611,40 @@ const ShopClient = {
         }
     },
 
-    showGuestQuantityLimitToast: function (quantityCap) {
+    showGuestQuantityLimitToast: function (quantityCap, targetQuantity = null) {
         const cap = Math.max(1, Number.parseInt(String(quantityCap || 1), 10) || 1);
+        const attempted = Number.isFinite(Number(targetQuantity)) && Number(targetQuantity) >= 1
+            ? Math.trunc(Number(targetQuantity))
+            : cap + 1;
+        const knownStockCount = this.getKnownPurchaseStockCount();
+
+        if (knownStockCount !== null && attempted > knownStockCount) {
+            const message = (typeof window !== 'undefined' && window.i18n?.t ? window.i18n.t('shop.insufficientStock') : null)
+                || (this.isEnglishShopLocale() ? 'Insufficient stock. Please contact support.' : '库存不足，请联系客服补货');
+            this.showShopToast(message, 'error');
+            return;
+        }
+
         const message = this.isEnglishShopLocale()
             ? `Guest checkout is limited to ${cap} item${cap === 1 ? '' : 's'} per order. Log in to purchase more.`
             : `游客用户最多可购 ${cap} 件，登录后可以购买多件。`;
         this.showShopToast(message, 'error');
     },
 
-    showPurchaseQuantityLimitToast: function (quantityCap) {
+    showPurchaseQuantityLimitToast: function (quantityCap, targetQuantity = null) {
         const cap = Math.max(1, Number.parseInt(String(quantityCap || 1), 10) || 1);
+        const attempted = Number.isFinite(Number(targetQuantity)) && Number(targetQuantity) >= 1
+            ? Math.trunc(Number(targetQuantity))
+            : cap + 1;
+        const knownStockCount = this.getKnownPurchaseStockCount();
+
+        if (knownStockCount !== null && attempted > knownStockCount) {
+            const message = (typeof window !== 'undefined' && window.i18n?.t ? window.i18n.t('shop.insufficientStock') : null)
+                || (this.isEnglishShopLocale() ? 'Insufficient stock. Please contact support.' : '库存不足，请联系客服补货');
+            this.showShopToast(message, 'error');
+            return;
+        }
+
         const message = this.isEnglishShopLocale()
             ? `This product allows up to ${cap} item${cap === 1 ? '' : 's'} per order. Contact support for special requests.`
             : `该商品单次最高可购 ${cap} 件，特殊需求请联系客服。`;
@@ -14533,6 +14669,7 @@ const ShopClient = {
             Number.parseInt(String(this.currentPurchase?.quantity ?? '1'), 10) || 1
         );
         let newQty = currentQuantity + numericDelta;
+        const targetQuantity = currentQuantity + numericDelta;
         const exceedsQuantityCap = newQty > quantityCap;
         if (newQty < 1) newQty = 1;
         if (exceedsQuantityCap) newQty = quantityCap;
@@ -14540,18 +14677,18 @@ const ShopClient = {
         if (newQty === currentQuantity) {
             if (numericDelta > 0 && currentQuantity >= quantityCap) {
                 if (this.isGuestCashEntryActive()) {
-                    this.showGuestQuantityLimitToast(quantityCap);
+                    this.showGuestQuantityLimitToast(quantityCap, targetQuantity);
                 } else {
-                    this.showPurchaseQuantityLimitToast(quantityCap);
+                    this.showPurchaseQuantityLimitToast(quantityCap, targetQuantity);
                 }
             }
             return;
         }
         if (exceedsQuantityCap) {
             if (this.isGuestCashEntryActive()) {
-                this.showGuestQuantityLimitToast(quantityCap);
+                this.showGuestQuantityLimitToast(quantityCap, targetQuantity);
             } else {
-                this.showPurchaseQuantityLimitToast(quantityCap);
+                this.showPurchaseQuantityLimitToast(quantityCap, targetQuantity);
             }
         }
 
@@ -14570,13 +14707,14 @@ const ShopClient = {
             : this.getCurrentPurchaseQuantityCap();
         let val = parseInt(input.value, 10);
         if (isNaN(val) || val < 1) val = 1;
+        const targetQuantity = val;
         const exceedsQuantityCap = val > quantityCap;
         if (exceedsQuantityCap) val = quantityCap;
         if (exceedsQuantityCap) {
             if (this.isGuestCashEntryActive()) {
-                this.showGuestQuantityLimitToast(quantityCap);
+                this.showGuestQuantityLimitToast(quantityCap, targetQuantity);
             } else {
-                this.showPurchaseQuantityLimitToast(quantityCap);
+                this.showPurchaseQuantityLimitToast(quantityCap, targetQuantity);
             }
         }
 

@@ -4378,3 +4378,264 @@ test('sweepOpsAlertJobs can deliver email-only queued alerts', async () => {
     assert.equal(state.attempts[0].channel, 'email');
     assert.equal(state.attempts[0].status, 'delivered');
 });
+
+test('loadOpsAlertsRuntimeConfig overrides default.enabled to false when all configured sites are disabled', async () => {
+    const supabase = createSupabaseStub({
+        systemConfig: [{
+            config_key: 'ops_alerts',
+            config_value: {
+                __site_scoped: true,
+                default: {
+                    enabled: true,
+                    dedupe_window_minutes: 15,
+                    channels: {
+                        feishu: { enabled: true },
+                        email: { enabled: true },
+                        telegram: { enabled: true }
+                    }
+                },
+                sites: {
+                    cn: {
+                        enabled: false,
+                        dedupe_window_minutes: 15,
+                        channels: {
+                            feishu: { enabled: false },
+                            email: { enabled: false },
+                            telegram: { enabled: false }
+                        }
+                    }
+                }
+            }
+        }]
+    });
+
+    const allRuntime = await loadOpsAlertsRuntimeConfig(supabase, {}, { site: 'all' });
+    const cnRuntime = await loadOpsAlertsRuntimeConfig(supabase, {}, { site: 'cn' });
+
+    assert.equal(allRuntime.config.enabled, false);
+    assert.equal(allRuntime.config.channels.feishu.enabled, false);
+    assert.equal(allRuntime.config.channels.email.enabled, false);
+    assert.equal(allRuntime.config.channels.telegram.enabled, false);
+
+    assert.equal(cnRuntime.config.enabled, false);
+    assert.equal(cnRuntime.config.channels.feishu.enabled, false);
+});
+
+test('enqueueOpsAlertJob rejects alert when target site alerts are disabled even if called with an old or site:all runtime', async () => {
+    const state = {
+        jobs: [],
+        attempts: [],
+        systemConfig: [{
+            config_key: 'ops_alerts',
+            config_value: {
+                __site_scoped: true,
+                default: {
+                    enabled: true,
+                    channels: {
+                        feishu: { enabled: true }
+                    }
+                },
+                sites: {
+                    cn: {
+                        enabled: false,
+                        channels: {
+                            feishu: { enabled: false }
+                        }
+                    }
+                }
+            }
+        }]
+    };
+    const supabase = createSupabaseStub(state);
+
+    const oldRuntime = {
+        site: 'all',
+        config: {
+            enabled: true,
+            channels: {
+                feishu: { enabled: true, minimum_severity: 'warning' }
+            }
+        }
+    };
+
+    const result = await enqueueOpsAlertJob(supabase, {
+        alertType: 'guest_shop_payment_review',
+        title: '游客支付待人工复核',
+        content: '订单待复核',
+        severity: 'warning',
+        payload: {
+            site: 'cn'
+        }
+    }, {
+        runtime: oldRuntime
+    });
+
+    assert.equal(result.queued, false);
+    assert.equal(result.reason, 'ops_alerts_disabled');
+    assert.equal(state.jobs.length, 0);
+});
+
+test('sweepOpsAlertJobs does not claim or deliver jobs when all sites are disabled', async () => {
+    const state = {
+        jobs: [{
+            id: 'job-pending-1',
+            alert_type: 'guest_shop_payment_review',
+            severity: 'warning',
+            title: '游客支付待人工复核',
+            content: '订单待复核',
+            payload: { site: 'cn' },
+            channels: ['feishu'],
+            remaining_channels: ['feishu'],
+            attempts: 0,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            next_retry_at: new Date(Date.now() - 60000).toISOString()
+        }],
+        attempts: [],
+        systemConfig: [{
+            config_key: 'ops_alerts',
+            config_value: {
+                __site_scoped: true,
+                default: {
+                    enabled: true,
+                    channels: { feishu: { enabled: true } }
+                },
+                sites: {
+                    cn: {
+                        enabled: false,
+                        channels: { feishu: { enabled: false } }
+                    }
+                }
+            }
+        }]
+    };
+    const supabase = createSupabaseStub(state);
+
+    let fetchCalled = false;
+    const result = await sweepOpsAlertJobs(supabase, {
+        fetchImpl: async () => {
+            fetchCalled = true;
+            return { ok: true, status: 200, async text() { return '{}'; } };
+        }
+    });
+
+    assert.equal(result.claimed, 0);
+    assert.equal(result.delivered, 0);
+    assert.equal(fetchCalled, false);
+    assert.equal(state.attempts.length, 0);
+});
+
+test('sweepOpsAlertJobs suppresses job when target site alerts are disabled during processing', async () => {
+    const state = {
+        jobs: [{
+            id: 'job-pending-2',
+            alert_type: 'guest_shop_payment_review',
+            severity: 'warning',
+            title: '游客支付待人工复核',
+            content: '订单待复核',
+            payload: { site: 'cn' },
+            channels: ['feishu'],
+            remaining_channels: ['feishu'],
+            attempts: 0,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            next_retry_at: new Date(Date.now() - 60000).toISOString()
+        }],
+        attempts: [],
+        systemConfig: [{
+            config_key: 'ops_alerts',
+            config_value: {
+                __site_scoped: true,
+                default: {
+                    enabled: true,
+                    channels: { feishu: { enabled: true } }
+                },
+                sites: {
+                    cn: {
+                        enabled: false,
+                        channels: { feishu: { enabled: false } }
+                    },
+                    intl: {
+                        enabled: true,
+                        channels: { feishu: { enabled: true } }
+                    }
+                }
+            }
+        }]
+    };
+    const supabase = createSupabaseStub(state);
+
+    let fetchCalled = false;
+    const result = await sweepOpsAlertJobs(supabase, {
+        fetchImpl: async () => {
+            fetchCalled = true;
+            return { ok: true, status: 200, async text() { return '{}'; } };
+        }
+    });
+
+    assert.equal(result.claimed, 1);
+    assert.equal(result.delivered, 0);
+    assert.equal(result.suppressed, 1);
+    assert.equal(fetchCalled, false);
+    assert.equal(state.jobs[0].status, 'suppressed');
+    assert.equal(state.jobs[0].last_error, 'ops_alerts_disabled');
+});
+
+test('sweepOpsAlertJobs suppresses job when all remaining channels are disabled on target site', async () => {
+    const state = {
+        jobs: [{
+            id: 'job-pending-3',
+            alert_type: 'guest_shop_payment_review',
+            severity: 'warning',
+            title: '游客支付待人工复核',
+            content: '订单待复核',
+            payload: { site: 'cn' },
+            channels: ['feishu', 'email'],
+            remaining_channels: ['feishu', 'email'],
+            attempts: 0,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            next_retry_at: new Date(Date.now() - 60000).toISOString()
+        }],
+        attempts: [],
+        systemConfig: [{
+            config_key: 'ops_alerts',
+            config_value: {
+                __site_scoped: true,
+                default: {
+                    enabled: true,
+                    channels: {
+                        feishu: { enabled: true },
+                        email: { enabled: true }
+                    }
+                },
+                sites: {
+                    cn: {
+                        enabled: true,
+                        channels: {
+                            feishu: { enabled: false },
+                            email: { enabled: false }
+                        }
+                    }
+                }
+            }
+        }]
+    };
+    const supabase = createSupabaseStub(state);
+
+    let fetchCalled = false;
+    const result = await sweepOpsAlertJobs(supabase, {
+        fetchImpl: async () => {
+            fetchCalled = true;
+            return { ok: true, status: 200, async text() { return '{}'; } };
+        }
+    });
+
+    assert.equal(result.claimed, 1);
+    assert.equal(result.delivered, 0);
+    assert.equal(result.suppressed, 1);
+    assert.equal(fetchCalled, false);
+    assert.equal(state.jobs[0].status, 'suppressed');
+    assert.equal(state.jobs[0].last_error, 'channels_disabled');
+});
+

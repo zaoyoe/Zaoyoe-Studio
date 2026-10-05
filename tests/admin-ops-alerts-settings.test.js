@@ -4773,3 +4773,43 @@ test('ops alert settings preview actions fan out to Feishu when the channel is e
         assert.equal(state.feishuTests.length, 1);
     });
 });
+
+test('ops alert settings POST syncs default enabled to false when disabling all sites', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: { enabled: true },
+                feishu: { enabled: true },
+                email: { enabled: true }
+            }
+        })
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                site: 'cn',
+                config: {
+                    enabled: false,
+                    channels: {
+                        telegram: { enabled: false },
+                        feishu: { enabled: false },
+                        email: { enabled: false }
+                    }
+                }
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        assert.equal(res.statusCode, 200);
+
+        const upsert = state.systemConfigUpserts.find((item) => item.config_key === 'ops_alerts');
+        assert.ok(upsert);
+        assert.equal(upsert.config_value.sites.cn.enabled, false);
+        assert.equal(upsert.config_value.default.enabled, false);
+        assert.equal(upsert.config_value.default.channels.feishu.enabled, false);
+        assert.equal(upsert.config_value.default.channels.email.enabled, false);
+    });
+});
+

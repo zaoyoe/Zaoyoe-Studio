@@ -889,7 +889,45 @@ function resolveOpsAlertsConfigValueForSite(value, site = 'all') {
         fallback: 'all'
     });
     if (normalizedSite === 'all') {
-        return getOpsAlertsSiteScopedConfigDefaultValue(value);
+        const defaultValue = getOpsAlertsSiteScopedConfigDefaultValue(value);
+        const sites = value.sites && typeof value.sites === 'object' && !Array.isArray(value.sites)
+            ? value.sites
+            : {};
+        const siteValues = Object.values(sites).filter((item) => item && typeof item === 'object');
+        if (siteValues.length > 0 && defaultValue && typeof defaultValue === 'object') {
+            let nextDefault = defaultValue;
+            const allSitesDisabled = siteValues.every((siteConfig) => siteConfig.enabled === false);
+            if (allSitesDisabled && nextDefault.enabled !== false) {
+                nextDefault = {
+                    ...nextDefault,
+                    enabled: false
+                };
+            }
+            const defaultChannels = nextDefault.channels && typeof nextDefault.channels === 'object'
+                ? { ...nextDefault.channels }
+                : null;
+            if (defaultChannels) {
+                let channelChanged = false;
+                for (const channelName of ['feishu', 'email', 'telegram']) {
+                    const allChannelDisabled = siteValues.every((s) => s?.channels?.[channelName]?.enabled === false);
+                    if (allChannelDisabled && defaultChannels[channelName] && defaultChannels[channelName].enabled !== false) {
+                        defaultChannels[channelName] = {
+                            ...defaultChannels[channelName],
+                            enabled: false
+                        };
+                        channelChanged = true;
+                    }
+                }
+                if (channelChanged) {
+                    nextDefault = {
+                        ...nextDefault,
+                        channels: defaultChannels
+                    };
+                }
+            }
+            return nextDefault;
+        }
+        return defaultValue;
     }
 
     const sites = value.sites && typeof value.sites === 'object' && !Array.isArray(value.sites)
@@ -4173,9 +4211,21 @@ async function loadExistingOpsAlertSummaryJob(supabase, alertType, dedupeKey) {
 
 async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
     const siteContext = resolveOpsAlertInputSite(input, options);
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, options.env, {
-        site: siteContext.site
-    });
+    const shouldReloadRuntime = !options.runtime
+        || (Boolean(options.runtime.site) && options.runtime.site !== siteContext.site);
+    const runtime = shouldReloadRuntime
+        ? await loadOpsAlertsRuntimeConfig(supabase, options.env, {
+            site: siteContext.site
+        })
+        : options.runtime;
+
+    if (!runtime?.config || runtime.config.enabled !== true) {
+        return {
+            queued: false,
+            reason: 'ops_alerts_disabled'
+        };
+    }
+
     const alertType = normalizeText(input.alertType || input.alert_type);
     const explicitCreatedAt = normalizeText(input.createdAt || input.created_at);
     const referenceDate = options.now instanceof Date
@@ -4442,9 +4492,18 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
 
 async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
     const siteContext = resolveOpsAlertInputSite(input, options);
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, options.env, {
-        site: siteContext.site
-    });
+    const shouldReloadRuntime = !options.runtime
+        || (Boolean(options.runtime.site) && options.runtime.site !== siteContext.site);
+    const runtime = shouldReloadRuntime
+        ? await loadOpsAlertsRuntimeConfig(supabase, options.env, {
+            site: siteContext.site
+        })
+        : options.runtime;
+
+    if (!runtime?.config || runtime.config.enabled !== true) {
+        return { queued: false, reason: 'ops_alerts_disabled' };
+    }
+
     const alertType = normalizeText(input.alertType || input.alert_type);
     const title = normalizeText(input.title);
     const content = formatTimestampsInsideText(input.content);
@@ -6964,6 +7023,15 @@ async function processOpsAlertJob(supabase, job, runtime, options = {}) {
         };
     }
 
+    if (!runtime?.config || runtime.config.enabled !== true) {
+        await markOpsAlertJobSuppressed(supabase, job, 'ops_alerts_disabled');
+        return {
+            delivered: false,
+            suppressed: true,
+            remaining: []
+        };
+    }
+
     const suppression = await shouldSuppressResolvedOpsAlertJob(supabase, job);
     if (suppression?.suppressed) {
         await markOpsAlertJobSuppressed(supabase, job, suppression.reason);
@@ -6974,10 +7042,23 @@ async function processOpsAlertJob(supabase, job, runtime, options = {}) {
         };
     }
 
+    const activeChannels = remainingChannels.filter((channel) => {
+        return runtime?.config?.channels?.[channel]?.enabled === true;
+    });
+
+    if (!activeChannels.length) {
+        await markOpsAlertJobSuppressed(supabase, job, 'channels_disabled');
+        return {
+            delivered: false,
+            suppressed: true,
+            remaining: []
+        };
+    }
+
     const failedChannels = [];
     const failureMessages = [];
 
-    for (const channel of remainingChannels) {
+    for (const channel of activeChannels) {
         let result = null;
 
         try {
@@ -7062,18 +7143,14 @@ async function sweepOpsAlertJobs(supabase, options = {}) {
     const runtimeBySite = new Map();
 
     async function resolveRuntimeForJob(job = {}) {
-        if (options.runtime) {
+        if (options.runtime && (!options.runtime.site || options.runtime.site !== 'all')) {
             return runtime;
         }
 
         const siteContext = resolveOpsAlertInputSite({
-            payload: job.payload
+            payload: job?.payload
         }, options);
-        if (!siteContext.explicit) {
-            return runtime;
-        }
-
-        const site = siteContext.site;
+        const site = siteContext.site || 'cn';
         if (!runtimeBySite.has(site)) {
             runtimeBySite.set(site, loadOpsAlertsRuntimeConfig(supabase, options.env, { site }));
         }

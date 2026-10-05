@@ -308,12 +308,20 @@ function buildAlert({
         `处理入口：${ADMIN_ENTRY}`
     ].filter(Boolean);
 
+    const sites = Array.from(new Set(
+        (Array.isArray(sampleOrders) ? sampleOrders : [])
+            .map((order) => normalizeText(order?.site || order?.order?.site).toLowerCase())
+            .filter(Boolean)
+    ));
+    const site = sites.length === 1 ? sites[0] : (sites.length ? 'all' : 'cn');
+
     return {
         alertType,
         severity,
         title,
         content: contentLines.join('\n'),
         payload: {
+            site,
             target_id: alertType,
             count: Math.max(0, Math.round(Number(count || 0))),
             order_nos: orderNos,
@@ -321,6 +329,7 @@ function buildAlert({
             entry_path: ADMIN_ENTRY,
             ...extraPayload
         },
+        site,
         source: 'guest_shop_monitor',
         dedupeKey: buildDedupeKey(alertType, dedupeParts.length ? dedupeParts : [severity, String(count || 0), orderNos.join(',')]),
         dedupeWindowMinutes: Number(config?.dedupe_window_minutes || DEFAULT_GUEST_SHOP_MONITOR_CONFIG.dedupe_window_minutes)
@@ -734,6 +743,15 @@ async function runGuestShopAlertSweep(supabase, options = {}) {
     }
 
     for (const alert of alerts) {
+        const alertSite = alert.site || alert.payload?.site || 'cn';
+        const alertRuntime = (options.runtime && (!options.runtime.site || options.runtime.site === alertSite))
+            ? options.runtime
+            : await loadOpsAlertsRuntimeConfig(supabase, env, { site: alertSite });
+        if (alertRuntime?.config && alertRuntime.config.enabled !== true) {
+            summary.skipped_no_channels += 1;
+            continue;
+        }
+
         let result = { queued: false, reason: 'skipped' };
         try {
             result = await enqueueOpsAlertJob(supabase, {
@@ -741,7 +759,7 @@ async function runGuestShopAlertSweep(supabase, options = {}) {
                 createdAt: nowDate.toISOString(),
                 source: 'guest_shop_monitor'
             }, {
-                runtime,
+                runtime: alertRuntime,
                 env,
                 now: nowDate,
                 skipSummary: true

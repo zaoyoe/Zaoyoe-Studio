@@ -932,6 +932,253 @@
         if (next) next.disabled = page >= totalPages || state.busy;
     }
 
+    function resolveOrderDiscounts(detail) {
+        const paidAmount = Number(detail?.total_amount ?? detail?.amount ?? detail?.amount_breakdown?.total_amount) || 0;
+        const breakdown = detail?.amount_breakdown;
+        let listAmount = Number(breakdown?.list_amount);
+        let discountAmount = Number(breakdown?.discount_amount);
+        const discountCode = normalizeText(breakdown?.discount_code || detail?.discount_code || detail?.coupon_code, 50);
+        const quantity = Number(detail?.quantity || breakdown?.quantity || 1) || 1;
+
+        if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+            if (Number.isFinite(Number(detail?.discount_amount))) {
+                discountAmount = Number(detail.discount_amount);
+            } else if (Number.isFinite(Number(detail?.coupon_discount))) {
+                discountAmount = Number(detail.coupon_discount);
+            } else if (Number.isFinite(Number(detail?.promo_discount))) {
+                discountAmount = Number(detail.promo_discount);
+            } else {
+                discountAmount = 0;
+            }
+        }
+
+        if (!Number.isFinite(listAmount) || listAmount <= 0) {
+            const listUnit = Number(detail?.list_unit_amount || breakdown?.list_unit_amount);
+            if (Number.isFinite(listUnit) && listUnit > 0) {
+                listAmount = Math.round(listUnit * quantity * 100) / 100;
+            }
+        }
+
+        const discountItems = [];
+
+        // 1. Snapshot applied discounts
+        let snapshot = detail?.discount_snapshot;
+        if (typeof snapshot === 'string') {
+            try { snapshot = JSON.parse(snapshot); } catch (_) { snapshot = null; }
+        }
+        const appliedDiscounts = Array.isArray(snapshot?.applied_discounts) ? snapshot.applied_discounts : [];
+        if (appliedDiscounts.length > 0) {
+            for (const item of appliedDiscounts) {
+                if (!item || typeof item !== 'object') continue;
+                const itemCode = normalizeText(item.code || item.discount_code || item.coupon_code, 50);
+                const itemType = normalizeText(item.type || item.discount_type, 30).toLowerCase();
+                const itemAmount = Number(item.discount_amount || item.amount || 0);
+                const itemLabel = normalizeText(item.name || item.benefit_label || item.label, 100);
+
+                let label = itemLabel || '活动优惠';
+                if (itemType === 'coupon' || itemType === 'code' || itemCode) {
+                    label = itemCode ? `优惠码 (${itemCode})` : '优惠券优惠';
+                } else if (itemType === 'flash_sale' || itemType === 'flash' || /秒杀/u.test(itemLabel)) {
+                    label = '秒杀价优惠';
+                } else if (itemType === 'tier' || itemType === 'quantity' || /阶梯/u.test(itemLabel)) {
+                    label = '阶梯价优惠';
+                } else if (itemType === 'percent') {
+                    label = itemCode ? `折扣优惠 (${itemCode})` : '折扣优惠';
+                } else if (itemType === 'fixed') {
+                    label = itemCode ? `满减优惠 (${itemCode})` : '满减优惠';
+                } else if (itemLabel) {
+                    label = itemLabel;
+                }
+
+                discountItems.push({
+                    label,
+                    amount: itemAmount > 0 ? itemAmount : null,
+                    text: itemAmount > 0 ? `-¥${itemAmount.toFixed(2)}` : (itemLabel || '已优惠')
+                });
+            }
+        }
+
+        // 2. Catalog check for product & SKU specific flash sale or tier pricing
+        const productId = normalizeText(detail?.product_id, 100);
+        const productName = normalizeText(detail?.snapshot_product_name || detail?.product_name, 100);
+        const skuId = normalizeText(detail?.sku_id, 100);
+        const skuName = normalizeText(detail?.snapshot_sku_name || detail?.sku_name, 100);
+
+        const catalogProduct = (productId && catalogProductsMap.get(productId))
+            || (productName && catalogProductsMap.get(productName));
+
+        let catalogOriginalTotal = null;
+        let catalogBaseUnit = 0;
+        let flashSalePrice = 0;
+        let hasFlash = false;
+        if (catalogProduct) {
+            // Find SKU in product.skus or product.inventory_skus
+            const skus = Array.isArray(catalogProduct.skus) ? catalogProduct.skus
+                : (Array.isArray(catalogProduct.inventory_skus) ? catalogProduct.inventory_skus : []);
+            let matchedSku = null;
+            if (skuId) {
+                matchedSku = skus.find((s) => String(s.id || '').trim() === skuId);
+            }
+            if (!matchedSku && skuName) {
+                matchedSku = skus.find((s) => String(s.sku_name || s.name || '').trim() === skuName);
+            }
+            if (!matchedSku && skus.length > 0) {
+                matchedSku = skus.find((s) => s.is_default) || skus[0];
+            }
+
+            // Catalog base price
+            catalogBaseUnit = Number(
+                matchedSku?.price_points
+                ?? matchedSku?.pricePoints
+                ?? catalogProduct.price_points
+                ?? catalogProduct.pricePoints
+                ?? catalogProduct.price
+            );
+
+            // Flash sale price
+            flashSalePrice = Number(
+                matchedSku?.flash_sale_price
+                ?? matchedSku?.product_flash_sale_price
+                ?? catalogProduct.flash_sale_price
+                ?? catalogProduct.product_flash_sale_price
+                ?? catalogProduct.productFlashSalePrice
+            );
+            hasFlash = Number.isFinite(flashSalePrice) && flashSalePrice > 0;
+
+            // Tier quantity rules
+            const quantityRules = matchedSku?.quantity_rules
+                || matchedSku?.quantityRules
+                || catalogProduct.quantity_rules
+                || catalogProduct.productQuantityRules;
+
+            const unitAmount = Number(detail?.unit_amount ?? breakdown?.unit_amount);
+            const listUnit = Number(detail?.list_unit_amount ?? breakdown?.list_unit_amount);
+
+            if (Number.isFinite(catalogBaseUnit) && catalogBaseUnit > 0) {
+                catalogOriginalTotal = Math.round(catalogBaseUnit * quantity * 100) / 100;
+
+                // Check flash sale match
+                if (hasFlash && (listUnit === flashSalePrice || unitAmount === flashSalePrice) && catalogBaseUnit > flashSalePrice) {
+                    const flashSaved = Math.round((catalogBaseUnit - flashSalePrice) * quantity * 100) / 100;
+                    if (flashSaved > 0 && !discountItems.some((d) => d.label.includes('秒杀'))) {
+                        discountItems.unshift({
+                            label: '秒杀价优惠',
+                            amount: flashSaved,
+                            text: `-¥${flashSaved.toFixed(2)}`
+                        });
+                        discountAmount = Math.max(discountAmount, Math.round((discountAmount + flashSaved) * 100) / 100);
+                    }
+                } else if (Array.isArray(quantityRules) && quantityRules.length > 0) {
+                    // Check tier quantity rules
+                    let matchedRule = null;
+                    for (const rule of quantityRules) {
+                        const ruleQty = Number(rule.qty || rule.quantity);
+                        const rulePrice = Number(rule.price);
+                        if (quantity >= ruleQty && catalogBaseUnit > rulePrice) {
+                            if (!matchedRule || ruleQty > matchedRule.qty) {
+                                matchedRule = { qty: ruleQty, price: rulePrice };
+                            }
+                        }
+                    }
+                    if (matchedRule) {
+                        const tierSaved = Math.round((catalogBaseUnit - matchedRule.price) * quantity * 100) / 100;
+                        if (tierSaved > 0 && !discountItems.some((d) => d.label.includes('阶梯'))) {
+                            discountItems.unshift({
+                                label: `阶梯价优惠 (满${matchedRule.qty}件)`,
+                                amount: tierSaved,
+                                text: `-¥${tierSaved.toFixed(2)}`
+                            });
+                            discountAmount = Math.max(discountAmount, Math.round((discountAmount + tierSaved) * 100) / 100);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Coupon code check
+        if (discountCode && !discountItems.some((d) => d.label.includes('优惠码') || d.label.includes(discountCode))) {
+            const couponAmt = Number(detail?.coupon_discount || breakdown?.discount_amount || detail?.discount_amount);
+            const amt = Number.isFinite(couponAmt) && couponAmt > 0 ? couponAmt : (discountAmount > 0 ? discountAmount : null);
+            discountItems.push({
+                label: `优惠码优惠 (${discountCode})`,
+                amount: amt,
+                text: amt > 0 ? `-¥${amt.toFixed(2)}` : '已减免'
+            });
+        }
+
+        // 4. Promo discount check
+        const promoAmt = Number(detail?.promo_discount);
+        if (Number.isFinite(promoAmt) && promoAmt > 0 && !discountItems.some((d) => d.label.includes('活动') || d.label.includes('促销'))) {
+            discountItems.push({
+                label: '促销立减优惠',
+                amount: promoAmt,
+                text: `-¥${promoAmt.toFixed(2)}`
+            });
+        }
+
+        // 5. Fallback if discountAmount > 0 and no specific item
+        if (discountAmount > 0 && discountItems.length === 0) {
+            let label = '活动立减优惠';
+            if (hasFlash && Number.isFinite(catalogBaseUnit) && catalogBaseUnit > flashSalePrice) {
+                label = '秒杀价优惠';
+            } else if (quantity > 1) {
+                label = `阶梯价优惠 (共${quantity}件)`;
+            }
+            discountItems.push({
+                label,
+                amount: discountAmount,
+                text: `-¥${discountAmount.toFixed(2)}`
+            });
+        }
+
+        // 6. Determine original amount
+        let originalAmount = null;
+        if (Number.isFinite(catalogOriginalTotal) && catalogOriginalTotal > paidAmount) {
+            originalAmount = catalogOriginalTotal;
+        } else if (Number.isFinite(listAmount) && listAmount > 0) {
+            originalAmount = listAmount;
+        } else if (discountAmount > 0) {
+            originalAmount = Math.round((paidAmount + discountAmount) * 100) / 100;
+        } else {
+            originalAmount = paidAmount;
+        }
+
+        if (originalAmount > paidAmount) {
+            const netDiff = Math.round((originalAmount - paidAmount) * 100) / 100;
+            if (discountAmount <= 0 || Math.abs(discountAmount - netDiff) <= 0.05) {
+                discountAmount = netDiff;
+            }
+            if (discountItems.length === 0) {
+                let label = '活动立减优惠';
+                if (hasFlash && Number.isFinite(catalogBaseUnit) && catalogBaseUnit > flashSalePrice) {
+                    label = '秒杀价优惠';
+                } else if (quantity > 1) {
+                    label = `阶梯价优惠 (共${quantity}件)`;
+                }
+                discountItems.push({
+                    label,
+                    amount: discountAmount,
+                    text: `-¥${discountAmount.toFixed(2)}`
+                });
+            }
+        }
+
+        // Align single discount item amount with total discountAmount if within 5 cents (handles channel fee rounding)
+        if (discountItems.length === 1 && discountAmount > 0 && Number.isFinite(discountItems[0].amount)) {
+            if (Math.abs(discountItems[0].amount - discountAmount) <= 0.05) {
+                discountItems[0].amount = discountAmount;
+                discountItems[0].text = `-¥${discountAmount.toFixed(2)}`;
+            }
+        }
+
+        return {
+            originalAmount,
+            discountAmount: Math.max(0, discountAmount || 0),
+            paidAmount,
+            discountItems
+        };
+    }
+
     function renderDetail() {
         const detail = state.detail;
         setHidden('guestOrdersDetail', !detail);
@@ -947,47 +1194,141 @@
         if (!rows || !detail) return;
         rows.textContent = '';
         const payment = resolvePaymentMethod(detail, detail);
+        const discountData = resolveOrderDiscounts(detail);
+
+        const origText = discountData.originalAmount > 0
+            ? formatAmount(discountData.originalAmount)
+            : (discountData.paidAmount > 0 ? formatAmount(discountData.paidAmount) : '-');
+        const paidText = discountData.paidAmount > 0 ? formatAmount(discountData.paidAmount) : '-';
+
         const fields = [
-            ['订单号', detail.order_no || '-', true],
-            ['金额', formatAmount(detail.amount), false],
-            ['支付方式', payment?.label || '-', false],
-            ['支付状态', statusLabel(PAYMENT_LABELS, detail.payment_status).text, false]
+            ['订单号', detail.order_no || '-', true, 'order-no'],
+            ['支付方式', payment?.label || '-', false, 'payment'],
+            ['支付状态', statusLabel(PAYMENT_LABELS, detail.payment_status).text, false, 'status'],
+            ['原始金额', origText, false, 'original-amount'],
+            ['优惠金额', discountData, false, 'discount-amount'],
+            ['实付金额', paidText, false, 'paid-amount']
         ];
         if (normalizeText(detail.refund_status) && normalizeText(detail.refund_status) !== 'none') {
-            fields.push(['退款状态', normalizeText(detail.refund_status, 40), false]);
+            fields.push(['退款状态', normalizeText(detail.refund_status, 40), false, 'refund-status']);
         }
-        for (const [label, value, mono] of fields) {
+
+        for (const [label, value, mono, key] of fields) {
             const row = document.createElement('div');
-            row.appendChild(createNode('dt', '', label));
-            const dd = createNode('dd', mono ? 'is-mono' : '', value);
-            if (label === '订单号' && value && value !== '-') {
-                dd.classList.add('is-copyable');
-                dd.title = '点击复制订单号';
-                dd.setAttribute('role', 'button');
-                dd.setAttribute('tabindex', '0');
-                dd.setAttribute('aria-label', `复制订单号 ${value}`);
+            row.className = `guest-orders-detail-row guest-orders-detail-row--${key}`;
 
-                const copyIcon = document.createElement('i');
-                copyIcon.className = 'far fa-copy guest-orders-item-no-copy-icon';
-                copyIcon.setAttribute('aria-hidden', 'true');
-                dd.appendChild(copyIcon);
+            if (key === 'discount-amount') {
+                const dt = document.createElement('dt');
+                dt.className = 'guest-orders-detail-discount-dt';
+                dt.appendChild(createNode('span', '', label));
 
-                const handleCopyDetailNo = (e) => {
-                    e.stopPropagation();
-                    if (window.getSelection) {
-                        try { window.getSelection().removeAllRanges(); } catch (_) {}
+                const help = document.createElement('span');
+                help.className = 'guest-orders-discount-help';
+                help.setAttribute('role', 'button');
+                help.setAttribute('tabindex', '0');
+                help.setAttribute('aria-label', '查看优惠明细');
+
+                const icon = document.createElement('i');
+                icon.className = 'fas fa-circle-exclamation guest-orders-discount-help-icon';
+                icon.setAttribute('aria-hidden', 'true');
+                help.appendChild(icon);
+
+                const popover = document.createElement('div');
+                popover.className = 'guest-orders-discount-popover';
+                popover.setAttribute('role', 'tooltip');
+
+                const popTitle = document.createElement('div');
+                popTitle.className = 'guest-orders-discount-popover__title';
+                const tagIcon = document.createElement('i');
+                tagIcon.className = 'fas fa-tags';
+                tagIcon.setAttribute('aria-hidden', 'true');
+                popTitle.appendChild(tagIcon);
+                popTitle.appendChild(createNode('span', '', '优惠明细'));
+                popover.appendChild(popTitle);
+
+                if (value.discountItems && value.discountItems.length > 0) {
+                    const list = document.createElement('div');
+                    list.className = 'guest-orders-discount-popover__list';
+                    for (const item of value.discountItems) {
+                        const itemEl = document.createElement('div');
+                        itemEl.className = 'guest-orders-discount-popover__row';
+                        itemEl.appendChild(createNode('span', 'disc-name', item.label));
+                        itemEl.appendChild(createNode('span', 'disc-amt', item.text));
+                        list.appendChild(itemEl);
                     }
-                    void handleCopyText(value, dd);
+                    popover.appendChild(list);
+                } else {
+                    const empty = createNode('div', 'guest-orders-discount-popover__empty', '未享受优惠');
+                    popover.appendChild(empty);
+                }
+
+                help.appendChild(popover);
+
+                const handleToggle = (e) => {
+                    e.stopPropagation();
+                    const active = help.classList.toggle('is-active');
+                    if (active) {
+                        const handleOutside = (evt) => {
+                            if (!help.contains(evt.target)) {
+                                help.classList.remove('is-active');
+                                document.removeEventListener('click', handleOutside);
+                            }
+                        };
+                        setTimeout(() => document.addEventListener('click', handleOutside), 10);
+                    }
                 };
-                dd.addEventListener('click', handleCopyDetailNo);
-                dd.addEventListener('keydown', (e) => {
+                help.addEventListener('click', handleToggle);
+                help.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        handleCopyDetailNo(e);
+                        handleToggle(e);
                     }
                 });
+
+                dt.appendChild(help);
+                row.appendChild(dt);
+
+                const dd = createNode('dd', 'guest-orders-detail-discount-val', '');
+                const hasDiscount = value.discountAmount > 0;
+                const amountText = hasDiscount ? `-${formatAmount(value.discountAmount)}` : '¥0.00';
+                const numSpan = createNode('span', `guest-orders-detail-amount-num${hasDiscount ? ' has-discount' : ''}`, amountText);
+                dd.appendChild(numSpan);
+                row.appendChild(dd);
+            } else {
+                row.appendChild(createNode('dt', '', label));
+                const dd = createNode('dd', mono ? 'is-mono' : '', value);
+                if (key === 'paid-amount') {
+                    dd.classList.add('is-paid-amount');
+                }
+                if (label === '订单号' && value && value !== '-') {
+                    dd.classList.add('is-copyable');
+                    dd.title = '点击复制订单号';
+                    dd.setAttribute('role', 'button');
+                    dd.setAttribute('tabindex', '0');
+                    dd.setAttribute('aria-label', `复制订单号 ${value}`);
+
+                    const copyIcon = document.createElement('i');
+                    copyIcon.className = 'far fa-copy guest-orders-item-no-copy-icon';
+                    copyIcon.setAttribute('aria-hidden', 'true');
+                    dd.appendChild(copyIcon);
+
+                    const handleCopyDetailNo = (e) => {
+                        e.stopPropagation();
+                        if (window.getSelection) {
+                            try { window.getSelection().removeAllRanges(); } catch (_) {}
+                        }
+                        void handleCopyText(value, dd);
+                    };
+                    dd.addEventListener('click', handleCopyDetailNo);
+                    dd.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleCopyDetailNo(e);
+                        }
+                    });
+                }
+                row.appendChild(dd);
             }
-            row.appendChild(dd);
             rows.appendChild(row);
         }
 
@@ -1594,10 +1935,13 @@
         clearDelivery();
         setBusy(true);
         try {
-            const payload = await requestJson(
-                `${DETAIL_ENDPOINT}?${buildQuery({ order_no: orderNo })}`,
-                { headers: credentialHeaders() }
-            );
+            const [payload] = await Promise.all([
+                requestJson(
+                    `${DETAIL_ENDPOINT}?${buildQuery({ order_no: orderNo })}`,
+                    { headers: credentialHeaders() }
+                ),
+                loadShopCatalog()
+            ]);
             if (detailSerial !== state.detailRequestSerial) return;
             state.detail = payload?.order || null;
             if (payload?.order) {

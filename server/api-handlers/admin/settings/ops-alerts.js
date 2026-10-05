@@ -1133,6 +1133,48 @@ async function loadSystemConfigValue(supabase, configKey) {
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description, site = 'cn') {
     const previousValue = await loadSystemConfigValue(supabase, configKey);
     const storedValue = upsertSiteScopedSystemConfigValue(previousValue, site, configValue);
+    if (configKey === OPS_ALERTS_CONFIG_KEY && storedValue && typeof storedValue === 'object') {
+        const sites = storedValue.sites && typeof storedValue.sites === 'object' ? storedValue.sites : {};
+        const siteValues = Object.values(sites).filter((item) => item && typeof item === 'object');
+        if (siteValues.length > 0) {
+            const allSitesDisabled = siteValues.every((item) => item.enabled === false);
+            if (allSitesDisabled) {
+                if (!storedValue.default || typeof storedValue.default !== 'object') {
+                    storedValue.default = {
+                        ...(configValue && typeof configValue === 'object' ? configValue : {}),
+                        enabled: false
+                    };
+                } else {
+                    storedValue.default = {
+                        ...storedValue.default,
+                        enabled: false
+                    };
+                }
+            }
+            const defaultChannels = storedValue.default && typeof storedValue.default.channels === 'object'
+                ? { ...storedValue.default.channels }
+                : (configValue && typeof configValue.channels === 'object' ? { ...configValue.channels } : null);
+            if (defaultChannels) {
+                let channelChanged = false;
+                for (const channelName of ['feishu', 'email', 'telegram']) {
+                    const allChannelDisabled = siteValues.every((s) => s?.channels?.[channelName]?.enabled === false);
+                    if (allChannelDisabled && defaultChannels[channelName] && defaultChannels[channelName].enabled !== false) {
+                        defaultChannels[channelName] = {
+                            ...defaultChannels[channelName],
+                            enabled: false
+                        };
+                        channelChanged = true;
+                    }
+                }
+                if (channelChanged && storedValue.default) {
+                    storedValue.default = {
+                        ...storedValue.default,
+                        channels: defaultChannels
+                    };
+                }
+            }
+        }
+    }
     const { error } = await supabase
         .from('system_config')
         .upsert({
