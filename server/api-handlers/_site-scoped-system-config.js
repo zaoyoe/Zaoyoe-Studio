@@ -192,7 +192,44 @@ function resolveSiteScopedSystemConfigForRead(key, value, site = 'all') {
     });
 
     if (normalizedSite === 'all') {
-        return getSiteScopedSystemConfigDefaultValue(value);
+        const defaultValue = getSiteScopedSystemConfigDefaultValue(value);
+        if (key === 'ops_alerts') {
+            const sites = isPlainObject(value?.sites) ? value.sites : {};
+            const siteValues = Object.values(sites).filter((item) => isPlainObject(item));
+            if (siteValues.length > 0 && isPlainObject(defaultValue)) {
+                let nextDefault = defaultValue;
+                if (siteValues.every((item) => item.enabled === false) && nextDefault.enabled !== false) {
+                    nextDefault = {
+                        ...nextDefault,
+                        enabled: false
+                    };
+                }
+                const defaultChannels = isPlainObject(nextDefault.channels)
+                    ? { ...nextDefault.channels }
+                    : null;
+                if (defaultChannels) {
+                    let channelChanged = false;
+                    for (const channelName of ['feishu', 'email', 'telegram']) {
+                        const allChannelDisabled = siteValues.every((s) => isPlainObject(s.channels) && s.channels[channelName]?.enabled === false);
+                        if (allChannelDisabled && isPlainObject(defaultChannels[channelName]) && defaultChannels[channelName].enabled !== false) {
+                            defaultChannels[channelName] = {
+                                ...defaultChannels[channelName],
+                                enabled: false
+                            };
+                            channelChanged = true;
+                        }
+                    }
+                    if (channelChanged) {
+                        nextDefault = {
+                            ...nextDefault,
+                            channels: defaultChannels
+                        };
+                    }
+                }
+                return nextDefault;
+            }
+        }
+        return defaultValue;
     }
 
     return resolveSiteScopedSystemConfigValue(value, normalizedSite);

@@ -74,6 +74,8 @@
             loading: en ? 'Loading products…' : '商品加载中…',
             searchResults: (count) => en ? `Search results (${count})` : `搜索结果（${count}）`,
             wholesale: en ? 'Tiered' : '阶梯价',
+            flashSale: en ? 'Flash' : '秒杀',
+            calculating: en ? 'Calculating...' : '计算中...',
             auto: en ? 'Instant delivery' : '自动交付',
             online: en ? 'Online delivery' : '在线交付',
             low: en ? 'Low stock' : '即将售罄',
@@ -342,6 +344,15 @@
         const labels = copy();
         const stock = listStockMeta(product, fulfillment);
         const chips = [];
+        const flashContext = shop && typeof shop.getActiveFlashSalePricingContext === 'function'
+            ? shop.getActiveFlashSalePricingContext(product, pricingState?.currentPrice)
+            : null;
+        const hasFlash = Boolean(pricingState?.hasFlashSale || pricingState?.flashSaleBadgeHtml || flashContext?.hasFlashSale);
+        const flashSaleEnd = product?.flash_sale_end || '';
+        const flashEndMs = flashSaleEnd ? Date.parse(flashSaleEnd) : null;
+        if (hasFlash && Number.isFinite(flashEndMs) && Date.now() < flashEndMs) {
+            chips.push(`<span class="list-chip list-chip--flash"><i class="fas fa-bolt-lightning list-chip--flash__icon" aria-hidden="true"></i><span class="flash-sale-badge__label">${escapeHtml(labels.flashSale)}</span></span>`);
+        }
         if (hasTieredPricing(product, pricingState)) {
             chips.push(`<span class="list-chip list-chip--wholesale">${escapeHtml(labels.wholesale)}</span>`);
         }
@@ -360,7 +371,7 @@
         listChipsMarkup
     });
 
-    function thumbMarkup(product, displayName) {
+    function thumbMarkup(product, displayName, isFlashSale = false) {
         const shop = shopClient();
         const imageAsset = typeof window.getShopProductImageAsset === 'function'
             ? window.getShopProductImageAsset(product)
@@ -377,7 +388,7 @@
         if (String(product?.icon_url || '').startsWith('fa')) {
             return `<i class="${escapeAttribute(product.icon_url)}" aria-hidden="true"></i>`;
         }
-        return BOX_ICON;
+        return `${BOX_ICON}`;
     }
 
     function hydrateRowImages(root) {
@@ -471,18 +482,36 @@
             const cartAria = cartDisabled
                 ? (fulfillment.manualDelivery ? labels.online : labels.soldOut)
                 : (shop && typeof shop.getCartCopy === 'function' ? shop.getCartCopy().addLabel : labels.addCart);
-            return `<article class="list-row${soldOut ? ' is-sold-out' : ''}" data-shop-action="${shopAction}" data-product-id="${escapeAttribute(product.id)}" role="button" tabindex="0">
+            const pricing = shop && typeof shop.resolveProductPricing === 'function'
+                ? shop.resolveProductPricing(product, shop.agentPricesCache || {})
+                : null;
+            const flashContext = shop && typeof shop.getActiveFlashSalePricingContext === 'function'
+                ? shop.getActiveFlashSalePricingContext(product, pricingState?.currentPrice)
+                : null;
+            const hasFlashSale = Boolean(pricingState?.hasFlashSale || pricingState?.flashSaleBadgeHtml || flashContext?.hasFlashSale);
+            const originalPriceValue = (hasFlashSale && (flashContext?.flashSaleOriginalPrice != null || pricing?.originalPrice != null))
+                ? (shop && typeof shop.formatShopPointValue === 'function'
+                    ? shop.formatShopPointValue(flashContext?.flashSaleOriginalPrice ?? pricing?.originalPrice)
+                    : String(flashContext?.flashSaleOriginalPrice ?? pricing?.originalPrice))
+                : null;
+            const inlineOriginalHtml = (hasFlashSale && originalPriceValue)
+                ? `<del class="list-price__original" aria-label="${escapeAttribute(labels.originalPrice || '原价')}">￥${escapeHtml(originalPriceValue)}</del>`
+                : '';
+            const metricsOriginalHtml = (hasFlashSale && originalPriceValue)
+                ? `<del class="list-price__original" aria-label="${escapeAttribute(labels.originalPrice || '原价')}">￥${escapeHtml(originalPriceValue)}</del>`
+                : '';
+            return `<article class="list-row${soldOut ? ' is-sold-out' : ''}${hasFlashSale ? ' is-flash-sale' : ''}" data-shop-action="${shopAction}" data-product-id="${escapeAttribute(product.id)}" role="button" tabindex="0">
                 <div class="list-product">
-                    <div class="list-thumb">${thumbMarkup(product, displayName)}</div>
+                    <div class="list-thumb">${thumbMarkup(product, displayName, hasFlashSale)}</div>
                     <div class="list-product__copy">
                         ${categoryChip}
                         <strong>${escapeHtml(displayName)}</strong>
                         <p>${escapeHtml(displayDesc || '')}</p>
-                        ${listChipsMarkup(product, fulfillment, pricingState, `<div class="list-price list-price--inline list-chip list-chip--price"><span class="list-price__symbol" aria-hidden="true">￥</span><span class="list-price__value">${escapeHtml(priceValue)}</span></div>`)}
+                        ${listChipsMarkup(product, fulfillment, pricingState, `<div class="list-price list-price--inline${hasFlashSale ? ' list-price--flash' : ''} list-chip list-chip--price">${inlineOriginalHtml}<span class="list-price__symbol" aria-hidden="true">￥</span><span class="list-price__value">${escapeHtml(priceValue)}</span></div>`)}
                     </div>
                 </div>
                 <div class="list-metrics">
-                    <div class="list-price"><span class="list-price__symbol" aria-hidden="true">￥</span><span class="list-price__value">${escapeHtml(priceValue)}</span></div>
+                    <div class="list-price${hasFlashSale ? ' list-price--flash' : ''}">${metricsOriginalHtml}<span class="list-price__symbol" aria-hidden="true">￥</span><span class="list-price__value">${escapeHtml(priceValue)}</span></div>
                     <span class="list-stock">${escapeHtml(stock.label)}</span>
                     <span class="list-sales">${sales == null ? '—' : escapeHtml(String(sales))}</span>
                     <div class="list-actions">
@@ -686,6 +715,7 @@
         });
         hydrateRowImages(rows);
         updateCategoryTitles();
+        shopClient()?.startFlashSaleTimer?.();
     }
 
     function clearListEnterTimer() {
