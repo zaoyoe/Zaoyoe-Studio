@@ -90,6 +90,24 @@ function createSupabase(state) {
                 };
             }
 
+            if (String(args?.p_code || '').toUpperCase() === 'ORDER-EXT-001') {
+                return {
+                    data: {
+                        valid: false,
+                        query_type: 'order',
+                        code: 'ZY-CN-ORDER-001',
+                        external_order_id: 'ORDER-EXT-001',
+                        status: 'used',
+                        batch_id: 'batch-cn-order-1',
+                        batch_name: 'Order Batch',
+                        package_name: 'Starter',
+                        points: 100,
+                        used_by: 'Alice'
+                    },
+                    error: null
+                };
+            }
+
             return {
                 data: { valid: false },
                 error: null
@@ -179,6 +197,37 @@ test('points lookup handler returns code status payload via fn_check_code_status
         assert.equal(state.rpcCalls[0]?.fn, 'fn_check_code_status');
         assert.equal(res.json().kind, 'code');
         assert.equal(res.json().result?.code, 'ZY-CN-LOOKUP');
+    });
+});
+
+test('points lookup handler preserves external order-number lookup through the admin RPC', async () => {
+    await withPointsLookupHandler({
+        tables: {
+            redemption_codes: [
+                {
+                    id: 'code-order-1',
+                    code: 'ZY-CN-ORDER-001',
+                    site: 'cn',
+                    batch_id: 'batch-cn-order-1',
+                    package_id: 'pkg-1',
+                    status: 'used',
+                    created_at: '2026-04-01T09:00:00.000Z',
+                    external_order_id: 'ORDER-EXT-001',
+                    used_by: 'user-1'
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', url: '/api/admin/points/lookup?site=cn&q=ORDER-EXT-001', headers: {} }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.rpcCalls[0]?.fn, 'fn_check_code_status');
+        assert.equal(state.rpcCalls[0]?.args?.p_code, 'ORDER-EXT-001');
+        assert.equal(res.json().kind, 'code');
+        assert.equal(res.json().result?.query_type, 'order');
+        assert.equal(res.json().result?.external_order_id, 'ORDER-EXT-001');
+        assert.equal(res.json().result?.code, 'ZY-CN-ORDER-001');
     });
 });
 

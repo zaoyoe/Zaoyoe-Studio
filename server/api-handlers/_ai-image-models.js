@@ -1,4 +1,6 @@
 const crypto = require('node:crypto');
+const dns = require('node:dns').promises;
+const net = require('node:net');
 const {
     resolveAiImageProviderRuntimeConfig,
     resolveAiImageRuntimeSecretConfig,
@@ -21,6 +23,10 @@ const DEFAULT_PROVIDER_TIMEOUT_MS = 120000;
 const DEFAULT_REVERSE_MAX_TOKENS = 520;
 const DEFAULT_REVERSE_REFERENCE_MAX_BYTES = 5 * 1024 * 1024;
 const MAX_REVERSE_REFERENCE_MAX_BYTES = 20 * 1024 * 1024;
+const DEFAULT_EDIT_REFERENCE_MAX_BYTES = 12 * 1024 * 1024;
+const MAX_EDIT_REFERENCE_MAX_BYTES = 20 * 1024 * 1024;
+const DEFAULT_EDIT_REFERENCE_TOTAL_MAX_BYTES = 48 * 1024 * 1024;
+const MAX_EDIT_REFERENCE_TOTAL_MAX_BYTES = 64 * 1024 * 1024;
 const MAX_REVERSE_REFERENCE_REDIRECTS = 3;
 const DEFAULT_VIDEO_POLL_INTERVAL_MS = 3000;
 const DEFAULT_VIDEO_POLL_MAX_ATTEMPTS = 160;
@@ -3313,9 +3319,12 @@ function persistProviderVideoUrl(videoUrl, {
 }
 
 async function fetchReferenceImageForEdit(referenceImageUrl, {
-    env,
+    env = process.env,
     fetchImpl = globalThis.fetch,
-    index = 0
+    index = 0,
+    maxBytes = DEFAULT_EDIT_REFERENCE_MAX_BYTES,
+    signal = null,
+    resolveHostname = null
 } = {}) {
     const normalizedUrl = normalizeText(referenceImageUrl, 4000);
     if (!normalizedUrl) {
@@ -3325,31 +3334,61 @@ async function fetchReferenceImageForEdit(referenceImageUrl, {
         throw error;
     }
 
-    const response = await fetchProviderResponse(fetchImpl, normalizedUrl, {
-        method: 'GET'
-    }, {
-        env,
-        label: 'AI 图片参考图下载'
+    let currentUrl = await assertSafeTrustedReferenceImageUrl(normalizedUrl, env, {
+        fetchImpl,
+        resolveHostname
     });
-    if (!response.ok) {
-        throw buildUpstreamError(response, {
+    let response = null;
+    for (let redirectCount = 0; redirectCount <= MAX_REVERSE_REFERENCE_REDIRECTS; redirectCount += 1) {
+        response = await fetchProviderResponse(fetchImpl, currentUrl.toString(), {
+            method: 'GET',
+            redirect: 'manual',
+            headers: {
+                Accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8'
+            },
+            ...(signal ? { signal } : {})
+        }, {
+            env,
+            label: 'AI 图片参考图下载'
+        });
+
+        if (![301, 302, 303, 307, 308].includes(Number(response.status || 0))) break;
+        const location = response.headers?.get?.('location') || '';
+        abortResponseBody(response);
+        if (!location || redirectCount === MAX_REVERSE_REFERENCE_REDIRECTS) {
+            const error = new Error('AI 图片参考图跳转次数过多，请重新上传参考图');
+            error.statusCode = 400;
+            error.code = 'ai_image_reference_redirect_limit';
+            throw error;
+        }
+        currentUrl = await assertSafeTrustedReferenceImageUrl(
+            new URL(location, currentUrl).toString(),
+            env,
+            { fetchImpl, resolveHostname }
+        );
+    }
+
+    if (!response?.ok) {
+        throw buildUpstreamError(response || { status: 502 }, {
             code: 'ai_image_reference_url_unavailable',
-            message: `AI 图片参考图不可访问，HTTP ${response.status}`
+            message: `AI 图片参考图不可访问，HTTP ${response?.status || 502}`
         });
     }
 
     const mimeType = normalizeMimeType(response.headers?.get?.('content-type') || 'image/png', 'image/png');
     if (!mimeType.startsWith('image/')) {
+        abortResponseBody(response);
         const error = new Error(`AI 图片参考图返回的不是图片内容：${mimeType}`);
         error.statusCode = 400;
         error.code = 'ai_image_reference_url_not_image';
         throw error;
     }
 
-    const buffer = Buffer.from(await readResponseBodyWithTimeout(response, () => response.arrayBuffer(), {
+    const buffer = await readLimitedReferenceImageBuffer(response, {
         env,
-        label: 'AI 图片参考图下载响应体'
-    }));
+        maxBytes,
+        signal
+    });
     if (!buffer.length) {
         const error = new Error('AI 图片参考图为空，请重新上传参考图');
         error.statusCode = 400;
@@ -3443,20 +3482,44 @@ function getTaskReferenceAudioUrls(task = {}) {
 }
 
 async function fetchReferenceImagesForEdit(referenceImageUrls = [], {
-    env,
-    fetchImpl = globalThis.fetch
+    env = process.env,
+    fetchImpl = globalThis.fetch,
+    signal = null,
+    resolveHostname = null
 } = {}) {
     const urls = Array.isArray(referenceImageUrls) ? referenceImageUrls : [referenceImageUrls];
     if (!urls.length) {
-        return fetchReferenceImageForEdit('', { env, fetchImpl });
+        return fetchReferenceImageForEdit('', { env, fetchImpl, signal, resolveHostname });
     }
+    const maxBytes = normalizePositiveInt(
+        env.AI_IMAGE_EDIT_REFERENCE_MAX_BYTES || env.AI_IMAGE_REFERENCE_MAX_BYTES,
+        DEFAULT_EDIT_REFERENCE_MAX_BYTES,
+        { min: 1024, max: MAX_EDIT_REFERENCE_MAX_BYTES }
+    );
+    const maxTotalBytes = normalizePositiveInt(
+        env.AI_IMAGE_EDIT_REFERENCE_TOTAL_MAX_BYTES,
+        DEFAULT_EDIT_REFERENCE_TOTAL_MAX_BYTES,
+        { min: maxBytes, max: MAX_EDIT_REFERENCE_TOTAL_MAX_BYTES }
+    );
     const images = [];
+    let totalBytes = 0;
     for (const [index, url] of urls.entries()) {
-        images.push(await fetchReferenceImageForEdit(url, {
+        if (totalBytes >= maxTotalBytes) {
+            throw buildReferenceImageSizeError(maxTotalBytes);
+        }
+        const image = await fetchReferenceImageForEdit(url, {
             env,
             fetchImpl,
-            index
-        }));
+            index,
+            maxBytes: Math.min(maxBytes, maxTotalBytes - totalBytes),
+            signal,
+            resolveHostname
+        });
+        totalBytes += image.buffer.length;
+        if (totalBytes > maxTotalBytes) {
+            throw buildReferenceImageSizeError(maxTotalBytes);
+        }
+        images.push(image);
     }
     return images;
 }
@@ -3567,6 +3630,99 @@ function isBlockedReferenceImageHostname(value = '') {
         || hostname === '169.254.169.254';
 }
 
+const BLOCKED_REFERENCE_IMAGE_ADDRESSES = (() => {
+    const blockList = new net.BlockList();
+    [
+        ['0.0.0.0', 8, 'ipv4'],
+        ['10.0.0.0', 8, 'ipv4'],
+        ['100.64.0.0', 10, 'ipv4'],
+        ['127.0.0.0', 8, 'ipv4'],
+        ['169.254.0.0', 16, 'ipv4'],
+        ['172.16.0.0', 12, 'ipv4'],
+        ['192.0.0.0', 24, 'ipv4'],
+        ['192.168.0.0', 16, 'ipv4'],
+        ['198.18.0.0', 15, 'ipv4'],
+        ['224.0.0.0', 4, 'ipv4'],
+        ['::', 128, 'ipv6'],
+        ['::1', 128, 'ipv6'],
+        ['fc00::', 7, 'ipv6'],
+        ['fe80::', 10, 'ipv6'],
+        ['ff00::', 8, 'ipv6']
+    ].forEach(([address, prefix, family]) => blockList.addSubnet(address, prefix, family));
+    return blockList;
+})();
+
+function isBlockedReferenceImageAddress(address = '', family = 0) {
+    const normalized = normalizeText(address, 120);
+    const ipFamily = Number(family) || net.isIP(normalized);
+    if (!normalized || !ipFamily) return true;
+
+    // Do not add ::ffff:0:0/96 to the BlockList: Node treats that mapped
+    // IPv6 range as matching every IPv4 check on some runtimes. Normalize
+    // dotted IPv4-mapped IPv6 values and apply the IPv4 ranges instead.
+    if (ipFamily === 6 && /^::ffff:/iu.test(normalized)) {
+        const mapped = normalized.replace(/^::ffff:/iu, '');
+        if (net.isIP(mapped) === 4) return isBlockedReferenceImageAddress(mapped, 4);
+    }
+
+    try {
+        return BLOCKED_REFERENCE_IMAGE_ADDRESSES.check(
+            normalized,
+            ipFamily === 6 ? 'ipv6' : 'ipv4'
+        );
+    } catch (_) {
+        return true;
+    }
+}
+
+async function resolveReferenceImageAddresses(hostname, resolveHostname = null) {
+    const normalized = normalizeText(hostname, 500).replace(/^\[|\]$/g, '');
+    const literalFamily = net.isIP(normalized);
+    if (literalFamily) {
+        return [{ address: normalized, family: literalFamily }];
+    }
+    const lookup = typeof resolveHostname === 'function'
+        ? resolveHostname
+        : (value, options) => dns.lookup(value, options);
+    const records = await lookup(normalized, { all: true, verbatim: true });
+    const list = Array.isArray(records) ? records : [records];
+    return list
+        .map((record) => ({
+            address: normalizeText(record?.address || record, 120),
+            family: Number(record?.family) || net.isIP(record?.address || record)
+        }))
+        .filter((record) => record.address && record.family);
+}
+
+async function assertSafeTrustedReferenceImageUrl(value = '', env = {}, {
+    fetchImpl = globalThis.fetch,
+    resolveHostname = null
+} = {}) {
+    const parsed = assertTrustedReferenceImageUrl(value, env);
+    // Unit-test fetch shims do not perform network DNS resolution. Production
+    // always uses the runtime fetch and therefore performs the address check.
+    const shouldResolve = typeof resolveHostname === 'function' || fetchImpl === globalThis.fetch;
+    if (!shouldResolve) return parsed;
+
+    let addresses;
+    try {
+        addresses = await resolveReferenceImageAddresses(parsed.hostname, resolveHostname);
+    } catch (cause) {
+        const error = new Error('参考图片域名解析失败，请重新上传图片');
+        error.statusCode = 502;
+        error.code = 'ai_image_reference_dns_failed';
+        error.cause = cause;
+        throw error;
+    }
+    if (!addresses.length || addresses.some((record) => isBlockedReferenceImageAddress(record.address, record.family))) {
+        const error = new Error('参考图片地址不允许访问内部或保留网络');
+        error.statusCode = 400;
+        error.code = 'ai_image_reference_url_not_trusted';
+        throw error;
+    }
+    return parsed;
+}
+
 function assertTrustedReferenceImageUrl(value = '', env = {}) {
     let parsed;
     try {
@@ -3592,7 +3748,7 @@ function assertTrustedReferenceImageUrl(value = '', env = {}) {
 }
 
 function buildReferenceImageSizeError(maxBytes) {
-    const error = new Error(`反推参考图片超过 ${Math.max(1, Math.floor(maxBytes / 1024 / 1024))} MiB 限制，请压缩后重试`);
+    const error = new Error(`参考图片超过 ${Math.max(1, Math.floor(maxBytes / 1024 / 1024))} MiB 限制，请压缩后重试`);
     error.statusCode = 413;
     error.code = 'ai_image_reference_too_large';
     return error;
@@ -3603,8 +3759,10 @@ async function readLimitedReferenceImageBuffer(response, {
     maxBytes = DEFAULT_REVERSE_REFERENCE_MAX_BYTES,
     signal = null
 } = {}) {
-    const contentLength = Number(response.headers?.get?.('content-length') || 0);
-    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    const contentLengthHeader = String(response.headers?.get?.('content-length') || '').trim();
+    const hasContentLength = /^\d+$/u.test(contentLengthHeader);
+    const contentLength = hasContentLength ? Number(contentLengthHeader) : null;
+    if (hasContentLength && contentLength > maxBytes) {
         abortResponseBody(response);
         throw buildReferenceImageSizeError(maxBytes);
     }
@@ -3612,7 +3770,21 @@ async function readLimitedReferenceImageBuffer(response, {
     const readBuffer = async () => {
         const reader = response.body?.getReader?.();
         if (!reader) {
-            return Buffer.from(await response.arrayBuffer());
+            // A response without a streaming reader cannot be bounded while it
+            // is being read. Only accept this test/runtime fallback when the
+            // server supplied a trustworthy Content-Length header, then check
+            // the returned buffer again before handing it to image decoders.
+            if (!hasContentLength || typeof response.arrayBuffer !== 'function') {
+                const error = new Error('AI 图片参考图响应无法安全限制大小');
+                error.statusCode = 502;
+                error.code = 'ai_image_reference_body_unbounded';
+                throw error;
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            if (arrayBuffer.byteLength > maxBytes) {
+                throw buildReferenceImageSizeError(maxBytes);
+            }
+            return Buffer.from(arrayBuffer);
         }
         const chunks = [];
         let totalBytes = 0;
@@ -3647,14 +3819,18 @@ async function readLimitedReferenceImageBuffer(response, {
 async function fetchReverseReferenceImage(referenceImageUrl, {
     env = process.env,
     fetchImpl = globalThis.fetch,
-    signal = null
+    signal = null,
+    resolveHostname = null
 } = {}) {
     const maxBytes = normalizePositiveInt(
         env.AI_IMAGE_REVERSE_REFERENCE_MAX_BYTES || env.AI_IMAGE_REFERENCE_MAX_BYTES,
         DEFAULT_REVERSE_REFERENCE_MAX_BYTES,
         { min: 1024, max: MAX_REVERSE_REFERENCE_MAX_BYTES }
     );
-    let currentUrl = assertTrustedReferenceImageUrl(referenceImageUrl, env);
+    let currentUrl = await assertSafeTrustedReferenceImageUrl(referenceImageUrl, env, {
+        fetchImpl,
+        resolveHostname
+    });
     let response = null;
     const dnsRetryCount = normalizePositiveInt(
         env.AI_IMAGE_REFERENCE_DNS_RETRIES,
@@ -3695,7 +3871,11 @@ async function fetchReverseReferenceImage(referenceImageUrl, {
             error.code = 'ai_image_reference_redirect_limit';
             throw error;
         }
-        currentUrl = assertTrustedReferenceImageUrl(new URL(location, currentUrl).toString(), env);
+        currentUrl = await assertSafeTrustedReferenceImageUrl(
+            new URL(location, currentUrl).toString(),
+            env,
+            { fetchImpl, resolveHostname }
+        );
     }
 
     if (!response?.ok) {
@@ -4704,7 +4884,8 @@ async function executeOpenAiCompatibleImageGeneration(task = {}, {
     uploadImageBuffer = uploadGeneratedImageBufferPreviewFirst,
     runtimeConfig,
     onImageResult,
-    signal = null
+    signal = null,
+    resolveHostname = null
 } = {}) {
     if (task.billing_mode === 'api' && !runtimeConfig) {
         const error = new Error('API 模式需要使用用户 Key 的即时执行通道，当前后台队列不会读取或保存明文 Key');
@@ -4771,7 +4952,9 @@ async function executeOpenAiCompatibleImageGeneration(task = {}, {
         const referenceImageUrls = getTaskReferenceImageUrls(task);
         referenceImages = await fetchReferenceImagesForEdit(referenceImageUrls, {
             env,
-            fetchImpl
+            fetchImpl,
+            signal,
+            resolveHostname
         });
         referenceFetchMs = elapsedMs(referenceFetchStart);
         task.metadata = {
@@ -5289,6 +5472,7 @@ async function executeGeminiNativeImageGeneration(task = {}, {
     onImageResult,
     onDiagnostic,
     signal = null,
+    resolveHostname = null,
     geminiBatch = null
 } = {}) {
     const requestedCount = normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
@@ -5353,7 +5537,9 @@ async function executeGeminiNativeImageGeneration(task = {}, {
         const referenceImageUrls = getTaskReferenceImageUrls(task);
         referenceImages = await fetchReferenceImagesForEdit(referenceImageUrls, {
             env,
-            fetchImpl
+            fetchImpl,
+            signal,
+            resolveHostname
         });
         referenceFetchMs = elapsedMs(referenceFetchStart);
         task.metadata = {
@@ -5779,7 +5965,8 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
     env = process.env,
     fetchImpl = globalThis.fetch,
     runtimeConfig,
-    signal = null
+    signal = null,
+    resolveHostname = null
 } = {}) {
     if (task.billing_mode === 'api' && !runtimeConfig) {
         const error = new Error('API 模式需要使用用户 Key 的即时执行通道，当前后台队列不会读取或保存明文 Key');
@@ -5842,7 +6029,8 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
         reverseReferenceImage = await fetchReverseReferenceImage(task.reference_image_url, {
             env,
             fetchImpl,
-            signal
+            signal,
+            resolveHostname
         });
         referenceFetchMs = elapsedMs(referenceFetchStartedAt);
     }
