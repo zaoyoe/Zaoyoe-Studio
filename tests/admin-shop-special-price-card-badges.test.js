@@ -77,3 +77,25 @@ test('admin shop product cards mirror storefront special price badges', () => {
         'admin-studio.html should cache-bust the admin shop script for product price badges'
     );
 });
+
+test('admin shop flash-sale price input preserves decimal amounts', () => {
+    const shopSource = readFile('js/admin-shop.js');
+    const adminHtml = readFile('admin-studio.html');
+
+    assert.doesNotMatch(
+        shopSource,
+        /payload\[marketingFields\.flashSalePrice\]\s*=\s*parseInt\(/,
+        'flash-sale price in saveProduct must not be truncated with parseInt'
+    );
+    assert.match(
+        shopSource,
+        /const parsedFlashPrice = this\.normalizeProductPriceDraftValue\(flashPriceRaw\);/,
+        'flash-sale price in saveProduct must use normalizeProductPriceDraftValue to support decimals'
+    );
+    assert.match(
+        adminHtml,
+        /<input type="number" id="prodFlashSalePrice"[^>]*step="0\.01"/,
+        'admin-studio.html flash-sale price input should allow 0.01 step precision'
+    );
+});
+

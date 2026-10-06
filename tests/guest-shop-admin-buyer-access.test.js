@@ -389,7 +389,7 @@ test('A3 admin GET requires an order number and 404s on an unknown order', async
     }));
 });
 
-test('A3 admin GET on an unbound order returns bound:false with the §13.2 self-upgrade hint', async () => {
+test('A3 admin GET on an unbound order returns bound:false with the 2.1 manual-recovery hint', async () => {
     await withEnabledEnv(() => withHandler({
         orders: [makeOrderRow({ order_no: LEGACY_ORDER_NO, buyer_id: null })]
     }, async (handler) => {
@@ -400,7 +400,9 @@ test('A3 admin GET on an unbound order returns bound:false with the §13.2 self-
         assert.equal(payload.bound, false);
         assert.equal(payload.buyer, null);
         assert.deepEqual(payload.resets, []);
-        assert.match(payload.hint, /自助升级/);
+        assert.match(payload.hint, /人工核验/);
+        assert.match(payload.hint, /一次性找回链接/);
+        assert.doesNotMatch(payload.hint, /自助升级|取货口令|恢复入口/);
         assert.equal(payload.hint.length > 0, true);
     }));
 });

@@ -12,6 +12,7 @@ function createMockResponse() {
     const state = { statusCode: 200, headers: {}, body: '' };
     return {
         status(code) { state.statusCode = code; return this; },
+        set statusCode(code) { state.statusCode = code; },
         setHeader(name, value) { state.headers[String(name).toLowerCase()] = value; return this; },
         end(value = '') { state.body = String(value); return this; },
         get statusCode() { return state.statusCode; },
@@ -52,14 +53,18 @@ async function withPublicHandler(callback) {
                         preview: async (_req, res) => res.end('preview'),
                         orders: async (_req, res) => res.end('orders'),
                         status: async (_req, res) => res.end('status'),
-                        recover: async (_req, res) => res.end('recover'),
+                        cancel: async (_req, res) => res.end('cancel'),
+                        checkoutBatches: async (_req, res) => res.end('checkout-batches'),
+                        checkoutBatchStatus: async (_req, res) => res.end('checkout-batches-status'),
+                        checkoutBatchCancel: async (_req, res) => res.end('checkout-batches-cancel'),
+                        checkoutBatchClaim: async (_req, res) => res.end('checkout-batches-claim'),
                         claim: async (_req, res) => res.end('claim'),
                         order: async (_req, res) => res.end('order'),
                         delivery: async (_req, res) => res.end('delivery'),
+                        accessAvailability: async (_req, res) => res.end('access-availability'),
                         accessLogin: async (_req, res) => res.end('access-login'),
                         accessLogout: async (_req, res) => res.end('access-logout'),
                         accessReset: async (_req, res) => res.end('access-reset'),
-                        accessUpgrade: async (_req, res) => res.end('access-upgrade'),
                         webhook: async (_req, res, provider) => {
                             res.status(200);
                             res.end(`webhook:${provider}`);
@@ -113,12 +118,15 @@ test('shared public dispatcher exposes the secret-gated guest worker route', asy
     });
 });
 
-test('shared public dispatcher exposes the cross-device guest recovery route', async () => {
+test('shared public dispatcher no longer exposes the legacy guest recovery route', async () => {
     await withPublicHandler(async (handler) => {
         const res = createMockResponse();
         await handler({ method: 'POST', url: '/api/public?scope=shop&route=guest/recover' }, res);
-        assert.equal(res.statusCode, 200);
-        assert.equal(res.body, 'recover');
+        assert.equal(res.statusCode, 404);
+        assert.deepEqual(JSON.parse(res.body), {
+            success: false,
+            message: 'Public route not found'
+        });
     });
 });
 
@@ -136,13 +144,11 @@ test('shared public dispatcher exposes the flat-key guest order access routes', 
         for (const [route, body] of [
             ['guest/order', 'order'],
             ['guest/delivery', 'delivery'],
+            ['guest/access/availability', 'access-availability'],
             ['guest/access/login', 'access-login'],
             ['guest/access/logout', 'access-logout'],
-            // Order Access 2.0 (A3): the one-time reset link (§10.5) and the
-            // §13.2 historical-order self-upgrade share the same flat-key
-            // constraint as A2 (deviation D-1).
+            // The one-time reset link remains a support/admin recovery path.
             ['guest/access/reset', 'access-reset'],
-            ['guest/access/upgrade', 'access-upgrade']
         ]) {
             const res = createMockResponse();
             await handler({ method: 'GET', url: `/api/public?scope=shop&route=${route}&order_no=GS20260921-000001` }, res);
@@ -161,6 +167,14 @@ test('the guest order list route keeps its existing binding so the cookie sessio
     });
 });
 
+test('shared public dispatcher exposes the guest order cancellation route', async () => {
+    await withPublicHandler(async (handler) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', url: '/api/public?scope=shop&route=guest/cancel' }, res);
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.body, 'cancel');
+    });
+});
 test('guest order access Vercel entrypoints bind the shared handlers and stay out of the deploy', () => {
     const ignored = fs.readFileSync(path.join(repoRoot, '.vercelignore'), 'utf8')
         .split(/\r?\n/)
@@ -168,10 +182,10 @@ test('guest order access Vercel entrypoints bind the shared handlers and stay ou
     for (const [relativePath, handlerName] of [
         ['api/shop/guest/order.js', 'order'],
         ['api/shop/guest/delivery.js', 'delivery'],
+        ['api/shop/guest/access/availability.js', 'accessAvailability'],
         ['api/shop/guest/access/login.js', 'accessLogin'],
         ['api/shop/guest/access/logout.js', 'accessLogout'],
-        ['api/shop/guest/access/reset.js', 'accessReset'],
-        ['api/shop/guest/access/upgrade.js', 'accessUpgrade']
+        ['api/shop/guest/access/reset.js', 'accessReset']
     ]) {
         const source = fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
         assert.match(
@@ -204,10 +218,10 @@ test('claim endpoint contract rejects secrets in the JSON body', () => {
     assert.doesNotMatch(source, /body\.claimSecret\s*\|\|\s*body\.claim_secret/);
 });
 
-test('recover.js Vercel entrypoint binds the shared recover handler', () => {
-    const recover = fs.readFileSync(path.join(repoRoot, 'api/shop/guest/recover.js'), 'utf8');
+test('legacy recovery Vercel entrypoints are removed', () => {
     const ignored = fs.readFileSync(path.join(repoRoot, '.vercelignore'), 'utf8');
-    assert.match(recover, /createGuestShopHandlers\([\s\S]*\)\.recover/);
-    assert.match(ignored, /api\/shop\/guest\/recover\.js/);
+    for (const relativePath of ['api/shop/guest/recover.js', 'api/shop/guest/access/upgrade.js']) {
+        assert.equal(fs.existsSync(path.join(repoRoot, relativePath)), false, `${relativePath} must be deleted`);
+        assert.equal(ignored.includes(relativePath), false, `${relativePath} must not remain in .vercelignore`);
+    }
 });
-

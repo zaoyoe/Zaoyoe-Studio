@@ -560,6 +560,75 @@ test('NOWPayments parser USD quote still binds against stored CNY settlement', a
     assert.equal(state.events[0].observed_currency, 'CNY');
 });
 
+test('NOWPayments webhook verifies and settles order with price_currency usdtbsc', async () => {
+    const payment = {
+        id: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+        guest_order_id: ORDER_ID,
+        merchant_order_no: 'GS-NOW-USDTBSC-SETTLE',
+        purpose: 'shop_direct',
+        provider: 'nowpayments',
+        channel: 'nowpayments',
+        site: 'intl',
+        currency: 'CNY',
+        expected_amount: '10.10',
+        provider_order_no: 'GS-NOW-USDTBSC-SETTLE',
+        checkout_reference: 'NP-USDTBSC-SETTLE-1',
+        provider_metadata: {
+            price_amount: '1.52',
+            price_currency: 'usdtbsc',
+            pay_amount: '1.52',
+            pay_amount_text: '1.52',
+            local_currency: 'cny',
+            local_amount: 10.10,
+            cny_to_usd_rate: 0.15
+        }
+    };
+    const { handlers, state } = createHandlers({
+        provider: 'nowpayments',
+        payment,
+        paymentAdapter: {
+            async verifyGuestWebhook() {
+                return { valid: true, signature_version: 'HMAC-SHA512' };
+            },
+            async parseGuestWebhook({ payload }) {
+                return {
+                    merchant_order_no: payload.order_id,
+                    provider_order_no: payload.order_id,
+                    provider_payment_id: payload.payment_id,
+                    event_key: `nowpayments:${payload.payment_id}`,
+                    purpose: 'shop_direct',
+                    currency: 'USDTBSC',
+                    provider_currency: 'usdtbsc',
+                    price_amount: payload.price_amount,
+                    paid_amount: payload.price_amount,
+                    actually_paid_text: payload.actually_paid,
+                    pay_currency: payload.pay_currency,
+                    network_verified: true,
+                    final_status: 'paid'
+                };
+            }
+        }
+    });
+    const response = createResponse();
+    await handlers.webhook(makeNowpaymentsRequest({
+        payment_id: 'NP-USDTBSC-SETTLE-1',
+        order_id: 'GS-NOW-USDTBSC-SETTLE',
+        price_amount: '1.52',
+        price_currency: 'usdtbsc',
+        pay_amount: '1.52',
+        pay_currency: 'usdtbsc',
+        actually_paid: '1.52',
+        actually_paid_currency: 'usdtbsc'
+    }), response, 'nowpayments');
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload.accepted, true);
+    assert.equal(state.rpcCalls.length, 1);
+    assert.equal(state.rpcCalls[0].args.p_observed_currency, 'CNY');
+    assert.equal(state.rpcCalls[0].args.p_observed_amount, '10.10');
+    assert.equal(state.rpcCalls[0].args.p_observed_site, 'intl');
+});
+
 test('a NOWPayments callback that hits a ZPay merchant order is rejected unbound', async () => {
     const payment = {
         id: PAYMENT_ID,

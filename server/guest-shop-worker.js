@@ -14,6 +14,12 @@ const crypto = require('node:crypto');
 const {
     guestWorkerRequestDeclaresBody
 } = require('../api/_lib/guest-shop/raw-body');
+const {
+    parseRuntimeNumericSetting
+} = require('../api/_lib/guest-shop/runtime-config');
+const {
+    parseBuyerCredentialSwitch
+} = require('../api/_lib/guest-shop/buyer-credentials');
 
 const FULFILLMENT_STATE_KEY = '__guest_shop_worker';
 // A guest worker is a financial side-effect endpoint.  It must not inherit a
@@ -36,6 +42,14 @@ const DEFAULT_MAX_BACKOFF_MS = 30 * 60 * 1000;
 const DEFAULT_LEASE_MS = 2 * 60 * 1000;
 const DEFAULT_RETRY_JITTER_RATIO = 0.2;
 const MAX_ERROR_MESSAGE_LENGTH = 500;
+const ACCESS_AUDIT_RETENTION_SWITCH_ENV = 'GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED';
+const ACCESS_AUDIT_RETENTION_ENV = 'GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_DAYS';
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+const ACCESS_AUDIT_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+const ACCESS_AUDIT_PURGE_BATCH_SIZE = 1000;
+const ACCESS_AUDIT_PURGE_MAX_BATCHES = 10;
+const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'y', 'on', 'enabled']);
+const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'n', 'off', 'disabled']);
 
 const FULFILLMENT_CANDIDATE_STATUSES = Object.freeze([
     'pending',
@@ -47,7 +61,14 @@ const REFUND_CANDIDATE_STATUSES = Object.freeze([
     'pending',
     'failed'
 ]);
-const CANDIDATE_SELECT = 'id,order_no,site,currency,total_amount,payment_status,reservation_status,fulfillment_status,refund_status,expires_at,paid_at,fulfilled_at,updated_at,metadata';
+// Promo L1 reads `quantity` so the fulfillment loop knows how many cards the
+// order paid for. It is a bound on the loop, never on an amount: the money was
+// committed by fn_guest_shop_create_order and is not recomputed here.
+const CANDIDATE_SELECT = 'id,order_no,site,currency,total_amount,quantity,payment_status,reservation_status,fulfillment_status,refund_status,expires_at,paid_at,fulfilled_at,updated_at,metadata';
+const CHECKOUT_BATCH_CANDIDATE_SELECT = 'id,batch_no,payment_status,fulfillment_status,updated_at,paid_at,fulfilled_at';
+// Mirror of guest_shop_orders_quantity_check. Raising it is a migration, not an
+// env change, so the loop bound can never be widened at runtime.
+const GUEST_ORDER_QUANTITY_CEILING = 5;
 
 const PRODUCTION_MARKER_NAMES = Object.freeze([
     'VERCEL_ENV',
@@ -158,6 +179,54 @@ function resolveWorkerConfig(env = process.env) {
         );
     }
     return Object.freeze(config);
+}
+
+function parseAccessAuditRetentionSwitch(env = process.env) {
+    const raw = String(env?.[ACCESS_AUDIT_RETENTION_SWITCH_ENV] ?? '').trim().toLowerCase();
+    if (!raw) return Object.freeze({ present: false, valid: true, enabled: false });
+    if (TRUE_ENV_VALUES.has(raw)) return Object.freeze({ present: true, valid: true, enabled: true });
+    if (FALSE_ENV_VALUES.has(raw)) return Object.freeze({ present: true, valid: true, enabled: false });
+    return Object.freeze({ present: true, valid: false, enabled: false });
+}
+
+function resolveAccessAuditRetention(env = process.env) {
+    const retentionSwitch = parseAccessAuditRetentionSwitch(env);
+    if (!retentionSwitch.valid) {
+        return Object.freeze({
+            enabled: false,
+            valid: false,
+            retentionDays: null,
+            reason: 'access_audit_retention_switch_invalid'
+        });
+    }
+    if (!retentionSwitch.enabled) {
+        const credentialsEnabled = parseBuyerCredentialSwitch(env).enabled;
+        return Object.freeze({
+            enabled: false,
+            valid: !credentialsEnabled,
+            retentionDays: null,
+            reason: credentialsEnabled
+                ? 'access_audit_retention_required'
+                : 'access_audit_retention_disabled'
+        });
+    }
+
+    const retention = parseRuntimeNumericSetting(env, ACCESS_AUDIT_RETENTION_ENV);
+    if (!retention.valid) {
+        return Object.freeze({
+            enabled: true,
+            valid: false,
+            retentionDays: null,
+            reason: 'access_audit_retention_invalid'
+        });
+    }
+
+    return Object.freeze({
+        enabled: true,
+        valid: true,
+        retentionDays: retention.value,
+        reason: 'enabled'
+    });
 }
 
 function getGuestShopWorkerSecret(env = process.env) {
@@ -348,6 +417,7 @@ function createGuestShopWorker({
     randomBytes = crypto.randomBytes
 } = {}) {
     const config = resolveWorkerConfig(env);
+    const accessAuditRetention = resolveAccessAuditRetention(env);
     const trace = isGuestShopFulfillmentTraceEnabled(env);
     const name = normalizeText(
         workerName || env?.GUEST_SHOP_WORKER_NAME || `guest-shop-worker:${process.pid}`,
@@ -421,6 +491,71 @@ function createGuestShopWorker({
         return Array.from(byId.values())
             .sort((left, right) => String(left.updated_at || '').localeCompare(String(right.updated_at || '')))
             .slice(0, limit);
+    }
+
+    async function loadCheckoutBatchCandidates(limit) {
+        const db = requireDb();
+        let query = db.from('guest_shop_checkout_batches').select(CHECKOUT_BATCH_CANDIDATE_SELECT);
+        if (typeof query.eq !== 'function' || typeof query.in !== 'function') return [];
+        query = query.eq('payment_status', 'confirmed')
+            .in('fulfillment_status', ['pending', 'fulfilling', 'failed']);
+        if (typeof query.order === 'function') query = query.order('updated_at', { ascending: true });
+        if (typeof query.limit === 'function') query = query.limit(limit);
+        const result = await query;
+        if (result?.error) throw result.error;
+        return Array.isArray(result?.data) ? result.data : [];
+    }
+
+    async function loadCheckoutBatchById(batchId) {
+        const id = normalizeText(batchId, 160);
+        if (!id) return null;
+        const db = requireDb();
+        let query = db.from('guest_shop_checkout_batches')
+            .select(CHECKOUT_BATCH_CANDIDATE_SELECT)
+            .eq('id', id);
+        if (typeof query.maybeSingle === 'function') query = query.maybeSingle();
+        const result = await query;
+        if (result?.error) throw result.error;
+        return result?.data || null;
+    }
+
+    async function processCheckoutBatch(batch) {
+        if (!batch || !normalizeText(batch.id, 160)) {
+            return { status: 'skipped', reason: 'checkout_batch_missing' };
+        }
+        if (batch.payment_status !== 'confirmed') {
+            return { status: 'skipped', reason: 'payment_not_confirmed' };
+        }
+        if (batch.fulfillment_status === 'delivered') {
+            return { status: 'skipped', reason: 'fulfillment_terminal' };
+        }
+        try {
+            // The batch claim RPC is idempotent and consumes every held row in
+            // item order. It returns card content, so the worker deliberately
+            // keeps the result in process and only reads back the status.
+            await callRpc('fn_guest_shop_claim_checkout_batch', { p_batch_id: batch.id });
+            const latest = await loadCheckoutBatchById(batch.id);
+            if (latest?.fulfillment_status === 'delivered') {
+                return { status: 'delivered', batch_id: batch.id };
+            }
+            if (latest?.fulfillment_status === 'paid_unfulfillable') {
+                return { status: 'paid_unfulfillable', batch_id: batch.id };
+            }
+            const error = new Error('批量订单履约未确认');
+            error.code = 'guest_checkout_batch_fulfillment_unconfirmed';
+            error.retryable = true;
+            throw error;
+        } catch (error) {
+            logger?.warn?.('[GuestShopWorker] checkout batch fulfillment retry scheduled', {
+                batch_id: normalizeText(batch.id, 80),
+                code: safeErrorCode(error)
+            });
+            return {
+                status: 'retry_waiting',
+                batch_id: batch.id,
+                error_code: safeErrorCode(error, 'guest_checkout_batch_fulfillment_failed')
+            };
+        }
     }
 
     async function loadPayment(orderId) {
@@ -629,6 +764,28 @@ function createGuestShopWorker({
         });
     }
 
+    async function releaseTerminalRefundLease(order, statePatch, options) {
+        try {
+            const released = await releaseLease(order, 'refund', statePatch, options);
+            if (!released) {
+                logger?.warn?.('[GuestShopWorker] terminal refund recorded but lease release was not confirmed', {
+                    order_id: normalizeText(order.id, 80),
+                    refund_status: normalizeText(statePatch?.refund_status, 40)
+                });
+            }
+        } catch (error) {
+            // The refund RPC is the financial source of truth. Lease cleanup is
+            // housekeeping: if it fails, let the lease expire naturally rather
+            // than re-entering the provider-error path and rewriting a terminal
+            // refund as failed/retry_waiting.
+            logger?.error?.('[GuestShopWorker] terminal refund recorded but lease release failed', {
+                order_id: normalizeText(order.id, 80),
+                refund_status: normalizeText(statePatch?.refund_status, 40),
+                error: safeErrorMessage(error)
+            });
+        }
+    }
+
     async function processRefund(order, context = {}) {
         if (order.refund_status === 'succeeded' || order.refund_status === 'manual_review') {
             return { status: 'skipped', reason: 'refund_terminal' };
@@ -695,7 +852,7 @@ function createGuestShopWorker({
             const success = result?.success === true || ['refunded', 'succeeded', 'success'].includes(String(result?.status || '').toLowerCase());
             if (success) {
                 await recordRefund(order, 'succeeded', result?.provider_ref || result?.provider_order_no || result?.transaction_id || payment.provider_order_no, null, null);
-                await releaseLease(workingOrder, 'refund', {
+                await releaseTerminalRefundLease(workingOrder, {
                     refund_status: 'succeeded',
                     refund_next_attempt_at: null,
                     refund_last_error_code: null,
@@ -706,12 +863,12 @@ function createGuestShopWorker({
 
             if (result?.supported === false || result?.code === 'guest_refund_not_supported' || result?.status === 'blocked') {
                 await recordRefund(order, 'manual_review', result?.provider_ref || null, result?.code || 'guest_refund_not_supported', result?.message || '需人工退款核验');
-                await releaseLease(workingOrder, 'refund', {
+                await releaseTerminalRefundLease(workingOrder, {
                     refund_status: 'manual_review',
                     refund_next_attempt_at: null,
                     refund_last_error_code: result?.code || 'guest_refund_not_supported',
-                    refund_last_error_message: '需人工退款核验'
-                }, { terminal: true, patch: { last_error_code: result?.code || 'guest_refund_not_supported', last_error_message: '需人工退款核验' } });
+                    refund_last_error_message: result?.message || '需人工退款核验'
+                }, { terminal: true, patch: { last_error_code: result?.code || 'guest_refund_not_supported', last_error_message: result?.message || '需人工退款核验' } });
                 return { status: 'manual_review', attempt: nextAttempt };
             }
 
@@ -790,17 +947,73 @@ function createGuestShopWorker({
 
         try {
             const claimStartMs = currentDate().getTime();
-            const claimed = await callRpc('fn_guest_shop_claim_fulfillment', {
-                p_order_id: order.id,
-                // The claim RPC already locks and resolves the one
-                // reservation belonging to this order.  Supplying a
-                // reservation id fetched in a separate HTTP round-trip adds
-                // latency and creates a needless stale-read window.
-                p_reservation_id: null
+            // Promo L1: an order can hold up to 5 reservations and
+            // fn_guest_shop_claim_fulfillment hands over exactly ONE row per call
+            // (held rows first, then a stable created_at/id order, so a retry can
+            // never be given the same live card twice while another stays held).
+            // The worker therefore loops until every card of THIS order is
+            // consumed. Supplying a reservation id fetched in a separate HTTP
+            // round-trip would add latency and create a stale-read window, so the
+            // RPC keeps resolving the row itself.
+            //
+            // Termination is bounded twice. (1) The committed order quantity, so
+            // the loop can never claim more cards than were paid for. (2) A
+            // repeated reservation id: re-reading an already-consumed row returns
+            // that same row again (with its content) rather than signalling "no
+            // held row left", so without this the loop would spin whenever the
+            // reservation set and quantity disagree. fn_guest_shop_mark_fulfilled
+            // stays the authority - it refuses to write 'delivered' unless EVERY
+            // reservation is consumed - so a bounded early exit can never mark a
+            // partially delivered order as finished.
+            const expectedItems = normalizePositiveInteger(order.quantity, 1, {
+                min: 1,
+                max: GUEST_ORDER_QUANTITY_CEILING
             });
+            const seenReservationIds = new Set();
+            let claim = null;
+            let claimedItems = 0;
+            for (let item = 0; item <= expectedItems; item += 1) {
+                const row = await callRpc('fn_guest_shop_claim_fulfillment', {
+                    p_order_id: order.id,
+                    p_reservation_id: null
+                }) || {};
+                claim = row;
+                // The RPC persists paid_unfulfillable before returning this row,
+                // and for a multi-card order it has already released the remaining
+                // held cards, because one lost card makes the whole order
+                // undeliverable. Never retry with a replacement inventory row:
+                // that would break the payment-to-reservation audit boundary.
+                if (row.fulfillment_status === 'paid_unfulfillable'
+                    || row.reservation_status === 'released'
+                    || row.content == null) {
+                    break;
+                }
+                if (typeof row.content !== 'string' || !row.content.length) {
+                    const error = new Error('履约 RPC 未返回可交付库存');
+                    error.code = 'guest_fulfillment_content_missing';
+                    error.retryable = false;
+                    throw error;
+                }
+                const rowReservationId = normalizeText(row.reservation_id, 160);
+                if (!rowReservationId) {
+                    const error = new Error('履约 RPC 未返回库存预留引用');
+                    error.code = 'guest_fulfillment_reservation_missing';
+                    error.retryable = true;
+                    throw error;
+                }
+                if (seenReservationIds.has(rowReservationId)) break;
+                seenReservationIds.add(rowReservationId);
+                claimedItems += 1;
+                if (claimedItems >= expectedItems) break;
+            }
             const claimEndMs = currentDate().getTime();
 
-            const claim = claimed || {};
+            if (!claim) {
+                const error = new Error('履约 RPC 未返回结果');
+                error.code = 'guest_fulfillment_claim_missing';
+                error.retryable = true;
+                throw error;
+            }
             // The RPC persists paid_unfulfillable before returning this row.
             // Never retry with a replacement inventory row: that would break
             // the payment-to-reservation audit boundary.
@@ -852,6 +1065,11 @@ function createGuestShopWorker({
                 error.retryable = true;
                 throw error;
             }
+            // mark_fulfilled is an ORDER-level transition: the reservation id only
+            // proves the caller is talking about this order, it does not narrow the
+            // decision. It writes 'delivered' solely when every reservation of the
+            // order is consumed and every card is sold and non-shared, so a 1-of-3
+            // delivery raises guest_reservation_not_consumed instead of finishing.
             const marked = await callRpc('fn_guest_shop_mark_fulfilled', {
                 p_order_id: order.id,
                 p_reservation_id: reservationId
@@ -898,7 +1116,11 @@ function createGuestShopWorker({
                     lease_ms: leaseAcquiredMs - fulfillmentStartMs,
                     claim_ms: claimEndMs - claimStartMs,
                     mark_ms: markEndMs - claimEndMs,
-                    release_ms: fulfillmentEndMs - markEndMs
+                    release_ms: fulfillmentEndMs - markEndMs,
+                    // Cards actually handed over in this pass. Never a card
+                    // content, a claim secret or a provider payload.
+                    items: claimedItems,
+                    items_expected: expectedItems
                 });
             }
             return { status: 'delivered', attempt };
@@ -914,6 +1136,94 @@ function createGuestShopWorker({
         } catch (error) {
             logger?.error?.('[GuestShopWorker] expired reservation sweep failed', safeErrorMessage(error));
             return { processed_count: 0, released_count: 0, unfulfillable_count: 0, error: safeErrorCode(error) };
+        }
+    }
+
+    async function expireCheckoutBatches(limit) {
+        try {
+            return await callRpc('fn_guest_shop_expire_checkout_batches', { p_limit: limit });
+        } catch (error) {
+            logger?.error?.('[GuestShopWorker] expired checkout batch sweep failed', safeErrorMessage(error));
+            return { processed_count: 0, released_count: 0, error: safeErrorCode(error) };
+        }
+    }
+
+    async function purgeExpiredAccessAttempts() {
+        const base = {
+            enabled: accessAuditRetention.enabled,
+            retention_days: accessAuditRetention.retentionDays,
+            cutoff_at: null,
+            batch_size: ACCESS_AUDIT_PURGE_BATCH_SIZE,
+            max_batches: ACCESS_AUDIT_PURGE_MAX_BATCHES,
+            batches: 0,
+            deleted_count: 0,
+            has_more: false,
+            backlog_degraded: false,
+            error: null
+        };
+        if (!accessAuditRetention.enabled) {
+            return {
+                ...base,
+                error: accessAuditRetention.valid ? null : accessAuditRetention.reason,
+                backlog_degraded: !accessAuditRetention.valid
+            };
+        }
+        if (!accessAuditRetention.valid) {
+            return { ...base, error: accessAuditRetention.reason, backlog_degraded: true };
+        }
+
+        const cutoffAt = new Date(
+            currentDate().getTime() - (accessAuditRetention.retentionDays * MILLISECONDS_PER_DAY)
+        ).toISOString();
+
+        let batches = 0;
+        let deletedCount = 0;
+        let hasMore = false;
+        try {
+            for (let batch = 0; batch < ACCESS_AUDIT_PURGE_MAX_BATCHES; batch += 1) {
+                const result = await callRpc('fn_guest_shop_purge_access_attempts', {
+                    p_cutoff: cutoffAt,
+                    p_limit: ACCESS_AUDIT_PURGE_BATCH_SIZE
+                });
+                const batchDeletedCount = Number(result?.deleted_count);
+                const batchHasMore = result?.has_more;
+                if (!Number.isSafeInteger(batchDeletedCount)
+                    || batchDeletedCount < 0
+                    || batchDeletedCount > ACCESS_AUDIT_PURGE_BATCH_SIZE
+                    || typeof batchHasMore !== 'boolean'
+                    || (batchHasMore && batchDeletedCount !== ACCESS_AUDIT_PURGE_BATCH_SIZE)) {
+                    throw Object.assign(new Error('游客访问审计清理结果无效'), { code: 'access_audit_purge_result_invalid' });
+                }
+                batches += 1;
+                deletedCount += batchDeletedCount;
+                hasMore = batchHasMore;
+                if (!hasMore) break;
+            }
+
+            return {
+                ...base,
+                cutoff_at: cutoffAt,
+                batches,
+                deleted_count: deletedCount,
+                has_more: hasMore,
+                backlog_degraded: hasMore
+            };
+        } catch (error) {
+            logger?.error?.('[GuestShopWorker] access audit retention sweep failed', {
+                code: safeErrorCode(error),
+                message: safeErrorMessage(error),
+                batches,
+                deleted_count: deletedCount
+            });
+            return {
+                ...base,
+                cutoff_at: cutoffAt,
+                batches,
+                deleted_count: deletedCount,
+                has_more: true,
+                backlog_degraded: true,
+                error: safeErrorCode(error, 'access_audit_retention_failed')
+            };
         }
     }
 
@@ -960,11 +1270,28 @@ function createGuestShopWorker({
         const started = currentDate();
         const limit = normalizePositiveInteger(options.limit, config.batchSize, { min: 1, max: MAX_BATCH_SIZE });
         const expiry = await releaseExpiredReservations(limit);
+        const batchExpiry = await expireCheckoutBatches(limit);
+        const accessAuditCleanup = options.runAccessAuditCleanup === true
+            ? await purgeExpiredAccessAttempts()
+            : {
+                enabled: accessAuditRetention.enabled,
+                retention_days: accessAuditRetention.retentionDays,
+                cutoff_at: null,
+                batch_size: ACCESS_AUDIT_PURGE_BATCH_SIZE,
+                max_batches: ACCESS_AUDIT_PURGE_MAX_BATCHES,
+                batches: 0,
+                deleted_count: 0,
+                has_more: false,
+                backlog_degraded: !accessAuditRetention.valid,
+                error: accessAuditRetention.valid ? null : accessAuditRetention.reason,
+                skipped: 'not_scheduled'
+            };
         const orders = await loadCandidates(limit);
+        const checkoutBatches = await loadCheckoutBatchCandidates(limit);
         const summary = {
             success: true,
             worker_name: name,
-            scanned: orders.length,
+            scanned: orders.length + checkoutBatches.length,
             processed: 0,
             delivered: 0,
             retry_waiting: 0,
@@ -974,8 +1301,13 @@ function createGuestShopWorker({
             manual_review: 0,
             skipped: 0,
             errors: 0,
+            checkout_batches_scanned: checkoutBatches.length,
+            checkout_batches_delivered: 0,
+            checkout_batches_retry_waiting: 0,
             expired_reservations: Number(expiry?.released_count || 0),
+            expired_checkout_batches: Number(batchExpiry?.released_count || 0),
             expiry_unfulfillable: Number(expiry?.unfulfillable_count || 0),
+            access_audit_cleanup: accessAuditCleanup,
             duration_ms: 0
         };
 
@@ -1028,6 +1360,28 @@ function createGuestShopWorker({
                 });
             }
         }
+        for (const batch of checkoutBatches) {
+            try {
+                const result = await processCheckoutBatch(batch);
+                if (result.status === 'delivered') {
+                    summary.checkout_batches_delivered += 1;
+                    summary.delivered += 1;
+                } else if (result.status === 'retry_waiting') {
+                    summary.checkout_batches_retry_waiting += 1;
+                    summary.retry_waiting += 1;
+                } else if (result.status === 'paid_unfulfillable') {
+                    summary.paid_unfulfillable += 1;
+                }
+                if (result.status !== 'skipped') summary.processed += 1;
+            } catch (error) {
+                summary.errors += 1;
+                logger?.error?.('[GuestShopWorker] checkout batch processing failed', {
+                    batch_id: normalizeText(batch.id, 80),
+                    code: safeErrorCode(error),
+                    message: safeErrorMessage(error)
+                });
+            }
+        }
         summary.duration_ms = Math.max(0, currentDate().getTime() - started.getTime());
         return summary;
     }
@@ -1040,7 +1394,11 @@ function createGuestShopWorker({
         processFulfillment,
         processRefund,
         releaseExpiredReservations,
+        purgeExpiredAccessAttempts,
         loadCandidates,
+        loadCheckoutBatchCandidates,
+        loadCheckoutBatchById,
+        processCheckoutBatch,
         config,
         workerName: name
     });
@@ -1183,8 +1541,11 @@ function createGuestShopWorkerHandler({
     env = process.env,
     workerFactory = createGuestShopWorker,
     paymentAdapter = null,
-    logger = console
+    logger = console,
+    now = () => new Date()
 } = {}) {
+    let nextAccessAuditSweepAtMs = 0;
+
     return async function guestShopWorkerHandler(req, res) {
         const method = String(req?.method || '').toUpperCase();
         if (method === 'OPTIONS') {
@@ -1235,7 +1596,21 @@ function createGuestShopWorkerHandler({
                 env,
                 logger
             });
-            const result = await worker.runOnce({ limit });
+            const clockValue = typeof now === 'function' ? now() : now;
+            const clockDate = clockValue instanceof Date ? clockValue : new Date(clockValue);
+            const clockMs = Number.isFinite(clockDate.getTime()) ? clockDate.getTime() : Date.now();
+            const runAccessAuditCleanup = clockMs >= nextAccessAuditSweepAtMs;
+            if (runAccessAuditCleanup) {
+                // Advance before the RPC. A database outage should retry after
+                // ten minutes, not turn the 10-second fulfillment timer into a
+                // tight retention-query loop.
+                nextAccessAuditSweepAtMs = clockMs + ACCESS_AUDIT_SWEEP_INTERVAL_MS;
+            }
+            const result = await worker.runOnce({ limit, runAccessAuditCleanup });
+            const accessAuditCleanup = result?.access_audit_cleanup;
+            const maintenanceDegraded = Boolean(
+                accessAuditCleanup?.error || accessAuditCleanup?.backlog_degraded
+            );
 
             if (trace) {
                 // The same summary is returned to the systemd helper, which
@@ -1244,7 +1619,28 @@ function createGuestShopWorkerHandler({
                 logger?.info?.('[GuestShopWorker] run finished', {
                     duration_ms: Date.now() - workerStartMs,
                     fulfillment: result?.fulfillment?.summary,
-                    refund: result?.refund?.summary
+                    refund: result?.refund?.summary,
+                    access_audit_cleanup: accessAuditCleanup
+                });
+            }
+
+            if (maintenanceDegraded) {
+                const code = accessAuditCleanup?.error
+                    ? 'guest_access_audit_cleanup_failed'
+                    : 'guest_access_audit_backlog_degraded';
+                logger?.error?.('[GuestShopWorker] maintenance degraded', {
+                    code,
+                    batches: Number(accessAuditCleanup?.batches || 0),
+                    deleted_count: Number(accessAuditCleanup?.deleted_count || 0),
+                    has_more: accessAuditCleanup?.has_more === true
+                });
+                return sendWorkerJson(res, 503, {
+                    ...result,
+                    success: false,
+                    worker_run_success: result?.success === true,
+                    degraded: true,
+                    code,
+                    message: '履约已按幂等规则处理，但访问审计清理需要运维关注'
                 });
             }
 
@@ -1268,11 +1664,17 @@ module.exports = {
     WORKER_SECRET_HEADER_NAMES,
     DEFAULT_BATCH_SIZE,
     MAX_BATCH_SIZE,
+    ACCESS_AUDIT_RETENTION_SWITCH_ENV,
+    ACCESS_AUDIT_PURGE_BATCH_SIZE,
+    ACCESS_AUDIT_PURGE_MAX_BATCHES,
+    ACCESS_AUDIT_SWEEP_INTERVAL_MS,
     isProductionLikeRuntime,
     isStrongWorkerSecret,
     parseWorkerInteger,
     parseWorkerRatio,
+    parseAccessAuditRetentionSwitch,
     resolveWorkerConfig,
+    resolveAccessAuditRetention,
     workerRuntimeConfigError,
     getGuestShopWorkerSecret,
     getProvidedWorkerSecret,

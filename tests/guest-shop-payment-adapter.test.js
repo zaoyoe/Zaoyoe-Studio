@@ -212,6 +212,117 @@ test('ZPay checkout uses immutable server amount and excludes claim/user metadat
     assert.equal(form.get('param').includes('points'), false);
 });
 
+test('ZPay never treats an image field or gateway origin as the payment QR payload', async () => {
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 1,
+        payurl: 'https://zpayz.cn/pay/checkout?id=real-order',
+        img: 'https://zpayz.cn/static/qr-placeholder.png'
+    }));
+    const result = await adapter.createGuestPayment({
+        order: makeOrder(),
+        provider: 'zpay',
+        channel: 'alipay',
+        site: 'cn',
+        amount: '12.34',
+        allowedChannels: ['zpay']
+    });
+
+    assert.equal(result.checkout_url, 'https://zpayz.cn/pay/checkout?id=real-order');
+    assert.equal(result.qrcode_url, 'https://zpayz.cn/pay/checkout?id=real-order');
+    assert.equal(result.qrcode_image_url, 'https://zpayz.cn/static/qr-placeholder.png');
+    assert.notEqual(result.checkout_url, 'https://zpayz.cn');
+});
+
+test('ZPay keeps an image-looking payurl as the order payment URL for local QR generation', async () => {
+    const paymentUrl = 'https://zpayz.cn/pay/order/GS-IMAGE-LOOKING.png?token=order-specific';
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 1,
+        payurl: paymentUrl,
+        img: 'https://zpayz.cn/static/qr-placeholder.png'
+    }));
+    const result = await adapter.createGuestPayment({
+        order: makeOrder(),
+        provider: 'zpay',
+        channel: 'alipay',
+        site: 'cn',
+        amount: '12.34',
+        allowedChannels: ['zpay']
+    });
+
+    assert.equal(result.checkout_url, paymentUrl);
+    assert.equal(result.qrcode_url, paymentUrl);
+    assert.equal(result.qrcode_image_url, 'https://zpayz.cn/static/qr-placeholder.png');
+});
+
+test('ZPay can display an image-only response without encoding the image URL as a QR', async () => {
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 1,
+        img: 'https://zpayz.cn/static/qr.png'
+    }));
+    const result = await adapter.createGuestPayment({
+        order: makeOrder(),
+        provider: 'zpay',
+        channel: 'alipay',
+        site: 'cn',
+        amount: '12.34',
+        allowedChannels: ['zpay']
+    });
+
+    assert.equal(result.checkout_url, '');
+    assert.equal(result.qrcode_url, null);
+    assert.equal(result.qrcode_image_url, 'https://zpayz.cn/static/qr.png');
+});
+
+test('ZPay batch checkout rejects an image-only response before it can be rendered as a QR', async () => {
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 1,
+        img: 'https://zpayz.cn/static/qr.png'
+    }));
+
+    await assert.rejects(
+        () => adapter.createGuestPayment({
+            order: makeOrder(),
+            provider: 'zpay',
+            channel: 'alipay',
+            site: 'cn',
+            amount: '12.34',
+            allowedChannels: ['zpay'],
+            requireOrderScopedCheckout: true
+        }),
+        (error) => error?.code === 'guest_provider_checkout_invalid'
+    );
+});
+
+test('ZPay batch checkout rejects generic or local URLs and accepts an opaque cashier payment URL', async () => {
+    for (const responsePayload of [
+        { code: 1, payurl: 'http://localhost:8000/' },
+        { code: 1, qrcode: 'https://zpayz.cn/' }
+    ]) {
+        const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson(responsePayload));
+        await assert.rejects(
+            () => adapter.createGuestPayment({
+                order: makeOrder(), provider: 'zpay', channel: 'alipay', site: 'cn',
+                amount: '12.34', allowedChannels: ['zpay'], requireOrderScopedCheckout: true
+            }),
+            (error) => error?.code === 'guest_provider_checkout_invalid'
+        );
+    }
+
+    const order = makeOrder({ order_no: 'GCB-20260929010420-7E3E7BC2EDF8' });
+    const checkoutUrl = 'https://cashier.zpayz.cn/pay/checkout?token=opaque-provider-token';
+    const adapter = makeAdapter(zpayConfig({ checkout_url: 'https://gateway.zpayz.cn' }), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 1,
+        payurl: checkoutUrl
+    }));
+    const result = await adapter.createGuestPayment({
+        order, provider: 'zpay', channel: 'alipay', site: 'cn', amount: '12.34',
+        allowedChannels: ['zpay'], requireOrderScopedCheckout: true
+    });
+    assert.equal(result.checkout_url, checkoutUrl);
+    assert.equal(result.qrcode_url, checkoutUrl);
+    assert.equal(result.qrcode_image_url, null);
+});
+
 test('trusted guest amount prefers expected_amount over catalog total_amount', () => {
     const payable = getTrustedOrderAmount({
         expected_amount: '12.47',
@@ -357,6 +468,101 @@ test('NOWPayments intl checkout still settles CNY and converts the credit price 
     const body = JSON.parse(request.options.body);
     assert.equal(body.price_amount, '1.73');
     assert.equal(body.pay_currency, 'usdtbsc');
+});
+
+test('NOWPayments small-amount checkout quotes in USDTBSC crypto to support micro transactions', async () => {
+    let request;
+    const adapter = makeAdapter(nowpaymentsConfig({
+        pay_currency: 'usdtbsc',
+        price_currency: 'usdtbsc',
+        cny_to_usd_rate: 0.15
+    }), {
+        nowpayments_api_key: NOWPAYMENTS_API_KEY,
+        nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET
+    }, async (url, options) => {
+        request = { url, options };
+        return responseJson({
+            payment_id: 'NP-PAYMENT-MICRO-1',
+            order_id: 'GS20261004-000001',
+            pay_address: '0x1234567890abcdef1234567890abcdef12345678',
+            pay_amount: 1.52,
+            pay_currency: 'usdtbsc',
+            price_amount: 1.52,
+            price_currency: 'usdtbsc',
+            expiration_estimate_date: '2026-10-04T12:00:00Z'
+        });
+    });
+    const result = await adapter.createGuestPayment({
+        order: makeOrder({
+            order_no: 'GS20261004-000001',
+            total_amount: '10.10',
+            provider: 'nowpayments',
+            channel: 'nowpayments',
+            site: 'intl',
+            currency: 'CNY'
+        }),
+        provider: 'nowpayments',
+        channel: 'nowpayments',
+        site: 'intl',
+        amount: '10.10',
+        allowedChannels: ['nowpayments']
+    });
+
+    assert.equal(result.currency, 'CNY');
+    assert.equal(result.checkout.currency, 'CNY');
+    assert.equal(result.pay_currency, 'usdtbsc');
+    assert.equal(result.provider_metadata.price_currency, 'usdtbsc');
+    assert.equal(result.provider_metadata.price_amount, 1.52);
+    assert.equal(result.provider_metadata.local_amount, 10.10);
+    assert.equal(result.provider_metadata.cny_to_usd_rate, 0.15);
+    const body = JSON.parse(request.options.body);
+    assert.equal(body.price_amount, '1.52');
+    assert.equal(body.price_currency, 'usdtbsc');
+    assert.equal(body.pay_currency, 'usdtbsc');
+});
+
+test('NOWPayments checkout with price_currency usd defaults to usdtbsc for USDTBSC payments', async () => {
+    let request;
+    const adapter = makeAdapter(nowpaymentsConfig({
+        pay_currency: 'usdtbsc',
+        price_currency: 'usd',
+        cny_to_usd_rate: 0.15
+    }), {
+        nowpayments_api_key: NOWPAYMENTS_API_KEY,
+        nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET
+    }, async (url, options) => {
+        request = { url, options };
+        return responseJson({
+            payment_id: 'NP-PAYMENT-MICRO-2',
+            order_id: 'GS20261004-000002',
+            pay_address: '0x1234567890abcdef1234567890abcdef12345678',
+            pay_amount: 1.52,
+            pay_currency: 'usdtbsc',
+            price_amount: 1.52,
+            price_currency: 'usdtbsc',
+            expiration_estimate_date: '2026-10-04T12:00:00Z'
+        });
+    });
+    const result = await adapter.createGuestPayment({
+        order: makeOrder({
+            order_no: 'GS20261004-000002',
+            total_amount: '10.10',
+            provider: 'nowpayments',
+            channel: 'nowpayments',
+            site: 'intl',
+            currency: 'CNY'
+        }),
+        provider: 'nowpayments',
+        channel: 'nowpayments',
+        site: 'intl',
+        amount: '10.10',
+        allowedChannels: ['nowpayments']
+    });
+
+    const body = JSON.parse(request.options.body);
+    assert.equal(body.price_amount, '1.52');
+    assert.equal(body.price_currency, 'usdtbsc');
+    assert.equal(result.provider_metadata.price_currency, 'usdtbsc');
 });
 
 test('NOWPayments 4xx amount too small is a definitive create rejection', async () => {
@@ -545,7 +751,7 @@ test('NOWPayments finished callbacks require explicit actually_paid and actually
     const missingCurrency = await adapter.parseGuestWebhook({
         provider: 'nowpayments',
         site: 'cn',
-        payload: { ...base, actually_paid: '1.73' }
+        payload: { ...base, pay_currency: '', actually_paid: '1.73' }
     });
     assert.equal(missingCurrency.actually_paid, 1.73);
     assert.equal(missingCurrency.paid_currency, '');
@@ -561,14 +767,33 @@ test('NOWPayments finished callbacks require explicit actually_paid and actually
     assert.equal(wrongCurrency.status, 'wrong_asset');
     assert.equal(wrongCurrency.network_verified, false);
 
-    const valid = await adapter.parseGuestWebhook({
+    const wrongPayCurrency = await adapter.parseGuestWebhook({
+        provider: 'nowpayments',
+        site: 'cn',
+        payload: { ...base, pay_currency: 'usdttrc20', actually_paid: '1.73' }
+    });
+    assert.equal(wrongPayCurrency.actual_payment_verified, false);
+    assert.equal(wrongPayCurrency.status, 'wrong_asset');
+    assert.equal(wrongPayCurrency.network_verified, false);
+
+    const validSynthetic = await adapter.parseGuestWebhook({
         provider: 'nowpayments',
         site: 'cn',
         payload: { ...base, actually_paid: '1.73', actually_paid_currency: 'usdtbsc' }
     });
-    assert.equal(valid.actual_payment_verified, true);
-    assert.equal(valid.status, 'paid');
-    assert.equal(valid.network_verified, true);
+    assert.equal(validSynthetic.actual_payment_verified, true);
+    assert.equal(validSynthetic.status, 'paid');
+    assert.equal(validSynthetic.network_verified, true);
+
+    const validOfficial = await adapter.parseGuestWebhook({
+        provider: 'nowpayments',
+        site: 'cn',
+        payload: { ...base, actually_paid: '1.73' }
+    });
+    assert.equal(validOfficial.actual_payment_verified, true);
+    assert.equal(validOfficial.status, 'paid');
+    assert.equal(validOfficial.network_verified, true);
+    assert.equal(validOfficial.paid_currency, 'usdtbsc');
 });
 
 test('NOWPayments settlement preserves decimal text and rejects malformed amounts', async () => {
@@ -638,4 +863,55 @@ test('NOWPayments status query does not fall back to quote fields for settlement
     assert.equal(queried.actual_payment_verified, false);
     assert.equal(queried.status, 'review');
     assert.equal(queried.effective_status, 'review');
+});
+
+test('ZPay guest refund classifies an insufficient seller balance as manual review', async () => {
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 0,
+        msg: '卖家余额不足'
+    }));
+    const result = await adapter.refundGuestPayment({
+        provider: 'zpay',
+        site: 'cn',
+        providerOrderNo: 'GS20260917-000001',
+        merchantOrderNo: 'GS20260917-000001',
+        money: '9.09'
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.code, 'guest_refund_provider_balance_insufficient');
+    assert.equal(result.message, '卖家余额不足');
+});
+
+test('ZPay guest refund classifies an explicit provider rejection as manual review', async () => {
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 400,
+        msg: '该订单已退款或不可退款'
+    }));
+    const result = await adapter.refundGuestPayment({
+        provider: 'zpay',
+        site: 'cn',
+        providerOrderNo: 'GS20260917-000002',
+        merchantOrderNo: 'GS20260917-000002',
+        money: '1.00'
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.code, 'guest_refund_provider_rejected');
+});
+
+test('ZPay guest refund keeps an empty unclassified failure retryable', async () => {
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        msg: ''
+    }));
+    const result = await adapter.refundGuestPayment({
+        provider: 'zpay',
+        site: 'cn',
+        providerOrderNo: 'GS20260917-000003',
+        merchantOrderNo: 'GS20260917-000003',
+        money: '1.00'
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.status, 'unknown');
+    assert.equal(result.code, 'guest_refund_result_unknown');
 });

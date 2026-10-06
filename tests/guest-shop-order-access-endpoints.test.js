@@ -43,10 +43,12 @@ const BASE_ENV = Object.freeze({
     GUEST_SHOP_CLAIM_DERIVATION_PEPPER: 'guest-derivation-pepper-0123456789-abcdefghijklmnopqrstuv',
     GUEST_SHOP_CONTACT_HASH_PEPPER: CONTACT_PEPPER,
     GUEST_SHOP_REQUEST_HASH_PEPPER: REQUEST_PEPPER,
-    GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true'
+    GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+    GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'true'
 });
 
 const OFF_ENV = Object.freeze({ ...BASE_ENV, GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'false' });
+const PAGE_OFF_ENV = Object.freeze({ ...BASE_ENV, GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'false' });
 
 const COOKIE_NAME = '__Host-gs-acc';
 
@@ -248,6 +250,32 @@ function createSupabaseStub(state) {
                     error: null
                 };
             }
+            if (name === 'fn_guest_shop_list_delivered_content') {
+                // Mirrors supabase/migrations/20260923_guest_shop_promo_l1l2.sql:
+                // the helper re-validates the WHOLE order under the service-role
+                // contract and raises a named token for every undeliverable state;
+                // a healthy order returns one (reservation_id, item_index,
+                // content) row per item, ordered by reservation creation.
+                const order = state.orders.find((row) => row.id === args?.p_order_id);
+                const raise = (message) => ({ data: null, error: { message, code: 'P0002' } });
+                if (!order) return raise('guest_order_not_found');
+                if (String(order.payment_status) !== 'confirmed') return raise('guest_payment_not_confirmed');
+                if (String(order.fulfillment_status) !== 'delivered') return raise('guest_order_not_delivered');
+                if (String(state.reservationStatus) !== 'consumed') return raise('guest_reservation_not_consumed');
+                const requested = Number.isInteger(order.quantity) && order.quantity > 0 ? order.quantity : 1;
+                const contents = Array.isArray(state.deliveryContents)
+                    ? state.deliveryContents
+                    : Array.from({ length: requested }, () => state.deliveryContent);
+                if (contents.some((text) => typeof text !== 'string')) return raise('guest_consumed_inventory_inconsistent');
+                return {
+                    data: contents.map((content, index) => ({
+                        reservation_id: crypto.randomUUID(),
+                        item_index: index,
+                        content
+                    })),
+                    error: null
+                };
+            }
             if (name === 'fn_guest_shop_upsert_buyer_group') {
                 // Mirrors supabase/migrations/20260921_guest_shop_buyer_group_upsert.sql:
                 // a verified match REUSES its group (and only overwrites the
@@ -312,6 +340,9 @@ function createHarness({ env = BASE_ENV, state: stateOverrides = {}, rateLimited
         rpcCalls: [],
         reservationStatus: 'consumed',
         deliveryContent: 'CARD-KEY-0001',
+        // L1: an order can hold several consumed reservations; deliveryContents
+        // overrides the per-item content when a test needs a multi-card order.
+        deliveryContents: null,
         ...stateOverrides
     };
     const supabase = createSupabaseStub(state);
@@ -440,6 +471,37 @@ test('with the switch off GET /guest/orders keeps today\'s 405 and never reaches
     // No credential verification, no audit row, no read budget consumed: the
     // request must be indistinguishable from today's method-not-allowed path.
     assert.equal(limitCalls.length, 0);
+});
+
+test('the standalone page switch gates its capability endpoint and credential routes', async () => {
+    const { handlers, limitCalls } = createHarness({ env: PAGE_OFF_ENV });
+
+    const availability = createResponse();
+    await handlers.accessAvailability(getReq('/api/shop/guest/access/availability'), availability);
+    assert.equal(availability.statusCode, 404);
+    assert.equal(availability.payload.code, 'guest_feature_disabled');
+
+    const login = createResponse();
+    await handlers.accessLogin(postReq('/api/shop/guest/access/login', loginBody()), login);
+    assert.equal(login.statusCode, 404);
+    assert.equal(login.payload.code, 'guest_feature_disabled');
+    assert.equal(login.cookies.length, 0);
+
+    const list = createResponse();
+    await handlers.orders(getReq('/api/shop/guest/orders', {}, {
+        'x-guest-order-credential': credentialHeader()
+    }), list);
+    assert.equal(list.statusCode, 405);
+    assert.equal(list.headers.allow, 'POST');
+    assert.equal(limitCalls.length, 0, 'disabled page access must not consume a query budget');
+});
+
+test('the capability endpoint acknowledges only the enabled standalone page', async () => {
+    const { handlers } = createHarness();
+    const res = createResponse();
+    await handlers.accessAvailability(getReq('/api/shop/guest/access/availability'), res);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.payload, { success: true, enabled: true });
 });
 
 test('logout is never switch-gated so a rollback cannot strand a live cookie', async () => {
@@ -723,6 +785,54 @@ test('pagination and order_no filters are clamped, not trusted', async () => {
     assert.equal(filtered.payload.pagination.total, 0);
 });
 
+test('the same credential group returns every historical order across pages', async () => {
+    const orders = [
+        makeOrderRow({
+            order_no: 'GS20260921-000003',
+            created_at: '2026-09-23T00:00:00.000Z',
+            total_amount: '30.00',
+            unit_amount: '30.00'
+        }),
+        makeOrderRow({
+            order_no: 'GS20260921-000002',
+            created_at: '2026-09-22T00:00:00.000Z',
+            total_amount: '20.00',
+            unit_amount: '20.00'
+        }),
+        makeOrderRow({
+            order_no: 'GS20260921-000001',
+            created_at: '2026-09-21T00:00:00.000Z'
+        })
+    ];
+    const { handlers } = createHarness({ state: { orders } });
+    const header = { 'x-guest-order-credential': credentialHeader() };
+
+    const all = createResponse();
+    await handlers.orders(getReq('/api/shop/guest/orders', { page: 1, pageSize: 10 }, header), all);
+    assert.equal(all.statusCode, 200);
+    assert.equal(all.payload.pagination.total, 3);
+    assert.deepEqual(all.payload.orders.map((order) => order.order_no), [
+        'GS20260921-000003',
+        'GS20260921-000002',
+        'GS20260921-000001'
+    ]);
+
+    const firstPage = createResponse();
+    await handlers.orders(getReq('/api/shop/guest/orders', { page: 1, pageSize: 2 }, header), firstPage);
+    assert.deepEqual(firstPage.payload.pagination, { page: 1, page_size: 2, total: 3 });
+    assert.deepEqual(firstPage.payload.orders.map((order) => order.order_no), [
+        'GS20260921-000003',
+        'GS20260921-000002'
+    ]);
+
+    const secondPage = createResponse();
+    await handlers.orders(getReq('/api/shop/guest/orders', { page: 2, pageSize: 2 }, header), secondPage);
+    assert.deepEqual(secondPage.payload.pagination, { page: 2, page_size: 2, total: 3 });
+    assert.deepEqual(secondPage.payload.orders.map((order) => order.order_no), [
+        'GS20260921-000001'
+    ]);
+});
+
 test('delivery is gated on confirmed payment AND delivered fulfillment', async () => {
     const header = { 'x-guest-order-credential': credentialHeader() };
     const cases = [
@@ -747,6 +857,122 @@ test('delivery is gated on confirmed payment AND delivered fulfillment', async (
             assert.equal(res.payload.content, 'CARD-KEY-0001');
         }
     }
+});
+
+// ---------------------------------------------------------------------------
+// §11.2 + Promo L1/L2 — a multi-unit order and the committed amount breakdown
+// ---------------------------------------------------------------------------
+
+test('L1: a multi-unit order delivers every card in one payload', async () => {
+    const header = { 'x-guest-order-credential': credentialHeader() };
+    const { handlers, state } = createHarness({
+        state: {
+            orders: [makeOrderRow({
+                payment_status: 'confirmed',
+                fulfillment_status: 'delivered',
+                quantity: 3,
+                list_unit_amount: '12.34',
+                unit_amount: '12.34',
+                discount_amount: '0.00',
+                payment_fee_amount: '0.38',
+                total_amount: '37.40'
+            })],
+            deliveryContents: ['CARD-KEY-0001', 'CARD-KEY-0002', 'CARD-KEY-0003']
+        }
+    });
+    const res = createResponse();
+    await handlers.delivery(getReq('/api/shop/guest/delivery', { order_no: ORDER_NO }, header), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.success, true);
+    // One card keeps the pre-L1 single-string shape; several are joined so the
+    // buyer receives every item without a client change.
+    assert.equal(res.payload.content, 'CARD-KEY-0001\n\nCARD-KEY-0002\n\nCARD-KEY-0003');
+    // One round-trip for the whole order, never one call per item.
+    const deliveryCalls = state.rpcCalls.filter((call) => call.name === 'fn_guest_shop_list_delivered_content');
+    assert.equal(deliveryCalls.length, 1);
+    assert.deepEqual(deliveryCalls[0].args, { p_order_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' });
+});
+
+test('L1: a partially delivered order is a 409, never a truncated payload', async () => {
+    const header = { 'x-guest-order-credential': credentialHeader() };
+    // fn_guest_shop_list_delivered_content raises guest_reservation_not_consumed
+    // unless EVERY reservation of the order is consumed; the endpoint must map
+    // that onto its existing 409 contract instead of rendering what it has.
+    const { handlers } = createHarness({
+        state: {
+            orders: [makeOrderRow({
+                payment_status: 'confirmed',
+                fulfillment_status: 'delivered',
+                quantity: 2,
+                unit_amount: '12.34',
+                total_amount: '24.68'
+            })],
+            reservationStatus: 'held'
+        }
+    });
+    const res = createResponse();
+    await handlers.delivery(getReq('/api/shop/guest/delivery', { order_no: ORDER_NO }, header), res);
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.payload.code, 'guest_inventory_inconsistent');
+    assert.equal('content' in res.payload, false);
+});
+
+test('L2: the list snapshot fills coupon_discount and amount_breakdown from committed columns', async () => {
+    const { handlers } = createHarness({
+        state: {
+            orders: [makeOrderRow({
+                quantity: 2,
+                list_unit_amount: '12.34',
+                unit_amount: '11.11',
+                discount_amount: '2.46',
+                discount_code: 'WELCOME10',
+                payment_fee_amount: '0.23',
+                total_amount: '22.45'
+            })]
+        }
+    });
+    const res = createResponse();
+    await handlers.orders(getReq('/api/shop/guest/orders', {}, { 'x-guest-order-credential': credentialHeader() }), res);
+    assert.equal(res.statusCode, 200);
+    const [order] = res.payload.orders;
+    assert.equal(order.quantity, 2);
+    assert.equal(order.coupon_discount, 2.46);
+    assert.equal(order.promo_discount, null);
+    assert.deepEqual(order.amount_breakdown, {
+        quantity: 2,
+        unit_amount: 11.11,
+        net_amount: 22.22,
+        discount_amount: 2.46,
+        payment_fee_amount: 0.23,
+        total_amount: 22.45,
+        currency: 'CNY',
+        list_unit_amount: 12.34,
+        list_amount: 24.68,
+        discount_code: 'WELCOME10'
+    });
+});
+
+test('L2: an inconsistent committed row drops the breakdown instead of lying about it', async () => {
+    // total != unit*qty + fee. buildGuestAmountBreakdown must return null so the
+    // client never renders a breakdown that does not add up to the amount owed.
+    const { handlers } = createHarness({
+        state: {
+            orders: [makeOrderRow({
+                quantity: 2,
+                list_unit_amount: '12.34',
+                unit_amount: '11.11',
+                discount_amount: '2.46',
+                payment_fee_amount: '0.23',
+                total_amount: '99.99'
+            })]
+        }
+    });
+    const res = createResponse();
+    await handlers.orders(getReq('/api/shop/guest/orders', {}, { 'x-guest-order-credential': credentialHeader() }), res);
+    assert.equal(res.statusCode, 200);
+    const [order] = res.payload.orders;
+    assert.equal('amount_breakdown' in order, false);
+    assert.equal(order.quantity, 2);
 });
 
 test('detail and delivery reject non-GET methods with an Allow header', async () => {
@@ -806,39 +1032,14 @@ test('the session cookie is __Host- scoped, HttpOnly, Secure, SameSite=Strict an
 });
 
 // ---------------------------------------------------------------------------
-// A3 — §10.5 one-time reset link + §13.2 historical-order self-upgrade
+// A3 — §10.5 one-time reset link
 // ---------------------------------------------------------------------------
 
 const buyerAccessAdmin = require('../api/_lib/guest-shop/buyer-access-admin');
 
 const ADMIN_UUID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
-// A real claim secret: 43 base64url chars, which is what the upgrade endpoint's
-// /^[A-Za-z0-9_-]{40,200}$/ shape check and verifyClaimSecret both expect.
-const RECOVERY_CODE = security.generateClaimSecret();
-const CLAIM_HASH = security.hashClaimSecret(RECOVERY_CODE, { env: BASE_ENV });
-const LEGACY_ORDER_NO = 'GS20260101-000009';
-const LEGACY_ORDER_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const NEW_PASSWORD = 'Qw8#rT2!yZ';
 const WEAK_PASSWORD = 'abc';
-
-/**
- * A HISTORICAL order: placed before the credential switch existed, so
- * `buyer_id IS NULL` and the only proof of ownership is orderNo + claim secret.
- * This is the exact row shape §13.2's self-upgrade has to work on.
- */
-function makeLegacyOrderRow(overrides = {}) {
-    return makeOrderRow({
-        id: LEGACY_ORDER_ID,
-        order_no: LEGACY_ORDER_NO,
-        buyer_id: null,
-        claim_secret_hash: CLAIM_HASH,
-        claim_attempt_count: 0,
-        last_error_code: null,
-        last_error_message: null,
-        created_at: '2026-01-01T00:00:00.000Z',
-        ...overrides
-    });
-}
 
 /** Issues a link through the REAL admin primitive, against the test stub. */
 async function issueLink(supabase, { buyerId = BUYER_ID, site = 'cn', reason = '客服核实身份后补发一次性找回链接' } = {}) {
@@ -850,22 +1051,11 @@ function resetBody(overrides = {}) {
     return { token: 'A'.repeat(43), email: EMAIL, password: NEW_PASSWORD, site: 'cn', ...overrides };
 }
 
-function upgradeBody(overrides = {}) {
-    return {
-        orderNo: LEGACY_ORDER_NO,
-        recoveryCode: RECOVERY_CODE,
-        email: EMAIL,
-        password: PASSWORD,
-        site: 'cn',
-        ...overrides
-    };
-}
-
 function outcomesOf(state) {
     return state.attempts.map((row) => row.outcome);
 }
 
-test('A3: with the switch off reset and upgrade answer 404 guest_feature_disabled', async () => {
+test('A3: with the switch off reset answers 404 guest_feature_disabled', async () => {
     const { handlers } = createHarness({ env: OFF_ENV });
     const reset = createResponse();
     await handlers.accessReset(postReq('/api/shop/guest/access/reset', resetBody()), reset);
@@ -873,28 +1063,21 @@ test('A3: with the switch off reset and upgrade answer 404 guest_feature_disable
     assert.equal(reset.payload.code, 'guest_feature_disabled');
     assert.equal(reset.cookies.length, 0);
 
-    const upgrade = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody()), upgrade);
-    assert.equal(upgrade.statusCode, 404);
-    assert.equal(upgrade.payload.code, 'guest_feature_disabled');
-    assert.equal(upgrade.cookies.length, 0);
 });
 
-test('A3: reset and upgrade reject non-POST methods with an Allow header', async () => {
+test('A3: reset rejects non-POST methods with an Allow header', async () => {
     const { handlers, limitCalls } = createHarness();
-    for (const [name, path] of [['accessReset', '/api/shop/guest/access/reset'], ['accessUpgrade', '/api/shop/guest/access/upgrade']]) {
-        const res = createResponse();
-        await handlers[name](getReq(path), res);
-        assert.equal(res.statusCode, 405, `${name} must be POST-only`);
-        assert.equal(res.headers.allow, 'POST');
-        assert.equal(res.cookies.length, 0);
-    }
+    const res = createResponse();
+    await handlers.accessReset(getReq('/api/shop/guest/access/reset'), res);
+    assert.equal(res.statusCode, 405, 'accessReset must be POST-only');
+    assert.equal(res.headers.allow, 'POST');
+    assert.equal(res.cookies.length, 0);
     // A 405 must be answered before any budget is spent.
     assert.equal(limitCalls.length, 0);
 });
 
-test('A3: reset and upgrade bodies are field-whitelisted', async () => {
-    const { handlers, state } = createHarness({ state: { orders: [makeLegacyOrderRow()] } });
+test('A3: reset body is field-whitelisted', async () => {
+    const { handlers, state } = createHarness();
     for (const extra of [{ buyer_id: OTHER_BUYER_ID }, { contact_hash: 'deadbeef' }, { admin: true }, { pv: 99 }]) {
         const key = Object.keys(extra)[0];
         const a = createResponse();
@@ -903,14 +1086,8 @@ test('A3: reset and upgrade bodies are field-whitelisted', async () => {
         assert.equal(a.payload.code, 'unknown_field');
         assert.equal(a.cookies.length, 0);
 
-        const b = createResponse();
-        await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody(extra)), b);
-        assert.equal(b.statusCode, 400, `upgrade must reject ${key}`);
-        assert.equal(b.payload.code, 'unknown_field');
-        assert.equal(b.cookies.length, 0);
     }
     assert.equal(outcomesOf(state).includes('reset_success'), false);
-    assert.equal(outcomesOf(state).includes('upgrade_success'), false);
 });
 
 test('A3: an issued link is 43 base64url chars, only its sha256 is persisted, and issuing bumps password_version', async () => {
@@ -1136,216 +1313,4 @@ test('A3: a merged credential group cannot be reset through the guest link', asy
     );
     assert.equal(issued.code, 'guest_buyer_merged');
     assert.equal(state.resets.length, 0);
-});
-
-// ---------------------------------------------------------------------------
-// §13.2 — historical order self-upgrade
-// ---------------------------------------------------------------------------
-
-test('A3: upgrade refuses a wrong recovery code, spends the claim budget and leaves the order unbound', async () => {
-    const { handlers, state } = createHarness({ state: { orders: [makeLegacyOrderRow()] } });
-    const res = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody({
-        recoveryCode: security.generateClaimSecret()
-    })), res);
-    assert.equal(res.statusCode, 403);
-    assert.equal(res.payload.code, 'guest_claim_invalid');
-    assert.equal(res.cookies.length, 0, 'a wrong recovery code must never mint a session');
-    assert.equal(state.orders[0].buyer_id, null, 'the order must stay unbound');
-    assert.equal(state.orders[0].claim_attempt_count, 1, 'the shared recover budget must be spent');
-    assert.equal(outcomesOf(state).includes('upgrade_invalid'), true);
-    assert.equal(outcomesOf(state).includes('upgrade_success'), false);
-    // No credential group was created for the attacker's email.
-    assert.equal(state.buyers.length, 1);
-});
-
-test('A3: upgrade rejects malformed orderNo / recoveryCode shapes without touching the database', async () => {
-    const { handlers, state } = createHarness({ state: { orders: [makeLegacyOrderRow()] } });
-    for (const body of [
-        upgradeBody({ orderNo: 'x' }),
-        upgradeBody({ orderNo: '订单号 空格' }),
-        upgradeBody({ recoveryCode: 'short' }),
-        upgradeBody({ recoveryCode: '!' + 'A'.repeat(42) })
-    ]) {
-        const res = createResponse();
-        await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', body), res);
-        assert.equal(res.statusCode, 403);
-        assert.equal(res.payload.code, 'guest_claim_invalid');
-        assert.equal(res.cookies.length, 0);
-    }
-    assert.equal(state.orders[0].claim_attempt_count, 0, 'a shape reject must not spend the claim budget');
-    assert.equal(state.orders[0].buyer_id, null);
-});
-
-test('A3: upgrade cannot CREATE a credential group from a weak password', async () => {
-    const { handlers, state } = createHarness({ state: { orders: [makeLegacyOrderRow()] } });
-    const res = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody({
-        email: 'brand.new@example.com', password: WEAK_PASSWORD
-    })), res);
-    // K26 is enforced BEFORE resolveBuyerGroupForOrder, so the weak password
-    // never reaches the allocator: a 400, not a 201-shaped success.
-    assert.equal(res.statusCode, 400);
-    assert.equal(res.cookies.length, 0);
-    assert.equal(state.orders[0].buyer_id, null);
-    assert.equal(state.buyers.length, 1, 'no new credential group may exist');
-    assert.equal(outcomesOf(state).includes('upgrade_invalid'), true);
-    assert.equal(outcomesOf(state).includes('upgrade_success'), false);
-});
-
-test('A3: upgrade binds a historical order to the credential group that matches the submitted password', async () => {
-    const { handlers, state } = createHarness({ state: { orders: [makeLegacyOrderRow()] } });
-    const res = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody()), res);
-    assert.equal(res.statusCode, 200);
-    assert.equal(res.payload.success, true);
-    assert.equal(res.payload.upgraded, true);
-    assert.equal(res.payload.already_bound, false);
-    assert.equal(res.payload.order_no, LEGACY_ORDER_NO);
-    assert.equal(res.payload.credential_group_no, 1);
-    assert.equal(res.payload.authenticated, true);
-    assert.ok(sessionToken(res).startsWith('v2.'));
-    assert.equal(state.orders[0].buyer_id, BUYER_ID, 'the order is now owned by the matched group');
-    assert.equal(state.buyers.length, 1, 'an existing match must REUSE its group, never allocate');
-    assert.equal(state.buyers[0].password_hash, PASSWORD_HASH, 'the reuse path must not overwrite the password');
-    assert.equal(outcomesOf(state).includes('upgrade_success'), true);
-
-    // The bound order is now readable through the normal login path.
-    const list = createResponse();
-    await handlers.orders(getReq('/api/shop/guest/orders', {}, {
-        cookie: `${COOKIE_NAME}=${encodeURIComponent(sessionToken(res))}`
-    }), list);
-    assert.equal(list.statusCode, 200);
-    assert.deepEqual(list.payload.orders.map((row) => row.order_no), [LEGACY_ORDER_NO]);
-});
-
-test('A3: upgrade with a fresh email allocates a new group and the order follows it', async () => {
-    const { handlers, state } = createHarness({ state: { orders: [makeLegacyOrderRow()] } });
-    const freshEmail = 'brand.new@example.com';
-    const res = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody({
-        email: freshEmail, password: NEW_PASSWORD
-    })), res);
-    assert.equal(res.statusCode, 200);
-    assert.equal(res.payload.already_bound, false);
-    assert.equal(state.buyers.length, 2, 'a new credential group was allocated');
-    const created = state.buyers.find((row) => row.id !== BUYER_ID);
-    assert.equal(created.credential_group_no, 1, 'the new contact starts at group 1');
-    assert.equal(created.site, 'cn');
-    assert.equal(state.orders[0].buyer_id, created.id);
-    // The old contact did NOT gain access to this order.
-    const oldLogin = createResponse();
-    await handlers.accessLogin(postReq('/api/shop/guest/access/login', loginBody()), oldLogin);
-    assert.equal(oldLogin.statusCode, 200);
-    const oldList = createResponse();
-    await handlers.orders(getReq('/api/shop/guest/orders', {}, {
-        cookie: `${COOKIE_NAME}=${encodeURIComponent(sessionToken(oldLogin))}`
-    }), oldList);
-    assert.equal(oldList.statusCode, 200);
-    assert.deepEqual(oldList.payload.orders, [], 'the legacy order moved to the new group only');
-});
-
-test('A3: upgrade is idempotent for the same credential and a hard 409 for a different one', async () => {
-    const { handlers, state } = createHarness({ state: { orders: [makeLegacyOrderRow()] } });
-    const first = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody()), first);
-    assert.equal(first.statusCode, 200);
-    assert.equal(first.payload.already_bound, false);
-
-    // A double-click must not be told the order is broken.
-    const again = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody()), again);
-    assert.equal(again.statusCode, 200);
-    assert.equal(again.payload.already_bound, true);
-    assert.equal(again.payload.order_no, LEGACY_ORDER_NO);
-    assert.equal(state.orders[0].buyer_id, BUYER_ID);
-    assert.ok(sessionToken(again).startsWith('v2.'), 'the legitimate owner is signed in');
-});
-
-/**
- * THE FIX B REGRESSION TEST.
- *
- * Before the hardening, `accessUpgrade` short-circuited on `order.buyer_id`:
- * it re-read the bound group and minted a session cookie for it WITHOUT ever
- * checking the submitted email + password. Anyone holding the LEGACY
- * orderNo + claim code — which is printed on the old recovery page and is the
- * weaker of the two factors — would have escalated from single-order legacy
- * access to GROUP-WIDE access: every order and every card secret in that
- * credential group. That is the 掏鸟蛋 case, so it gets its own test.
- */
-test('A3: a bound order still requires the email + password — the legacy claim code alone grants nothing', async () => {
-    const bound = makeLegacyOrderRow({ buyer_id: BUYER_ID });
-    const { handlers, state } = createHarness({ state: { orders: [bound] } });
-
-    // Correct orderNo + correct claim code, WRONG password, same email.
-    const wrongPassword = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody({
-        password: 'Wr4ng!Pass9'
-    })), wrongPassword);
-    assert.notEqual(wrongPassword.statusCode, 200, 'the claim code alone must not authenticate');
-    assert.equal(wrongPassword.cookies.length, 0, 'no session may be minted without the password');
-    assert.equal(state.orders[0].buyer_id, BUYER_ID, 'the binding must not move');
-
-    // Correct orderNo + correct claim code, attacker's OWN email + a strong
-    // password they control. This is the exact escalation attempt: it allocates
-    // a group the attacker owns, and the CAS bind must refuse it.
-    const attacker = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody({
-        email: 'attacker@example.com', password: 'At7#tackEr9'
-    })), attacker);
-    assert.equal(attacker.statusCode, 409);
-    assert.equal(attacker.payload.code, 'guest_order_already_bound');
-    assert.equal(attacker.cookies.length, 0, 'the attacker must not receive the victim group session');
-    assert.equal(state.orders[0].buyer_id, BUYER_ID, 'the order still belongs to the original group');
-    assert.equal(outcomesOf(state).includes('upgrade_success'), false, 'no success may be audited for a refused bind');
-
-    // The real owner, with the real password, still gets in.
-    const owner = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody()), owner);
-    assert.equal(owner.statusCode, 200);
-    assert.equal(owner.payload.already_bound, true);
-    assert.ok(sessionToken(owner).startsWith('v2.'));
-});
-
-test('A3: upgrade takes the site from the ORDER, never from the body', async () => {
-    const { handlers, state } = createHarness({ state: { orders: [makeLegacyOrderRow()] } });
-    const res = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody({
-        email: 'brand.new@example.com', password: NEW_PASSWORD, site: 'intl'
-    })), res);
-    assert.equal(res.statusCode, 200);
-    // A body-supplied site must not be able to mint a credential group in a site
-    // the order was never placed in: the group key is (site, contact_hash).
-    assert.equal(state.buyers.length, 2);
-    assert.equal(state.buyers[1].site, 'cn', 'the new group inherits the ORDER site');
-    assert.equal(state.orders[0].buyer_id, state.buyers[1].id);
-});
-
-test('A3: an upgrade for an unknown order number collapses to the claim 403', async () => {
-    const { handlers, state } = createHarness({ state: { orders: [makeLegacyOrderRow()] } });
-    const res = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody({
-        orderNo: 'GS99999999-000000'
-    })), res);
-    assert.equal(res.statusCode, 403);
-    assert.equal(res.payload.code, 'guest_claim_invalid');
-    assert.equal(res.cookies.length, 0);
-    assert.equal(state.orders[0].buyer_id, null);
-});
-
-test('A3: a locked group answers 423 on the upgrade path too, before any allocation', async () => {
-    const lockedUntil = new Date(Date.now() + 600000).toISOString();
-    const { handlers, state } = createHarness({
-        state: {
-            buyers: [makeBuyerRow({ locked_until: lockedUntil, login_lock_stage: 2 })],
-            orders: [makeLegacyOrderRow()]
-        }
-    });
-    const res = createResponse();
-    await handlers.accessUpgrade(postReq('/api/shop/guest/access/upgrade', upgradeBody()), res);
-    assert.equal(res.statusCode, 423);
-    assert.equal(res.payload.code, 'guest_order_locked');
-    assert.equal(res.cookies.length, 0);
-    assert.equal(state.orders[0].buyer_id, null);
-    assert.equal(state.buyers.length, 1);
 });

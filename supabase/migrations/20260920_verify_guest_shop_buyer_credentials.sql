@@ -23,6 +23,17 @@
 -- `tests/guest-shop-verify-probe-contract.test.js` replays every probe in this
 -- file against the real migration text and fails if the rule is broken again.
 --
+-- SECOND RULE FOR PROBE AUTHORS (learned from a real false FAIL on 2026-09-23):
+-- never pin a probe to an EXACT function signature that a later migration is
+-- allowed to replace. `20260923_guest_shop_promo_l1l2.sql` legitimately moves
+-- fn_guest_shop_create_order from 13 to 15 parameters, which made the
+-- signature-pinned rows below report FAIL against a correct database. Probes in
+-- this file now resolve that function BY NAME (see the `fn_era` CTE) and assert
+-- era-independent A0 guarantees plus "the installed shape belongs to a known
+-- era". A brand-new signature must be added to `fn_era` in the same commit that
+-- introduces it; `tests/guest-shop-create-order-signature-compat.test.js` fails
+-- otherwise.
+--
 -- Every row must be PASS. Any FAIL means the migration was applied partially or
 -- an older migration was re-run on top of it; do NOT enable
 -- GUEST_SHOP_BUYER_CREDENTIAL_ENABLED until all rows pass.
@@ -71,17 +82,38 @@ WITH buyers_columns AS (
         array_length(p.proargtypes, 1) AS arity,
         pg_get_functiondef(p.oid) AS def
     FROM pg_proc p
-    WHERE p.oid = to_regprocedure(
-        'public.fn_guest_shop_create_order(text, uuid, uuid, text, text, text, text, text, text, uuid, text, text, integer)'
-    )
+    WHERE p.pronamespace = 'public'::regnamespace
+      AND p.proname = 'fn_guest_shop_create_order'
+), fn_era AS (
+    -- ERA-AWARE RESOLUTION -- 2026-09-23 probe correction.
+    --
+    -- This script was written while A0 owned the ONLY create_order signature:
+    -- 13 parameters. `20260923_guest_shop_promo_l1l2.sql` (promo L1/L2) DROPs
+    -- that exact signature and installs 15 parameters, so every CTE and probe
+    -- that resolved the function by its 13-parameter string started returning
+    -- NULL/empty and rows 8, 9 and 10 reported a FALSE FAIL against a perfectly
+    -- correct database. That is the same failure class as the 2026-09-18
+    -- literal/regex confusion documented above: the probe was wrong, not the
+    -- migration. Per this repo's rule, we fix the probe instead of living with
+    -- a red row that teaches operators to ignore verify output.
+    --
+    -- What A0 actually guaranteed is era-independent and is still asserted
+    -- below: exactly one overload, no 12-parameter legacy signature, the buyer
+    -- binding guards, SECURITY DEFINER, pinned search_path, and service-role-only
+    -- grants. WHICH signature is current is pinned by
+    -- `20260923_verify_guest_shop_promo_l1l2.sql` (function_arity_single_overload).
+    -- An arity that belongs to neither era still FAILs, so this is not a
+    -- licence for an unreviewed signature to slip through.
+    SELECT
+        (to_regprocedure('public.fn_guest_shop_create_order(text, uuid, uuid, text, text, text, text, text, text, uuid, text, text, integer)') IS NOT NULL) AS a0_signature,
+        (to_regprocedure('public.fn_guest_shop_create_order(text, uuid, uuid, text, text, text, text, text, text, uuid, text, text, integer, integer, text)') IS NOT NULL) AS l1l2_signature
 ), fn_grants AS (
     SELECT g.grantee, g.privilege_type, r.rolname
     FROM pg_proc p
     CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) g
     LEFT JOIN pg_roles r ON r.oid = g.grantee
-    WHERE p.oid = to_regprocedure(
-        'public.fn_guest_shop_create_order(text, uuid, uuid, text, text, text, text, text, text, uuid, text, text, integer)'
-    )
+    WHERE p.pronamespace = 'public'::regnamespace
+      AND p.proname = 'fn_guest_shop_create_order'
 ), checks AS (
     SELECT
         1 AS sort_order,
@@ -342,16 +374,18 @@ WITH buyers_columns AS (
         8,
         'create_order_signature_migrated',
         jsonb_build_object(
-            'new_13_param_signature_present', (
-                to_regprocedure('public.fn_guest_shop_create_order(text, uuid, uuid, text, text, text, text, text, text, uuid, text, text, integer)') IS NOT NULL
-            ),
+            -- Era-aware: exactly one KNOWN signature must be installed.
+            -- Renamed from `new_13_param_signature_present`, which could only
+            -- ever be true in the A0 era and turned into a false FAIL the moment
+            -- L1/L2 replaced the signature (see the fn_era comment).
+            'known_signature_present', (SELECT a0_signature OR l1l2_signature FROM fn_era),
             'legacy_12_param_signature_absent', (
                 to_regprocedure('public.fn_guest_shop_create_order(text, uuid, uuid, text, text, text, text, text, text, text, text, integer)') IS NULL
             ),
             'single_overload', (
                 (SELECT count(*) FROM pg_proc WHERE proname = 'fn_guest_shop_create_order' AND pronamespace = 'public'::regnamespace) = 1
             ),
-            'arity', (SELECT arity FROM fn),
+            'arity', (SELECT min(arity) FROM fn),
             'has_p_buyer_id_param', (SELECT COALESCE(bool_and('p_buyer_id' = ANY(proargnames)), false) FROM fn),
             'security_definer', (SELECT COALESCE(bool_and(security_definer), false) FROM fn),
             'search_path_pinned', (
@@ -362,10 +396,12 @@ WITH buyers_columns AS (
             )
         ),
         jsonb_build_object(
-            'new_13_param_signature_present', true,
+            'known_signature_present', true,
             'legacy_12_param_signature_absent', true,
             'single_overload', true,
-            'arity', 13,
+            -- Expected arity follows the installed era: 13 before L1/L2,
+            -- 15 after. Anything else means an unreviewed signature.
+            'arity', (SELECT CASE WHEN l1l2_signature THEN 15 ELSE 13 END FROM fn_era),
             'has_p_buyer_id_param', true,
             'security_definer', true,
             'search_path_pinned', true
@@ -392,7 +428,26 @@ WITH buyers_columns AS (
                 ), false)
                 FROM fn
             ),
-            'quantity_still_hardcoded_to_one', (SELECT COALESCE(bool_and(def !~ 'p_quantity'), false) FROM fn)
+            -- Era-aware (2026-09-23). A0 hardcoded one unit per guest order, so
+            -- this probe asserted that `p_quantity` never appears. L1/L2
+            -- deliberately introduces p_quantity -- bounded by a SERVER-SIDE cap
+            -- (LEAST(5, ...)), a fail-closed `guest_quantity_not_allowed` RAISE
+            -- and the zero-yuan amount CHECK -- so the A0 wording became a false
+            -- FAIL. The probe now asserts that the body agrees with whichever
+            -- era is installed; the new-era bounds themselves are proven by
+            -- 20260923_verify_guest_shop_promo_l1l2.sql
+            -- (zero_purchase_guards / orders_quantity_and_code_checks), never by
+            -- the client.
+            'quantity_policy_matches_era', (
+                SELECT COALESCE(bool_and(
+                    CASE
+                        WHEN (SELECT l1l2_signature FROM fn_era)
+                            THEN def ~ 'p_quantity' AND def ~ 'guest_quantity_not_allowed'
+                        ELSE def !~ 'p_quantity'
+                    END
+                ), false)
+                FROM fn
+            )
         ),
         jsonb_build_object(
             'requires_contact_hash_with_buyer_id', true,
@@ -403,7 +458,7 @@ WITH buyers_columns AS (
             'keeps_service_role_gate', true,
             'keeps_credit_price_resolver', true,
             'keeps_existing_guards', true,
-            'quantity_still_hardcoded_to_one', true
+            'quantity_policy_matches_era', true
         )
     UNION ALL
     SELECT

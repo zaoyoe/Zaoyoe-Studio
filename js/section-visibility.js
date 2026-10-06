@@ -42,18 +42,38 @@
     const SECTION_SELECTORS = {
         prompts: {
             sections: ['#prompts-section'],
+            hero: [
+                'a.entry-card[href="/prompts.html"]',
+                'a.entry-card[href="#prompts"]',
+                '.entry-card[data-home-entry-section="prompts"]',
+                '.entry-card[data-home-entry-id="prompts"]'
+            ],
             navDesktop: ['a.nav-trigger[href="/prompts.html"]'],
             navMobile: ['button.mobile-menu-trigger[data-submenu="prompts-mobile"]'],
             footer: ['a[href="/prompts.html"]']
         },
         shop: {
             sections: ['#shop-section'],
+            hero: [
+                'a.entry-card[href="/shop.html"]',
+                'a.entry-card[href="#shop"]',
+                '.entry-card[data-home-entry-section="shop"]',
+                '.entry-card[data-home-entry-id="shop"]'
+            ],
             navDesktop: ['a.nav-trigger[href="/shop.html"]'],
             navMobile: ['button.mobile-menu-trigger[data-submenu="shop-mobile"]'],
             footer: ['a[href="/shop.html"]']
         },
         gongyi: {
             sections: ['#gongyi-section'],
+            hero: [
+                'a.entry-card[href="https://new.fatherkey.com"]',
+                'a.entry-card[href="https://sub2api.fatherkey.com"]',
+                'a.entry-card[href="https://sub2api.zaoyoe.xyz"]',
+                'a.entry-card[href="#gongyi"]',
+                '.entry-card[data-home-entry-section="gongyi"]',
+                '.entry-card[data-home-entry-id="gongyi"]'
+            ],
             navDesktop: [
                 'a[href="https://new.fatherkey.com"]',
                 'a[href="https://sub2api.fatherkey.com"]',
@@ -72,30 +92,46 @@
         },
         verify: {
             sections: ['#verify-section'],
+            hero: [
+                'a.entry-card[href="/verify.html"]',
+                'a.entry-card[href="#verify"]',
+                '.entry-card[data-home-entry-section="verify"]',
+                '.entry-card[data-home-entry-id="verify"]'
+            ],
             navDesktop: ['a[href="/verify.html"]', 'a[href="#verify"]'],
             navMobile: ['a.mobile-menu-link[href="/verify.html"]'],
             footer: ['a[href="/verify.html"]']
         },
         guestbook: {
             sections: ['#guestbook-section'],
+            hero: [
+                'a.entry-card[href="/guestbook.html"]',
+                'a.entry-card[href="#guestbook"]',
+                '.entry-card[data-home-open-guestbook="1"]',
+                '.entry-card[data-home-entry-section="guestbook"]',
+                '.entry-card[data-home-entry-id="guestbook"]'
+            ],
             navDesktop: ['a[href="/guestbook.html"]'],
             navMobile: ['a.mobile-menu-link[href="/guestbook.html"]'],
             footer: ['a[href="/guestbook.html"]']
         },
         ticker: {
             sections: ['#ticker-section'],
+            hero: null,
             navDesktop: null,
             navMobile: null,
             footer: null
         },
         hero: {
             sections: ['#hero-section'],
+            hero: null,
             navDesktop: null,
             navMobile: null,
             footer: null
         },
         footer: {
             sections: ['footer.framer-footer'],
+            hero: null,
             navDesktop: null,
             navMobile: null,
             footer: null
@@ -302,6 +338,12 @@
                     const el = document.querySelector(sel);
                     setDomVisibility(el, visible);
                 });
+            }
+
+            // Hide/show hero carousel entry cards
+            if (Array.isArray(selectors.hero) && selectors.hero.length) {
+                const heroEls = queryScopedElements(['.hero-carousel', '.hero-section'], selectors.hero);
+                heroEls.forEach(el => setDomVisibility(el, visible));
             }
 
             // Hide/show desktop nav links

@@ -36,6 +36,9 @@ const WRITE_ACTIONS = Object.freeze({
     unlock_dead_letter: {
         rpc: 'fn_guest_shop_admin_unlock_dead_letter',
         audit: 'shop.guest_order.unlock_dead_letter'
+    },
+    close_unpaid_review: {
+        audit: 'shop.guest_order.close_unpaid_review'
     }
 });
 
@@ -70,7 +73,12 @@ const SAFE_VIEW_FIELDS = Object.freeze([
     'snapshot_sku_name',
     'quantity',
     'unit_amount',
+    'list_unit_amount',
     'total_amount',
+    'discount_amount',
+    'payment_fee_amount',
+    'inventory_purchase_unit_cost_cny',
+    'payment_currency',
     'payment_status',
     'reservation_status',
     'fulfillment_status',
@@ -477,6 +485,94 @@ async function handleGuestOrderWrite(req) {
     }
 
     const site = resolveWriteSite(body, req);
+    if (action === 'close_unpaid_review') {
+        const orderResult = await adminSupabase.from('guest_shop_orders')
+            .select('id,order_no,site,payment_status,fulfillment_status,refund_status,reservation_status,metadata')
+            .eq('id', orderId).maybeSingle();
+        if (orderResult?.error) throw orderResult.error;
+        const order = orderResult?.data;
+        if (!order) throw createHttpError(404, '游客订单不存在', 'guest_order_not_found');
+        if (site !== 'all' && order.site !== site) {
+            throw createHttpError(409, '订单站点与当前筛选不一致', 'guest_admin_site_mismatch');
+        }
+        if (order.fulfillment_status === 'delivered') {
+            throw createHttpError(409, '已发货订单不能按未付款关闭', 'guest_admin_not_eligible');
+        }
+        if (['confirmed', 'refunded', 'chargeback'].includes(order.payment_status)) {
+            throw createHttpError(409, '已支付订单不能按未付款关闭', 'guest_admin_not_eligible');
+        }
+
+        const paymentResult = await adminSupabase.from('guest_shop_payment_orders')
+            .select('id,status,paid_at')
+            .eq('guest_order_id', orderId).maybeSingle();
+        if (paymentResult?.error) throw paymentResult.error;
+        const payment = paymentResult?.data;
+        if (payment && payment.paid_at) {
+            throw createHttpError(409, '支付单已有付款记录，无法按未付款关闭', 'guest_admin_not_eligible');
+        }
+
+        try {
+            await adminSupabase.rpc('guest_shop_release_held_reservations', {
+                p_order_id: orderId,
+                p_reason: 'admin_close_unpaid'
+            });
+        } catch (_) {
+            // Best effort release if not already released
+        }
+
+        const nowIso = new Date().toISOString();
+        if (payment) {
+            await adminSupabase.from('guest_shop_payment_orders').update({
+                status: 'expired',
+                last_error_code: 'guest_order_expired',
+                last_error_message: reason,
+                updated_at: nowIso
+            }).eq('id', payment.id);
+        }
+
+        await adminSupabase.from('guest_shop_orders').update({
+            payment_status: 'expired',
+            last_error_code: null,
+            last_error_message: null,
+            cancelled_at: nowIso,
+            updated_at: nowIso
+        }).eq('id', orderId);
+
+        const safeResult = {
+            orderId: order.id,
+            orderNo: order.order_no,
+            payment: 'expired',
+            fulfillment: order.fulfillment_status,
+            refund: order.refund_status,
+            reservation: 'released'
+        };
+
+        await writeAdminAuditLog({
+            supabase: adminSupabase,
+            adminId,
+            actionType: spec.audit,
+            module: 'shop',
+            site: order.site,
+            details: {
+                order_id: safeResult.orderId,
+                order_no: safeResult.orderNo,
+                action,
+                reason,
+                previous_payment_status: order.payment_status,
+                payment_status: safeResult.payment,
+                fulfillment_status: safeResult.fulfillment,
+                refund_status: safeResult.refund
+            }
+        });
+
+        return {
+            success: true,
+            action,
+            site: order.site,
+            ...safeResult
+        };
+    }
+
     const rpcResult = await adminSupabase.rpc(spec.rpc, {
         p_order_id: orderId,
         p_reason: reason,

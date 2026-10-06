@@ -241,11 +241,21 @@ WITH fn AS (
                 WHERE p.pronamespace = 'public'::regnamespace
                   AND p.proname ~* 'guest_shop.*purge|purge.*guest_shop_buyer'
             ),
-            'create_order_rpc_still_13_params', EXISTS (
-                SELECT 1 FROM pg_proc p
-                WHERE p.oid = to_regprocedure(
-                    'public.fn_guest_shop_create_order(text, uuid, uuid, text, text, text, text, text, text, uuid, text, text, integer)'
-                )
+            -- Era-aware -- 2026-09-23 probe correction. This key used to be
+            -- `create_order_rpc_still_13_params` and pinned the A0 signature
+            -- exactly. `20260923_guest_shop_promo_l1l2.sql` (promo L1/L2) DROPs
+            -- that overload and installs 15 parameters, so the pinned probe
+            -- reported a FALSE FAIL against a correct database. A1b's real
+            -- invariant is "create_order still exists and stays callable", which
+            -- is era-independent; WHICH signature is current is pinned by
+            -- 20260923_verify_guest_shop_promo_l1l2.sql
+            -- (function_arity_single_overload). A shape that belongs to neither
+            -- era keeps this row red, and a new era must be added here in the
+            -- same commit that introduces it
+            -- (tests/guest-shop-create-order-signature-compat.test.js enforces it).
+            'create_order_rpc_known_signature', (
+                to_regprocedure('public.fn_guest_shop_create_order(text, uuid, uuid, text, text, text, text, text, text, uuid, text, text, integer)') IS NOT NULL
+                OR to_regprocedure('public.fn_guest_shop_create_order(text, uuid, uuid, text, text, text, text, text, text, uuid, text, text, integer, integer, text)') IS NOT NULL
             )
         ),
         jsonb_build_object(
@@ -255,7 +265,7 @@ WITH fn AS (
             'buyers_rls_still_enabled', true,
             'no_trigger_added_to_buyers', true,
             'no_purge_job_created', true,
-            'create_order_rpc_still_13_params', true
+            'create_order_rpc_known_signature', true
         )
 )
 SELECT

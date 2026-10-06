@@ -306,12 +306,14 @@ function buildShopInventoryLowAlerts(products = [], recentOrders = [], rawConfig
                 lines.splice(1, 0, `商品分类：${category}`);
             }
 
+            const site = normalizeText(product?.site).toLowerCase() || 'cn';
             return {
                 alertType,
                 severity,
                 title,
                 content: lines.join('\n'),
                 payload: {
+                    site,
                     target_id: productId,
                     product_id: productId,
                     product_name: productName,
@@ -324,6 +326,7 @@ function buildShopInventoryLowAlerts(products = [], recentOrders = [], rawConfig
                     updated_at: normalizeText(product?.updated_at) || null,
                     entry_path: '商城管理 -> 商品列表 -> 库存 / 补货'
                 },
+                site,
                 dedupeKey: crypto
                     .createHash('sha256')
                     .update(`${alertType}:${productId}`)
@@ -419,12 +422,14 @@ function buildShopInventoryRecoveredAlerts(products = [], recentOrders = [], sta
         lines.push(`持续时长：${Math.max(0, Math.round(incidentDurationMinutes))} 分钟`);
         lines.push('处理入口：商城管理 -> 商品列表 -> 库存 / 补货');
 
+        const site = normalizeText(currentProduct?.site).toLowerCase() || 'cn';
         return {
             alertType: 'shop_inventory_recovered',
             severity: 'warning',
             title: `${productName} 库存已恢复`,
             content: lines.join('\n'),
             payload: {
+                site,
                 target_id: targetId,
                 product_id: targetId,
                 product_name: productName,
@@ -444,6 +449,7 @@ function buildShopInventoryRecoveredAlerts(products = [], recentOrders = [], sta
                 updated_at: normalizeText(currentProduct.updated_at) || null,
                 entry_path: '商城管理 -> 商品列表 -> 库存 / 补货'
             },
+            site,
             allowedChannels: ['feishu'],
             dedupeKey: crypto
                 .createHash('sha256')
@@ -527,6 +533,14 @@ async function runShopInventoryLowSweep(supabase, options = {}) {
     const results = [];
 
     for (const alert of alerts) {
+        const alertSite = alert.site || alert.payload?.site || 'cn';
+        const alertRuntime = (options.runtime && (!options.runtime.site || options.runtime.site === alertSite))
+            ? options.runtime
+            : await loadOpsAlertsRuntimeConfig(supabase, env, { site: alertSite });
+        if (alertRuntime?.config && alertRuntime.config.enabled !== true) {
+            continue;
+        }
+
         const shouldSendImmediate = shouldSendImmediateInventoryAlert(alert, stateJobs, {
             summaryEnabled
         });
@@ -541,7 +555,7 @@ async function runShopInventoryLowSweep(supabase, options = {}) {
                 createdAt: nowDate.toISOString(),
                 source: 'shop_inventory_monitor'
             }, {
-                runtime,
+                runtime: alertRuntime,
                 env,
                 skipSummary: true
             });
@@ -570,7 +584,7 @@ async function runShopInventoryLowSweep(supabase, options = {}) {
                 createdAt: nowDate.toISOString(),
                 source: 'shop_inventory_monitor'
             }, {
-                runtime,
+                runtime: alertRuntime,
                 env
             });
 
@@ -595,12 +609,20 @@ async function runShopInventoryLowSweep(supabase, options = {}) {
     }
 
     for (const alert of recoveryAlerts) {
+        const alertSite = alert.site || alert.payload?.site || 'cn';
+        const alertRuntime = (options.runtime && (!options.runtime.site || options.runtime.site === alertSite))
+            ? options.runtime
+            : await loadOpsAlertsRuntimeConfig(supabase, env, { site: alertSite });
+        if (alertRuntime?.config && alertRuntime.config.enabled !== true) {
+            continue;
+        }
+
         const result = await enqueueOpsAlertJob(supabase, {
             ...alert,
             createdAt: nowDate.toISOString(),
             source: 'shop_inventory_monitor'
         }, {
-            runtime,
+            runtime: alertRuntime,
             env
         });
 

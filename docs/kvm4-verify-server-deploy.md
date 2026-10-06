@@ -1,8 +1,49 @@
 # KVM4 Verify Server Deployment
 
-KVM4 runs the persistent API and worker process behind `https://verify-api.zaoyoe.com`.
-The public site still enters through `https://www.zaoyoe.com`, and Vercel rewrites
-selected dynamic API paths to this service.
+KVM4 runs the persistent API and worker process behind `https://verify-api.fatherkey.com`.
+The public site enters through `https://www.fatherkey.com`, and Vercel rewrites
+selected dynamic API paths to this service. Older `zaoyoe.com` examples are
+historical references; production checks use the canonical routes above.
+
+## Release Integrity and Coordinated Verification
+
+Follow `AGENTS.md` Release Integrity and Recovery Rules and
+`docs/vercel-release-checklist.md` §1.2 before preparing a release. Preserve a
+readable backup before operations that could discard local work, and record the
+release branch, one declared remote, BASE, candidate SHA and complete file manifest.
+Never package a dirty checkout or copy selected local files over production.
+
+Normal releases use PR -> latest `main` -> the Vercel Git integration and both
+KVM4 Actions workflows. KVM4 is not an independent source of release commits.
+The deployment scripts currently enforce `origin/main`; on a manual recovery,
+verify that it identifies the same repository as the declared release remote
+and that their freshly fetched `main` SHAs agree. Do not switch remotes or weaken
+the guard to deploy an older commit.
+
+After merge, record the resulting latest `main` SHA separately from the candidate
+SHA. A release is complete only when all of these agree:
+
+- Vercel production alias `https://www.fatherkey.com` is Ready with that SHA.
+- `Deploy KVM4 Verify Server` and `Deploy KVM4 Sub2API` workflow runs for that
+  SHA have succeeded.
+- SSH readback of `/opt/zaoyoe-verify-server/.current-release` and
+  `/opt/sub2api/.current-release` equals that SHA; the verify container's
+  `/app/server/.release-commit` also matches.
+- Verify `/healthz` and NewAPI `https://new.fatherkey.com/health` are healthy;
+  NewAPI, PostgreSQL and Redis are healthy, and `sub2api-legacy` is not running.
+- For a guest-shop release, verify is on that commit before installing or
+  starting the worker. Verify the host worker files against that commit, the
+  approved timer state, recent service journal and applicable readiness result.
+
+Archive workflow run IDs, deployment identity, release markers and health
+results in the PR or linked release record. Re-fetch the declared remote during
+final verification; if `main` advances, reconcile the new scope and wait for all
+chains to follow it. Do not combine successes from different SHAs.
+
+On a mismatch, keep the release incomplete and investigate the commit source.
+Do not overwrite `.current-release`, deploy old snapshots, execute SQL or enable
+features to make checks appear green. A recovery deploy is only permitted from
+latest clean `main` after reconciliation; keep existing backups and data.
 
 ## What Gets Deployed
 
@@ -10,12 +51,19 @@ The deploy script builds a compact release from the latest clean `main`:
 
 - `package.json`
 - `package-lock.json`
+- `adapters/`
 - `api/`
 - `server/`
 - `js/`
 - `scripts/`
 - `docs/`
 - `supabase/`
+
+Check changed runtime files against the script's `PACKAGE_PATHS`, Docker build
+inputs and Vercel build/ignore rules. A compact API package does not need to
+include static frontend pages, but every changed surface must be included in
+its intended artifact. A missing runtime dependency is a release blocker;
+do not patch it by uploading individual working-tree files.
 
 Secrets are not packaged. Runtime secrets stay on KVM4 in:
 
@@ -25,7 +73,10 @@ Secrets are not packaged. Runtime secrets stay on KVM4 in:
 
 ## Deploy
 
-Run from local `main` after it has been fast-forwarded to `origin/main`:
+Normal deployment follows the Actions workflow below. Use this command only
+for emergency follow-up or workflow recovery after source reconciliation. Run
+from latest clean local `main`, aligned with freshly fetched `origin/main` and
+the declared release remote:
 
 ```bash
 npm run deploy:kvm4:verify
@@ -83,16 +134,24 @@ a temporary file on the runner, runs the same guarded deploy script used for
 manual deploys, then verifies:
 
 ```text
-https://verify-api.zaoyoe.com/healthz
-https://www.zaoyoe.com/api/payments/config?site=cn
-https://www.zaoyoe.com/api/shop/catalog?site=cn
+https://verify-api.fatherkey.com/healthz
+https://www.fatherkey.com/api/payments/config?site=cn
+https://www.fatherkey.com/api/shop/catalog?site=cn
 ```
 
 Manual deploy remains available for emergency use after `main` is current.
 
 ## Rollback
 
-Rollback to the previous release:
+Prefer a focused fix on latest `main` through the normal PR release path.
+Emergency rollback is an explicit recovery action: record the reason, target
+release and commit, preserve current work and data, and recheck every chain.
+Rolling back verify alone does not roll back Vercel or NewAPI and must not be
+reported as a complete release. Do not restore an old repository snapshot to
+resolve a single feature problem. Guest-shop rollback follows its product/SKU
+switch rules and never executes a database rollback.
+
+Rollback to the previous release in an emergency:
 
 ```bash
 npm run rollback:kvm4:verify
@@ -109,9 +168,9 @@ npm run rollback:kvm4:verify -- 20260519090000-abcdef12
 After deploy or rollback:
 
 ```bash
-curl -fsS https://verify-api.zaoyoe.com/healthz
-curl -fsS 'https://www.zaoyoe.com/api/payments/config?site=cn'
-curl -fsS 'https://www.zaoyoe.com/api/shop/catalog?site=cn'
+curl -fsS https://verify-api.fatherkey.com/healthz
+curl -fsS 'https://www.fatherkey.com/api/payments/config?site=cn'
+curl -fsS 'https://www.fatherkey.com/api/shop/catalog?site=cn'
 ```
 
 On KVM4:
@@ -145,8 +204,7 @@ journalctl -u zaoyoe-kvm4-health-watchdog.service --no-pager -n 80
 ## Guest Shop Worker
 
 Guest-shop API, webhooks, and the fulfillment worker run on KVM4 Verify Server,
-not on Vercel. Historical examples in this file still mention `zaoyoe.com`;
-current canonical guest-shop hostnames are:
+not on Vercel. The canonical guest-shop hostnames are:
 
 - `https://verify-api.fatherkey.com`
 - public `/api/shop/:path*` rewrite from Vercel production to that host
@@ -181,11 +239,17 @@ an instruction to execute SQL.
    readiness, secrets, port `127.0.0.1:3001`, and health checks.
 9. Rollback of guest checkout is closing the product/SKU switch. Rolling back a
    verify release does not by itself refund or un-fulfill guest orders.
+10. `GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED` is independent from the
+    buyer-credential switch. Buyer credentials require retention explicitly ON
+    after its migration and read-only verify report **7/7 PASS**. During a
+    credential rollback, leave retention ON until historical access-attempt rows
+    have aged through the configured retention window and cleanup has caught up.
 
-### Reload guest-shop secrets
+### Reload guest-shop secrets or switches
 
 `verify-server` reads `/opt/zaoyoe-verify-server/.env` through compose
-`env_file`. Writing a new key into `.env` is not enough.
+`env_file`. Writing a new key or changing a feature/retention switch in `.env`
+is not enough.
 
 ```bash
 # 1. backup .env (mode 0600). Append or rotate keys without printing values.
@@ -211,6 +275,86 @@ printing their values. Guest payment adapters call
 variables are only a fallback. Missing `ZPAY_PKEY` / `NOWPAYMENTS_API_KEY` in
 `.env` is expected when those live in stored secrets. Do not copy login-payment
 keys into guest-shop env "just in case".
+
+### Buyer credential retention lifecycle
+
+The retention switch defaults OFF. Apply
+`supabase/migrations/20260924_guest_shop_access_attempt_retention.sql` and run
+the read-only `supabase/migrations/20260924_verify_guest_shop_access_attempt_retention.sql`
+first; all **7** rows must be `PASS` before setting
+`GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED=true`. Codex deployment does
+not execute either SQL file.
+
+The supported matrix is:
+
+| Buyer credentials | Retention | Result |
+|---|---|---|
+| OFF | OFF | Default; no retention RPC |
+| ON | OFF | Invalid; readiness fails closed |
+| ON | ON | Allowed only after migration + 7/7 verify |
+| OFF | ON | Required rollback-drain mode; historical rows continue to expire |
+
+Every `.env` transition in this matrix uses the watchdog pause and
+`docker compose up -d --no-deps --force-recreate --no-build verify-server`
+sequence above. Never use `docker restart` or `docker compose restart` as an
+environment reload. On rollback, turn buyer credentials and the orders page
+OFF but keep retention and the guest-shop timer ON. Review retention OFF only
+after the configured retention period has elapsed and there is no cleanup
+error or backlog evidence.
+
+Retention runs every ten minutes and may drain at most 10 batches of 1000 rows
+per sweep. A cleanup/config/RPC error returns HTTP 503 with stable code
+`guest_access_audit_cleanup_failed`; a remaining backlog after 10 batches
+returns HTTP 503 with `guest_access_audit_backlog_degraded`. The systemd
+oneshot is failed for that tick even if fulfillment work completed safely.
+Inspect both records without replaying orders:
+
+```bash
+systemctl status zaoyoe-guest-shop-worker.service --no-pager
+journalctl -u zaoyoe-guest-shop-worker.service -n 80 --no-pager
+docker logs --since 30m zaoyoe-verify-server 2>&1 \
+  | grep -E 'guest_access_audit_(cleanup_failed|backlog_degraded)'
+```
+
+The systemd journal establishes the failed/HTTP 503 tick; the verify container
+`maintenance degraded` record carries the stable code, completed batch/delete
+counts, and `has_more`. Do not widen guest SKUs or disable retention while
+either condition persists.
+
+### KVM4 runtime readiness
+
+The local checkout command below is a source-tree gate. Because a complete
+checkout contains `guest-orders.html` and `js/guest-orders-client.js`, it checks
+those local files and deliberately does not require the generated
+`server/.release-commit` or fetch the live Vercel page.
+
+When buyer credentials and the guest-orders page are both enabled, run the
+production gate inside the actual KVM4 `verify-server` container. The compact
+image intentionally omits `guest-orders.html`, while deployment writes the
+exact release commit to `/app/server/.release-commit`; this makes readiness
+fetch the Vercel page and its same-origin client and compare their 12-character
+asset version with the KVM4 release commit.
+
+```bash
+cd /opt/zaoyoe-verify-server
+
+host_release="$(tr -d '\r\n' < .current-release)"
+container_release="$(docker compose exec -T verify-server \
+  sh -c 'tr -d "\r\n" < /app/server/.release-commit')"
+test -n "$host_release" && test "$host_release" = "$container_release"
+
+docker compose exec -T verify-server \
+  npm run readiness:guest-shop -- --fail-on-invalid
+```
+
+Before accepting the result, confirm the container uses a canonical HTTPS
+`APP_BASE_URL`. The report must show the Vercel `guest-orders.html` as
+`hosted_verified`, its same-origin `js/guest-orders-client.js` as
+`hosted_verified`, and `frontend:guest-orders-commit` as `aligned`. A request
+failure, cross-origin result, missing contract marker, missing release marker,
+or asset-version drift is a hard failure. This container check supplements the
+local source-tree gate; neither one applies SQL or grants permission to enable
+a product/SKU.
 
 ### Install
 
@@ -243,4 +387,4 @@ See also:
 
 - `AGENTS.md` Guest Shop Deployment Rules
 - `docs/guest-shop-payment-fulfillment-runbook.md`
-- `docs/guest-purchase-task-2.0.md`
+- `docs/guest-purchase-task-2.0.md`（任务 2.1 内容版本；路径兼容旧引用）

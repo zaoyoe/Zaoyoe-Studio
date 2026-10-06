@@ -4,21 +4,37 @@
  * Read-only production readiness gate for the guest-shop cash channel.
  *
  * This checker intentionally does not create a Supabase client and does not
- * call a provider.  A production deploy can run it before exposing a guest
- * product; the output only contains configuration names/statuses and never a
- * secret value.  Provider enablement and rate-limit RPC existence still live
- * in the database, so those items are reported as explicit operator checks
- * rather than being guessed from environment variables.
+ * call a payment provider. A production deploy can run it before exposing a
+ * guest product; the output only contains configuration names/statuses and
+ * never a secret value. When both buyer-access switches are enabled, the CLI
+ * performs read-only GETs against the Vercel-owned query page and client so it
+ * can align their static-asset commit with the KVM4 release marker. Database
+ * facts remain explicit operator checks rather than being guessed from env.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
 const dotenv = require('dotenv');
 const {
+    collectStaticAssetVersionsFromHtml,
+    extractAssetReference
+} = require('./check-prod-env');
+const {
     BUYER_CREDENTIAL_RUNTIME_SETTING_NAMES,
     GUEST_SHOP_RUNTIME_SETTINGS,
+    PROMO_RUNTIME_SETTING_NAMES,
     parseRuntimeNumericSetting
 } = require('../api/_lib/guest-shop/runtime-config');
+// Promo L1/L2 switches. The switch names and the quantity ceiling come from the
+// runtime module (never re-typed here) so readiness and the HTTP layer can never
+// disagree about what "off" means.
+const {
+    GUEST_DISCOUNT_SWITCH,
+    GUEST_MAX_QUANTITY_CEILING,
+    GUEST_QUANTITY_SWITCH,
+    parseGuestDiscountSwitch,
+    resolveGuestMaxQuantity
+} = require('../api/_lib/guest-shop/promo');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
@@ -57,7 +73,6 @@ const REQUIRED_REPO_FILES = Object.freeze([
     'api/shop/guest/preview.js',
     'api/shop/guest/orders.js',
     'api/shop/guest/status.js',
-    'api/shop/guest/recover.js',
     'api/shop/guest/claim.js',
     'api/shop/guest/webhooks/zpay.js',
     'api/shop/guest/webhooks/nowpayments.js',
@@ -71,7 +86,21 @@ const REQUIRED_REPO_FILES = Object.freeze([
     'scripts/guest-shop-reconcile.js',
     'supabase/migrations/20260913_add_guest_shop_cash_purchase.sql',
     'supabase/migrations/20260913_guest_shop_atomic_rpcs.sql',
-    'docs/guest-shop-payment-fulfillment-runbook.md'
+    'api/_lib/guest-shop/promo.js',
+    'supabase/migrations/20260923_guest_shop_promo_l1l2.sql',
+    'supabase/migrations/20260923_verify_guest_shop_promo_l1l2.sql',
+    'docs/guest-shop-payment-fulfillment-runbook.md',
+    'docs/guest-shop-promo-hardening-plan.md'
+]);
+
+// These artifacts are installed from the source checkout onto the KVM4 host;
+// they are intentionally outside deploy-kvm4-verify-server.sh PACKAGE_PATHS
+// and therefore cannot be inspected from inside the compact Verify image.
+// A normal source checkout must still contain them.
+const KVM4_HOST_ONLY_GUEST_WORKER_FILES = new Set([
+    'deploy/kvm4/guest-shop-worker/zaoyoe-guest-shop-worker',
+    'deploy/kvm4/guest-shop-worker/zaoyoe-guest-shop-worker.service',
+    'deploy/kvm4/guest-shop-worker/zaoyoe-guest-shop-worker.timer'
 ]);
 
 const REQUIRED_TEST_FILES = Object.freeze([
@@ -82,15 +111,63 @@ const REQUIRED_TEST_FILES = Object.freeze([
     'tests/guest-shop-worker-scheduler-contract.test.js',
     'tests/guest-shop-runtime-config.test.js',
     'tests/guest-shop-readiness.test.js',
+    'tests/guest-shop-access-attempt-retention.test.js',
     'tests/guest-shop-alerts.test.js',
     'tests/guest-shop-reconcile.test.js',
     'tests/guest-shop-status-recovery.test.js',
     'tests/guest-shop-frontend-contract.test.js',
-    'tests/guest-shop-public-route-contract.test.js'
+    'tests/guest-shop-public-route-contract.test.js',
+    'tests/guest-shop-task-2-1-closeout-contract.test.js'
 ]);
 
 const BUYER_CREDENTIAL_MIGRATION = 'supabase/migrations/20260920_guest_shop_buyer_credentials.sql';
 const BUYER_CREDENTIAL_VERIFY_MIGRATION = 'supabase/migrations/20260920_verify_guest_shop_buyer_credentials.sql';
+const BUYER_ACCESS_RETENTION_MIGRATION = 'supabase/migrations/20260924_guest_shop_access_attempt_retention.sql';
+const BUYER_ACCESS_RETENTION_VERIFY_MIGRATION = 'supabase/migrations/20260924_verify_guest_shop_access_attempt_retention.sql';
+const BUYER_ACCESS_RETENTION_WORKER = 'server/guest-shop-worker.js';
+const BUYER_ACCESS_RETENTION_SWITCH = 'GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED';
+
+const BUYER_ACCESS_RETENTION_MIGRATION_REQUIREMENTS = Object.freeze([
+    ['retention-index', /CREATE INDEX IF NOT EXISTS guest_shop_access_attempts_retention_idx\s+ON public\.guest_shop_access_attempts \(created_at ASC, id ASC\);/u, 'created_at/id 清理索引'],
+    ['purge-function', /CREATE OR REPLACE FUNCTION public\.fn_guest_shop_purge_access_attempts\(\s*p_cutoff TIMESTAMPTZ,\s*p_limit INTEGER DEFAULT 1000\s*\)/u, '受限清理函数'],
+    ['bounded-delete', /LEAST\(GREATEST\(COALESCE\(p_limit, 1000\), 1\), 1000\)/u, '单批最多 1000 行硬上限'],
+    ['victim-limit', /victims AS \([\s\S]*?LIMIT v_limit\s*\)/u, 'victims CTE 单批删除行数上限'],
+    ['skip-locked', /FOR UPDATE SKIP LOCKED/u, '并发清理 SKIP LOCKED'],
+    ['secure-definer', /SECURITY DEFINER\s+SET search_path = pg_catalog, pg_temp\s+AS \$\$/u, 'SECURITY DEFINER 固定完整 search_path（不含 public）'],
+    ['service-role-guard', /PERFORM public\.guest_shop_require_service_role\(\);/u, '函数体 service-role 守卫'],
+    ['advisory-lock', /PERFORM pg_catalog\.pg_advisory_xact_lock\(\s*pg_catalog\.hashtextextended\('guest_shop_access_attempt_retention', 0\)\s*\);/u, '事务级 advisory lock 串行化'],
+    ['revoke-public', /REVOKE ALL ON FUNCTION public\.fn_guest_shop_purge_access_attempts\(TIMESTAMPTZ, INTEGER\)\s+FROM PUBLIC, anon, authenticated, service_role;/u, 'PUBLIC/anon/authenticated/service_role 先撤权'],
+    ['grant-service-role', /GRANT EXECUTE ON FUNCTION public\.fn_guest_shop_purge_access_attempts\(TIMESTAMPTZ, INTEGER\)\s+TO service_role;/u, '仅 service_role 可执行']
+]);
+const BUYER_ACCESS_RETENTION_VERIFY_REQUIREMENTS = Object.freeze([
+    ['verify-index', /'retention_index'/u, '索引检查'],
+    ['verify-index-valid-ready', /bool_and\(indisvalid\)[\s\S]*?bool_and\(indisready\)/u, '索引 valid/ready 检查'],
+    ['verify-index-plain', /bool_and\(is_not_partial\)[\s\S]*?bool_and\(is_not_expression\)/u, '索引非 partial/表达式检查'],
+    ['verify-index-shape', /bool_and\(indnatts = 2\)[\s\S]*?bool_and\(indnkeyatts = 2\)[\s\S]*?bool_and\(access_method = 'btree'\)[\s\S]*?bool_and\(is_ascending_nulls_last\)[\s\S]*?bool_and\(key_columns = ARRAY\['created_at', 'id'\]::NAME\[\]\)/u, '索引精确 btree(created_at ASC,id ASC) 形态检查'],
+    ['verify-function', /'purge_function_present'/u, '函数存在检查'],
+    ['verify-single-overload', /\(SELECT COUNT\(\*\) = 1 FROM fn\)\s+AND \(SELECT COUNT\(\*\) = 1 FROM fn_family\)/u, '精确签名及同名函数族唯一重载检查'],
+    ['verify-owner', /'purge_function_owner'/u, '函数 owner 检查'],
+    ['verify-security', /'purge_function_security'/u, '函数安全属性检查'],
+    ['verify-search-path', /proconfig @> ARRAY\['search_path=pg_catalog, pg_temp'\]::TEXT\[\]/u, '完整 search_path（不含 public）检查'],
+    ['verify-result-contract', /'purge_function_result_contract'/u, '返回结果合同检查'],
+    ['verify-body', /'purge_function_body'/u, '有界删除函数体检查'],
+    ['verify-body-victim-limit', /def LIKE '%LIMIT v_limit%'/u, '函数体 victims LIMIT v_limit 检查'],
+    ['verify-body-service-role-guard', /def LIKE '%PERFORM public\.guest_shop_require_service_role\(\)%'/u, '函数体 service-role 守卫检查'],
+    ['verify-body-advisory-lock', /def LIKE '%pg_catalog\.pg_advisory_xact_lock%'/u, '函数体 advisory lock 检查'],
+    ['verify-grants', /'purge_function_grants'/u, '授权收口检查'],
+    ['verify-family-grant-source', /fn_grants AS \([\s\S]*?FROM fn_family\s+CROSS JOIN LATERAL aclexplode/u, '授权检查覆盖所有同名重载'],
+    ['verify-family-grants', /WHERE privilege_type = 'EXECUTE'\s+AND grantee NOT IN \(owner_name, 'service_role'\)/u, '非 owner/service_role 重载授权拒绝检查'],
+    ['verify-effective-grant-source', /fn_effective_privileges AS \([\s\S]*?has_function_privilege\('anon'[\s\S]*?has_function_privilege\('authenticated'[\s\S]*?has_function_privilege\('service_role'/u, '角色继承后的有效 EXECUTE 权限来源'],
+    ['verify-effective-grants', /NOT anon_can_execute\s+AND NOT authenticated_can_execute\s+AND service_role_can_execute/u, 'anon/authenticated 有效 EXECUTE 拒绝及 service_role 允许检查']
+]);
+const BUYER_ACCESS_RETENTION_WORKER_REQUIREMENTS = Object.freeze([
+    ['worker-rpc', /fn_guest_shop_purge_access_attempts/u, 'worker 调用清理 RPC'],
+    ['worker-config', /GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_DAYS/u, 'worker 使用统一保留天数配置'],
+    ['worker-batch', /ACCESS_AUDIT_PURGE_BATCH_SIZE\s*=\s*1000/u, 'worker 单批 1000 行'],
+    ['worker-schedule', /ACCESS_AUDIT_SWEEP_INTERVAL_MS\s*=\s*10\s*\*\s*60\s*\*\s*1000/u, 'worker 十分钟调度间隔'],
+    ['worker-switch', /GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED/u, '独立清理开关'],
+    ['worker-credential-interlock', /parseBuyerCredentialSwitch\(env\)\.enabled[\s\S]*?access_audit_retention_required/u, '凭证 ON + retention OFF 运行时互锁']
+]);
 
 // Static assertions about the Order Access 2.0 migration. The readiness gate
 // never connects to a database (that stays a manual check on the paired
@@ -135,11 +212,21 @@ const BUYER_CREDENTIAL_VERIFY_REQUIREMENTS = Object.freeze([
     ['verify-checks-function', /fn_guest_shop_create_order/u, 'verify 脚本检查下单 RPC 签名'],
     ['verify-checks-rls', /rls_and_privileges_closed/u, 'verify 脚本检查 RLS 与权限收口'],
     ['verify-checks-realtime', /realtime_published/u, 'verify 脚本检查新表未进入 realtime 发布'],
-    ['verify-checks-legacy-absent', /legacy_12_param_signature_absent/u, 'verify 脚本检查旧 12 参数签名已消失']
+    ['verify-checks-legacy-absent', /legacy_12_param_signature_absent/u, 'verify 脚本检查旧 12 参数签名已消失'],
+    // 2026-09-23 探针勘误：verify 曾被 13 参精确签名钉死，L1/L2 迁移换成 15 参后
+    // 第 8/9/10 行对**正确的库**报假 FAIL。时代清单（fn_era）是修复方式，必须留在这里，
+    // 否则下一次签名变更会重演同一场事故。
+    ['verify-era-aware-signature', /\), fn_era AS \(/u, 'verify 用 fn_era 时代清单识别 create_order 签名（不按单一签名钉死）'],
+    ['verify-known-signature-key', /known_signature_present/u, 'verify 断言已安装签名属于已知时代'],
+    ['verify-era-aware-quantity', /quantity_policy_matches_era/u, 'verify 的数量策略断言随时代推导（A0 固定 1 件 / L1L2 服务端限量）']
 ]);
 
 const BUYER_CREDENTIAL_VERIFY_PROHIBITIONS = Object.freeze([
-    ['verify-read-only', /^\s*(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu, 'verify 脚本必须是只读的（不得出现写操作语句）']
+    ['verify-read-only', /^\s*(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu, 'verify 脚本必须是只读的（不得出现写操作语句）'],
+    ['verify-no-signature-pinned-cte', /WHERE\s+p\.oid\s*=\s*to_regprocedure\(\s*'public\.fn_guest_shop_create_order/u, 'verify 不得按精确签名解析 create_order CTE（签名一变即整片假 FAIL）'],
+    ['verify-no-era-pinned-arity', /'arity', 13,/u, 'verify 的 arity 期望值必须由 fn_era 推导，不得写死 13'],
+    ['verify-retired-13-param-key', /new_13_param_signature_present/u, '已退休的时代钉死键 new_13_param_signature_present 不得复活'],
+    ['verify-retired-quantity-key', /quantity_still_hardcoded_to_one/u, '已退休的时代钉死键 quantity_still_hardcoded_to_one 不得复活']
 ]);
 
 // ---------------------------------------------------------------------------
@@ -188,17 +275,424 @@ const BUYER_GROUP_UPSERT_VERIFY_REQUIREMENTS = Object.freeze([
     ['verify-upsert-security-posture', /upsert_fn_security_posture/u, 'verify 检查 SECURITY DEFINER / search_path / 非 IMMUTABLE'],
     ['verify-upsert-grants', /upsert_fn_grants/u, 'verify 检查仅 service_role 可 EXECUTE'],
     ['verify-upsert-body-guarantees', /upsert_fn_body_guarantees/u, 'verify 检查 advisory lock / 命名错误 / DO NOTHING / record-only 不变量'],
-    ['verify-a1b-additive', /a1b_is_additive/u, 'verify 检查 A1b 未改动 A0 结构（纯增量）']
+    ['verify-a1b-additive', /a1b_is_additive/u, 'verify 检查 A1b 未改动 A0 结构（纯增量）'],
+    // 同上：A1b 的「create_order 仍可调」必须认时代，不能钉 13 参签名。
+    ['verify-a1b-era-aware-rpc', /create_order_rpc_known_signature/u, 'verify 断言 create_order RPC 属于已知签名时代（A0 13 参 / L1L2 15 参）']
 ]);
 
 const BUYER_GROUP_UPSERT_VERIFY_PROHIBITIONS = Object.freeze([
-    ['verify-read-only', /^\s*(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu, 'A1b verify 脚本必须是只读的（不得出现写操作语句）']
+    ['verify-read-only', /^\s*(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu, 'A1b verify 脚本必须是只读的（不得出现写操作语句）'],
+    ['verify-a1b-retired-rpc-key', /create_order_rpc_still_13_params/u, '已退休的时代钉死键 create_order_rpc_still_13_params 不得复活']
+]);
+
+// ---------------------------------------------------------------------------
+// Promo L1/L2 gate (docs/guest-shop-promo-hardening-plan.md §12.4 / §13).
+//
+// L1 = guest quantity > 1 with tiered/flash pricing. L2 = guest discount codes.
+// Both ship OFF and both stay behaviour-neutral until an operator flips the
+// matching env switch AND opens the paired database row:
+//
+//   env  GUEST_SHOP_DISCOUNT_ENABLED   L2 master switch (restart to take effect)
+//   env  GUEST_SHOP_MAX_QUANTITY       L1 operator ceiling (default 1, hard max 5)
+//   DB   guest_shop_promo_budget       seeded enabled=false / daily_budget=0
+//   DB   guest_shop_promo_breaker      seeded state='closed'
+//   DB   discount_codes.allow_guest    per-code whitelist, default false
+//
+// Like A0/A1b this checker never connects to a database: the migration files on
+// disk are the only thing it can prove statically, so every runtime/database
+// invariant below is an explicit operator check and readiness stays fail-closed.
+//
+// Two prohibitions are deliberately NOT asserted here, because both strings occur
+// legitimately inside SECURITY DEFINER function bodies (the atomic
+// guest_used_count increment and the order state machine). Asserting them would
+// either fail on the correct migration or force a regex so weak that it misses a
+// real data backfill:
+//   UPDATE public.discount_codes / UPDATE public.guest_shop_orders
+// The equivalent protection is 'no-top-level-dml', anchored to a statement start
+// so it only matches DML outside a $$ body, plus the paired verify script's
+// existing_rows_satisfy_new_checks / no_side_effects rows, which the operator
+// asserts against the live database.
+// ---------------------------------------------------------------------------
+const PROMO_MIGRATION = 'supabase/migrations/20260923_guest_shop_promo_l1l2.sql';
+const QUANTITY_CEILING_MIGRATION = 'supabase/migrations/20261004_guest_shop_quantity_ceiling_99.sql';
+const QUANTITY_CEILING_VERIFY_MIGRATION = 'supabase/migrations/20261004_verify_guest_shop_quantity_ceiling_99.sql';
+const PROMO_VERIFY_MIGRATION = 'supabase/migrations/20260923_verify_guest_shop_promo_l1l2.sql';
+
+const PROMO_MIGRATION_REQUIREMENTS = Object.freeze([
+    ['orders-list-unit-amount-column', /ADD COLUMN IF NOT EXISTS list_unit_amount NUMERIC\(14,2\)/u, 'guest_shop_orders.list_unit_amount 折前单价列'],
+    ['orders-discount-amount-column', /ADD COLUMN IF NOT EXISTS discount_amount NUMERIC\(14,2\) NOT NULL DEFAULT 0/u, 'guest_shop_orders.discount_amount 折扣列（NOT NULL DEFAULT 0）'],
+    ['orders-discount-code-column', /ADD COLUMN IF NOT EXISTS discount_code VARCHAR\(64\)/u, 'guest_shop_orders.discount_code 已用券码列'],
+    ['orders-discount-snapshot-column', /ADD COLUMN IF NOT EXISTS discount_snapshot JSONB/u, 'guest_shop_orders.discount_snapshot 不可变审计快照列'],
+    ['orders-payment-fee-column', /ADD COLUMN IF NOT EXISTS payment_fee_amount NUMERIC\(14,2\) NOT NULL DEFAULT 0/u, 'guest_shop_orders.payment_fee_amount 通道费独立列'],
+    ['orders-amount-check', /guest_shop_orders_amount_check/u, '订单金额 CHECK（total_amount = unit_amount*quantity + payment_fee_amount）'],
+    ['orders-quantity-ceiling', /guest_shop_orders_quantity_check[\s\S]{0,80}CHECK \(quantity >= 1 AND quantity <= 99\)/u, '订单数量硬顶 CHECK(quantity BETWEEN 1 AND 99)'],
+    ['orders-discount-code-shape', /ADD CONSTRAINT guest_shop_orders_discount_code_check/u, '券码字符集 CHECK（大写白名单）'],
+    ['zero-purchase-floor', /discount_amount < ROUND\(list_unit_amount \* quantity, 2\)/u, '零元购地板：折扣必须严格小于折前总额（永不产生 0 元单）'],
+    ['discount-half-cap', /discount_amount <= ROUND\(list_unit_amount \* quantity \* 0\.5, 2\)/u, '折扣硬顶：单笔最多折 50%（数据库层地板价）'],
+    ['fee-cap', /payment_fee_amount <= ROUND\(unit_amount \* quantity \* 0\.1, 2\) \+ 0\.01/u, '通道费硬顶 10%（含 0.01 进位余量）'],
+    ['ledger-table', /CREATE TABLE IF NOT EXISTS public\.guest_shop_discount_redemptions \(/u, 'guest_shop_discount_redemptions 游客用券台账建表'],
+    ['ledger-buyer-attribution', /buyer_contact_hash/u, '用券台账带 buyer_contact_hash 归属列（配额地基）'],
+    ['ledger-return-columns', /returned_at/u, '用券台账带 returned_at 归还列（TTL 到期退券退预算）'],
+    ['discount-codes-allow-guest', /ADD COLUMN IF NOT EXISTS allow_guest BOOLEAN/u, 'discount_codes.allow_guest 券级白名单列（默认 false）'],
+    ['discount-codes-guest-max-uses', /ADD COLUMN IF NOT EXISTS guest_max_uses INTEGER/u, 'discount_codes.guest_max_uses 券级次数硬预算列（0 = 关闭）'],
+    ['discount-codes-guest-used-count', /ADD COLUMN IF NOT EXISTS guest_used_count/u, 'discount_codes.guest_used_count 已用次数计数列'],
+    ['discount-codes-guest-budget', /ADD COLUMN IF NOT EXISTS guest_max_total_discount NUMERIC/u, 'discount_codes.guest_max_total_discount 券级金额硬预算列'],
+    ['sku-guest-max-quantity', /guest_max_quantity/u, '商品/SKU 级 guest_max_quantity 游客件数上限列'],
+    ['budget-table', /CREATE TABLE IF NOT EXISTS public\.guest_shop_promo_budget \(/u, 'guest_shop_promo_budget 站点日预算建表'],
+    ['budget-seed-closed', /VALUES \('cn', false, 0\), \('intl', false, 0\)/u, '站点日预算种子为「关闭 + 0 元」（cn/intl 双站）'],
+    ['breaker-table', /CREATE TABLE IF NOT EXISTS public\.guest_shop_promo_breaker \(/u, 'guest_shop_promo_breaker 熔断单行表建表'],
+    ['breaker-seed-closed', /VALUES \(1, 'closed'\)/u, '熔断种子为 closed（未跳闸）'],
+    ['breaker-state-two-values', /guest_shop_promo_breaker_state_check CHECK \(state IN \('closed', 'open'\)\)/u, '熔断状态只有 closed/open 两值（无自动半开）'],
+    ['breaker-events-table', /CREATE TABLE IF NOT EXISTS public\.guest_shop_promo_breaker_events \(/u, 'guest_shop_promo_breaker_events 滚动窗口计数/审计建表'],
+    ['gate-fn', /CREATE OR REPLACE FUNCTION public\.guest_shop_promo_gate\(/u, 'guest_shop_promo_gate 促销总闸函数'],
+    ['evaluate-fn', /CREATE OR REPLACE FUNCTION public\.fn_guest_shop_evaluate_discount\(/u, 'fn_guest_shop_evaluate_discount 只读报价函数'],
+    ['reserve-fn', /CREATE OR REPLACE FUNCTION public\.fn_guest_shop_reserve_discount\(/u, 'fn_guest_shop_reserve_discount 原子扣减预占函数'],
+    ['return-reservation-fn', /CREATE OR REPLACE FUNCTION public\.fn_guest_shop_return_discount_reservation\(/u, 'fn_guest_shop_return_discount_reservation 预占归还函数'],
+    ['record-event-fn', /CREATE OR REPLACE FUNCTION public\.fn_guest_shop_promo_record_event\(/u, 'fn_guest_shop_promo_record_event 滚动窗口事件计数函数'],
+    ['set-breaker-fn', /CREATE OR REPLACE FUNCTION public\.fn_guest_shop_promo_set_breaker\(/u, 'fn_guest_shop_promo_set_breaker 人工跳闸/恢复函数'],
+    ['status-fn', /CREATE OR REPLACE FUNCTION public\.fn_guest_shop_promo_status\(\)/u, 'fn_guest_shop_promo_status 只读状态函数'],
+    ['resolver-fn', /CREATE OR REPLACE FUNCTION public\.guest_shop_resolve_credit_unit_amount\(/u, 'guest_shop_resolve_credit_unit_amount 唯一定价权威函数（L1 放开 quantity）'],
+    ['reservation-rollup-fn', /CREATE OR REPLACE FUNCTION public\.guest_shop_reservation_rollup\(/u, 'guest_shop_reservation_rollup 多行预占汇总函数'],
+    ['release-held-fn', /CREATE OR REPLACE FUNCTION public\.guest_shop_release_held_reservations\(/u, 'guest_shop_release_held_reservations 到期释放函数（同时退券退预算）'],
+    ['create-order-quantity-arg', /p_quantity INTEGER DEFAULT 1/u, 'fn_guest_shop_create_order 新增 p_quantity（默认 1 = P0 行为）'],
+    ['create-order-code-arg', /p_discount_code TEXT DEFAULT NULL/u, 'fn_guest_shop_create_order 新增 p_discount_code（默认 NULL = P0 行为）'],
+    ['legacy-create-order-dropped', /DROP FUNCTION IF EXISTS public\.fn_guest_shop_create_order\([\s\S]{0,120}TEXT, UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID, TEXT, TEXT, INTEGER\s*\)/u, '旧 13 参数 create_order 重载被显式 DROP（避免 PostgREST 重载歧义）'],
+    ['security-definer', /SECURITY DEFINER/u, '促销函数声明为 SECURITY DEFINER'],
+    ['search-path-pinned', /SET search_path = public, pg_temp/u, '促销函数固定 search_path 防止对象劫持'],
+    ['budget-closed-token', /guest_promo_budget_closed/u, '预算未开的命名错误令牌'],
+    ['breaker-halted-token', /guest_promo_halted/u, '熔断跳闸的命名错误令牌'],
+    ['identity-required-token', /guest_discount_identity_required/u, '折扣无法归属身份的命名错误令牌'],
+    ['quantity-not-allowed-token', /guest_quantity_not_allowed/u, '数量超限的命名错误令牌'],
+    ['privilege-leak-guard', /guest_shop_privilege_leak/u, '权限泄漏断言（浏览器不可达促销表）'],
+    ['ledger-rls', /ALTER TABLE public\.guest_shop_discount_redemptions ENABLE ROW LEVEL SECURITY/u, '用券台账开启 RLS'],
+    ['budget-rls', /ALTER TABLE public\.guest_shop_promo_budget ENABLE ROW LEVEL SECURITY/u, '预算表开启 RLS'],
+    ['breaker-rls', /ALTER TABLE public\.guest_shop_promo_breaker ENABLE ROW LEVEL SECURITY/u, '熔断表开启 RLS'],
+    ['breaker-events-rls', /ALTER TABLE public\.guest_shop_promo_breaker_events ENABLE ROW LEVEL SECURITY/u, '熔断事件表开启 RLS'],
+    ['ledger-revoke-browser', /REVOKE ALL ON TABLE public\.guest_shop_discount_redemptions FROM PUBLIC, anon, authenticated/u, '用券台账对 anon/authenticated 撤权'],
+    ['budget-revoke-browser', /REVOKE ALL ON TABLE public\.guest_shop_promo_budget FROM PUBLIC, anon, authenticated/u, '预算表对 anon/authenticated 撤权'],
+    ['breaker-revoke-browser', /REVOKE ALL ON TABLE public\.guest_shop_promo_breaker FROM PUBLIC, anon, authenticated/u, '熔断表对 anon/authenticated 撤权'],
+    ['breaker-events-revoke-browser', /REVOKE ALL ON TABLE public\.guest_shop_promo_breaker_events FROM PUBLIC, anon, authenticated/u, '熔断事件表对 anon/authenticated 撤权'],
+    ['gate-fn-service-only', /GRANT EXECUTE ON FUNCTION public\.guest_shop_promo_gate\(TEXT, NUMERIC\) TO service_role/u, 'gate 函数仅授予 service_role EXECUTE'],
+    ['evaluate-fn-service-only', /GRANT EXECUTE ON FUNCTION public\.fn_guest_shop_evaluate_discount\(TEXT, UUID, UUID, INTEGER, NUMERIC, TEXT, UUID, TEXT, TEXT, INTEGER, INTEGER\) TO service_role/u, 'evaluate 函数仅授予 service_role EXECUTE'],
+    ['reserve-fn-service-only', /GRANT EXECUTE ON FUNCTION public\.fn_guest_shop_reserve_discount\(TEXT, UUID, UUID, INTEGER, NUMERIC, TEXT, UUID, TEXT, TEXT, TEXT, UUID, INTEGER, INTEGER\) TO service_role/u, 'reserve 函数仅授予 service_role EXECUTE'],
+    ['create-order-fn-service-only', /GRANT EXECUTE ON FUNCTION public\.fn_guest_shop_create_order\(TEXT, UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID, TEXT, TEXT, INTEGER, INTEGER, TEXT\) TO service_role/u, '15 参数 create_order 仅授予 service_role EXECUTE'],
+    ['resolver-fn-service-only', /GRANT EXECUTE ON FUNCTION public\.guest_shop_resolve_credit_unit_amount\(TEXT, NUMERIC, NUMERIC, BOOLEAN, JSONB, JSONB, JSONB, JSONB, NUMERIC, NUMERIC, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, INTEGER, TIMESTAMP WITH TIME ZONE\) TO service_role/u, '定价 resolver 仅授予 service_role EXECUTE']
+]);
+
+const PROMO_MIGRATION_PROHIBITIONS = Object.freeze([
+    ['no-guest-product-enablement', /allow_guest_purchase\s*=\s*true/iu, '迁移不得打开游客商品/SKU 开关'],
+    ['no-product-update', /UPDATE\s+public\.shop_products/iu, '迁移不得 UPDATE shop_products'],
+    ['no-sku-update', /UPDATE\s+public\.shop_product_skus/iu, '迁移不得 UPDATE shop_product_skus'],
+    ['no-top-level-dml', /^(?:UPDATE|DELETE|TRUNCATE)[ \t]+public\./mu, '迁移不得在顶层（$ 函数体之外）做数据回填/删除'],
+    ['no-drop-table', /DROP\s+TABLE/iu, '迁移不得删表（只允许按精确签名 DROP 旧函数重载）'],
+    ['no-drop-schema', /DROP\s+SCHEMA/iu, '迁移不得删 schema'],
+    ['no-drop-amount-check-without-readd', /DROP CONSTRAINT IF EXISTS guest_shop_orders_amount_check;(?![\s\S]{0,600}ADD CONSTRAINT guest_shop_orders_amount_check)/iu, '金额 CHECK 不得只删不加（AGENTS.md 禁止 DROP CONSTRAINT 了事）'],
+    ['no-browser-policy', /CREATE POLICY/iu, '迁移不得为促销表创建任何 RLS 策略（浏览器必须完全不可达）'],
+    ['no-anon-grant', /GRANT[^;]*\bTO\s+(?:anon|authenticated)\b/iu, '迁移不得向 anon/authenticated 授权'],
+    ['no-scheduled-job', /pg_cron|cron\.schedule/iu, '迁移不得创建定时任务（清理由运维调度）'],
+    ['no-auto-half-open', /'half[_-]open'/iu, '熔断状态不得引入半开值（恢复必须人工 + 二次确认 + 审计）'],
+    ['no-budget-seed-open', /VALUES \('(?:cn|intl)', true/iu, '预算种子不得预置为已开启'],
+    ['no-breaker-seed-open', /VALUES \(1, 'open'\)/iu, '熔断种子不得预置为已跳闸'],
+    ['no-code-default-allow-guest', /allow_guest BOOLEAN[^,\n]*DEFAULT true/iu, 'allow_guest 默认值不得为 true（默认全开）'],
+    // The old form of this prohibition matched a column that this batch never
+    // creates, so it passed vacuously while two SQL comments told operators to
+    // tune an env switch that does not exist either. Asserting the phantom names
+    // are ABSENT is the check that actually protects an operator: the only
+    // percent bound is guest_shop_orders_amount_check's 50% floor, and it is
+    // tightened by the per-code / per-site budgets, not by a knob.
+    ['no-phantom-percent-knob', /GUEST_SHOP_DISCOUNT_MAX_PERCENT|guest_max_discount_percent/iu, '迁移不得引用未实现的折扣率 env 旋钮或券级折扣率列（本批折扣率边界只有数据库 50% 硬顶，引用不存在的开关会误导运维）']
+]);
+
+const PROMO_VERIFY_REQUIREMENTS = Object.freeze([
+    ['verify-orders-new-columns', /'orders_new_columns'/u, 'verify 检查 guest_shop_orders 5 个新列'],
+    ['verify-orders-amount-check', /'orders_amount_check'/u, 'verify 检查订单金额 CHECK（含零元购地板与 50% 硬顶）'],
+    ['verify-orders-quantity-and-code', /'orders_quantity_and_code_checks'/u, 'verify 检查数量硬顶与券码字符集 CHECK'],
+    ['verify-reservations-multi-row', /'reservations_multi_row'/u, 'verify 检查库存预占支持一单多行'],
+    ['verify-ledger-table-columns', /'ledger_table_columns'/u, 'verify 检查用券台账列（且不含明文邮箱/密码/claim_secret）'],
+    ['verify-ledger-constraints', /'ledger_constraints'/u, 'verify 检查用券台账约束'],
+    ['verify-ledger-indexes', /'ledger_indexes'/u, 'verify 检查用券台账 24h 配额索引'],
+    ['verify-ledger-rls-and-privileges', /'ledger_rls_and_privileges'/u, 'verify 检查用券台账 RLS 与权限收口'],
+    ['verify-function-arity', /'function_arity_single_overload'/u, 'verify 检查促销函数各自唯一重载（签名无歧义）'],
+    ['verify-function-privileges', /'function_privileges'/u, 'verify 检查促销函数仅 service_role 可执行'],
+    ['verify-function-hardening', /'function_hardening'/u, 'verify 检查 SECURITY DEFINER / search_path / 非 IMMUTABLE'],
+    ['verify-zero-purchase-guards', /'zero_purchase_guards'/u, 'verify 检查零元购防线（地板 + 硬顶 + total_amount > 0）'],
+    ['verify-resolver-parity', /'resolver_tier_flash_parity'/u, 'verify 检查阶梯价/闪购在游客与登录链路等价'],
+    ['verify-replay-return-types', /'replay_return_types_cast'/u, 'verify 检查幂等重放返回类型与 CAST 一致'],
+    ['verify-existing-rows-satisfy-checks', /'existing_rows_satisfy_new_checks'/u, 'verify 检查历史行满足新 CHECK（无需回填）'],
+    ['verify-no-side-effects', /'no_side_effects'/u, 'verify 检查迁移无副作用（无新触发器/无定时任务）'],
+    ['verify-discount-codes-guest-columns', /'discount_codes_guest_columns'/u, 'verify 检查 discount_codes 游客列与「0 = 关闭」语义'],
+    ['verify-promo-budget-table', /'promo_budget_table'/u, 'verify 检查预算表结构与种子关闭'],
+    ['verify-promo-breaker-table', /'promo_breaker_table'/u, 'verify 检查熔断表结构与种子 closed'],
+    ['verify-promo-breaker-events-table', /'promo_breaker_events_table'/u, 'verify 检查熔断事件表结构与窗口索引'],
+    ['verify-ledger-return-columns', /'ledger_return_columns'/u, 'verify 检查台账归还列（退券退预算闭环）'],
+    ['verify-promo-function-guards', /'promo_function_guards'/u, 'verify 检查促销函数体的命名错误令牌与闸序不变量'],
+    // 2026-09-23 首次执行后的两类探针缺陷修复（假 FAIL 第 3、4 类）。
+    // pg_proc.prosrc 保留函数自己的 SQL 注释，拿关键字正则扫原始 prosrc 会把
+    // 注释当代码：fn_guest_shop_evaluate_discount 的原子性说明里有一句
+    // "the atomic UPDATE pair"，于是只读函数被报成 evaluate_is_read_only=false。
+    // 修法只能是「先剥注释再扫」（CTE fn_code），并且保留 fail-closed 键证明
+    // 剥离没有吃掉函数体；绝不允许靠删注释或删只读断言让它变绿。
+    ['verify-body-scans-strip-comments', /regexp_replace\(f\.prosrc, '--\.\*', ' ', 'gn'\)/u, 'fn_code CTE：函数体探针先剥行注释'],
+    ['verify-body-scans-strip-block-comments', /'\/\[\*\]\.\*\?\[\*\]\/', ' ', 'gs'/u, 'fn_code CTE：函数体探针再剥块注释'],
+    ['verify-fn-code-superset', /\), fn_code AS \([\s\S]{0,2000}?SELECT f\.\*,/u, 'fn_code 是 guest_fns 的严格超集（所有探针统一走它）'],
+    ['verify-evaluate-no-dynamic-sql', /'evaluate_has_no_dynamic_sql'/u, 'verify 检查 evaluate 无动态 SQL（EXECUTE）'],
+    ['verify-evaluate-strip-keeps-guards', /'evaluate_strip_keeps_guards'/u, 'verify 保留 fail-closed 键：剥注释后角色守卫与共享定价器调用仍在'],
+    ['verify-promo-functions-never-write-products', /'promo_functions_never_write_products'/u, 'verify 检查任何 guest_shop 函数都不得写 shop_products / shop_product_skus（机制断言）'],
+    // 运维状态（开了几个游客商品/ SKU / 券）不是迁移的性质，不能作为 PASS/FAIL
+    // 常量；沿用 20260915_verify_guest_shop_credit_pricing.sql 第 8 行的 REVIEW 约定。
+    ['verify-operator-state-review-row', /'operator_state_review'/u, 'verify 第 23 行以 REVIEW 形式输出运维状态'],
+    ['verify-operator-state-review-branch', /THEN 'PASS' ELSE 'REVIEW'/u, 'verify 的判分 CASE 对运维状态行走 PASS/REVIEW 分支（永不 FAIL）'],
+    ['verify-operator-state-names-products', /'guest_enabled_products'/u, 'verify 点名具体游客商品（光有计数无法据此行动）']
+]);
+
+const PROMO_VERIFY_PROHIBITIONS = Object.freeze([
+    ['verify-read-only', /^[ \t]*(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu, '促销 verify 脚本必须是只读的（不得出现写操作语句）'],
+    // 运维状态钉死成常量，会让正确的迁移在「有人开过游客商品」时必然 FAIL；
+    // FAIL 一旦成为常态，运维就会开始忽略所有 FAIL —— 这本身就是安全事故的前置条件。
+    ['verify-no-pinned-operator-count', /'guest_products_enabled',\s*0\b/u, '促销 verify 不得把游客商品计数钉成常量 0（运维状态只能进 REVIEW 行）'],
+    // 直接扫原始 prosrc：注释会被当成代码。负向探针因此假 FAIL，正向探针
+    // 因此可能假 PASS（更危险）。所有函数体扫描必须走 fn_code.code。
+    ['verify-no-raw-prosrc-regex', /prosrc\s*~\*?\s*'/u, '促销 verify 不得对原始 prosrc 做关键字正则扫描（必须先剥注释）'],
+    ['verify-no-raw-prosrc-position', /\bin\s+(?:[fp]\.)?prosrc\b/u, '促销 verify 不得对原始 prosrc 做 position 扫描（必须先剥注释）']
+]);
+
+// js/guest-shop-client.js is the only browser script allowed to carry a guest
+// discount code, and only inside a POST body. Each pattern below is a
+// single-line "sink + code identifier" test: it fires only when a code-ish name
+// is used together with a persistent/URL sink, so an ordinary
+// `normalizeGuestDiscountCode(body.discountCode)` never trips it. The same
+// invariants are asserted by tests/guest-shop-frontend-contract.test.js; keeping
+// them here too means a release cannot ship a leaked code even if the contract
+// test is skipped.
+const GUEST_SHOP_CLIENT_FILE = 'js/guest-shop-client.js';
+const PROMO_CLIENT_CODE_LEAK_PATTERNS = Object.freeze([
+    ['local-storage', /localStorage\b[^\n]*(?:discount|coupon|promo)[_-]?code/iu],
+    ['session-storage', /sessionStorage\b[^\n]*(?:discount|coupon|promo)[_-]?code/iu],
+    ['url-search-params', /URLSearchParams[^\n]*(?:discount|coupon|promo)[_-]?code/iu],
+    ['location-url', /location\.(?:search|href|assign|replace)[^\n]*(?:discount|coupon|promo)[_-]?code/iu],
+    ['history-or-window-open', /(?:history\.pushState|window\.open)[^\n]*(?:discount|coupon|promo)[_-]?code/iu],
+    ['literal-query-param', /[?&](?:discount|coupon|promo)[_-]?code=/iu],
+    ['anchor-href', /\.href\s*=[^\n]*(?:discount|coupon|promo)[_-]?code/iu]
 ]);
 
 const BUYER_CREDENTIAL_FRONTEND_FILES = Object.freeze([
     'guest-orders.html',
     'js/guest-orders-client.js'
 ]);
+const KVM4_RELEASE_COMMIT_FILE = 'server/.release-commit';
+const GUEST_ORDERS_PAGE_CONTRACT_MARKERS = Object.freeze([
+    '<body class="guest-orders-page">',
+    'id="guestOrdersFeatureGate"',
+    'id="guestOrdersProtectedContent"',
+    'id="guestOrdersQueryForm"'
+]);
+const GUEST_ORDERS_CLIENT_CONTRACT_MARKERS = Object.freeze([
+    "const ACCESS_AVAILABILITY_ENDPOINT = '/api/shop/guest/access/availability';",
+    "const CREDENTIAL_HEADER = 'X-Guest-Order-Credential';",
+    "credentials: 'same-origin'"
+]);
+
+function managedFrontendUrl(env, relativePath) {
+    const baseUrl = envValue(env, 'APP_BASE_URL', 2000);
+    if (!isHttpsUrl(baseUrl)) return '';
+    try {
+        const parsed = new URL(baseUrl);
+        const hostname = parsed.hostname.toLowerCase();
+        if (!['fatherkey.com', 'www.fatherkey.com', 'zaoyoe.xyz', 'www.zaoyoe.xyz'].includes(hostname)) return '';
+        return new URL(`/${String(relativePath || '').replace(/^\/+/, '')}`, parsed.origin).toString();
+    } catch (_) {
+        return '';
+    }
+}
+
+/**
+ * The source checkout and Vercel build contain both browser artifacts. The
+ * KVM4 Verify image deliberately contains only the API/runtime subset: Vercel
+ * owns the HTML entry point, while the client module remains in the image as a
+ * code-contract witness. A missing externally hosted HTML file is therefore a
+ * manual deployment-chain check, not an invalid API image. It still keeps
+ * strict readiness closed until the live page and CI contract evidence have
+ * been reviewed. Every other missing frontend artifact remains a hard failure.
+ */
+function inspectBuyerCredentialFrontend(env, production, repoRoot = REPO_ROOT) {
+    return BUYER_CREDENTIAL_FRONTEND_FILES.map((relativePath) => {
+        if (fs.existsSync(path.join(repoRoot, relativePath))) {
+            return buildCheck('buyer_credentials', `frontend:${relativePath}`, true, 'present', `${relativePath} 已存在。`, {
+                relative_path: relativePath,
+                blocking: false,
+                severity: 'info'
+            });
+        }
+
+        const hostedUrl = relativePath === 'guest-orders.html' && production
+            ? managedFrontendUrl(env, relativePath)
+            : '';
+        if (hostedUrl) {
+            return manualCheck(
+                'buyer_credentials',
+                `frontend:${relativePath}`,
+                `${relativePath} 由 Vercel 托管，不属于 KVM4 Verify 精简镜像；启用前必须核验线上页面可达、来源为同一 main 提交，且 tests/guest-shop-frontend-contract.test.js 已通过。`,
+                {
+                    relative_path: relativePath,
+                    hosted_url: hostedUrl,
+                    deployment_surface: 'vercel'
+                }
+            );
+        }
+
+        return invalidCheck(
+            'buyer_credentials',
+            `frontend:${relativePath}`,
+            `启用凭证链路后 ${relativePath} 必须存在（A2 交付物）；仅在 production 且 APP_BASE_URL 指向受管 HTTPS 站点时，Vercel 托管的 guest-orders.html 可改由线上证据核验。`,
+            { relative_path: relativePath }
+        );
+    });
+}
+
+function readKvm4ReleaseCommit(repoRoot = REPO_ROOT) {
+    try {
+        const commit = fs.readFileSync(path.join(repoRoot, KVM4_RELEASE_COMMIT_FILE), 'utf8').trim().toLowerCase();
+        return /^[0-9a-f]{40}$/u.test(commit) ? commit : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+async function fetchHostedFrontendText(url, { fetchImpl = globalThis.fetch, timeoutMs = 10000 } = {}) {
+    if (typeof fetchImpl !== 'function') throw new Error('fetch unavailable');
+    const response = await fetchImpl(url, {
+        method: 'GET',
+        headers: { Accept: 'text/html, application/javascript, text/plain' },
+        cache: 'no-store',
+        redirect: 'follow',
+        signal: AbortSignal.timeout(timeoutMs)
+    });
+    return {
+        ok: response.ok === true,
+        status: Number(response.status) || 0,
+        url: String(response.url || url),
+        text: await response.text()
+    };
+}
+
+/**
+ * Verify the Vercel-owned query page from the KVM4 runtime without requiring
+ * the HTML file in the API image. Vercel's build rewrites every same-site
+ * CSS/JS `v=` value to VERCEL_GIT_COMMIT_SHA[0..12], so matching those values
+ * to KVM4's generated release marker proves both deployment chains are on the
+ * same commit. Contract markers keep a generic/stale HTML response from being
+ * accepted as the guest-order page.
+ */
+async function inspectHostedBuyerCredentialFrontend({
+    env = process.env,
+    repoRoot = REPO_ROOT,
+    fetchImpl = globalThis.fetch,
+    timeoutMs = 10000
+} = {}) {
+    const pageUrl = managedFrontendUrl(env, 'guest-orders.html');
+    if (!pageUrl) {
+        return [invalidCheck('buyer_credentials', 'frontend:guest-orders.html', '无法从 APP_BASE_URL 解析受管的 Vercel 游客订单查询页。', {
+            env_name: 'APP_BASE_URL'
+        })];
+    }
+
+    const releaseCommit = readKvm4ReleaseCommit(repoRoot);
+    if (!releaseCommit) {
+        return [invalidCheck('buyer_credentials', 'frontend:release-commit', `KVM4 精简镜像缺少有效的 ${KVM4_RELEASE_COMMIT_FILE}，无法证明 Vercel 静态页与 Verify API 来自同一 main 提交。`, {
+            relative_path: KVM4_RELEASE_COMMIT_FILE
+        })];
+    }
+    const expectedVersion = releaseCommit.slice(0, 12);
+
+    let pageResponse;
+    try {
+        pageResponse = await fetchHostedFrontendText(pageUrl, { fetchImpl, timeoutMs });
+    } catch (_) {
+        return [invalidCheck('buyer_credentials', 'frontend:guest-orders.html', 'Vercel 游客订单查询页请求失败；启用前必须取得可验证的线上页面。', {
+            hosted_url: pageUrl,
+            deployment_surface: 'vercel'
+        })];
+    }
+    if (!pageResponse.ok || new URL(pageResponse.url).origin !== new URL(pageUrl).origin) {
+        return [invalidCheck('buyer_credentials', 'frontend:guest-orders.html', `Vercel 游客订单查询页不可用或跳转离开 canonical origin（HTTP ${pageResponse.status || 0}）。`, {
+            hosted_url: pageUrl,
+            deployment_surface: 'vercel'
+        })];
+    }
+
+    const missingPageMarker = GUEST_ORDERS_PAGE_CONTRACT_MARKERS.find((marker) => !pageResponse.text.includes(marker));
+    if (missingPageMarker) {
+        return [invalidCheck('buyer_credentials', 'frontend:guest-orders.html', '线上 guest-orders.html 缺少必要的凭证查询合同标记；可能是旧版、错误页或不完整构建。', {
+            hosted_url: pageUrl,
+            deployment_surface: 'vercel'
+        })];
+    }
+
+    const versions = collectStaticAssetVersionsFromHtml(pageResponse.text);
+    const uniqueVersions = [...new Set(versions)];
+    const versionAligned = uniqueVersions.length === 1 && uniqueVersions[0] === expectedVersion;
+    if (!versionAligned) {
+        return [invalidCheck('buyer_credentials', 'frontend:guest-orders-commit', 'Vercel guest-orders.html 的静态资产版本与 KVM4 Verify release commit 不一致。', {
+            expected_commit: expectedVersion,
+            observed_versions: uniqueVersions.slice(0, 6),
+            deployment_surface: 'vercel+kvm4'
+        })];
+    }
+
+    const clientReference = extractAssetReference(pageResponse.text, 'js/guest-orders-client.js');
+    let clientUrl = '';
+    try {
+        clientUrl = new URL(clientReference, pageUrl).toString();
+    } catch (_) {
+        clientUrl = '';
+    }
+    if (!clientReference || !clientUrl || new URL(clientUrl).origin !== new URL(pageUrl).origin) {
+        return [invalidCheck('buyer_credentials', 'frontend:js/guest-orders-client.js:hosted', '线上查询页未引用同源 guest-orders-client.js。', {
+            hosted_url: pageUrl,
+            deployment_surface: 'vercel'
+        })];
+    }
+
+    let clientResponse;
+    try {
+        clientResponse = await fetchHostedFrontendText(clientUrl, { fetchImpl, timeoutMs });
+    } catch (_) {
+        return [invalidCheck('buyer_credentials', 'frontend:js/guest-orders-client.js:hosted', '线上 guest-orders-client.js 请求失败。', {
+            hosted_url: clientUrl,
+            deployment_surface: 'vercel'
+        })];
+    }
+    const missingClientMarker = GUEST_ORDERS_CLIENT_CONTRACT_MARKERS.find((marker) => !clientResponse.text.includes(marker));
+    if (!clientResponse.ok
+        || new URL(clientResponse.url).origin !== new URL(pageUrl).origin
+        || missingClientMarker) {
+        return [invalidCheck('buyer_credentials', 'frontend:js/guest-orders-client.js:hosted', '线上 guest-orders-client.js 不可用或缺少必要安全合同标记。', {
+            hosted_url: clientUrl,
+            deployment_surface: 'vercel'
+        })];
+    }
+
+    return [
+        buildCheck('buyer_credentials', 'frontend:guest-orders.html', true, 'hosted_verified', 'Vercel 游客订单查询页可达且关键邮箱凭证查询结构完整。', {
+            hosted_url: pageUrl,
+            deployment_surface: 'vercel',
+            blocking: false,
+            severity: 'info'
+        }),
+        buildCheck('buyer_credentials', 'frontend:guest-orders-commit', true, 'aligned', 'Vercel 查询页静态资产版本与 KVM4 Verify release commit 一致。', {
+            expected_commit: expectedVersion,
+            deployment_surface: 'vercel+kvm4',
+            blocking: false,
+            severity: 'info'
+        }),
+        buildCheck('buyer_credentials', 'frontend:js/guest-orders-client.js:hosted', true, 'hosted_verified', 'Vercel 查询页加载的同源客户端具备可用性探针、专用凭证头与 same-origin cookie 合同。', {
+            hosted_url: clientUrl,
+            deployment_surface: 'vercel',
+            blocking: false,
+            severity: 'info'
+        })
+    ];
+}
 
 function parseArgs(argv = []) {
     const options = {
@@ -581,6 +1075,15 @@ function inspectGuestSecrets(env, production) {
  * able to fail a gate, and neither must a comment be able to satisfy one, so
  * every structural pattern runs against the comment-stripped source.
  */
+function readRepoFile(repoRoot = REPO_ROOT, relativePath = '') {
+    if (!relativePath) return '';
+    try {
+        return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
+    } catch (_) {
+        return '';
+    }
+}
+
 function stripSqlComments(source = '') {
     const text = String(source || '');
     let out = '';
@@ -664,6 +1167,7 @@ function inspectBuyerCredentials(env, production, repoRoot = REPO_ROOT) {
 
     const credential = parseSwitch('GUEST_SHOP_BUYER_CREDENTIAL_ENABLED');
     const page = parseSwitch('GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED');
+    const retentionSwitch = parseSwitch(BUYER_ACCESS_RETENTION_SWITCH);
 
     if (credential.present && credential.parsed === null) {
         checks.push(invalidCheck('buyer_credentials', 'credential-switch-boolean', 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED 必须是布尔值；无法解析时按关闭处理会掩盖配置错误。', {
@@ -681,6 +1185,30 @@ function inspectBuyerCredentials(env, production, repoRoot = REPO_ROOT) {
             ? 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED 已显式关闭（等于现状）。'
             : '未设置 GUEST_SHOP_BUYER_CREDENTIAL_ENABLED；默认关闭，线上行为与现状一致。', {
             env_name: 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED'
+        }));
+    }
+
+    if (retentionSwitch.present && retentionSwitch.parsed === null) {
+        checks.push(invalidCheck('buyer_credentials', 'access-retention-switch-boolean', `${BUYER_ACCESS_RETENTION_SWITCH} 必须是布尔值；无法解析时不得猜测数据清理状态。`, {
+            env_name: BUYER_ACCESS_RETENTION_SWITCH
+        }));
+    } else if (credential.value && !retentionSwitch.value) {
+        checks.push(invalidCheck('buyer_credentials', 'access-retention-switch-required', `启用游客邮箱 + 查询密码链路时必须显式开启 ${BUYER_ACCESS_RETENTION_SWITCH}，避免访问审计数据无限保留。`, {
+            env_name: BUYER_ACCESS_RETENTION_SWITCH
+        }));
+    } else if (retentionSwitch.value) {
+        checks.push(buildCheck('buyer_credentials', 'access-retention-switch-boolean', true, 'enabled', credential.value
+            ? '游客访问审计保留清理已显式启用。'
+            : '游客凭证链路已关闭，但访问审计保留清理继续运行，以完成回滚后的历史数据生命周期。', {
+            env_name: BUYER_ACCESS_RETENTION_SWITCH,
+            blocking: false,
+            severity: 'info'
+        }));
+    } else {
+        checks.push(optionalCheck('buyer_credentials', 'access-retention-switch-boolean', retentionSwitch.present
+            ? `${BUYER_ACCESS_RETENTION_SWITCH} 已显式关闭。`
+            : `未设置 ${BUYER_ACCESS_RETENTION_SWITCH}；默认关闭。`, {
+            env_name: BUYER_ACCESS_RETENTION_SWITCH
         }));
     }
 
@@ -727,24 +1255,18 @@ function inspectBuyerCredentials(env, production, repoRoot = REPO_ROOT) {
             }));
         }
 
-        for (const relativePath of BUYER_CREDENTIAL_FRONTEND_FILES) {
-            checks.push(fs.existsSync(path.join(repoRoot, relativePath))
-                ? buildCheck('buyer_credentials', `frontend:${relativePath}`, true, 'present', `${relativePath} 已存在。`, {
-                    relative_path: relativePath,
-                    blocking: false,
-                    severity: 'info'
-                })
-                : invalidCheck('buyer_credentials', `frontend:${relativePath}`, `启用凭证链路后 ${relativePath} 必须存在（A2 交付物）。`, { relative_path: relativePath }));
-        }
+        checks.push(...inspectBuyerCredentialFrontend(env, production, repoRoot));
     }
 
     for (const name of BUYER_CREDENTIAL_RUNTIME_SETTING_NAMES) {
         checks.push(inspectRuntimeNumericSetting(env, name, { production }));
     }
 
-    // Step-up challenge must fire BEFORE the lockout, otherwise the captcha
-    // threshold is dead configuration and the operator believes they have
-    // protection they do not. Mirrors the webhook-limit-order invariant above.
+    // Keep the reserved CAPTCHA thresholds internally consistent even though
+    // the current request path does not yet consume or verify a CAPTCHA token.
+    // Readiness must never describe this relationship as active protection:
+    // the initial five-order rollout relies on the implemented per-IP budget
+    // and per-contact staged lock instead.
     const numeric = (name) => parseRuntimeNumericSetting(env, name);
     const captchaPairs = [
         ['buyer-captcha-before-lockout', 'GUEST_SHOP_BUYER_CAPTCHA_BUYER_THRESHOLD', 'GUEST_SHOP_BUYER_LOGIN_MAX_FAILURES', '买家'],
@@ -766,12 +1288,31 @@ function inspectBuyerCredentials(env, production, repoRoot = REPO_ROOT) {
                 lock_threshold: lock.value
             }));
         } else {
-            checks.push(buildCheck('buyer_credentials', key, true, 'consistent', `${scope}验证码阈值 ${captcha.value} 早于锁定阈值 ${lock.value} 触发。`, {
+            checks.push(buildCheck('buyer_credentials', key, true, 'configured_deferred', `${scope}验证码预留阈值 ${captcha.value} 小于锁定阈值 ${lock.value}；当前运行链路尚未读取或校验 CAPTCHA token，不可视为有效保护。`, {
                 env_name: `${captchaName},${lockName}`,
                 blocking: false,
                 severity: 'info'
             }));
         }
+    }
+
+    if (credential.value) {
+        checks.push(manualCheck(
+            'buyer_credentials',
+            'captcha-runtime-deferred',
+            'CAPTCHA provider/token 服务端校验尚未实现；首批最多 5 单灰度仅依赖已实现的 IP 限流、买家失败计数与阶梯锁定，CAPTCHA 不得作为放行证据。',
+            {
+                deferred: true,
+                rollout_limit_orders: 5
+            }
+        ));
+    } else {
+        checks.push(optionalCheck(
+            'buyer_credentials',
+            'captcha-runtime-deferred',
+            '游客凭证链路未启用；CAPTCHA provider/token 服务端校验仍为 deferred。',
+            { deferred: true }
+        ));
     }
 
     // §15.2-2..6 are database facts. This script never connects to a database,
@@ -912,12 +1453,321 @@ function inspectBuyerCredentials(env, production, repoRoot = REPO_ROOT) {
         severity: credential.value ? 'critical' : 'high'
     }));
 
-    checks.push(manualCheck('buyer_credentials', 'database-schema-applied', `必须在目标 Supabase 中执行 ${BUYER_CREDENTIAL_MIGRATION}，并运行 ${BUYER_CREDENTIAL_VERIFY_MIGRATION} 确认 11 项检查全部 PASS（含 RLS 收口、13 参数 RPC 签名、旧 12 参数签名已消失）。本脚本不连接数据库。`, {
+    checks.push(manualCheck('buyer_credentials', 'database-schema-applied', `必须在目标 Supabase 中执行 ${BUYER_CREDENTIAL_MIGRATION}，并运行 ${BUYER_CREDENTIAL_VERIFY_MIGRATION} 确认 11 项检查全部 PASS（含 RLS 收口、create_order RPC 属于已知签名时代【A0=13 参 / 20260923 L1L2=15 参】、旧 12 参数签名已消失）。本脚本不连接数据库。`, {
         relative_path: BUYER_CREDENTIAL_VERIFY_MIGRATION,
         severity: credential.value ? 'critical' : 'high'
     }));
-    checks.push(manualCheck('buyer_credentials', 'access-attempt-purge', `guest_shop_access_attempts 的 ${parseRuntimeNumericSetting(env, 'GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_DAYS').value} 天清理由运维调度，迁移不会创建定时任务；启用凭证链路前必须确认清理方式已落地。`, {
-        severity: 'medium'
+
+    // Access-attempt retention is now an application worker contract, not an
+    // unspecified operator cron. Prove the migration, read-only verify and
+    // worker wiring on disk; applying and running the verify SQL remains a
+    // separate database evidence step that this checker cannot manufacture.
+    const rawRetention = read(BUYER_ACCESS_RETENTION_MIGRATION);
+    const rawRetentionVerify = read(BUYER_ACCESS_RETENTION_VERIFY_MIGRATION);
+    const retentionWorker = read(BUYER_ACCESS_RETENTION_WORKER);
+    const retention = stripSqlComments(rawRetention);
+    const retentionVerify = stripSqlComments(rawRetentionVerify);
+
+    if (!rawRetention) {
+        checks.push(invalidCheck('buyer_credentials', 'access-retention-migration-file', `${BUYER_ACCESS_RETENTION_MIGRATION} 缺失；访问审计无法按保留期有界清理。`, {
+            relative_path: BUYER_ACCESS_RETENTION_MIGRATION
+        }));
+    } else {
+        for (const [key, pattern, label] of BUYER_ACCESS_RETENTION_MIGRATION_REQUIREMENTS) {
+            checks.push(pattern.test(retention)
+                ? buildCheck('buyer_credentials', `access-retention:${key}`, true, 'present', `访问审计清理迁移已包含${label}。`, {
+                    relative_path: BUYER_ACCESS_RETENTION_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `access-retention:${key}`, `访问审计清理迁移缺少${label}。`, {
+                    relative_path: BUYER_ACCESS_RETENTION_MIGRATION
+                }));
+        }
+        checks.push(/pg_cron|cron\.schedule|CREATE\s+TRIGGER/iu.test(retention)
+            ? invalidCheck('buyer_credentials', 'access-retention:no-sql-scheduler', '访问审计清理迁移不得创建数据库定时任务或触发器；调度归 KVM4 worker。', {
+                relative_path: BUYER_ACCESS_RETENTION_MIGRATION
+            })
+            : buildCheck('buyer_credentials', 'access-retention:no-sql-scheduler', true, 'absent', '访问审计清理迁移未创建数据库定时任务或触发器。', {
+                relative_path: BUYER_ACCESS_RETENTION_MIGRATION,
+                blocking: false,
+                severity: 'info'
+            }));
+    }
+
+    if (!rawRetentionVerify) {
+        checks.push(invalidCheck('buyer_credentials', 'access-retention-verify-file', `${BUYER_ACCESS_RETENTION_VERIFY_MIGRATION} 缺失；无法核验目标库清理函数。`, {
+            relative_path: BUYER_ACCESS_RETENTION_VERIFY_MIGRATION
+        }));
+    } else {
+        for (const [key, pattern, label] of BUYER_ACCESS_RETENTION_VERIFY_REQUIREMENTS) {
+            checks.push(pattern.test(retentionVerify)
+                ? buildCheck('buyer_credentials', `access-retention:${key}`, true, 'present', `访问审计 verify 已包含${label}。`, {
+                    relative_path: BUYER_ACCESS_RETENTION_VERIFY_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `access-retention:${key}`, `访问审计 verify 缺少${label}。`, {
+                    relative_path: BUYER_ACCESS_RETENTION_VERIFY_MIGRATION
+                }));
+        }
+        checks.push(/^[ \t]*(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu.test(retentionVerify)
+            ? invalidCheck('buyer_credentials', 'access-retention:verify-read-only', '访问审计 verify 必须只读。', {
+                relative_path: BUYER_ACCESS_RETENTION_VERIFY_MIGRATION
+            })
+            : buildCheck('buyer_credentials', 'access-retention:verify-read-only', true, 'read_only', '访问审计 verify 未包含顶层写操作。', {
+                relative_path: BUYER_ACCESS_RETENTION_VERIFY_MIGRATION,
+                blocking: false,
+                severity: 'info'
+            }));
+    }
+
+    if (!retentionWorker) {
+        checks.push(invalidCheck('buyer_credentials', 'access-retention-worker-file', `${BUYER_ACCESS_RETENTION_WORKER} 缺失；访问审计清理没有运行入口。`, {
+            relative_path: BUYER_ACCESS_RETENTION_WORKER
+        }));
+    } else {
+        for (const [key, pattern, label] of BUYER_ACCESS_RETENTION_WORKER_REQUIREMENTS) {
+            checks.push(pattern.test(retentionWorker)
+                ? buildCheck('buyer_credentials', `access-retention:${key}`, true, 'present', `guest-shop worker 已包含${label}。`, {
+                    relative_path: BUYER_ACCESS_RETENTION_WORKER,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `access-retention:${key}`, `guest-shop worker 缺少${label}。`, {
+                    relative_path: BUYER_ACCESS_RETENTION_WORKER
+                }));
+        }
+    }
+
+    checks.push(manualCheck('buyer_credentials', 'access-retention-schema-applied', `必须在目标 Supabase 中执行 ${BUYER_ACCESS_RETENTION_MIGRATION}，并运行 ${BUYER_ACCESS_RETENTION_VERIFY_MIGRATION} 确认 7 项检查全部 PASS。${BUYER_ACCESS_RETENTION_SWITCH} 开启后，worker 将按 ${parseRuntimeNumericSetting(env, 'GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_DAYS').value} 天保留期每十分钟尝试一次、每批最多 1000 行；该独立开关可在凭证回滚关闭后继续清理，本脚本不执行 SQL。`, {
+        relative_path: BUYER_ACCESS_RETENTION_VERIFY_MIGRATION,
+        severity: credential.value ? 'critical' : 'high'
+    }));
+
+    return checks;
+}
+
+/**
+ * Promo L1/L2 gate (docs/guest-shop-promo-hardening-plan.md §12.4).
+ *
+ * L1 (guest quantity > 1 with tiered/flash pricing) and L2 (guest discount
+ * codes) are shipped in one batch because splitting them produces a priced
+ * quote the order cannot honour - i.e. `amount_mismatch`, paid-but-undelivered.
+ * Both stay OFF by default, so this whole block is behaviour-neutral until an
+ * operator opts in AND opens the paired database row.
+ *
+ * Fail-closed rules asserted here (exit code 2, INVALID):
+ *   - an unparsable switch value (a typo must not silently read as OFF/ON),
+ *   - GUEST_SHOP_DISCOUNT_ENABLED=true without GUEST_SHOP_BUYER_CREDENTIAL_ENABLED
+ *     (the database refuses an unattributable discount: guest_discount_identity_required),
+ *   - a quantity ceiling that disagrees with the database CHECK bound,
+ *   - a promo migration/verify file that is missing or violates a static guard.
+ *
+ * Everything that can only be proven against a live database stays an explicit
+ * operator check (exit code 3, NOT_READY): budget opened, breaker closed, dirty
+ * coupon scan, per-SKU quantity ceilings, and archived sandbox evidence.
+ */
+function inspectPromo(env, production, repoRoot = REPO_ROOT) {
+    const checks = [];
+
+    // ---- L2 master switch -------------------------------------------------
+    const discount = parseGuestDiscountSwitch(env);
+    const credentialRaw = envValue(env, 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED', 40);
+    const credentialEnabled = credentialRaw ? parseBoolean(credentialRaw) === true : false;
+
+    if (discount.present && !discount.valid) {
+        checks.push(invalidCheck('promo', 'discount-switch-boolean', `${GUEST_DISCOUNT_SWITCH} 必须是布尔值（1/true/yes/on 或 0/false/no/off）；无法解析的值必须报错而不是被当成关闭。`, {
+            env_name: GUEST_DISCOUNT_SWITCH
+        }));
+    } else if (discount.enabled && !credentialEnabled) {
+        checks.push(invalidCheck('promo', 'discount-requires-buyer-credentials', `开启 ${GUEST_DISCOUNT_SWITCH} 前必须先开启 GUEST_SHOP_BUYER_CREDENTIAL_ENABLED：折扣必须能归属到一个买家身份分组，否则数据库会以 guest_discount_identity_required 拒绝，前端却已经把券码收走了。`, {
+            env_name: `${GUEST_DISCOUNT_SWITCH},GUEST_SHOP_BUYER_CREDENTIAL_ENABLED`
+        }));
+    } else if (discount.enabled) {
+        checks.push(buildCheck('promo', 'discount-switch-boolean', true, 'enabled', `游客优惠码通道（L2）已显式启用；下方预算、熔断、脏券扫描全部必须为真。`, {
+            env_name: GUEST_DISCOUNT_SWITCH,
+            blocking: false,
+            severity: 'info',
+            requires_manual_review: true
+        }));
+    } else {
+        checks.push(optionalCheck('promo', 'discount-switch-boolean', discount.present
+            ? `${GUEST_DISCOUNT_SWITCH} 已显式关闭（等于现状）；提交的券码会被 403 guest_discount_disabled 拒绝，而不是被静默丢弃。`
+            : `未设置 ${GUEST_DISCOUNT_SWITCH}；默认关闭，线上行为与现状一致。`, {
+            env_name: GUEST_DISCOUNT_SWITCH
+        }));
+    }
+
+    // ---- L1 quantity ceiling ---------------------------------------------
+    for (const name of PROMO_RUNTIME_SETTING_NAMES) {
+        checks.push(inspectRuntimeNumericSetting(env, name, { area: 'promo', production }));
+    }
+
+    const quantitySpec = GUEST_SHOP_RUNTIME_SETTINGS[GUEST_QUANTITY_SWITCH];
+    const ceilingConsistent = Boolean(quantitySpec)
+        && quantitySpec.max === GUEST_MAX_QUANTITY_CEILING
+        && quantitySpec.min === 1
+        && quantitySpec.defaultValue === 1;
+    checks.push(ceilingConsistent
+        ? buildCheck('promo', 'quantity-ceiling-consistent', true, 'consistent', `${GUEST_QUANTITY_SWITCH} 的 env 上限（max=${GUEST_MAX_QUANTITY_CEILING}, default=1）与 guest_shop_orders_quantity_check 的数据库硬顶一致；env 只能收紧、不能放宽。`, {
+            env_name: GUEST_QUANTITY_SWITCH,
+            database_ceiling: GUEST_MAX_QUANTITY_CEILING,
+            blocking: false,
+            severity: 'info'
+        })
+        : invalidCheck('promo', 'quantity-ceiling-consistent', `${GUEST_QUANTITY_SWITCH} 的运行时配置表与数据库硬顶 ${GUEST_MAX_QUANTITY_CEILING} 不一致；放宽 env 上限只会让下单在 CHECK 处失败，必须改迁移而不是改配置表。`, {
+            env_name: GUEST_QUANTITY_SWITCH,
+            database_ceiling: GUEST_MAX_QUANTITY_CEILING
+        }));
+
+    const operatorQuantity = resolveGuestMaxQuantity(env);
+    if (operatorQuantity > 1) {
+        checks.push(manualCheck('promo', 'quantity-inventory-gate', `${GUEST_QUANTITY_SWITCH}=${operatorQuantity} 已放开游客单笔多件（掏鸟蛋面）。启用前必须确认：单 SKU guest_max_quantity 已按需收紧、per-IP 未付款件数上限与库存占比闸生效、TTL 到期同时释放库存与归还券预算。有效上限仍是 min(env, sku.guest_max_quantity, product.guest_max_quantity, product.max_purchase_quantity, ${GUEST_MAX_QUANTITY_CEILING})，且 fn_guest_shop_create_order 会重算并拒绝越界值。`, {
+            env_name: GUEST_QUANTITY_SWITCH,
+            effective_value: operatorQuantity,
+            severity: production ? 'high' : 'medium'
+        }));
+    } else {
+        checks.push(buildCheck('promo', 'quantity-inventory-gate', true, 'default', `${GUEST_QUANTITY_SWITCH} 生效值为 1（P0 行为）：每单只预占一行库存，阶梯价最多只能命中 qty=1 规则。`, {
+            env_name: GUEST_QUANTITY_SWITCH,
+            effective_value: operatorQuantity,
+            blocking: false,
+            severity: 'info'
+        }));
+    }
+
+    // ---- Client-side leak guard (static, cheap, always asserted) ----------
+    // A discount code in a URL/query/storage key is a leaked code: it lands in
+    // browser history, proxy logs and provider metadata. This is asserted here
+    // as well as in the contract test so a release cannot ship it by accident.
+    const clientSource = readRepoFile(repoRoot, GUEST_SHOP_CLIENT_FILE);
+    if (!clientSource) {
+        checks.push(invalidCheck('promo', 'client-file-present', `${GUEST_SHOP_CLIENT_FILE} 缺失；游客结账前端不可用。`, {
+            relative_path: GUEST_SHOP_CLIENT_FILE
+        }));
+    } else {
+        const leaks = PROMO_CLIENT_CODE_LEAK_PATTERNS.filter(([, pattern]) => pattern.test(clientSource));
+        checks.push(leaks.length === 0
+            ? buildCheck('promo', 'client-code-not-leaked', true, 'absent', `${GUEST_SHOP_CLIENT_FILE} 未把优惠码写入 URL/query/localStorage/sessionStorage。`, {
+                relative_path: GUEST_SHOP_CLIENT_FILE,
+                blocking: false,
+                severity: 'info'
+            })
+            : invalidCheck('promo', 'client-code-not-leaked', `${GUEST_SHOP_CLIENT_FILE} 疑似把优惠码写入 ${leaks.map(([key]) => key).join(', ')}；优惠码只能出现在 POST body 中。`, {
+                relative_path: GUEST_SHOP_CLIENT_FILE,
+                matched: leaks.map(([key]) => key)
+            }));
+    }
+
+    // ---- Migration / verify static assertions -----------------------------
+    const read = (relativePath) => readRepoFile(repoRoot, relativePath);
+    const rawMigration = read(PROMO_MIGRATION);
+    const rawVerify = read(PROMO_VERIFY_MIGRATION);
+    const rawQuantityCeilingMigration = read(QUANTITY_CEILING_MIGRATION);
+    const rawQuantityCeilingVerify = read(QUANTITY_CEILING_VERIFY_MIGRATION);
+    const migration = stripSqlComments(rawMigration);
+    const verify = stripSqlComments(rawVerify);
+    const quantityCeilingMigration = stripSqlComments(rawQuantityCeilingMigration);
+    const quantityCeilingVerify = stripSqlComments(rawQuantityCeilingVerify);
+
+    if (!rawMigration) {
+        checks.push(invalidCheck('promo', 'migration-file', `${PROMO_MIGRATION} 缺失；游客阶梯价/闪购/优惠码没有任何数据库授权，L1+L2 不得发布。`, {
+            relative_path: PROMO_MIGRATION
+        }));
+    } else {
+        checks.push(buildCheck('promo', 'migration-file', true, 'present', `${PROMO_MIGRATION} 已存在。`, {
+            relative_path: PROMO_MIGRATION,
+            blocking: false,
+            severity: 'info'
+        }));
+        for (const [key, pattern, label] of PROMO_MIGRATION_REQUIREMENTS) {
+            checks.push(pattern.test(migration)
+                ? buildCheck('promo', `migration:${key}`, true, 'present', `促销迁移已包含${label}。`, {
+                    relative_path: PROMO_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('promo', `migration:${key}`, `促销迁移缺少${label}。`, { relative_path: PROMO_MIGRATION }));
+        }
+        for (const [key, pattern, label] of PROMO_MIGRATION_PROHIBITIONS) {
+            checks.push(pattern.test(migration)
+                ? invalidCheck('promo', `migration:${key}`, `促销迁移违反约束：${label}。`, { relative_path: PROMO_MIGRATION })
+                : buildCheck('promo', `migration:${key}`, true, 'absent', `促销迁移未违反约束：${label}。`, {
+                    relative_path: PROMO_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                }));
+        }
+    }
+
+    if (!rawVerify) {
+        checks.push(invalidCheck('promo', 'verify-migration-file', `${PROMO_VERIFY_MIGRATION} 缺失；无法在目标库验证 L1/L2 迁移结果。`, {
+            relative_path: PROMO_VERIFY_MIGRATION
+        }));
+    } else {
+        for (const [key, pattern, label] of PROMO_VERIFY_REQUIREMENTS) {
+            checks.push(pattern.test(verify)
+                ? buildCheck('promo', `verify:${key}`, true, 'present', `促销 verify 脚本已包含${label}。`, {
+                    relative_path: PROMO_VERIFY_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('promo', `verify:${key}`, `促销 verify 脚本缺少${label}。`, { relative_path: PROMO_VERIFY_MIGRATION }));
+        }
+        for (const [key, pattern, label] of PROMO_VERIFY_PROHIBITIONS) {
+            checks.push(pattern.test(verify)
+                ? invalidCheck('promo', `verify:${key}`, `促销 verify 脚本违反约束：${label}。`, { relative_path: PROMO_VERIFY_MIGRATION })
+                : buildCheck('promo', `verify:${key}`, true, 'absent', `促销 verify 脚本未违反约束：${label}。`, {
+                    relative_path: PROMO_VERIFY_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                }));
+        }
+    }
+
+    checks.push(rawQuantityCeilingMigration
+        ? buildCheck('promo', 'quantity-ceiling-migration-file', true, 'present', `${QUANTITY_CEILING_MIGRATION} 已存在，现行硬顶迁移纳入候选。`, { relative_path: QUANTITY_CEILING_MIGRATION, blocking: false, severity: 'info' })
+        : invalidCheck('promo', 'quantity-ceiling-migration-file', `${QUANTITY_CEILING_MIGRATION} 缺失；应用层上限与数据库约束无法形成同一发布单元。`, { relative_path: QUANTITY_CEILING_MIGRATION }));
+    checks.push(rawQuantityCeilingVerify
+        && /quantity <= 99/u.test(quantityCeilingVerify)
+        && /quantity <= 99/u.test(quantityCeilingMigration)
+        && /fn_guest_shop_admin_manual_fulfill/u.test(quantityCeilingMigration)
+        && /quantity > 99/u.test(quantityCeilingMigration)
+        && /quantity > 99/u.test(migration)
+        ? buildCheck('promo', 'quantity-ceiling-verify-file', true, 'present', `${QUANTITY_CEILING_VERIFY_MIGRATION} 已包含 99 上限校验。`, { relative_path: QUANTITY_CEILING_VERIFY_MIGRATION, blocking: false, severity: 'info' })
+        : invalidCheck('promo', 'quantity-ceiling-verify-file', `${QUANTITY_CEILING_VERIFY_MIGRATION} 缺失或未覆盖 99 上限。`, { relative_path: QUANTITY_CEILING_VERIFY_MIGRATION }));
+
+    // ---- Database facts: explicit operator checks -------------------------
+    // 23 行是 verify 脚本自己的行数，不能写成 PROMO_VERIFY_REQUIREMENTS.length：
+    // 后者是本脚本对 verify 文本做的静态断言条数（现在 31 条），两者不是一回事，
+    // 混用会让运维照着错误的数字去核对报告。
+    checks.push(manualCheck('promo', 'promo-schema-applied', `必须在目标 Supabase 中、于 ${'supabase/migrations/20260922_guest_shop_access_resets.sql'} 之后执行 ${PROMO_MIGRATION}，再执行 ${QUANTITY_CEILING_MIGRATION} 并运行 ${PROMO_VERIFY_MIGRATION}、${QUANTITY_CEILING_VERIFY_MIGRATION} 确认 23 行报告里第 1-22 行全部 PASS（含零元购地板、50% 折扣硬顶、促销函数唯一重载与仅 service_role 可执行、evaluate 只读、历史行满足新 CHECK、无副作用），第 23 行 operator_state_review 为 PASS 或 REVIEW：REVIEW 表示需要人工确认列出的游客商品/SKU/优惠码都是有意开启的，它不是迁移失败。Codex 不执行 SQL；本脚本不连接数据库。`, {
+        relative_path: PROMO_VERIFY_MIGRATION,
+        severity: discount.enabled ? 'critical' : 'high'
+    }));
+
+    checks.push(manualCheck('promo', 'promo-budget-opened', `L2 生效前必须把 guest_shop_promo_budget 目标站点行改为 enabled=true 且 daily_budget_cny>0（迁移种子是 cn/intl 双站 enabled=false、daily_budget=0）。未开预算时 gate 返回 guest_promo_budget_closed，游客只能按原价购买——这是有意的 fail-closed，不是故障。`, {
+        severity: discount.enabled ? 'critical' : 'medium'
+    }));
+
+    checks.push(manualCheck('promo', 'promo-breaker-closed', `启用前确认 guest_shop_promo_breaker 单行为 state='closed'；存在 open 行即为 NOT_READY（readiness 退出码 3）。恢复只能人工执行 fn_guest_shop_promo_set_breaker('closed', actor, reason)，没有自动半开。`, {
+        severity: discount.enabled ? 'critical' : 'medium'
+    }));
+
+    checks.push(manualCheck('promo', 'promo-dirty-coupon-scan', `只读脏券扫描：不得存在 allow_guest=true 且 (guest_max_uses=0 OR guest_max_total_discount<=0) 的券。按 §8.1，0 表示「关闭」而不是「无限」，所以「开了游客白名单却没给次数/金额预算」就是脏券；扫到任何一行都是 INVALID（readiness 退出码 2），必须先修券再启用。折扣率无需扫描：本批唯一的折扣率边界是 guest_shop_orders_amount_check 的 50% 硬顶，券表没有折扣率列。`, {
+        severity: discount.enabled ? 'critical' : 'high'
+    }));
+
+    checks.push(manualCheck('promo', 'promo-sku-quantity-scan', `只读扫描：对 allow_guest_purchase=true 的商品/SKU，确认 COALESCE(sku.guest_max_quantity, product.guest_max_quantity, 1) 不超过运营预期的 ${operatorQuantity} 件，且 product.max_purchase_quantity 未被误设为大值。有效上限取三者与 ${GUEST_MAX_QUANTITY_CEILING} 的最小值，任何一处收紧都会生效。`, {
+        env_name: GUEST_QUANTITY_SWITCH,
+        effective_value: operatorQuantity,
+        severity: operatorQuantity > 1 ? 'high' : 'medium'
+    }));
+
+    checks.push(manualCheck('promo', 'promo-parity-evidence', `L2/L3 必须同批发布：只有前端能报价、后端不认账会直接产生 amount_mismatch（已付款不发货）。启用前必须归档 ≥40 条黄金向量 parity 测试结果与 §15.4 沙箱实机证据到 docs/guest-shop-promo-evidence.md；没有实机证据不得宣称完成。任一阶段出现 amount_mismatch >= 1 立即回到全部开关关闭并跳闸。`, {
+        relative_path: 'docs/guest-shop-promo-evidence.md',
+        severity: discount.enabled ? 'critical' : 'high'
     }));
 
     return checks;
@@ -961,17 +1811,18 @@ function strictInteger(value, name) {
 }
 
 function inspectRuntimeNumericSetting(env, name, {
+    area = 'limits',
     key,
     label,
     production
 } = {}) {
     const spec = GUEST_SHOP_RUNTIME_SETTINGS[name];
-    if (!spec) return invalidCheck('limits', key || name, `${name} 不是受支持的游客运行时配置。`, { env_name: name });
+    if (!spec) return invalidCheck(area, key || name, `${name} 不是受支持的游客运行时配置。`, { env_name: name });
 
     const parsed = parseRuntimeNumericSetting(env, name);
     const displayLabel = label || spec.label || name;
     if (!parsed.present) {
-        return buildCheck('limits', key || spec.key, true, 'default', `${name} 未设置，将使用安全默认值 ${spec.defaultValue}。`, {
+        return buildCheck(area, key || spec.key, true, 'default', `${name} 未设置，将使用安全默认值 ${spec.defaultValue}。`, {
             env_name: name,
             effective_value: spec.defaultValue,
             blocking: false,
@@ -989,14 +1840,14 @@ function inspectRuntimeNumericSetting(env, name, {
         // Keep the existing readiness convention for non-production range
         // tuning, while malformed syntax remains a hard failure everywhere.
         if (parsed.code === 'numeric_out_of_range' && !production) {
-            return warningCheck('limits', key || spec.key, `${displayLabel} 超出建议范围 ${spec.min}-${spec.max}（非生产环境）。`, {
+            return warningCheck(area, key || spec.key, `${displayLabel} 超出建议范围 ${spec.min}-${spec.max}（非生产环境）。`, {
                 ...detail,
                 severity: 'low'
             });
         }
-        return invalidCheck('limits', key || spec.key, parsed.reason || `${displayLabel} 配置无效。`, detail);
+        return invalidCheck(area, key || spec.key, parsed.reason || `${displayLabel} 配置无效。`, detail);
     }
-    return buildCheck('limits', key || spec.key, true, 'configured', `${displayLabel}=${parsed.value} 在建议范围内。`, {
+    return buildCheck(area, key || spec.key, true, 'configured', `${displayLabel}=${parsed.value} 在建议范围内。`, {
         env_name: name,
         observed: parsed.value,
         min: spec.min,
@@ -1338,11 +2189,30 @@ function inspectProvider(env, provider, production) {
 
 function inspectRepo(repoRoot = REPO_ROOT) {
     const checks = [];
+    const compactImage = Boolean(readKvm4ReleaseCommit(repoRoot));
     for (const relativePath of REQUIRED_REPO_FILES) {
         const exists = fs.existsSync(path.join(repoRoot, relativePath));
-        checks.push(exists
-            ? buildCheck('repo', `file:${relativePath}`, true, 'present', `${relativePath} 已存在。`, { relative_path: relativePath, blocking: false, severity: 'info' })
-            : invalidCheck('repo', `file:${relativePath}`, `${relativePath} 缺失。`, { relative_path: relativePath }));
+        if (exists) {
+            checks.push(buildCheck('repo', `file:${relativePath}`, true, 'present', `${relativePath} 已存在。`, {
+                relative_path: relativePath,
+                blocking: false,
+                severity: 'info'
+            }));
+        } else if (compactImage && KVM4_HOST_ONLY_GUEST_WORKER_FILES.has(relativePath)) {
+            checks.push(manualCheck(
+                'repo',
+                `file:${relativePath}`,
+                `${relativePath} 是 KVM4 宿主机安装资产，不在 Verify 精简镜像的 PACKAGE_PATHS 中；请在宿主机核验 canonical installer 已落地对应 helper/systemd unit。`,
+                {
+                    relative_path: relativePath,
+                    deployment_surface: 'kvm4-host',
+                    compact_image: true,
+                    marker_path: KVM4_RELEASE_COMMIT_FILE
+                }
+            ));
+        } else {
+            checks.push(invalidCheck('repo', `file:${relativePath}`, `${relativePath} 缺失。`, { relative_path: relativePath }));
+        }
     }
     for (const relativePath of REQUIRED_TEST_FILES) {
         const exists = fs.existsSync(path.join(repoRoot, relativePath));
@@ -1358,11 +2228,10 @@ function inspectRepo(repoRoot = REPO_ROOT) {
     checks.push(router.includes("'guest/preview'")
         && router.includes("'guest/orders'")
         && router.includes("'guest/status'")
-        && router.includes("'guest/recover'")
         && router.includes("'guest/claim'")
         && router.includes("'guest/webhooks/zpay'")
         && router.includes("'guest/webhooks/nowpayments'")
-        ? buildCheck('repo', 'guest-routes-registered', true, 'present', '游客 preview/order/status/recover/claim 与 provider webhook 路由均已注册。', { blocking: false, severity: 'info' })
+        ? buildCheck('repo', 'guest-routes-registered', true, 'present', '游客 preview/order/status/claim 与 provider webhook 路由均已注册。', { blocking: false, severity: 'info' })
         : invalidCheck('repo', 'guest-routes-registered', 'api/public.js 未完整注册游客路由。'));
 
     const handler = read('server/api-handlers/public/guest-shop.js');
@@ -1457,26 +2326,11 @@ function inspectProductionCallbacks(env, production) {
     return checks;
 }
 
-function runReadiness({ env = process.env, repoRoot = REPO_ROOT, envFile = '', now = new Date() } = {}) {
-    const production = isProductionLikeRuntime(env);
-    const checks = [
-        inspectEnvFile(envFile, env),
-        inspectRuntime(env),
-        ...inspectSupabase(env, production),
-        ...inspectGuestSecrets(env, production),
-        inspectWorkerSecret(env, production),
-        ...inspectBuyerCredentials(env, production, repoRoot),
-        ...inspectPersistentRateLimit(env, production),
-        ...inspectLimits(env, production),
-        ...inspectProductionCallbacks(env, production),
-        ...SUPPORTED_PROVIDERS.flatMap((provider) => inspectProvider(env, provider, production)),
-        ...inspectRepo(repoRoot),
-        ...inspectRunbook(repoRoot)
-    ];
-
-    const blockingChecks = checks.filter((check) => check.blocking === true && check.ok !== true);
-    const warnings = checks.filter((check) => check.status === 'warning');
-    const manualReview = checks.filter((check) => check.requires_manual_review === true);
+function buildReadinessSummary(checks, production, checkedAt = new Date()) {
+    const normalizedChecks = Array.isArray(checks) ? checks : [];
+    const blockingChecks = normalizedChecks.filter((check) => check.blocking === true && check.ok !== true);
+    const warnings = normalizedChecks.filter((check) => check.status === 'warning');
+    const manualReview = normalizedChecks.filter((check) => check.requires_manual_review === true);
     const findings = blockingChecks.map((check) => ({
         severity: check.severity || 'high',
         key: check.key,
@@ -1485,12 +2339,14 @@ function runReadiness({ env = process.env, repoRoot = REPO_ROOT, envFile = '', n
         env_name: check.env_name || ''
     }));
 
-    const checkedAt = now instanceof Date && Number.isFinite(now.getTime()) ? now.toISOString() : new Date().toISOString();
+    const timestamp = checkedAt instanceof Date && Number.isFinite(checkedAt.getTime())
+        ? checkedAt.toISOString()
+        : (typeof checkedAt === 'string' && checkedAt ? checkedAt : new Date().toISOString());
     return {
-        checked_at: checkedAt,
+        checked_at: timestamp,
         production_like: production,
         providers: SUPPORTED_PROVIDERS,
-        checks,
+        checks: normalizedChecks,
         findings,
         warnings: warnings.map((check) => ({ key: check.key, message: check.message, severity: check.severity, area: check.area })),
         manual_review: manualReview.map((check) => ({ key: check.key, message: check.message, area: check.area })),
@@ -1503,6 +2359,57 @@ function runReadiness({ env = process.env, repoRoot = REPO_ROOT, envFile = '', n
         ok: blockingChecks.length === 0,
         ready: production && blockingChecks.length === 0 && manualReview.length === 0
     };
+}
+
+function runReadiness({ env = process.env, repoRoot = REPO_ROOT, envFile = '', now = new Date() } = {}) {
+    const production = isProductionLikeRuntime(env);
+    const checks = [
+        inspectEnvFile(envFile, env),
+        inspectRuntime(env),
+        ...inspectSupabase(env, production),
+        ...inspectGuestSecrets(env, production),
+        inspectWorkerSecret(env, production),
+        ...inspectBuyerCredentials(env, production, repoRoot),
+        ...inspectPromo(env, production, repoRoot),
+        ...inspectPersistentRateLimit(env, production),
+        ...inspectLimits(env, production),
+        ...inspectProductionCallbacks(env, production),
+        ...SUPPORTED_PROVIDERS.flatMap((provider) => inspectProvider(env, provider, production)),
+        ...inspectRepo(repoRoot),
+        ...inspectRunbook(repoRoot)
+    ];
+
+    return buildReadinessSummary(checks, production, now);
+}
+
+async function runReadinessWithHostedFrontend(options = {}) {
+    const summary = runReadiness(options);
+    const env = options.env || process.env;
+    const pageCheckIndex = summary.checks.findIndex((check) => check.key === 'frontend:guest-orders.html');
+    if (pageCheckIndex < 0) return summary;
+
+    const pageCheck = summary.checks[pageCheckIndex];
+    // A complete source checkout already proves both frontend artifacts from
+    // the candidate tree and has no generated KVM4 release marker. Hosted
+    // commit alignment is required only for the compact Verify image, where
+    // guest-orders.html is intentionally absent and delegated to Vercel.
+    const compactImageRequiresHostedEvidence = pageCheck.status === 'manual_review'
+        && pageCheck.deployment_surface === 'vercel';
+    const hostedVerificationRequired = summary.production_like === true
+        && parseBoolean(envValue(env, 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED', 40)) === true
+        && parseBoolean(envValue(env, 'GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED', 40)) === true
+        && compactImageRequiresHostedEvidence;
+    if (!hostedVerificationRequired) return summary;
+
+    const hostedChecks = await inspectHostedBuyerCredentialFrontend({
+        env,
+        repoRoot: options.repoRoot || REPO_ROOT,
+        fetchImpl: options.fetchImpl || globalThis.fetch,
+        timeoutMs: options.timeoutMs || 10000
+    });
+    const checks = [...summary.checks];
+    checks.splice(pageCheckIndex, 1, ...hostedChecks);
+    return buildReadinessSummary(checks, summary.production_like, summary.checked_at);
 }
 
 function formatHumanReport(summary = {}) {
@@ -1548,40 +2455,48 @@ function getReadinessExitCode(options = {}, summary = {}) {
     return 0;
 }
 
-function main() {
+async function main() {
     const options = parseArgs(process.argv.slice(2));
     const env = loadEnvFile(options.envFile, process.env);
-    const summary = runReadiness({ env, repoRoot: REPO_ROOT, envFile: options.envFile });
+    const summary = await runReadinessWithHostedFrontend({ env, repoRoot: REPO_ROOT, envFile: options.envFile });
     process.stdout.write(`${options.json ? JSON.stringify(summary, null, 2) : formatHumanReport(summary)}\n`);
     const exitCode = getReadinessExitCode(options, summary);
     if (exitCode > 0) process.exitCode = exitCode;
 }
 
 if (require.main === module) {
-    try {
-        main();
-    } catch (error) {
+    main().catch((error) => {
         // Do not echo arbitrary parser/env contents; only expose a generic
         // failure line suitable for CI logs.
         console.error(`guest-shop-readiness failed: ${error?.message || 'unknown error'}`);
         process.exitCode = 1;
-    }
+    });
 }
 
 module.exports = {
     DEFAULT_ENV_FILE,
     READINESS_EXIT_CODES,
+    PROMO_MIGRATION,
+    PROMO_MIGRATION_PROHIBITIONS,
+    PROMO_MIGRATION_REQUIREMENTS,
+    PROMO_VERIFY_MIGRATION,
+    PROMO_VERIFY_PROHIBITIONS,
+    PROMO_VERIFY_REQUIREMENTS,
     REQUIRED_REPO_FILES,
     REQUIRED_TEST_FILES,
     SUPPORTED_PROVIDERS,
+    buildReadinessSummary,
     formatHumanReport,
     getReadinessExitCode,
     inspectBuyerCredentials,
+    inspectBuyerCredentialFrontend,
+    inspectHostedBuyerCredentialFrontend,
     inspectCallbackUrl,
     inspectGuestSecrets,
     inspectLimits,
     inspectPersistentRateLimit,
     inspectProductionCallbacks,
+    inspectPromo,
     inspectProvider,
     inspectRepo,
     inspectRunbook,
@@ -1592,5 +2507,6 @@ module.exports = {
     parseArgs,
     parseProviderList,
     runReadiness,
+    runReadinessWithHostedFrontend,
     stripSqlComments
 };

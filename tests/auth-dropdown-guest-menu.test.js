@@ -140,3 +140,39 @@ test('logout cleanup clears admin chat bootstrap state before guest UI is restor
     assert.match(authSource, /if \(clearCacheOnLogout\) \{\s*clearAuthStateForLogout\(\);/);
     assert.match(authSource, /async function handleLogout[\s\S]*?clearAuthStateForLogout\(\);[\s\S]*?window\.supabaseClient\.auth\.signOut\(\)/);
 });
+
+test('standalone inject-auth toggles user dropdown instead of directly opening auth sheet', () => {
+    const injectSource = readRepoFile('inject-auth.js');
+
+    assert.match(
+        injectSource,
+        /function handleInjectedAuthClick\(event\)/,
+        'inject-auth must define handleInjectedAuthClick for standalone pages'
+    );
+    assert.match(
+        injectSource,
+        /if \(dropdown\.classList\.contains\('active'\)\) \{\s*closeDropdown\(\);\s*\} else \{\s*openDropdown\(\);\s*\}/,
+        'handleInjectedAuthClick must toggle the dropdown active state when userDropdown is present'
+    );
+    assert.match(
+        injectSource,
+        /if \(typeof window\.handleAuthClick === 'function' && window\.handleAuthClick !== handleInjectedAuthClick\)/,
+        'bindGlobalEvents must fall back to handleInjectedAuthClick when external handleAuthClick is not defined'
+    );
+    assert.match(
+        injectSource,
+        /syncDropdownAuthMode\(dropdown, hasCachedAuthProfile\(\)\);/,
+        'openDropdown must sync dropdown auth mode before opening'
+    );
+    assert.match(
+        injectSource,
+        /if \(typeof window\.handleAuthClick !== 'function'\) \{\s*window\.handleAuthClick = handleInjectedAuthClick;\s*\}/,
+        'exposeAuthApi must expose fallback handleAuthClick'
+    );
+    assert.match(
+        injectSource,
+        /if \(typeof window\.closeUserDropdown !== 'function'\) \{\s*window\.closeUserDropdown = closeDropdown;\s*\}/,
+        'exposeAuthApi must expose fallback closeUserDropdown'
+    );
+});
+

@@ -1932,8 +1932,10 @@
         const authBtn = document.getElementById('authBtn');
         if (!dropdown || !authBtn) return;
 
+        syncDropdownAuthMode(dropdown, hasCachedAuthProfile());
+
         const rect = authBtn.getBoundingClientRect();
-        const navBar = authBtn.closest('.nav-bar') || authBtn.closest('.framer-nav') || authBtn.closest('nav') || authBtn.closest('.top-right-nav');
+        const navBar = authBtn.closest('.nav-bar') || authBtn.closest('.framer-nav') || authBtn.closest('nav') || authBtn.closest('.top-right-nav')?.parentElement || authBtn.closest('.top-right-nav');
         const navBottom = navBar ? navBar.getBoundingClientRect().bottom : rect.bottom + 8;
         const navOverlap = parseFloat(
             getComputedStyle(document.documentElement).getPropertyValue('--nav-dropdown-overlap')
@@ -1954,7 +1956,7 @@
     }
 
     function closeDropdown() {
-        if (typeof window.closeUserDropdown === 'function') {
+        if (typeof window.closeUserDropdown === 'function' && window.closeUserDropdown !== closeDropdown) {
             window.closeUserDropdown();
             return;
         }
@@ -1966,6 +1968,27 @@
         dropdown?.setAttribute('aria-hidden', 'true');
         overlay?.classList.remove('active');
         authBtn?.setAttribute('aria-expanded', 'false');
+    }
+
+    function handleInjectedAuthClick(event) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        const dropdown = document.getElementById('userDropdown');
+        if (dropdown) {
+            if (dropdown.classList.contains('active')) {
+                closeDropdown();
+            } else {
+                openDropdown();
+            }
+            return;
+        }
+
+        openLoginModal().catch((error) => {
+            console.error('Failed to open auth sheet:', error);
+        });
     }
 
     function hasCachedAuthProfile() {
@@ -2403,14 +2426,10 @@
         const authBtn = document.getElementById('authBtn');
         if (authBtn && authBtn.dataset.bound !== '1') {
             authBtn.addEventListener('click', (event) => {
-                if (typeof window.handleAuthClick === 'function') {
+                if (typeof window.handleAuthClick === 'function' && window.handleAuthClick !== handleInjectedAuthClick) {
                     window.handleAuthClick(event);
                 } else {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    openLoginModal().catch((error) => {
-                        console.error('Failed to open auth sheet:', error);
-                    });
+                    handleInjectedAuthClick(event);
                 }
             });
             authBtn.dataset.bound = '1';
@@ -2421,6 +2440,23 @@
             dropdownOverlay.addEventListener('click', closeDropdown);
             dropdownOverlay.dataset.bound = '1';
         }
+
+        document.addEventListener('click', (event) => {
+            const dropdown = document.getElementById('userDropdown');
+            const authBtn = document.getElementById('authBtn');
+            if (!dropdown?.classList.contains('active')) return;
+            if (dropdown.contains(event.target) || authBtn?.contains(event.target)) return;
+            closeDropdown();
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                const dropdown = document.getElementById('userDropdown');
+                if (dropdown?.classList.contains('active')) {
+                    closeDropdown();
+                }
+            }
+        });
 
         bindDropdownEvents();
         bindAuthSheetEvents();
@@ -2444,6 +2480,12 @@
         window.isAuthModalOpen = function () {
             return !!document.getElementById('loginModal')?.classList.contains('active');
         };
+        if (typeof window.handleAuthClick !== 'function') {
+            window.handleAuthClick = handleInjectedAuthClick;
+        }
+        if (typeof window.closeUserDropdown !== 'function') {
+            window.closeUserDropdown = closeDropdown;
+        }
     }
 
     exposeAuthApi();

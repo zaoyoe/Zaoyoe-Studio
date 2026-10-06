@@ -1825,6 +1825,7 @@ const PRODUCT_SCHEMA_COMPATIBILITY_FIELDS = [
     'webhook_target',
     'manual_delivery',
     'allow_guest_purchase',
+    'guest_max_quantity',
     'guest_cash_price_cny',
     'guest_cash_price_intl',
     'guest_payment_channels',
@@ -1832,6 +1833,8 @@ const PRODUCT_SCHEMA_COMPATIBILITY_FIELDS = [
     'quantity_rules_intl',
     'flash_sale_price',
     'flash_sale_price_intl',
+    'flash_sale_start',
+    'flash_sale_start_intl',
     'flash_sale_end',
     'flash_sale_end_intl',
     'name_en',
@@ -1884,6 +1887,8 @@ function isMissingProductSchemaColumnError(error) {
 function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missingFields = [] } = {}) {
     const nextPayload = { ...(payload && typeof payload === 'object' ? payload : {}) };
     const removedFields = [];
+    const missingStartFields = ['flash_sale_start', 'flash_sale_start_intl']
+        .filter((field) => missingFields.includes(field));
     const missingSet = new Set(Array.isArray(missingFields) && missingFields.length
         ? missingFields
         : PRODUCT_SCHEMA_COMPATIBILITY_FIELDS);
@@ -1897,6 +1902,21 @@ function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missin
             }
         });
     };
+
+    const requestedMissingStartFields = missingStartFields.filter((field) => (
+        Object.prototype.hasOwnProperty.call(nextPayload, field)
+        && nextPayload[field] !== null
+        && nextPayload[field] !== undefined
+        && nextPayload[field] !== ''
+    ));
+    if (requestedMissingStartFields.length) {
+        return {
+            payload: nextPayload,
+            removedFields,
+            requiredMigrationMissingFields: requestedMissingStartFields
+        };
+    }
+    removeFields(missingStartFields);
 
     if (hasMissing('name_intl', 'name_intl_zh')) {
         if (
@@ -1975,12 +1995,14 @@ function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missin
 
     if (hasMissing(
         'allow_guest_purchase',
+        'guest_max_quantity',
         'guest_cash_price_cny',
         'guest_cash_price_intl',
         'guest_payment_channels'
     )) {
         removeFields([
             'allow_guest_purchase',
+            'guest_max_quantity',
             'guest_cash_price_cny',
             'guest_cash_price_intl',
             'guest_payment_channels'
@@ -2079,6 +2101,15 @@ async function writeProductRowWithSchemaFallback(supabase, {
 
         const missingFields = getMissingProductSchemaFields(result.error);
         const fallback = buildSchemaCompatibleProductPayload(nextPayload, { site, missingFields });
+        if (fallback.requiredMigrationMissingFields?.length) {
+            return {
+                result,
+                payload: nextPayload,
+                compatibilityFallback: usedCompatibilityFallback,
+                compatibilityRemovedFields: Array.from(new Set(removedFields)),
+                requiredMigrationMissingFields: fallback.requiredMigrationMissingFields
+            };
+        }
         if (!fallback.removedFields.length) {
             return {
                 result,
@@ -2122,8 +2153,16 @@ function prepareProductPayloadForWritableSite(payload = {}, { productId = '', si
         nextPayload.allow_guest_purchase = normalizeBoolean(nextPayload.allow_guest_purchase, false);
     }
 
+    if (Object.prototype.hasOwnProperty.call(nextPayload, 'guest_max_quantity')) {
+        const normalizedGuestMaxQuantity = normalizePositiveInteger(nextPayload.guest_max_quantity);
+        if (normalizedGuestMaxQuantity !== null) {
+            nextPayload.guest_max_quantity = normalizedGuestMaxQuantity;
+        }
+    }
+
     const guestFieldPresent = [
         'allow_guest_purchase',
+        'guest_max_quantity',
         'guest_cash_price_cny',
         'guest_cash_price_intl',
         'guest_payment_channels'
@@ -2173,6 +2212,34 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
     const blockingIssues = [];
     const warnings = [];
 
+    for (const schedule of [
+        { start: 'flash_sale_start', end: 'flash_sale_end', price: 'flash_sale_price', site: 'CN' },
+        { start: 'flash_sale_start_intl', end: 'flash_sale_end_intl', price: 'flash_sale_price_intl', site: 'INTL' }
+    ]) {
+        const rawStart = safePayload[schedule.start];
+        if (rawStart === null || rawStart === undefined || String(rawStart).trim() === '') continue;
+        const startMs = Date.parse(String(rawStart));
+        if (!Number.isFinite(startMs)) {
+            appendProductValidationIssue(blockingIssues, 'blocking', 'flash_sale_start_invalid',
+                `${schedule.site} 秒杀开始时间格式无效。`, schedule.start);
+            continue;
+        }
+        const rawEnd = safePayload[schedule.end];
+        const endMs = rawEnd === null || rawEnd === undefined || String(rawEnd).trim() === ''
+            ? NaN : Date.parse(String(rawEnd));
+        if (!Number.isFinite(endMs) || startMs >= endMs) {
+            appendProductValidationIssue(blockingIssues, 'blocking', 'flash_sale_window_invalid',
+                `${schedule.site} 设置秒杀开始时间时，必须设置更晚且有效的结束时间。`, schedule.end);
+        }
+        const rawPrice = safePayload[schedule.price];
+        const flashPrice = rawPrice === null || rawPrice === undefined || String(rawPrice).trim() === ''
+            ? NaN : Number(rawPrice);
+        if (!Number.isFinite(flashPrice) || flashPrice < 0) {
+            appendProductValidationIssue(blockingIssues, 'blocking', 'flash_sale_price_required',
+                `${schedule.site} 设置秒杀开始时间时，必须填写有效的秒杀价格。`, schedule.price);
+        }
+    }
+
     const name = normalizeText(safePayload.name, 160);
     const category = normalizeText(safePayload.category || safePendingCategory?.name, 120);
     const deliveryType = normalizeText(safePayload.delivery_type, 20).toUpperCase() === 'API' ? 'API' : 'KEY';
@@ -2180,6 +2247,7 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
     const webhookTarget = normalizeText(safePayload.webhook_target, 2000);
     const isActive = normalizeBoolean(safePayload.is_active, true);
     const maxPurchaseQuantity = normalizePositiveInteger(safePayload.max_purchase_quantity);
+    const guestMaxQuantity = normalizePositiveInteger(safePayload.guest_max_quantity);
     const purchaseLimit24hQuantity = normalizePositiveInteger(safePayload.purchase_limit_24h_quantity);
     const purchaseLimitWindowQuantity = normalizePositiveInteger(safePayload.purchase_limit_window_quantity);
     const purchaseLimitWindowMinutes = normalizePositiveInteger(safePayload.purchase_limit_window_minutes);
@@ -2205,6 +2273,18 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
 
     if (!category) {
         appendProductValidationIssue(blockingIssues, 'blocking', 'category_required', '请选择商品分类。', 'category');
+    }
+
+    if (Object.prototype.hasOwnProperty.call(safePayload, 'guest_max_quantity')) {
+        if (guestMaxQuantity === null || guestMaxQuantity < 1 || guestMaxQuantity > 99) {
+            appendProductValidationIssue(
+                blockingIssues,
+                'blocking',
+                'guest_max_quantity_invalid',
+                '游客单次限购必须是 1 到 99 之间的整数。',
+                'guest_max_quantity'
+            );
+        }
     }
 
     if (
@@ -2510,6 +2590,16 @@ module.exports = async (req, res) => {
                 site: writableSite
             });
             const result = writeResult.result;
+
+            if (writeResult.requiredMigrationMissingFields?.length) {
+                return sendJson(res, 409, {
+                    success: false,
+                    code: 'shop_flash_sale_start_migration_required',
+                    message: '请先执行秒杀开始时间数据库迁移，再保存该商品。',
+                    details: writeResult.requiredMigrationMissingFields,
+                    hint: 'supabase/migrations/20260923_shop_flash_sale_start.sql'
+                });
+            }
 
             if (result.error || !result.data?.length) {
                 const errorPayload = buildShopMutationErrorPayload(result.error, '保存商品失败', 400, 'shop_product_save_failed');

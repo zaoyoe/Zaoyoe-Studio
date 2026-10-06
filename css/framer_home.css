@@ -1719,23 +1719,28 @@ html[data-theme="dark"] body.home-page .hero-carousel .entry-card-ui {
     transition: none !important;
 }
 
-.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(1) .home-entry-card-icon {
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(1) .home-entry-card-icon,
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card[data-home-entry-id="prompts"] .home-entry-card-icon {
     color: #f472b6;
 }
 
-.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(2) .home-entry-card-icon {
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(2) .home-entry-card-icon,
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card[data-home-entry-id="gongyi"] .home-entry-card-icon {
     color: #5ed8f8;
 }
 
-.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(3) .home-entry-card-icon {
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(3) .home-entry-card-icon,
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card[data-home-entry-id="shop"] .home-entry-card-icon {
     color: #4ade80;
 }
 
-.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(4) .home-entry-card-icon {
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(4) .home-entry-card-icon,
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card[data-home-entry-id="verify"] .home-entry-card-icon {
     color: #667eea;
 }
 
-.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(5) .home-entry-card-icon {
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(5) .home-entry-card-icon,
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card[data-home-entry-id="guestbook"] .home-entry-card-icon {
     color: #f59e0b;
 }
 

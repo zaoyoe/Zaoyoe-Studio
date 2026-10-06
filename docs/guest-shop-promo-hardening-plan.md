@@ -2,7 +2,7 @@
 
 > 工作目录：`/Volumes/chao/AI/xianyu_profit_calculator-guest-promo`
 > 分支：`codex/guest-shop-promo-hardening`（基线 `2424dcc14` = 最新 `main`）
-> 关联：`docs/guest-purchase-task-2.0.md`、`docs/guest-shop-payment-fulfillment-runbook.md`、`AGENTS.md`
+> 关联：`docs/guest-purchase-task-2.0.md`（当前任务 2.1 内容版本）、`docs/guest-shop-payment-fulfillment-runbook.md`、`AGENTS.md`
 > 前置已完成任务：`codex/guest-shop-entry-merge`（`7cf0cb405`，未部署）
 
 ## 0. 文档定位
@@ -633,6 +633,8 @@ ON CONFLICT (bucket_day, site) DO UPDATE
 - 每例断言：JS 展示结果 == 期望值；并输出一份 `supabase/migrations/2026MMDD_verify_guest_shop_promo_parity.sql`（用户执行），用同一组 fixture 在 DB 侧 `SELECT` 出结果做人工/脚本比对。
 - CI 里 JS 侧必须全绿；SQL 侧作为交付物，**不由 Codex 执行**。
 
+> **已交付（2026-09-19，C-E3 完成）**：`tests/guest-shop-pricing-parity.test.js`（9 例 / **74 条黄金向量** A32·B10·C20·D12，`node --test` 9 pass / 0 fail）+ 配套只读 SQL `supabase/migrations/20260923_verify_guest_shop_promo_parity.sql`（单条 `WITH…SELECT`、32 条 group-A fixture、由测试源码生成与 JS fixture 逐字一致；**Codex 不执行**，留用户在 SQL Editor 以 service_role 跑）。权威边界、防漂移与回归读数见 `docs/guest-shop-promo-evidence.md` **§2.11** 与 `docs/guest-purchase-task-2.0.md` **§60.8.3**。readiness `promo-parity-evidence` 的「≥40 条黄金向量」一半已满足；另一半「§15.4 沙箱实机证据」仍 **0/9**，故 `ready` 仍为 **false**，不得据此宣称完成或可启用。
+
 ### 9.6 报价令牌（quote token，C-B10 / T9）
 
 - 结构：`base64url(payload) + '.' + HMAC-SHA256(pepper, payload)`，pepper 复用 `GUEST_SHOP_SESSION_PEPPER`。
@@ -757,7 +759,7 @@ pricingVersion: 'guest-promo-v1'   // 版本升级，旧 fingerprint 天然不�
 
 > **L2 与 L3 拆开发布是禁止的**：只发 L2 会出现「前端能报价、后端不认账」，直接产生 `amount_mismatch`（已付款不发货）。只发 L3 会出现「后端能算、前端拿不到报价」。
 
-每期交付物固定四件套：迁移文件（写盘不执行）+ verify SQL + 自动化测试 + 文档更新（本文 + `docs/guest-shop-payment-fulfillment-runbook.md` + `docs/guest-purchase-task-2.0.md`）。
+每期交付物固定四件套：迁移文件（写盘不执行）+ verify SQL + 自动化测试 + 文档更新（本文 + `docs/guest-shop-payment-fulfillment-runbook.md` + `docs/guest-purchase-task-2.0.md` 的任务 2.1 §61）。
 
 ### 灰度许可签署（用户填写）
 
@@ -903,7 +905,7 @@ pricingVersion: 'guest-promo-v1'   // 版本升级，旧 fingerprint 天然不�
 
 - 本文（设计合同）
 - `docs/guest-shop-payment-fulfillment-runbook.md` — 增补促销章节：开关层级、紧急停机三路径、熔断恢复、预算归还核对
-- `docs/guest-purchase-task-2.0.md` — 增补促销任务条目与完成标准
+- `docs/guest-purchase-task-2.0.md` — 任务 2.1 §61 的促销任务条目与完成标准
 - `docs/guest-shop-promo-evidence.md`（新）— 实机证据归档
 
 ---
@@ -1208,3 +1210,243 @@ A4（邮箱 OTP + 游客订单并入账号）**必须排在 L2 之后**，因为
 4. **异常领用速度（窜货 / 脚本套利的信号）** → §19 单码增速熔断 + 站点级熔断，自动跳闸、只能人工恢复
 
 **所以正确的问题不是「会不会亏钱」，而是「最坏情况我会少赚多少，这个数我接受吗」。** 反杀熟（H1：绝不按身份差别定价）与促销硬预算（总让利封顶）并不矛盾，而是正交的两件事：前者管「不能歧视谁」，后者管「总共能让多少利」。**把风控做在结构上限上，而不是做在用户身份上——这是本节的全部要点。**
+
+---
+
+## 23. L1+L2 合并批次的实现记录与偏差（2026-09-19）
+
+> 本节记录 `codex/guest-shop-promo-l1l2` 分支**实际落地**的内容，以及与前文
+> （§8 数据模型 / §9 定价权威链路 / §11 防券码枚举 / §14 分期计划）不一致之处。
+> **冲突时以本节为准**（效力约定同 §22）。
+>
+> 本节**不是启用授权**：所有开关默认关闭，`readiness --fail-on-not-ready` 仍返回 `3`，
+> 发布仍按 `AGENTS.md`，启用仍需 §14 的灰度许可签署 + §15.4 的实机证据归档。
+
+### 23.1 本批次实际范围
+
+用户指令是「L1+L2 合并一批」。按 §14 的分期表，这等价于 **L1 + L2 + L3 中的「定价权威」部分**同批交付
+（§14 明确禁止 L2/L3 拆开发布，因为拆开就会出现「前端能报价、后端不认账」→ `amount_mismatch` → 已付款不发货）。
+**L4（后台运营界面）不在本批。**
+
+| 能力 | 状态 | 落点 |
+|---|---|---|
+| L1 游客多件 + 阶梯价 + 闪购 | ✅ | `guest_shop_resolve_credit_unit_amount` 放开 `p_quantity`；`fn_guest_shop_create_order` 一条语句预占 N 行 |
+| L1 件数四处取小 | ✅ | `min(env GUEST_SHOP_MAX_QUANTITY, sku.guest_max_quantity, product.guest_max_quantity, product.max_purchase_quantity, 5)` |
+| L2 游客优惠码（percent / fixed） | ✅ | `fn_guest_shop_evaluate_discount`（只读）+ `fn_guest_shop_reserve_discount`（原子扣减） |
+| L2 券级/站点级硬预算 | ✅ | `discount_codes.guest_*` 五列 + `guest_shop_promo_budget` |
+| L2 身份配额（跨凭证分组并集） | ✅ | `guest_shop_discount_redemptions` 台账，按 `buyer_contact_hash` 计数 |
+| L2 熔断（人工恢复，无半开） | ✅ | `guest_shop_promo_breaker` + `guest_shop_promo_breaker_events` + `fn_guest_shop_promo_set_breaker` |
+| L3 create-order 内重算 + 金额 CHECK | ✅ | `guest_shop_orders_amount_check`（含零元购地板 + 50% 硬顶 + 通道费 10% 硬顶） |
+| L3 fingerprint 扩展（quantity + code + discount） | ✅ | `api/_lib/guest-shop/security.js` |
+| L3 退款/过期归还券预算（幂等） | ✅ | `fn_guest_shop_return_discount_reservation` + 台账 `returned_at` |
+| **L2 `POST /api/shop/guest/quote`** | ❌ **延后** | 见 §23.2 |
+| **L3 quote 令牌绑定 / `guest_quote_stale`** | ❌ **延后** | 见 §23.2 |
+| **C-D3 库存占比闸 / C-D4 并发未付款单闸 / C-D5 促销单 TTL** | ❌ **未实现** | 见 §23.5（**多件启用前必须补**） |
+| **L4 后台运营界面** | ❌ 未开工 | 熔断恢复目前只能由运维手工执行 SQL 函数 |
+| §7.4 锁定退避（5 次/10 分钟 → 15 分钟 → 30 分钟 → 24 小时） | ❌ 未实现 | 见 §23.7，由 24h 台账配额 + 熔断替代 |
+
+### 23.2 偏差 1：本批**没有** quote 端点（§9.1 `p_mode='quote'`、§9.2 第 9 步、§9.6 quote 令牌全部延后）
+
+**做了什么替代**：折扣在 **create-order 事务内**被权威计算与校验；任何不可用都收敛成
+**统一 400 `guest_discount_unavailable`**（C-E6），**且不写任何订单行**（整个事务回滚，预占的券预算与库存一并归还）。
+客户端拿到这个错误后**主动撤回折扣 UI**（`js/guest-shop-client.js` 的 `handleCreateOrderError` →
+`state.amountBreakdown = null` + `setDiscountInvalid(true)`），因此屏幕上不可能停留一条
+「已优惠 ¥X」而实际订单不存在的假折扣行。
+
+**为什么这个替代比 quote 令牌更强**（这是本批最重要的设计判断）：
+
+- quote 令牌解决的是「报价与成交不一致」。但它引入一个**新的信任边界**：令牌本身要签名、要绑定会话、
+  要处理过期与重放，`guest_quote_stale` 只是一个**事后**发现不一致的错误。
+- 本批的做法是**根本不存在第二份报价**：买家看到的金额只来自 ①preview 的**单价/小计**（服务端算）
+  和 ②**已创建订单**的 `amount_breakdown`（数据库算）。折扣金额在订单存在之前**从不下发**，
+  所以「前端持有的折扣报价」这个可被篡改/过期的对象**不存在**。
+- 撤回发生在**权威错误**上，而不是发生在「与另一份报价比对」上，因此它**不可能与已提交的行不一致**。
+
+**代价（必须写进运营口径）**：买家填了券码点「立即购买」，若券不可用，得到的是
+**一次失败的下单**（400 + 「优惠码不可用」），而不是「下单前先告诉你券不能用」。
+券码校验的**限流与配额仍然生效**（见 §23.7），所以这不会被变成枚举 oracle，
+但**体验上确实比 quote 差一档**。若后续要做「输入券码即时校验」，
+再按 §9.6 补 quote 端点 + 令牌绑定；本批的撤回逻辑与之兼容，不需要回退。
+
+**preview 的参数白名单**：`site` / `productId` / `skuId` / `quantity` 四个，**没有** `code`。
+券码只出现在 `POST /api/shop/guest/orders` 的 JSON body，
+不进 URL、不进 query、不进 `localStorage` / `sessionStorage`、不进缓存键（C-E8 保持）。
+
+### 23.3 偏差 2：开关命名与「策略表」形态
+
+| 前文条目 | 本批实际 | 说明 |
+|---|---|---|
+| K1 `GUEST_SHOP_PROMO_ENABLED` | **`GUEST_SHOP_DISCOUNT_ENABLED`**（L2 主闸，默认关） | 命名更窄更准确：它只管**优惠码**。L1（多件/阶梯）由 `GUEST_SHOP_MAX_QUANTITY` 单独管，两个闸互不隐含 |
+| — | **`GUEST_SHOP_MAX_QUANTITY`**（L1 运营上限，默认 `1`，`min=1`，`max=5`） | `max=5` 与 `guest_shop_orders_quantity_check` 的数据库硬顶**逐字一致**；readiness 有 `quantity-ceiling-consistent` 守门，改宽 env 只会在写入时 CHECK 失败，**必须改迁移** |
+| §8.3 `guest_shop_promo_policy` 单行策略表 | **未建**。改为三处分散落点 | ①站点级：`guest_shop_promo_budget`（每站一行，`enabled` + `daily_budget_cny`）②全局：`guest_shop_promo_breaker`（单行，阈值就地可调）③券级：`discount_codes.guest_max_uses` / `guest_max_total_discount` / `allow_guest`。**没有 `max_quantity` / `min_payable_cny` / `promo_order_ttl_seconds` / `max_stock_hold_percent` 这些策略列**，对应旋钮见 §23.5 |
+
+**降级语义（已实现并测试）**：`discount_enabled` 在 preview 里是
+`GUEST_SHOP_DISCOUNT_ENABLED && GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 的**与**。
+理由：折扣必须可归属身份，否则数据库直接抛 `guest_discount_identity_required`
+（见 §23.4）。所以**订单访问 2.0 的凭证开关是 L2 的硬前置**，
+只开 `GUEST_SHOP_DISCOUNT_ENABLED` 不会打开游客优惠码通道，这是有意的 fail-closed。
+
+**关闭时的行为**：`GUEST_SHOP_DISCOUNT_ENABLED` 未开而买家仍提交券码 → **403 `guest_discount_disabled`**，
+**不是静默丢弃**。静默丢弃会让买家以为自己拿到了折扣却按原价被扣款。
+
+### 23.4 偏差 3：身份层复用「订单访问 2.0」凭证，不建游客会话表
+
+- **没有** `guest_shop_sessions` 表，**没有** `guest_session_hash` 列，**没有** `__Host-` 会话 cookie
+  （§7.1/§7.3 与 §15.2 里那条 cookie 契约断言因此**不适用**，本批未新增该断言）。
+- 配额主判据按 §22.1 落地为 **`buyer_contact_hash`**：
+  `fn_guest_shop_evaluate_discount` / `fn_guest_shop_reserve_discount` 都要求它是 64-hex，
+  否则抛 `guest_discount_identity_required`；台账按它跨**该邮箱的全部凭证分组**并集计数
+  （**不用 `buyer_id`**，理由见 §22.1.1：换分组刷额度）。
+- 兜底判据 **`request_ip_hash`**。`request_device_hash` 按 §22.1 **不入配额**（只写台账取证）。
+- 24h 阈值：`per_contact` 默认 **3**（函数内 `LEAST(10, ...)` 硬夹）、`per_ip` 默认 **10**（`LEAST(50, ...)` 硬夹）。
+  两个阈值目前**只由 SQL 默认值提供**，HTTP 层不传参，所以运营改不了 —— 要调必须改迁移，
+  这与「env 只能收紧不能放宽」是同一个口径。
+- 并发安全：扣减前对 `contact_hash` 与 `ip_hash` 各取一次 `pg_advisory_xact_lock`，
+  同一身份/同一网络的并发下单被串行化，配额不可能被竞态突破。
+
+### 23.5 偏差 4：C-D3 / C-D4 / C-D5 未实现（**多件启用前必须补**）
+
+§14 把这三道闸写在 L1 行里，本批**没有**实现它们：
+
+| 控制 | 状态 | 现状与补偿 |
+|---|---|---|
+| C-D3 库存占比闸（游客最多占住 X%） | ❌ 未实现 | 目前只靠 `GUEST_SHOP_MAX_QUANTITY=1` + 单 SKU `guest_max_quantity` + 下单限流 12/min/IP 约束。**多件（≥2）一旦放开，攻击者可以用大量未付款单把某 SKU 的可用库存全部锁死** |
+| C-D4 并发未付款单闸 | ❌ 未实现 | 同上，无 per-identity/per-IP 的 pending 单数上限 |
+| C-D5 促销单独立短 TTL | ❌ 未实现 | 促销单与原价单共用 `GUEST_SHOP_ORDER_TTL_SECONDS`（迁移把 `p_ttl_seconds` 夹在 300–7200）。券预算会随 TTL 释放归还，但**占着不买的时间窗没有被压缩** |
+
+**为什么本批仍可安全合并**：三道闸都是「多件 + 大量未付款单」才成立的攻击面。
+`GUEST_SHOP_MAX_QUANTITY` 默认 `1`，此时每单只预占一行库存，与 L1 之前的行为**完全一致**；
+且 readiness 的 `promo/quantity-inventory-gate` 检查在该值 `>1` 时会**升级为 high 并显式点名这两道闸**，
+构成一道人工闸门。
+
+**硬性要求**：把 `GUEST_SHOP_MAX_QUANTITY` 调到 `≥2` **之前**，必须先补 C-D3 + C-D4（并建议一并补 C-D5），
+并重新归档 readiness 与实机证据。**只改 env 就放多件是被禁止的。**
+
+### 23.6 偏差 5：券码字符集
+
+§11.5 写的是 `^[A-Z0-9]{4,32}$`；本批实现为 **`^[A-Z0-9][A-Z0-9_-]{0,49}$`（最长 50）**，
+与 `discount_codes` 既有券码字符集、`guest_shop_orders_discount_code_check`、
+以及进入幂等 fingerprint 的归一化值**三处逐字一致**。
+
+理由：若收窄成 `{4,32}` 且不含 `_-`，运营**已经创建**的合法券会在游客侧被格式闸拒掉，
+买家看到的是「优惠码不可用」而运营查不出原因。三处一致意味着
+**在 Node 层通过格式闸的值，绝不可能在数据库层因形状被拒**。
+枚举防护不依赖长度下限：真正的防线是 C-E6 统一错误 + 限流 + 24h 配额 + 熔断（§23.7）。
+
+### 23.7 偏差 6：限流与锁定退避
+
+- **没有**新增 §11.3 的三级 quote 桶（`quote:ip` / `quote:session` / `quote:global`），因为没有 quote 端点。
+- 沿用既有持久化 fail-closed 限流：**preview 60/min/IP**、**orders 12/min/IP**。
+  券码校验发生在 orders 路径内，所以「撞券码」的成本被 12/min/IP + 24h 台账配额（3/身份、10/IP）双重压住。
+- **没有**实现 §7.4 的阶梯锁定退避。替代：24h 配额命中即 `guest_discount_rate_limited`，
+  异常速度由 §12 熔断（`mismatch_trip_threshold=3`、`identity_trip_threshold=20`、`trip_window_seconds=900`）
+  在**滚动 15 分钟窗口**内自动跳闸，恢复只能人工。
+- 限流不可用仍然 **503 拒绝**，不放行（F11 不变）。
+
+### 23.8 本批已落地的数据库红线（不可协商，改动必须重跑 verify）
+
+`supabase/migrations/20260923_guest_shop_promo_l1l2.sql` 的 `guest_shop_orders_amount_check` 一次性钉住了：
+
+1. `unit_amount > 0 AND total_amount > 0` —— **任何情况下都不存在 0 元单**；
+2. `discount_amount < ROUND(list_unit_amount * quantity, 2)` —— **零元购地板**：折扣必须**严格小于**折前总额；
+3. `discount_amount <= ROUND(list_unit_amount * quantity * 0.5, 2)` —— **单笔最多折 50%**，这是本批**唯一**的折扣率边界；
+4. `payment_fee_amount <= ROUND(unit_amount * quantity * 0.1, 2) + 0.01` —— 通道费硬顶 10%（`+0.01` 是进位余量）；
+5. `total_amount = unit_amount * quantity + payment_fee_amount` —— **金额三者必须自洽**，
+   其中 `unit_amount` 是**折后**净单价、`payment_fee_amount` 是**按折后净额**计算的通道费。
+
+> ⚠️ 关于第 3 条：**本批不存在折扣率 env 旋钮，`discount_codes` 也没有折扣率列。**
+> 早期草稿的注释里提到过 `GUEST_SHOP_DISCOUNT_MAX_PERCENT` 与 `guest_max_discount_percent`，
+> 两者**都未实现**，相关注释已修正，readiness 也新增了 `no-phantom-percent-knob` 禁令，
+> 防止运维去配一个不存在的开关。**要收紧单券**用 `guest_max_uses` / `guest_max_total_discount`；
+> **要收紧整站**用 `guest_shop_promo_budget.daily_budget_cny`；
+> **要提高 50% 本身**只能改迁移并重跑 verify。
+
+其余结构性红线：`guest_shop_orders_quantity_check`（1..5）、`guest_shop_orders_discount_code_check`（字符集）、
+`discount_codes_guest_caps_check`（`guest_used_count <= guest_max_uses`、`guest_discount_total <= guest_max_total_discount`，
+让「超发的游客额度」在数据库层**不可表示**）、熔断状态只有 `closed` / `open` 两值（**无半开**）、
+四张新表全部 `ENABLE ROW LEVEL SECURITY` + `REVOKE FROM PUBLIC, anon, authenticated` + 仅 `service_role`、
+七个促销函数全部 `SECURITY DEFINER` + `SET search_path` + 非 `IMMUTABLE` + 各自**唯一重载**。
+
+### 23.9 自动化守门员清单（本批新增/扩展）
+
+| 文件 | 断言要点 | 结果 |
+|---|---|---|
+| `tests/guest-shop-promo-error-contract.test.js`（**新**，9 例） | 迁移里 `RAISE` 的每一个 `guest_*` 码都在 `GUEST_CREATE_ORDER_ERROR_CONTRACT` 有映射（**UNMAPPED 必须为空**）；表里的公开码集合与实际一致；C-E6 归一（`guest_discount_code_rejected` 等细码对外**只**呈现 `guest_discount_unavailable`）；`mapGuestCreateOrderError` 与 `failResponse` 之间**不得泄漏** `SQLSTATE` / 内部细码；跨路径码（`guest_provider_order_conflict`）仍被真实抛出 | 9/9 |
+| `tests/guest-shop-frontend-contract.test.js`（扩展，26 例，基线 25） | `guestPromo=20260923_GUEST_PROMO_L1L2_1` cache-bust 标记；数量/优惠码两个区块**默认 hidden**；preview 的 `URLSearchParams` 白名单**只有** `site/productId/skuId/quantity`；`discount_enabled` 单点驱动显隐；切换商品/SKU 时 `resetPromoSelection` 必须清空数量与券码；沿用隔离断言（无 `supabase`/`access_token`/`Authorization`/`Math.random()`） | 26/26 |
+| `tests/guest-shop-create-order-signature-compat.test.js`（扩展，**15 例** = 原 8 + 新 §5 的 7） | `fn_guest_shop_create_order` 从 13 参换到 **15 参**：旧 13 参签名被**精确 DROP**、只剩唯一重载、`p_quantity INTEGER DEFAULT 1` 与 `p_discount_code TEXT DEFAULT NULL` 逐位正确、所有 DEFAULT 参数**连续排在末尾**（否则具名调用无法解析）、未升级的调用方仍解析到 15 参函数。**§5（2026-09-23 新增，7 例）**：自动从迁移推导出**每一个历史 create_order 签名**，断言归档 verify 认识当前签名、绝不发明任何迁移没装过的签名、按 `pronamespace+proname` 而非精确签名解析、已退役键名保持退役、arity 的 CASE 覆盖当前时代 | **15/15** |
+| `tests/guest-shop-credit-pricing.test.js`（扩展，13 例） | JS 展示镜像与 SQL resolver 在阶梯/闪购上的 parity；多件小计只由服务端算 | 13/13 |
+| `tests/guest-shop-security.test.js`（扩展，10 例） | fingerprint 含 quantity + 归一化券码 + 折扣额；换券/换数量重放 → `guest_idempotency_conflict` | 10/10 |
+| `tests/guest-shop-orders-idempotency.test.js`（扩展，7 例） / `tests/guest-shop-order-access-endpoints.test.js`（扩展，43 例） | 幂等重放返回**新制度**金额形状；订单列表/详情的 `quantity` 与 `amount_breakdown` 只在行确实由促销 RPC 写入时回显（legacy 行**不得**渲染「已优惠 ¥0.00」） | 7/7、43/43 |
+| `scripts/guest-shop-readiness.js` 新增 `promo` 组 | 108 项：迁移 81 present / 17 absent（禁令）+ env 旋钮 + 客户端券码泄漏静态扫描 + 6 项 `manual_review`（schema 已应用、预算已开、熔断 closed、脏券扫描、SKU 件数扫描、parity 证据）。`--fail-on-invalid` 退出 **0**、`findings: none`；`--fail-on-not-ready` 退出 **3**（预期 fail-closed）；`manual_review_count` 14 → **20**。**时代感知探针守门（2026-09-23 新增）**：要求项 `verify-era-aware-signature` / `verify-known-signature-key` / `verify-era-aware-quantity`；禁止项 `verify-no-signature-pinned-cte` / `verify-no-era-pinned-arity` / `verify-retired-13-param-key` / `verify-retired-quantity-key`（A0 探针）与 `verify-a1b-era-aware-rpc` / `verify-a1b-retired-rpc-key`（A1b 探针） | 0 INVALID |
+| 全量回归 `node --test --test-force-exit tests/*.test.js` | **3361 tests / 3361 pass / 0 fail**，`EXIT=0`（`main` 基线 3156，**+205**，fail 仍为 0，满足 §15.3「pass 只增不减」）。开发中曾出现一次 **3314** 读数，诊断为 `--test-force-exit` 在高负载下的瞬时少计，随后三次连续运行均稳定 3361，详见证据文档 §2.7 | ✅ |
+
+> **计数勘误（2026-09-23）**：上表初稿记 compat 为 8 例、全量为 3354，那是**探针修复前**的快照。
+> 15 参签名让两个归档 verify 探针假 FAIL（D-10 同类事故第二次），修法是把它改成时代感知而非再钉一个新常量，
+> 并为此新增 compat §5 的 7 例与 readiness 的 9 条时代感知断言 —— 于是 compat 8→**15**、全量 3354→**3361**。
+> **迁移与业务代码未因这次勘误改动一行**；`20260920` / `20260921` 两个 verify 脚本改的是校验器自身。
+> 完整事故记录、修法与新键名见 `docs/guest-shop-promo-evidence.md` §1.5 / §1.7 的「探针勘误（2026-09-23）」两段。
+
+### 23.10 后续批次（不在本批）
+
+1. **L4 后台运营界面**：券的 `allow_guest` / 游客预算 / 熔断状态与人工恢复（RBAC + 二次确认 + 原因 + 审计）/ 台账查询。
+   在此之前，熔断恢复只能由运维执行 `SELECT public.fn_guest_shop_promo_set_breaker('closed', '<actor>', '<reason>')`。
+2. **C-D3 + C-D4（+ C-D5）**：放开 `GUEST_SHOP_MAX_QUANTITY ≥ 2` 的**前置条件**，见 §23.5。
+3. **§9.6 quote 端点 + quote 令牌**（可选，体验优化）：仅当运营确认「下单后才知道券不能用」的失败率过高时再做。
+4. **§7.4 阶梯锁定退避**（可选）：若 24h 配额 + 熔断仍不足以压住撞库，再补。
+5. **A4（邮箱 OTP + 游客订单并入账号）**：按 §22.3 必须排在本批之后。
+
+### 恢复的历史促销归档片段
+
+以下内容从已确认的历史工作提交恢复，仅用于保留原始证据和状态，不改变当前开关、数据库或验收结论。
+
+
+### 23.11 C-D3/C-D4/C-D5 代码闸补充状态（2026-09-22）
+
+本节 supersede §23.5 中“尚未实现”的代码状态描述；§23.5 的启用前置条件和实机证据要求仍然有效。
+
+- `supabase/migrations/20260924_guest_shop_promo_safety_gates.sql` 已实现三道数据库级 fail-closed 闸门。Codex 没有执行 SQL。2026-09-22 用户在目标 Supabase 跑完只读 verify，11/11 `ok=true`，闸门对象已经在库里。逐行归档见 `docs/guest-shop-promo-evidence.md` §2.13 和 `docs/guest-purchase-task-2.0.md` §61.25。
+- C-D3 使用 reservation 的 `inventory_source_sku_id` 聚合 source chain，并以 product 级 advisory lock 串行化 alias/CN-INTL 共享库存；物理库存仍处于 `reserve` 的陈旧 hold 继续计入，直到释放 worker 修复，避免低估真实占用。
+- C-D4 对同一联系哈希或 IP 的 `pending`、`created`、`review` 持仓订单统一计数，跨站点不拆分身份上限；排除当前订单后，其他订单达到 2 笔即拒绝。C-D5 同时检查订单和 reservation 的 600 秒硬上限，订单/预占更新也受延迟触发器保护。
+- `supabase/migrations/20260924_verify_guest_shop_promo_safety_gates.sql` 仅只读。11/11 只闭合 schema `manual_review` 里的「对象是否存在」。C-D4 拒绝半项的实机见下一条；C-D3、过期物理释放、支付和运营证据仍未执行，所以 `GUEST_SHOP_MAX_QUANTITY` 必须保持 1，促销预算/开关保持关闭。
+- 未跟踪的 `20260925_guest_shop_promo_gates.sql` 为不同实现的历史草稿，不属于本批执行顺序；不得与 20260924 迁移叠加，也不得单独替代它。
+- `function_security` 的实测 detail 是 `prosecdef=true; search_path=public,pg_temp`。未把 search_path 改成 `pg_catalog, public`。`pg_catalog` 未出现在 search_path 里时由 PostgreSQL 先搜索，本轮不改函数。
+- 2026-09-22 拒绝半项预检没有建单。C-D3/C-D4 对原价数量 1 同样生效；买家只看到 `guest_promo_safety_limit`。非共享卡 ≤5 张时第一笔即被 C-D3 拒绝，6 到 10 张时第二笔被 C-D3 拒绝，单独证明 C-D4 至少要 11 张。`is_shared = true` 不计入占比。详见 `docs/guest-shop-promo-evidence.md` §2.14。
+- 2026-09-22 稍后只对「测试 2」做了 C-D4 HTTP 实机：两笔原价不付款单成功，第三笔 409 `guest_promo_safety_limit` 且无订单号。11:10（Asia/Shanghai）前段 4 八项全 `true`，C-D4 拒绝半项已闭合；C-D3 和物理释放未做，卡 7 仍是 PARTIAL。详见 `docs/guest-shop-promo-evidence.md` §2.15。不要重跑旧回读，不要付款，不要重复建单，不要在未释放的 `reserve` 上做 C-D3。2026-09-22 11:34（Asia/Shanghai）提前脚本报「已经提前过了」并中止，没有改任何行。第二笔库内截止是 `2026-09-22 03:34:28.167897+00`，整秒字面量对不上，「仍在未来 3 分钟内」被误当成已提前。同一次过期回读差 9 秒，`seconds_until_later_expiry=9`、`within_ttl_expected=true`，安全项全是 true，不是失败。11:35 之后的过期回读段 6 已闭合：`both_expired=true`，`clock_layer_closed=true`，`release_layer_closed=true`，`both_reservations_released=true`，`both_inventory_available=true`，`cd3_stale_hold_count=0`，`cd4_contact_open_count=0`，`cd4_ip_open_count=0`，`seconds_until_later_expiry=-429`。原价、数量 1、未付款、未发货、无支付确认、无券台账、无第三笔仍全是 true。时钟层和物理释放都已闭合。这仍不是卡 7 PASS，因为 C-D3 还没做。不要在「测试」或「测试 2」上硬做 C-D3，164 张和 41 张都远低于 20% 的可观测区间，也不要改库存状态去凑 5 到 10 张。2026-09-22 预检已跑完：29 行，`use_for_cd3=true` 为 0。不要把那份预检当当前步骤重跑。2026-09-22 缺口脚本已跑完：五行，`only_switch_missing` 全部是 false。详见 `docs/guest-shop-promo-evidence.md` §2.18。不要重跑缺口脚本，不要写启用 SQL，不要建单，不要上架，不要开游客开关。真实商品和名称含「测试请勿兑换」的不要打开。
+- 2026-09-22 12:42（Asia/Shanghai）专用商品「沙箱CD3」确认通过后，只打了一笔原价不付款单。commit 409 `guest_promo_safety_limit`，没有订单号。详见 `docs/guest-shop-promo-evidence.md` §2.20。
+- 2026-09-22 同日回读已贴回：订单、支付、预占都是 0，`nonshared_available=5`，`guest_held_reserve=0`，`live_open_guest_orders=0`，`readback_verdict` 以「C-D3 拒绝可归因」开头。C-D3 拒绝半项闭合。这是原价单，不能代替促销 TTL 归还。卡 7 仍是 PARTIAL。不要再打第二笔。详见 `docs/guest-shop-promo-evidence.md` §2.21。
+- 2026-09-22 同日开关回读已贴回：`product_allow_guest=false`，`sku_allow_guest` 为空，`effective_guest=false`，`guest_switch_off=true`，`switch_verdict` 以「游客开关已关」开头。订单、支付、预占仍是 0，非共享 available 仍是 5。游客开关关闭闭合。商品仍上架，本步不要求下架。不要再打开，不要建单，不要付款。卡 7 仍是 PARTIAL。详见 `docs/guest-shop-promo-evidence.md` §2.22。
+- 2026-09-22「沙箱CD7」确认通过：非共享 available 正好 6，单价 10.00，券 `SBXPROMO10` 预期抵扣 1.00。随后只打了一笔促销 commit，公开响应是 500 `guest_shop_request_failed`，没有订单号。回读已贴回，判语以「没有留下订单」开头。详见 `docs/guest-shop-promo-evidence.md` §2.24 和 §2.25。
+- 2026-09-22 同一笔 500 的内部原因是 `guest_promo_order_ttl_invalid`。`guest_shop_orders.created_at` 仍默认 `NOW()`（事务起点），而 `fn_guest_shop_create_order` 用 `clock_timestamp()` 计算 `expires_at` 和 `reserved_until`。有券时 TTL 正好 600 秒，20260924 延迟触发器不允许它们晚于 `created_at + 600 seconds`，提交时整笔回滚。不要把 Node 的 600 减 1 秒，也不要替换已应用的建单函数。当时的修复文件是 `supabase/migrations/20260926_guest_shop_promo_ttl_clock.sql`，只把该列默认值改成 `clock_timestamp()`；然后跑 `supabase/migrations/20260926_verify_guest_shop_promo_ttl_clock.sql`，3 行都要 `ok=true`。detail 为 `now()` 表示迁移还没执行。当时的门是验证通过前不要建单，不要付款，不要开生产折扣开关。不得用 `20260925_guest_shop_promo_gates.sql` 代替。
+- 2026-09-22 时钟验证三行已贴回，全部 `ok=true`。detail 分别是 `clock_timestamp()`、`15-arg INSERT omits created_at`、`v_now is clock_timestamp and expires_at adds p_ttl_seconds`。Codex 没有执行 SQL。不要重跑这两份 20260926 SQL。14:06 那笔仍然没有留下订单。下一笔还没打，尚未建单。现行步骤是先跑 `supabase/sandbox/S154_cd7_promo_hold_readback.sql`；到期后再跑 `supabase/sandbox/S154_cd7_promo_expiry_readback.sql`。未到 `expires_at` 不是失败。不要提前截止时间，不要付款，不要开生产折扣开关。卡 7 继续 PARTIAL。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+2026-09-22 15:34（Asia/Shanghai）已留下 1 笔未付款促销单 `GS2026092207342938190F2B83D5ACF`，commit HTTP 201，应付 9.09。持有回读还没贴回。请立刻重跑 `supabase/sandbox/S154_cd7_promo_hold_readback.sql`。不要再打第二笔，不要付款，不要提前截止时间。卡 7 继续 PARTIAL。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+2026-09-22 持有回读已贴回，判语以「持有已闭合」开头。订单 `GS2026092207342938190F2B83D5ACF`，`ttl_seconds` 599.848。到期回读还没贴回。北京时间 15:44:29 之后再跑 `supabase/sandbox/S154_cd7_promo_expiry_readback.sql`。未到 `expires_at` 不是失败。不要再打第二笔，不要付款，不要提前截止时间。卡 7 继续 PARTIAL。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+2026-09-22 到期回读已贴回，判语以「归还已闭合」开头。订单 `GS2026092207342938190F2B83D5ACF`，`seconds_until_expiry` -128.353，释放原因 `expired`。非共享 available 回到 6，游客 held 为 0，券计数和当日预算回到 0，`cn_budget_is_today=true`。订单行仍记着抵扣 1.00，不要改成 0。这仍不是整卡 PASS，不要回写九项历史表。「沙箱CD7」游客开关还没关。下一步只取消它的「允许游客购买」，再跑 `supabase/sandbox/S154_cd7_switch_off_readonly.sql`。不要付款，不要再打一笔，不要提前截止时间。卡 7 继续 PARTIAL。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+2026-09-22 开关回读已贴回，判语以「游客开关已关」开头。商品「沙箱CD7」/「默认规格」，`5f940176-8059-443a-b5fd-79adc883a810` / `c955f03a-8cd6-44b8-b751-06e2ad66d4cd`，单价 10.00。`product_allow_guest=false`，`sku_allow_guest` 为空，`effective_guest=false`，`guest_switch_off=true`。商品和规格仍上架。登录积分商城可能还能看到这 6 张。本步不要求下架。游客订单 1、支付行 1、已释放预占 1、held 0，非共享 available 6，两级 `stock_count` 都是 6，付款类计数都是 0。不要再打开游客开关，不要建单，不要付款。订单行仍记着抵扣 1.00，不要改成 0。这仍不是整卡 PASS，不要回写九项历史表。卡 8 会打开全局促销熔断并要求一笔原价购买，等于要把刚关上的游客开关再打开，本步不授权。卡 7 继续 PARTIAL。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+2026-09-22 用户要求按计划继续。卡 8 现行步骤只做熔断基线，只跑 `supabase/sandbox/S154_cd8_breaker_baseline_readonly.sql`。全文一条 SELECT，不调用 `fn_guest_shop_promo_status()`。`baseline_verdict` 以「基线通过」开头才算这半步。不要打开熔断，不要补插缺行。`guest_promo_halted` 由数据库闸在预算之前返回，不要为了看见它打开 `GUEST_SHOP_DISCOUNT_ENABLED`。原价购买会重新打开「沙箱CD7」，本步不授权。不要建单，不要付款。订单 `GS2026092207342938190F2B83D5ACF` 的抵扣 1.00 不要改成 0。卡 7 继续 PARTIAL。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+2026-09-22 基线已贴回，`baseline_verdict` 以「基线通过」开头。`breaker_state=closed`，`state_exclusive_ok=true`，事件计数全是 0，`manual_open_count=0`，`manual_close_count=0`。CN 日预算 20.00，当日已用 0.00，日期 2026-09-22，intl 关闭且日预算 0.00。现行步骤只打开熔断正好一次：`node supabase/sandbox/s154-guest-promo-toolbox.js breaker open --actor s154-card8 --reason "S154 第8项" --yes`。然后 `node supabase/sandbox/s154-guest-promo-toolbox.js gate --site cn --amount 1.00`。期望 `allowed=false`、code=`guest_promo_halted`。工具箱把这行印成「未通过 / 需要人工判读」是预期业务结果，退出码仍是 0，不要因此重试，也不要打开 `GUEST_SHOP_DISCOUNT_ENABLED`。最后跑 `supabase/sandbox/S154_cd8_breaker_open_readonly.sql`。全文一条 SELECT。`open_verdict` 以「打开半步通过」开头才算这半步。不要合闸，不要建单，不要付款。不要打开「沙箱CD7」或「沙箱CD3」。订单 `GS2026092207342938190F2B83D5ACF` 的抵扣 1.00 不要改成 0。卡 7 继续 PARTIAL。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+不要第二次打开。不要跑 `S154_fixture_setup.sql` 或 `S154_cleanup.sql`。cleanup 在 open 时会自己合闸并补 `manual_close`。原价购买会重新打开「沙箱CD7」，本步不授权。`GUEST_SHOP_MAX_QUANTITY` 保持 1。卡 9 还没开始。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。卡 7 继续 PARTIAL，不得改写成整卡 PASS。
+
+2026-09-22 打开半步已贴回，`open_verdict` 以「打开半步通过」开头。`breaker_state=open`，`opened_by=s154-card8`，`breaker_reason=S154 第8项`，`opened_at=2026-09-22 09:00:51.533097+00`，`manual_open_count=1`，`manual_close_count=0`。CN 日预算 20.00，当日已用 0.00，日期 2026-09-22，intl 关闭且日预算 0.00。gate 为 `allowed=false`、code=`guest_promo_halted`，退出码 0。工具箱印「未通过 / 需要人工判读」是预期，不要因此重试，也不要打开 `GUEST_SHOP_DISCOUNT_ENABLED`。合闸已经执行正好一次，不要再跑：`node supabase/sandbox/s154-guest-promo-toolbox.js breaker closed --actor s154-card8 --reason "S154 第8项恢复" --yes`。返回 `closed`，`closed_by=s154-card8`，`closed_at=2026-09-22 09:18:20.678679+00`（北京时间 17:18:20），熔断行 reason 为空是预期。随后 `node supabase/sandbox/s154-guest-promo-toolbox.js gate --site cn --amount 1.00` 已执行，`allowed=true`、code=`ok`，退出码 0。不要重复合闸。现行步骤只跑 `supabase/sandbox/S154_cd8_breaker_close_readonly.sql`。全文一条 SELECT。`close_verdict` 以「合闸半步通过」开头才算这半步。以「还是 open」开头不是失败。合闸会把熔断行 reason 清空，关闭原因只留在 manual_close 事件。不要再打开，不要建单，不要付款。不要打开「沙箱CD7」或「沙箱CD3」。订单 `GS2026092207342938190F2B83D5ACF` 的抵扣 1.00 不要改成 0。原价购买不在这一步。卡 8 合闸后仍不是整卡 PASS，不得改写成整卡 PASS。卡 9 还没开始。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。卡 7 继续 PARTIAL。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+2026-09-22 合闸回读已贴回，`close_verdict` 以「合闸半步通过」开头。`breaker_state=closed`，`closed_by=s154-card8`，`closed_at=2026-09-22 09:18:20.678679+00`（北京时间 17:18:20），`manual_open=1`，`manual_close=1`。熔断行 reason 为空是预期。同一轮 gate 已是 `allowed=true`、code=`ok`。不要再合一次，不要再打开。现行步骤只跑 `supabase/sandbox/S154_cd9_budget_baseline_readonly.sql`。全文一条 SELECT。`baseline_verdict` 以「基线通过」开头才算这半步。CN 日预算应仍是 20.00，已用 0.00，日期 2026-09-22，intl 仍关闭。不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具，也不要跑 `S154_fixture_setup.sql` 或 `S154_cleanup.sql`。不要打开熔断，不要打开「沙箱CD7」或「沙箱CD3」，不要建单，不要付款，不要开 `GUEST_SHOP_DISCOUNT_ENABLED`。卡 9 模板里的支付、`guest_promo_budget_exhausted` 和原价可买都不在这一步。夹具会把 CN 日预算改成 1.00 并归零计数。原价购买会重新打开「沙箱CD7」。告警链路未接线，不能据此把卡 9 写成整卡 PASS。订单 `GS2026092207342938190F2B83D5ACF` 的抵扣 1.00 不要改成 0。卡 8 合闸后仍不是整卡 PASS，不得改写成整卡 PASS。卡 7 继续 PARTIAL。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+2026-09-22 卡 9 只读预算基线已贴回，`baseline_verdict` 以「基线通过」开头。`breaker_state=closed`，`closed_by=s154-card8`，`closed_at=2026-09-22 09:18:20.678679+00`，`manual_open=1`，`manual_close=1`。CN 日预算仍是 20.00，已用 0.00，日期 2026-09-22，intl 仍关闭。Codex 没有执行这条 SQL。这一轮没有新的 SQL。不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具，也不要跑 `S154_fixture_setup.sql` 或 `S154_cleanup.sql`。不要打开熔断，不要打开「沙箱CD7」或「沙箱CD3」，不要建单，不要付款，不要开 `GUEST_SHOP_DISCOUNT_ENABLED`。
+
+卡 9 基线通过不是整卡 PASS。模板里的支付、`guest_promo_budget_exhausted` 和原价可买都不在这一轮。夹具会把 CN 日预算从 20.00 改成 1.00 并归零计数。原价购买会重新打开「沙箱CD7」，公开 6 张 ¥10 的卡。告警链路未接线，没有 webhook、邮件或 IM，不能据此把卡 9 写成整卡 PASS。证据 §2.6 仍是全部未执行，卡 4 的券配额仍是「⬜ 未执行」。切 `BUDGET_TIGHT` 前要先抄卡 4，这一轮不补做卡 4，也不回写 §2.6。订单 `GS2026092207342938190F2B83D5ACF` 的抵扣 1.00 不要改成 0。卡 8 合闸后仍不是整卡 PASS，不得改写成整卡 PASS。卡 7 继续 PARTIAL。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+2026-09-22 卡 9 只读预算基线已贴回，`baseline_verdict` 以「基线通过」开头。上一节写入时这一轮没有新的 SQL。`breaker_state=closed`，`closed_by=s154-card8`，`closed_at=2026-09-22 09:18:20.678679+00`，`manual_open=1`，`manual_close=1`。CN 日预算仍是 20.00，已用 0.00，日期 2026-09-22，intl 仍关闭。抄录尚未贴回。现行步骤只跑 `supabase/sandbox/S154_cd9_card4_snapshot_readonly.sql`。全文一条 SELECT，不调用 `fn_guest_shop_promo_status()`，也不调用 `fn_guest_shop_promo_set_breaker`。`snapshot_verdict` 以「抄录通过」开头才算这半步。抄的是 `SBXPROMO10` 和 `SBXQUOTA2` 的游客计数、让利总额，以及按券汇总的台账行数和金额，不输出联系人或 IP。这不是卡 4 PASS。证据 §2.6 仍是全部未执行，卡 4 的券配额仍是「⬜ 未执行」。不要回写 §2.6。计数不是 0 时留下本行，这一轮仍不要切。写着异常不是邀请去修。不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具，也不要跑 `S154_fixture_setup.sql` 或 `S154_cleanup.sql`。不要打开熔断，不要打开「沙箱CD7」或「沙箱CD3」，不要建单，不要付款，不要开 `GUEST_SHOP_DISCOUNT_ENABLED`。卡 9 模板里的支付、`guest_promo_budget_exhausted` 和原价可买都不在这一步。夹具会把 CN 日预算从 20.00 改成 1.00 并归零计数。原价购买会重新打开「沙箱CD7」，公开 6 张 ¥10 的卡。告警链路未接线，没有 webhook、邮件或 IM，不能据此把卡 9 写成整卡 PASS。订单 `GS2026092207342938190F2B83D5ACF` 的抵扣 1.00 不要改成 0。卡 8 合闸后仍不是整卡 PASS，不得改写成整卡 PASS。卡 7 继续 PARTIAL。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+
+2026-09-22 用户贴回 `supabase/sandbox/S154_cd9_card4_snapshot_readonly.sql`，正好 1 行。Codex 没有执行这条 SQL。`snapshot_verdict` 以「抄录通过」开头。`SBXPROMO10` 与 `SBXQUOTA2` 都是 percent、结算比例 90、active、站点 cn。`SBXPROMO10` 的 `guest_max_uses` 是 50、让利上限 50.00；`SBXQUOTA2` 的 `guest_max_uses` 是 2、让利上限 30.00。两边 `guest_used_count`、`used_count`、`guest_discount_total` 都是 0。`SBXPROMO10` 台账 1 行且已归还，抵扣 1.00；`SBXQUOTA2` 台账 0 行。`breaker_state=closed`，`closed_by=s154-card8`，`closed_at=2026-09-22 09:18:20.678679+00`，`manual_open=1`，`manual_close=1`。CN 日预算仍是 20.00，已用 0.00，日期 2026-09-22，intl 仍关闭。两个沙箱游客开关仍关。「沙箱CD7」游客订单 1，付款类 0；「沙箱CD3」游客订单 0。订单 `GS2026092207342938190F2B83D5ACF` 仍未付款，预占已释放，抵扣仍是 1.00。这一轮没有新的 SQL。这不是卡 4 PASS，也不是卡 9 整卡 PASS。卡 9 基线通过不是整卡 PASS。证据 §2.6 仍是全部未执行（0/9），卡 4 的券配额仍是「⬜ 未执行」。不要回写 §2.6。现有夹具仍指向「测试」¥0.01 和「测试 2」¥144.00，重跑会改写 CN 日预算并归零计数。不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具，也不要跑 `S154_fixture_setup.sql` 或 `S154_cleanup.sql`。不要打开熔断，不要打开「沙箱CD7」或「沙箱CD3」，不要建单，不要付款，不要开 `GUEST_SHOP_DISCOUNT_ENABLED`。卡 9 模板里的支付、`guest_promo_budget_exhausted` 和原价可买都不在这一轮。原价购买会重新打开「沙箱CD7」，公开 6 张 ¥10 的卡。告警链路未接线，没有 webhook、邮件或 IM，不能据此把卡 9 写成整卡 PASS。写着异常不是邀请去修。不调用 `fn_guest_shop_promo_status()`，也不调用 `fn_guest_shop_promo_set_breaker`。订单抵扣 1.00 不要改成 0。卡 8 合闸后仍不是整卡 PASS，不得改写成整卡 PASS。卡 7 继续 PARTIAL。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+2026-09-22 切预算前的卡 4 抄录已贴回。结果尚未贴回。整份执行 `supabase/sandbox/S154_cd9_cd7_budget_tighten.sql`，不要只跑最后一条 SELECT。Codex 不执行这条 SQL。它只把已有 CN 日预算从 20.00 收到 1.00，不改已用、日期、intl、券、熔断或游客开关。`tighten_verdict` 以「收紧半步通过」开头，才表示这一次从 20.00 收到 1.00；以「本次没有再改」开头不是失败；以「看不清」开头表示没有本次标记，请整份再跑，不要手工改数字。不要把 20.00 写回去。写着异常不是邀请去修。CN 日预算是全站上限，不是「沙箱CD7」私有。生产「测试」`52246f1d-b98d-4920-9129-581296f43de9`（¥0.01）游客入口可能仍开，「测试 2」`c16212d8-6ad8-4b3c-831c-3cc68b2d7a52` 是 ¥144。原价不消耗预算。打开「沙箱CD7」会公开 6 张 ¥10 的卡。0.00 加 1.00 可以通过门禁，第二笔 1.00 才是 `guest_promo_budget_exhausted`，这一步两笔都不建。1.00 过了当天也不会自己回到 20.00。预算表没有触发器；表开了 RLS 且没有策略，改到 0 行就停，不要加策略。告警没有 webhook、邮件或 IM，只能记 N/A。订单 `GS2026092207342938190F2B83D5ACF` 的抵扣 1.00 不要改成 0。这不是卡 4 PASS，也不是卡 9 整卡 PASS。证据 §2.6 仍是 0/9，卡 4 仍是「⬜ 未执行」。不要回写 §2.6。不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具或 cleanup。不调用 `fn_guest_shop_promo_status()`，不调用 `fn_guest_shop_promo_set_breaker`，也不调用 `guest_shop_promo_gate`。不要打开熔断，不要打开「沙箱CD7」或「沙箱CD3」，不要建单，不要付款，不要开 `GUEST_SHOP_DISCOUNT_ENABLED`。卡 7 继续 PARTIAL，不得改写成整卡 PASS。卡 8 合闸后仍不是整卡 PASS。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+2026-09-22 用户贴回 `supabase/sandbox/S154_cd9_cd7_budget_tighten.sql`，正好 1 行。Codex 没有执行这条 SQL。`tighten_marker=updated`，`tighten_verdict` 以「收紧半步通过」开头。`breaker_state=closed`，`closed_by=s154-card8`。CN 启用，日预算 1.00，已用 0.00，日期 2026-09-22。intl 关闭，日预算 0.00，已用 0.00，日期 2026-09-22。不要重跑这份收紧脚本。第二次整份重跑看到「本次没有再改」不是失败，但这一轮不要再跑。不要把 20.00 写回去。以「看不清」开头仍然不是这半步的完成判语。写着异常不是邀请去修。这一轮没有新的 SQL。CN 日预算是全站上限，不是「沙箱CD7」私有。生产「测试」`52246f1d-b98d-4920-9129-581296f43de9`（¥0.01）游客入口可能仍开，「测试 2」`c16212d8-6ad8-4b3c-831c-3cc68b2d7a52` 是 ¥144。原价不消耗预算。打开「沙箱CD7」会公开 6 张 ¥10 的卡。0.00 加 1.00 可以通过门禁，第二笔 1.00 才是 `guest_promo_budget_exhausted`。这一轮两笔都不建。1.00 过了当天也不会自己回到 20.00。卡 9 模板里的支付、打满拒绝实机和原价可买都不在这一轮。支付和原价购买都会重新打开「沙箱CD7」。本贴回不授权。告警没有 webhook、邮件或 IM，只能记 N/A，不能据此把卡 9 写成整卡 PASS。这不是卡 4 PASS，也不是卡 9 整卡 PASS。证据 §2.6 仍是 0/9，卡 4 仍是「⬜ 未执行」。不要回写 §2.6。不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具或 cleanup。不调用 `fn_guest_shop_promo_status()`，不调用 `fn_guest_shop_promo_set_breaker`，也不调用 `guest_shop_promo_gate`。不要打开熔断，不要打开「沙箱CD7」或「沙箱CD3」，不要建单，不要付款，不要开 `GUEST_SHOP_DISCOUNT_ENABLED`。订单 `GS2026092207342938190F2B83D5ACF` 的抵扣 1.00 不要改成 0。卡 7 继续 PARTIAL，不得改写成整卡 PASS。卡 8 合闸后仍不是整卡 PASS。卡 9 收紧半步通过不是整卡 PASS。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+2026-09-23 卡 9 支付回读已经由用户贴回，`readback_verdict` 为「支付半步通过」。订单和支付 confirmed，金额/手续费/四项验证、履约、库存、券台账、CN 预算和熔断均符合本次半步要求。预算保留 2026-09-22 / CN 上限 1.00 / 已用 1.00；不要滚动、清零或恢复 20.00。卡 9 整卡仍未通过，卡 2 也不因这笔付款闭合；不要再次付款、再建单、踢 worker 或打开商品开关。阶段 5 仍 `in_progress`，总进度 80%（4/5）。

@@ -329,6 +329,51 @@ test('shop mutate validation accepts intl create payloads that only carry the En
     });
 });
 
+test('shop mutate validates scheduled flash fields before writing', async () => {
+    await withShopMutateHandler({}, async ({ handler }) => {
+        const res = createMockResponse();
+        await handler({
+            method: 'POST', headers: {},
+            body: {
+                action: 'validate_product', site: 'cn',
+                payload: {
+                    name: 'Scheduled Card', category: 'cards', delivery_type: 'KEY',
+                    flash_sale_start: '2026-10-02T00:00:00Z',
+                    flash_sale_end: '2026-10-01T00:00:00Z',
+                    flash_sale_price: 7
+                }
+            }
+        }, res);
+        assert.equal(res.json().validation.blockingIssues.some((issue) => issue.code === 'flash_sale_window_invalid'), true);
+    });
+});
+
+test('shop mutate requires the scheduled flash migration before saving a start time', async () => {
+    await withShopMutateHandler({
+        writeResults: [{ data: null, error: {
+            message: "Could not find the 'flash_sale_start' column of 'shop_products' in the schema cache"
+        } }]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({
+            method: 'POST', headers: {},
+            body: {
+                action: 'upsert_product', site: 'cn',
+                payload: {
+                    name: 'Scheduled Card', category: 'cards', delivery_type: 'KEY',
+                    flash_sale_start: '2026-10-01T00:00:00Z',
+                    flash_sale_end: '2026-10-02T00:00:00Z',
+                    flash_sale_price: 7
+                }
+            }
+        }, res);
+        assert.equal(res.statusCode, 409);
+        assert.equal(res.json().code, 'shop_flash_sale_start_migration_required');
+        assert.deepEqual(res.json().details, ['flash_sale_start']);
+        assert.equal(state.insertPayloads[0].flash_sale_start, '2026-10-01T00:00:00Z');
+    });
+});
+
 test('shop mutate validation warns when active KEY product has no available inventory', async () => {
     await withShopMutateHandler({
         inventoryRows: []

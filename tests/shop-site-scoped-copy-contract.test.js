@@ -160,7 +160,7 @@ test('storefront resolves product copy by current site and current UI language',
     );
     assert.match(
         publicHandlerSource,
-        /function resolveGuidanceLanguage[\s\S]*if \(normalizedValue\) \{[\s\S]*return normalizeGuidanceLanguage\(normalizedValue\);[\s\S]*return 'zh';/,
+        /function resolveGuidanceLanguage[\s\S]*const normalizedValue[\s\S]*if \(normalizedValue\)\s*(?:\{\s*)?return normalizeGuidanceLanguage\(normalizedValue\);[\s\S]*return 'zh';/,
         'public API should default missing language to Chinese for every site'
     );
     assert.match(

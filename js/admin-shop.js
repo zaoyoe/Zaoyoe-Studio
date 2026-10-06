@@ -354,6 +354,7 @@ const ShopAdmin = {
     guestExceptionProvider: '',
     guestExceptionQuery: '',
     guestExceptionsRequestToken: 0,
+    guestPromoStatusRequestToken: 0,
     focusedOrderId: '',
     currentOrderDetailId: '',
     orderDetailRequestToken: 0,
@@ -430,11 +431,13 @@ const ShopAdmin = {
         cn: {
             quantityRules: 'quantity_rules',
             flashSalePrice: 'flash_sale_price',
+            flashSaleStart: 'flash_sale_start',
             flashSaleEnd: 'flash_sale_end'
         },
         intl: {
             quantityRules: 'quantity_rules_intl',
             flashSalePrice: 'flash_sale_price_intl',
+            flashSaleStart: 'flash_sale_start_intl',
             flashSaleEnd: 'flash_sale_end_intl'
         }
     },
@@ -3270,6 +3273,292 @@ Example output format:
         return payload;
     },
 
+    loadGuestOrderSensitiveDetail: async function (orderNo) {
+        const normalizedOrderNo = String(orderNo || '').trim();
+        if (!normalizedOrderNo) throw new Error('缺少游客订单号');
+        const response = await (window.AdminApi?.fetch || fetch)(
+            this.buildAdminShopUrl('shop/guest-order-sensitive-detail', { orderNo: normalizedOrderNo }),
+            { credentials: 'include' }
+        );
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) throw new Error(payload.message || '敏感订单详情加载失败');
+        return payload;
+    },
+
+    renderGuestOrderSensitiveDetail: function (payload = {}) {
+        const escape = (v) => this.escapeHtml(v == null || v === '' ? '—' : String(v));
+        const field = (label, value, tone = '') => `<div class="shop-guest-sensitive-field${tone ? ` shop-guest-sensitive-field--${tone}` : ''}"><span class="shop-guest-sensitive-label">${escape(label)}</span><span class="shop-guest-sensitive-value">${escape(value)}</span></div>`;
+        const order = payload.order || {};
+        const inventories = Array.isArray(payload.inventories) ? payload.inventories : [];
+        const inventory = inventories[0] || null;
+        const inventoryReadError = payload.section_errors?.inventory || '';
+        const reservation = payload.reservation || null;
+        const paymentEventCount = Number.isFinite(payload.payment_event_count) ? payload.payment_event_count : 0;
+        const webhookStatus = payload.webhook_raw_body_status === 'not_saved_hash_only' ? '未保存原文；仅保留脱敏 payload 和 body_sha256' : '已保存';
+        const inventoryCards = inventories.map((item, index) => {
+            const content = String(item?.content || '').trim();
+            const inventoryId = String(item?.id || '').trim();
+            return `<div class="shop-guest-sensitive-inventory">
+                <div class="shop-guest-sensitive-inventory__header"><strong>第 ${index + 1} 张</strong><span>${escape(item?.status)}</span></div>
+                <div class="shop-guest-sensitive-inventory__content">${escape(content)}</div>
+                <div class="shop-guest-sensitive-inventory__actions">
+                    ${inventoryId ? `<button type="button" class="shop-order-detail-inline-btn" data-shop-action="inventory-show-detail" data-inventory-id="${this.escapeForAttr(inventoryId)}">库存详情</button>` : ''}
+                    ${content ? `<button type="button" class="shop-order-detail-inline-btn" data-shop-action="inventory-detail-copy-main" data-content="${this.escapeForAttr(content)}">复制</button>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+        return `<div class="shop-guest-sensitive-panel" data-sensitive-order="${this.escapeForAttr(order.order_no || '')}">
+            <div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-user-shield"></i> 管理员敏感排障信息</div></div>
+            <p class="shop-guest-exception-ops-hint">卡密仅在本次详情会话显示，页面不会保存到本地；只展示当前订单关联的库存内容和必要诊断状态。</p>
+            <div class="shop-guest-sensitive-fields">
+                <div class="shop-guest-sensitive-field shop-guest-sensitive-field--content"><span class="shop-guest-sensitive-label">卡密 / 库存内容</span><div class="shop-guest-sensitive-inventories">${inventoryCards || escape(inventoryReadError ? `库存读取失败：${inventoryReadError}` : '未关联库存')}</div></div>
+                ${field('库存状态', inventories.length ? inventories.map((item) => `${item.status || '—'}${item.is_shared ? ' · 共享库存' : ' · 独占库存'}`).join('；') : (inventoryReadError ? '库存读取失败' : '未关联库存'))}
+                ${field('领取口令明文', order.claim_secret_plaintext_status === 'not_saved_unrecoverable' ? '未保存明文，无法从 claim_secret_hash 恢复' : order.claim_secret_plaintext, 'content')}
+                ${field('claim secret 校验', order.claim_secret_hash_present ? '已保存哈希（不可逆）' : '未保存')}
+                ${field('claim secret 尝试次数', order.claim_attempt_count == null ? '—' : order.claim_attempt_count)}
+                ${field('预占状态', reservation?.status || reservation?.reservation_status || '未关联预占')}
+                ${field('预占库存引用', reservation?.inventory_id || inventory?.id || '—')}
+                ${field('webhook 事件', paymentEventCount ? `${paymentEventCount} 条已记录` : '无记录')}
+                ${field('原始 webhook body', webhookStatus)}
+            </div>
+        </div>`;
+    },
+
+    revealGuestOrderSensitiveDetail: async function (button) {
+        const orderNo = String(button?.dataset?.orderNo || '').trim();
+        if (!orderNo) return;
+        if (!window.confirm('敏感信息包含发货卡密、库存内容及订单领取诊断信息。确认仅为排障目的显示？')) return;
+        button.disabled = true;
+        button.textContent = '正在加载…';
+        try {
+            const payload = await this.loadGuestOrderSensitiveDetail(orderNo);
+            const panel = document.createElement('div');
+            panel.innerHTML = this.renderGuestOrderSensitiveDetail(payload);
+            const target = document.querySelector('#guestExceptionSensitiveDetail');
+            if (target) target.replaceWith(panel.firstElementChild);
+            button.remove();
+        } catch (error) {
+            button.disabled = false;
+            button.textContent = '显示敏感详情';
+            window.alert?.(error?.message || '敏感订单详情加载失败');
+        }
+    },
+
+    openGuestExceptionDetail: async function ({ orderNo } = {}) {
+        const normalizedOrderNo = String(orderNo || '').trim();
+        if (!normalizedOrderNo) return;
+        this.closeDynamicModal('guestExceptionDetailModal');
+        const overlay = document.createElement('div');
+        overlay.id = 'guestExceptionDetailModal';
+        overlay.dataset.shopOverlayClose = 'dynamic-modal';
+        overlay.dataset.modalId = 'guestExceptionDetailModal';
+        overlay.className = 'shop-order-content-overlay';
+        overlay.innerHTML = `<div id="guestExceptionDetailShell" class="shop-order-content-shell">${this.buildGuestExceptionDetailLoadingMarkup(normalizedOrderNo)}</div>`;
+        this.bindOverlayDismiss(overlay, () => this.closeDynamicModal('guestExceptionDetailModal'));
+        document.body.appendChild(overlay);
+        requestAnimationFrame(() => overlay.classList.add('is-visible'));
+        try {
+            const payload = await this.loadGuestOrdersViaAdminApi({
+                site: 'all',
+                exception: 'all',
+                orderNo: normalizedOrderNo,
+                page: 1,
+                pageSize: 1
+            });
+            const row = Array.isArray(payload?.rows) ? payload.rows.find((item) => String(item?.order_no || '').trim() === normalizedOrderNo) : null;
+            const shell = overlay.querySelector('#guestExceptionDetailShell');
+            if (shell) shell.innerHTML = row
+                ? this.renderGuestExceptionDetailBody(row)
+                : this.buildGuestExceptionDetailErrorMarkup('未找到该游客订单', normalizedOrderNo);
+        } catch (error) {
+            const shell = overlay.querySelector('#guestExceptionDetailShell');
+            if (shell) shell.innerHTML = this.buildGuestExceptionDetailErrorMarkup(error?.message || '游客订单详情加载失败', normalizedOrderNo);
+        }
+    },
+
+    buildGuestExceptionDetailLoadingMarkup: function (orderNo) {
+        const field = (width) => `<span class="shop-guest-detail-loading__field ${this.getShopSkeletonWidthClass(width)}"></span>`;
+        const section = (kind, count) => `<div class="shop-order-detail-section shop-order-detail-section--${kind}"><div class="shop-guest-detail-loading__fields">${Array.from({ length: count }, (_, index) => field(index % 2 ? '62%' : '84%')).join('')}</div></div>`;
+        return `<div class="shop-order-content-modal shop-order-detail-modal custom-scrollbar shop-guest-detail-loading">
+            <div class="shop-order-content-header shop-order-detail-header"><div><div class="shop-order-detail-eyebrow">Guest Order</div><h3 class="shop-order-content-title">游客订单详情</h3><div class="shop-order-content-meta">订单号：${this.escapeHtml(orderNo)}</div></div>
+            <button type="button" class="shop-order-content-close" data-shop-action="guest-exception-detail-close" aria-label="关闭">&times;</button></div>
+            <div class="shop-order-content-body shop-order-detail-body"><div class="shop-guest-detail-loading__hero">${field('70%')}${field('42%')}</div>
+            <div class="shop-order-detail-grid shop-guest-detail-loading__grid">${section('guest-summary', 6)}${section('guest-payment', 5)}${section('guest-inventory', 4)}${section('guest-timeline', 5)}${section('guest-fulfillment', 6)}${section('profit', 7)}</div></div>
+        </div>`;
+    },
+
+    buildGuestExceptionDetailErrorMarkup: function (message, orderNo) {
+        return `<div class="shop-order-content-modal shop-order-detail-modal custom-scrollbar">
+            <div class="shop-order-content-header shop-order-detail-header"><div><div class="shop-order-detail-eyebrow">Guest Order</div><h3 class="shop-order-content-title">游客订单详情</h3></div>
+            <button type="button" class="shop-order-content-close" data-shop-action="guest-exception-detail-close" aria-label="关闭">&times;</button></div>
+            <div class="shop-order-content-body shop-order-detail-body"><div class="shop-order-detail-empty"><div class="shop-order-detail-empty__title">详情加载失败</div><div class="shop-order-detail-empty__summary">${this.escapeHtml(message || '游客订单详情加载失败')}</div><div class="shop-order-content-meta">订单号：<code class="shop-order-content-order-id">${this.escapeHtml(orderNo)}</code></div></div></div>
+        </div>`;
+    },
+
+    renderGuestOrderFulfillmentSection: function (row = {}) {
+        const value = (v) => this.escapeHtml(v == null || v === '' ? '—' : String(v));
+        const time = (v) => v ? value(new Date(v).toLocaleString('zh-CN')) : '—';
+        const kv = (label, v) => `<div><span>${this.escapeHtml(label)}</span><strong>${v}</strong></div>`;
+        const badge = (label, tone = 'muted') => `<span class="shop-order-detail-badge shop-order-detail-badge--${tone}">${this.escapeHtml(label)}</span>`;
+        const payment = String(row?.payment_status || '').trim().toLowerCase();
+        const reservation = String(row?.reservation_status || '').trim().toLowerCase();
+        const reservationRow = String(row?.reservation_row_status || '').trim().toLowerCase();
+        const fulfillment = String(row?.fulfillment_status || '').trim().toLowerCase();
+        const refund = String(row?.refund_status || '').trim().toLowerCase();
+        const errorCode = row?.last_error_code || row?.payment_last_error_code || '';
+        const errorMessage = row?.last_error_message || row?.payment_last_error_message || '';
+        const recentError = [errorCode, errorMessage].filter((item) => item != null && String(item).trim()).join('：');
+        const pills = [
+            badge(`支付 ${this.formatGuestExceptionStatus(row.payment_status)}`, payment === 'confirmed' ? 'success' : 'warn'),
+            badge(`预占 ${this.formatGuestExceptionStatus(row.reservation_status)}`, reservation === 'consumed' ? 'success' : reservation === 'held' ? 'warn' : 'muted'),
+            badge(`库存行 ${this.formatGuestExceptionStatus(row.reservation_row_status)}`, reservationRow === 'consumed' ? 'success' : reservationRow === 'held' ? 'warn' : 'muted'),
+            badge(`履约 ${this.formatGuestExceptionStatus(row.fulfillment_status)}`, fulfillment === 'delivered' ? 'success' : fulfillment === 'paid_unfulfillable' ? 'danger' : 'warn'),
+            badge(`退款 ${this.formatGuestExceptionStatus(row.refund_status)}`, refund === 'succeeded' ? 'success' : ['failed', 'manual_review'].includes(refund) ? 'danger' : 'muted')
+        ].join('');
+        const actions = `<button type="button" class="guest-exception-copy-order shop-guest-exception-copy-order shop-order-detail-inline-btn" data-shop-action="guest-exception-copy-order" data-order-no="${this.escapeForAttr(row.order_no || '')}" title="复制游客订单号" aria-label="复制游客订单号"><i class="fas fa-copy" aria-hidden="true"></i> 复制订单号</button>${this.renderGuestExceptionWriteButtons(row)}${this.renderGuestBuyerAccessButton(row)}`;
+
+        return `<div class="shop-order-detail-section shop-order-detail-section--guest-fulfillment">
+            <div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-truck-fast"></i> 履约与动作</div></div>
+            <div class="shop-order-detail-hero__pills">${pills || '<span class="shop-order-detail-empty-inline">暂无履约上下文</span>'}</div>
+            <div class="shop-order-detail-kv">
+                ${kv('最近错误', value(recentError))}
+                ${kv('最近更新', time(row.updated_at))}
+                ${kv('发货完成', time(row.fulfilled_at))}
+                ${kv('预占截止', time(row.reserved_until))}
+                ${kv('订单到期', time(row.expires_at))}
+                ${kv('支付记录', value(row.payment_row_status))}
+            </div>
+            <p class="shop-guest-exception-ops-hint">动作仍按二次确认、权限校验和审计流程执行，打开详情不会自动写入订单。</p>
+            <div class="shop-order-detail-inline-actions">${actions}</div>
+        </div>`;
+    },
+
+    renderGuestOrderProfitDetailSection: function (row = {}) {
+        const profit = row?.profit_attribution && typeof row.profit_attribution === 'object'
+            ? row.profit_attribution
+            : (row?.profit && typeof row.profit === 'object' ? row.profit : {});
+        const hasNumber = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+        const firstNumber = (...values) => values.find((value) => hasNumber(value));
+        const currency = String(profit.currency || row.currency || 'CNY').trim().toUpperCase() || 'CNY';
+        const money = (value) => hasNumber(value)
+            ? `${currency} ${Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
+            : '待核对';
+        const amount = (label, value, detail = '') => `<div><span>${this.escapeHtml(label)}</span><strong>${this.escapeHtml(money(value))}</strong>${detail ? `<em>${this.escapeHtml(detail)}</em>` : ''}</div>`;
+        const revenue = firstNumber(profit.recognized_revenue_amount, profit.recognized_revenue_cny, profit.revenue_cny, row.paid_amount);
+        const gross = firstNumber(profit.gross_amount, profit.gross_amount_cny, profit.gross_revenue_cny, row.total_amount);
+        const expected = firstNumber(row.expected_amount, profit.expected_amount_cny);
+        const discount = firstNumber(profit.discount_cny, profit.discount_amount_cny, row.discount_amount)
+            ?? (hasNumber(gross) && hasNumber(expected) ? Math.max(0, Number(gross) - Number(expected)) : null);
+        const fee = firstNumber(profit.payment_fee_cny, profit.payment_fee_amount, row.payment_fee_amount);
+        const cost = firstNumber(profit.recognized_cost_cny, profit.purchase_cost_cny, profit.inventory_cost_cny, row.purchase_cost_cny,
+            Number(row.quantity || 1) === 1 ? row.inventory_purchase_unit_cost_cny : null);
+        const net = firstNumber(profit.net_profit_cny, profit.gross_profit_cny)
+            ?? (hasNumber(revenue) && hasNumber(cost) ? Number(revenue) - Number(cost) : null);
+        const refunded = ['succeeded', 'refunded', 'full_refund'].includes(String(row.refund_status || '').trim().toLowerCase()) || profit.refunded === true;
+        const tone = refunded ? 'refunded' : (hasNumber(net) && Number(net) < 0 ? 'loss' : hasNumber(net) && Number(net) > 0 ? 'profit' : 'neutral');
+        const coverage = String(profit.cost_coverage || row.cost_coverage || (hasNumber(cost) ? 'complete' : (row.inventory_id ? 'no_cost' : 'no_inventory'))).trim().toLowerCase();
+        const coverageLabel = { complete: '成本完整', partial: '部分缺成本', no_cost: '缺少成本', no_inventory: '未关联库存' }[coverage] || '待核对';
+        const coverageTone = coverage === 'complete' ? 'success' : coverage === 'no_inventory' || coverage === 'no_cost' ? 'warn' : 'neutral';
+        const reconciliation = profit.reconciliation_status || row.reconciliation_status || row.ledger_status || (refunded ? '已退款待对账' : '待核对');
+        const notes = Array.isArray(profit.notes) ? profit.notes.filter(Boolean) : [];
+        if (!notes.length) notes.push(hasNumber(cost) ? '成本已从后台归因字段读取。' : '游客订单摘要未返回采购成本，净利润需在对账数据补齐后确认。');
+        const itemCosts = Array.isArray(profit.item_costs) ? profit.item_costs.filter(Boolean) : [];
+        const itemCostMarkup = itemCosts.length
+            ? `<div class="shop-order-profit-cost-list">${itemCosts.map((item) => `<div class="shop-order-profit-cost-row shop-order-profit-cost-row--${item.cost_status === 'costed' ? 'costed' : 'missing'}"><span>${this.escapeHtml(item.product_name || item.inventory_id || '库存')}</span><strong>${this.escapeHtml(item.cost_status === 'costed' ? money(item.purchase_unit_cost_cny) : '缺成本')}</strong><em>${this.escapeHtml(item.source_batch_id ? `批次 ${item.source_batch_id}` : '未记录批次')}</em></div>`).join('')}</div>`
+            : '';
+
+        return `<div class="shop-order-detail-section shop-order-detail-section--profit shop-order-detail-section--profit-${tone}">
+            <div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-scale-balanced"></i> 利润与对账</div><div class="shop-order-detail-hero__pills">${this.renderDeliveryMetaBadge('游客现金订单', 'neutral')}${this.renderDeliveryMetaBadge(coverageLabel, coverageTone)}</div></div>
+            <div class="shop-order-profit-summary">
+                <div class="shop-order-profit-summary__primary shop-order-profit-summary__primary--${tone}"><span>净利润</span><strong>${this.escapeHtml(money(net))}</strong><em>${this.escapeHtml(String(reconciliation))}</em></div>
+                ${amount('确认收入', revenue, `实付 ${money(row.paid_amount)}`)}
+                ${amount('订单应付', expected, `原价 ${money(gross)}`)}
+                ${amount('优惠影响', discount)}
+                ${amount('支付手续费', fee)}
+                ${amount('确认成本', cost)}
+                <div><span>退款影响</span><strong>${refunded ? '已冲销' : '未退款'}</strong><em>${this.escapeHtml(this.formatGuestExceptionStatus(row.refund_status))}</em></div>
+                <div><span>对账状态</span><strong>${this.escapeHtml(String(reconciliation))}</strong><em>${this.escapeHtml(coverageLabel)}</em></div>
+            </div>
+            <div class="shop-order-profit-notes"><div class="shop-order-profit-note">商品毛利为订单估算，不是支付平台的实际结算费或最终净结算额。</div>${notes.map((note) => `<div class="shop-order-profit-note">${this.escapeHtml(note)}</div>`).join('')}</div>
+            ${itemCostMarkup}
+        </div>`;
+    },
+
+    renderGuestOrderRefundTimelineEvent: function (row = {}) {
+        const refund = String(row?.refund_status || '').trim().toLowerCase();
+        const payment = String(row?.payment_status || '').trim().toLowerCase();
+        const fulfillment = String(row?.fulfillment_status || '').trim().toLowerCase();
+        const succeeded = ['succeeded', 'refunded', 'full_refund'].includes(refund);
+        const failed = ['failed', 'manual_review'].includes(refund);
+        const pending = refund === 'pending';
+        if (!succeeded && !failed && !pending && payment !== 'refunded') return '';
+        const tone = succeeded || payment === 'refunded' ? 'success' : failed ? 'danger' : 'warn';
+        const parsedRefundAt = new Date(row?.refunded_at || '');
+        const time = Number.isFinite(parsedRefundAt.getTime())
+            ? parsedRefundAt.toLocaleString('zh-CN')
+            : '退款时间未单独记录';
+        const conflict = failed && payment === 'refunded' ? '支付记录显示已退款，请核对订单退款状态' : '';
+        const label = succeeded || payment === 'refunded' ? '退款' : this.formatGuestExceptionStatus(refund);
+        return `<div class="shop-guest-order-refund-event shop-guest-order-refund-event--${tone}" data-refund-state="${this.escapeForAttr(payment === 'refunded' ? 'refunded' : refund)}">
+            <span>${this.escapeHtml(label)}</span><strong>${this.escapeHtml(time)}</strong>
+            <small>${this.escapeHtml(conflict || (fulfillment === 'delivered' ? '已发货订单' : ''))}</small>
+        </div>`;
+    },
+
+    renderGuestExceptionDetailBody: function (row = {}) {
+        const status = (value) => this.escapeHtml(this.formatGuestExceptionStatus(value));
+        const value = (v) => this.escapeHtml(v == null || v === '' ? '—' : String(v));
+        const time = (v) => v ? value(new Date(v).toLocaleString('zh-CN')) : '—';
+        const amount = (v) => v == null || v === '' ? '—' : value(`${row.currency || ''} ${v}`.trim());
+        const kv = (label, v) => `<div class="shop-order-detail-kv"><span>${this.escapeHtml(label)}</span><strong>${v}</strong></div>`;
+        const badge = (label, tone = 'muted') => `<span class="shop-order-detail-badge shop-order-detail-badge--${tone}">${this.escapeHtml(label)}</span>`;
+        const exception = this.getGuestExceptionMeta(row.exception_key || 'normal');
+        const exceptionTone = exception.tone === 'success' ? 'success' : (exception.tone === 'danger' ? 'danger' : 'warn');
+        const orderContextPills = [
+            badge(`站点 ${String(row.site || '').toUpperCase() || '—'}`, 'neutral'),
+            badge(`数量 ${row.quantity == null ? '—' : row.quantity}`, 'muted'),
+            row.provider ? badge(`通道 ${String(row.provider).toUpperCase()}`, 'processing') : '',
+            row.channel ? badge(`渠道 ${row.channel}`, 'muted') : ''
+        ].filter(Boolean).join('');
+        const verificationPills = [
+            row.sign_verified === true ? badge('签名已校验', 'success') : row.sign_verified === false ? badge('签名未校验', 'danger') : '',
+            row.amount_verified === true ? badge('金额已校验', 'success') : row.amount_verified === false ? badge('金额未校验', 'danger') : '',
+            row.currency_verified === true ? badge('币种已校验', 'success') : row.currency_verified === false ? badge('币种未校验', 'danger') : ''
+        ].filter(Boolean).join('');
+        const verificationGroups = `<div class="shop-order-detail-hero__group shop-order-detail-hero__group--context"><span class="shop-order-detail-hero__group-label">订单环境</span><div class="shop-order-detail-hero__group-pills">${orderContextPills}</div></div><div class="shop-order-detail-hero__group shop-order-detail-hero__group--verification"><span class="shop-order-detail-hero__group-label">支付校验</span><div class="shop-order-detail-hero__group-pills">${verificationPills || badge('暂无校验结果', 'muted')}</div></div>`;
+        const paymentPills = [
+            badge(`支付 ${this.formatGuestExceptionStatus(row.payment_status)}`, row.payment_status === 'confirmed' ? 'success' : 'warn'),
+            badge(`支付记录 ${this.formatGuestExceptionStatus(row.payment_row_status)}`, row.payment_row_status === 'confirmed' ? 'success' : 'muted'),
+            badge(`退款 ${this.formatGuestExceptionStatus(row.refund_status)}`, row.refund_status === 'succeeded' ? 'success' : ['failed', 'manual_review'].includes(String(row.refund_status || '').toLowerCase()) ? 'danger' : 'muted')
+        ].join('');
+        const reservationPills = [
+            badge(`预占 ${this.formatGuestExceptionStatus(row.reservation_status)}`, row.reservation_status === 'consumed' ? 'success' : 'muted'),
+            badge(`预占行 ${this.formatGuestExceptionStatus(row.reservation_row_status)}`, row.reservation_row_status === 'held' ? 'warn' : row.reservation_row_status === 'consumed' ? 'success' : 'muted'),
+            badge(`履约 ${this.formatGuestExceptionStatus(row.fulfillment_status)}`, row.fulfillment_status === 'delivered' ? 'success' : row.fulfillment_status === 'paid_unfulfillable' ? 'danger' : 'warn')
+        ].join('');
+        const errorMarkup = row.last_error_code || row.last_error_message || row.payment_last_error_code || row.payment_last_error_message
+            ? `<div class="shop-order-detail-section shop-order-detail-section--danger"><div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-triangle-exclamation"></i> 错误与复核信息</div></div>${kv('订单错误码', value(row.last_error_code))}${kv('订单错误说明', value(row.last_error_message))}${kv('支付错误码', value(row.payment_last_error_code))}${kv('支付错误说明', value(row.payment_last_error_message))}${kv('异常分类', value(exception.label))}${kv('分类原因', value(row.exception_reason))}</div>`
+            : '';
+        const fulfillmentMarkup = this.renderGuestOrderFulfillmentSection(row);
+        const profitMarkup = this.renderGuestOrderProfitDetailSection(row);
+        const refundTimelineEvent = this.renderGuestOrderRefundTimelineEvent(row);
+        return `<div class="shop-order-content-modal shop-order-detail-modal custom-scrollbar">
+            <div class="shop-order-content-header shop-order-detail-header"><div><div class="shop-order-detail-eyebrow">Guest Order</div><h3 class="shop-order-content-title">游客订单详情</h3><div class="shop-order-content-meta">订单号：<code class="shop-order-content-order-id">${value(row.order_no)}</code></div></div><div class="shop-order-detail-inline-actions"><button type="button" class="shop-order-content-close" data-shop-action="guest-exception-detail-close" aria-label="关闭">&times;</button></div></div>
+            <div class="shop-order-content-body shop-order-detail-body">
+                <div class="shop-order-detail-hero"><div><div class="shop-order-detail-hero__title">${value(row.snapshot_product_name || row.product_id)}</div><div class="shop-order-detail-hero__subtitle">${value(row.snapshot_sku_name || row.sku_id)} · ${value(String(row.site || '').toUpperCase())}</div></div><div class="shop-order-detail-hero__pills">${badge(exception.label, exceptionTone)}${verificationGroups}</div></div>
+                <div class="shop-order-detail-grid">
+                    <div class="shop-order-detail-section"><div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-receipt"></i> 订单与金额</div></div>${kv('商品', value(row.snapshot_product_name || row.product_id))}${kv('规格', value(row.snapshot_sku_name || row.sku_id))}${kv('商品 ID', value(row.product_id))}${kv('SKU ID', value(row.sku_id))}${kv('数量', value(row.quantity))}${kv('币种', value(row.currency))}${kv('单价', amount(row.unit_amount))}${kv('订单总额', amount(row.total_amount))}${kv('应付金额', amount(row.expected_amount))}${kv('实付金额', amount(row.paid_amount))}</div>
+                    <div class="shop-order-detail-section"><div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-credit-card"></i> 支付与退款</div></div><div class="shop-order-detail-hero__pills">${paymentPills}</div>${kv('支付平台', value(row.provider))}${kv('支付渠道', value(row.channel))}${kv('支付订单 ID', value(row.payment_order_id))}${kv('支付平台订单号', value(row.provider_order_no))}${kv('最后支付事件', time(row.last_event_at))}</div>
+                    <div class="shop-order-detail-section"><div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-boxes-stacked"></i> 库存与预占</div></div><div class="shop-order-detail-hero__pills">${reservationPills}</div>${kv('预占 ID', value(row.reservation_id))}${kv('库存引用 ID', value(row.inventory_id))}${kv('预占截止', time(row.reserved_until))}${kv('订单到期', time(row.expires_at))}<p class="shop-guest-exception-ops-hint">库存内容、卡密、claim secret 和 webhook 原文属于敏感排障资料，默认隐藏，需管理员显式确认后按订单加载。</p><div id="guestExceptionSensitiveDetail" class="shop-guest-sensitive-placeholder"><button type="button" class="shop-guest-exception-action shop-guest-exception-action--sensitive shop-order-detail-inline-btn" data-shop-action="guest-exception-sensitive-detail" data-order-no="${this.escapeForAttr(row.order_no || "")}"><i class="fas fa-eye" aria-hidden="true"></i> 显示敏感详情</button></div></div>
+                    <div class="shop-order-detail-section shop-order-detail-section--guest-timeline"><div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-clock"></i> 时间线</div></div><div class="shop-order-detail-grid shop-order-detail-grid--secondary">${kv('创建', time(row.created_at))}${kv('支付', time(row.paid_at))}${kv('发货', time(row.fulfilled_at))}${kv('最近更新', time(row.updated_at))}${kv('最后事件', time(row.last_event_at))}</div>${refundTimelineEvent}</div>
+                </div>
+                ${errorMarkup}
+                ${fulfillmentMarkup}
+                ${profitMarkup}
+            </div></div>`;
+    },
+
+
     copyGuestExceptionOrder: async function (button) {
         const orderNo = String(button?.dataset?.orderNo || '').trim();
         if (!orderNo) return;
@@ -3293,6 +3582,7 @@ Example output format:
 
     getGuestExceptionWriteActions: function (row = {}) {
         const payment = String(row?.payment_status || '').trim().toLowerCase();
+        const paymentRow = String(row?.payment_row_status || '').trim().toLowerCase();
         const fulfillment = String(row?.fulfillment_status || '').trim().toLowerCase();
         const refund = String(row?.refund_status || '').trim().toLowerCase();
         const exceptionKey = String(row?.exception_key || '').trim().toLowerCase();
@@ -3307,6 +3597,14 @@ Example output format:
                 title: '申请退款',
                 icon: 'fa-undo',
                 modifier: 'refund'
+            });
+        }
+        if (refund === 'manual_review') {
+            actions.push({
+                action: 'reconcile_refund',
+                title: '核销退款',
+                icon: 'fa-receipt',
+                modifier: 'reconcile'
             });
         }
         const canFulfill = fulfillment === 'paid_unfulfillable'
@@ -3330,6 +3628,17 @@ Example output format:
                 modifier: 'unlock'
             });
         }
+        const canCloseUnpaid = (payment === 'review' || paymentRow === 'review')
+            && fulfillment !== 'delivered'
+            && !['confirmed', 'refunded', 'chargeback'].includes(payment);
+        if (canCloseUnpaid) {
+            actions.push({
+                action: 'close_unpaid_review',
+                title: '关闭未付单',
+                icon: 'fa-ban',
+                modifier: 'close-unpaid'
+            });
+        }
         return actions;
     },
 
@@ -3338,16 +3647,33 @@ Example output format:
             request_refund: {
                 title: '申请退款',
                 confirmLabel: '确认退款',
+                icon: 'fa-undo',
                 hint: '确认后会把该订单加入退款队列，由履约任务向支付通道发起退款。后台不会回显卡密或取货口令。'
+            },
+            reconcile_refund: {
+                title: '人工退款核销 (确认已退款)',
+                confirmLabel: '确认已退款并闭环',
+                icon: 'fa-check-circle',
+                hint: '该订单在支付网关自动退款失败，已转入人工财务复核。若您已在支付平台手动退款或确认结清，请在此登记流水号完成闭环。',
+                needsProviderRef: true
+            },
+            close_unpaid_review: {
+                title: '关闭未付款订单',
+                confirmLabel: '确认关闭订单',
+                icon: 'fa-ban',
+                hint: '该订单处于支付待复核状态。若已核实买家实际未支付，确认后将把订单置为失效（expired）并移出人工复核队列。',
+                needsProviderRef: false
             },
             manual_fulfill: {
                 title: '补发库存',
                 confirmLabel: '确认补发',
+                icon: 'fa-paper-plane',
                 hint: '确认后会从同 SKU 的可用非共享库存中领取一张并标记已发货。后台不会回显卡密。'
             },
             unlock_dead_letter: {
                 title: '解锁死信',
                 confirmLabel: '确认解锁',
+                icon: 'fa-unlock-alt',
                 hint: '确认后只解锁这一笔死信，并清掉 worker 死信标记。请确认当前没有活动履约租约。'
             }
         };
@@ -3373,17 +3699,25 @@ Example output format:
         const normalizedOrderId = String(orderId || '').trim();
         if (!meta || !normalizedOrderId) return;
         this.closeDynamicModal('guestExceptionOpsModal');
+        const providerRefSection = meta.needsProviderRef ? `
+            <div class="shop-refund-modal-section">
+                <label class="shop-refund-modal-label" for="guestExceptionOpsProviderRef">退款流水号 / 凭证号 <span class="required-star">*</span></label>
+                <input type="text" id="guestExceptionOpsProviderRef" class="shop-refund-modal-input refund-modal-input" placeholder="例如：支付宝退款交易号或财务记账凭证号">
+                <p id="guestExceptionOpsProviderRefError" class="shop-guest-exception-ops-error" hidden>请填写退款流水号或凭证号</p>
+            </div>
+        ` : '';
         const modalHtml = `
             <div id="guestExceptionOpsModal" data-shop-overlay-close="dynamic-modal" data-modal-id="guestExceptionOpsModal"
                 class="shop-refund-modal-overlay">
                 <div class="shop-refund-modal">
                     <h3 class="shop-refund-modal-title">
-                        <span class="shop-refund-modal-title-icon">
-                             <i class="fas fa-exclamation-circle"></i>
+                        <span class="shop-refund-modal-title-icon shop-refund-modal-title-icon--${this.escapeForAttr(action)}">
+                             <i class="fas ${this.escapeForAttr(meta.icon || 'fa-exclamation-circle')}"></i>
                         </span>
                         ${this.escapeHtml(meta.title)}
                     </h3>
                     <p class="shop-guest-exception-ops-hint">订单 ${this.escapeHtml(orderNo || normalizedOrderId)}。${this.escapeHtml(meta.hint)}</p>
+                    ${providerRefSection}
                     <div class="shop-refund-modal-section shop-refund-modal-section--remark">
                         <label class="shop-refund-modal-label" for="guestExceptionOpsReason">处理原因</label>
                         <textarea id="guestExceptionOpsReason" class="shop-refund-modal-textarea" placeholder="请填写至少 8 个字的处理原因"></textarea>
@@ -3391,7 +3725,7 @@ Example output format:
                     </div>
                     <div class="shop-refund-modal-actions">
                         <button type="button" data-shop-action="guest-exception-ops-cancel" data-modal-id="guestExceptionOpsModal" class="refund-btn-cancel">取消</button>
-                        <button type="button" class="refund-btn-confirm" data-shop-action="guest-exception-ops-confirm"
+                        <button type="button" class="refund-btn-confirm refund-btn-confirm--${this.escapeForAttr(action)}" data-shop-action="guest-exception-ops-confirm"
                             data-guest-action="${this.escapeForAttr(action)}" data-order-id="${this.escapeForAttr(normalizedOrderId)}"
                             data-order-no="${this.escapeForAttr(orderNo || '')}">${this.escapeHtml(meta.confirmLabel)}</button>
                     </div>
@@ -3404,7 +3738,11 @@ Example output format:
         });
         requestAnimationFrame(() => {
             document.getElementById('guestExceptionOpsModal')?.classList.add('is-visible');
-            document.getElementById('guestExceptionOpsReason')?.focus();
+            if (meta.needsProviderRef) {
+                document.getElementById('guestExceptionOpsProviderRef')?.focus();
+            } else {
+                document.getElementById('guestExceptionOpsReason')?.focus();
+            }
         });
     },
 
@@ -3413,6 +3751,24 @@ Example output format:
         const orderId = String(button?.dataset?.orderId || '').trim();
         const meta = this.getGuestExceptionWriteMeta(action);
         if (!meta || !orderId) return;
+
+        let providerRef = '';
+        if (meta.needsProviderRef) {
+            const refInput = document.getElementById('guestExceptionOpsProviderRef');
+            const refError = document.getElementById('guestExceptionOpsProviderRefError');
+            providerRef = String(refInput?.value || '').trim();
+            if (!providerRef) {
+                if (refError) {
+                    refError.hidden = false;
+                    refError.textContent = '请填写退款流水号或凭证号';
+                }
+                refInput?.focus();
+                this.showActionToast('请填写退款流水号或凭证号', 'warning');
+                return;
+            }
+            if (refError) refError.hidden = true;
+        }
+
         const reasonInput = document.getElementById('guestExceptionOpsReason');
         const reasonError = document.getElementById('guestExceptionOpsReasonError');
         const reason = String(reasonInput?.value || '').trim();
@@ -3429,19 +3785,28 @@ Example output format:
         this.setActionButtonLoading(button, '处理中...');
         try {
             const headers = await this.getAdminAuthHeaders();
+            const routeUrl = action === 'reconcile_refund'
+                ? this.buildAdminShopUrl('payments/shop-refund-reconcile')
+                : this.buildAdminShopUrl('shop/guest-orders');
+
+            const bodyPayload = {
+                action,
+                orderId,
+                confirm: true,
+                reason,
+                site: window.AdminSiteFilter?.getSiteFilter?.() || 'all'
+            };
+            if (action === 'reconcile_refund') {
+                bodyPayload.providerRef = providerRef;
+            }
+
             const response = await (window.AdminApi?.fetch || fetch)(
-                this.buildAdminShopUrl('shop/guest-orders'),
+                routeUrl,
                 {
                     method: 'POST',
                     credentials: 'include',
                     headers,
-                    body: JSON.stringify({
-                        action,
-                        orderId,
-                        confirm: true,
-                        reason,
-                        site: window.AdminSiteFilter?.getSiteFilter?.() || 'all'
-                    })
+                    body: JSON.stringify(bodyPayload)
                 }
             );
             const payload = await response.json().catch(() => ({}));
@@ -3533,7 +3898,7 @@ Example output format:
                         </span>
                         买家访问
                     </h3>
-                    <p class="shop-guest-exception-ops-hint">订单 ${this.escapeHtml(normalizedOrderNo)}。处理游客买家的查询密码访问问题：解锁登录锁定、生成一次性找回链接、撤销链接。后台不显示邮箱、查询密码、卡密或取货口令。</p>
+                    <p class="shop-guest-exception-ops-hint">订单 ${this.escapeHtml(normalizedOrderNo)}。处理游客买家的查询密码访问问题：解锁登录锁定、生成一次性找回链接、撤销链接。后台不显示邮箱、查询密码、卡密或其他敏感凭证。</p>
                     <div id="guestBuyerAccessState" class="shop-guest-buyer-access-state">
                         <p class="shop-guest-buyer-access-note">正在读取买家访问状态…</p>
                     </div>
@@ -3644,13 +4009,13 @@ Example output format:
         const site = String(payload.site || '').trim().toUpperCase() || '—';
 
         if (!payload.bound) {
-            // §13.2：历史订单由买家自助升级，管理台不代设密码。给出可直接照读的话术。
+            // 2.1：历史未绑定订单只允许人工核验和管理员一次性找回链接。
             stateBox.innerHTML = `
                 <div class="shop-guest-buyer-access-flag shop-guest-buyer-access-flag--warn">
                     <i class="fas fa-circle-info" aria-hidden="true"></i>
                     <div>
                         <strong>该订单尚未绑定查询密码</strong>
-                        <p>${this.escapeHtml(payload.hint || '请引导买家在游客订单页自助升级（订单号 + 取货口令）。')}</p>
+                        <p>${this.escapeHtml(payload.hint || '该订单尚未绑定查询密码。请先人工核验买家身份，再由管理员生成一次性找回链接；不要向买家提供历史凭证查询入口。')}</p>
                     </div>
                 </div>
                 <dl class="shop-guest-buyer-access-facts">
@@ -3948,7 +4313,7 @@ Example output format:
             const site = String(row.site || '').trim().toUpperCase() || '—';
             const amount = row.total_amount == null ? '—' : `${row.currency || ''} ${row.total_amount}`.trim();
             const updated = row.updated_at ? new Date(row.updated_at).toLocaleString('zh-CN') : '—';
-            return `<tr class="shop-order-row shop-guest-exception-row">
+            return `<tr class="shop-order-row shop-guest-exception-row" data-shop-action="guest-exception-row-detail" data-order-no="${this.escapeForAttr(orderNo)}" title="点击查看订单详情">
                 <td data-label="游客订单"><div class="shop-guest-exception-order-no">${this.escapeHtml(orderNo || '—')}</div><div class="shop-guest-exception-muted">游客现金单</div></td>
                 <td data-label="商品 / 站点"><div>${this.escapeHtml(product)}</div><div class="shop-guest-exception-muted">${this.escapeHtml(sku ? `${sku} · ${site}` : site)}</div></td>
                 <td data-label="支付"><div>${this.escapeHtml(this.formatGuestExceptionStatus(row.payment_status))}</div><div class="shop-guest-exception-muted">${this.escapeHtml(amount)}</div></td>
@@ -3969,6 +4334,91 @@ Example output format:
         }).join('');
     },
 
+    formatGuestPromoEventKind: function (kind) {
+        const labels = {
+            amount_mismatch: '金额不匹配',
+            identity_limit_hit: '身份限额命中',
+            budget_exhausted: '预算耗尽',
+            code_exhausted: '券额度耗尽',
+            manual_open: '人工打开熔断',
+            manual_close: '人工关闭熔断',
+            auto_open: '自动打开熔断'
+        };
+        return labels[String(kind || '').trim()] || '未知事件';
+    },
+
+    renderGuestPromoStatus: function (payload) {
+        const message = document.getElementById('guestPromoStatusMessage');
+        const budgetsContainer = document.getElementById('guestPromoStatusBudgets');
+        const eventsContainer = document.getElementById('guestPromoStatusEvents');
+        if (!message || !budgetsContainer || !eventsContainer) return;
+
+        if (!payload?.success || payload.available !== true) {
+            message.textContent = '状态暂不可用；请刷新后重试。';
+            budgetsContainer.innerHTML = '';
+            eventsContainer.textContent = '状态暂不可用';
+            return;
+        }
+
+        const breakerState = payload.breaker?.state === 'open' ? '已打开' : '已关闭';
+        const breakerTone = payload.breaker?.state === 'open' ? 'danger' : 'success';
+        const breakerTime = payload.breaker?.state === 'open' && payload.breaker?.opened_at
+            ? ` · ${new Date(payload.breaker.opened_at).toLocaleString('zh-CN')}`
+            : '';
+        message.innerHTML = `<span class="shop-guest-promo-status-breaker shop-guest-promo-status-breaker--${breakerTone}">促销熔断：${this.escapeHtml(breakerState)}</span><span>预算日期：${this.escapeHtml(payload.budget_date || '—')}</span>${this.escapeHtml(breakerTime)}`;
+
+        const siteLabels = { cn: 'CN', intl: 'INTL' };
+        const budgets = Array.isArray(payload.budgets) ? payload.budgets : [];
+        budgetsContainer.innerHTML = budgets.map((budget) => {
+            const site = String(budget?.site || '').toLowerCase();
+            if (!Object.prototype.hasOwnProperty.call(siteLabels, site)) return '';
+            const enabled = budget.enabled === true ? '已启用' : '已关闭';
+            return `<div class="shop-guest-promo-status-budget"><strong>${siteLabels[site]}</strong><span>状态：${enabled}</span><span>日预算：¥${this.escapeHtml(String(budget.daily_budget_cny ?? '—'))}</span><span>已用：¥${this.escapeHtml(String(budget.spent_cny ?? '—'))}</span><span>剩余：¥${this.escapeHtml(String(budget.remaining_cny ?? '—'))}</span>${budget.stale_date ? '<span class="shop-guest-exception-muted">显示当前预算日口径</span>' : ''}</div>`;
+        }).join('');
+
+        const events = Array.isArray(payload.events) ? payload.events : [];
+        if (!events.length) {
+            eventsContainer.textContent = '最近没有安全事件';
+            return;
+        }
+        eventsContainer.innerHTML = `<ul>${events.map((event) => {
+            const occurredAt = event?.occurred_at ? new Date(event.occurred_at).toLocaleString('zh-CN') : '—';
+            const site = event?.site === 'cn' ? 'CN' : event?.site === 'intl' ? 'INTL' : '全站';
+            return `<li><span>#${this.escapeHtml(String(event?.id ?? '—'))}</span><span>${this.escapeHtml(this.formatGuestPromoEventKind(event?.kind))}</span><span>${site}</span><time>${this.escapeHtml(occurredAt)}</time></li>`;
+        }).join('')}</ul>`;
+    },
+
+    loadGuestPromoStatus: async function () {
+        const token = (this.guestPromoStatusRequestToken || 0) + 1;
+        this.guestPromoStatusRequestToken = token;
+        const message = document.getElementById('guestPromoStatusMessage');
+        const budgets = document.getElementById('guestPromoStatusBudgets');
+        const events = document.getElementById('guestPromoStatusEvents');
+        if (message) message.textContent = '正在读取状态…';
+        if (budgets) budgets.innerHTML = '';
+        if (events) events.textContent = '正在读取…';
+
+        try {
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/promo-status'),
+                { credentials: 'include', cache: 'no-store' }
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (token !== this.guestPromoStatusRequestToken) return { stale: true };
+            if (!response.ok || !payload.success) {
+                this.renderGuestPromoStatus({ success: false, available: false });
+                return { success: false };
+            }
+            this.renderGuestPromoStatus(payload);
+            return payload;
+        } catch (_) {
+            if (token === this.guestPromoStatusRequestToken) {
+                this.renderGuestPromoStatus({ success: false, available: false });
+            }
+            return { success: false };
+        }
+    },
+
     loadGuestOrderExceptions: async function (page = 1, options = {}) {
         const tbody = document.getElementById('guestExceptionsTableBody');
         if (!tbody) return { count: 0, rows: [] };
@@ -3977,7 +4427,7 @@ Example output format:
         const loadGeneration = Number(this.shopTabLoadGeneration['guest-exceptions'] || 0);
         this.guestExceptionsPage = Math.max(1, Number.parseInt(page, 10) || 1);
         const queryInput = document.getElementById('guestExceptionQueryInput');
-        const query = String(options.queryOverride !== undefined ? options.queryOverride : queryInput?.value || this.guestExceptionQuery || '').trim();
+        const query = String(options.queryOverride !== undefined ? options.queryOverride : queryInput ? queryInput.value : this.guestExceptionQuery || '').trim();
         this.guestExceptionQuery = query;
         if (queryInput && queryInput.value !== query) queryInput.value = query;
         const filter = String(options.filterOverride || this.guestExceptionFilter || 'any').trim().toLowerCase();
@@ -4093,35 +4543,128 @@ Example output format:
     normalizeCurrentProductCategory: function (categories = this.categoryData) {
         const sortedCategories = this.getSortedAdminProductCategories(categories);
         const currentCategory = String(this.currentCategory || '').trim();
-        if (currentCategory && sortedCategories.some((category) => category.name === currentCategory)) {
+        if (currentCategory && currentCategory !== 'all' && sortedCategories.some((category) => category.name === currentCategory)) {
             this.currentCategory = currentCategory;
             return currentCategory;
         }
 
-        const fallbackCategory = String(sortedCategories[0]?.name || '').trim();
-        this.currentCategory = fallbackCategory;
-        return fallbackCategory;
+        if (sortedCategories.length > 0) {
+            this.currentCategory = sortedCategories[0].name;
+            return sortedCategories[0].name;
+        }
+
+        // The product workspace opens on the complete catalog. Category-specific
+        // views are opt-in through the filter buttons; defaulting to the first
+        // category hides valid products and breaks the all-products smoke path.
+        this.currentCategory = 'all';
+        return 'all';
+    },
+
+    syncCategoryIndicator: function (options = {}) {
+        const container = document.getElementById('productCategorySidebarList');
+        if (!container) return;
+        const indicator = container.querySelector('.list-aside__indicator');
+        const active = container.querySelector('.filter-tab.active');
+        if (!indicator || !active) return;
+        if (typeof window !== 'undefined' && window.innerWidth <= 820) {
+            return;
+        }
+        const top = active.offsetTop;
+        const height = active.offsetHeight;
+        if (!height) {
+            requestAnimationFrame(() => this.syncCategoryIndicator(options));
+            return;
+        }
+        const skipMotion = !options.animate || indicator.dataset.placed !== '1';
+        const motionStyle = skipMotion ? 'transition:none;' : '';
+        indicator.setAttribute('style', `height:${height}px;transform:translate3d(0,${top}px,0);${motionStyle}`);
+        if (skipMotion) {
+            void indicator.offsetHeight;
+            indicator.setAttribute('style', `height:${height}px;transform:translate3d(0,${top}px,0);`);
+        }
+        indicator.dataset.placed = '1';
+    },
+
+    setProductCategoryDrawer: function (open) {
+        const shopView = document.getElementById('shop-view-products');
+        const moduleShop = document.getElementById('module-shop');
+        const trigger = shopView?.querySelector('[data-list-drawer-open], [data-shop-action="product-open-category-drawer"]');
+        const shouldOpen = Boolean(open);
+        shopView?.classList.toggle('is-list-drawer-ready', true);
+        shopView?.classList.toggle('is-list-drawer-open', shouldOpen);
+        moduleShop?.classList.toggle('shop-list-drawer-open', shouldOpen);
+        document.body.classList.toggle('shop-list-drawer-open', shouldOpen);
+        if (trigger) trigger.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+        if (shouldOpen) {
+            requestAnimationFrame(() => this.syncCategoryIndicator({ animate: false }));
+        }
     },
 
     syncProductCategoryFilterButtons: function () {
-        document.querySelectorAll('#productCategoryFilters .filter-tab[data-category]').forEach((tab) => {
+        document.querySelectorAll('#productCategoryFilters .filter-tab[data-category], #productCategorySidebarList .filter-tab[data-category]').forEach((tab) => {
             const isActive = String(tab.dataset.category || '').trim() === String(this.currentCategory || '').trim();
             tab.classList.toggle('active', isActive);
+            tab.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
+        const titleEl = document.getElementById('productCatalogCategoryTitle');
+        if (titleEl) {
+            titleEl.textContent = this.currentCategory === 'all' ? '全部商品' : this.currentCategory;
+        }
+        const mobileTitleEl = document.getElementById('adminProductMobileCategoryTitle');
+        if (mobileTitleEl) {
+            mobileTitleEl.textContent = this.currentCategory === 'all' ? '全部商品' : this.currentCategory;
+        }
+        const activeSidebarTab = document.querySelector('#productCategorySidebarList .filter-tab.active');
+        if (activeSidebarTab && typeof activeSidebarTab.scrollIntoView === 'function') {
+            activeSidebarTab.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+        }
+        this.syncCategoryIndicator({ animate: true });
+    },
+
+    shopProductCategoryCache: null,
+
+    invalidateProductCache: function () {
+        if (this.shopProductCategoryCache) {
+            this.shopProductCategoryCache.clear();
+        }
     },
 
     filterCategory: function (category, btn) {
+        this.setProductCategoryDrawer(false);
         const normalizedCategory = String(category || '').trim();
         if (!normalizedCategory) return;
         this.currentCategory = normalizedCategory;
 
-        // Update UI - only update category tabs, not status tabs
-        const container = document.getElementById('productCategoryFilters');
-        const categoryTabs = container?.querySelectorAll('.filter-tab:not(.status-filter)') || [];
-        categoryTabs.forEach(t => t.classList.remove('active'));
-        btn?.classList.add('active');
+        this.syncProductCategoryFilterButtons();
 
-        // Reload Grid
+        // 1. Check exact cache key for 0ms instant category switch
+        const cacheKey = `${this.currentStatusFilter}:${this.currentProductDeliveryFilter}:${this.productSearchQuery || ''}:${normalizedCategory}`;
+        const cached = this.shopProductCategoryCache ? this.shopProductCategoryCache.get(cacheKey) : null;
+        if (cached && Array.isArray(cached.data)) {
+            this.renderProductListRows(cached.data);
+            this.syncProductSelectionModeUi();
+            return;
+        }
+
+        // 2. Check if 'all' is cached for instant in-memory filtering (0ms latency!)
+        const allKey = `${this.currentStatusFilter}:${this.currentProductDeliveryFilter}::all`;
+        const allCached = this.shopProductCategoryCache ? this.shopProductCategoryCache.get(allKey) : null;
+        if (allCached && Array.isArray(allCached.data) && !this.productSearchQuery) {
+            const filteredData = normalizedCategory === 'all'
+                ? allCached.data
+                : allCached.data.filter(p => String(p?.category || '').trim() === normalizedCategory);
+            this.renderProductListRows(filteredData);
+            this.syncProductSelectionModeUi();
+            return;
+        }
+
+        // 3. Immediately render skeleton if not in cache so user gets instant visual response
+        const listRowsContainer = document.getElementById('productsListRows');
+        if (listRowsContainer) {
+            this.renderProductListSkeleton(listRowsContainer);
+        }
+
+        // Reload Grid & List
         this.loadProducts();
     },
 
@@ -4140,6 +4683,9 @@ Example output format:
             }
         });
 
+        // Invalidate cache on status switch
+        this.invalidateProductCache();
+
         // Reload Grid
         this.loadProducts();
     },
@@ -4147,6 +4693,7 @@ Example output format:
     applyProductSearch: function () {
         const input = document.getElementById('productSearchInput');
         this.productSearchQuery = String(input?.value || '').trim();
+        this.invalidateProductCache();
         this.loadProducts();
     },
 
@@ -4156,6 +4703,7 @@ Example output format:
         if (input) {
             input.value = '';
         }
+        this.invalidateProductCache();
         this.loadProducts();
     },
 
@@ -4164,6 +4712,7 @@ Example output format:
         this.currentProductDeliveryFilter = ['all', 'key', 'api'].includes(normalizedValue)
             ? normalizedValue
             : 'all';
+        this.invalidateProductCache();
         this.loadProducts();
     },
 
@@ -4532,7 +5081,7 @@ Example output format:
     },
 
     isProductDeliveryFilterCompactLayout: function () {
-        return window.matchMedia?.('(max-width: 768px)')?.matches === true;
+        return false;
     },
 
     syncProductDeliveryFilterPlacement: function () {
@@ -4714,7 +5263,10 @@ Example output format:
             case 'orders':
                 return this.runShopTabLoader(normalizedTab, () => this.searchOrders(this.ordersPage || 1));
             case 'guest-exceptions':
-                return this.runShopTabLoader(normalizedTab, () => this.loadGuestOrderExceptions(this.guestExceptionsPage || 1));
+                return this.runShopTabLoader(normalizedTab, () => Promise.all([
+                    this.loadGuestOrderExceptions(this.guestExceptionsPage || 1),
+                    this.loadGuestPromoStatus()
+                ]));
             case 'fulfillment':
                 return this.runShopTabLoader(normalizedTab, () => this.loadDeliveryTasks(this.deliveryTaskPage || 1));
             default:
@@ -5305,6 +5857,20 @@ Example output format:
                 return;
             }
 
+            const openDrawer = target.closest('[data-list-drawer-open], [data-shop-action="product-open-category-drawer"]');
+            if (openDrawer) {
+                event.preventDefault();
+                this.setProductCategoryDrawer(true);
+                return;
+            }
+
+            const closeDrawer = target.closest('[data-list-drawer-close], [data-shop-action="product-close-category-drawer"]');
+            if (closeDrawer) {
+                event.preventDefault();
+                this.setProductCategoryDrawer(false);
+                return;
+            }
+
             const actionEl = target.closest('[data-shop-action]');
             if (!actionEl) {
                 return;
@@ -5342,9 +5908,21 @@ Example output format:
                     this.invalidateShopTabCache('guest-exceptions');
                     this.loadGuestOrderExceptions(this.guestExceptionsPage || 1);
                     break;
+                case 'guest-promo-status-refresh':
+                    void this.loadGuestPromoStatus();
+                    break;
                 case 'guest-exceptions-summary-filter':
                     this.guestExceptionFilter = actionEl.dataset.guestExceptionFilter || 'any';
                     this.loadGuestOrderExceptions(1);
+                    break;
+                case 'guest-exception-row-detail':
+                    void this.openGuestExceptionDetail({ orderNo: actionEl.dataset.orderNo });
+                    break;
+                case 'guest-exception-detail-close':
+                    this.closeDynamicModal('guestExceptionDetailModal');
+                    break;
+                case 'guest-exception-sensitive-detail':
+                    void this.revealGuestOrderSensitiveDetail(actionEl);
                     break;
                 case 'guest-exception-copy-order':
                     void this.copyGuestExceptionOrder(actionEl);
@@ -5380,8 +5958,17 @@ Example output format:
                 case 'product-open-create-modal':
                     this.openProductModal();
                     break;
+                case 'product-open-category-drawer':
+                    this.setProductCategoryDrawer(true);
+                    break;
+                case 'product-close-category-drawer':
+                    this.setProductCategoryDrawer(false);
+                    break;
                 case 'product-filter-category':
                     this.filterCategory(actionEl.dataset.category, actionEl);
+                    break;
+                case 'product-set-view':
+                    this.setProductViewMode(actionEl.dataset.viewTarget);
                     break;
                 case 'product-filter-status':
                     this.filterStatus(actionEl.dataset.status, actionEl);
@@ -5844,6 +6431,18 @@ Example output format:
             }
         }, true);
 
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                this.setProductCategoryDrawer(false);
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 820) {
+                this.setProductCategoryDrawer(false);
+            }
+        });
+
         document.addEventListener('change', (event) => {
             const target = event.target instanceof Element ? event.target : event.target?.parentElement;
             if (!target) {
@@ -6095,33 +6694,82 @@ Example output format:
         }, true);
     },
 
+    renderCategorySidebarSkeleton: function (container) {
+        if (!container) return;
+        const widths = ['list-aside-skel-name--w1', 'list-aside-skel-name--w2', 'list-aside-skel-name--w3', 'list-aside-skel-name--w4', 'list-aside-skel-name--w5', 'list-aside-skel-name--w2'];
+        const items = widths.map((wClass, index) => `
+            <div class="filter-tab is-skeleton${index === 0 ? ' active' : ''}" aria-hidden="true" data-skeleton-index="${index}">
+                <span class="list-skel list-aside-skel-name ${wClass}"></span>
+                <span class="list-skel list-aside-skel-count"></span>
+            </div>
+        `).join('');
+        container.innerHTML = `<span class="list-aside__indicator" aria-hidden="true" data-placed="1"></span>${items}`;
+    },
+
     // Render Product Category Filter Buttons dynamically
     renderProductCategoryFilters: async function () {
         const container = document.getElementById('productCategoryFilters');
-        if (!container) {
+        const sidebarContainer = document.getElementById('productCategorySidebarList');
+        if (!container && !sidebarContainer) {
             console.log('productCategoryFilters container not found');
             return;
+        }
+
+        if (sidebarContainer && (!sidebarContainer.querySelector('.filter-tab:not(.is-skeleton)'))) {
+            this.renderCategorySidebarSkeleton(sidebarContainer);
         }
 
         try {
             // Use the same category source as Import tab
             await this.loadCategories();
 
-            console.log('Categories for filters:', this.categoryData);
-
-            container.innerHTML = '';
             const categories = this.getSortedAdminProductCategories(this.categoryData);
             this.normalizeCurrentProductCategory(categories);
 
-            // Add dynamic category buttons from categoryData
-            categories.forEach(cat => {
-                const btn = document.createElement('button');
-                btn.className = `filter-tab${this.currentCategory === cat.name ? ' active' : ''}`;
-                btn.textContent = cat.name;
-                btn.dataset.shopAction = 'product-filter-category';
-                btn.dataset.category = cat.name;
-                container.appendChild(btn);
-            });
+            // 1. Populate sidebar tabs (with count badges and sliding indicator, without 'all' tab)
+            if (sidebarContainer) {
+                sidebarContainer.innerHTML = '<span class="list-aside__indicator" aria-hidden="true"></span>';
+
+                categories.forEach(cat => {
+                    const btn = document.createElement('button');
+                    btn.className = `filter-tab${this.currentCategory === cat.name ? ' active' : ''}`;
+                    btn.type = 'button';
+                    btn.dataset.shopAction = 'product-filter-category';
+                    btn.dataset.category = cat.name;
+                    btn.setAttribute('aria-pressed', this.currentCategory === cat.name ? 'true' : 'false');
+                    btn.innerHTML = `
+                        <span data-list-category-label class="category-name">${this.escapeHtml(cat.name)}</span>
+                        <span class="count" data-list-category-count data-category-count="${this.escapeForAttr(cat.name)}">${this.getCategoryProductCount(cat.name)}</span>
+                    `;
+                    sidebarContainer.appendChild(btn);
+                });
+
+                this.syncCategoryIndicator();
+            }
+
+            // 2. Populate original container for backward compatibility
+            if (container) {
+                container.innerHTML = '';
+
+                const allButton = document.createElement('button');
+                allButton.className = `filter-tab${this.currentCategory === 'all' ? ' active' : ''}`;
+                allButton.textContent = '全部';
+                allButton.dataset.shopAction = 'product-filter-category';
+                allButton.dataset.category = 'all';
+                container.appendChild(allButton);
+
+                // Add dynamic category buttons from categoryData
+                categories.forEach(cat => {
+                    const btn = document.createElement('button');
+                    btn.className = `filter-tab${this.currentCategory === cat.name ? ' active' : ''}`;
+                    btn.textContent = cat.name;
+                    btn.dataset.shopAction = 'product-filter-category';
+                    btn.dataset.category = cat.name;
+                    container.appendChild(btn);
+                });
+            }
+
+            this.syncProductCategoryFilterButtons();
 
         } catch (e) {
             console.error('Failed to load category filters:', e);
@@ -7939,6 +8587,7 @@ Example output format:
         const toggleBtn = document.getElementById('toggleProductSelectionBtn');
         const batchBtn = document.getElementById('productBatchActionsBtn');
         const grid = document.getElementById('productsGrid');
+        const listView = document.getElementById('productsListView');
 
         if (toggleBtn) {
             toggleBtn.classList.toggle('active', this.isProductSelectionMode);
@@ -7949,11 +8598,19 @@ Example output format:
         if (grid) {
             grid.classList.toggle('shop-admin-products-grid--selection-mode', this.isProductSelectionMode);
         }
+        if (listView) {
+            listView.classList.toggle('shop-admin-products-list--selection-mode', this.isProductSelectionMode);
+        }
 
         if (!this.isProductSelectionMode) {
             document.querySelectorAll('.product-select-checkbox').forEach((input) => {
                 input.checked = false;
             });
+            const headSelectAll = document.getElementById('adminProductTableHeadSelectAll');
+            if (headSelectAll) {
+                headSelectAll.checked = false;
+                headSelectAll.indeterminate = false;
+            }
             this.closeProductBatchMenu();
             this.updateProductSelectionCount();
         }
@@ -8878,11 +9535,19 @@ Example output format:
 
     isAdminProductFlashSaleActive: function (product = {}) {
         const marketingFields = this.getMarketingFieldMap();
-        const flashPrice = Number(product?.[marketingFields.flashSalePrice]);
+        const flashPriceValue = product?.[marketingFields.flashSalePrice];
+        const flashPrice = Number(flashPriceValue);
+        const flashStartValue = product?.[marketingFields.flashSaleStart];
+        const hasFlashStart = flashStartValue !== null && flashStartValue !== undefined && flashStartValue !== '';
+        const flashStartMs = hasFlashStart ? Date.parse(flashStartValue) : null;
         const flashEndMs = Date.parse(product?.[marketingFields.flashSaleEnd] || '');
-        return Number.isFinite(flashPrice)
+        return flashPriceValue !== null
+            && flashPriceValue !== undefined
+            && flashPriceValue !== ''
+            && Number.isFinite(flashPrice)
             && flashPrice >= 0
             && Number.isFinite(flashEndMs)
+            && (!hasFlashStart || (Number.isFinite(flashStartMs) && flashStartMs <= Date.now()))
             && flashEndMs > Date.now();
     },
 
@@ -8907,6 +9572,336 @@ Example output format:
         return `<div class="shop-admin-product-special-badge shop-admin-product-special-badge--tier" title="${this.escapeForAttr(`阶梯价：${rulesLabel}`)}">阶梯价</div>`;
     },
 
+    productViewMode: 'list',
+    productCategoryCountMap: {},
+
+    getCategoryProductCount: function (categoryName) {
+        if (!this.productCategoryCountMap) return 0;
+        return Number(this.productCategoryCountMap[categoryName] ?? 0) || 0;
+    },
+
+    syncProductCategorySidebarCounts: function () {
+        document.querySelectorAll('#productCategorySidebarList .count[data-category-count]').forEach((badge) => {
+            const cat = badge.dataset.categoryCount;
+            if (cat) {
+                badge.textContent = String(this.getCategoryProductCount(cat));
+            }
+        });
+    },
+
+    updateProductCategoryCountsFromProducts: function (products) {
+        if (!Array.isArray(products)) return;
+        const counts = { all: products.length };
+        products.forEach(p => {
+            const cat = String(p.category || 'other').trim();
+            counts[cat] = (counts[cat] || 0) + 1;
+        });
+        this.productCategoryCountMap = counts;
+        this.syncProductCategorySidebarCounts();
+    },
+
+    refreshCategoryCountsBackground: async function () {
+        try {
+            const payload = await this.loadShopProductsViaAdminApi({
+                status: this.currentStatusFilter === 'active' ? 'active' : 'deleted',
+                fields: 'picker'
+            });
+            const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+            this.updateProductCategoryCountsFromProducts(rows);
+        } catch (_err) {
+            // Non-blocking
+        }
+    },
+
+    setProductViewMode: function (view) {
+        this.productViewMode = 'list';
+        try {
+            localStorage.setItem('admin_shop_product_view_mode', 'list');
+        } catch (_e) {}
+
+        const layout = document.querySelector('.shop-admin-products-layout') || document.querySelector('.list-layout');
+        if (layout) {
+            layout.dataset.view = 'list';
+            layout.dataset.shopLayout = 'list';
+        }
+
+        const viewProducts = document.getElementById('shop-view-products');
+        if (viewProducts) {
+            viewProducts.dataset.view = 'list';
+            viewProducts.dataset.shopLayout = 'list';
+            viewProducts.classList.add('shop-layout--list');
+            viewProducts.classList.remove('shop-layout--grid');
+        }
+
+        const cachedProducts = Array.from(this.productGridCache?.values() || []);
+        this.renderProductListRows(cachedProducts);
+    },
+
+    renderProductListSkeleton: function (container, { count = 5 } = {}) {
+        const target = container || document.getElementById('productsListRows');
+        if (!target) return;
+        const rows = [];
+        for (let i = 0; i < count; i += 1) {
+            rows.push(`
+                <article class="list-row is-skeleton" aria-hidden="true">
+                    <div class="list-product">
+                        <div class="list-thumb list-skel"></div>
+                        <div class="list-product__copy">
+                            <strong class="list-skel"></strong>
+                            <p class="list-skel"></p>
+                        </div>
+                    </div>
+                    <div class="list-metrics">
+                        <div class="list-price"><span class="list-skel shop-admin-skeleton--price"></span></div>
+                        <span class="list-stock"><span class="list-skel shop-admin-skeleton--stock"></span></span>
+                        <span class="list-sales"><span class="list-skel shop-admin-skeleton--badge"></span></span>
+                        <div class="list-actions"><span class="list-skel shop-admin-skeleton--icon-btn"></span></div>
+                    </div>
+                </article>
+            `);
+        }
+        target.innerHTML = rows.join('');
+    },
+
+    renderProductListRows: function (products) {
+        const listRowsContainer = document.getElementById('productsListRows');
+        if (!listRowsContainer) return;
+
+        const data = Array.isArray(products) ? products : Array.from(this.productGridCache?.values() || []);
+        listRowsContainer.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            listRowsContainer.innerHTML = '<div class="shop-list-empty">没有找到匹配的商品</div>';
+            listRowsContainer.classList.remove('is-enter');
+            void listRowsContainer.offsetWidth;
+            listRowsContainer.classList.add('is-enter');
+            return;
+        }
+
+        data.forEach(p => {
+            const safeProductId = this.escapeForAttr(String(p.id || ''));
+            const productDisplayName = this.getAdminProductDisplayName(p);
+            const safeProductName = this.escapeHtml(productDisplayName);
+            const safeProductDescription = this.escapeHtml(this.getAdminProductDescription(p));
+            const safeProductNameAttr = this.escapeForAttr(productDisplayName);
+            const productAltText = this.escapeForAttr(productDisplayName || '商品封面');
+
+            const stock = Math.max(0, Number(p.stock_count || 0) || 0);
+            const manualDelivery = p.manual_delivery === true;
+
+            const productImageAsset = getShopProductImageAsset(p);
+            const productImageOriginalUrl = getShopProductImageAssetUrl(productImageAsset, 'original') || String(p.icon_url || '');
+            const productImageCacheVersion = buildShopProductImageCacheVersion(p);
+            const productImageDisplayOriginalUrl = appendShopImageUrlVersion(productImageOriginalUrl, productImageCacheVersion);
+            const safeProductIconUrl = this.escapeForAttr(productImageDisplayOriginalUrl);
+            const safeProductIconClass = this.escapeForAttr(String(p.icon_url || 'fas fa-box'));
+            const hasProductImage = this.isShopImageSource(productImageOriginalUrl);
+
+            const displayThumbHtml = hasProductImage
+                ? `<img class="list-thumb__image" alt="${productAltText}" loading="lazy" decoding="async" data-shop-product-image="1" data-shop-product-original-src="${safeProductIconUrl}">`
+                : (p.icon_url?.startsWith('fa')
+                    ? `<i class="${safeProductIconClass}" aria-hidden="true"></i>`
+                    : (p.icon_url
+                        ? `<img class="list-thumb__image" src="${safeProductIconUrl}" alt="${productAltText}">`
+                        : '<svg class="shop-icon-fallback" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>'));
+
+            const hasFlashSale = this.isAdminProductFlashSaleActive(p);
+            const hasTiered = (this.getAdminProductDiscountTierRules(p) || []).length > 0;
+
+            const editSite = ShopAdmin.getEditSite();
+            const skuPrice = this.getAdminProductPrimarySkuPrice(p);
+            const basePrice = editSite === 'intl' ? (skuPrice ?? p.price_points_intl) : (skuPrice ?? p.price_points);
+            const formattedPrice = basePrice != null ? this.formatAdminProductPointValue(basePrice) : '--';
+
+            let priceValue = formattedPrice;
+            let originalPriceHtml = '';
+            if (hasFlashSale && p.flash_sale_price != null) {
+                const flashPriceFormatted = this.formatAdminProductPointValue(p.flash_sale_price);
+                originalPriceHtml = `<del class="list-price__original" aria-label="原价">￥${formattedPrice}</del>`;
+                priceValue = flashPriceFormatted;
+            }
+
+            let stockLabel = '';
+            if (manualDelivery) {
+                stockLabel = '在线交付';
+            } else if (stock <= 0) {
+                stockLabel = '<span class="shop-product-stock--empty">售罄</span>';
+            } else if (stock < 3) {
+                stockLabel = `<span class="shop-product-stock--low">即将售罄 (${stock})</span>`;
+            } else if (stock <= 10) {
+                stockLabel = `充足 (${stock})`;
+            } else {
+                stockLabel = `充足 (${stock})`;
+            }
+
+            const statusBadgeHtml = p.is_active
+                ? '<span class="list-chip list-chip--auto">上架中</span>'
+                : '<span class="list-chip list-chip--offline">已下架</span>';
+
+            const chips = [];
+            if (hasFlashSale) {
+                chips.push('<span class="list-chip list-chip--flash"><i class="fas fa-bolt-lightning list-chip--flash__icon" aria-hidden="true"></i><span class="flash-sale-badge__label">秒杀</span></span>');
+            }
+            if (hasTiered) {
+                chips.push('<span class="list-chip list-chip--wholesale">阶梯价</span>');
+            }
+            if (manualDelivery) {
+                chips.push('<span class="list-chip list-chip--online">人工发货</span>');
+            } else if (p.delivery_type === 'api') {
+                chips.push('<span class="list-chip list-chip--online">API 接口</span>');
+            } else {
+                chips.push('<span class="list-chip list-chip--auto">自动交付</span>');
+            }
+            if (p.allow_guest_purchase) {
+                chips.push('<span class="list-chip list-chip--guest-purchase">游客可购</span>');
+            }
+            if (p.category) {
+                chips.push(`<span class="list-chip">${this.escapeHtml(p.category)}</span>`);
+            }
+            const chipsHtml = chips.join('');
+
+            const row = document.createElement('article');
+            row.className = 'list-row' + (p.is_active ? '' : ' inactive-product');
+            row.dataset.productId = safeProductId;
+
+            row.innerHTML = `
+                <div class="list-product">
+                    <label class="product-card-checkbox-label" title="选择商品">
+                        <input type="checkbox" class="inv-checkbox product-select-checkbox" data-product-id="${safeProductId}">
+                        <span class="product-card-checkbox-custom"></span>
+                    </label>
+                    <div class="list-thumb">
+                        ${displayThumbHtml}
+                    </div>
+                    <div class="list-product__copy">
+                        <strong>${safeProductName}</strong>
+                        <p>${safeProductDescription || ''}</p>
+                        <div class="list-chips">
+                            ${chipsHtml}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="list-metrics">
+                    <div class="list-price${hasFlashSale ? ' list-price--flash' : ''}">
+                        ${originalPriceHtml}
+                        <span class="list-price__symbol" aria-hidden="true">￥</span>
+                        <span class="list-price__value">${priceValue}</span>
+                    </div>
+
+                    <span class="list-stock">
+                        ${stockLabel}
+                    </span>
+
+                    <span class="list-sales">
+                        ${statusBadgeHtml}
+                    </span>
+
+                    <div class="list-actions">
+                        <button type="button" class="list-action-btn" data-shop-action="product-edit" data-product-id="${safeProductId}" title="编辑">
+                            <i class="fas fa-edit" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="list-action-btn" data-shop-action="product-toggle-status" data-product-id="${safeProductId}" data-new-status="${!p.is_active}" title="${p.is_active ? '下架' : '上架'}">
+                            <i class="fas fa-${p.is_active ? 'eye-slash' : 'eye'}" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="list-action-btn list-action-btn--danger" data-shop-action="product-delete" data-product-id="${safeProductId}" data-product-name="${safeProductNameAttr}" title="删除">
+                            <i class="fas fa-trash" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            // Row image hydration
+            const productImage = row.querySelector('img[data-shop-product-image="1"]');
+            if (productImage) {
+                productImage.addEventListener('error', () => {
+                    if (this.handleProductCardImageError(productImage, productImageAsset || productImageOriginalUrl)) {
+                        return;
+                    }
+                    this.replaceProductCardImageWithFallback(productImage);
+                });
+                this.setProductCardImageSource(productImage, productImageAsset || productImageOriginalUrl, {
+                    version: productImageCacheVersion
+                });
+            }
+
+            // Edit button
+            const editBtn = row.querySelector('[data-shop-action="product-edit"]');
+            if (editBtn) {
+                editBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    await this.editProduct(safeProductId);
+                });
+            }
+
+            // Toggle Status button
+            const toggleBtn = row.querySelector('[data-shop-action="product-toggle-status"]');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    await this.toggleStatus(safeProductId, !p.is_active, toggleBtn);
+                });
+            }
+
+            // Delete button
+            const deleteBtn = row.querySelector('[data-shop-action="product-delete"]');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    await this.deleteProduct(safeProductId, p.name || '', deleteBtn);
+                });
+            }
+
+            // Checkbox
+            const checkbox = row.querySelector('.product-select-checkbox');
+            if (checkbox) {
+                checkbox.addEventListener('click', (e) => e.stopPropagation());
+                checkbox.addEventListener('change', () => {
+                    const isChecked = checkbox.checked;
+                    document.querySelectorAll(`.product-select-checkbox[data-product-id="${safeProductId}"]`).forEach(cb => {
+                        cb.checked = isChecked;
+                    });
+                    this.updateProductSelectionCount();
+                });
+            }
+
+            // Row click in selection mode
+            row.addEventListener('click', (e) => {
+                if (this.isProductSelectionMode) {
+                    if (e.target.closest('.list-action-btn') || e.target.closest('.product-select-checkbox')) return;
+                    const rowCheckbox = row.querySelector('.product-select-checkbox');
+                    if (rowCheckbox) {
+                        rowCheckbox.checked = !rowCheckbox.checked;
+                        const isChecked = rowCheckbox.checked;
+                        document.querySelectorAll(`.product-select-checkbox[data-product-id="${safeProductId}"]`).forEach(cb => {
+                            cb.checked = isChecked;
+                        });
+                        this.updateProductSelectionCount();
+                    }
+                }
+            });
+
+            listRowsContainer.appendChild(row);
+        });
+
+        // Ensure current selection state is applied to list checkboxes
+        document.querySelectorAll('#productsGrid .product-select-checkbox:checked').forEach(gridCb => {
+            const pid = gridCb.dataset.productId;
+            if (pid) {
+                const listCb = listRowsContainer.querySelector(`.product-select-checkbox[data-product-id="${pid}"]`);
+                if (listCb) listCb.checked = true;
+            }
+        });
+
+        // Trigger smooth cascade entrance animation (1:1 with shop page)
+        listRowsContainer.classList.remove('is-enter');
+        void listRowsContainer.offsetWidth;
+        listRowsContainer.classList.add('is-enter');
+    },
+
     loadProducts: async function () {
         const container = document.getElementById('productsGrid');
         if (!container) return; // Grid container might be missing if HTML update failed
@@ -8925,6 +9920,10 @@ Example output format:
         this.shopTabLoadState.products = 'loading';
         container.classList.add('shop-grid', 'shop-admin-products-grid');
         this.renderProductGridSkeleton(container);
+        const listRowsContainer = document.getElementById('productsListRows');
+        if (listRowsContainer && !listRowsContainer.querySelector('.list-row.is-skeleton')) {
+            this.renderProductListSkeleton(listRowsContainer);
+        }
         this.productGridCache = new Map();
 
         try {
@@ -8943,6 +9942,16 @@ Example output format:
             const data = Array.isArray(payload?.rows) ? payload.rows : [];
             this.productGridCache = new Map((data || []).map((product) => [String(product.id || ''), { ...product }]));
 
+            if (!this.shopProductCategoryCache) this.shopProductCategoryCache = new Map();
+            const cacheKey = `${this.currentStatusFilter}:${this.currentProductDeliveryFilter}:${this.productSearchQuery || ''}:${normalizedCategory || 'all'}`;
+            this.shopProductCategoryCache.set(cacheKey, { data, timestamp: Date.now() });
+
+            if (this.currentCategory === 'all' && !this.productSearchQuery && this.currentProductDeliveryFilter === 'all') {
+                this.updateProductCategoryCountsFromProducts(data);
+            } else if (Object.keys(this.productCategoryCountMap || {}).length <= 1) {
+                void this.refreshCategoryCountsBackground();
+            }
+
             container.innerHTML = '';
 
             // Add "New Product" Card
@@ -8956,6 +9965,8 @@ Example output format:
             container.appendChild(addCard);
 
             if (!data || data.length === 0) {
+                this.renderProductListRows([]);
+                this.setProductViewMode(this.productViewMode || 'list');
                 this.syncProductSelectionModeUi();
                 if (Number(this.shopTabLoadGeneration.products || 0) === loadGeneration) {
                     this.shopTabLoadState.products = 'loaded';
@@ -9118,6 +10129,8 @@ Example output format:
                 container.appendChild(card);
             });
 
+            this.renderProductListRows(data);
+            this.setProductViewMode(this.productViewMode || 'list');
             this.syncProductSelectionModeUi();
 
             // Refresh sidebar list
@@ -9188,21 +10201,50 @@ Example output format:
     },
 
     updateProductSelectionCount: function () {
-        const count = document.querySelectorAll('.product-select-checkbox:checked').length;
+        const checkedBoxes = Array.from(document.querySelectorAll('.product-select-checkbox:checked'));
+        const uniqueIds = new Set(checkedBoxes.map(cb => cb.dataset.productId).filter(Boolean));
+        const count = uniqueIds.size;
         const countEl = document.getElementById('productBatchSelectedCount');
         if (countEl) countEl.textContent = count;
+
+        const headSelectAll = document.getElementById('adminProductTableHeadSelectAll');
+        if (headSelectAll) {
+            const allBoxes = Array.from(document.querySelectorAll('.product-select-checkbox'));
+            if (allBoxes.length > 0 && checkedBoxes.length === allBoxes.length) {
+                headSelectAll.checked = true;
+                headSelectAll.indeterminate = false;
+            } else if (checkedBoxes.length > 0) {
+                headSelectAll.checked = false;
+                headSelectAll.indeterminate = true;
+            } else {
+                headSelectAll.checked = false;
+                headSelectAll.indeterminate = false;
+            }
+        }
     },
 
     selectAllProducts: function () {
+        const headSelectAll = document.getElementById('adminProductTableHeadSelectAll');
         const checkboxes = document.querySelectorAll('.product-select-checkbox');
-        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        let shouldCheck;
+        if (headSelectAll && headSelectAll.matches(':focus, :hover, :active')) {
+            shouldCheck = headSelectAll.checked;
+        } else {
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            shouldCheck = !allChecked;
+        }
 
-        checkboxes.forEach(cb => cb.checked = !allChecked);
+        checkboxes.forEach(cb => {
+            cb.checked = shouldCheck;
+        });
+
+        this.isProductSelectionMode = shouldCheck;
+        this.syncProductSelectionModeUi();
         this.updateProductSelectionCount();
 
         // Keep menu open
         const menu = document.getElementById('productBatchActionMenu');
-        if (menu) {
+        if (menu && menu.classList.contains('is-open')) {
             menu.classList.add('is-open');
         }
     },
@@ -9212,8 +10254,8 @@ Example output format:
             return;
         }
 
-        const selectedIds = Array.from(document.querySelectorAll('.product-select-checkbox:checked'))
-            .map(cb => cb.dataset.productId);
+        const selectedIds = [...new Set(Array.from(document.querySelectorAll('.product-select-checkbox:checked'))
+            .map(cb => cb.dataset.productId).filter(Boolean))];
 
         if (selectedIds.length === 0) {
             alert('请先选择要删除的商品');
@@ -9236,6 +10278,7 @@ Example output format:
             // Exit selection mode and refresh
             this.isProductSelectionMode = true; // Will be toggled off by next line
             this.toggleProductSelectionMode(); // Exit mode
+            this.invalidateProductCache();
             await this.loadProducts();
 
             const successMessage = `成功删除 ${result.deleted || selectedIds.length} 个商品`;
@@ -9255,8 +10298,8 @@ Example output format:
         try {
             let products;
             if (selectedOnly) {
-                const selectedIds = Array.from(document.querySelectorAll('.product-select-checkbox:checked'))
-                    .map(cb => cb.dataset.productId);
+                const selectedIds = [...new Set(Array.from(document.querySelectorAll('.product-select-checkbox:checked'))
+                    .map(cb => cb.dataset.productId).filter(Boolean))];
 
                 if (selectedIds.length === 0) {
                     alert('请先选择要导出的商品');
@@ -9760,6 +10803,12 @@ Example output format:
         document.getElementById('prodMaxPurchaseQuantity').value = data.max_purchase_quantity != null
             ? data.max_purchase_quantity
             : '';
+        const guestMaxPurchaseQuantityInput = document.getElementById('prodGuestMaxPurchaseQuantity');
+        if (guestMaxPurchaseQuantityInput) {
+            guestMaxPurchaseQuantityInput.value = data.guest_max_quantity != null
+                ? data.guest_max_quantity
+                : '1';
+        }
         this.setOptionalInputValue(
             'prodPurchaseLimit24hQuantity',
             data.purchase_limit_24h_quantity != null ? data.purchase_limit_24h_quantity : ''
@@ -9778,10 +10827,19 @@ Example output format:
         );
 
         document.getElementById('prodFlashSalePrice').value = data?.[marketingFields.flashSalePrice] != null ? data[marketingFields.flashSalePrice] : '';
+        if (data?.[marketingFields.flashSaleStart]) {
+            const date = new Date(data[marketingFields.flashSaleStart]);
+            document.getElementById('prodFlashSaleStart').value = Number.isFinite(date.getTime())
+                ? new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16)
+                : '';
+        } else {
+            document.getElementById('prodFlashSaleStart').value = '';
+        }
         if (data?.[marketingFields.flashSaleEnd]) {
             const date = new Date(data[marketingFields.flashSaleEnd]);
-            const localIso = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-            document.getElementById('prodFlashSaleEnd').value = localIso;
+            document.getElementById('prodFlashSaleEnd').value = Number.isFinite(date.getTime())
+                ? new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16)
+                : '';
         } else {
             document.getElementById('prodFlashSaleEnd').value = '';
         }
@@ -9800,6 +10858,7 @@ Example output format:
             allow_guest_purchase: data.allow_guest_purchase === true || String(data.allow_guest_purchase || '').toLowerCase() === 'true',
             guest_cash_price_cny: data.guest_cash_price_cny,
             guest_cash_price_intl: data.guest_cash_price_intl,
+            guest_max_quantity: data.guest_max_quantity,
             guest_payment_channels: data.guest_payment_channels
         });
 
@@ -9953,8 +11012,13 @@ Example output format:
         if (document.getElementById('prodGuestChannelNowpayments')?.checked) {
             channels.push('nowpayments');
         }
+        const guestMaxQuantityRaw = (document.getElementById('prodGuestMaxPurchaseQuantity')?.value || '').trim();
+        const guestMaxQuantity = guestMaxQuantityRaw === ''
+            ? 1
+            : Number.parseInt(guestMaxQuantityRaw, 10);
         return {
             allow_guest_purchase: document.getElementById('prodAllowGuestPurchase')?.checked === true,
+            guest_max_quantity: Number.isFinite(guestMaxQuantity) ? guestMaxQuantity : guestMaxQuantityRaw,
             guest_cash_price_cny: null,
             guest_cash_price_intl: null,
             guest_payment_channels: channels
@@ -10013,6 +11077,12 @@ Example output format:
         if (checkbox) {
             checkbox.checked = allowGuestPurchase;
         }
+        const guestMaxQuantityInput = document.getElementById('prodGuestMaxPurchaseQuantity');
+        if (guestMaxQuantityInput) {
+            guestMaxQuantityInput.value = state.guest_max_quantity != null && state.guest_max_quantity !== ''
+                ? String(state.guest_max_quantity)
+                : '1';
+        }
         const channels = this.normalizeGuestPaymentChannelTokens(state.guest_payment_channels);
         const zpay = document.getElementById('prodGuestChannelZpay');
         const nowpayments = document.getElementById('prodGuestChannelNowpayments');
@@ -10041,8 +11111,8 @@ Example output format:
         }
 
         if (upsertPayload.price_points == null) {
-            const fallbackPrice = Number.parseInt(snapshot?.price_points, 10);
-            if (Number.isFinite(fallbackPrice) && fallbackPrice >= 0) {
+            const fallbackPrice = this.normalizeProductPriceDraftValue(snapshot?.price_points);
+            if (fallbackPrice !== null && fallbackPrice >= 0) {
                 upsertPayload.price_points = fallbackPrice;
             } else if (editSite !== 'intl') {
                 throw new Error('缺少商品基础价格，无法保存现有商品');
@@ -10432,6 +11502,7 @@ Example output format:
 
             // Reset marketing fields
             document.getElementById('prodFlashSalePrice').value = '';
+            document.getElementById('prodFlashSaleStart').value = '';
             document.getElementById('prodFlashSaleEnd').value = '';
 
             // Reset delivery fields
@@ -10445,6 +11516,7 @@ Example output format:
                 allow_guest_purchase: false,
                 guest_cash_price_cny: '',
                 guest_cash_price_intl: '',
+                guest_max_quantity: 1,
                 guest_payment_channels: []
             });
 
@@ -10622,11 +11694,13 @@ Example output format:
             const parsedSort = Number.parseInt(sortInput, 10);
             const normalizedSort = Number.isFinite(parsedSort) ? parsedSort : 0;
             const maxPurchaseQuantityRaw = (document.getElementById('prodMaxPurchaseQuantity').value || '').trim();
+            const guestMaxPurchaseQuantityRaw = (document.getElementById('prodGuestMaxPurchaseQuantity')?.value || '').trim();
             const purchaseLimit24hQuantityRaw = (document.getElementById('prodPurchaseLimit24hQuantity')?.value || '').trim();
             const purchaseLimitWindowQuantityRaw = (document.getElementById('prodPurchaseLimitWindowQuantity')?.value || '').trim();
             const purchaseLimitWindowMinutesRaw = (document.getElementById('prodPurchaseLimitWindowMinutes')?.value || '').trim();
             const perAccountPurchaseLimitRaw = (document.getElementById('prodPerAccountPurchaseLimit')?.value || '').trim();
             let normalizedMaxPurchaseQuantity = null;
+            let normalizedGuestMaxPurchaseQuantity = 1;
             let normalizedPurchaseLimit24hQuantity = null;
             let normalizedPurchaseLimitWindowQuantity = null;
             let normalizedPurchaseLimitWindowMinutes = null;
@@ -10694,6 +11768,18 @@ Example output format:
                 normalizedMaxPurchaseQuantity = parsedMaxPurchaseQuantity;
             }
 
+            if (guestMaxPurchaseQuantityRaw !== '') {
+                const parsedGuestMaxPurchaseQuantity = Number.parseInt(guestMaxPurchaseQuantityRaw, 10);
+                if (!Number.isFinite(parsedGuestMaxPurchaseQuantity) || parsedGuestMaxPurchaseQuantity < 1 || parsedGuestMaxPurchaseQuantity > 99) {
+                    const failureMessage = '游客单次限购必须是 1 到 99 之间的整数';
+                    failSaveFeedback();
+                    this.setProductSaveInlineError(failureMessage);
+                    this.showActionToast(failureMessage, 'warning');
+                    return;
+                }
+                normalizedGuestMaxPurchaseQuantity = parsedGuestMaxPurchaseQuantity;
+            }
+
             try {
                 normalizedPurchaseLimit24hQuantity = parseOptionalPositiveInteger(purchaseLimit24hQuantityRaw, '24小时累计上限');
                 normalizedPerAccountPurchaseLimit = parseOptionalPositiveInteger(perAccountPurchaseLimitRaw, '每账号仅限购数量');
@@ -10715,6 +11801,10 @@ Example output format:
             document.getElementById('prodMaxPurchaseQuantity').value = normalizedMaxPurchaseQuantity == null
                 ? ''
                 : String(normalizedMaxPurchaseQuantity);
+            this.setOptionalInputValue(
+                'prodGuestMaxPurchaseQuantity',
+                String(normalizedGuestMaxPurchaseQuantity)
+            );
             this.setOptionalInputValue(
                 'prodPurchaseLimit24hQuantity',
                 normalizedPurchaseLimit24hQuantity == null ? '' : String(normalizedPurchaseLimit24hQuantity)
@@ -11058,6 +12148,7 @@ Example output format:
                 category: document.getElementById('prodCategory').value,
                 display_order: normalizedSort,
                 max_purchase_quantity: normalizedMaxPurchaseQuantity,
+                guest_max_quantity: normalizedGuestMaxPurchaseQuantity,
                 purchase_limit_24h_quantity: normalizedPurchaseLimit24hQuantity,
                 purchase_limit_window_quantity: normalizedPurchaseLimitWindowQuantity,
                 purchase_limit_window_minutes: normalizedPurchaseLimitWindowMinutes,
@@ -11071,6 +12162,7 @@ Example output format:
                 // Marketing fields
                 [marketingFields.quantityRules]: null,
                 [marketingFields.flashSalePrice]: null,
+                [marketingFields.flashSaleStart]: null,
                 [marketingFields.flashSaleEnd]: null
             };
 
@@ -11114,12 +12206,32 @@ Example output format:
 
             const flashPriceRaw = document.getElementById('prodFlashSalePrice').value.trim();
             if (flashPriceRaw !== '') {
-                payload[marketingFields.flashSalePrice] = parseInt(flashPriceRaw);
+                const parsedFlashPrice = this.normalizeProductPriceDraftValue(flashPriceRaw);
+                if (parsedFlashPrice !== null) {
+                    payload[marketingFields.flashSalePrice] = parsedFlashPrice;
+                } else {
+                    const message = '秒杀特价必须为有效非负数字';
+                    failSaveFeedback();
+                    this.setProductSaveInlineError(message);
+                    return;
+                }
+            }
+
+            const flashStartRaw = document.getElementById('prodFlashSaleStart').value;
+            if (flashStartRaw) {
+                payload[marketingFields.flashSaleStart] = new Date(flashStartRaw).toISOString();
             }
 
             const flashEndRaw = document.getElementById('prodFlashSaleEnd').value;
             if (flashEndRaw) {
                 payload[marketingFields.flashSaleEnd] = new Date(flashEndRaw).toISOString();
+            }
+
+            if (flashStartRaw && flashEndRaw && new Date(flashStartRaw).getTime() >= new Date(flashEndRaw).getTime()) {
+                const message = '秒杀开始时间必须早于结束时间';
+                failSaveFeedback();
+                this.setProductSaveInlineError(message);
+                return;
             }
 
             try {
@@ -11239,6 +12351,7 @@ Example output format:
                 });
 
                 // Refresh products and category filters
+                this.invalidateProductCache();
                 this.loadProducts();
                 await this.renderProductCategoryFilters();
             } catch (err) {
@@ -11281,6 +12394,7 @@ Example output format:
             this.finishActionButton(actionButton, '已删除');
             this.showActionToast('商品已删除', 'success');
             this.emitCommandFeedback(successMessage, 'saved', { source: 'shop-products' });
+            this.invalidateProductCache();
             this.loadProducts();
         } catch (err) {
             const failureMessage = '删除失败: ' + err.message;
@@ -11309,6 +12423,7 @@ Example output format:
             this.finishActionButton(actionButton, successMessage);
             this.showActionToast(successMessage, 'success');
             this.emitCommandFeedback(`${successMessage}：${id}`, 'saved', { source: 'shop-products' });
+            this.invalidateProductCache();
             this.loadProducts();
         } catch (err) {
             const failureMessage = 'Error: ' + err.message;
@@ -16758,7 +17873,7 @@ Example output format:
             : '<div class="shop-order-profit-note">当前订单暂无额外对账提示。</div>';
 
         return `
-            <div class="shop-order-detail-section shop-order-detail-section--profit shop-order-detail-section--profit-${tone}">
+            <div class="shop-order-detail-section shop-order-detail-section--profit shop-order-detail-section--point-profit shop-order-detail-section--profit-${tone}">
                 <div class="shop-order-detail-section__header">
                     <div class="shop-order-detail-section__title"><i class="fas fa-scale-balanced"></i> 利润与对账</div>
                     <div class="shop-order-detail-hero__pills">
@@ -17189,7 +18304,7 @@ Example output format:
                     </div>
 
                     <div class="shop-order-detail-grid">
-                        <div class="shop-order-detail-section">
+                        <div class="shop-order-detail-section shop-order-detail-section--point-inventory">
                             <div class="shop-order-detail-section__header">
                                 <div class="shop-order-detail-section__title"><i class="fas fa-boxes-stacked"></i> 库存与内容</div>
                                 <div class="shop-order-detail-inline-actions">
@@ -17204,7 +18319,7 @@ Example output format:
                             <div class="shop-order-content-box shop-order-detail-content-box">${itemsMarkup}</div>
                         </div>
 
-                        <div class="shop-order-detail-section">
+                        <div class="shop-order-detail-section shop-order-detail-section--point-fulfillment">
                             <div class="shop-order-detail-section__header">
                                 <div class="shop-order-detail-section__title"><i class="fas fa-truck-fast"></i> 履约与动作</div>
                             </div>
@@ -17230,7 +18345,7 @@ Example output format:
                     ${profitMarkup}
 
                     <div class="shop-order-detail-grid shop-order-detail-grid--secondary">
-                        <div class="shop-order-detail-section">
+                        <div class="shop-order-detail-section shop-order-detail-section--point-tickets">
                             <div class="shop-order-detail-section__header">
                                 <div class="shop-order-detail-section__title"><i class="fas fa-life-ring"></i> 工单摘要</div>
                                 <div class="shop-order-detail-hero__pills">
@@ -17241,7 +18356,7 @@ Example output format:
                             <div class="shop-order-detail-list">${ticketMarkup}</div>
                         </div>
 
-                        <div class="shop-order-detail-section">
+                        <div class="shop-order-detail-section shop-order-detail-section--point-risk">
                             <div class="shop-order-detail-section__header">
                                 <div class="shop-order-detail-section__title"><i class="fas fa-shield-halved"></i> 风控摘要</div>
                                 <div class="shop-order-detail-hero__pills">

@@ -13,6 +13,7 @@
  */
 
 const crypto = require('node:crypto');
+const net = require('node:net');
 const {
     buildZpayOutTradeNo,
     createZpayPayment,
@@ -90,7 +91,7 @@ function mapNowpaymentsCreateError(error) {
     if (error instanceof GuestShopPaymentError) return error;
     if (!isDefinitiveNowpaymentsCreateRejection(error)) return error;
     const rawMessage = String(error?.message || '').trim();
-    const message = /amountto is too small/i.test(rawMessage)
+    const message = /amount(to|from) is too small/i.test(rawMessage)
         ? '金额低于 NOWPayments 最低限额，无法创建支付'
         : (rawMessage || 'NOWPayments 拒绝创建支付');
     const status = Number(error?.statusCode || 0);
@@ -219,6 +220,70 @@ function safeUrl(value, {
     } catch (_) {
         return '';
     }
+}
+
+function isImageUrl(value = '') {
+    const normalized = text(value, '', 1000);
+    if (!normalized) return false;
+    try {
+        const parsed = new URL(normalized);
+        return /\.(?:apng|avif|gif|jpe?g|png|svg|webp)(?:$|[?#])/iu.test(parsed.pathname);
+    } catch (_) {
+        return false;
+    }
+}
+
+function isOrderScopedZpayCheckoutUrl(value) {
+    // Batch checkout generates a QR from this URL, so a syntactically valid
+    // gateway home page is not sufficient. The link must be a concrete HTTPS
+    // page. The response is already bound to the signed `out_trade_no` in the
+    // request that produced it; requiring that value to be visible in the URL
+    // rejects normal opaque, tokenized payment links returned by ZPay gateways.
+    const normalized = safeUrl(value);
+    if (!normalized) return false;
+    try {
+        const parsed = new URL(normalized);
+        const hostname = parsed.hostname.toLowerCase().replace(/\.$/u, '');
+        if (!hostname
+            || hostname === 'localhost'
+            || hostname.endsWith('.localhost')
+            || net.isIP(hostname)) {
+            return false;
+        }
+        if (parsed.pathname === '/') {
+            return false;
+        }
+
+        // Some ZPay integrations submit to one host and return a checkout URL
+        // from a separate cashier host. The response is still tied to the
+        // signed merchant request, so host equality would reject a valid order.
+        // Keep the URL-shape checks above to prevent QR generation from a
+        // gateway root, local endpoint, or numeric address.
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function resolveZpayCheckoutArtifacts(payload = {}, env = {}) {
+    const allowHttp = !isProductionLikeRuntime(env);
+    // ZPay's `payurl` is the order-specific payment endpoint. Some gateways
+    // use an image-looking path for that endpoint, so its URL shape must not
+    // make us fall back to `img` (which can be a generic provider placeholder).
+    const payUrl = safeUrl(payload.payurl, { allowHttp }) || '';
+    const rawQr = safeUrl(payload.qrcode, { allowHttp }) || '';
+    const rawImage = safeUrl(payload.img, { allowHttp }) || '';
+    const qrcodeUrl = rawQr && !isImageUrl(rawQr) ? rawQr : '';
+    const qrcodeImageUrl = (rawQr && isImageUrl(rawQr) ? rawQr : '') || rawImage;
+    // `checkout_url` is a configured gateway origin, not an order-specific
+    // payment URL. Falling back to it creates a scannable QR for the gateway
+    // home page, which looks valid but cannot pay the current order.
+    const checkoutUrl = payUrl || qrcodeUrl;
+    return {
+        checkoutUrl,
+        qrcodeUrl: qrcodeUrl || payUrl,
+        qrcodeImageUrl
+    };
 }
 
 function isProductionLikeRuntime(env = process.env) {
@@ -494,10 +559,22 @@ function normalizeNowpaymentsCurrency(value) {
 }
 
 function getNowpaymentsActuallyPaidCurrency(payload = {}) {
-    // pay_currency is the requested asset, not the settled asset.  Never
-    // substitute it for actually_paid_currency during verification.
-    if (!Object.prototype.hasOwnProperty.call(payload, 'actually_paid_currency')) return '';
-    return normalizeNowpaymentsCurrency(payload.actually_paid_currency);
+    // 1. Explicit actually_paid_currency takes highest precedence if provided (e.g. tests or custom extensions)
+    if (Object.prototype.hasOwnProperty.call(payload, 'actually_paid_currency') && payload.actually_paid_currency) {
+        return normalizeNowpaymentsCurrency(payload.actually_paid_currency);
+    }
+    // 2. Official NOWPayments IPN and status query responses provide outcome_currency and pay_currency.
+    // We only resolve paidCurrency from these fields if funds were actually paid.
+    const actuallyPaid = getNowpaymentsActuallyPaid(payload);
+    if (actuallyPaid !== null) {
+        if (Object.prototype.hasOwnProperty.call(payload, 'outcome_currency') && payload.outcome_currency) {
+            return normalizeNowpaymentsCurrency(payload.outcome_currency);
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'pay_currency') && payload.pay_currency) {
+            return normalizeNowpaymentsCurrency(payload.pay_currency);
+        }
+    }
+    return '';
 }
 
 function normalizeNowpaymentsSettlement(payload = {}, status = 'unknown') {
@@ -526,8 +603,7 @@ function nowpaymentsSettlementFailureReason(payload = {}, settlement, status = '
     if (status !== 'paid') return '';
     if (!Object.prototype.hasOwnProperty.call(payload, 'actually_paid')) return 'missing_actually_paid';
     if (!(settlement?.actuallyPaid > 0) || !settlement?.actuallyPaidText) return 'invalid_actually_paid';
-    if (!Object.prototype.hasOwnProperty.call(payload, 'actually_paid_currency')) return 'missing_actually_paid_currency';
-    if (!settlement?.paidCurrency) return 'invalid_actually_paid_currency';
+    if (!settlement?.paidCurrency) return 'missing_actually_paid_currency';
     if (!settlement.networkVerified) return 'wrong_asset';
     return '';
 }
@@ -872,6 +948,11 @@ function createGuestShopPaymentAdapter({
         currency: currencyInput,
         amount,
         allowedChannels = order?.guest_payment_channels || order?.payment_channels || [],
+        // Batch checkout cannot safely use an image-only provider response:
+        // gateways commonly return a shared loading image before the
+        // order-specific payment URL is available. Direct checkout keeps its
+        // established image-only fallback for integrations that support it.
+        requireOrderScopedCheckout = false,
         requestOrigin = '',
         requestHost = '',
         req = null,
@@ -943,20 +1024,35 @@ function createGuestShopPaymentAdapter({
                     statusCode: 502
                 });
             }
-            const checkoutUrl = safeUrl(payload.payurl || payload.qrcode || payload.img || '', {
-                allowHttp: !isProductionLikeRuntime(env),
-                allowData: false
-            });
-            if (!checkoutUrl) {
-                throw new GuestShopPaymentError('易支付未返回可用支付链接', {
-                    code: 'guest_provider_checkout_missing',
-                    statusCode: 502
-                });
-            }
+            const artifacts = resolveZpayCheckoutArtifacts(payload, env);
             const tradeNo = text(payload.trade_no, '', MAX_PROVIDER_REFERENCE_LENGTH) || null;
             const gatewayOrderId = text(payload.O_id || payload.order_id, '', MAX_PROVIDER_REFERENCE_LENGTH) || null;
-            const qrcodeUrl = safeUrl(payload.qrcode, { allowHttp: !isProductionLikeRuntime(env) }) || null;
-            const imageUrl = safeUrl(payload.img, { allowHttp: !isProductionLikeRuntime(env) }) || null;
+            const checkoutUrl = requireOrderScopedCheckout
+                && !isOrderScopedZpayCheckoutUrl(artifacts.checkoutUrl)
+                ? ''
+                : (artifacts.checkoutUrl || '');
+            const qrcodeUrl = requireOrderScopedCheckout
+                && !isOrderScopedZpayCheckoutUrl(artifacts.qrcodeUrl)
+                ? null
+                : (artifacts.qrcodeUrl || null);
+            if ((!checkoutUrl && !qrcodeUrl) && (requireOrderScopedCheckout || !artifacts.qrcodeImageUrl)) {
+                throw new GuestShopPaymentError(
+                    requireOrderScopedCheckout
+                        ? '易支付返回的支付链接无法验证为当前订单'
+                        : '易支付未返回可用支付链接',
+                    {
+                    code: requireOrderScopedCheckout
+                        ? 'guest_provider_checkout_invalid'
+                        : 'guest_provider_checkout_missing',
+                    statusCode: 502
+                    }
+                );
+            }
+            // Do not persist or return a provider image for a batch. Once an
+            // order-specific URL exists the browser renders its local QR, and
+            // retaining `img` leaves a route for a generic provider graphic to
+            // be mistaken for that QR during a replay.
+            const imageUrl = requireOrderScopedCheckout ? null : (artifacts.qrcodeImageUrl || null);
             const metadata = buildSafeMetadata('zpay', {
                 provider_order_no: providerOrderNo,
                 trade_no: tradeNo,
@@ -985,7 +1081,7 @@ function createGuestShopPaymentAdapter({
                 provider_metadata: metadata,
                 payment_order_patch: {
                     provider_order_no: providerOrderNo,
-                    checkout_reference: checkoutUrl,
+                    checkout_reference: checkoutUrl || qrcodeUrl || null,
                     provider_metadata: metadata
                 },
                 checkout: {
@@ -1001,11 +1097,22 @@ function createGuestShopPaymentAdapter({
         }
 
         let priceAmount;
-        const priceCurrency = normalizeCurrency(context.integration.priceCurrency).toLowerCase();
-        if (priceCurrency === 'usd') {
-            // Guest settlement is always CNY. NOWPayments quotes in USD on both
+        const configuredPriceCurrency = normalizeCurrency(context.integration.priceCurrency).toLowerCase();
+        // If configured as 'usd' and pay currency is 'usdtbsc', or configured as 'usdtbsc'/'usdt':
+        // USDT is pegged 1:1 to USD, and quoting in crypto (usdtbsc) avoids NOWPayments'
+        // fiat-to-crypto liquidity engine which enforces a ~$18.57 USD minimum.
+        const isUsdPegged = ['usd', 'usdt', 'usdtbsc', 'usdc', 'busd'].includes(configuredPriceCurrency);
+        const priceCurrency = (configuredPriceCurrency === 'usd' && context.integration.payCurrency === 'usdtbsc')
+            ? 'usdtbsc'
+            : configuredPriceCurrency;
+
+        if (isUsdPegged || priceCurrency === 'usdtbsc' || priceCurrency === 'usdt') {
+            // Guest settlement is always CNY. NOWPayments quotes in USD or crypto on both
             // sites using the same recharge conversion path.
-            priceAmount = convertCnyAmountToPriceAmount(amountSnapshot.amount, context.integration);
+            priceAmount = convertCnyAmountToPriceAmount(amountSnapshot.amount, {
+                ...context.integration,
+                priceCurrency
+            });
         } else if (priceCurrency === currency.toLowerCase()) {
             priceAmount = amountSnapshot.amount;
         } else {
@@ -1025,6 +1132,7 @@ function createGuestShopPaymentAdapter({
         try {
             result = await createNowpaymentsPayment({
                 channelConfig: context.channelConfig,
+                priceCurrency,
                 secretValues: context.secretValues,
                 requestOrigin: context.origin,
                 orderId: providerOrderNo,
@@ -1046,11 +1154,13 @@ function createGuestShopPaymentAdapter({
             });
         }
         const payAmountText = formatNowpaymentsPayAmount(payAmountRaw, context.integration.payAmountPrecision || 2);
-        const quoteExpiresAt = text(
+        const officialExpiresAt = text(
             payload.expiration_estimate_date || payload.expiration_date || payload.valid_until || payload.quote_expires_at,
             '',
             80
-        ) || null;
+        );
+        const quoteExpiresAt = officialExpiresAt
+            || new Date(Date.now() + (context.integration.quoteTtlSeconds || 1200) * 1000).toISOString();
         const metadata = buildSafeMetadata('nowpayments', {
             provider_order_no: providerOrderNo,
             payment_id: paymentId,
@@ -1397,16 +1507,25 @@ function createGuestShopPaymentAdapter({
         }, typeof options.fetchImpl === 'function' ? { fetchImpl: options.fetchImpl } : { fetchImpl: defaultFetchImpl });
         const payload = result.response?.data && typeof result.response.data === 'object' ? result.response.data : {};
         const success = String(payload.code ?? '').trim() === '1';
+        const providerMessage = text(payload.msg, success ? '退款成功' : '易支付退款失败', 240);
+        const providerMessageLower = providerMessage.toLowerCase();
+        const balanceInsufficient = /卖家余额不足|余额不足|insufficient\s+(?:seller\s+)?balance|insufficient\s+funds|insufficient\s+merchant\s+balance/i.test(providerMessageLower);
+        const providerRejected = !success && (balanceInsufficient || String(payload.code ?? '').trim() !== '');
+        const refundStatus = success ? 'refunded' : (providerRejected ? 'blocked' : 'unknown');
+        const refundCode = success
+            ? null
+            : (balanceInsufficient ? 'guest_refund_provider_balance_insufficient' : (providerRejected ? 'guest_refund_provider_rejected' : 'guest_refund_result_unknown'));
         return {
             supported: true,
             success,
             provider,
             purpose: GUEST_PURPOSE,
-            status: success ? 'refunded' : 'unknown',
+            status: refundStatus,
+            code: refundCode,
             merchant_order_no: text(payload.out_trade_no || merchantOrderNo, '', MAX_ORDER_REFERENCE_LENGTH) || null,
             provider_order_no: text(payload.out_trade_no || orderNo, '', MAX_PROVIDER_REFERENCE_LENGTH) || null,
             transaction_id: text(payload.trade_no || tradeNo, '', MAX_PROVIDER_REFERENCE_LENGTH) || null,
-            message: text(payload.msg, success ? '退款成功' : '易支付退款失败', 240),
+            message: providerMessage,
             response_payload: payload
         };
     }
@@ -1449,5 +1568,6 @@ module.exports = {
     normalizeDecimalAmount,
     normalizeProvider,
     normalizeSite,
+    isOrderScopedZpayCheckoutUrl,
     safeUrl
 };

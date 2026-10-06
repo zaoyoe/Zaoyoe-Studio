@@ -170,7 +170,7 @@ test('wallet shop orders display paid amount before gross total after discounts'
     assert.match(renderOrdersSource, /-this\.getShopOrderPaidAmount\(order\)/);
     assert.match(previewSource, /const totalPrice = this\.getShopOrderPaidAmount\(previewOrder\);/);
     assert.match(shopDetailSource, /const totalPrice = this\.getShopOrderPaidAmount\(order\);/);
-    assert.match(shopDetailSource, /-\$\{this\.formatPoints\(totalPrice\)\}/);
+    assert.match(shopDetailSource, /-\$\{this\.formatWalletAmount\(totalPrice\)\}/);
     assert.doesNotMatch(script, /order\.total_price != null \? order\.total_price : order\.price_paid/);
     assert.doesNotMatch(script, /isShopOrder[\s\S]{0,80}-this\.normalizePointValue\(order(?:\?|\.)\.total_price \|\| 0\)/);
     assert.match(script, /order\.price_paid,[\s\S]*order\.total_price/);

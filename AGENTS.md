@@ -22,11 +22,96 @@ When the user asks Codex to deploy:
 
 Canonical full deploy prompt:
 
-> 推送并完整部署。请严格按 AGENTS.md：创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须同时验证 Vercel production Ready、GitHub Actions 的 Deploy KVM4 Verify Server 成功、Deploy KVM4 Sub2API 成功，并 SSH 到 KVM4 确认 verify/sub2api 的 .current-release 都等于 main 最新 commit，/health 正常，docker ps healthy。最后用中文汇报三条链路结果。
+> 推送并完整部署。请严格按 AGENTS.md：先核验可恢复备份、干净候选提交和完整发布清单；创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须同时验证 Vercel production Ready、GitHub Actions 的 Deploy KVM4 Verify Server 成功、Deploy KVM4 Sub2API 成功，并 SSH 到 KVM4 确认 verify/sub2api 的 .current-release 都等于 main 最新 commit，/health 正常，docker ps healthy。最后用中文汇报三条链路结果。
 
 Emergency rollback is allowed with `npx vercel rollback <deployment-url-or-id> --yes`.
 
 The build command also blocks production builds when `VERCEL_ENV=production` and `VERCEL_GIT_COMMIT_REF` is not `main`.
+
+## Release Integrity and Recovery Rules
+
+The release unit is a complete Git commit, not the current working directory,
+a preview deployment, or a collection of local files. These checks are
+mandatory before creating or updating a production PR, and before any reset,
+rebase, branch switch, or restore operation that could discard local work.
+
+1. Before a destructive Git operation, create a recoverable backup of tracked,
+   staged, unstaged, and untracked files. Record the backup commit or stash
+   identity and verify that the expected files can be read back from it. A
+   backup created after the reset is not evidence that the pre-reset work was
+   preserved.
+2. Do not publish from a dirty or ambiguous checkout. `git status --porcelain`
+   must be empty, the checkout must not be detached, and the release branch,
+   remote, base commit, and `HEAD` SHA must be recorded before the PR is opened.
+   Untracked source, test, documentation, migration, or asset files are release
+   blockers until they are intentionally committed or explicitly removed.
+3. Use one declared remote and base for the release. Do not mix local `main`,
+   `origin/main`, and another remote's `main` without recording the exact
+   commit selected as the base. A PR must list `git log BASE..HEAD` and the
+   changed-file manifest so a later merge cannot silently omit local work.
+4. A feature release must include a manifest in the PR description containing
+   the commit SHA, PR number, changed runtime surfaces, tests, migrations and
+   their database-application status. Code, tests, operational documents and
+   worker files that describe one capability must come from the same release
+   candidate or be explicitly marked as historical evidence.
+5. Documentation-contract tests are release blockers. Every section, archive
+   marker and result referenced by a test must exist. `NOT RUN`, `PARTIAL`,
+   `REVIEW`, and missing external evidence must never be converted to `PASS` by
+   editing prose or deleting a failing assertion. Historical records are
+   append-only; corrections must preserve the original result and explain the
+   source of the correction.
+6. Local previews must expose the source commit SHA in startup output and a
+   non-sensitive response or diagnostics surface. Before reporting a preview as
+   representative, compare that SHA with the intended commit and the files
+   being reviewed. A preview showing a working-tree change is not production
+   evidence.
+7. Before merge, run the full relevant contract suite and record exact
+   pass/fail counts. For guest-shop changes this includes guest-shop tests,
+   admin guest-order tests, readiness checks, and any feature-specific
+   migration/verify contracts. A green subset cannot conceal failures in a
+   historical archive contract.
+8. After merge, verify that every production chain reports the same latest
+   `main` SHA. If a chain or local preview reports a different SHA, stop the
+   release and reconcile the commit source before changing configuration,
+   enabling a feature, or creating test orders.
+9. Verify that the candidate preserves the latest `main` and the complete
+   user-authorized feature set. Review open revert/rollback PRs and commits that
+   remove recent work. Do not merge an old rollback, restore an old snapshot, or
+   omit a feature from the release merely to resolve a dirty checkout or make
+   tests green. Any intentional exclusion must be recorded in the manifest;
+   changing the user's approved release scope requires their approval.
+10. Re-fetch the declared remote before merge and again during final production
+    verification. If `main` or the PR head has changed since review, reconcile
+    the manifest and rerun affected checks before merge. Record the resulting
+    `main` SHA separately from the candidate SHA. A successful workflow or a
+    `Ready` deployment for a different SHA does not complete the release.
+11. Archive the release manifest, backup identity, test counts, workflow run IDs,
+    Vercel deployment identity, runtime release markers and health evidence in
+    the PR or a linked release record. Report each chain as PASS, FAIL, PENDING
+    or NOT RUN with its SHA. A partial deployment must remain explicitly
+    incomplete; do not report overall success or delete the recovery backup.
+12. Check the changed runtime-file manifest against Vercel build/ignore rules,
+    KVM4 package paths and Docker build inputs. Every changed runtime surface
+    must reach its intended production artifact from the same candidate SHA.
+    Compact service packages are allowed; unexplained omission of required
+    files is a release blocker, not permission to upload them individually.
+
+If any rule above fails, stop at the evidence/reconciliation stage. Do not
+reset, force-push, deploy, enable guest checkout, execute SQL, or delete the
+backup to make the release appear clean.
+
+### Guest-shop evidence boundary
+
+The stage-5 operations manual and the historical promo archive contracts are
+different evidence sets. `docs/guest-shop-stage5-remaining-operations-manual.md`
+covers the operator-facing A5–G3 acceptance actions. The 18 archive-contract
+tests in `tests/guest-shop-promo-safety-gates.test.js` and
+`tests/guest-shop-promo-ttl-clock.test.js` cover historical promo safety, TTL,
+breaker and budget records referenced by the Task 2.1 archive sections. A
+failure in those tests is not proof that an A6–G3 page action was unverified,
+and a PASS in the A5–G3 manual is not proof that the historical archive is
+complete. Keep both results separately recorded; neither may be silently
+substituted for the other.
 
 KVM4 verify server deploys are automated from `main` by the GitHub Actions
 workflow `Deploy KVM4 Verify Server`. After a PR merges into `main`, the
@@ -187,18 +272,27 @@ Hard prohibitions:
 - Do not treat automated tests, default readiness exit `0`, or a successful
   three-chain deploy as permission to open guest checkout.
 - `--fail-on-not-ready` returning `3` is the expected fail-closed result until
-  sandbox, database, worker and manual evidence are archived. Do not bypass it
-  with `|| true`.
+  its applicable sandbox, database, worker and manual evidence is archived. Do
+  not bypass it with `|| true`. This aggregate result does not block a
+  default-off production deploy, and a disabled optional feature does not block
+  a CN, original-price, quantity-one SKU; it blocks enabling the capability to
+  which the missing evidence belongs.
 - Rollback of guest checkout is closing the guest product/SKU switch, not a
   database rollback and not a Vercel-only rollback.
 
 Canonical guest-shop deploy prompt:
 
-> 推送并完整部署游客购买相关改动。请严格按 AGENTS.md：从专用游客购买分支创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须验证 Vercel production Ready、Deploy KVM4 Verify Server、Deploy KVM4 Sub2API，并 SSH 确认 verify/sub2api 的 .current-release 等于 main 最新 commit。verify 发布成功后才能安装或启动 KVM4 guest-shop worker。部署过程不得执行 SQL，也不得打开游客商品。最后用中文汇报四条链路结果。
+> 推送并完整部署游客购买相关改动。请严格按 AGENTS.md：先核验可恢复备份、干净候选提交和完整发布清单；从专用游客购买分支创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须验证 Vercel production Ready、Deploy KVM4 Verify Server、Deploy KVM4 Sub2API，并 SSH 确认 verify/sub2api 的 .current-release 等于 main 最新 commit。verify 发布成功后才能安装或启动 KVM4 guest-shop worker。部署过程不得执行 SQL，也不得打开游客商品。最后用中文汇报四条链路结果。
 
 Canonical guest-shop enablement is a separate later step in
-`docs/guest-purchase-task-2.0.md`. Enablement requires Task 2.0 completion
-criteria, not merely a successful deploy.
+`docs/guest-purchase-task-2.0.md` (the file currently carries the Task 2.1
+content version for compatibility). The old Task 2.0 percentage and A-J matrix
+are frozen historical evidence: they do not block a default-off Task 2.1
+deploy. Enabling a selected SKU requires the direct, feature-scoped safety gate
+in Task 2.1 §61.9, an operator review of that exact product/SKU, a successful
+production deploy, and the user's explicit approval. Unrelated historical
+payment cases and disabled future features are not implicit prerequisites.
+Deployment success alone still never enables a guest product.
 
 See also:
 

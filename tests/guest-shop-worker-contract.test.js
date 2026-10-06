@@ -241,11 +241,65 @@ test('guest worker durably claims and marks a paid order without exposing conten
     assert.equal(order.fulfillment_status, 'delivered');
     assert.deepEqual(calls.map((call) => call.name), [
         'fn_guest_shop_release_expired_reservations',
+        'fn_guest_shop_expire_checkout_batches',
         'fn_guest_shop_claim_fulfillment',
         'fn_guest_shop_mark_fulfilled'
     ]);
     assert.equal(JSON.stringify(summary).includes('CARD-CONTENT'), false);
     assert.equal(JSON.stringify(logs).includes('CARD-CONTENT'), false);
+});
+
+test('guest worker retries confirmed checkout batches and never exposes batch card content', async () => {
+    const batch = {
+        id: '11111111-1111-4111-8111-111111111111',
+        batch_no: 'GCB-WORKER-1',
+        payment_status: 'confirmed',
+        fulfillment_status: 'pending',
+        updated_at: '2026-09-29T03:16:04.000Z',
+        paid_at: '2026-09-29T03:16:04.000Z',
+        fulfilled_at: null
+    };
+    const rowsByTable = {
+        guest_shop_orders: [],
+        guest_shop_checkout_batches: [batch],
+        guest_shop_payment_orders: []
+    };
+    const calls = [];
+    const logs = [];
+    const instance = worker.createGuestShopWorker({
+        supabase: {
+            from(table) { return makeWorkerQuery(table, rowsByTable); },
+            async rpc(name, params) {
+                calls.push({ name, params });
+                if (name === 'fn_guest_shop_release_expired_reservations') {
+                    return { data: [{ processed_count: 0, released_count: 0, unfulfillable_count: 0 }], error: null };
+                }
+                if (name === 'fn_guest_shop_expire_checkout_batches') {
+                    return { data: [{ processed_count: 0, released_count: 0 }], error: null };
+                }
+                if (name === 'fn_guest_shop_claim_checkout_batch') {
+                    batch.fulfillment_status = 'delivered';
+                    batch.fulfilled_at = '2026-09-29T03:16:05.000Z';
+                    return {
+                        data: [{ item_index: 0, content: 'BATCH-CARD-CONTENT-MUST-STAY-SERVER-SIDE' }],
+                        error: null
+                    };
+                }
+                throw new Error(`unexpected rpc ${name}`);
+            }
+        },
+        now: () => new Date('2026-09-29T03:17:00.000Z'),
+        logger: { warn: (...args) => logs.push(args), error: (...args) => logs.push(args) }
+    });
+
+    const summary = await instance.runOnce({ limit: 1 });
+    assert.equal(summary.checkout_batches_scanned, 1);
+    assert.equal(summary.checkout_batches_delivered, 1);
+    assert.equal(summary.errors, 0);
+    assert.equal(batch.fulfillment_status, 'delivered');
+    assert.equal(calls.some((call) => call.name === 'fn_guest_shop_claim_checkout_batch'), true);
+    assert.equal(JSON.stringify(summary).includes('BATCH-CARD-CONTENT'), false);
+    assert.equal(JSON.stringify(logs).includes('BATCH-CARD-CONTENT'), false);
 });
 
 function containsValue(actual, expected) {

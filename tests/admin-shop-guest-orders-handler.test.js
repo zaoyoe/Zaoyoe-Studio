@@ -94,6 +94,16 @@ async function withGuestOrdersHandler(initialState, callback) {
                             call.operations.push({ method: 'ilike', args });
                             return builder;
                         },
+                        update(...args) {
+                            call.operations.push({ method: 'update', args });
+                            return builder;
+                        },
+                        async maybeSingle() {
+                            const res = typeof state.maybeSingleResult === 'function'
+                                ? state.maybeSingleResult(table, call)
+                                : state.maybeSingleResult;
+                            return res !== undefined ? res : { data: state.queryResult?.data?.[0] || null, error: null };
+                        },
                         then(resolve, reject) {
                             return Promise.resolve(state.queryResult).then(resolve, reject);
                         }
@@ -552,3 +562,58 @@ test('guest order write maps active lease and missing RPC to fail-closed statuse
         assert.match(res.json().message, /尚未启用/);
     });
 });
+
+test('guest order write close_unpaid_review marks unpaid review order as expired and audits', async () => {
+    await withGuestOrdersHandler({
+        maybeSingleResult: (table) => {
+            if (table === 'guest_shop_orders') {
+                return {
+                    data: {
+                        id: ORDER_UUID,
+                        order_no: 'GS-20261004-TEST',
+                        site: 'cn',
+                        payment_status: 'review',
+                        fulfillment_status: 'pending',
+                        refund_status: 'none'
+                    },
+                    error: null
+                };
+            }
+            if (table === 'guest_shop_payment_orders') {
+                return {
+                    data: {
+                        id: 'payment-uuid-1',
+                        status: 'review',
+                        paid_at: null
+                    },
+                    error: null
+                };
+            }
+            return { data: null, error: null };
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({
+            method: 'POST',
+            headers: {},
+            url: '/api/admin?route=shop/guest-orders',
+            body: {
+                action: 'close_unpaid_review',
+                orderId: ORDER_UUID,
+                confirm: true,
+                reason: '买家实际未支付，确认关闭超时弃单',
+                site: 'cn'
+            }
+        }, res);
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.action, 'close_unpaid_review');
+        assert.equal(payload.orderId, ORDER_UUID);
+        assert.equal(payload.payment, 'expired');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'shop.guest_order.close_unpaid_review');
+        assert.equal(state.auditLogs[0].details.order_id, ORDER_UUID);
+    });
+});
+

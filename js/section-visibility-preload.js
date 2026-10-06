@@ -14,6 +14,12 @@
         }),
         prompts: Object.freeze({
             sections: Object.freeze(['#prompts-section']),
+            hero: Object.freeze([
+                '.hero-carousel a.entry-card[href="/prompts.html"]',
+                '.hero-carousel a.entry-card[href="#prompts"]',
+                '.hero-carousel .entry-card[data-home-entry-section="prompts"]',
+                '.hero-carousel .entry-card[data-home-entry-id="prompts"]'
+            ]),
             navDesktop: Object.freeze([
                 '.nav-menu a.nav-trigger[href="/prompts.html"]',
                 '.nav-container a.nav-trigger[href="/prompts.html"]'
@@ -29,6 +35,12 @@
         }),
         shop: Object.freeze({
             sections: Object.freeze(['#shop-section']),
+            hero: Object.freeze([
+                '.hero-carousel a.entry-card[href="/shop.html"]',
+                '.hero-carousel a.entry-card[href="#shop"]',
+                '.hero-carousel .entry-card[data-home-entry-section="shop"]',
+                '.hero-carousel .entry-card[data-home-entry-id="shop"]'
+            ]),
             navDesktop: Object.freeze([
                 '.nav-menu a.nav-trigger[href="/shop.html"]',
                 '.nav-container a.nav-trigger[href="/shop.html"]'
@@ -44,6 +56,14 @@
         }),
         gongyi: Object.freeze({
             sections: Object.freeze(['#gongyi-section']),
+            hero: Object.freeze([
+                '.hero-carousel a.entry-card[href="https://new.fatherkey.com"]',
+                '.hero-carousel a.entry-card[href="https://sub2api.fatherkey.com"]',
+                '.hero-carousel a.entry-card[href="https://sub2api.zaoyoe.xyz"]',
+                '.hero-carousel a.entry-card[href="#gongyi"]',
+                '.hero-carousel .entry-card[data-home-entry-section="gongyi"]',
+                '.hero-carousel .entry-card[data-home-entry-id="gongyi"]'
+            ]),
             navDesktop: Object.freeze([
                 '.nav-menu a[href="https://new.fatherkey.com"]',
                 '.nav-menu a[href="https://sub2api.fatherkey.com"]',
@@ -71,6 +91,12 @@
         }),
         verify: Object.freeze({
             sections: Object.freeze(['#verify-section']),
+            hero: Object.freeze([
+                '.hero-carousel a.entry-card[href="/verify.html"]',
+                '.hero-carousel a.entry-card[href="#verify"]',
+                '.hero-carousel .entry-card[data-home-entry-section="verify"]',
+                '.hero-carousel .entry-card[data-home-entry-id="verify"]'
+            ]),
             navDesktop: Object.freeze([
                 '.nav-menu a[href="/verify.html"]',
                 '.nav-menu a[href="#verify"]',
@@ -88,6 +114,13 @@
         }),
         guestbook: Object.freeze({
             sections: Object.freeze(['#guestbook-section']),
+            hero: Object.freeze([
+                '.hero-carousel a.entry-card[href="/guestbook.html"]',
+                '.hero-carousel a.entry-card[href="#guestbook"]',
+                '.hero-carousel .entry-card[data-home-open-guestbook="1"]',
+                '.hero-carousel .entry-card[data-home-entry-section="guestbook"]',
+                '.hero-carousel .entry-card[data-home-entry-id="guestbook"]'
+            ]),
             navDesktop: Object.freeze([
                 '.nav-menu a[href="/guestbook.html"]',
                 '.nav-container a[href="/guestbook.html"]'
@@ -165,6 +198,7 @@
 
             const hiddenSelectors = [
                 ...(selectors.sections || []),
+                ...(selectors.hero || []),
                 ...(selectors.navDesktop || []),
                 ...(selectors.navMobile || []),
                 ...(selectors.footer || [])
@@ -176,6 +210,24 @@
 
             chunks.push(`${hiddenSelectors.join(',\n')} {\n    display: none !important;\n}`);
         });
+
+        const hasHiddenHeroEntry = ['prompts', 'gongyi', 'shop', 'verify', 'guestbook'].some(
+            (sec) => normalizedConfig[sec] === false
+        );
+        if (hasHiddenHeroEntry) {
+            chunks.push([
+                '.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .hero-carousel-track {',
+                '    grid-auto-flow: column !important;',
+                '    grid-auto-columns: 180px !important;',
+                '    grid-template-columns: none !important;',
+                '}',
+                '@media (max-width: 767px) {',
+                '    .hero-section[data-home-static-hero="1"]:not([data-render-signature]) .hero-carousel-track {',
+                '        grid-auto-columns: 140px !important;',
+                '    }',
+                '}'
+            ].join('\n'));
+        }
 
         return chunks.join('\n');
     }

@@ -5,7 +5,7 @@
  *
  * Contract: docs/guest-shop-order-access-2.0.md
  *   §10.5  管理台：解锁登录锁定 / 一次性找回链接
- *   §13.2  历史订单自助升级为密码访问
+ *   2.1     历史未绑定订单只保留人工核验路径
  *   §6.4   凭证分组（buyer_id 是访问主体，contact_hash 不是）
  *   §8.1   锁定与预算
  *   §9.1   统一错误码（防枚举）
@@ -364,11 +364,9 @@ async function loadOrderForAccess({ supabase, orderNo }) {
 /**
  * Resolve the credential group that owns an order.
  *
- * `buyer_id IS NULL` is NOT an error here — it is the §13.2 case (a historical
- * order that was placed before the credential switch existed). The caller
- * decides: the admin unlock/issue actions answer 409 `guest_buyer_not_bound`
- * with a hint to use the self-upgrade form, because there is no group to unlock
- * and no email an admin is allowed to invent one for.
+ * `buyer_id IS NULL` is a historical order that predates the credential
+ * switch. It remains visible to the admin exception queue, but there is no
+ * public migration path and no group for an unlock/reset action to operate on.
  */
 async function resolveBuyerByOrderNo({ supabase, orderNo }) {
     const order = await loadOrderForAccess({ supabase, orderNo });
@@ -379,7 +377,7 @@ async function resolveBuyerByOrderNo({ supabase, orderNo }) {
             buyer: null,
             bound: false,
             notBoundError: adminAccessError(
-                '该订单尚未绑定查询密码，无法执行此操作。请引导用户在游客订单页的「使用订单号 + 取货口令找回」中自助设置查询密码。',
+                '该订单尚未绑定查询密码，无法执行此操作。请先人工核验买家身份，再由管理员生成一次性找回链接。',
                 'guest_buyer_not_bound',
                 409
             )
@@ -747,51 +745,6 @@ async function applyPasswordReset({ supabase, buyer, password, security = defaul
     return Object.freeze({ buyerId: normalizedBuyer.id, passwordVersion: next });
 }
 
-// ---------------------------------------------------------------------------
-// §13.2 historical order self-upgrade
-// ---------------------------------------------------------------------------
-
-/**
- * Bind a historical order (`buyer_id IS NULL`) to a credential group.
- *
- * Idempotent by design: a second submit that resolves to the SAME group is a
- * success, not a 409, because the buyer double-clicking must not be told their
- * order is broken. A DIFFERENT group is a hard 409 `guest_order_already_bound`
- * and needs support, exactly as §13.2 specifies.
- *
- * The direct UPDATE is safe with respect to the guest-shop SQL contract: the
- * `guest_shop_orders` triggers guard inventory and payment transitions, and
- * `buyer_id` is not part of any of them (verified against
- * 20260920_guest_shop_buyer_credentials.sql §2).
- */
-async function bindOrderToBuyer({ supabase, order, buyerId, now = new Date() }) {
-    const db = assertSupabase(supabase);
-    const orderId = String(order?.id || '').trim();
-    const target = String(buyerId || '').trim();
-    if (!isUuid(orderId) || !isUuid(target)) {
-        throw adminAccessError('订单或凭证分组无效', 'guest_order_already_bound', 409);
-    }
-    const at = (now instanceof Date ? now : new Date()).toISOString();
-    let query = db.from(ORDER_TABLE).update({ buyer_id: target, updated_at: at })
-        .eq('id', orderId)
-        .is('buyer_id', null);
-    if (typeof query.select === 'function') query = query.select('id,buyer_id');
-    const result = await (typeof query.maybeSingle === 'function' ? query.maybeSingle() : query);
-    if (result?.error) throw result.error;
-    if (result?.data) {
-        return Object.freeze({ orderId, buyerId: target, alreadyBound: false });
-    }
-    // CAS missed: either a concurrent upgrade won, or the order was bound long
-    // ago. Re-read and decide — same group is idempotent success.
-    const fresh = await db.from(ORDER_TABLE).select('id,buyer_id').eq('id', orderId).maybeSingle();
-    if (fresh?.error) throw fresh.error;
-    const current = String(fresh?.data?.buyer_id || '').trim();
-    if (current && current === target) {
-        return Object.freeze({ orderId, buyerId: target, alreadyBound: true });
-    }
-    throw adminAccessError('该订单已绑定其他查询密码，请联系客服处理', 'guest_order_already_bound', 409);
-}
-
 module.exports = {
     ADMIN_CAS_RETRIES,
     BUYER_ACCESS_FIELDS,
@@ -812,7 +765,6 @@ module.exports = {
     RESET_TOKEN_PATTERN,
     adminAccessError,
     applyPasswordReset,
-    bindOrderToBuyer,
     bumpBuyerPasswordVersion,
     consumeResetToken,
     databaseUnavailable,

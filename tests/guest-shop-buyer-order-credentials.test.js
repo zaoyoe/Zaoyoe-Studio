@@ -269,6 +269,14 @@ test('parseBuyerCredentialSwitch fails closed on garbage and treats absent as di
     assert.equal(buyer.isBuyerCredentialEnabled({ GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true' }), true);
     assert.equal(buyer.isBuyerCredentialEnabled({ GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'maybe' }), false);
     assert.equal(buyer.isBuyerCredentialEnabled({}), false);
+
+    assert.deepEqual(buyer.parseGuestOrdersPageSwitch({}), { present: false, valid: true, enabled: false });
+    assert.equal(buyer.isGuestOrdersPageEnabled({ GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'true' }), true);
+    assert.equal(buyer.isGuestOrdersPageEnabled({ GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'no' }), false);
+    assert.deepEqual(
+        buyer.parseGuestOrdersPageSwitch({ GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'maybe' }),
+        { present: true, valid: false, enabled: false }
+    );
 });
 
 test('resolveBuyerCredentialSettings applies defaults, clamps the cap and rejects invalid numbers', () => {
@@ -764,7 +772,14 @@ test('A1b verify script is read-only and asserts the six structural guarantees',
     assert.match(verify, /insert_never_upserts/u);
     assert.match(verify, /registered_match_never_a_predicate/u);
     assert.match(verify, /advisory_lock_serialises_contact/u);
-    assert.match(verify, /create_order_rpc_still_13_params/u);
+    // 2026-09-23 era-aware probe: the key used to pin the A0 13-parameter
+    // create_order signature exactly. 20260923_guest_shop_promo_l1l2.sql
+    // legitimately replaces it with 15 parameters, so the pinned probe would
+    // report a FALSE FAIL against a correct database. The row now asserts
+    // "a KNOWN create_order signature is installed"; the retired key must not
+    // come back.
+    assert.match(verify, /create_order_rpc_known_signature/u);
+    assert.doesNotMatch(verify, /create_order_rpc_still_13_params/u);
     // Read-only: no leading write/DDL statement (string literals inside the body
     // checks are fine; this mirrors the readiness gate's prohibition regex).
     assert.doesNotMatch(verify, /^\s*(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu);

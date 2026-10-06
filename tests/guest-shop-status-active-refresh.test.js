@@ -8,6 +8,8 @@ const { createGuestShopHandlers } = require('../server/api-handlers/public/guest
 
 const ORDER_ID = '33333333-3333-4333-8333-333333333333';
 const PAYMENT_ID = '44444444-4444-4444-8444-444444444444';
+const PRODUCT_ID = '55555555-5555-4555-8555-555555555555';
+const SKU_ID = '66666666-6666-4666-8666-666666666666';
 const ORDER_NO = 'GS20260916-000777';
 
 function clone(value) {
@@ -30,8 +32,12 @@ function makeOrder(overrides = {}) {
     return {
         id: ORDER_ID,
         order_no: ORDER_NO,
-        payment_order_id: PAYMENT_ID,
         site: 'cn',
+        product_id: PRODUCT_ID,
+        sku_id: SKU_ID,
+        snapshot_product_name: 'Status refresh product',
+        snapshot_sku_name: 'Default SKU',
+        quantity: 1,
         claim_secret_hash: 'stored-claim-hash',
         claim_attempt_count: 0,
         last_error_code: null,
@@ -252,7 +258,15 @@ test('lost webhook self-heals through the active provider query and confirm RPC'
     assert.equal(response.statusCode, 200);
     assert.equal(response.payload.success, true);
     assert.equal(response.payload.order.payment_status, 'confirmed');
+    assert.equal(response.payload.order.site, 'cn');
+    assert.equal(response.payload.order.product_id, PRODUCT_ID);
+    assert.equal(response.payload.order.sku_id, SKU_ID);
+    assert.equal(response.payload.order.product_name, 'Status refresh product');
+    assert.equal(response.payload.order.sku_name, 'Default SKU');
+    assert.equal(response.payload.order.provider, 'zpay');
+    assert.equal(response.payload.order.channel, 'alipay');
     assert.equal(Object.prototype.hasOwnProperty.call(response.payload, 'checkout'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(response.payload.order, 'provider_metadata'), false);
     assert.equal(adapter.state.queries.length, 1);
 
     const query = adapter.state.queries[0];
@@ -405,7 +419,7 @@ test('confirmed orders use shorter throttle window for faster fulfillment', asyn
     assert.equal(response.payload.order.payment_status, 'confirmed');
 });
 
-test('a terminal order never reads the payment row or queries the provider', async () => {
+test('a terminal order exposes its bound channel without querying the provider', async () => {
     const supabase = createSupabaseStub({ order: makeOrder({ payment_status: 'confirmed', fulfillment_status: 'delivered' }) });
     const adapter = makeAdapter({ result: makeZpayQueryResult() });
     const handlers = createHandlers({ supabase, adapter });
@@ -415,7 +429,9 @@ test('a terminal order never reads the payment row or queries the provider', asy
 
     assert.equal(response.statusCode, 200);
     assert.equal(response.payload.order.payment_status, 'confirmed');
-    assert.equal(supabase.state.paymentReads, 0);
+    assert.equal(response.payload.order.provider, 'zpay');
+    assert.equal(response.payload.order.channel, 'alipay');
+    assert.equal(supabase.state.paymentReads, 1);
     assert.equal(adapter.state.queries.length, 0);
     assert.equal(supabase.state.eventInserts, 0);
 });
