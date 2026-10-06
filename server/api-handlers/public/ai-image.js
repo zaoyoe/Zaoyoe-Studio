@@ -4790,11 +4790,27 @@ function createAiImageHandlers({
 
     let fastAdmissionSupported = null;
 
+    function isProductionRuntime() {
+        return String(env?.VERCEL_ENV || '').trim().toLowerCase() === 'production'
+            || String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+    }
+
     function isFastAdmissionUnavailable(error = {}) {
         const signal = [error?.code, error?.message, error?.details, error?.hint]
             .filter(Boolean)
             .join(' ');
         return /PGRST202|fn_admit_ai_workbench_task|schema cache|function .* does not exist|Unexpected RPC/i.test(signal);
+    }
+
+    function buildFastAdmissionUnavailableError(cause = null) {
+        const error = new Error('AI 工作台准入 RPC 在生产环境不可用，已拒绝创建任务');
+        error.statusCode = 503;
+        error.code = 'ai_workbench_admission_unavailable';
+        if (cause) {
+            error.details = normalizeText(cause.details || '', 500);
+            error.hint = normalizeText(cause.hint || '', 500);
+        }
+        return error;
     }
 
     function buildFastAdmissionError(payload = {}) {
@@ -4829,6 +4845,11 @@ function createAiImageHandlers({
         const matchedRule = safeObject(safeObject(taskPayload?.metadata).pricing).matched_rule;
         const matchedRuleId = normalizeText(matchedRule?.id, 160);
         const matchedRuleUpdatedAt = normalizeText(matchedRule?.updated_at || matchedRule?.updatedAt, 120);
+        const productionRuntime = isProductionRuntime();
+
+        if (productionRuntime && (fastAdmissionSupported === false || typeof supabase?.rpc !== 'function')) {
+            throw buildFastAdmissionUnavailableError();
+        }
 
         if (fastAdmissionSupported !== false && typeof supabase?.rpc === 'function') {
             const { data, error } = await supabase.rpc('fn_admit_ai_workbench_task', {
@@ -4869,6 +4890,9 @@ function createAiImageHandlers({
                 });
             }
             fastAdmissionSupported = false;
+            if (productionRuntime) {
+                throw buildFastAdmissionUnavailableError(error);
+            }
         }
 
         await assertUserTaskCapacity(supabase, {

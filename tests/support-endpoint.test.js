@@ -259,7 +259,7 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
     });
 });
 
-test('support code_status returns fn_check_code_status payload for the support bot', async () => {
+test('support code_status uses the support-only RPC and returns its sanitized payload', async () => {
     const rpcCalls = [];
 
     await withSupportHandler({
@@ -277,7 +277,7 @@ test('support code_status returns fn_check_code_status payload for the support b
                     adminSupabase: {
                         async rpc(fn, args) {
                             rpcCalls.push({ fn, args });
-                            assert.equal(fn, 'fn_check_code_status');
+                            assert.equal(fn, 'fn_check_support_code_status');
                             return {
                                 data: {
                                     valid: false,
@@ -310,6 +310,43 @@ test('support code_status returns fn_check_code_status payload for the support b
         assert.equal(payload.success, true);
         assert.equal(payload.payload.status, 'revoked');
         assert.equal(rpcCalls[0]?.args?.p_code, 'ZY-C4B7-9F36-A9F0');
+        assert.equal(Object.prototype.hasOwnProperty.call(payload.payload, 'code'), false);
+        assert.equal(Object.prototype.hasOwnProperty.call(payload.payload, 'external_order_id'), false);
+        assert.equal(Object.prototype.hasOwnProperty.call(payload.payload, 'used_by'), false);
+        assert.equal(Object.prototype.hasOwnProperty.call(payload.payload, 'revoked_by'), false);
+        assert.equal(Object.prototype.hasOwnProperty.call(payload.payload, 'batch_id'), false);
+        assert.equal(Object.prototype.hasOwnProperty.call(payload.payload, 'batch_name'), false);
+    });
+});
+
+test('support code_status rejects arbitrary external order numbers before RPC', async () => {
+    let rpcCalls = 0;
+    await withSupportHandler({
+        adminModule: {
+            async requireAuthenticatedUser() {
+                return {
+                    user: { id: 'user-support-code-input' },
+                    requestSupabase: { from() { throw new Error('must not query request tables'); } },
+                    adminSupabase: {
+                        async rpc() {
+                            rpcCalls += 1;
+                            return { data: null, error: null };
+                        }
+                    }
+                };
+            }
+        }
+    }, async (handler) => {
+        const res = createMockResponse();
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: { action: 'code_status', input: 'AFD-ORDER-20261006-001' }
+        }, res);
+        const payload = res.json();
+        assert.equal(res.statusCode, 400);
+        assert.equal(payload.code, 'code_status_input_invalid');
+        assert.equal(rpcCalls, 0);
     });
 });
 
@@ -462,13 +499,13 @@ test('support ticket_history returns the current user ticket results and focuses
     });
 });
 
-test('chat support code_status falls back to direct rpc when the support endpoint is unavailable', () => {
+test('chat support code_status stays on the authenticated support endpoint', () => {
     const source = fs.readFileSync(path.resolve(__dirname, '../js/components/ChatWidget.js'), 'utf8');
 
-    assert.match(source, /async callSupportCodeStatusRpcFallback\(input, cause = null\)/);
-    assert.match(source, /shouldFallbackSupportCodeStatusRequest\(response, payload = \{\}\)/);
-    assert.match(source, /\[404, 405, 500, 501, 502, 503, 504\]\.includes\(status\)/);
-    assert.match(source, /this\.supabase\.rpc\('fn_check_code_status', \{\s*p_code: codeOrOrder\s*\}\)/);
+    assert.match(source, /async callSupportApi\(action, input\)/);
+    assert.doesNotMatch(source, /callSupportCodeStatusRpcFallback/);
+    assert.doesNotMatch(source, /fn_check_support_code_status/);
+    assert.doesNotMatch(source, /fn_check_code_status/);
 });
 
 test('support create_ticket still succeeds when external alert enqueue fails', async () => {

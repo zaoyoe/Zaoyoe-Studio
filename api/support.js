@@ -43,6 +43,31 @@ function looksLikeRedeemCode(value) {
     return /^[A-Z0-9]+(?:-[A-Z0-9]+)+$/.test(normalized) && /[A-Z]/.test(normalized);
 }
 
+function isSupportRedeemCode(value) {
+    const normalized = normalizeText(value, 120).toUpperCase();
+    return normalized.startsWith('ZY-') && looksLikeRedeemCode(normalized);
+}
+
+function sanitizeCodeStatusPayload(value) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+    if (!source) return null;
+    const allowedKeys = [
+        'valid',
+        'status',
+        'package_name',
+        'points',
+        'expires_at',
+        'used_at',
+        'revoke_reason',
+        'revoked_at',
+        'message'
+    ];
+    return allowedKeys.reduce((result, key) => {
+        if (Object.prototype.hasOwnProperty.call(source, key)) result[key] = source[key];
+        return result;
+    }, {});
+}
+
 function looksLikeAfdianOrderNo(value) {
     const normalized = normalizeText(value, 120);
     if (!normalized || isUuid(normalized) || looksLikeEmail(normalized) || looksLikeRedeemCode(normalized)) {
@@ -611,13 +636,13 @@ async function handleExplainFailure({ requestSupabase, adminSupabase, user, inpu
 }
 
 async function handleCodeStatus({ adminSupabase, input }) {
-    const codeOrOrder = normalizeText(input, 120).toUpperCase();
-    if (!codeOrOrder) {
-        throw createError('请输入兑换码或外部订单号');
+    const code = normalizeText(input, 120).toUpperCase();
+    if (!isSupportRedeemCode(code)) {
+        throw createError('请输入有效的 ZY- 开头兑换码', 400, 'code_status_input_invalid');
     }
 
-    const { data, error } = await adminSupabase.rpc('fn_check_code_status', {
-        p_code: codeOrOrder
+    const { data, error } = await adminSupabase.rpc('fn_check_support_code_status', {
+        p_code: code
     });
 
     if (error) {
@@ -626,7 +651,7 @@ async function handleCodeStatus({ adminSupabase, input }) {
 
     return {
         success: true,
-        payload: data || null
+        payload: sanitizeCodeStatusPayload(data)
     };
 }
 

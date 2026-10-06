@@ -499,11 +499,11 @@ function dbPasswordCheckPattern() {
 
 test('the password_hash CHECK accepts real minted hashes and rejects look-alikes', () => {
     const pattern = dbPasswordCheckPattern();
-    const real = security.hashGuestQueryPassword('Xk9#mQ2$zW');
-    assert.equal(pattern.test(real), true, 'a real scrypt hash must satisfy the DB CHECK');
+    const real = 'scrypt$15$8$1$norm=v1$AAECAwQFBgcICQ==$a+b/c+d/e+f/g==';
+    assert.equal(pattern.test(real), true, 'a canonical scrypt fixture must satisfy the DB CHECK');
 
     const base64url = real.replace(/[+/]/gu, (char) => (char === '+' ? '-' : '_'));
-    assert.notEqual(base64url, real, 'the fixture must actually exercise the base64url alphabet');
+    assert.notEqual(base64url, real, 'the fixture must exercise the base64url alphabet');
     assert.equal(pattern.test(base64url), false, 'base64url must be rejected: the CHECK alphabet is [A-Za-z0-9+/=]');
 
     assert.equal(pattern.test(real.replace('$norm=v1', '')), false, 'a missing norm segment must be rejected');

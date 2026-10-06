@@ -211,6 +211,12 @@ function createSupabaseStub(state = {}) {
     return {
         rpc(name, args = {}) {
             state.rpcCalls.push({ name, args: clone(args) });
+            if (name === 'fn_admit_ai_workbench_task' && state.admissionRpcError) {
+                return Promise.resolve({
+                    data: null,
+                    error: clone(state.admissionRpcError)
+                });
+            }
             if (name === 'take_rate_limit_tokens' && state.batchRateLimitEnabled) {
                 const results = [];
                 for (const check of (Array.isArray(args.p_checks) ? args.p_checks : [])) {
@@ -1792,6 +1798,41 @@ test('ai image submit rejects a stale displayed pricing revision before task cre
     assert.equal(payload.code, 'pricing_changed');
     assert.equal(state.insertedTasks.length, 0);
     assert.equal(state.rpcCalls.some((call) => call.name === 'fn_admit_ai_workbench_task'), false);
+});
+
+test('ai image submit fails closed in production when admission RPC is unavailable', async () => {
+    for (const admissionRpcError of [
+        null,
+        {
+            code: 'PGRST202',
+            message: 'Could not find the function public.fn_admit_ai_workbench_task in the schema cache'
+        }
+    ]) {
+        const state = admissionRpcError ? { admissionRpcError } : {};
+        const { handlers } = createHandlers({
+            state,
+            env: { VERCEL_ENV: 'production' },
+            body: {
+                site: 'cn',
+                billingMode: 'points',
+                prompt: '生产准入 RPC 缺失时不应创建任务',
+                model: 'gpt-image-2',
+                ratio: '1:1',
+                resolution: '1k',
+                quantity: 1
+            }
+        });
+        const res = createMockResponse();
+
+        await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 503);
+        assert.equal(payload.success, false);
+        assert.equal(payload.code, 'ai_workbench_admission_unavailable');
+        assert.equal(state.insertedTasks.length, 0);
+        assert.equal(state.rpcCalls.filter((call) => call.name === 'fn_admit_ai_workbench_task').length, 1);
+    }
 });
 
 test('ai image submit accepts the current pricing revision and snapshots it on the task', async () => {

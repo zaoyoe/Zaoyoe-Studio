@@ -95,16 +95,16 @@
                 apiAction: 'code_status',
                 requiresAuth: true,
                 prompt: {
-                    zh: '把兑换码或外部订单号发我，我帮你看是未使用、已使用、已过期还是无效。',
-                    en: 'Send me the redemption code or external order number and I will check whether it is unused, used, expired, or invalid.'
+                    zh: '把兑换码发我，我帮你看是未使用、已使用、已过期还是无效。',
+                    en: 'Send me the redemption code and I will check whether it is unused, used, expired, or invalid.'
                 },
                 placeholder: {
-                    zh: '输入兑换码或外部订单号',
-                    en: 'Enter a code or external order number'
+                    zh: '输入兑换码',
+                    en: 'Enter a redemption code'
                 },
                 inputHint: {
-                    zh: '示例：`ZY-ABCD-1234` 或外部订单号',
-                    en: 'Example: `ZY-ABCD-1234` or an external order number'
+                    zh: '示例：`ZY-ABCD-1234`',
+                    en: 'Example: `ZY-ABCD-1234`'
                 }
             },
             redeem_code: {

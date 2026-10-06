@@ -41,7 +41,47 @@ function buildImageFetchResponse(bytes = 'reference-image-bytes', mimeType = 'im
                 return '';
             }
         },
+        body: new ReadableStream({
+            start(controller) {
+                controller.enqueue(new Uint8Array(buffer));
+                controller.close();
+            }
+        }),
         arrayBuffer: async () => buffer
+    };
+}
+
+function buildStreamingImageFetchResponse(chunks = [], mimeType = 'image/png', location = '') {
+    const buffers = chunks.map((chunk) => Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    let index = 0;
+    let cancelled = false;
+    return {
+        ok: true,
+        status: location ? 302 : 200,
+        headers: {
+            get(name = '') {
+                const normalized = String(name).toLowerCase();
+                if (normalized === 'content-type') return mimeType;
+                if (normalized === 'location') return location;
+                return '';
+            }
+        },
+        body: {
+            getReader() {
+                return {
+                    async read() {
+                        if (index >= buffers.length) return { done: true, value: undefined };
+                        return { done: false, value: new Uint8Array(buffers[index++]) };
+                    },
+                    async cancel() {
+                        cancelled = true;
+                    }
+                };
+            }
+        },
+        get cancelled() {
+            return cancelled;
+        }
     };
 }
 
@@ -2869,7 +2909,8 @@ test('gemini native image executor sends continuation reference image bytes upst
 
     const execution = await executeGeminiNativeImageGeneration(task, {
         env: {
-            AI_IMAGE_GEMINI_URL_BRIDGE: 'false'
+            AI_IMAGE_GEMINI_URL_BRIDGE: 'false',
+            AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com'
         },
         runtimeConfig: {
             apiKey: 'sk-sub2api',
@@ -2886,14 +2927,7 @@ test('gemini native image executor sends continuation reference image bytes upst
                 body: options.body ? JSON.parse(options.body) : null
             });
             if (String(url) === task.reference_image_url) {
-                return {
-                    ok: true,
-                    status: 200,
-                    headers: {
-                        get: (name) => String(name || '').toLowerCase() === 'content-type' ? 'image/png' : ''
-                    },
-                    arrayBuffer: async () => Buffer.from('source-child-image-bytes')
-                };
+                return buildImageFetchResponse('source-child-image-bytes', 'image/png');
             }
             return {
                 ok: true,
@@ -3705,19 +3739,13 @@ test('openai compatible image executor uses edits API with reference image for i
     const execution = await executeOpenAiCompatibleImageGeneration(task, {
         env: {
             AI_IMAGE_API_KEY: 'sk-test',
-            AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1'
+            AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+            AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com'
         },
         fetchImpl: async (url, options = {}) => {
             requests.push({ url: String(url), options });
             if (String(url) === 'https://cdn.example.com/reference.png') {
-                return {
-                    ok: true,
-                    status: 200,
-                    headers: {
-                        get: () => 'image/png'
-                    },
-                    arrayBuffer: async () => Buffer.from('reference-image-bytes')
-                };
+                return buildImageFetchResponse('reference-image-bytes', 'image/png');
             }
             return {
                 ok: true,
@@ -3780,19 +3808,13 @@ test('openai compatible image executor passes continuation base and extra refere
     const execution = await executeOpenAiCompatibleImageGeneration(task, {
         env: {
             AI_IMAGE_API_KEY: 'sk-test',
-            AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1'
+            AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+            AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com'
         },
         fetchImpl: async (url, options = {}) => {
             requests.push({ url: String(url), options });
             if (String(url).startsWith('https://cdn.example.com/')) {
-                return {
-                    ok: true,
-                    status: 200,
-                    headers: {
-                        get: () => 'image/png'
-                    },
-                    arrayBuffer: async () => Buffer.from(`bytes:${url}`)
-                };
+                return buildImageFetchResponse(`bytes:${url}`, 'image/png');
             }
             return {
                 ok: true,
@@ -4093,7 +4115,8 @@ test('openai compatible image executor classifies provider network failures', as
             env: {
                 AI_IMAGE_API_KEY: 'sk-test',
                 AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
-                AI_IMAGE_PROVIDER_TIMEOUT_MS: '10000'
+                AI_IMAGE_PROVIDER_TIMEOUT_MS: '10000',
+                AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com'
             },
             fetchImpl: async () => {
                 throw fetchError;
@@ -4356,6 +4379,160 @@ test('openai compatible text vision executor rejects non-image and oversized rev
         }),
         (error) => error.code === 'ai_image_reference_too_large' && error.statusCode === 413
     );
+});
+
+test('openai compatible text vision executor rejects literal private and loopback reference IPs', async () => {
+    let fetchCalls = 0;
+    for (const referenceImageUrl of [
+        'https://127.0.0.1/reference.png',
+        'https://[::1]/reference.png'
+    ]) {
+        await assert.rejects(
+            executeOpenAiCompatibleTextVision({
+                id: `task-private-reference-${referenceImageUrl}`,
+                mode: 'reverse',
+                billing_mode: 'points',
+                model: 'claude-opus-4-6',
+                reference_image_url: referenceImageUrl
+            }, {
+                env: {
+                    AI_IMAGE_API_KEY: 'sk-test',
+                    AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+                    AI_IMAGE_REFERENCE_IMAGE_HOSTS: '127.0.0.1 [::1]'
+                },
+                fetchImpl: async () => {
+                    fetchCalls += 1;
+                    return buildImageFetchResponse();
+                }
+            }),
+            (error) => error.code === 'ai_image_reference_url_not_trusted' && error.statusCode === 400
+        );
+    }
+    assert.equal(fetchCalls, 0);
+});
+
+test('openai compatible text vision executor rejects a trusted host resolving to a private address', async () => {
+    let fetchCalls = 0;
+    await assert.rejects(
+        executeOpenAiCompatibleTextVision({
+            id: 'task-dns-private-reference',
+            mode: 'reverse',
+            billing_mode: 'points',
+            model: 'claude-opus-4-6',
+            reference_image_url: 'https://cdn.example.com/reference.png'
+        }, {
+            env: {
+                AI_IMAGE_API_KEY: 'sk-test',
+                AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+                AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com'
+            },
+            resolveHostname: async () => [{ address: '10.0.0.9', family: 4 }],
+            fetchImpl: async () => {
+                fetchCalls += 1;
+                return buildImageFetchResponse();
+            }
+        }),
+        (error) => error.code === 'ai_image_reference_url_not_trusted' && error.statusCode === 400
+    );
+    assert.equal(fetchCalls, 0);
+});
+
+test('openai compatible text vision executor revalidates redirects before downloading references', async () => {
+    const fetchCalls = [];
+    await assert.rejects(
+        executeOpenAiCompatibleTextVision({
+            id: 'task-reference-redirect',
+            mode: 'reverse',
+            billing_mode: 'points',
+            model: 'claude-opus-4-6',
+            reference_image_url: 'https://cdn.example.com/reference.png'
+        }, {
+            env: {
+                AI_IMAGE_API_KEY: 'sk-test',
+                AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+                AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com'
+            },
+            resolveHostname: async () => [{ address: '203.0.113.10', family: 4 }],
+            fetchImpl: async (url) => {
+                fetchCalls.push(String(url));
+                return buildStreamingImageFetchResponse([], 'image/png', 'https://untrusted.example.net/reference.png');
+            }
+        }),
+        (error) => error.code === 'ai_image_reference_url_not_trusted' && error.statusCode === 400
+    );
+    assert.deepEqual(fetchCalls, ['https://cdn.example.com/reference.png']);
+});
+
+test('openai compatible text vision executor bounds streamed reference bodies without Content-Length', async () => {
+    let fetchCalls = 0;
+    await assert.rejects(
+        executeOpenAiCompatibleTextVision({
+            id: 'task-streaming-reference-limit',
+            mode: 'reverse',
+            billing_mode: 'points',
+            model: 'claude-opus-4-6',
+            reference_image_url: 'https://cdn.example.com/reference.png'
+        }, {
+            env: {
+                AI_IMAGE_API_KEY: 'sk-test',
+                AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+                AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com',
+                AI_IMAGE_REVERSE_REFERENCE_MAX_BYTES: '1024'
+            },
+            fetchImpl: async () => {
+                fetchCalls += 1;
+                return buildStreamingImageFetchResponse([Buffer.alloc(900), Buffer.alloc(200)]);
+            }
+        }),
+        (error) => error.code === 'ai_image_reference_too_large' && error.statusCode === 413
+    );
+    assert.equal(fetchCalls, 1);
+});
+
+test('openai compatible image edits enforce a total byte limit across references', async () => {
+    const task = {
+        id: 'task-edit-total-reference-limit',
+        site: 'cn',
+        user_id: 'user-1',
+        mode: 'image',
+        billing_mode: 'points',
+        status: 'running',
+        model: 'gpt-image-2',
+        ratio: '1:1',
+        resolution: '1k',
+        quantity: 1,
+        prompt: '合并两张参考图',
+        reference_image_url: 'https://cdn.example.com/base.png',
+        metadata: {
+            reference_images: [{ url: 'https://cdn.example.com/extra.png' }]
+        }
+    };
+    let providerCalls = 0;
+    await assert.rejects(
+        executeOpenAiCompatibleImageGeneration(task, {
+            env: {
+                AI_IMAGE_API_KEY: 'sk-test',
+                AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+                AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com',
+                AI_IMAGE_EDIT_REFERENCE_MAX_BYTES: '1024',
+                AI_IMAGE_EDIT_REFERENCE_TOTAL_MAX_BYTES: '1500'
+            },
+            fetchImpl: async (url) => {
+                if (String(url).startsWith('https://cdn.example.com/')) {
+                    return buildImageFetchResponse(Buffer.alloc(900), 'image/png');
+                }
+                providerCalls += 1;
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({ data: [{ b64_json: Buffer.from('unused').toString('base64') }] })
+                };
+            },
+            uploadImageBuffer: async () => ({})
+        }),
+        (error) => error.code === 'ai_image_reference_too_large' && error.statusCode === 413
+    );
+    assert.equal(providerCalls, 0);
 });
 
 test('openai compatible text vision executor rejects models outside an explicit vision model list', async () => {

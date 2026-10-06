@@ -2300,54 +2300,13 @@ class ChatWidget {
             });
             payload = await response.json().catch(() => ({}));
         } catch (error) {
-            if (action === 'code_status') {
-                return this.callSupportCodeStatusRpcFallback(input, error);
-            }
             throw error;
         }
 
         if (!response.ok || payload.success === false) {
-            if (action === 'code_status' && this.shouldFallbackSupportCodeStatusRequest(response, payload)) {
-                return this.callSupportCodeStatusRpcFallback(input, new Error(payload.message || '支持请求失败'));
-            }
             throw new Error(payload.message || '支持请求失败');
         }
         return payload.payload || null;
-    }
-
-    shouldFallbackSupportCodeStatusRequest(response, payload = {}) {
-        const status = Number(response?.status || 0);
-        const code = String(payload?.code || '').trim();
-        if ([404, 405, 500, 501, 502, 503, 504].includes(status)) {
-            return true;
-        }
-
-        return [
-            'support_not_configured',
-            'auth_service_unavailable',
-            'support_request_failed',
-            'code_status_failed'
-        ].includes(code);
-    }
-
-    async callSupportCodeStatusRpcFallback(input, cause = null) {
-        const codeOrOrder = String(input || '').trim().toUpperCase();
-        if (!codeOrOrder) {
-            throw new Error(this.getCurrentLanguage() === 'zh' ? '请输入兑换码或外部订单号' : 'Enter a code or external order number');
-        }
-
-        if (!this.supabase?.rpc) {
-            throw cause || new Error(this.getCurrentLanguage() === 'zh' ? '支持请求失败' : 'Support request failed');
-        }
-
-        const { data, error } = await this.supabase.rpc('fn_check_code_status', {
-            p_code: codeOrOrder
-        });
-        if (error) {
-            throw new Error(error.message || (this.getCurrentLanguage() === 'zh' ? '兑换码状态查询失败' : 'Code status lookup failed'));
-        }
-
-        return data || null;
     }
 
     async callVerifyStatus(taskId) {
@@ -2426,13 +2385,8 @@ class ChatWidget {
             const lines = [
                 this.getCurrentLanguage() === 'zh' ? '兑换码状态结果' : 'Code Status',
                 `${this.getCurrentLanguage() === 'zh' ? '状态' : 'Status'}：${valid ? status : (payload.message || status)}`,
-                payload.code ? `${this.getCurrentLanguage() === 'zh' ? '兑换码' : 'Code'}：${payload.code}` : '',
                 payload.package_name ? `${this.getCurrentLanguage() === 'zh' ? '套餐' : 'Package'}：${payload.package_name}` : '',
                 payload.points ? `${this.getCurrentLanguage() === 'zh' ? '积分' : 'Points'}：${payload.points}` : '',
-                payload.used_by ? `${this.getCurrentLanguage() === 'zh' ? '使用者' : 'Used By'}：${payload.used_by}` : '',
-                payload.used_at ? `${this.getCurrentLanguage() === 'zh' ? '使用时间' : 'Used At'}：${payload.used_at}` : '',
-                payload.revoke_reason ? `${this.getCurrentLanguage() === 'zh' ? '撤销理由' : 'Revocation Reason'}：${payload.revoke_reason}` : '',
-                payload.revoked_at ? `${this.getCurrentLanguage() === 'zh' ? '撤销时间' : 'Revoked At'}：${payload.revoked_at}` : '',
                 payload.expires_at ? `${this.getCurrentLanguage() === 'zh' ? '过期时间' : 'Expires At'}：${payload.expires_at}` : '',
                 payload.message && !valid ? `${this.getCurrentLanguage() === 'zh' ? '说明' : 'Note'}：${payload.message}` : ''
             ].filter(Boolean);
