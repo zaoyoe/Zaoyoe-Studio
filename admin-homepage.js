@@ -1742,7 +1742,24 @@ const HomepageAdmin = (() => {
     function invalidateSectionVisibilityCaches() {
         try {
             ['cn', 'intl'].forEach(site => {
-                localStorage.removeItem(`zaoyoe_section_vis_${site}`);
+                const visConfig = {};
+                let hasData = false;
+                HOMEPAGE_MANAGED_SECTIONS.forEach((sec) => {
+                    const cfg = getHomepageSectionConfigBySite(sec, site);
+                    if (cfg) {
+                        hasData = true;
+                        visConfig[sec] = cfg.is_visible !== false;
+                    }
+                });
+
+                if (hasData) {
+                    localStorage.setItem(`zaoyoe_section_vis_${site}`, JSON.stringify(visConfig));
+                    if (site === (window.SiteConfig?.site || 'cn') && window.SectionVisibility?.updateConfig) {
+                        window.SectionVisibility.updateConfig(visConfig);
+                    }
+                } else {
+                    localStorage.removeItem(`zaoyoe_section_vis_${site}`);
+                }
             });
         } catch (e) {
             console.warn('[Homepage] Failed to invalidate section visibility cache:', e);

@@ -1001,7 +1001,7 @@
             }),
             customImage: config.custom_image || null,
             entries: configuredEntries
-                .filter((item) => item?.enabled !== false)
+                .filter((item) => item?.enabled !== false && (!window.SectionVisibility || !item?.section || window.SectionVisibility.isVisible(item.section)))
                 .map((item, index) => {
                     const entryFallback = getHeroEntryFallback(item, index);
                     const rawEntryText = getLocalizedField(item, 'text') || item?.text;

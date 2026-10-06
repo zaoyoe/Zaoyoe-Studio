@@ -3582,6 +3582,7 @@ Example output format:
 
     getGuestExceptionWriteActions: function (row = {}) {
         const payment = String(row?.payment_status || '').trim().toLowerCase();
+        const paymentRow = String(row?.payment_row_status || '').trim().toLowerCase();
         const fulfillment = String(row?.fulfillment_status || '').trim().toLowerCase();
         const refund = String(row?.refund_status || '').trim().toLowerCase();
         const exceptionKey = String(row?.exception_key || '').trim().toLowerCase();
@@ -3596,6 +3597,14 @@ Example output format:
                 title: '申请退款',
                 icon: 'fa-undo',
                 modifier: 'refund'
+            });
+        }
+        if (refund === 'manual_review') {
+            actions.push({
+                action: 'reconcile_refund',
+                title: '核销退款',
+                icon: 'fa-receipt',
+                modifier: 'reconcile'
             });
         }
         const canFulfill = fulfillment === 'paid_unfulfillable'
@@ -3619,6 +3628,17 @@ Example output format:
                 modifier: 'unlock'
             });
         }
+        const canCloseUnpaid = (payment === 'review' || paymentRow === 'review')
+            && fulfillment !== 'delivered'
+            && !['confirmed', 'refunded', 'chargeback'].includes(payment);
+        if (canCloseUnpaid) {
+            actions.push({
+                action: 'close_unpaid_review',
+                title: '关闭未付单',
+                icon: 'fa-ban',
+                modifier: 'close-unpaid'
+            });
+        }
         return actions;
     },
 
@@ -3627,16 +3647,33 @@ Example output format:
             request_refund: {
                 title: '申请退款',
                 confirmLabel: '确认退款',
+                icon: 'fa-undo',
                 hint: '确认后会把该订单加入退款队列，由履约任务向支付通道发起退款。后台不会回显卡密或取货口令。'
+            },
+            reconcile_refund: {
+                title: '人工退款核销 (确认已退款)',
+                confirmLabel: '确认已退款并闭环',
+                icon: 'fa-check-circle',
+                hint: '该订单在支付网关自动退款失败，已转入人工财务复核。若您已在支付平台手动退款或确认结清，请在此登记流水号完成闭环。',
+                needsProviderRef: true
+            },
+            close_unpaid_review: {
+                title: '关闭未付款订单',
+                confirmLabel: '确认关闭订单',
+                icon: 'fa-ban',
+                hint: '该订单处于支付待复核状态。若已核实买家实际未支付，确认后将把订单置为失效（expired）并移出人工复核队列。',
+                needsProviderRef: false
             },
             manual_fulfill: {
                 title: '补发库存',
                 confirmLabel: '确认补发',
+                icon: 'fa-paper-plane',
                 hint: '确认后会从同 SKU 的可用非共享库存中领取一张并标记已发货。后台不会回显卡密。'
             },
             unlock_dead_letter: {
                 title: '解锁死信',
                 confirmLabel: '确认解锁',
+                icon: 'fa-unlock-alt',
                 hint: '确认后只解锁这一笔死信，并清掉 worker 死信标记。请确认当前没有活动履约租约。'
             }
         };
@@ -3662,17 +3699,25 @@ Example output format:
         const normalizedOrderId = String(orderId || '').trim();
         if (!meta || !normalizedOrderId) return;
         this.closeDynamicModal('guestExceptionOpsModal');
+        const providerRefSection = meta.needsProviderRef ? `
+            <div class="shop-refund-modal-section">
+                <label class="shop-refund-modal-label" for="guestExceptionOpsProviderRef">退款流水号 / 凭证号 <span class="required-star">*</span></label>
+                <input type="text" id="guestExceptionOpsProviderRef" class="shop-refund-modal-input refund-modal-input" placeholder="例如：支付宝退款交易号或财务记账凭证号">
+                <p id="guestExceptionOpsProviderRefError" class="shop-guest-exception-ops-error" hidden>请填写退款流水号或凭证号</p>
+            </div>
+        ` : '';
         const modalHtml = `
             <div id="guestExceptionOpsModal" data-shop-overlay-close="dynamic-modal" data-modal-id="guestExceptionOpsModal"
                 class="shop-refund-modal-overlay">
                 <div class="shop-refund-modal">
                     <h3 class="shop-refund-modal-title">
-                        <span class="shop-refund-modal-title-icon">
-                             <i class="fas fa-exclamation-circle"></i>
+                        <span class="shop-refund-modal-title-icon shop-refund-modal-title-icon--${this.escapeForAttr(action)}">
+                             <i class="fas ${this.escapeForAttr(meta.icon || 'fa-exclamation-circle')}"></i>
                         </span>
                         ${this.escapeHtml(meta.title)}
                     </h3>
                     <p class="shop-guest-exception-ops-hint">订单 ${this.escapeHtml(orderNo || normalizedOrderId)}。${this.escapeHtml(meta.hint)}</p>
+                    ${providerRefSection}
                     <div class="shop-refund-modal-section shop-refund-modal-section--remark">
                         <label class="shop-refund-modal-label" for="guestExceptionOpsReason">处理原因</label>
                         <textarea id="guestExceptionOpsReason" class="shop-refund-modal-textarea" placeholder="请填写至少 8 个字的处理原因"></textarea>
@@ -3680,7 +3725,7 @@ Example output format:
                     </div>
                     <div class="shop-refund-modal-actions">
                         <button type="button" data-shop-action="guest-exception-ops-cancel" data-modal-id="guestExceptionOpsModal" class="refund-btn-cancel">取消</button>
-                        <button type="button" class="refund-btn-confirm" data-shop-action="guest-exception-ops-confirm"
+                        <button type="button" class="refund-btn-confirm refund-btn-confirm--${this.escapeForAttr(action)}" data-shop-action="guest-exception-ops-confirm"
                             data-guest-action="${this.escapeForAttr(action)}" data-order-id="${this.escapeForAttr(normalizedOrderId)}"
                             data-order-no="${this.escapeForAttr(orderNo || '')}">${this.escapeHtml(meta.confirmLabel)}</button>
                     </div>
@@ -3693,7 +3738,11 @@ Example output format:
         });
         requestAnimationFrame(() => {
             document.getElementById('guestExceptionOpsModal')?.classList.add('is-visible');
-            document.getElementById('guestExceptionOpsReason')?.focus();
+            if (meta.needsProviderRef) {
+                document.getElementById('guestExceptionOpsProviderRef')?.focus();
+            } else {
+                document.getElementById('guestExceptionOpsReason')?.focus();
+            }
         });
     },
 
@@ -3702,6 +3751,24 @@ Example output format:
         const orderId = String(button?.dataset?.orderId || '').trim();
         const meta = this.getGuestExceptionWriteMeta(action);
         if (!meta || !orderId) return;
+
+        let providerRef = '';
+        if (meta.needsProviderRef) {
+            const refInput = document.getElementById('guestExceptionOpsProviderRef');
+            const refError = document.getElementById('guestExceptionOpsProviderRefError');
+            providerRef = String(refInput?.value || '').trim();
+            if (!providerRef) {
+                if (refError) {
+                    refError.hidden = false;
+                    refError.textContent = '请填写退款流水号或凭证号';
+                }
+                refInput?.focus();
+                this.showActionToast('请填写退款流水号或凭证号', 'warning');
+                return;
+            }
+            if (refError) refError.hidden = true;
+        }
+
         const reasonInput = document.getElementById('guestExceptionOpsReason');
         const reasonError = document.getElementById('guestExceptionOpsReasonError');
         const reason = String(reasonInput?.value || '').trim();
@@ -3718,19 +3785,28 @@ Example output format:
         this.setActionButtonLoading(button, '处理中...');
         try {
             const headers = await this.getAdminAuthHeaders();
+            const routeUrl = action === 'reconcile_refund'
+                ? this.buildAdminShopUrl('payments/shop-refund-reconcile')
+                : this.buildAdminShopUrl('shop/guest-orders');
+
+            const bodyPayload = {
+                action,
+                orderId,
+                confirm: true,
+                reason,
+                site: window.AdminSiteFilter?.getSiteFilter?.() || 'all'
+            };
+            if (action === 'reconcile_refund') {
+                bodyPayload.providerRef = providerRef;
+            }
+
             const response = await (window.AdminApi?.fetch || fetch)(
-                this.buildAdminShopUrl('shop/guest-orders'),
+                routeUrl,
                 {
                     method: 'POST',
                     credentials: 'include',
                     headers,
-                    body: JSON.stringify({
-                        action,
-                        orderId,
-                        confirm: true,
-                        reason,
-                        site: window.AdminSiteFilter?.getSiteFilter?.() || 'all'
-                    })
+                    body: JSON.stringify(bodyPayload)
                 }
             );
             const payload = await response.json().catch(() => ({}));
@@ -4467,9 +4543,14 @@ Example output format:
     normalizeCurrentProductCategory: function (categories = this.categoryData) {
         const sortedCategories = this.getSortedAdminProductCategories(categories);
         const currentCategory = String(this.currentCategory || '').trim();
-        if (currentCategory && sortedCategories.some((category) => category.name === currentCategory)) {
+        if (currentCategory && currentCategory !== 'all' && sortedCategories.some((category) => category.name === currentCategory)) {
             this.currentCategory = currentCategory;
             return currentCategory;
+        }
+
+        if (sortedCategories.length > 0) {
+            this.currentCategory = sortedCategories[0].name;
+            return sortedCategories[0].name;
         }
 
         // The product workspace opens on the complete catalog. Category-specific
@@ -4479,25 +4560,111 @@ Example output format:
         return 'all';
     },
 
+    syncCategoryIndicator: function (options = {}) {
+        const container = document.getElementById('productCategorySidebarList');
+        if (!container) return;
+        const indicator = container.querySelector('.list-aside__indicator');
+        const active = container.querySelector('.filter-tab.active');
+        if (!indicator || !active) return;
+        if (typeof window !== 'undefined' && window.innerWidth <= 820) {
+            return;
+        }
+        const top = active.offsetTop;
+        const height = active.offsetHeight;
+        if (!height) {
+            requestAnimationFrame(() => this.syncCategoryIndicator(options));
+            return;
+        }
+        const skipMotion = !options.animate || indicator.dataset.placed !== '1';
+        const motionStyle = skipMotion ? 'transition:none;' : '';
+        indicator.setAttribute('style', `height:${height}px;transform:translate3d(0,${top}px,0);${motionStyle}`);
+        if (skipMotion) {
+            void indicator.offsetHeight;
+            indicator.setAttribute('style', `height:${height}px;transform:translate3d(0,${top}px,0);`);
+        }
+        indicator.dataset.placed = '1';
+    },
+
+    setProductCategoryDrawer: function (open) {
+        const shopView = document.getElementById('shop-view-products');
+        const moduleShop = document.getElementById('module-shop');
+        const trigger = shopView?.querySelector('[data-list-drawer-open], [data-shop-action="product-open-category-drawer"]');
+        const shouldOpen = Boolean(open);
+        shopView?.classList.toggle('is-list-drawer-ready', true);
+        shopView?.classList.toggle('is-list-drawer-open', shouldOpen);
+        moduleShop?.classList.toggle('shop-list-drawer-open', shouldOpen);
+        document.body.classList.toggle('shop-list-drawer-open', shouldOpen);
+        if (trigger) trigger.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+        if (shouldOpen) {
+            requestAnimationFrame(() => this.syncCategoryIndicator({ animate: false }));
+        }
+    },
+
     syncProductCategoryFilterButtons: function () {
-        document.querySelectorAll('#productCategoryFilters .filter-tab[data-category]').forEach((tab) => {
+        document.querySelectorAll('#productCategoryFilters .filter-tab[data-category], #productCategorySidebarList .filter-tab[data-category]').forEach((tab) => {
             const isActive = String(tab.dataset.category || '').trim() === String(this.currentCategory || '').trim();
             tab.classList.toggle('active', isActive);
+            tab.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
+        const titleEl = document.getElementById('productCatalogCategoryTitle');
+        if (titleEl) {
+            titleEl.textContent = this.currentCategory === 'all' ? '全部商品' : this.currentCategory;
+        }
+        const mobileTitleEl = document.getElementById('adminProductMobileCategoryTitle');
+        if (mobileTitleEl) {
+            mobileTitleEl.textContent = this.currentCategory === 'all' ? '全部商品' : this.currentCategory;
+        }
+        const activeSidebarTab = document.querySelector('#productCategorySidebarList .filter-tab.active');
+        if (activeSidebarTab && typeof activeSidebarTab.scrollIntoView === 'function') {
+            activeSidebarTab.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+        }
+        this.syncCategoryIndicator({ animate: true });
+    },
+
+    shopProductCategoryCache: null,
+
+    invalidateProductCache: function () {
+        if (this.shopProductCategoryCache) {
+            this.shopProductCategoryCache.clear();
+        }
     },
 
     filterCategory: function (category, btn) {
+        this.setProductCategoryDrawer(false);
         const normalizedCategory = String(category || '').trim();
         if (!normalizedCategory) return;
         this.currentCategory = normalizedCategory;
 
-        // Update UI - only update category tabs, not status tabs
-        const container = document.getElementById('productCategoryFilters');
-        const categoryTabs = container?.querySelectorAll('.filter-tab:not(.status-filter)') || [];
-        categoryTabs.forEach(t => t.classList.remove('active'));
-        btn?.classList.add('active');
+        this.syncProductCategoryFilterButtons();
 
-        // Reload Grid
+        // 1. Check exact cache key for 0ms instant category switch
+        const cacheKey = `${this.currentStatusFilter}:${this.currentProductDeliveryFilter}:${this.productSearchQuery || ''}:${normalizedCategory}`;
+        const cached = this.shopProductCategoryCache ? this.shopProductCategoryCache.get(cacheKey) : null;
+        if (cached && Array.isArray(cached.data)) {
+            this.renderProductListRows(cached.data);
+            this.syncProductSelectionModeUi();
+            return;
+        }
+
+        // 2. Check if 'all' is cached for instant in-memory filtering (0ms latency!)
+        const allKey = `${this.currentStatusFilter}:${this.currentProductDeliveryFilter}::all`;
+        const allCached = this.shopProductCategoryCache ? this.shopProductCategoryCache.get(allKey) : null;
+        if (allCached && Array.isArray(allCached.data) && !this.productSearchQuery) {
+            const filteredData = normalizedCategory === 'all'
+                ? allCached.data
+                : allCached.data.filter(p => String(p?.category || '').trim() === normalizedCategory);
+            this.renderProductListRows(filteredData);
+            this.syncProductSelectionModeUi();
+            return;
+        }
+
+        // 3. Immediately render skeleton if not in cache so user gets instant visual response
+        const listRowsContainer = document.getElementById('productsListRows');
+        if (listRowsContainer) {
+            this.renderProductListSkeleton(listRowsContainer);
+        }
+
+        // Reload Grid & List
         this.loadProducts();
     },
 
@@ -4516,6 +4683,9 @@ Example output format:
             }
         });
 
+        // Invalidate cache on status switch
+        this.invalidateProductCache();
+
         // Reload Grid
         this.loadProducts();
     },
@@ -4523,6 +4693,7 @@ Example output format:
     applyProductSearch: function () {
         const input = document.getElementById('productSearchInput');
         this.productSearchQuery = String(input?.value || '').trim();
+        this.invalidateProductCache();
         this.loadProducts();
     },
 
@@ -4532,6 +4703,7 @@ Example output format:
         if (input) {
             input.value = '';
         }
+        this.invalidateProductCache();
         this.loadProducts();
     },
 
@@ -4540,6 +4712,7 @@ Example output format:
         this.currentProductDeliveryFilter = ['all', 'key', 'api'].includes(normalizedValue)
             ? normalizedValue
             : 'all';
+        this.invalidateProductCache();
         this.loadProducts();
     },
 
@@ -4908,7 +5081,7 @@ Example output format:
     },
 
     isProductDeliveryFilterCompactLayout: function () {
-        return window.matchMedia?.('(max-width: 768px)')?.matches === true;
+        return false;
     },
 
     syncProductDeliveryFilterPlacement: function () {
@@ -5684,6 +5857,20 @@ Example output format:
                 return;
             }
 
+            const openDrawer = target.closest('[data-list-drawer-open], [data-shop-action="product-open-category-drawer"]');
+            if (openDrawer) {
+                event.preventDefault();
+                this.setProductCategoryDrawer(true);
+                return;
+            }
+
+            const closeDrawer = target.closest('[data-list-drawer-close], [data-shop-action="product-close-category-drawer"]');
+            if (closeDrawer) {
+                event.preventDefault();
+                this.setProductCategoryDrawer(false);
+                return;
+            }
+
             const actionEl = target.closest('[data-shop-action]');
             if (!actionEl) {
                 return;
@@ -5771,8 +5958,17 @@ Example output format:
                 case 'product-open-create-modal':
                     this.openProductModal();
                     break;
+                case 'product-open-category-drawer':
+                    this.setProductCategoryDrawer(true);
+                    break;
+                case 'product-close-category-drawer':
+                    this.setProductCategoryDrawer(false);
+                    break;
                 case 'product-filter-category':
                     this.filterCategory(actionEl.dataset.category, actionEl);
+                    break;
+                case 'product-set-view':
+                    this.setProductViewMode(actionEl.dataset.viewTarget);
                     break;
                 case 'product-filter-status':
                     this.filterStatus(actionEl.dataset.status, actionEl);
@@ -6235,6 +6431,18 @@ Example output format:
             }
         }, true);
 
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                this.setProductCategoryDrawer(false);
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 820) {
+                this.setProductCategoryDrawer(false);
+            }
+        });
+
         document.addEventListener('change', (event) => {
             const target = event.target instanceof Element ? event.target : event.target?.parentElement;
             if (!target) {
@@ -6486,41 +6694,82 @@ Example output format:
         }, true);
     },
 
+    renderCategorySidebarSkeleton: function (container) {
+        if (!container) return;
+        const widths = ['list-aside-skel-name--w1', 'list-aside-skel-name--w2', 'list-aside-skel-name--w3', 'list-aside-skel-name--w4', 'list-aside-skel-name--w5', 'list-aside-skel-name--w2'];
+        const items = widths.map((wClass, index) => `
+            <div class="filter-tab is-skeleton${index === 0 ? ' active' : ''}" aria-hidden="true" data-skeleton-index="${index}">
+                <span class="list-skel list-aside-skel-name ${wClass}"></span>
+                <span class="list-skel list-aside-skel-count"></span>
+            </div>
+        `).join('');
+        container.innerHTML = `<span class="list-aside__indicator" aria-hidden="true" data-placed="1"></span>${items}`;
+    },
+
     // Render Product Category Filter Buttons dynamically
     renderProductCategoryFilters: async function () {
         const container = document.getElementById('productCategoryFilters');
-        if (!container) {
+        const sidebarContainer = document.getElementById('productCategorySidebarList');
+        if (!container && !sidebarContainer) {
             console.log('productCategoryFilters container not found');
             return;
+        }
+
+        if (sidebarContainer && (!sidebarContainer.querySelector('.filter-tab:not(.is-skeleton)'))) {
+            this.renderCategorySidebarSkeleton(sidebarContainer);
         }
 
         try {
             // Use the same category source as Import tab
             await this.loadCategories();
 
-            console.log('Categories for filters:', this.categoryData);
-
-            container.innerHTML = '';
-
-            const allButton = document.createElement('button');
-            allButton.className = `filter-tab${this.currentCategory === 'all' ? ' active' : ''}`;
-            allButton.textContent = '全部';
-            allButton.dataset.shopAction = 'product-filter-category';
-            allButton.dataset.category = 'all';
-            container.appendChild(allButton);
-
             const categories = this.getSortedAdminProductCategories(this.categoryData);
             this.normalizeCurrentProductCategory(categories);
 
-            // Add dynamic category buttons from categoryData
-            categories.forEach(cat => {
-                const btn = document.createElement('button');
-                btn.className = `filter-tab${this.currentCategory === cat.name ? ' active' : ''}`;
-                btn.textContent = cat.name;
-                btn.dataset.shopAction = 'product-filter-category';
-                btn.dataset.category = cat.name;
-                container.appendChild(btn);
-            });
+            // 1. Populate sidebar tabs (with count badges and sliding indicator, without 'all' tab)
+            if (sidebarContainer) {
+                sidebarContainer.innerHTML = '<span class="list-aside__indicator" aria-hidden="true"></span>';
+
+                categories.forEach(cat => {
+                    const btn = document.createElement('button');
+                    btn.className = `filter-tab${this.currentCategory === cat.name ? ' active' : ''}`;
+                    btn.type = 'button';
+                    btn.dataset.shopAction = 'product-filter-category';
+                    btn.dataset.category = cat.name;
+                    btn.setAttribute('aria-pressed', this.currentCategory === cat.name ? 'true' : 'false');
+                    btn.innerHTML = `
+                        <span data-list-category-label class="category-name">${this.escapeHtml(cat.name)}</span>
+                        <span class="count" data-list-category-count data-category-count="${this.escapeForAttr(cat.name)}">${this.getCategoryProductCount(cat.name)}</span>
+                    `;
+                    sidebarContainer.appendChild(btn);
+                });
+
+                this.syncCategoryIndicator();
+            }
+
+            // 2. Populate original container for backward compatibility
+            if (container) {
+                container.innerHTML = '';
+
+                const allButton = document.createElement('button');
+                allButton.className = `filter-tab${this.currentCategory === 'all' ? ' active' : ''}`;
+                allButton.textContent = '全部';
+                allButton.dataset.shopAction = 'product-filter-category';
+                allButton.dataset.category = 'all';
+                container.appendChild(allButton);
+
+                // Add dynamic category buttons from categoryData
+                categories.forEach(cat => {
+                    const btn = document.createElement('button');
+                    btn.className = `filter-tab${this.currentCategory === cat.name ? ' active' : ''}`;
+                    btn.textContent = cat.name;
+                    btn.dataset.shopAction = 'product-filter-category';
+                    btn.dataset.category = cat.name;
+                    container.appendChild(btn);
+                });
+            }
+
+            this.syncProductCategoryFilterButtons();
 
         } catch (e) {
             console.error('Failed to load category filters:', e);
@@ -8338,6 +8587,7 @@ Example output format:
         const toggleBtn = document.getElementById('toggleProductSelectionBtn');
         const batchBtn = document.getElementById('productBatchActionsBtn');
         const grid = document.getElementById('productsGrid');
+        const listView = document.getElementById('productsListView');
 
         if (toggleBtn) {
             toggleBtn.classList.toggle('active', this.isProductSelectionMode);
@@ -8348,11 +8598,19 @@ Example output format:
         if (grid) {
             grid.classList.toggle('shop-admin-products-grid--selection-mode', this.isProductSelectionMode);
         }
+        if (listView) {
+            listView.classList.toggle('shop-admin-products-list--selection-mode', this.isProductSelectionMode);
+        }
 
         if (!this.isProductSelectionMode) {
             document.querySelectorAll('.product-select-checkbox').forEach((input) => {
                 input.checked = false;
             });
+            const headSelectAll = document.getElementById('adminProductTableHeadSelectAll');
+            if (headSelectAll) {
+                headSelectAll.checked = false;
+                headSelectAll.indeterminate = false;
+            }
             this.closeProductBatchMenu();
             this.updateProductSelectionCount();
         }
@@ -9314,6 +9572,336 @@ Example output format:
         return `<div class="shop-admin-product-special-badge shop-admin-product-special-badge--tier" title="${this.escapeForAttr(`阶梯价：${rulesLabel}`)}">阶梯价</div>`;
     },
 
+    productViewMode: 'list',
+    productCategoryCountMap: {},
+
+    getCategoryProductCount: function (categoryName) {
+        if (!this.productCategoryCountMap) return 0;
+        return Number(this.productCategoryCountMap[categoryName] ?? 0) || 0;
+    },
+
+    syncProductCategorySidebarCounts: function () {
+        document.querySelectorAll('#productCategorySidebarList .count[data-category-count]').forEach((badge) => {
+            const cat = badge.dataset.categoryCount;
+            if (cat) {
+                badge.textContent = String(this.getCategoryProductCount(cat));
+            }
+        });
+    },
+
+    updateProductCategoryCountsFromProducts: function (products) {
+        if (!Array.isArray(products)) return;
+        const counts = { all: products.length };
+        products.forEach(p => {
+            const cat = String(p.category || 'other').trim();
+            counts[cat] = (counts[cat] || 0) + 1;
+        });
+        this.productCategoryCountMap = counts;
+        this.syncProductCategorySidebarCounts();
+    },
+
+    refreshCategoryCountsBackground: async function () {
+        try {
+            const payload = await this.loadShopProductsViaAdminApi({
+                status: this.currentStatusFilter === 'active' ? 'active' : 'deleted',
+                fields: 'picker'
+            });
+            const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+            this.updateProductCategoryCountsFromProducts(rows);
+        } catch (_err) {
+            // Non-blocking
+        }
+    },
+
+    setProductViewMode: function (view) {
+        this.productViewMode = 'list';
+        try {
+            localStorage.setItem('admin_shop_product_view_mode', 'list');
+        } catch (_e) {}
+
+        const layout = document.querySelector('.shop-admin-products-layout') || document.querySelector('.list-layout');
+        if (layout) {
+            layout.dataset.view = 'list';
+            layout.dataset.shopLayout = 'list';
+        }
+
+        const viewProducts = document.getElementById('shop-view-products');
+        if (viewProducts) {
+            viewProducts.dataset.view = 'list';
+            viewProducts.dataset.shopLayout = 'list';
+            viewProducts.classList.add('shop-layout--list');
+            viewProducts.classList.remove('shop-layout--grid');
+        }
+
+        const cachedProducts = Array.from(this.productGridCache?.values() || []);
+        this.renderProductListRows(cachedProducts);
+    },
+
+    renderProductListSkeleton: function (container, { count = 5 } = {}) {
+        const target = container || document.getElementById('productsListRows');
+        if (!target) return;
+        const rows = [];
+        for (let i = 0; i < count; i += 1) {
+            rows.push(`
+                <article class="list-row is-skeleton" aria-hidden="true">
+                    <div class="list-product">
+                        <div class="list-thumb list-skel"></div>
+                        <div class="list-product__copy">
+                            <strong class="list-skel"></strong>
+                            <p class="list-skel"></p>
+                        </div>
+                    </div>
+                    <div class="list-metrics">
+                        <div class="list-price"><span class="list-skel shop-admin-skeleton--price"></span></div>
+                        <span class="list-stock"><span class="list-skel shop-admin-skeleton--stock"></span></span>
+                        <span class="list-sales"><span class="list-skel shop-admin-skeleton--badge"></span></span>
+                        <div class="list-actions"><span class="list-skel shop-admin-skeleton--icon-btn"></span></div>
+                    </div>
+                </article>
+            `);
+        }
+        target.innerHTML = rows.join('');
+    },
+
+    renderProductListRows: function (products) {
+        const listRowsContainer = document.getElementById('productsListRows');
+        if (!listRowsContainer) return;
+
+        const data = Array.isArray(products) ? products : Array.from(this.productGridCache?.values() || []);
+        listRowsContainer.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            listRowsContainer.innerHTML = '<div class="shop-list-empty">没有找到匹配的商品</div>';
+            listRowsContainer.classList.remove('is-enter');
+            void listRowsContainer.offsetWidth;
+            listRowsContainer.classList.add('is-enter');
+            return;
+        }
+
+        data.forEach(p => {
+            const safeProductId = this.escapeForAttr(String(p.id || ''));
+            const productDisplayName = this.getAdminProductDisplayName(p);
+            const safeProductName = this.escapeHtml(productDisplayName);
+            const safeProductDescription = this.escapeHtml(this.getAdminProductDescription(p));
+            const safeProductNameAttr = this.escapeForAttr(productDisplayName);
+            const productAltText = this.escapeForAttr(productDisplayName || '商品封面');
+
+            const stock = Math.max(0, Number(p.stock_count || 0) || 0);
+            const manualDelivery = p.manual_delivery === true;
+
+            const productImageAsset = getShopProductImageAsset(p);
+            const productImageOriginalUrl = getShopProductImageAssetUrl(productImageAsset, 'original') || String(p.icon_url || '');
+            const productImageCacheVersion = buildShopProductImageCacheVersion(p);
+            const productImageDisplayOriginalUrl = appendShopImageUrlVersion(productImageOriginalUrl, productImageCacheVersion);
+            const safeProductIconUrl = this.escapeForAttr(productImageDisplayOriginalUrl);
+            const safeProductIconClass = this.escapeForAttr(String(p.icon_url || 'fas fa-box'));
+            const hasProductImage = this.isShopImageSource(productImageOriginalUrl);
+
+            const displayThumbHtml = hasProductImage
+                ? `<img class="list-thumb__image" alt="${productAltText}" loading="lazy" decoding="async" data-shop-product-image="1" data-shop-product-original-src="${safeProductIconUrl}">`
+                : (p.icon_url?.startsWith('fa')
+                    ? `<i class="${safeProductIconClass}" aria-hidden="true"></i>`
+                    : (p.icon_url
+                        ? `<img class="list-thumb__image" src="${safeProductIconUrl}" alt="${productAltText}">`
+                        : '<svg class="shop-icon-fallback" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>'));
+
+            const hasFlashSale = this.isAdminProductFlashSaleActive(p);
+            const hasTiered = (this.getAdminProductDiscountTierRules(p) || []).length > 0;
+
+            const editSite = ShopAdmin.getEditSite();
+            const skuPrice = this.getAdminProductPrimarySkuPrice(p);
+            const basePrice = editSite === 'intl' ? (skuPrice ?? p.price_points_intl) : (skuPrice ?? p.price_points);
+            const formattedPrice = basePrice != null ? this.formatAdminProductPointValue(basePrice) : '--';
+
+            let priceValue = formattedPrice;
+            let originalPriceHtml = '';
+            if (hasFlashSale && p.flash_sale_price != null) {
+                const flashPriceFormatted = this.formatAdminProductPointValue(p.flash_sale_price);
+                originalPriceHtml = `<del class="list-price__original" aria-label="原价">￥${formattedPrice}</del>`;
+                priceValue = flashPriceFormatted;
+            }
+
+            let stockLabel = '';
+            if (manualDelivery) {
+                stockLabel = '在线交付';
+            } else if (stock <= 0) {
+                stockLabel = '<span class="shop-product-stock--empty">售罄</span>';
+            } else if (stock < 3) {
+                stockLabel = `<span class="shop-product-stock--low">即将售罄 (${stock})</span>`;
+            } else if (stock <= 10) {
+                stockLabel = `充足 (${stock})`;
+            } else {
+                stockLabel = `充足 (${stock})`;
+            }
+
+            const statusBadgeHtml = p.is_active
+                ? '<span class="list-chip list-chip--auto">上架中</span>'
+                : '<span class="list-chip list-chip--offline">已下架</span>';
+
+            const chips = [];
+            if (hasFlashSale) {
+                chips.push('<span class="list-chip list-chip--flash"><i class="fas fa-bolt-lightning list-chip--flash__icon" aria-hidden="true"></i><span class="flash-sale-badge__label">秒杀</span></span>');
+            }
+            if (hasTiered) {
+                chips.push('<span class="list-chip list-chip--wholesale">阶梯价</span>');
+            }
+            if (manualDelivery) {
+                chips.push('<span class="list-chip list-chip--online">人工发货</span>');
+            } else if (p.delivery_type === 'api') {
+                chips.push('<span class="list-chip list-chip--online">API 接口</span>');
+            } else {
+                chips.push('<span class="list-chip list-chip--auto">自动交付</span>');
+            }
+            if (p.allow_guest_purchase) {
+                chips.push('<span class="list-chip list-chip--guest-purchase">游客可购</span>');
+            }
+            if (p.category) {
+                chips.push(`<span class="list-chip">${this.escapeHtml(p.category)}</span>`);
+            }
+            const chipsHtml = chips.join('');
+
+            const row = document.createElement('article');
+            row.className = 'list-row' + (p.is_active ? '' : ' inactive-product');
+            row.dataset.productId = safeProductId;
+
+            row.innerHTML = `
+                <div class="list-product">
+                    <label class="product-card-checkbox-label" title="选择商品">
+                        <input type="checkbox" class="inv-checkbox product-select-checkbox" data-product-id="${safeProductId}">
+                        <span class="product-card-checkbox-custom"></span>
+                    </label>
+                    <div class="list-thumb">
+                        ${displayThumbHtml}
+                    </div>
+                    <div class="list-product__copy">
+                        <strong>${safeProductName}</strong>
+                        <p>${safeProductDescription || ''}</p>
+                        <div class="list-chips">
+                            ${chipsHtml}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="list-metrics">
+                    <div class="list-price${hasFlashSale ? ' list-price--flash' : ''}">
+                        ${originalPriceHtml}
+                        <span class="list-price__symbol" aria-hidden="true">￥</span>
+                        <span class="list-price__value">${priceValue}</span>
+                    </div>
+
+                    <span class="list-stock">
+                        ${stockLabel}
+                    </span>
+
+                    <span class="list-sales">
+                        ${statusBadgeHtml}
+                    </span>
+
+                    <div class="list-actions">
+                        <button type="button" class="list-action-btn" data-shop-action="product-edit" data-product-id="${safeProductId}" title="编辑">
+                            <i class="fas fa-edit" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="list-action-btn" data-shop-action="product-toggle-status" data-product-id="${safeProductId}" data-new-status="${!p.is_active}" title="${p.is_active ? '下架' : '上架'}">
+                            <i class="fas fa-${p.is_active ? 'eye-slash' : 'eye'}" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="list-action-btn list-action-btn--danger" data-shop-action="product-delete" data-product-id="${safeProductId}" data-product-name="${safeProductNameAttr}" title="删除">
+                            <i class="fas fa-trash" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            // Row image hydration
+            const productImage = row.querySelector('img[data-shop-product-image="1"]');
+            if (productImage) {
+                productImage.addEventListener('error', () => {
+                    if (this.handleProductCardImageError(productImage, productImageAsset || productImageOriginalUrl)) {
+                        return;
+                    }
+                    this.replaceProductCardImageWithFallback(productImage);
+                });
+                this.setProductCardImageSource(productImage, productImageAsset || productImageOriginalUrl, {
+                    version: productImageCacheVersion
+                });
+            }
+
+            // Edit button
+            const editBtn = row.querySelector('[data-shop-action="product-edit"]');
+            if (editBtn) {
+                editBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    await this.editProduct(safeProductId);
+                });
+            }
+
+            // Toggle Status button
+            const toggleBtn = row.querySelector('[data-shop-action="product-toggle-status"]');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    await this.toggleStatus(safeProductId, !p.is_active, toggleBtn);
+                });
+            }
+
+            // Delete button
+            const deleteBtn = row.querySelector('[data-shop-action="product-delete"]');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    await this.deleteProduct(safeProductId, p.name || '', deleteBtn);
+                });
+            }
+
+            // Checkbox
+            const checkbox = row.querySelector('.product-select-checkbox');
+            if (checkbox) {
+                checkbox.addEventListener('click', (e) => e.stopPropagation());
+                checkbox.addEventListener('change', () => {
+                    const isChecked = checkbox.checked;
+                    document.querySelectorAll(`.product-select-checkbox[data-product-id="${safeProductId}"]`).forEach(cb => {
+                        cb.checked = isChecked;
+                    });
+                    this.updateProductSelectionCount();
+                });
+            }
+
+            // Row click in selection mode
+            row.addEventListener('click', (e) => {
+                if (this.isProductSelectionMode) {
+                    if (e.target.closest('.list-action-btn') || e.target.closest('.product-select-checkbox')) return;
+                    const rowCheckbox = row.querySelector('.product-select-checkbox');
+                    if (rowCheckbox) {
+                        rowCheckbox.checked = !rowCheckbox.checked;
+                        const isChecked = rowCheckbox.checked;
+                        document.querySelectorAll(`.product-select-checkbox[data-product-id="${safeProductId}"]`).forEach(cb => {
+                            cb.checked = isChecked;
+                        });
+                        this.updateProductSelectionCount();
+                    }
+                }
+            });
+
+            listRowsContainer.appendChild(row);
+        });
+
+        // Ensure current selection state is applied to list checkboxes
+        document.querySelectorAll('#productsGrid .product-select-checkbox:checked').forEach(gridCb => {
+            const pid = gridCb.dataset.productId;
+            if (pid) {
+                const listCb = listRowsContainer.querySelector(`.product-select-checkbox[data-product-id="${pid}"]`);
+                if (listCb) listCb.checked = true;
+            }
+        });
+
+        // Trigger smooth cascade entrance animation (1:1 with shop page)
+        listRowsContainer.classList.remove('is-enter');
+        void listRowsContainer.offsetWidth;
+        listRowsContainer.classList.add('is-enter');
+    },
+
     loadProducts: async function () {
         const container = document.getElementById('productsGrid');
         if (!container) return; // Grid container might be missing if HTML update failed
@@ -9332,6 +9920,10 @@ Example output format:
         this.shopTabLoadState.products = 'loading';
         container.classList.add('shop-grid', 'shop-admin-products-grid');
         this.renderProductGridSkeleton(container);
+        const listRowsContainer = document.getElementById('productsListRows');
+        if (listRowsContainer && !listRowsContainer.querySelector('.list-row.is-skeleton')) {
+            this.renderProductListSkeleton(listRowsContainer);
+        }
         this.productGridCache = new Map();
 
         try {
@@ -9350,6 +9942,16 @@ Example output format:
             const data = Array.isArray(payload?.rows) ? payload.rows : [];
             this.productGridCache = new Map((data || []).map((product) => [String(product.id || ''), { ...product }]));
 
+            if (!this.shopProductCategoryCache) this.shopProductCategoryCache = new Map();
+            const cacheKey = `${this.currentStatusFilter}:${this.currentProductDeliveryFilter}:${this.productSearchQuery || ''}:${normalizedCategory || 'all'}`;
+            this.shopProductCategoryCache.set(cacheKey, { data, timestamp: Date.now() });
+
+            if (this.currentCategory === 'all' && !this.productSearchQuery && this.currentProductDeliveryFilter === 'all') {
+                this.updateProductCategoryCountsFromProducts(data);
+            } else if (Object.keys(this.productCategoryCountMap || {}).length <= 1) {
+                void this.refreshCategoryCountsBackground();
+            }
+
             container.innerHTML = '';
 
             // Add "New Product" Card
@@ -9363,6 +9965,8 @@ Example output format:
             container.appendChild(addCard);
 
             if (!data || data.length === 0) {
+                this.renderProductListRows([]);
+                this.setProductViewMode(this.productViewMode || 'list');
                 this.syncProductSelectionModeUi();
                 if (Number(this.shopTabLoadGeneration.products || 0) === loadGeneration) {
                     this.shopTabLoadState.products = 'loaded';
@@ -9525,6 +10129,8 @@ Example output format:
                 container.appendChild(card);
             });
 
+            this.renderProductListRows(data);
+            this.setProductViewMode(this.productViewMode || 'list');
             this.syncProductSelectionModeUi();
 
             // Refresh sidebar list
@@ -9595,21 +10201,50 @@ Example output format:
     },
 
     updateProductSelectionCount: function () {
-        const count = document.querySelectorAll('.product-select-checkbox:checked').length;
+        const checkedBoxes = Array.from(document.querySelectorAll('.product-select-checkbox:checked'));
+        const uniqueIds = new Set(checkedBoxes.map(cb => cb.dataset.productId).filter(Boolean));
+        const count = uniqueIds.size;
         const countEl = document.getElementById('productBatchSelectedCount');
         if (countEl) countEl.textContent = count;
+
+        const headSelectAll = document.getElementById('adminProductTableHeadSelectAll');
+        if (headSelectAll) {
+            const allBoxes = Array.from(document.querySelectorAll('.product-select-checkbox'));
+            if (allBoxes.length > 0 && checkedBoxes.length === allBoxes.length) {
+                headSelectAll.checked = true;
+                headSelectAll.indeterminate = false;
+            } else if (checkedBoxes.length > 0) {
+                headSelectAll.checked = false;
+                headSelectAll.indeterminate = true;
+            } else {
+                headSelectAll.checked = false;
+                headSelectAll.indeterminate = false;
+            }
+        }
     },
 
     selectAllProducts: function () {
+        const headSelectAll = document.getElementById('adminProductTableHeadSelectAll');
         const checkboxes = document.querySelectorAll('.product-select-checkbox');
-        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        let shouldCheck;
+        if (headSelectAll && headSelectAll.matches(':focus, :hover, :active')) {
+            shouldCheck = headSelectAll.checked;
+        } else {
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            shouldCheck = !allChecked;
+        }
 
-        checkboxes.forEach(cb => cb.checked = !allChecked);
+        checkboxes.forEach(cb => {
+            cb.checked = shouldCheck;
+        });
+
+        this.isProductSelectionMode = shouldCheck;
+        this.syncProductSelectionModeUi();
         this.updateProductSelectionCount();
 
         // Keep menu open
         const menu = document.getElementById('productBatchActionMenu');
-        if (menu) {
+        if (menu && menu.classList.contains('is-open')) {
             menu.classList.add('is-open');
         }
     },
@@ -9619,8 +10254,8 @@ Example output format:
             return;
         }
 
-        const selectedIds = Array.from(document.querySelectorAll('.product-select-checkbox:checked'))
-            .map(cb => cb.dataset.productId);
+        const selectedIds = [...new Set(Array.from(document.querySelectorAll('.product-select-checkbox:checked'))
+            .map(cb => cb.dataset.productId).filter(Boolean))];
 
         if (selectedIds.length === 0) {
             alert('请先选择要删除的商品');
@@ -9643,6 +10278,7 @@ Example output format:
             // Exit selection mode and refresh
             this.isProductSelectionMode = true; // Will be toggled off by next line
             this.toggleProductSelectionMode(); // Exit mode
+            this.invalidateProductCache();
             await this.loadProducts();
 
             const successMessage = `成功删除 ${result.deleted || selectedIds.length} 个商品`;
@@ -9662,8 +10298,8 @@ Example output format:
         try {
             let products;
             if (selectedOnly) {
-                const selectedIds = Array.from(document.querySelectorAll('.product-select-checkbox:checked'))
-                    .map(cb => cb.dataset.productId);
+                const selectedIds = [...new Set(Array.from(document.querySelectorAll('.product-select-checkbox:checked'))
+                    .map(cb => cb.dataset.productId).filter(Boolean))];
 
                 if (selectedIds.length === 0) {
                     alert('请先选择要导出的商品');
@@ -11715,6 +12351,7 @@ Example output format:
                 });
 
                 // Refresh products and category filters
+                this.invalidateProductCache();
                 this.loadProducts();
                 await this.renderProductCategoryFilters();
             } catch (err) {
@@ -11757,6 +12394,7 @@ Example output format:
             this.finishActionButton(actionButton, '已删除');
             this.showActionToast('商品已删除', 'success');
             this.emitCommandFeedback(successMessage, 'saved', { source: 'shop-products' });
+            this.invalidateProductCache();
             this.loadProducts();
         } catch (err) {
             const failureMessage = '删除失败: ' + err.message;
@@ -11785,6 +12423,7 @@ Example output format:
             this.finishActionButton(actionButton, successMessage);
             this.showActionToast(successMessage, 'success');
             this.emitCommandFeedback(`${successMessage}：${id}`, 'saved', { source: 'shop-products' });
+            this.invalidateProductCache();
             this.loadProducts();
         } catch (err) {
             const failureMessage = 'Error: ' + err.message;
