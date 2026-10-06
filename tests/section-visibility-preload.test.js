@@ -177,3 +177,29 @@ test('shared-nav public pages include the section visibility preload before firs
         );
     });
 });
+
+test('section visibility preload injects hidden hero entry rules when a section like verify is disabled', () => {
+    const { document } = executePreloadScript({
+        url: 'https://www.fatherkey.com/',
+        cacheConfig: {
+            hero: true,
+            prompts: true,
+            shop: true,
+            gongyi: true,
+            verify: false,
+            guestbook: true,
+            ticker: true,
+            footer: true
+        }
+    });
+
+    const styleElement = document.getElementById('section-visibility-preload-style');
+    assert.ok(styleElement, 'preload style element should be created');
+
+    const css = styleElement.textContent;
+    assert.match(css, /\.hero-carousel a\.entry-card\[href="\/verify\.html"\]/, 'should hide verify card by href');
+    assert.match(css, /\.hero-carousel \.entry-card\[data-home-entry-section="verify"\]/, 'should hide verify card by section');
+    assert.match(css, /\.hero-carousel \.entry-card\[data-home-entry-id="verify"\]/, 'should hide verify card by entry id');
+    assert.match(css, /\.hero-section\[data-home-static-hero="1"\]:not\(\[data-render-signature\]\) \.hero-carousel-track/, 'should adjust static hero track');
+    assert.match(css, /grid-auto-flow:\s*column !important;/, 'should switch to auto-flowing columns for remaining visible cards');
+});

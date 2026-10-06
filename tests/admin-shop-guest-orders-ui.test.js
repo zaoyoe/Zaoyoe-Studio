@@ -98,10 +98,13 @@ test('guest exception UI keeps secrets out of rendering and uses the existing co
     assert.match(script, /guest-exception-copy-order/);
     assert.match(script, /guest-exception-write/);
     assert.match(script, /request_refund/);
+    assert.match(script, /reconcile_refund/);
+    assert.match(script, /close_unpaid_review/);
     assert.match(script, /manual_fulfill/);
     assert.match(script, /unlock_dead_letter/);
     assert.match(script, /confirm:\s*true/);
     assert.match(modal, /shop-refund-modal/);
+    assert.match(modal, /guestExceptionOpsProviderRef/);
     assert.match(modal, /refund-btn-cancel/);
     assert.match(modal, /refund-btn-confirm/);
     assert.match(modal, /guestExceptionOpsReason/);
@@ -246,3 +249,22 @@ test('the buyer access modal reuses the shop modal shell and has its own styles'
     // 既有 A2 之前的断言不得被 A3 破坏
     assert.doesNotMatch(guestOpsModalSource(), /guestBuyerAccess/);
 });
+
+test('guest exception ops modal and refund modal are adapted to light theme', () => {
+    for (const token of [
+        'html[data-theme="light"] .shop-refund-modal',
+        'html:not([data-theme="dark"]) .shop-refund-modal',
+        'html[data-theme="light"] .shop-refund-modal-title',
+        'html[data-theme="light"] .shop-guest-exception-ops-hint',
+        'html[data-theme="light"] .shop-refund-modal-input',
+        'html[data-theme="light"] .shop-refund-modal-textarea',
+        'html[data-theme="light"] .shop-refund-modal .refund-btn-cancel',
+        'html[data-theme="light"] .shop-refund-modal .refund-btn-confirm--reconcile_refund',
+        'html[data-theme="light"] .shop-refund-modal .refund-btn-confirm--close_unpaid_review',
+        '.shop-refund-modal-title-icon--reconcile_refund',
+        '.shop-refund-modal-title-icon--close_unpaid_review'
+    ]) {
+        assert.ok(css.includes(token), `missing style ${token}`);
+    }
+});
+
