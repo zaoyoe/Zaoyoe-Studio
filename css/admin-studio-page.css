@@ -50361,36 +50361,47 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
     }
 
     #module-shop #shop-view-products .shop-product-toolbar-row {
-        grid-template-columns: minmax(0, 1fr) auto !important;
-        align-items: center !important;
-        gap: 10px !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 
-    #module-shop #shop-view-products .shop-product-toolbar-search-box {
-        grid-column: 1 / -1 !important;
-        order: 1 !important;
-        width: 100% !important;
-        max-width: 100% !important;
-    }
-
+    #module-shop #shop-view-products .shop-product-toolbar-search-box,
     #module-shop #shop-view-products .shop-product-toolbar-actions {
-        grid-column: 1 / 2 !important;
-        order: 2 !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: flex-start !important;
-        gap: 8px !important;
-        width: auto !important;
-        max-width: 100% !important;
+        grid-column: 1 / -1;
     }
 
-    #module-shop #shop-view-products .shop-product-toolbar-actions .btn {
-        width: auto !important;
-        min-width: 60px !important;
-        height: 36px !important;
-        padding: 0 14px !important;
-        font-size: 13px !important;
-        font-weight: 600 !important;
+    #module-shop #shop-view-products .shop-product-toolbar-actions,
+    #module-shop #shop-view-orders .shop-orders-toolbar-actions,
+    #module-shop #shop-view-fulfillment .shop-delivery-filter-actions {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px !important;
+        width: 100% !important;
+        max-width: none !important;
+        min-width: 0 !important;
+    }
+
+    #module-shop #shop-view-products .shop-product-toolbar-actions > :is(.btn, button),
+    #module-shop #shop-view-orders .shop-orders-toolbar-actions > :is(.btn, button),
+    #module-shop #shop-view-fulfillment .shop-delivery-filter-actions > .shop-delivery-inline-btn {
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 42px;
+        padding: 0 12px !important;
+        justify-content: center;
+        border-radius: 14px;
+        font-size: 0.9rem !important;
+    }
+
+    #module-shop #shop-view-products #productSelectControls {
+        --shop-product-delivery-mobile-width: clamp(136px, 42vw, 168px);
+    }
+
+    #module-shop #shop-view-products #productSelectControls .shop-custom-select.shop-product-toolbar-select,
+    #module-shop #shop-view-products #productSelectControls select.shop-product-toolbar-select:not(.shop-native-select--hidden) {
+        flex: 0 0 var(--shop-product-delivery-mobile-width) !important;
+        width: var(--shop-product-delivery-mobile-width) !important;
+        min-width: 0 !important;
+        max-width: var(--shop-product-delivery-mobile-width) !important;
     }
 
     #module-shop #shop-view-products #productSelectControls,

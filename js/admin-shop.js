@@ -6703,7 +6703,7 @@ Example output format:
                 <span class="list-skel list-aside-skel-count"></span>
             </div>
         `).join('');
-        container.innerHTML = `<span class="list-aside__indicator" aria-hidden="true" style="height:42px;transform:translate3d(0,0px,0);" data-placed="1"></span>${items}`;
+        container.innerHTML = `<span class="list-aside__indicator" aria-hidden="true" data-placed="1"></span>${items}`;
     },
 
     // Render Product Category Filter Buttons dynamically
