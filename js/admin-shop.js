@@ -312,7 +312,7 @@ function appendShopImageUrlVersion(url, version = '') {
 
 const ShopAdmin = {
     currentTab: 'products',
-    SHOP_TAB_IDS: ['products', 'import', 'inventory', 'orders', 'guest-exceptions', 'fulfillment'],
+    SHOP_TAB_IDS: ['products', 'supplier-catalog', 'import', 'inventory', 'orders', 'guest-exceptions', 'fulfillment'],
     SHOP_TAB_PREFETCH_ALLOWLIST: [],
     SHOP_SKU_INVENTORY_POOL_COLORS: [
         '#6b9ece',
@@ -403,6 +403,18 @@ const ShopAdmin = {
     currentStatusFilter: 'active', // State for status filter: 'active' or 'deleted'
     productSearchQuery: '',
     currentProductDeliveryFilter: 'all',
+    supplierCatalogPage: 1,
+    supplierCatalogPageSize: 20,
+    supplierCatalogProviderId: '16688',
+    supplierCatalogSite: 'cn',
+    supplierCatalogKeywords: '',
+    supplierCatalogItems: [],
+    supplierCatalogTotal: 0,
+    supplierCatalogSelectedGoodsNos: new Set(),
+    supplierCatalogRequestToken: 0,
+    supplierCatalogDetailRequestToken: 0,
+    supplierCatalogDetailItem: null,
+    supplierCatalogImportInFlight: false,
     currentImportCategory: 'all', // State for import filter
     allProductsForImport: [], // Cache for import list (active products)
     deletedProductsForImport: [], // Cache for deleted products (recycle bin)
@@ -5256,6 +5268,8 @@ Example output format:
                     this.renderProductCategoryFilters(),
                     this.loadProducts()
                 ]));
+            case 'supplier-catalog':
+                return this.runShopTabLoader(normalizedTab, () => this.loadSupplierCatalog());
             case 'import':
                 return this.runShopTabLoader(normalizedTab, () => this.initImportView());
             case 'inventory':
@@ -5716,6 +5730,60 @@ Example output format:
         return document.getElementById(elementId)?.checked === true;
     },
 
+    getInventoryImportType: function (scope = 'importView') {
+        const elementId = scope === 'modal' || scope === 'importModal'
+            ? 'importModalInventoryType'
+            : (scope === 'legacy' || scope === 'inventory' ? 'inventoryInventoryType' : 'importViewInventoryType');
+        const value = String(document.getElementById(elementId)?.value || 'standard').trim().toLowerCase();
+        return value === 'kc_pay_gpt_cdk' ? 'kc_pay_gpt_cdk' : 'standard';
+    },
+
+    syncInventoryImportTypeControls: function (scope = 'importView') {
+        const normalizedScope = scope === 'modal' ? 'importModal' : (scope === 'inventory' ? 'legacy' : scope);
+        const type = this.getInventoryImportType(normalizedScope);
+        const typeElementId = normalizedScope === 'importModal'
+            ? 'importModalInventoryType'
+            : (normalizedScope === 'legacy' ? 'inventoryInventoryType' : 'importViewInventoryType');
+        const reusableElementId = normalizedScope === 'importModal'
+            ? 'importModalReusableDelivery'
+            : (normalizedScope === 'legacy' ? 'inventoryReusableDelivery' : 'importViewReusableDelivery');
+        const inputElementId = normalizedScope === 'importModal'
+            ? 'importContentInput'
+            : (normalizedScope === 'legacy' ? 'inventoryInput' : 'importViewContentInput');
+        const hintElementId = normalizedScope === 'importModal'
+            ? 'importModalInventoryTypeHint'
+            : (normalizedScope === 'legacy' ? 'inventoryInventoryTypeHint' : 'importViewInventoryTypeHint');
+        const typeElement = document.getElementById(typeElementId);
+        const reusableElement = document.getElementById(reusableElementId);
+        const inputElement = document.getElementById(inputElementId);
+        const hintElement = document.getElementById(hintElementId);
+        const isCdk = type === 'kc_pay_gpt_cdk';
+
+        if (typeElement && typeElement.value !== type) {
+            typeElement.value = type;
+        }
+        if (reusableElement) {
+            if (isCdk) {
+                reusableElement.checked = false;
+            }
+            reusableElement.disabled = isCdk;
+            reusableElement.closest('.shop-import-reusable-option')?.classList.toggle('is-disabled', isCdk);
+        }
+        if (inputElement) {
+            inputElement.placeholder = isCdk
+                ? '每行一条 KC-PAY-GPT CDK；系统会加密保存，后台不显示明文'
+                : '每行一条账号或交付内容';
+        }
+        if (hintElement) {
+            hintElement.textContent = isCdk
+                ? '本站只售卖卡密，不自动充值；用户付款后在本站查看卡密，再前往 KC-PAY-GPT 自行兑换。CDK 不会在后台列表显示明文。'
+                : '普通库存按原有内容交付。';
+            hintElement.classList.toggle('is-cdk', isCdk);
+        }
+
+        return type;
+    },
+
     toggleMobileImportView: function (view) {
         const layout = document.querySelector('.import-layout');
         const sidebarBtn = document.getElementById('mobileImportSidebarBtn');
@@ -5900,6 +5968,24 @@ Example output format:
                     break;
                 case 'shop-switch-tab':
                     this.switchTab(actionEl.dataset.shopTab);
+                    break;
+                case 'supplier-catalog-search':
+                    this.loadSupplierCatalog({ force: true, page: 1 });
+                    break;
+                case 'supplier-catalog-import':
+                    void this.importSupplierCatalogGoods();
+                    break;
+                case 'supplier-catalog-page':
+                    this.changeSupplierCatalogPage(actionEl.dataset.pageDirection);
+                    break;
+                case 'supplier-catalog-detail':
+                    void this.openSupplierCatalogDetail(actionEl.dataset.goodsNo);
+                    break;
+                case 'supplier-catalog-import-detail':
+                    void this.importSupplierCatalogDetail();
+                    break;
+                case 'supplier-catalog-detail-close':
+                    this.closeSupplierCatalogDetail();
                     break;
                 case 'guest-exceptions-search':
                     this.loadGuestOrderExceptions(1);
@@ -6462,6 +6548,28 @@ Example output format:
             this.markProductModalDirty(actionEl);
 
             switch (actionEl.dataset.shopChange) {
+                case 'supplier-catalog-provider':
+                    this.supplierCatalogProviderId = String(actionEl.value || '16688').trim().toLowerCase() || '16688';
+                    this.supplierCatalogPage = 1;
+                    void this.loadSupplierCatalog({ force: true, page: 1 });
+                    break;
+                case 'supplier-catalog-site':
+                    this.supplierCatalogSite = ['cn', 'intl'].includes(String(actionEl.value || '').trim().toLowerCase())
+                        ? String(actionEl.value).trim().toLowerCase()
+                        : 'cn';
+                    this.supplierCatalogPage = 1;
+                    this.supplierCatalogSelectedGoodsNos.clear();
+                    void this.loadSupplierCatalog({ force: true, page: 1 });
+                    break;
+                case 'supplier-catalog-select-all':
+                    this.selectAllSupplierCatalogPage(actionEl.checked);
+                    break;
+                case 'supplier-catalog-item':
+                    this.toggleSupplierCatalogItem(actionEl.dataset.goodsNo, actionEl.checked);
+                    break;
+                case 'inventory-type-select':
+                    this.syncInventoryImportTypeControls(actionEl.dataset.inventoryScope || 'importView');
+                    break;
                 case 'pagination-go': {
                     const max = Math.max(1, Number.parseInt(actionEl.dataset.paginationMax || '1', 10) || 1);
                     let nextPage = Number.parseInt(actionEl.value || '1', 10) || 1;
@@ -6620,6 +6728,12 @@ Example output format:
             }
 
             switch (actionEl.dataset.shopKeydown) {
+                case 'supplier-catalog-search-enter':
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        this.loadSupplierCatalog({ force: true, page: 1 });
+                    }
+                    break;
                 case 'inventory-search-enter':
                     if (event.key === 'Enter') {
                         event.preventDefault();
@@ -6678,6 +6792,8 @@ Example output format:
 
             if (overlay.dataset.shopOverlayClose === 'product-modal') {
                 this.hideProductModal();
+            } else if (overlay.dataset.shopOverlayClose === 'supplier-catalog-detail') {
+                this.closeSupplierCatalogDetail();
             } else if (overlay.dataset.shopOverlayClose === 'dynamic-modal') {
                 this.closeDynamicModal(overlay.dataset.modalId);
             }
@@ -6826,6 +6942,11 @@ Example output format:
             });
         }
 
+        // CDK import is opt-in and explicit in every inventory entry point.
+        this.syncInventoryImportTypeControls('importView');
+        this.syncInventoryImportTypeControls('legacy');
+        this.syncInventoryImportTypeControls('importModal');
+
         // Initialize order-related event listeners
         this._initOrderEvents();
     },
@@ -6848,7 +6969,7 @@ Example output format:
 
     restoreShopUrlState: function () {
         const url = this.getShopUrlObject();
-        const validTabs = new Set(['products', 'import', 'inventory', 'orders', 'guest-exceptions', 'fulfillment']);
+        const validTabs = new Set(['products', 'supplier-catalog', 'import', 'inventory', 'orders', 'guest-exceptions', 'fulfillment']);
         if (!url) return { tabName: this.currentTab || 'products' };
 
         const search = url.searchParams;
@@ -9900,6 +10021,355 @@ Example output format:
         listRowsContainer.classList.remove('is-enter');
         void listRowsContainer.offsetWidth;
         listRowsContainer.classList.add('is-enter');
+    },
+
+    getSupplierCatalogQuery: function () {
+        const providerSelect = document.getElementById('supplierCatalogProvider');
+        const siteSelect = document.getElementById('supplierCatalogSite');
+        const searchInput = document.getElementById('supplierCatalogSearchInput');
+        const providerId = String(providerSelect?.value || this.supplierCatalogProviderId || '16688').trim().toLowerCase() || '16688';
+        const siteValue = String(siteSelect?.value || this.supplierCatalogSite || 'cn').trim().toLowerCase();
+        const site = ['cn', 'intl'].includes(siteValue) ? siteValue : 'cn';
+        const keywords = String(searchInput?.value ?? this.supplierCatalogKeywords ?? '').trim().slice(0, 100);
+
+        this.supplierCatalogProviderId = providerId;
+        this.supplierCatalogSite = site;
+        this.supplierCatalogKeywords = keywords;
+        return { providerId, site, keywords };
+    },
+
+    loadSupplierCatalog: async function ({ force = false, page = this.supplierCatalogPage || 1 } = {}) {
+        const tableBody = document.getElementById('supplierCatalogTableBody');
+        if (!tableBody) return null;
+
+        const query = this.getSupplierCatalogQuery();
+        const nextPage = Math.max(1, Number.parseInt(String(page || 1), 10) || 1);
+        this.supplierCatalogPage = nextPage;
+        this.syncSupplierCatalogControls();
+
+        const requestToken = ++this.supplierCatalogRequestToken;
+        tableBody.innerHTML = '<tr><td colspan="7" class="shop-supplier-catalog__empty"><i class="fas fa-spinner fa-spin"></i> 正在读取供应商目录...</td></tr>';
+        if (force) {
+            this.renderSupplierCatalogFeedback('', 'info');
+        }
+
+        const params = {
+            providerId: query.providerId,
+            action: 'list',
+            pageNo: nextPage,
+            pageSize: this.supplierCatalogPageSize,
+            keywords: query.keywords
+        };
+
+        try {
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/supplier-catalog', params),
+                { credentials: 'include' }
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                const error = new Error(payload.message || '供应商目录暂不可用，请稍后重试。');
+                error.code = payload.code || '';
+                throw error;
+            }
+            if (requestToken !== this.supplierCatalogRequestToken) return payload;
+
+            this.supplierCatalogItems = Array.isArray(payload.items) ? payload.items : [];
+            this.supplierCatalogTotal = Math.max(0, Number(payload.total) || 0);
+            this.supplierCatalogPage = Math.max(1, Number(payload.pageNo) || nextPage);
+            this.renderSupplierCatalogRows();
+            this.syncSupplierCatalogControls();
+            return payload;
+        } catch (error) {
+            if (requestToken !== this.supplierCatalogRequestToken) return null;
+            this.supplierCatalogItems = [];
+            this.supplierCatalogTotal = 0;
+            tableBody.innerHTML = `<tr><td colspan="7" class="shop-supplier-catalog__empty shop-supplier-catalog__empty--error"><i class="fas fa-circle-exclamation"></i> ${this.escapeHtml(error.message || '供应商目录读取失败。')}</td></tr>`;
+            this.syncSupplierCatalogControls();
+            this.renderSupplierCatalogFeedback(error.message || '供应商目录读取失败。', 'error');
+            return null;
+        }
+    },
+
+    formatSupplierCatalogDeliveryMethod: function (value) {
+        return {
+            1: '自动发货',
+            2: '人工发货',
+            3: 'API 发货'
+        }[Number(value)] || '上游未说明';
+    },
+
+    formatSupplierCatalogPrice: function (item = {}) {
+        const rawPrice = String(item.supplierUnitPrice ?? '').trim();
+        if (!rawPrice) return '—';
+        const currency = this.escapeHtml(String(item.currency || 'CNY').trim().toUpperCase());
+        return `${this.escapeHtml(rawPrice)} ${currency}`;
+    },
+
+    renderSupplierCatalogRows: function () {
+        const tableBody = document.getElementById('supplierCatalogTableBody');
+        if (!tableBody) return;
+
+        const items = Array.isArray(this.supplierCatalogItems) ? this.supplierCatalogItems : [];
+        if (!items.length) {
+            tableBody.innerHTML = '<tr><td colspan="7" class="shop-supplier-catalog__empty"><i class="fas fa-box-open"></i> 当前目录没有匹配商品。</td></tr>';
+            return;
+        }
+
+        tableBody.innerHTML = items.map((item) => {
+            const goodsNo = String(item.providerGoodsId || '').trim();
+            const selected = this.supplierCatalogSelectedGoodsNos.has(goodsNo);
+            const description = String(item.description || '').trim();
+            return `
+                <tr class="shop-supplier-catalog__row${selected ? ' is-selected' : ''}">
+                    <td class="shop-supplier-catalog__check-col" data-label="选择">
+                        <input type="checkbox" aria-label="选择 ${this.escapeForAttr(item.name || goodsNo)}" data-shop-change="supplier-catalog-item" data-goods-no="${this.escapeForAttr(goodsNo)}" ${selected ? 'checked' : ''}>
+                    </td>
+                    <td data-label="商品">
+                        <div class="shop-supplier-catalog__product">
+                            <strong>${this.escapeHtml(item.name || '未命名商品')}</strong>
+                            ${description ? `<small>${this.escapeHtml(description.slice(0, 120))}</small>` : ''}
+                        </div>
+                    </td>
+                    <td data-label="上游货号"><code>${this.escapeHtml(goodsNo || '—')}</code></td>
+                    <td data-label="采购参考价"><span class="shop-supplier-catalog__price">${this.formatSupplierCatalogPrice(item)}</span></td>
+                    <td data-label="起购数量">${item.minimumQuantity ? this.escapeHtml(String(item.minimumQuantity)) : '—'}</td>
+                    <td data-label="发货方式"><span class="shop-supplier-catalog__method">${this.escapeHtml(this.formatSupplierCatalogDeliveryMethod(item.deliveryMethod))}</span></td>
+                    <td data-label="操作">
+                        <button type="button" class="btn btn-secondary shop-supplier-catalog__detail-button" data-shop-action="supplier-catalog-detail" data-goods-no="${this.escapeForAttr(goodsNo)}">
+                            <i class="fas fa-eye"></i> 查看详情
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    },
+
+    syncSupplierCatalogControls: function () {
+        const totalPages = Math.max(1, Math.ceil((Number(this.supplierCatalogTotal) || 0) / this.supplierCatalogPageSize));
+        const currentPage = Math.min(totalPages, Math.max(1, Number(this.supplierCatalogPage) || 1));
+        const selectedCount = this.supplierCatalogSelectedGoodsNos instanceof Set
+            ? this.supplierCatalogSelectedGoodsNos.size
+            : 0;
+        const visibleGoodsNos = (this.supplierCatalogItems || [])
+            .map((item) => String(item?.providerGoodsId || '').trim())
+            .filter(Boolean);
+        const selectAll = document.getElementById('supplierCatalogSelectAll');
+        const importButton = document.getElementById('supplierCatalogImportButton');
+        const selectionCount = document.getElementById('supplierCatalogSelectionCount');
+        const pageInfo = document.getElementById('supplierCatalogPageInfo');
+        const prevButton = document.getElementById('supplierCatalogPrevButton');
+        const nextButton = document.getElementById('supplierCatalogNextButton');
+
+        if (selectAll) {
+            selectAll.checked = visibleGoodsNos.length > 0 && visibleGoodsNos.every((goodsNo) => this.supplierCatalogSelectedGoodsNos.has(goodsNo));
+            selectAll.indeterminate = visibleGoodsNos.some((goodsNo) => this.supplierCatalogSelectedGoodsNos.has(goodsNo)) && !selectAll.checked;
+        }
+        if (importButton) {
+            importButton.disabled = selectedCount === 0 || this.supplierCatalogImportInFlight;
+        }
+        if (selectionCount) selectionCount.textContent = `已选 ${selectedCount} 项`;
+        if (pageInfo) pageInfo.textContent = this.supplierCatalogTotal ? `第 ${currentPage} / ${totalPages} 页，共 ${this.supplierCatalogTotal} 项` : '第 1 页';
+        if (prevButton) prevButton.disabled = currentPage <= 1 || this.supplierCatalogImportInFlight;
+        if (nextButton) nextButton.disabled = currentPage >= totalPages || this.supplierCatalogImportInFlight;
+    },
+
+    toggleSupplierCatalogItem: function (goodsNo, checked) {
+        const normalizedGoodsNo = String(goodsNo || '').trim();
+        if (!normalizedGoodsNo) return;
+        if (!(this.supplierCatalogSelectedGoodsNos instanceof Set)) {
+            this.supplierCatalogSelectedGoodsNos = new Set();
+        }
+        if (checked) this.supplierCatalogSelectedGoodsNos.add(normalizedGoodsNo);
+        else this.supplierCatalogSelectedGoodsNos.delete(normalizedGoodsNo);
+        this.renderSupplierCatalogRows();
+        this.syncSupplierCatalogControls();
+    },
+
+    selectAllSupplierCatalogPage: function (checked) {
+        if (!(this.supplierCatalogSelectedGoodsNos instanceof Set)) {
+            this.supplierCatalogSelectedGoodsNos = new Set();
+        }
+        (this.supplierCatalogItems || []).forEach((item) => {
+            const goodsNo = String(item?.providerGoodsId || '').trim();
+            if (!goodsNo) return;
+            if (checked) this.supplierCatalogSelectedGoodsNos.add(goodsNo);
+            else this.supplierCatalogSelectedGoodsNos.delete(goodsNo);
+        });
+        this.renderSupplierCatalogRows();
+        this.syncSupplierCatalogControls();
+    },
+
+    changeSupplierCatalogPage: function (direction) {
+        const totalPages = Math.max(1, Math.ceil((Number(this.supplierCatalogTotal) || 0) / this.supplierCatalogPageSize));
+        const delta = String(direction || '').trim().toLowerCase() === 'prev' ? -1 : 1;
+        const nextPage = Math.min(totalPages, Math.max(1, (Number(this.supplierCatalogPage) || 1) + delta));
+        if (nextPage === this.supplierCatalogPage) return;
+        void this.loadSupplierCatalog({ page: nextPage });
+    },
+
+    renderSupplierCatalogFeedback: function (message = '', tone = 'info') {
+        const feedback = document.getElementById('supplierCatalogFeedback');
+        if (!feedback) return;
+        const normalizedMessage = String(message || '').trim();
+        feedback.hidden = !normalizedMessage;
+        feedback.className = `shop-supplier-catalog__feedback${normalizedMessage ? ` shop-supplier-catalog__feedback--${tone}` : ''}`;
+        feedback.innerHTML = normalizedMessage;
+    },
+
+    importSupplierCatalogGoods: async function (goodsNos = null, { confirm = true, button = null } = {}) {
+        const selectedGoodsNos = Array.isArray(goodsNos)
+            ? [...new Set(goodsNos.map((value) => String(value || '').trim()).filter(Boolean))]
+            : [...(this.supplierCatalogSelectedGoodsNos instanceof Set ? this.supplierCatalogSelectedGoodsNos : [])];
+        if (!selectedGoodsNos.length) {
+            this.renderSupplierCatalogFeedback('请先选择要导入的上游商品。', 'warning');
+            return null;
+        }
+        if (selectedGoodsNos.length > 20) {
+            this.renderSupplierCatalogFeedback('单次最多导入 20 个商品，请分批选择。', 'warning');
+            return null;
+        }
+        if (this.supplierCatalogImportInFlight) return null;
+
+        const query = this.getSupplierCatalogQuery();
+        if (confirm && typeof window.confirm === 'function') {
+            const accepted = window.confirm(`将导入 ${selectedGoodsNos.length} 个商品为商城草稿。导入后不会自动上架，也不会启用供应商映射。是否继续？`);
+            if (!accepted) return null;
+        }
+
+        const actionButton = button || document.getElementById('supplierCatalogImportButton');
+        this.supplierCatalogImportInFlight = true;
+        this.syncSupplierCatalogControls();
+        this.setActionButtonLoading(actionButton, '导入中...');
+        try {
+            const headers = await this.getAdminAuthHeaders();
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/supplier-catalog'),
+                {
+                    method: 'POST',
+                    headers,
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        action: 'import',
+                        providerId: query.providerId,
+                        site: query.site,
+                        goodsNos: selectedGoodsNos
+                    })
+                }
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !Array.isArray(payload.results)) {
+                throw new Error(payload.message || '导入失败，请稍后重试。');
+            }
+
+            const imported = payload.results.filter((result) => ['imported_as_draft', 'already_imported'].includes(result.status));
+            const failed = payload.results.filter((result) => result.status === 'failed');
+            imported.forEach((result) => this.supplierCatalogSelectedGoodsNos.delete(String(result.goodsNo || '').trim()));
+            const resultLines = payload.results.map((result) => {
+                const goodsNo = this.escapeHtml(result.goodsNo || '未知货号');
+                const state = result.status === 'imported_as_draft'
+                    ? '<span class="is-success">已生成草稿</span>'
+                    : result.status === 'already_imported'
+                        ? '<span class="is-muted">已导入</span>'
+                        : `<span class="is-error">${this.escapeHtml(result.message || '导入失败')}</span>`;
+                return `<li><code>${goodsNo}</code> ${state}</li>`;
+            }).join('');
+            const tone = failed.length ? (imported.length ? 'warning' : 'error') : 'success';
+            this.renderSupplierCatalogFeedback(
+                `<strong>导入完成：</strong>成功 ${imported.length} 项，失败 ${failed.length} 项。${failed.length ? '<br>失败项不会创建可售商品，请修正后重试。' : ''}<ul>${resultLines}</ul>`,
+                tone
+            );
+            this.invalidateShopTabCache('products');
+            await this.loadSupplierCatalog({ force: true, page: this.supplierCatalogPage });
+            return payload;
+        } catch (error) {
+            this.renderSupplierCatalogFeedback(this.escapeHtml(error.message || '导入失败，请稍后重试。'), 'error');
+            return null;
+        } finally {
+            this.supplierCatalogImportInFlight = false;
+            this.restoreActionButton(actionButton);
+            this.syncSupplierCatalogControls();
+        }
+    },
+
+    openSupplierCatalogDetail: async function (goodsNo) {
+        const normalizedGoodsNo = String(goodsNo || '').trim();
+        if (!normalizedGoodsNo) return null;
+        const modal = document.getElementById('supplierCatalogDetailModal');
+        const body = document.getElementById('supplierCatalogDetailBody');
+        if (!modal || !body) return null;
+        const requestToken = ++this.supplierCatalogDetailRequestToken;
+        this.supplierCatalogDetailItem = null;
+        body.innerHTML = '<div class="shop-supplier-catalog-detail-modal__loading"><i class="fas fa-spinner fa-spin"></i> 正在读取详情...</div>';
+        modal.classList.add('active');
+        modal.setAttribute('aria-hidden', 'false');
+
+        try {
+            const query = this.getSupplierCatalogQuery();
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/supplier-catalog', {
+                    providerId: query.providerId,
+                    action: 'detail',
+                    goodsNo: normalizedGoodsNo
+                }),
+                { credentials: 'include' }
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success || !payload.item) {
+                throw new Error(payload.message || '商品详情暂不可用，请稍后重试。');
+            }
+            if (requestToken !== this.supplierCatalogDetailRequestToken) return payload;
+            this.supplierCatalogDetailItem = payload.item;
+            this.renderSupplierCatalogDetail(payload.item);
+            return payload;
+        } catch (error) {
+            if (requestToken !== this.supplierCatalogDetailRequestToken) return null;
+            body.innerHTML = `<div class="shop-supplier-catalog-detail-modal__error"><i class="fas fa-circle-exclamation"></i> ${this.escapeHtml(error.message || '商品详情读取失败。')}</div>`;
+            return null;
+        }
+    },
+
+    renderSupplierCatalogDetail: function (item = {}) {
+        const title = document.getElementById('supplierCatalogDetailTitle');
+        const body = document.getElementById('supplierCatalogDetailBody');
+        if (!body) return;
+        if (title) title.textContent = String(item.name || '商品详情');
+        const safeImageUrl = /^https:\/\//i.test(String(item.imageUrl || '').trim()) ? String(item.imageUrl).trim() : '';
+        body.innerHTML = `
+            ${safeImageUrl ? `<img class="shop-supplier-catalog-detail-modal__image" src="${this.escapeForAttr(safeImageUrl)}" alt="">` : ''}
+            <div class="shop-supplier-catalog-detail-modal__meta-grid">
+                <div><span>上游货号</span><strong><code>${this.escapeHtml(item.providerGoodsId || '—')}</code></strong></div>
+                <div><span>采购参考价</span><strong>${this.formatSupplierCatalogPrice(item)}</strong></div>
+                <div><span>起购数量</span><strong>${item.minimumQuantity ? this.escapeHtml(String(item.minimumQuantity)) : '—'}</strong></div>
+                <div><span>发货方式</span><strong>${this.escapeHtml(this.formatSupplierCatalogDeliveryMethod(item.deliveryMethod))}</strong></div>
+            </div>
+            <div class="shop-supplier-catalog-detail-modal__description">
+                <span>上游描述</span>
+                <p>${this.escapeHtml(item.description || '上游未提供描述。')}</p>
+            </div>
+        `;
+    },
+
+    importSupplierCatalogDetail: async function () {
+        const item = this.supplierCatalogDetailItem;
+        const goodsNo = String(item?.providerGoodsId || '').trim();
+        if (!goodsNo) {
+            this.renderSupplierCatalogFeedback('当前详情缺少上游货号，无法导入。', 'warning');
+            return null;
+        }
+        const result = await this.importSupplierCatalogGoods([goodsNo], {
+            button: document.querySelector('[data-shop-action="supplier-catalog-import-detail"]')
+        });
+        if (result) this.closeSupplierCatalogDetail();
+        return result;
+    },
+
+    closeSupplierCatalogDetail: function () {
+        const modal = document.getElementById('supplierCatalogDetailModal');
+        if (!modal) return;
+        ++this.supplierCatalogDetailRequestToken;
+        modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
     },
 
     loadProducts: async function () {
@@ -13038,6 +13508,7 @@ Example output format:
         if (lines.length === 0) { alert('没有检测到有效数据'); return; }
 
         const importStatus = document.querySelector('input[name="importStatus"]:checked')?.value || 'available';
+        const inventoryType = this.getInventoryImportType('legacy');
         const reusableDelivery = this.isReusableInventoryInputChecked('legacy');
         const skuId = document.getElementById('inventorySkuSelect')?.value || this.selectedProductSkuId || '';
         const blocker = this.getSkuImportBlocker(this.selectedProductId, skuId);
@@ -13065,7 +13536,8 @@ Example output format:
                 lines,
                 importStatus,
                 batchId,
-                reusableDelivery
+                reusableDelivery,
+                inventoryType
             });
             const imported = this.normalizeInventoryStockCount(result?.imported) || lines.length;
             const stockCount = this.syncProductStockAfterInventoryMutation({
@@ -13076,7 +13548,7 @@ Example output format:
             });
 
             this.finishActionButton(btnElement, '已导入');
-            const successMessage = `成功导入 ${imported} 条库存${reusableDelivery ? '，已标记为可重复发货' : ''}`;
+            const successMessage = `成功导入 ${imported} ${inventoryType === 'kc_pay_gpt_cdk' ? '条 CDK' : '条库存'}${reusableDelivery ? '，已标记为可重复发货' : ''}`;
             this.showActionToast(successMessage, 'success');
             this.emitCommandFeedback(successMessage, 'saved', { source: 'shop-inventory' });
 
@@ -13085,6 +13557,7 @@ Example output format:
             document.getElementById('lineCount').textContent = '0';
             const reusableInput = document.getElementById('inventoryReusableDelivery');
             if (reusableInput) reusableInput.checked = false;
+            this.syncInventoryImportTypeControls('legacy');
 
             // Refresh visuals
             await this.refreshInventoryStockViews();
@@ -13167,12 +13640,15 @@ Example output format:
         };
     },
 
-    performInventoryImport: async function ({ productId, skuId = '', contentLines, status = 'available', batchId = '', procurement = null, reusableDelivery = false } = {}) {
+    performInventoryImport: async function ({ productId, skuId = '', contentLines, status = 'available', batchId = '', procurement = null, reusableDelivery = false, inventoryType = 'standard' } = {}) {
         const lines = Array.isArray(contentLines)
             ? contentLines.map((line) => String(line || '').trim()).filter(Boolean)
             : [];
         const resolvedProductId = String(productId || '').trim();
         const resolvedBatchId = String(batchId || '').trim() || this.buildInventoryImportBatchId();
+        const resolvedInventoryType = String(inventoryType || 'standard').trim().toLowerCase() === 'kc_pay_gpt_cdk'
+            ? 'kc_pay_gpt_cdk'
+            : 'standard';
 
         if (!resolvedProductId) {
             throw new Error('请选择商品');
@@ -13184,7 +13660,7 @@ Example output format:
         }
 
         if (!lines.length) {
-            throw new Error('请输入有效的账号内容');
+            throw new Error(resolvedInventoryType === 'kc_pay_gpt_cdk' ? '请输入有效的 CDK' : '请输入有效的账号内容');
         }
 
         const mutationPayload = {
@@ -13193,7 +13669,8 @@ Example output format:
             lines,
             importStatus: String(status || 'available').trim() || 'available',
             batchId: resolvedBatchId,
-            reusableDelivery: reusableDelivery === true
+            reusableDelivery: resolvedInventoryType === 'kc_pay_gpt_cdk' ? false : reusableDelivery === true,
+            inventoryType: resolvedInventoryType
         };
 
         if (procurement && typeof procurement === 'object') {
@@ -20675,10 +21152,11 @@ Example output format:
         const contentInput = document.getElementById('importContentInput');
         const content = contentInput?.value || '';
         const status = document.querySelector('#importInventoryModal input[name="importStatus"]:checked')?.value || 'available';
+        const inventoryType = this.getInventoryImportType('importModal');
         const reusableDelivery = this.isReusableInventoryInputChecked('importModal');
 
         if (!productId) { alert('请选择商品'); return; }
-        if (!content.trim()) { alert('请输入账号内容'); return; }
+        if (!content.trim()) { alert(inventoryType === 'kc_pay_gpt_cdk' ? '请输入 CDK' : '请输入账号内容'); return; }
 
         const contentLines = content.split('\n').map((line) => line.trim()).filter(Boolean);
         if (contentLines.length === 0) { alert('请输入有效的账号内容'); return; }
@@ -20692,7 +21170,7 @@ Example output format:
         }
 
         this.setActionButtonLoading(importButton, '导入中...');
-        this.emitCommandFeedback(`正在导入 ${contentLines.length} 个账号...`, 'loading', {
+        this.emitCommandFeedback(`正在导入 ${contentLines.length} ${inventoryType === 'kc_pay_gpt_cdk' ? '条 CDK' : '个账号'}...`, 'loading', {
             source: 'shop-inventory',
             persistent: true
         });
@@ -20704,7 +21182,8 @@ Example output format:
                 contentLines,
                 status,
                 procurement,
-                reusableDelivery
+                reusableDelivery,
+                inventoryType
             });
             this.syncProductStockAfterInventoryMutation({
                 productId,
@@ -20713,13 +21192,14 @@ Example output format:
                 status
             });
             this.finishActionButton(importButton, '已导入');
-            const successMessage = `成功导入 ${imported} 个账号${reusableDelivery ? '，已标记为可重复发货' : ''}，批次号: ${batchId}`;
+            const successMessage = `成功导入 ${imported} ${inventoryType === 'kc_pay_gpt_cdk' ? '条 CDK' : '个账号'}${reusableDelivery ? '，已标记为可重复发货' : ''}，批次号: ${batchId}`;
             this.showActionToast(successMessage, 'success');
             this.emitCommandFeedback(successMessage, 'saved', { source: 'shop-inventory' });
             this.notifyProcurementImportWarning(procurementWarning);
             contentInput.value = '';
             const reusableInput = document.getElementById('importModalReusableDelivery');
             if (reusableInput) reusableInput.checked = false;
+            this.syncInventoryImportTypeControls('importModal');
             this.updateLegacyImportLineCount();
             this.closeImportModal();
             await this.refreshInventoryStockViews({ inventoryPage: this.inventoryPage });
@@ -21963,10 +22443,11 @@ Example output format:
         const skuId = document.getElementById('importViewSkuSelect')?.value || this.selectedImportViewProductSkuId || '';
         const content = document.getElementById('importViewContentInput').value;
         const status = document.querySelector('input[name="importViewStatus"]:checked').value;
+        const inventoryType = this.getInventoryImportType('importView');
         const reusableDelivery = this.isReusableInventoryInputChecked('importView');
 
         if (!productId) { alert('请先在左侧选择商品'); return; }
-        if (!content.trim()) { alert('请输入账号内容'); return; }
+        if (!content.trim()) { alert(inventoryType === 'kc_pay_gpt_cdk' ? '请输入 CDK' : '请输入账号内容'); return; }
 
         const contentLines = content.split('\n').map(l => l.trim()).filter(l => l);
         if (contentLines.length === 0) return;
@@ -21980,7 +22461,7 @@ Example output format:
         }
 
         this.setActionButtonLoading(actionButton, '导入中...');
-        this.emitCommandFeedback(`正在导入 ${contentLines.length} 个账号...`, 'loading', {
+        this.emitCommandFeedback(`正在导入 ${contentLines.length} ${inventoryType === 'kc_pay_gpt_cdk' ? '条 CDK' : '个账号'}...`, 'loading', {
             source: 'shop-inventory',
             persistent: true
         });
@@ -21992,7 +22473,8 @@ Example output format:
                 contentLines,
                 status,
                 procurement,
-                reusableDelivery
+                reusableDelivery,
+                inventoryType
             });
             this.syncProductStockAfterInventoryMutation({
                 productId,
@@ -22001,7 +22483,7 @@ Example output format:
                 status
             });
             this.finishActionButton(actionButton, '已导入');
-            const successMessage = `成功导入 ${imported} 个账号${reusableDelivery ? '，已标记为可重复发货' : ''}，批次号: ${batchId}`;
+            const successMessage = `成功导入 ${imported} ${inventoryType === 'kc_pay_gpt_cdk' ? '条 CDK' : '个账号'}${reusableDelivery ? '，已标记为可重复发货' : ''}，批次号: ${batchId}`;
             this.showActionToast(successMessage, 'success');
             this.emitCommandFeedback(successMessage, 'saved', { source: 'shop-inventory' });
             this.notifyProcurementImportWarning(procurementWarning);
@@ -22011,6 +22493,7 @@ Example output format:
             document.getElementById('importViewLineCount').textContent = '(0个)';
             const reusableInput = document.getElementById('importViewReusableDelivery');
             if (reusableInput) reusableInput.checked = false;
+            this.syncInventoryImportTypeControls('importView');
 
             // Note: We don't clear selection so user can continue importing if needed.
             await this.refreshInventoryStockViews({

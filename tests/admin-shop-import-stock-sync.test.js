@@ -73,8 +73,8 @@ test('shop import view patches product stock badges immediately after inventory 
     );
     assert.match(
         performInventoryImportBlock,
-        /reusableDelivery: reusableDelivery === true/,
-        'the shared import helper should forward reusable delivery state to the admin mutation'
+        /reusableDelivery: resolvedInventoryType === 'kc_pay_gpt_cdk' \? false : reusableDelivery === true/,
+        'the shared import helper should forward reusable delivery state while forcing CDK to one-time delivery'
     );
     assert.match(
         importInventoryBlock,
