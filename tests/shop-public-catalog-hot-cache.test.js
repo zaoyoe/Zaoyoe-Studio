@@ -1070,3 +1070,97 @@ test('public shop catalog remains available when the sales query fails', async (
     assert.equal(res.json().products[0].id, 'product-unavailable-sales');
     assert.equal(Object.hasOwn(res.json().products[0], 'sales_count'), false);
 });
+
+function createFilterableThenableQuery(rows = []) {
+    const filters = [];
+    return {
+        select() {
+            return this;
+        },
+        in(column, values) {
+            filters.push({ type: 'in', column, values: Array.isArray(values) ? values : [values] });
+            return this;
+        },
+        eq(column, value) {
+            filters.push({ type: 'eq', column, value });
+            return this;
+        },
+        order() {
+            return this;
+        },
+        limit() {
+            return this;
+        },
+        then(resolve, reject) {
+            const data = (Array.isArray(rows) ? rows : []).filter((row) => filters.every((filter) => {
+                if (filter.type === 'in') {
+                    return filter.values.includes(row?.[filter.column]);
+                }
+                return row?.[filter.column] === filter.value;
+            }));
+            return Promise.resolve({ data, error: null }).then(resolve, reject);
+        }
+    };
+}
+
+test('public shop catalog counts only CDK inventory assigned to the current storefront site', async () => {
+    const rows = {
+        shop_categories: [{ id: 'cat_tools', name: 'tools', sort_order: 1, is_public: true }],
+        shop_products: [{
+            id: 'product-site-cdk',
+            name: 'Site CDK product',
+            price_points: 10,
+            price_points_intl: 1,
+            stock_count: 99,
+            category: 'tools',
+            display_order: 1,
+            is_active: true
+        }],
+        shop_product_skus: [{
+            id: 'sku-site-cdk',
+            product_id: 'product-site-cdk',
+            sku_name: 'Default',
+            inventory_sku_id: 'sku-site-cdk',
+            inventory_source_sku_ids: [],
+            inventory_source_sku_ids_intl: [],
+            price_points: 10,
+            price_points_intl: 1,
+            stock_count: 99,
+            is_default: true,
+            is_active: true,
+            sort_order: 0
+        }],
+        shop_inventory: [
+            { id: 'inventory-standard', product_id: 'product-site-cdk', sku_id: 'sku-site-cdk', status: 'available', inventory_type: 'standard' },
+            { id: 'inventory-cdk-cn', product_id: 'product-site-cdk', sku_id: 'sku-site-cdk', status: 'available', inventory_type: 'kc_pay_gpt_cdk' },
+            { id: 'inventory-cdk-intl', product_id: 'product-site-cdk', sku_id: 'sku-site-cdk', status: 'available', inventory_type: 'kc_pay_gpt_cdk' }
+        ],
+        shop_cdk_secrets: [
+            { inventory_id: 'inventory-cdk-cn', site: 'cn' },
+            { inventory_id: 'inventory-cdk-intl', site: 'intl' }
+        ],
+        shop_orders: []
+    };
+
+    const supabase = {
+        from(table) {
+            assert.ok(Object.hasOwn(rows, table), `unexpected table: ${table}`);
+            return createFilterableThenableQuery(rows[table]);
+        }
+    };
+    const handler = createCatalogHandler(supabase);
+
+    async function load(site) {
+        const res = createMockResponse();
+        await handler({
+            method: 'GET',
+            url: `/api/shop/catalog?site=${site}&refresh=1`,
+            headers: {}
+        }, res);
+        assert.equal(res.statusCode, 200);
+        return res.json().products[0].skus[0].stock_count;
+    }
+
+    assert.equal(await load('cn'), 2);
+    assert.equal(await load('intl'), 2);
+});

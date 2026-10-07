@@ -8,6 +8,13 @@ const {
 const {
     normalizeAllowedChannels
 } = require('../../../../api/_lib/payments/guest-shop-adapter');
+const crypto = require('node:crypto');
+const {
+    encryptCdk,
+    fingerprintCdk,
+    normalizeCdk,
+    isCdkInventoryType
+} = require('../../../../api/_lib/shop-cdk-secrets');
 
 async function countAvailableInventory(supabase, productId, skuId = '') {
     let query = supabase
@@ -22,6 +29,62 @@ async function countAvailableInventory(supabase, productId, skuId = '') {
 
     const { count } = await query;
     return Number(count || 0);
+}
+
+async function cleanupProcurementBatchAfterInventoryImportFailure(supabase, batchId = '') {
+    const normalizedBatchId = normalizeText(batchId, 160);
+    if (!normalizedBatchId || !supabase) {
+        return;
+    }
+
+    const { error } = await supabase
+        .from('shop_procurement_batches')
+        .delete()
+        .eq('id', normalizedBatchId);
+
+    if (error) {
+        // Keep the original import error as the user-facing failure. The batch id
+        // is safe operational metadata; never include CDK values or credentials.
+        console.warn('[ShopAdmin] failed to clean up procurement batch after inventory import failure', {
+            batchId: normalizedBatchId,
+            error: error.message || String(error)
+        });
+    }
+}
+
+async function loadInventoryRowsForDeletion(supabase, inventoryIds = []) {
+    const normalizedIds = [...new Set(
+        (Array.isArray(inventoryIds) ? inventoryIds : [inventoryIds])
+            .map((id) => normalizeText(id, 160))
+            .filter(Boolean)
+    )];
+    if (!normalizedIds.length) {
+        return { data: [], error: null };
+    }
+
+    let response = await supabase
+        .from('shop_inventory')
+        .select('id, product_id, status, batch_id, inventory_type')
+        .in('id', normalizedIds);
+
+    if (response?.error && isMissingColumnError(response.error, 'inventory_type')) {
+        response = await supabase
+            .from('shop_inventory')
+            .select('id, product_id, status, batch_id')
+            .in('id', normalizedIds);
+    }
+
+    if (response?.error) {
+        return response;
+    }
+
+    return {
+        ...response,
+        data: (Array.isArray(response.data) ? response.data : []).map((row) => ({
+            ...row,
+            inventory_type: normalizeText(row?.inventory_type, 40).toLowerCase() || 'standard'
+        }))
+    };
 }
 
 function normalizePositiveInteger(value) {
@@ -2534,7 +2597,7 @@ module.exports = async (req, res) => {
     }
 
     try {
-        const { supabase, user } = await requireAdmin(req, { permission: 'shop.manage' });
+        const { supabase, adminSupabase, user } = await requireAdmin(req, { permission: 'shop.manage' });
         const body = await parseJsonBody(req);
         const action = String(body.action || '').trim();
 
@@ -3401,9 +3464,12 @@ module.exports = async (req, res) => {
                 160
             );
             const lines = Array.isArray(body.lines) ? body.lines : [];
+            const inventoryType = normalizeText(body.inventoryType || body.inventory_type || 'standard', 40).toLowerCase() || 'standard';
             const importStatus = String(body.importStatus || 'available').trim() || 'available';
             const batchId = body.batchId ? String(body.batchId) : `batch_${Date.now()}`;
-            const reusableDelivery = normalizeBoolean(
+            const reusableDelivery = isCdkInventoryType(inventoryType)
+                ? false
+                : normalizeBoolean(
                 body.reusableDelivery
                 ?? body.reusable_delivery
                 ?? body.repeatableDelivery
@@ -3413,6 +3479,14 @@ module.exports = async (req, res) => {
                 false
             );
             let procurement = null;
+
+            if (!['standard', 'kc_pay_gpt_cdk'].includes(inventoryType)) {
+                return sendJson(res, 400, {
+                    success: false,
+                    code: 'shop_inventory_type_invalid',
+                    message: '库存类型无效，请明确选择普通库存或 KC-PAY-GPT CDK'
+                });
+            }
 
             if (!productId || !lines.length) {
                 return sendJson(res, 400, { success: false, message: 'productId and lines are required' });
@@ -3450,10 +3524,61 @@ module.exports = async (req, res) => {
             }
 
             const inventorySkuId = normalizeText(sku?.id, 160) || null;
-            const inserts = lines
+            const normalizedLines = lines
                 .map((line) => String(line || '').trim())
-                .filter(Boolean)
-                .map((content) => {
+                .filter(Boolean);
+            if (!normalizedLines.length) {
+                return sendJson(res, 400, { success: false, message: '没有有效库存数据' });
+            }
+
+            let cdkItems = null;
+            if (isCdkInventoryType(inventoryType)) {
+                if (!adminSupabase || typeof adminSupabase.rpc !== 'function') {
+                    return sendJson(res, 503, {
+                        success: false,
+                        code: 'shop_cdk_service_role_required',
+                        message: 'CDK 安全导入服务暂不可用，请检查服务端配置'
+                    });
+                }
+
+                const batchFingerprints = new Set();
+                try {
+                    cdkItems = normalizedLines.map((line) => {
+                        const normalizedCdk = normalizeCdk(line);
+                        const fingerprint = fingerprintCdk(normalizedCdk);
+                        if (batchFingerprints.has(fingerprint)) {
+                            const duplicateError = new Error('本批次包含重复 CDK，已拒绝整批导入');
+                            duplicateError.code = 'shop_cdk_duplicate_batch';
+                            throw duplicateError;
+                        }
+                        batchFingerprints.add(fingerprint);
+                        const inventoryId = crypto.randomUUID();
+                        const encrypted = encryptCdk(normalizedCdk, {
+                            inventoryId,
+                            site: writableSite
+                        });
+                        return {
+                            inventory_id: inventoryId,
+                            fingerprint: encrypted.fingerprint,
+                            ciphertext: encrypted.ciphertext,
+                            nonce: encrypted.nonce,
+                            auth_tag: encrypted.auth_tag,
+                            encryption_version: encrypted.version,
+                            algorithm: encrypted.algorithm
+                        };
+                    });
+                } catch (error) {
+                    return sendJson(res, Number(error?.statusCode) || 400, {
+                        success: false,
+                        code: error?.code || 'shop_cdk_invalid',
+                        message: error?.message || 'CDK 内容无效，已拒绝整批导入'
+                    });
+                }
+            }
+
+            const inserts = isCdkInventoryType(inventoryType)
+                ? []
+                : normalizedLines.map((content) => {
                     const entry = {
                         product_id: productId,
                         sku_id: inventorySkuId,
@@ -3466,10 +3591,7 @@ module.exports = async (req, res) => {
                     }
                     return entry;
                 });
-
-            if (!inserts.length) {
-                return sendJson(res, 400, { success: false, message: '没有有效库存数据' });
-            }
+            const importedCount = cdkItems?.length || inserts.length;
 
             let procurementContext = null;
             try {
@@ -3478,7 +3600,7 @@ module.exports = async (req, res) => {
                     productId,
                     sku,
                     batchId,
-                    importedCount: inserts.length,
+                    importedCount,
                     site: writableSite,
                     adminId: user?.id || null
                 });
@@ -3502,27 +3624,69 @@ module.exports = async (req, res) => {
                 });
             }
 
-            const { error } = await supabase.from('shop_inventory').insert(inserts);
-            if (error) {
-                if (reusableDelivery && isMissingReusableInventorySchemaError(error)) {
+            if (isCdkInventoryType(inventoryType)) {
+                const { data: cdkImportResult, error: cdkImportError } = await adminSupabase.rpc(
+                    'fn_admin_import_shop_cdk_inventory',
+                    {
+                        p_product_id: productId,
+                        p_sku_id: inventorySkuId,
+                        p_batch_id: batchId,
+                        p_site: writableSite,
+                        p_items: cdkItems,
+                        p_status: importStatus
+                    }
+                );
+                if (cdkImportError) {
+                    await cleanupProcurementBatchAfterInventoryImportFailure(
+                        supabase,
+                        procurementContext?.batch?.id
+                    );
                     return sendJson(res, 400, {
                         success: false,
-                        code: 'shop_reusable_inventory_schema_missing',
-                        message: '可重复发货库存字段尚未部署，请先执行 20260612_add_shop_reusable_inventory.sql。',
-                        details: error?.details || '',
-                        hint: error?.hint || ''
+                        code: 'shop_cdk_import_failed',
+                        message: cdkImportError.message || 'CDK 导入失败',
+                        details: cdkImportError?.details || '',
+                        hint: cdkImportError?.hint || ''
                     });
                 }
-                if (procurementContext?.batch?.id && isMissingProcurementSchemaError(error)) {
+                if (!cdkImportResult || cdkImportResult.success !== true) {
+                    await cleanupProcurementBatchAfterInventoryImportFailure(
+                        supabase,
+                        procurementContext?.batch?.id
+                    );
                     return sendJson(res, 400, {
                         success: false,
-                        code: 'shop_procurement_schema_missing',
-                        message: createMissingProcurementSchemaError(error).message,
-                        details: error?.details || '',
-                        hint: error?.hint || ''
+                        code: cdkImportResult?.code || 'shop_cdk_import_rejected',
+                        message: cdkImportResult?.message || 'CDK 导入被拒绝'
                     });
                 }
-                return sendJson(res, 400, { success: false, message: error.message });
+            } else {
+                const { error } = await supabase.from('shop_inventory').insert(inserts);
+                if (error) {
+                    await cleanupProcurementBatchAfterInventoryImportFailure(
+                        supabase,
+                        procurementContext?.batch?.id
+                    );
+                    if (reusableDelivery && isMissingReusableInventorySchemaError(error)) {
+                        return sendJson(res, 400, {
+                            success: false,
+                            code: 'shop_reusable_inventory_schema_missing',
+                            message: '可重复发货库存字段尚未部署，请先执行 20260612_add_shop_reusable_inventory.sql。',
+                            details: error?.details || '',
+                            hint: error?.hint || ''
+                        });
+                    }
+                    if (procurementContext?.batch?.id && isMissingProcurementSchemaError(error)) {
+                        return sendJson(res, 400, {
+                            success: false,
+                            code: 'shop_procurement_schema_missing',
+                            message: createMissingProcurementSchemaError(error).message,
+                            details: error?.details || '',
+                            hint: error?.hint || ''
+                        });
+                    }
+                    return sendJson(res, 400, { success: false, message: error.message });
+                }
             }
 
             const stockCount = await countAvailableInventory(supabase, productId);
@@ -3549,8 +3713,9 @@ module.exports = async (req, res) => {
                     unit_cost_cny: procurement?.unit_cost_cny ?? null,
                     source_warning_type: procurementContext?.sourceWarning?.type || null,
                     source_warning_batch_id: procurementContext?.sourceWarning?.batchId || null,
-                    count: inserts.length,
+                    count: importedCount,
                     import_status: importStatus,
+                    inventory_type: inventoryType,
                     reusable_delivery: reusableDelivery,
                     is_shared: reusableDelivery
                 }
@@ -3558,7 +3723,7 @@ module.exports = async (req, res) => {
 
             return sendJson(res, 200, {
                 success: true,
-                imported: inserts.length,
+                imported: importedCount,
                 stockCount,
                 skuId: sku?.id || null,
                 inventorySkuId,
@@ -3569,7 +3734,8 @@ module.exports = async (req, res) => {
                 procurementWarning: procurementContext?.sourceWarning || null,
                 sourceWarning: procurementContext?.sourceWarning || null,
                 reusableDelivery,
-                isShared: reusableDelivery
+                isShared: reusableDelivery,
+                inventoryType
             });
         }
 
@@ -3767,17 +3933,24 @@ module.exports = async (req, res) => {
                 return sendJson(res, 400, { success: false, message: 'inventoryId is required' });
             }
 
-            const { data: existingRow, error: existingError } = await supabase
-                .from('shop_inventory')
-                .select('id, product_id, status, batch_id')
-                .eq('id', inventoryId)
-                .single();
+            const { data: existingRows, error: existingError } = await loadInventoryRowsForDeletion(
+                supabase,
+                [inventoryId]
+            );
+            const existingRow = Array.isArray(existingRows) ? existingRows[0] : null;
 
             if (existingError || !existingRow) {
                 return sendJson(res, 404, { success: false, message: '库存项不存在' });
             }
 
             if (action === 'inventory_delete') {
+                if (existingRow.inventory_type === 'kc_pay_gpt_cdk') {
+                    return sendJson(res, 409, {
+                        success: false,
+                        code: 'shop_cdk_inventory_delete_blocked',
+                        message: 'KC-PAY-GPT CDK 库存不可直接删除，请改为冻结；已售或已绑定的 CDK 不得重新入库。'
+                    });
+                }
                 const { error } = await supabase.from('shop_inventory').delete().eq('id', inventoryId);
                 if (error) {
                     return sendJson(res, 400, { success: false, message: error.message });
@@ -3841,10 +4014,10 @@ module.exports = async (req, res) => {
                 return sendJson(res, 400, { success: false, message: 'inventoryIds is required' });
             }
 
-            const { data: rows, error: rowsError } = await supabase
-                .from('shop_inventory')
-                .select('id, product_id, status, batch_id')
-                .in('id', inventoryIds);
+            const { data: rows, error: rowsError } = await loadInventoryRowsForDeletion(
+                supabase,
+                inventoryIds
+            );
 
             if (rowsError) {
                 return sendJson(res, 400, { success: false, message: rowsError.message });
@@ -3852,6 +4025,16 @@ module.exports = async (req, res) => {
 
             if (!rows?.length) {
                 return sendJson(res, 404, { success: false, message: '库存项不存在' });
+            }
+
+            const cdkRows = rows.filter((row) => row.inventory_type === 'kc_pay_gpt_cdk');
+            if (cdkRows.length) {
+                return sendJson(res, 409, {
+                    success: false,
+                    code: 'shop_cdk_inventory_delete_blocked',
+                    message: '批量删除中包含 KC-PAY-GPT CDK 库存，请改为逐项冻结；CDK 不允许通过删除重新入库。',
+                    blockedCount: cdkRows.length
+                });
             }
 
             const { error: deleteError } = await supabase

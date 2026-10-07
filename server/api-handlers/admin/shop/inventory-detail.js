@@ -5,7 +5,9 @@ const {
 const {
     normalizeText,
     loadOrderLinksByInventoryIds,
-    loadInventoryRecordsByIds
+    loadInventoryRecordsByIds,
+    redactInventoryRecord,
+    isMissingColumnError
 } = require('./_order-linkage');
 
 function getSearchParams(req) {
@@ -32,7 +34,7 @@ async function loadInventoryRecord(supabase, inventoryId) {
         throw error;
     }
 
-    return data || null;
+    return redactInventoryRecord(data || null);
 }
 
 async function loadProcurementContext(supabase, sourceBatchId) {
@@ -134,9 +136,9 @@ async function loadHistoryItems(supabase, inventoryRecord, inventoryId, buyerId)
         return [];
     }
 
-    const { data, error } = await supabase
+    let response = await supabase
         .from('shop_inventory')
-        .select('id, content, sold_at')
+        .select('id, content, inventory_type, sold_at')
         .eq('buyer_id', buyerId)
         .eq('product_id', inventoryRecord.product_id)
         .eq('status', 'sold')
@@ -144,12 +146,26 @@ async function loadHistoryItems(supabase, inventoryRecord, inventoryId, buyerId)
         .order('sold_at', { ascending: false })
         .limit(10);
 
+    if (response?.error && isMissingColumnError(response.error, 'inventory_type')) {
+        response = await supabase
+            .from('shop_inventory')
+            .select('id, content, sold_at')
+            .eq('buyer_id', buyerId)
+            .eq('product_id', inventoryRecord.product_id)
+            .eq('status', 'sold')
+            .neq('id', inventoryId)
+            .order('sold_at', { ascending: false })
+            .limit(10);
+    }
+
+    const { data, error } = response;
+
     if (error) {
         throw error;
     }
 
     return (Array.isArray(data) ? data : []).map((row) => ({
-        shop_inventory: row
+        shop_inventory: redactInventoryRecord(row)
     }));
 }
 
@@ -178,7 +194,7 @@ async function loadSameOrderItems(supabase, orderId, inventoryId) {
     const inventoryRecordsById = await loadInventoryRecordsByIds(
         supabase,
         relatedInventoryIds,
-        'id, content, sold_at'
+        'id, content, inventory_type, sold_at'
     );
 
     return relatedInventoryIds

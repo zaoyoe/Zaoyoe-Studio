@@ -4,7 +4,9 @@ const {
 } = require('../../../../api/_lib/admin');
 const {
     normalizeText,
-    loadOrderLinksByInventoryIds
+    loadOrderLinksByInventoryIds,
+    redactInventoryRecord,
+    isMissingColumnError
 } = require('./_order-linkage');
 
 function getSearchParams(req) {
@@ -18,6 +20,45 @@ function normalizePositiveInteger(value, fallback, maxValue = 10000) {
         return fallback;
     }
     return Math.min(parsed, maxValue);
+}
+
+async function redactInventoryListItems(supabase, items = []) {
+    const safeItems = Array.isArray(items) ? items : [];
+    const ids = safeItems
+        .map((item) => normalizeText(item?.id, 160))
+        .filter(Boolean);
+    if (!ids.length) {
+        return safeItems;
+    }
+
+    let response = await supabase
+        .from('shop_inventory')
+        .select('id, inventory_type')
+        .in('id', ids);
+
+    if (response?.error && isMissingColumnError(response.error, 'inventory_type')) {
+        return safeItems.map((item) => ({
+            ...item,
+            inventory_type: normalizeText(item?.inventory_type, 40).toLowerCase() || 'standard'
+        }));
+    }
+
+    const { data, error } = response;
+    if (error) {
+        throw error;
+    }
+
+    const typeById = new Map((Array.isArray(data) ? data : []).map((row) => [
+        normalizeText(row?.id, 160),
+        normalizeText(row?.inventory_type, 40).toLowerCase() || 'standard'
+    ]));
+
+    return safeItems.map((item) => redactInventoryRecord({
+        ...item,
+        inventory_type: normalizeText(item?.inventory_type, 40).toLowerCase()
+            || typeById.get(normalizeText(item?.id, 160))
+            || 'standard'
+    }));
 }
 
 async function resolveMissingOrderIds(supabase, items = []) {
@@ -108,7 +149,8 @@ module.exports = async function adminShopInventoryHandler(req, res) {
             });
         }
 
-        const items = await resolveMissingOrderIds(supabase, data.items);
+        const redactedItems = await redactInventoryListItems(supabase, data.items);
+        const items = await resolveMissingOrderIds(supabase, redactedItems);
 
         return sendJson(res, 200, {
             success: true,

@@ -1,5 +1,9 @@
 const crypto = require('node:crypto');
 const {
+    decryptCdk,
+    isCdkInventoryType
+} = require('../../../api/_lib/shop-cdk-secrets');
+const {
     buildDiscountLifecycleSummary
 } = require('../admin/discounts/_shared');
 const {
@@ -941,27 +945,84 @@ function createShopHandlers({
         };
     }
 
-    async function loadAvailableShopInventoryStockByProduct(dataSupabase, productIds = []) {
+    async function loadAvailableShopInventoryStockByProduct(dataSupabase, productIds = [], currentSite = 'cn') {
         const normalizedProductIds = [...new Set(
             (Array.isArray(productIds) ? productIds : [])
                 .map((productId) => normalizeText(productId, 160))
                 .filter(Boolean)
         )];
+        const normalizedSite = normalizePublicShopSalesSite(currentSite);
         if (!normalizedProductIds.length || !dataSupabase?.from) {
             return new Map();
         }
 
         try {
-            const { data, error } = await dataSupabase
+            let inventoryResponse = await dataSupabase
                 .from('shop_inventory')
-                .select('product_id, sku_id, status')
+                .select('id, product_id, sku_id, status, inventory_type')
                 .in('product_id', normalizedProductIds)
                 .eq('status', 'available');
 
+            // Keep the public catalog compatible while the CDK migration is
+            // being rolled out. Existing rows are standard inventory, whereas
+            // a CDK row is counted only after its protected secret is found.
+            if (inventoryResponse?.error && isMissingColumnError(inventoryResponse.error, 'inventory_type')) {
+                inventoryResponse = await dataSupabase
+                    .from('shop_inventory')
+                    .select('id, product_id, sku_id, status')
+                    .in('product_id', normalizedProductIds)
+                    .eq('status', 'available');
+            }
+
+            const { data, error } = inventoryResponse;
+
             if (error) throw error;
 
+            const inventoryRows = Array.isArray(data) ? data : [];
+            const cdkInventoryIds = inventoryRows
+                .filter((row) => isCdkInventoryType(row?.inventory_type))
+                .map((row) => normalizeText(row?.id, 160))
+                .filter(Boolean);
+            let siteScopedCdkInventoryIds = new Set();
+
+            if (cdkInventoryIds.length && typeof dataSupabase.from === 'function') {
+                try {
+                    const { data: secretRows, error: secretError } = await dataSupabase
+                        .from('shop_cdk_secrets')
+                        .select('inventory_id, site')
+                        .in('inventory_id', cdkInventoryIds)
+                        .eq('site', normalizedSite);
+
+                    if (secretError) {
+                        if (!isMissingRelationError(secretError, 'shop_cdk_secrets')
+                            && !isMissingColumnError(secretError, 'site')) {
+                            throw secretError;
+                        }
+                    } else {
+                        siteScopedCdkInventoryIds = new Set(
+                            (Array.isArray(secretRows) ? secretRows : [])
+                                .map((row) => normalizeText(row?.inventory_id, 160))
+                                .filter(Boolean)
+                        );
+                    }
+                } catch (error) {
+                    if (!isMissingRelationError(error, 'shop_cdk_secrets')
+                        && !isMissingColumnError(error, 'site')) {
+                        throw error;
+                    }
+                    // A not-yet-deployed CDK table must never make standard
+                    // inventory disappear or make an unverified CDK row look
+                    // available. The latter therefore remains excluded.
+                }
+            }
+
             const stockByProductId = new Map();
-            (Array.isArray(data) ? data : []).forEach((row) => {
+            inventoryRows.forEach((row) => {
+                const inventoryType = String(row?.inventory_type || 'standard').trim().toLowerCase() || 'standard';
+                if (isCdkInventoryType(inventoryType)
+                    && !siteScopedCdkInventoryIds.has(normalizeText(row?.id, 160))) {
+                    return;
+                }
                 const productId = normalizeText(row?.product_id, 160);
                 if (!productId) return;
                 if (!stockByProductId.has(productId)) {
@@ -1268,7 +1329,8 @@ function createShopHandlers({
                 const productsWithSkus = await attachPublicShopProductSkus(dataSupabase, Array.isArray(data) ? data : []);
                 const stockByProductId = await loadAvailableShopInventoryStockByProduct(
                     dataSupabase,
-                    productsWithSkus.map((product) => product?.id)
+                    productsWithSkus.map((product) => product?.id),
+                    currentSite
                 );
                 const products = productsWithSkus.map((product) => {
                     const productId = normalizeText(product?.id, 160);
@@ -3287,11 +3349,22 @@ function createShopHandlers({
         )];
 
         const inventoryContentMap = new Map();
+        const inventoryTypeMap = new Map();
+        const cdkInventoryIds = [];
         if (inventoryIds.length) {
-            const { data: inventoryRows, error: inventoryError } = await dataSupabase
+            let inventoryResponse = await dataSupabase
                 .from('shop_inventory')
-                .select('id, content')
+                .select('id, content, inventory_type')
                 .in('id', inventoryIds);
+
+            if (inventoryResponse?.error && isMissingColumnError(inventoryResponse.error, 'inventory_type')) {
+                inventoryResponse = await dataSupabase
+                    .from('shop_inventory')
+                    .select('id, content')
+                    .in('id', inventoryIds);
+            }
+
+            const { data: inventoryRows, error: inventoryError } = inventoryResponse;
 
             if (inventoryError) {
                 throw inventoryError;
@@ -3300,7 +3373,68 @@ function createShopHandlers({
             for (const row of inventoryRows || []) {
                 const inventoryId = String(row?.id || '').trim();
                 if (!inventoryId) continue;
-                inventoryContentMap.set(inventoryId, String(row?.content || ''));
+                const inventoryType = String(row?.inventory_type || 'standard').trim().toLowerCase() || 'standard';
+                inventoryTypeMap.set(inventoryId, inventoryType);
+                if (isCdkInventoryType(inventoryType)) {
+                    cdkInventoryIds.push(inventoryId);
+                    // CDK plaintext is never read from shop_inventory.content.
+                    inventoryContentMap.set(inventoryId, '');
+                } else {
+                    inventoryContentMap.set(inventoryId, String(row?.content || ''));
+                }
+            }
+        }
+
+        const cdkDeliveryMap = new Map();
+        if (cdkInventoryIds.length) {
+            if (!dataSupabase || typeof dataSupabase.rpc !== 'function') {
+                const error = new Error('CDK 交付服务暂不可用，请联系客服处理');
+                error.statusCode = 503;
+                error.code = 'shop_cdk_delivery_unavailable';
+                throw error;
+            }
+
+            const { data: deliveryData, error: deliveryError } = await dataSupabase.rpc(
+                'fn_get_shop_cdk_delivery',
+                {
+                    p_order_id: normalizedOrderId,
+                    p_user_id: normalizedUserId,
+                    p_site: site
+                }
+            );
+            if (deliveryError) {
+                const error = new Error('CDK 交付服务暂不可用，请联系客服处理');
+                error.statusCode = 503;
+                error.code = 'shop_cdk_delivery_unavailable';
+                error.cause = deliveryError;
+                throw error;
+            }
+
+            const deliveryPayload = Array.isArray(deliveryData) ? deliveryData[0] : deliveryData;
+            if (!deliveryPayload || deliveryPayload.success !== true) {
+                const error = new Error(deliveryPayload?.message || 'CDK 订单绑定校验失败，请联系客服处理');
+                error.statusCode = 409;
+                error.code = deliveryPayload?.code || 'shop_cdk_delivery_rejected';
+                throw error;
+            }
+
+            for (const secret of Array.isArray(deliveryPayload.items) ? deliveryPayload.items : []) {
+                const inventoryId = String(secret?.inventory_id || '').trim();
+                if (!inventoryId || !cdkInventoryIds.includes(inventoryId)) {
+                    continue;
+                }
+                const plaintext = decryptCdk(secret, {
+                    inventoryId,
+                    site
+                });
+                cdkDeliveryMap.set(inventoryId, plaintext);
+            }
+
+            if (cdkDeliveryMap.size !== cdkInventoryIds.length) {
+                const error = new Error('CDK 交付记录不完整，请联系客服处理');
+                error.statusCode = 409;
+                error.code = 'shop_cdk_delivery_incomplete';
+                throw error;
             }
         }
 
@@ -3315,8 +3449,14 @@ function createShopHandlers({
                     inventory_id: inventoryId || null,
                     name: item?.snapshot_product_name || order?.snapshot_product_name || '未知商品',
                     content: inventoryId
-                        ? (inventoryContentMap.get(inventoryId) || '')
+                        ? (isCdkInventoryType(inventoryTypeMap.get(inventoryId))
+                            ? (cdkDeliveryMap.get(inventoryId) || '')
+                            : (inventoryContentMap.get(inventoryId) || ''))
                         : '',
+                    inventory_type: inventoryTypeMap.get(inventoryId) || 'standard',
+                    delivery_mode: isCdkInventoryType(inventoryTypeMap.get(inventoryId))
+                        ? 'kc_pay_gpt_cdk'
+                        : 'standard',
                     price: Number(item?.price_paid || 0) || 0
                 };
             })
@@ -3324,7 +3464,13 @@ function createShopHandlers({
                 id: null,
                 inventory_id: String(order?.inventory_id || '').trim() || null,
                 name: order?.snapshot_product_name || '未知商品',
-                content: inventoryContentMap.get(String(order?.inventory_id || '').trim()) || '',
+                content: isCdkInventoryType(inventoryTypeMap.get(String(order?.inventory_id || '').trim()))
+                    ? (cdkDeliveryMap.get(String(order?.inventory_id || '').trim()) || '')
+                    : (inventoryContentMap.get(String(order?.inventory_id || '').trim()) || ''),
+                inventory_type: inventoryTypeMap.get(String(order?.inventory_id || '').trim()) || 'standard',
+                delivery_mode: isCdkInventoryType(inventoryTypeMap.get(String(order?.inventory_id || '').trim()))
+                    ? 'kc_pay_gpt_cdk'
+                    : 'standard',
                 price: Number(order?.price_paid || 0) || 0
             }];
 

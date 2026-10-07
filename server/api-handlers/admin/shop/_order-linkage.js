@@ -10,22 +10,71 @@ function uniqueNormalized(values = [], maxLength = 200) {
     )];
 }
 
-async function loadInventoryRecordsByIds(supabase, inventoryIds = [], columns = 'id, content, status, buyer_id, sold_at, remark, product_id, sku_id, source_batch_id, purchase_unit_cost, purchase_currency, purchase_exchange_rate_to_cny, purchase_unit_cost_cny') {
+
+function isCdkInventoryRecord(record = {}) {
+    return String(record?.inventory_type || '').trim().toLowerCase() === 'kc_pay_gpt_cdk';
+}
+
+function redactInventoryRecord(record = {}) {
+    if (!record || typeof record !== 'object') {
+        return record;
+    }
+    if (!isCdkInventoryRecord(record)) {
+        return record;
+    }
+    return {
+        ...record,
+        content: ''
+    };
+}
+
+function isMissingColumnError(error, columnName = '') {
+    const normalizedMessage = String(error?.message || '').trim().toLowerCase();
+    const normalizedColumn = String(columnName || '').trim().toLowerCase();
+    if (!normalizedMessage || !normalizedColumn) return false;
+    return normalizedMessage.includes(normalizedColumn)
+        && (
+            normalizedMessage.includes('does not exist')
+            || normalizedMessage.includes('not exist')
+            || normalizedMessage.includes('undefined column')
+            || normalizedMessage.includes('schema cache')
+        );
+}
+
+function removeSelectColumn(columns = '', columnName = '') {
+    const normalizedColumn = String(columnName || '').trim().toLowerCase();
+    return String(columns || '')
+        .split(',')
+        .map((column) => column.trim())
+        .filter((column) => column && column.toLowerCase() !== normalizedColumn)
+        .join(', ');
+}
+
+async function loadInventoryRecordsByIds(supabase, inventoryIds = [], columns = 'id, content, inventory_type, status, buyer_id, sold_at, remark, product_id, sku_id, source_batch_id, purchase_unit_cost, purchase_currency, purchase_exchange_rate_to_cny, purchase_unit_cost_cny') {
     const ids = uniqueNormalized(inventoryIds, 160);
     if (!ids.length) {
         return new Map();
     }
 
-    const { data, error } = await supabase
+    let response = await supabase
         .from('shop_inventory')
         .select(columns)
         .in('id', ids);
+
+    if (response?.error && isMissingColumnError(response.error, 'inventory_type')) {
+        response = await supabase
+            .from('shop_inventory')
+            .select(removeSelectColumn(columns, 'inventory_type'))
+            .in('id', ids);
+    }
+
+    const { data, error } = response;
 
     if (error) {
         throw error;
     }
 
-    return new Map((Array.isArray(data) ? data : []).map((row) => [normalizeText(row?.id, 160), row]));
+    return new Map((Array.isArray(data) ? data : []).map((row) => [normalizeText(row?.id, 160), redactInventoryRecord(row)]));
 }
 
 async function loadOrderItemsByOrderIds(supabase, orderIds = []) {
@@ -79,7 +128,8 @@ function buildLinkedInventoryItems(order = {}, orderItems = [], inventoryRecords
                 order_item_id: normalizeText(item?.id, 160) || null,
                 product_name: normalizeText(item?.snapshot_product_name) || orderProductName,
                 price_paid: Number(item?.price_paid || 0) || 0,
-                content: inventoryRecord?.content || '',
+                content: isCdkInventoryRecord(inventoryRecord) ? '' : (inventoryRecord?.content || ''),
+                inventory_type: inventoryRecord?.inventory_type || 'standard',
                 status: inventoryRecord?.status || null,
                 buyer_id: inventoryRecord?.buyer_id || null,
                 sold_at: inventoryRecord?.sold_at || null,
@@ -105,7 +155,8 @@ function buildLinkedInventoryItems(order = {}, orderItems = [], inventoryRecords
         order_item_id: null,
         product_name: orderProductName,
         price_paid: Number(order?.price_paid || order?.total_price || 0) || 0,
-        content: inventoryRecord?.content || '',
+        content: isCdkInventoryRecord(inventoryRecord) ? '' : (inventoryRecord?.content || ''),
+        inventory_type: inventoryRecord?.inventory_type || 'standard',
         status: inventoryRecord?.status || null,
         buyer_id: inventoryRecord?.buyer_id || null,
         sold_at: inventoryRecord?.sold_at || null,
@@ -224,5 +275,8 @@ module.exports = {
     buildLinkedInventoryItems,
     buildResolvedItems,
     loadOrderLinksByInventoryIds,
-    resolveOrderLinkageSource
+    resolveOrderLinkageSource,
+    isCdkInventoryRecord,
+    redactInventoryRecord,
+    isMissingColumnError
 };
