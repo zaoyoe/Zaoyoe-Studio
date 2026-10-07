@@ -305,6 +305,7 @@ test('vercel recovery readiness functions include non-runtime audit assets', () 
 
     assert.equal(config.outputDirectory, '.vercel-static');
     assert.match(vercelIgnore, /!server\/api-handlers\/\*\*/);
+    assert.match(vercelIgnore, /!server\/integrations\/\*\*/);
     assert.match(vercelIgnore, /!scripts\/\*\.js/);
     assert.match(vercelIgnore, /!docs\/\*\.md/);
     assert.match(vercelIgnore, /!supabase\/migrations\/\*\.sql/);
