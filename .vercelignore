@@ -159,6 +159,11 @@ server/*
 !server/prompt-video-poster.js
 !server/api-handlers/
 !server/api-handlers/**
+
+# Supplier adapters are runtime dependencies of /api/admin. Keep the provider
+# registry and adapters in the serverless function bundle as well.
+!server/integrations/
+!server/integrations/**
 !supabase/
 supabase/*
 !supabase/migrations/
