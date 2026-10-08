@@ -565,6 +565,10 @@ function normalizeHomepageVerifyProductLabel(value) {
   return legacyLabels.has(text) ? 'Gemini Pro' : text;
 }
 
+function getHomepageSiteGongyiOrigin() {
+  return window.SiteConfig?.getGongyiOrigin?.() || (window.SiteConfig?.site === 'intl' ? 'https://new.zaoyoe.xyz' : 'https://new.fatherkey.com');
+}
+
 function normalizeHomepageGongyiUrl(value) {
   const normalized = String(value || '').trim();
   if (!normalized) {
@@ -576,10 +580,15 @@ function normalizeHomepageGongyiUrl(value) {
     const hostname = parsed.hostname.toLowerCase();
     if (hostname === 'sub2api.fatherkey.com' || hostname === 'gongyi.zaoyoe.com' || hostname === 'www.gongyi.zaoyoe.com') {
       const path = parsed.pathname === '/' ? '' : parsed.pathname;
-      return `https://new.fatherkey.com${path}${parsed.search}${parsed.hash}`;
+      return `${getHomepageSiteGongyiOrigin()}${path}${parsed.search}${parsed.hash}`;
     }
   } catch (error) {
     // Keep non-absolute URLs unchanged.
+  }
+
+  if (/^https:\/\/new\.fatherkey\.com(?:\/|$)/i.test(normalized)) {
+    const parsed = new URL(normalized);
+    return `${getHomepageSiteGongyiOrigin()}${parsed.pathname === '/' ? '' : parsed.pathname}${parsed.search}${parsed.hash}`;
   }
 
   return normalized;
@@ -3686,7 +3695,7 @@ const FramerHome = {
         zh: '进入控制台',
         en: 'Open Console'
       }),
-      ctaLink: normalizeHomepageGongyiUrl(String(config.cta_link || '').trim() || 'https://new.fatherkey.com'),
+      ctaLink: normalizeHomepageGongyiUrl(String(config.cta_link || '').trim() || getHomepageSiteGongyiOrigin()),
       highlights: resolveHomepageLocalizedTextList(config.highlight_items, defaultHighlights),
       featureCards: defaultCards.map((card, index) => {
         const baseKey = `feature_${index + 1}`;
@@ -4170,7 +4179,7 @@ const FramerHome = {
       hero: { enable_auto: true },
       prompts: { enable_auto: true, max_items: 24, sort: 'popular', section_title: '提示词', section_subtitle: '让创作更高效，让灵感更自由' },
       shop: { enable_auto: true, max_items: 8, section_title: '资源商城', section_subtitle: '优质资源，助力成长' },
-      gongyi: { enable_auto: false, section_tag: 'API中转', brand_name: '核心秘钥', brand_name_en: 'Father Key', brand_subtitle: 'Subscription to API Conversion Platform', cta_text: '进入控制台', cta_link: 'https://new.fatherkey.com' },
+      gongyi: { enable_auto: false, section_tag: 'API中转', brand_name: '核心秘钥', brand_name_en: 'Father Key', brand_subtitle: 'Subscription to API Conversion Platform', cta_text: '进入控制台', cta_link: getHomepageSiteGongyiOrigin() },
       verify: { enable_auto: true, section_title: 'Gemini Pro', section_subtitle: '快速验证您的 API 密钥' },
       guestbook: { enable_auto: true, max_items: 6, section_title: '留言板', section_subtitle: '用户的声音' },
       ticker: { enable_auto: true, speed: 30 }
@@ -5416,7 +5425,7 @@ const FramerHome = {
             <h2 class="gongyi-brand">${escapeHomeHtml(data.brandName || 'Zaoyoe')}</h2>
             <p class="gongyi-brand-subtitle">${escapeHomeHtml(data.brandSubtitle || fallbackBrandSubtitle)}</p>
             <div class="gongyi-actions">
-              <a href="${escapeHomeHtml(data.ctaLink || 'https://new.fatherkey.com')}" class="btn btn-primary gongyi-cta" data-home-gongyi-cta="1" target="_blank" rel="noopener noreferrer">
+              <a href="${escapeHomeHtml(data.ctaLink || getHomepageSiteGongyiOrigin())}" class="btn btn-primary gongyi-cta" data-home-gongyi-cta="1" target="_blank" rel="noopener noreferrer">
                 ${escapeHomeHtml(data.ctaText || fallbackCtaText)}
               </a>
             </div>
