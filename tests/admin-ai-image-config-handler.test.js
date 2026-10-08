@@ -393,7 +393,7 @@ test('admin ai image config lists agents and pricing for selected site plus glob
                 id: 'api-base-intl',
                 site: 'intl',
                 label: 'Zaoyoe Sub2API',
-                base_url: 'https://sub2api.zaoyoe.xyz/v1',
+                base_url: 'https://new.zaoyoe.xyz/v1',
                 is_active: true,
                 display_order: 30,
                 metadata: {}

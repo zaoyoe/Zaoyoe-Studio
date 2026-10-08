@@ -359,11 +359,11 @@ test('vercel public redirects send gongyi and status entry paths to dedicated su
     assert.equal(gongyiHtmlRedirect.permanent, false);
 
     assert.ok(intlGongyiRedirect, 'vercel.json should keep the intl /gongyi route on the intl relay subdomain');
-    assert.equal(intlGongyiRedirect.destination, 'https://sub2api.zaoyoe.xyz');
+    assert.equal(intlGongyiRedirect.destination, 'https://new.zaoyoe.xyz');
     assert.equal(intlGongyiRedirect.permanent, false);
 
     assert.ok(intlGongyiHtmlRedirect, 'vercel.json should keep the intl /gongyi.html route on the intl relay subdomain');
-    assert.equal(intlGongyiHtmlRedirect.destination, 'https://sub2api.zaoyoe.xyz');
+    assert.equal(intlGongyiHtmlRedirect.destination, 'https://new.zaoyoe.xyz');
     assert.equal(intlGongyiHtmlRedirect.permanent, false);
 
     assert.ok(statusRedirect, 'vercel.json should redirect /status to the dedicated status subdomain');

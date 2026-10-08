@@ -77,17 +77,17 @@
             navDesktop: [
                 'a[href="https://new.fatherkey.com"]',
                 'a[href="https://sub2api.fatherkey.com"]',
-                'a[href="https://sub2api.zaoyoe.xyz"]'
+                'a[href="https://new.zaoyoe.xyz"]'
             ],
             navMobile: [
                 'a.mobile-menu-link[href="https://new.fatherkey.com"]',
                 'a.mobile-menu-link[href="https://sub2api.fatherkey.com"]',
-                'a.mobile-menu-link[href="https://sub2api.zaoyoe.xyz"]'
+                'a.mobile-menu-link[href="https://new.zaoyoe.xyz"]'
             ],
             footer: [
                 'a[href="https://new.fatherkey.com"]',
                 'a[href="https://sub2api.fatherkey.com"]',
-                'a[href="https://sub2api.zaoyoe.xyz"]'
+                'a[href="https://new.zaoyoe.xyz"]'
             ]
         },
         verify: {

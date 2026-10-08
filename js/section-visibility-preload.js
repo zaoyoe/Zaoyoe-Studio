@@ -67,26 +67,26 @@
             navDesktop: Object.freeze([
                 '.nav-menu a[href="https://new.fatherkey.com"]',
                 '.nav-menu a[href="https://sub2api.fatherkey.com"]',
-                '.nav-menu a[href="https://sub2api.zaoyoe.xyz"]',
+                '.nav-menu a[href="https://new.zaoyoe.xyz"]',
                 '.nav-container a[href="https://new.fatherkey.com"]',
                 '.nav-container a[href="https://sub2api.fatherkey.com"]',
-                '.nav-container a[href="https://sub2api.zaoyoe.xyz"]'
+                '.nav-container a[href="https://new.zaoyoe.xyz"]'
             ]),
             navMobile: Object.freeze([
                 '.mobile-menu-items a.mobile-menu-link[href="https://new.fatherkey.com"]',
                 '.mobile-menu-items a.mobile-menu-link[href="https://sub2api.fatherkey.com"]',
-                '.mobile-menu-items a.mobile-menu-link[href="https://sub2api.zaoyoe.xyz"]',
+                '.mobile-menu-items a.mobile-menu-link[href="https://new.zaoyoe.xyz"]',
                 '.mobile-menu-item a.mobile-menu-link[href="https://new.fatherkey.com"]',
                 '.mobile-menu-item a.mobile-menu-link[href="https://sub2api.fatherkey.com"]',
-                '.mobile-menu-item a.mobile-menu-link[href="https://sub2api.zaoyoe.xyz"]'
+                '.mobile-menu-item a.mobile-menu-link[href="https://new.zaoyoe.xyz"]'
             ]),
             footer: Object.freeze([
                 'footer a[href="https://new.fatherkey.com"]',
                 'footer a[href="https://sub2api.fatherkey.com"]',
-                'footer a[href="https://sub2api.zaoyoe.xyz"]',
+                'footer a[href="https://new.zaoyoe.xyz"]',
                 '.framer-footer a[href="https://new.fatherkey.com"]',
                 '.framer-footer a[href="https://sub2api.fatherkey.com"]',
-                '.framer-footer a[href="https://sub2api.zaoyoe.xyz"]'
+                '.framer-footer a[href="https://new.zaoyoe.xyz"]'
             ])
         }),
         verify: Object.freeze({

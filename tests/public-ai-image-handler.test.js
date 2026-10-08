@@ -182,7 +182,7 @@ function createDefaultApiBaseUrls() {
             id: 'api-base-default-intl',
             site: 'intl',
             label: 'Zaoyoe Sub2API',
-            base_url: 'https://sub2api.zaoyoe.xyz/v1',
+            base_url: 'https://new.zaoyoe.xyz/v1',
             is_active: true,
             display_order: 20,
             metadata: {}
@@ -597,13 +597,13 @@ test('reverse prompt defaults to text vision model and chat model group', () => 
 test('ai image allowed API base URLs come from admin-controlled env', () => {
     assert.deepEqual(
         resolveAllowedApiBaseUrls({}),
-        ['https://new.fatherkey.com/v1', 'https://sub2api.zaoyoe.xyz/v1']
+        ['https://new.fatherkey.com/v1', 'https://new.zaoyoe.xyz/v1']
     );
     assert.deepEqual(
         resolveAllowedApiBaseUrls({
-            AI_IMAGE_ALLOWED_API_BASE_URLS: 'https://sub2api.fatherkey.com/v1, https://sub2api.zaoyoe.xyz/v1/'
+            AI_IMAGE_ALLOWED_API_BASE_URLS: 'https://sub2api.fatherkey.com/v1, https://new.zaoyoe.xyz/v1/'
         }),
-        ['https://sub2api.fatherkey.com/v1', 'https://sub2api.zaoyoe.xyz/v1']
+        ['https://sub2api.fatherkey.com/v1', 'https://new.zaoyoe.xyz/v1']
     );
 });
 
@@ -612,7 +612,7 @@ test('NewAPI pricing aliases never opt into legacy Sub2API usage lookup', () => 
         'https://new.fatherkey.com/v1',
         'https://sub2api.fatherkey.com/v1',
         'https://sub2api.zaoyoe.com/v1',
-        'https://sub2api.zaoyoe.xyz/v1'
+        'https://new.zaoyoe.xyz/v1'
     ].forEach((baseUrl) => {
         assert.equal(isNewApiGatewayBaseUrl(baseUrl), true);
         assert.equal(supportsLegacySub2ApiUsageLookup(baseUrl), false);
@@ -890,7 +890,7 @@ test('ai image model prices publicly proxy effective Sub2API quotes without expo
                             isActive: true,
                             providerId: 'failed-provider',
                             label: 'Sub2API Backup',
-                            baseUrl: 'https://sub2api.zaoyoe.xyz/v1',
+                            baseUrl: 'https://new.zaoyoe.xyz/v1',
                             apiKey: failedProviderKey,
                             modelGroup: 'chat',
                             chatModels: ['claude-sonnet-4']
@@ -2781,7 +2781,7 @@ test('points chat stream settles NewAPI from its X-OneAPI request log', async ()
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-newapi-stream-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.zaoyoe.xyz/v1',
+            AI_IMAGE_API_BASE_URL: 'https://new.zaoyoe.xyz/v1',
             AI_IMAGE_CHAT_MODEL: 'MiniMax-M3',
             AI_IMAGE_NEWAPI_BILLING_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_NEWAPI_BILLING_LOOKUP_INTERVAL_MS: '0'
@@ -2891,7 +2891,7 @@ test('points chat stream keeps an unresolved NewAPI request pending for exact li
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-newapi-stream-pending-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.zaoyoe.xyz/v1',
+            AI_IMAGE_API_BASE_URL: 'https://new.zaoyoe.xyz/v1',
             AI_IMAGE_CHAT_MODEL: 'MiniMax-M3',
             AI_WORKBENCH_BILLING_V2_ENABLED: 'true',
             AI_IMAGE_NEWAPI_BILLING_LOOKUP_ATTEMPTS: '1',
@@ -5852,7 +5852,7 @@ test('task list reconciles completed NewAPI token usage from its exact request l
 });
 
 test('task list settles every tracked NewAPI request and never settles an untracked sibling', async () => {
-    const providerBaseUrl = 'https://sub2api.zaoyoe.xyz/v1';
+    const providerBaseUrl = 'https://new.zaoyoe.xyz/v1';
     const makeTask = (id, records) => ({
         id,
         site: 'cn',
@@ -5968,10 +5968,10 @@ test('task list settles every tracked NewAPI request and never settles an untrac
     assert.equal(untrackedTask.metadata.sub2api_billing_sync.status, 'missing_request_id');
     assert.equal(settlementCalls.length, 1);
     assert.equal(settlementCalls[0].args.p_amount, 0.001);
-    assert.equal(requests.filter((url) => url === 'https://sub2api.zaoyoe.xyz/api/log/token').length, 1);
+    assert.equal(requests.filter((url) => url === 'https://new.zaoyoe.xyz/api/log/token').length, 1);
     assert.equal(requests.every((url) => [
-        'https://sub2api.zaoyoe.xyz/api/log/token',
-        'https://sub2api.zaoyoe.xyz/api/status'
+        'https://new.zaoyoe.xyz/api/log/token',
+        'https://new.zaoyoe.xyz/api/status'
     ].includes(url)), true);
 });
 

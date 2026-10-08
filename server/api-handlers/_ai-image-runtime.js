@@ -147,7 +147,7 @@ function isNewApiBillingBaseUrl(value = '') {
             'new.fatherkey.com',
             'sub2api.fatherkey.com',
             'sub2api.zaoyoe.com',
-            'sub2api.zaoyoe.xyz'
+            'new.zaoyoe.xyz'
         ].includes(host);
     } catch (_) {
         return false;

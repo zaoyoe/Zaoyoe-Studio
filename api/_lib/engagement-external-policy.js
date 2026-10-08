@@ -7,7 +7,7 @@ const LEGACY_FATHERKEY_API_ORIGIN = 'https://sub2api.fatherkey.com';
 const DEFAULT_EXTERNAL_EMBED_ORIGINS = Object.freeze([
     CANONICAL_FATHERKEY_API_ORIGIN,
     LEGACY_FATHERKEY_API_ORIGIN,
-    'https://sub2api.zaoyoe.xyz',
+    'https://new.zaoyoe.xyz',
     'https://zaoyoe.com',
     'https://www.zaoyoe.com',
     'https://zaoyoe.xyz',
@@ -126,7 +126,7 @@ function buildExternalEmbedSnippet(policy = {}) {
 
 function buildExternalEmbedDiagnostics(policy = {}) {
     const normalized = normalizeExternalEmbedPolicy(policy);
-    const gongyiOrigins = [CANONICAL_FATHERKEY_API_ORIGIN, 'https://sub2api.zaoyoe.xyz'];
+    const gongyiOrigins = [CANONICAL_FATHERKEY_API_ORIGIN, 'https://new.zaoyoe.xyz'];
     const hasGongyiOrigin = gongyiOrigins.every((origin) => normalized.allowed_origins.includes(origin));
     return {
         status: normalized.enabled && hasGongyiOrigin ? 'ready' : 'attention',
@@ -153,7 +153,7 @@ function buildExternalEmbedDiagnostics(policy = {}) {
                 id: 'gongyi_origin',
                 label: 'API中转白名单',
                 status: hasGongyiOrigin ? 'ok' : 'warning',
-                detail: hasGongyiOrigin ? 'API中转域名已在 CORS 白名单内' : '需要加入 new.fatherkey.com / sub2api.zaoyoe.xyz'
+                detail: hasGongyiOrigin ? 'API中转域名已在 CORS 白名单内' : '需要加入 new.fatherkey.com / new.zaoyoe.xyz'
             },
             {
                 id: 'asset_base',

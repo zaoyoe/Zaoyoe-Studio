@@ -35,7 +35,7 @@
     });
     const GONGYI_ORIGINS = Object.freeze({
         cn: 'https://new.fatherkey.com',
-        intl: 'https://sub2api.zaoyoe.xyz'
+        intl: 'https://new.zaoyoe.xyz'
     });
     const DEFAULT_FOOTER_CONTACTS = Object.freeze({
         support_url: 'https://afdian.com/a/zaoyoe',

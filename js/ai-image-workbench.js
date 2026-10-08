@@ -47,7 +47,7 @@
     const REMOTE_RECORDS_FAST_POLL_FAST_ROUNDS = 6;
     const DEFAULT_API_BASE_PROFILES = Object.freeze([
         { id: 'fatherkey', label: 'FatherKey', baseUrl: 'https://new.fatherkey.com/v1' },
-        { id: 'zaoyoe', label: 'Zaoyoe', baseUrl: 'https://sub2api.zaoyoe.xyz/v1' }
+        { id: 'zaoyoe', label: 'Zaoyoe', baseUrl: 'https://new.zaoyoe.xyz/v1' }
     ]);
     let runtimeApiBaseProfiles = DEFAULT_API_BASE_PROFILES.slice();
 

@@ -87,7 +87,7 @@ test('public engagement API allows controlled CORS for external gongyi host', ()
 
 test('external engagement policy builds deployable snippets and diagnostics', () => {
     const policy = externalPolicy.normalizeExternalEmbedPolicy({
-        allowed_origins: 'https://sub2api.fatherkey.com\nhttps://sub2api.zaoyoe.xyz\nhttps://custom.example.com',
+        allowed_origins: 'https://sub2api.fatherkey.com\nhttps://new.zaoyoe.xyz\nhttps://custom.example.com',
         api_origin: 'https://www.fatherkey.com/api/../',
         asset_base: 'https://cdn.fatherkey.com/assets',
         default_page_id: 'gongyi',
@@ -98,7 +98,7 @@ test('external engagement policy builds deployable snippets and diagnostics', ()
     assert.deepEqual(policy.allowed_origins, [
         'https://new.fatherkey.com',
         'https://sub2api.fatherkey.com',
-        'https://sub2api.zaoyoe.xyz',
+        'https://new.zaoyoe.xyz',
         'https://custom.example.com'
     ]);
     assert.equal(policy.api_origin, 'https://www.fatherkey.com');
