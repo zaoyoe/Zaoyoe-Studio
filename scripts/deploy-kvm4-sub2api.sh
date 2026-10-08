@@ -772,12 +772,21 @@ if [[ "$maintenance_status" != "403" ]]; then
   rollback
   die "temporary Sub2API maintenance ingress did not reject direct origin traffic with HTTP 403"
 fi
-maintenance_edge_status="$(curl -sS --max-time 20 -H 'Cache-Control: no-cache' \
-  -o /dev/null -w '%{http_code}' \
-  "https://new.fatherkey.com/health?maintenance=$RELEASE_ID" || true)"
-maintenance_intl_edge_status="$(curl -sS --max-time 20 -H 'Cache-Control: no-cache' \
-  -o /dev/null -w '%{http_code}' \
-  "https://new.zaoyoe.xyz/health?maintenance=$RELEASE_ID" || true)"
+maintenance_edge_status=""
+maintenance_intl_edge_status=""
+for attempt in 1 2 3 4 5 6; do
+  maintenance_edge_status="$(curl -sS --max-time 20 -H 'Cache-Control: no-cache' \
+    -o /dev/null -w '%{http_code}' \
+    "https://new.fatherkey.com/health?maintenance=$RELEASE_ID&attempt=$attempt" || true)"
+  maintenance_intl_edge_status="$(curl -sS --max-time 20 -H 'Cache-Control: no-cache' \
+    -o /dev/null -w '%{http_code}' \
+    "https://new.zaoyoe.xyz/health?maintenance=$RELEASE_ID&attempt=$attempt" || true)"
+  if [[ "$maintenance_edge_status" == "503" && "$maintenance_intl_edge_status" == "503" ]]; then
+    break
+  fi
+  echo "Waiting for both Cloudflare domains to observe the temporary maintenance ingress (attempt $attempt/6; domestic=$maintenance_edge_status international=$maintenance_intl_edge_status)" >&2
+  sleep 5
+done
 if [[ "$maintenance_edge_status" != "503" || "$maintenance_intl_edge_status" != "503" ]]; then
   rollback
   die "temporary Sub2API maintenance ingress did not return HTTP 503 through both Cloudflare domains"
