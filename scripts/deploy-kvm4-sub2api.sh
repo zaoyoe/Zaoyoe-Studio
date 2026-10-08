@@ -775,9 +775,12 @@ fi
 maintenance_edge_status="$(curl -sS --max-time 20 -H 'Cache-Control: no-cache' \
   -o /dev/null -w '%{http_code}' \
   "https://new.fatherkey.com/health?maintenance=$RELEASE_ID" || true)"
-if [[ "$maintenance_edge_status" != "503" ]]; then
+maintenance_intl_edge_status="$(curl -sS --max-time 20 -H 'Cache-Control: no-cache' \
+  -o /dev/null -w '%{http_code}' \
+  "https://new.zaoyoe.xyz/health?maintenance=$RELEASE_ID" || true)"
+if [[ "$maintenance_edge_status" != "503" || "$maintenance_intl_edge_status" != "503" ]]; then
   rollback
-  die "temporary Sub2API maintenance ingress did not return HTTP 503 through Cloudflare"
+  die "temporary Sub2API maintenance ingress did not return HTTP 503 through both Cloudflare domains"
 fi
 
 echo "Stopping the previous public app before the NewAPI schema migration"
@@ -1060,6 +1063,12 @@ if ! jq -e '
   (.data.country_code | test("^[A-Z]{2}$"))
 ' >/dev/null <<<"$edge_region_payload"; then
   fail_after_public_open "Cloudflare did not provide an authenticated country to NewAPI"
+fi
+
+intl_health_status="$(curl -sS --max-time 20 -H 'Cache-Control: no-cache' -o /dev/null -w '%{http_code}' \
+  "https://new.zaoyoe.xyz/health?probe=$RELEASE_ID" || true)"
+if [[ "$intl_health_status" != "200" ]]; then
+  fail_after_public_open "international NewAPI domain health check failed"
 fi
 
 if ! cleanup_regional_smoke_user; then

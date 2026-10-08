@@ -16,7 +16,7 @@
     });
     const GONGYI_ORIGINS = Object.freeze({
         cn: 'https://new.fatherkey.com',
-        intl: 'https://sub2api.zaoyoe.xyz'
+        intl: 'https://new.zaoyoe.xyz'
     });
     const DEFAULT_LAYOUTS = Object.freeze({
         cn: Object.freeze({ root_page_key: 'home' }),

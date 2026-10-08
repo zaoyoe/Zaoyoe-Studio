@@ -2,7 +2,7 @@ const NEWAPI_GATEWAY_HOSTNAMES = Object.freeze(new Set([
     'new.fatherkey.com',
     'sub2api.fatherkey.com',
     'sub2api.zaoyoe.com',
-    'sub2api.zaoyoe.xyz'
+    'new.zaoyoe.xyz'
 ]));
 
 const QUOTA_PER_UNIT_CACHE_TTL_MS = 5 * 60 * 1000;

@@ -363,5 +363,5 @@ CREATE POLICY "Admins manage ai image download events"
 INSERT INTO public.ai_image_api_base_urls (site, label, base_url, display_order, metadata)
 VALUES
     ('cn', 'FatherKey Sub2API', 'https://sub2api.fatherkey.com/v1', 10, '{"source":"default"}'::jsonb),
-    ('intl', 'Zaoyoe Sub2API', 'https://sub2api.zaoyoe.xyz/v1', 20, '{"source":"default"}'::jsonb)
+    ('intl', 'Zaoyoe Sub2API', 'https://new.zaoyoe.xyz/v1', 20, '{"source":"default"}'::jsonb)
 ON CONFLICT DO NOTHING;

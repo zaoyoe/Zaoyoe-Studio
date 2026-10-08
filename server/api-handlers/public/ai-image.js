@@ -60,7 +60,7 @@ const {
 
 const DEFAULT_ALLOWED_API_BASE_URLS = Object.freeze([
     'https://new.fatherkey.com/v1',
-    'https://sub2api.zaoyoe.xyz/v1'
+    'https://new.zaoyoe.xyz/v1'
 ]);
 const LEGACY_COMPATIBLE_API_BASE_URLS = Object.freeze([
     'https://sub2api.fatherkey.com/v1'
