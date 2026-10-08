@@ -59,16 +59,32 @@ import { apiKeySchema } from '../types'
 import { useApiKeys } from './api-keys-provider'
 
 function getServerAddress(): string {
+  const browserOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+  const isInternationalSite =
+    typeof window !== 'undefined' && window.location.hostname.endsWith('.zaoyoe.xyz')
+  const expectedOrigin = isInternationalSite
+    ? 'https://new.zaoyoe.xyz'
+    : 'https://new.fatherkey.com'
+
   try {
     const raw = localStorage.getItem('status')
     if (raw) {
       const status = JSON.parse(raw)
-      if (status.server_address) return status.server_address as string
+      if (status.server_address) {
+        const configuredOrigin = String(status.server_address).replace(/\/+$/, '')
+        // The API service can retain the domestic canonical URL in its global
+        // setting. Connection info must follow the site the user is visiting.
+        if (isInternationalSite && configuredOrigin === 'https://new.fatherkey.com') {
+          return expectedOrigin
+        }
+        return configuredOrigin
+      }
     }
   } catch {
     /* empty */
   }
-  return window.location.origin
+  if (isInternationalSite) return expectedOrigin
+  return browserOrigin || expectedOrigin
 }
 
 type DataTableRowActionsProps<TData> = {
