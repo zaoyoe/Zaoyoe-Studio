@@ -198,7 +198,7 @@ function collectRepositorySourceFiles(rootDir = REPO_ROOT) {
                 // This assertion covers repository source, not ignored build output.
                 // NewAPI's web/dist is generated and can contain minified strings
                 // that resemble HTML attributes without shipping inline handlers.
-                if (['.git', '.vercel-static', 'node_modules', 'coverage', 'docs', 'tests', 'dist', 'dist-ssr', 'build'].includes(entry.name)) {
+                if (['.git', '.vercel-static', 'node_modules', 'coverage', 'docs', 'tests', 'dist', 'dist-ssr', 'build', 'services'].includes(entry.name)) {
                     continue;
                 }
                 stack.push(relativePath);
