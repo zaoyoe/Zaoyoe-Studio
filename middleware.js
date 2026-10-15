@@ -1,11 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
-import { next, rewrite } from '@vercel/functions';
+import { next } from '@vercel/functions';
 
 const ADMIN_STUDIO_PATHS = new Set(['/admin-studio', '/admin-studio.html']);
 const ROOT_ENTRY_PATHS = new Set(['/', '/index', '/index.html']);
 const INDEPENDENT_TG_ROOT_TARGETS = Object.freeze({
-    'tg.fatherkey.com': '/tg.html',
-    'tg.adm.fatherkey.com': '/tg-admin.html'
+    'tg.fatherkey.com': '/tg',
+    'tg.adm.fatherkey.com': '/tg-admin'
 });
 const INDEPENDENT_TG_HOSTS = new Set(Object.keys(INDEPENDENT_TG_ROOT_TARGETS));
 const INDEPENDENT_TG_ROOT_HEADERS = Object.freeze({
@@ -119,7 +119,7 @@ function isIndependentTgHost(requestUrl) {
     return INDEPENDENT_TG_HOSTS.has(String(requestUrl?.hostname || '').trim().toLowerCase());
 }
 
-export function buildIndependentTgRootRewriteUrl(requestUrl) {
+export function buildIndependentTgRootRedirectUrl(requestUrl) {
     const url = requestUrl instanceof URL
         ? requestUrl
         : new URL(String(requestUrl || '/'), 'https://www.fatherkey.com');
@@ -138,14 +138,15 @@ export function buildIndependentTgRootRewriteUrl(requestUrl) {
     return targetUrl;
 }
 
-function maybeHandleIndependentTgRootRewrite(requestUrl) {
-    const targetUrl = buildIndependentTgRootRewriteUrl(requestUrl);
+function maybeHandleIndependentTgRootRedirect(requestUrl) {
+    const targetUrl = buildIndependentTgRootRedirectUrl(requestUrl);
     if (!targetUrl) {
         return null;
     }
 
-    return rewrite(targetUrl, {
-        headers: INDEPENDENT_TG_ROOT_HEADERS
+    return new Response(null, {
+        status: 307,
+        headers: { ...INDEPENDENT_TG_ROOT_HEADERS, Location: targetUrl.toString() }
     });
 }
 
@@ -308,9 +309,9 @@ async function handleAdminStudioAccess(request, requestUrl) {
 export default async function middleware(request) {
     const requestUrl = new URL(request.url);
 
-    const tgRootRewrite = maybeHandleIndependentTgRootRewrite(requestUrl);
-    if (tgRootRewrite) {
-        return tgRootRewrite;
+    const tgRootRedirect = maybeHandleIndependentTgRootRedirect(requestUrl);
+    if (tgRootRedirect) {
+        return tgRootRedirect;
     }
 
     const siteLayoutRedirect = await maybeHandleSiteLayoutRootRedirect(requestUrl);

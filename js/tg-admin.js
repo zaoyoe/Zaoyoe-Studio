@@ -40,9 +40,10 @@
         if (!hasCallback) return null;
         // Remove credentials and provider errors from the address bar before any
         // network operation. This page never consumes implicit-flow tokens.
-        globalScope.history.replaceState(null, '', '/tg-admin.html');
+        const isCallbackPath = url.pathname === '/tg-admin' || url.pathname === '/tg-admin.html';
+        globalScope.history.replaceState(null, '', isCallbackPath ? url.pathname : '/tg-admin.html');
         const pending = consumePendingOAuth();
-        if (!pending || url.pathname !== '/tg-admin.html' || url.hash || url.searchParams.has('access_token') || url.searchParams.has('refresh_token')) return { error: '登录请求已过期或无效，请重新使用 Google 登录' };
+        if (!pending || !isCallbackPath || url.hash || url.searchParams.has('access_token') || url.searchParams.has('refresh_token')) return { error: '登录请求已过期或无效，请重新使用 Google 登录' };
         if (url.searchParams.has('error') || url.searchParams.has('error_code') || url.searchParams.has('error_description')) return { error: 'Google 登录未完成，请重新选择账号登录' };
         const codes = url.searchParams.getAll('code');
         if (codes.length !== 1 || !/^[A-Za-z0-9_-]{1,2048}$/.test(codes[0])) return { error: '登录请求已过期或无效，请重新使用 Google 登录' };

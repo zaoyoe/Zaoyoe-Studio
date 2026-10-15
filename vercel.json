@@ -26,6 +26,72 @@
     },
     "redirects": [
         {
+            "source": "/",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "destination": "/tg",
+            "permanent": false
+        },
+        {
+            "source": "/",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.adm.fatherkey.com"
+                }
+            ],
+            "destination": "/tg-admin",
+            "permanent": false
+        },
+        {
+            "source": "/index",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "destination": "/tg",
+            "permanent": false
+        },
+        {
+            "source": "/index.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "destination": "/tg",
+            "permanent": false
+        },
+        {
+            "source": "/index",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.adm.fatherkey.com"
+                }
+            ],
+            "destination": "/tg-admin",
+            "permanent": false
+        },
+        {
+            "source": "/index.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.adm.fatherkey.com"
+                }
+            ],
+            "destination": "/tg-admin",
+            "permanent": false
+        },
+        {
             "source": "/gongyi",
             "has": [
                 {
@@ -113,66 +179,6 @@
         }
     ],
     "rewrites": [
-        {
-            "source": "/",
-            "has": [
-                {
-                    "type": "host",
-                    "value": "tg.fatherkey.com"
-                }
-            ],
-            "destination": "/tg.html"
-        },
-        {
-            "source": "/",
-            "has": [
-                {
-                    "type": "host",
-                    "value": "tg.adm.fatherkey.com"
-                }
-            ],
-            "destination": "/tg-admin.html"
-        },
-        {
-            "source": "/index",
-            "has": [
-                {
-                    "type": "host",
-                    "value": "tg.fatherkey.com"
-                }
-            ],
-            "destination": "/tg.html"
-        },
-        {
-            "source": "/index.html",
-            "has": [
-                {
-                    "type": "host",
-                    "value": "tg.fatherkey.com"
-                }
-            ],
-            "destination": "/tg.html"
-        },
-        {
-            "source": "/index",
-            "has": [
-                {
-                    "type": "host",
-                    "value": "tg.adm.fatherkey.com"
-                }
-            ],
-            "destination": "/tg-admin.html"
-        },
-        {
-            "source": "/index.html",
-            "has": [
-                {
-                    "type": "host",
-                    "value": "tg.adm.fatherkey.com"
-                }
-            ],
-            "destination": "/tg-admin.html"
-        },
         {
             "source": "/api/admin",
             "destination": "https://verify-api.fatherkey.com/api/admin"

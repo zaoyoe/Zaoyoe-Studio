@@ -18,9 +18,11 @@ test('TG public and admin entry pages stay independent from the existing shop', 
 
 test('TG domains route their roots to separate pages', () => {
     const vercel = JSON.parse(read('vercel.json'));
-    for (const [host, destination] of [['tg.fatherkey.com', '/tg.html'], ['tg.adm.fatherkey.com', '/tg-admin.html']]) {
-        const route = vercel.rewrites.find((route) => route.source === '/' && route.has?.some((condition) => condition.type === 'host' && condition.value === host));
+    for (const [host, destination] of [['tg.fatherkey.com', '/tg'], ['tg.adm.fatherkey.com', '/tg-admin']]) {
+        const route = vercel.redirects.find((route) => route.source === '/' && route.has?.some((condition) => condition.type === 'host' && condition.value === host));
         assert.equal(route?.destination, destination);
+        assert.equal(route.permanent, false);
+        assert.ok(fs.existsSync(path.join(root, `${destination}.html`)), 'canonical redirect must resolve to an actual TG static page');
     }
 });
 

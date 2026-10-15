@@ -439,6 +439,36 @@ test('Google success without super-admin permissions cannot issue a host session
     assert.equal(businessCalls(ui).length, 0);
 });
 
+test('Google callback survives Vercel cleanUrls without changing the allowlisted redirect or PKCE marker', async () => {
+    const origin = 'https://tg.adm.fatherkey.com';
+    const redirectTo = `${origin}/tg-admin.html`;
+    const url = `${origin}/tg-admin?code=clean_url_code`;
+    const ui = page({ signedIn: false, url, pending: pendingMarker({ redirectTo }) });
+    await ui.ready();
+    assert.deepEqual(ui.history, ['/tg-admin']);
+    assert.equal(ui.window.location.href, `${origin}/tg-admin`);
+    assert.equal(ui.storage.size, 0);
+    assert.equal(ui.authCalls.filter((call) => call.action === 'exchange').length, 1);
+    assert.equal(ui.authCalls[0].code, 'clean_url_code');
+    assert.deepEqual(ui.accessCalls.map((call) => call.action), ['verify', 'issue']);
+    assert.equal(ui.get('tgAdminApp').hidden, false);
+
+    for (const options of [
+        { url },
+        { url, pending: pendingMarker({ redirectTo, createdAt: Date.now() - 600001 }) },
+        { url, pending: pendingMarker({ redirectTo: `${origin}/tg-admin` }) },
+        { url: `${url}&code=second`, pending: pendingMarker({ redirectTo }) },
+        { url: `${url}&access_token=untrusted`, pending: pendingMarker({ redirectTo }) },
+        { url: `${url}#refresh_token=untrusted`, pending: pendingMarker({ redirectTo }) }
+    ]) {
+        const rejected = page({ signedIn: false, ...options }); await rejected.ready();
+        assert.equal(rejected.authCalls.some((call) => call.action === 'exchange'), false);
+        assert.equal(rejected.accessCalls.some((call) => call.action === 'issue'), false);
+        assert.equal(rejected.get('tgAdminApp').hidden, true);
+        assert.equal(rejected.storage.size, 0);
+    }
+});
+
 test('Google callbacks without a matching recent marker, duplicate codes or implicit tokens are rejected', async () => {
     const cases = [
         { url: `${LOCAL_ADMIN_URL}?code=valid_code` },
