@@ -20,6 +20,7 @@
     let pendingAdminStudioSessionUserId = '';
     let pendingAdminStudioSessionRenewPromise = null;
     let adminStudioSessionRenewTimer = null;
+    let adminStudioSessionRenewContext = null;
     let adminStudioSessionActivityRenewLastAt = 0;
     let pendingWarmAdminStudioPromise = null;
     let pendingWarmAdminStudioUserId = '';
@@ -61,7 +62,7 @@
             }
 
             const normalizedPath = candidate.pathname.replace(/\/+$/, '') || '/';
-            const allowedPaths = new Set(['/admin-studio', '/admin-studio.html']);
+            const allowedPaths = new Set(['/admin-studio', '/admin-studio.html', '/tg-admin', '/tg-admin.html']);
             if (!allowedPaths.has(normalizedPath)) {
                 return fallback;
             }
@@ -87,7 +88,13 @@
         }
     }
 
-    function readPersistedSupabaseSession() {
+    function readPersistedSupabaseSession(options = {}) {
+        const client = options.supabaseClient || globalScope?.supabaseClient || null;
+        // Independent TG sessions must never import the storefront's persisted
+        // credentials, including when a shared session-renewal timer runs.
+        if (options.allowPersistedSessionFallback === false || client?.auth?.storageKey === 'tg-admin-auth-v1') {
+            return null;
+        }
         try {
             if (!globalScope?.localStorage) {
                 return null;
@@ -334,7 +341,7 @@
         }
     }
 
-    function writeAdminStudioSessionCache(userId, payload = {}) {
+    function writeAdminStudioSessionCache(userId, payload = {}, options = {}) {
         const normalizedUserId = String(userId || '').trim();
         const expiresInSeconds = Number(payload?.expiresInSeconds || 0);
         if (!normalizedUserId || !Number.isFinite(expiresInSeconds) || expiresInSeconds <= 0) {
@@ -343,6 +350,11 @@
         }
 
         try {
+            adminStudioSessionRenewContext = {
+                userId: normalizedUserId,
+                supabaseClient: options.supabaseClient || globalScope?.supabaseClient || null,
+                allowPersistedSessionFallback: options.allowPersistedSessionFallback !== false
+            };
             const issuedAt = Date.now();
             globalScope?.sessionStorage?.setItem(ADMIN_STUDIO_SESSION_CACHE_KEY, JSON.stringify({
                 userId: normalizedUserId,
@@ -357,6 +369,7 @@
 
     function clearCachedAdminStudioSession() {
         clearAdminStudioSessionRenewTimer();
+        adminStudioSessionRenewContext = null;
         try {
             globalScope?.sessionStorage?.removeItem(ADMIN_STUDIO_SESSION_CACHE_KEY);
         } catch (_) {
@@ -478,6 +491,10 @@
         }
 
         pendingAdminStudioSessionRenewPromise = createAdminStudioSession({
+            ...(adminStudioSessionRenewContext?.userId === normalizedUserId ? adminStudioSessionRenewContext : {}),
+            ...(options.supabaseClient ? { supabaseClient: options.supabaseClient } : {}),
+            ...(Object.prototype.hasOwnProperty.call(options, 'allowPersistedSessionFallback')
+                ? { allowPersistedSessionFallback: options.allowPersistedSessionFallback } : {}),
             userId: normalizedUserId,
             forceRefresh: true,
             preserveCacheOnFailure: true
@@ -919,7 +936,7 @@
     }
 
     async function createAdminStudioSession(options = {}) {
-        const persistedSession = readPersistedSupabaseSession()?.session || null;
+        const persistedSession = readPersistedSupabaseSession(options)?.session || null;
         const explicitUserId = String(
             options?.userId ||
             options?.user?.id ||
@@ -930,6 +947,11 @@
         if (!forceRefresh) {
             const cachedSession = getCachedAdminStudioSessionResult(explicitUserId);
             if (cachedSession) {
+                adminStudioSessionRenewContext = {
+                    userId: explicitUserId,
+                    supabaseClient: options.supabaseClient || globalScope?.supabaseClient || null,
+                    allowPersistedSessionFallback: options.allowPersistedSessionFallback !== false
+                };
                 scheduleAdminStudioSessionRenewal(explicitUserId);
                 return cachedSession;
             }
@@ -1044,7 +1066,8 @@
             if (result?.ok) {
                 writeAdminStudioSessionCache(
                     resolvedUserId || String(session?.user?.id || buildPersistedSessionUser(persistedSession)?.id || '').trim(),
-                    result.payload
+                    result.payload,
+                    options
                 );
             } else if (options.preserveCacheOnFailure !== true) {
                 clearCachedAdminStudioSession();
@@ -1112,6 +1135,7 @@
                 : await getCurrentAdminAccess({
                     user: normalizedUser,
                     supabaseClient: options.supabaseClient,
+                    allowPersistedSessionFallback: options.allowPersistedSessionFallback,
                     forceRefresh: options.forceRefresh === true
                 });
 
@@ -1124,6 +1148,7 @@
 
             const session = await createAdminStudioSession({
                 supabaseClient: options.supabaseClient,
+                allowPersistedSessionFallback: options.allowPersistedSessionFallback,
                 userId: access.user.id,
                 forceRefresh: options.forceRefresh === true
             });
@@ -1176,7 +1201,7 @@
             const currentUser = userResult?.data?.user || null;
             const error = userResult?.error || null;
             if (error || !currentUser) {
-                const persistedSession = readPersistedSupabaseSession()?.session || null;
+                const persistedSession = readPersistedSupabaseSession(options)?.session || null;
                 const persistedUser = buildPersistedSessionUser(persistedSession);
                 if (!persistedUser) {
                     clearAccessCache();
@@ -1218,7 +1243,7 @@
             const error = rpcResult?.error || (!rpcResult ? new Error('Admin access RPC timed out') : null);
 
             if (error) {
-                const persistedSession = readPersistedSupabaseSession()?.session || null;
+                const persistedSession = readPersistedSupabaseSession(options)?.session || null;
                 const fallbackAccess = await fetchPersistedAdminAccess(persistedSession, user);
                 if (!fallbackAccess) {
                     throw error;

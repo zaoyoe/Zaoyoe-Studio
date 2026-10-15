@@ -1,0 +1,19 @@
+[Unit]
+Description=Zaoyoe independent Telegram Premium fulfillment tick
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+ConditionPathExists=/opt/zaoyoe-verify-server/.env
+ConditionPathExists=/opt/zaoyoe-verify-server/.current-release
+ConditionPathExists=/etc/zaoyoe-tg-worker/expected-release
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/zaoyoe-tg-worker --once
+TimeoutStartSec=210
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/run/lock

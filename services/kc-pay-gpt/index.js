@@ -1,11 +1,20 @@
 const { executePaymentWithRetry } = require('./payment-retry');
 const { openPricingCheckout } = require('./pricing-checkout');
-const { openApiCheckout } = require('./chatgpt');
+const { openApiCheckout, isBillingCountryMismatchError, shouldFallbackToPricingCheckout } = require('./chatgpt');
 const store = require('./mysql-store');
 const { getRegionConfig, getRegionBrowserProfile } = require('./region-config');
 const { installChatGptSession, bootstrapChatGptSession } = require('./session-auth');
 const { connectTaskBrowser, applyCdpEnv, closeTaskBrowser } = require('./browser-runtime');
 const { preparePlaywrightProxy } = require('./playwright-proxy');
+const { checkProxyConnectivity } = require('./proxy-preflight');
+const { captureDiagnosticScreenshot } = require('./task-diagnostics');
+const { injectClaudeSession, bootstrapClaudeSession } = require('./claude-auth');
+const { openClaudeCheckout } = require('./pricing-checkout-claude');
+const { injectGrokSession, bootstrapGrokSession } = require('./grok-auth');
+const { openGrokCheckout } = require('./pricing-checkout-grok');
+const { isBundle } = require('./public/grok-plan-catalog');
+const { observeGrokCommerce } = require('./grok-commerce');
+const { validateCdkPlan } = require('./cdk-plan-catalog');
 const fs = require('fs');
 const path = require('path');
 
@@ -39,6 +48,9 @@ const path = require('path');
 
 // 全部敏感配置请通过环境变量传入
 const CONFIG = {
+    platform: process.env.PLATFORM || "",
+    claudeSessionKey: process.env.CLAUDE_SESSION_KEY || "",
+    grokToken: process.env.GROK_TOKEN || "",
     chatgptToken: process.env.CHATGPT_TOKEN || "",
     chatgptSessionJson: process.env.CHATGPT_SESSION_JSON || "",
     cdkCode: process.env.CDK_CODE || "",
@@ -121,9 +133,9 @@ async function captureDebugScreenshot(context, preferredPage, prefix, label = '�
     }
 
     const screenshotPath = buildDebugScreenshotPath(prefix);
-    await targetPage.screenshot({ path: screenshotPath, fullPage: true });
-    console.log(`📸 [系统] ${label}已保存: ${screenshotPath}`);
-    return screenshotPath;
+    const saved = await captureDiagnosticScreenshot(targetPage, screenshotPath);
+    if (saved) console.log(`📸 [系统] ${label}已保存: ${saved}`);
+    return saved;
 }
 
 async function isCheckoutErrorPage(page) {
@@ -186,11 +198,45 @@ async function run() {
     let browser = null;
     let context = null;
     let page = null;
+    let commerceObserver = null;
     let paymentSucceeded = false;
+    const debugOnly = process.env.CHECKOUT_DEBUG_ONLY === '1';
+    const diagnosticMode = String(process.env.CHECKOUT_DIAGNOSTIC_MODE || 'checkout').toLowerCase();
+    let diagnostic = null;
+    let diagnosticCancelled = false;
+    const assertDiagnosticActive = () => {
+        if (diagnosticCancelled) throw Object.assign(new Error('诊断已取消，未提交支付'), { code: 'DIAGNOSTIC_CANCELLED' });
+    };
+    const stopDiagnostic = () => {
+        diagnosticCancelled = true;
+        // Closing the diagnostic context interrupts pending Playwright operations
+        // so the normal catch/finally can preserve media and release resources.
+        Promise.resolve(context?.close()).catch(() => {});
+        if (!context) Promise.resolve(closeTaskBrowser(browserSession, browser)).catch(() => {});
+    };
+    if (debugOnly) {
+        process.once?.('SIGTERM', stopDiagnostic);
+        process.once?.('SIGINT', stopDiagnostic);
+    }
+
+    try {
+    if (debugOnly) {
+        const { getDiagnosticCatalog, createDiagnosticReporter } = require('./checkout-diagnostic');
+        const selected = getDiagnosticCatalog().platforms.find(item => item.id === CONFIG.platform);
+        if (CONFIG.cdkCode || !selected?.plans.some(plan => plan.id === CONFIG.planType)
+            || !selected.modes.some(mode => mode.id === diagnosticMode)
+            || !selected.regions.includes(CONFIG.paymentRegionOverride)) {
+            throw Object.assign(new Error('诊断参数无效，已停止；未操作卡密或银行卡'), { code: 'DIAGNOSTIC_INPUT_INVALID' });
+        }
+        diagnostic = createDiagnosticReporter({ platform: CONFIG.platform, planType: CONFIG.planType,
+            region: CONFIG.paymentRegionOverride, mode: diagnosticMode });
+        diagnostic.check('browser', '浏览器启动', 'running');
+    }
 
     const preparedProxy = await preparePlaywrightProxy(CONFIG.proxy);
     proxyCleanup = preparedProxy.cleanup;
     const proxyConfig = preparedProxy.proxyConfig;
+    assertDiagnosticActive();
 
     if (proxyConfig) {
         console.log(`🌐 [系统] 代理已配置${preparedProxy.relayed ? '（SOCKS→本地 HTTP 中继）' : ''}`);
@@ -203,6 +249,8 @@ async function run() {
     });
     applyCdpEnv(browserSession);
     browser = browserSession.browser;
+    assertDiagnosticActive();
+    diagnostic?.check('browser', '浏览器启动', 'passed');
 
     const realUserAgent = browserSession.realUserAgent;
 
@@ -210,8 +258,18 @@ async function run() {
     const matched = realUserAgent.match(/Chrome\/(\d+)/);
     const chromeMajor = matched ? Number(matched[1]) : 147;
 
-    const paymentRegion = String(CONFIG.paymentRegionOverride || '').trim().toUpperCase()
-        || await store.getPaymentRegion();
+    let paymentRegion = String(CONFIG.paymentRegionOverride || '').trim().toUpperCase();
+    if (!paymentRegion && CONFIG.cdkCode) {
+        try {
+            const cdkDetails = await store.verifyCdkDetails(CONFIG.cdkCode);
+            if (cdkDetails && cdkDetails.payment_region) {
+                paymentRegion = String(cdkDetails.payment_region).toUpperCase();
+            }
+        } catch (_) {}
+    }
+    if (!paymentRegion) {
+        paymentRegion = await store.getPaymentRegion();
+    }
     const regionCfg = getRegionConfig(paymentRegion);
     const browserProfile = getRegionBrowserProfile(paymentRegion);
 
@@ -243,11 +301,7 @@ async function run() {
     }
 
     context = await browser.newContext(contextOptions);
-    const sessionRaw = CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
-    const installResult = await installChatGptSession(context, sessionRaw);
-    const sessionData = installResult?.sessionData || installResult;
-    const cookieVerified = Boolean(installResult?.cookieVerified);
-
+    assertDiagnosticActive();
     // ============= 指纹伪装 =============
     await context.addInitScript((injectedChromeMajor) => {
         const NavProto = Object.getPrototypeOf(navigator);
@@ -457,132 +511,206 @@ async function run() {
         } catch (_) { }
     }, chromeMajor);
 
-    try {
         // --- Phase 0: Proxy Connectivity Check ---
         if (proxyConfig) {
+            diagnostic?.check('proxy', '代理连通性', 'running');
             console.log('正在检查代理连通性...');
-            try {
-                const probeResponse = await context.request.get("http://api.ipify.org/?format=text", {
-                    timeout: 15000
-                });
-                if (probeResponse.ok()) {
-                    const ip = (await probeResponse.text()).trim();
-                    const ipMasked = String(ip).replace(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/, '***.***.$3.$4');
-                    console.log(`✅ [系统] 代理连接成功! 代理公网 IP: ${ipMasked}`);
-                } else {
-                    throw new Error(`代理响应异常: HTTP ${probeResponse.status()}`);
-                }
-            } catch (proxyError) {
-                console.log("    [!] 请检查 PROXY 配置是否正确、代理是否可连通，以及当前网络是否稳定。");
-                throw proxyError;
-            }
+            const { ip } = await checkProxyConnectivity(context);
+            const ipMasked = ip.includes(':') ? '[IPv6 已隐藏]'
+                : ip.replace(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/, '***.***.$3.$4');
+            console.log(`✅ [系统] 代理连接成功! 代理公网 IP: ${ipMasked}`);
+            diagnostic?.check('proxy', '代理连通性', 'passed', '已通过当前浏览器通道核验');
+        } else {
+            diagnostic?.check('proxy', '代理连通性', 'skipped', '使用本机网络，未配置代理');
         }
 
         // --- Phase 1: Resolve payment parameters ---
-        const debugOnly = process.env.CHECKOUT_DEBUG_ONLY === '1';
         if (debugOnly) {
-            console.log('[调试] 支付链接调试模式：浏览器注入 Session → Checkout API → 输出链接（不执行支付）');
+            console.log(`[诊断] ${diagnosticMode === 'link' ? '仅生成链接' : '完整结账检查'}：不预留银行卡，不填写卡片或账单地址，不提交支付`);
         } else {
             console.log('[1] 准备自助充值流程...');
         }
 
-        // Determine plan_type: prefer env variable, fallback to CDK lookup
+        // Determine plan_type and platform: prefer env variable, fallback to CDK lookup
         let planType = CONFIG.planType;
+        let cdkPlatform = '';
         const cdkCode = CONFIG.cdkCode;
         const email = CONFIG.email;
 
         if (cdkCode) {
-            try {
-                const cdkDetails = await store.verifyCdkDetails(cdkCode);
-                if (cdkDetails && cdkDetails.plan_type) {
-                    planType = cdkDetails.plan_type;
-                }
-            } catch (_) {
-                // CDK lookup failed, use default
+            const cdkDetails = await store.verifyCdkDetails(cdkCode);
+            if (!cdkDetails) throw new Error('无法核验卡密商品，已停止充值');
+            const validated = validateCdkPlan(cdkDetails.plan_type, cdkDetails.platform, { activation: true });
+            if (planType && validateCdkPlan(planType).planName !== validated.planName) {
+                throw new Error('任务套餐与卡密商品不一致，已停止充值');
             }
+            planType = validated.planType;
+            cdkPlatform = validated.platform;
         }
         if (!planType) {
             planType = 'plus';
         }
 
+        const validatedPlan = validateCdkPlan(planType, CONFIG.platform || cdkPlatform || undefined, { activation: true });
+        planType = validatedPlan.planType;
+        const platform = validatedPlan.platform;
+
         // Resolve region and currency (与浏览器 profile 一致)
         const billingCountry = paymentRegion;
         const billingCurrency = regionCfg ? regionCfg.currency : 'USD';
 
-        console.log(`[1] 套餐类型: ${planType}, 地区: ${paymentRegion}, 币种: ${billingCurrency}`);
+        console.log(`[1] 平台: ${platform.toUpperCase()}, 套餐类型: ${planType}, 地区: ${paymentRegion}, 币种: ${billingCurrency}`);
 
         page = await context.newPage();
         page.on('close', () => {
             console.warn(`⚠️ [系统] 当前页面已关闭，关闭前最后 URL: ${page.url()}`);
         });
 
-        const loginInfo = await bootstrapChatGptSession(page, sessionRaw, { sessionData, cookieVerified });
-        if (loginInfo.email && !email) {
-            console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
-        }
-
-        // --- Phase 2: API 创建 Checkout（注入账单地区），失败时回退 UI 定价页 ---
-        const checkoutMode = String(process.env.CHECKOUT_MODE || 'api').toLowerCase();
-        let checkoutOpened = false;
+        let loginInfo = null;
         let checkoutResult = null;
-        const planNameOverride = String(CONFIG.planNameOverride || '').trim() || undefined;
+        diagnostic?.check('session', '官方登录状态', 'running', '等待官方登录组件核验');
 
-        if (checkoutMode !== 'ui') {
-            try {
-                checkoutResult = await openApiCheckout(page, {
-                    accessToken: loginInfo.session?.accessToken || CONFIG.chatgptToken,
+        if (platform === 'claude') {
+            console.log('🤖 [平台] 启动 Claude 自助升级流程...');
+            const claudeCred = CONFIG.claudeSessionKey || CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
+            await injectClaudeSession(context, claudeCred);
+            loginInfo = await bootstrapClaudeSession(page, claudeCred, { planType });
+            if (diagnostic) {
+                const account = require('./claude-auth').getClaudeAccountSnapshot(page);
+                diagnostic.check('session', '官方登录状态', account?.accountId ? 'passed' : 'unconfirmed',
+                    account?.accountId ? '官方账号接口已确认登录' : '页面已打开，账号接口暂未确认；继续检查结账组件');
+            }
+            if (loginInfo && loginInfo.email) {
+                console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
+            }
+            console.log('🧭 [步骤] 正在打开 Claude 订阅收银台...');
+            diagnostic?.check('checkout', '打开官方结账', 'running');
+            checkoutResult = await openClaudeCheckout(page, { planType });
+        } else if (platform === 'grok') {
+            console.log('⚡ [平台] 启动 Grok (X) 自助升级流程...');
+            const grokCred = CONFIG.grokToken || CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
+            await injectGrokSession(context, grokCred);
+            if (isBundle(planType)) commerceObserver = observeGrokCommerce(page, planType);
+            loginInfo = await bootstrapGrokSession(page, grokCred, { planType });
+            diagnostic?.check('session', '官方登录状态', 'passed', '正式登录检查已完成，继续核验结账页面');
+            if (loginInfo && loginInfo.email) {
+                console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
+            }
+            console.log('🧭 [步骤] 正在打开 Grok 订阅收银台...');
+            diagnostic?.check('checkout', '打开官方结账', 'running');
+            checkoutResult = await openGrokCheckout(page, { planType, platformMode: loginInfo?.platformMode, commerceObserver,
+                onCheckoutPage: checkoutPage => { page = checkoutPage; } });
+        } else {
+            // --- Phase 0.5: Install ChatGPT Session ---
+            const sessionRaw = CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
+            const installResult = await installChatGptSession(context, sessionRaw);
+            const sessionData = installResult?.sessionData || installResult;
+            const cookieVerified = Boolean(installResult?.cookieVerified);
+            const hasSessionToken = Boolean(installResult?.hasSessionToken);
+
+            loginInfo = await bootstrapChatGptSession(page, sessionRaw, { sessionData, cookieVerified, hasSessionToken });
+            diagnostic?.check('session', '官方登录状态', 'passed', '正式登录检查已完成，继续核验结账接口');
+            if (loginInfo.email && !email) {
+                console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
+            }
+
+            // --- Phase 2: 创建 Checkout，支持 auto / hybrid 极速通道，并平滑回退至 UI 定价页 ---
+            const checkoutMode = String(process.env.CHECKOUT_MODE || 'auto').toLowerCase();
+            let checkoutOpened = false;
+            const planNameOverride = String(CONFIG.planNameOverride || '').trim() || undefined;
+            diagnostic?.check('checkout', diagnosticMode === 'link' ? '生成官方链接' : '打开官方结账', 'running');
+
+            if (checkoutMode !== 'ui') {
+                try {
+                    console.log('⚡ [极速通道] 正在尝试通过 API 闪电直达 Stripe 收银台...');
+                    checkoutResult = await openApiCheckout(page, {
+                        accessToken: loginInfo.session?.accessToken || CONFIG.chatgptToken,
+                        planType,
+                        country: billingCountry,
+                        currency: billingCurrency,
+                        planNameOverride,
+                        verifyPage: !debugOnly || diagnosticMode === 'checkout'
+                    });
+                    checkoutOpened = true;
+                    console.log('⚡ [极速通道] ✅ API 直达收银台成功，已跳过 UI 定价页！');
+                } catch (apiError) {
+                    console.warn(`[Warn] API Checkout 尝试未果: ${apiError.message}`);
+                    if (!shouldFallbackToPricingCheckout(apiError, { checkoutMode, debugOnly: debugOnly && diagnosticMode === 'link' })) {
+                        if (isBillingCountryMismatchError(apiError.message)) {
+                            console.warn('[Warn] 检测到账单地区不匹配，已停止 UI 回退，避免在错误地区继续尝试支付');
+                        }
+                        throw apiError;
+                    }
+                    console.log('🧭 [智能回退] 正在平滑转入 UI 定价页流程...');
+                }
+            }
+
+            if (!checkoutOpened) {
+                if (debugOnly && diagnosticMode === 'link') {
+                    throw new Error('API Checkout 失败，调试模式不启用 UI 定价页');
+                }
+                console.log('🧭 [步骤] 正在打开定价页并选择升级套餐...');
+                const checkoutUrl = await openPricingCheckout(page, {
+                    region: billingCountry,
                     planType,
-                    country: billingCountry,
-                    currency: billingCurrency,
-                    planNameOverride,
-                    verifyPage: !debugOnly
+                    onCheckoutPage: (checkoutPage) => { page = checkoutPage; }
                 });
-                checkoutOpened = true;
-            } catch (apiError) {
-                console.warn(`[Warn] API Checkout 失败: ${apiError.message}`);
-                if (debugOnly) {
-                    throw apiError;
-                }
-                if (checkoutMode === 'api') {
-                    console.log('[Info] 正在回退到 UI 定价页流程...');
-                } else {
-                    throw apiError;
-                }
+                checkoutResult = { checkoutUrl };
             }
-        }
-
-        if (!checkoutOpened) {
-            if (debugOnly) {
-                throw new Error('API Checkout 失败，调试模式不启用 UI 定价页');
-            }
-            console.log('🧭 [步骤] 正在打开定价页并选择升级套餐...');
-            await openPricingCheckout(page, {
-                region: billingCountry,
-                planType
-            });
-            checkoutResult = { checkoutUrl: page.url() };
         }
 
         if (debugOnly) {
-            const checkoutUrl = checkoutResult?.checkoutUrl || page.url();
-            console.log(`🔗 [调试] 支付链接: ${checkoutUrl}`);
-            console.log(`CHECKOUT_URL: ${checkoutUrl}`);
+            assertDiagnosticActive();
+            const { trustedCheckoutUrl } = require('./checkout-diagnostic');
+            const checkoutUrl = trustedCheckoutUrl(checkoutResult?.checkoutUrl || checkoutResult?.url || page.url(), platform);
+            if (!checkoutUrl) throw Object.assign(new Error('官方未返回可信结账地址'), { code: 'DIAGNOSTIC_URL_UNTRUSTED' });
+            diagnostic.checkout({ url: checkoutUrl });
+            diagnostic.check('checkout', diagnosticMode === 'link' ? '生成官方链接' : '打开官方结账', 'passed');
+            if (diagnosticMode === 'checkout') {
+                diagnostic.check('form', '结账表单', 'running');
+                const { inspectDiagnosticCheckout } = require('./checkout-diagnostic-inspection');
+                const inspection = await inspectDiagnosticCheckout(page, { platform, planType, region: billingCountry,
+                    checkoutResult, commerceObserver });
+                assertDiagnosticActive();
+                for (const check of inspection.checks || []) diagnostic.check(check.id, check.label, check.status, check.message);
+                diagnostic.checkout({ ...inspection, url: checkoutUrl });
+                if (!inspection.confirmed) throw Object.assign(new Error('结账页面已打开，但无法完整确认所选套餐、币种或表单'), { code: 'DIAGNOSTIC_CHECKOUT_UNCONFIRMED' });
+                if (platform === 'claude' && diagnostic.report.checks.find(check => check.id === 'session')?.status !== 'passed') {
+                    const { getClaudeAccountSnapshot, readClaudeAccountInBrowser } = require('./claude-auth');
+                    const account = getClaudeAccountSnapshot(page) || (await readClaudeAccountInBrowser(page, 1500)).account;
+                    assertDiagnosticActive();
+                    if (!account?.accountId) throw Object.assign(new Error('结账页面已就绪，但官方账号接口尚未确认登录状态'), { code: 'DIAGNOSTIC_SESSION_UNCONFIRMED' });
+                    diagnostic.check('session', '官方登录状态', 'passed', '官方账号接口已确认登录');
+                }
+            } else {
+                diagnostic.check('form', '结账表单', 'skipped', '仅生成链接模式未打开或检查表单');
+                diagnostic.check('product', '套餐与金额', 'unconfirmed', 'API 已生成链接；未核验实际订单金额、币种和套餐');
+                diagnostic.checkout({ kind: 'link', confirmed: false });
+            }
+            diagnostic.check('payment', '实际支付', 'skipped', '诊断在支付入口前结束；未预留银行卡、填写账单或提交支付');
+            const diagnosticShot = await captureDebugScreenshot(context, page, 'checkout', '诊断截图');
+            assertDiagnosticActive();
+            if (diagnosticShot) console.log(`SUCCESS_SCREENSHOT: ${diagnosticShot}`);
+            diagnostic.finish(true, diagnosticMode === 'link' ? '官方链接已生成，实际结账尚未核验' : '结账检查通过；税费和实际支付尚未核验');
             console.log('CHECKOUT_DEBUG_SUCCESS');
             return;
         }
 
-        console.log('✅ [步骤] Checkout 页面已打开，开始信用卡支付流程...');
+        console.log(`✅ [步骤] ${platform.toUpperCase()} Checkout 页面已打开，开始信用卡支付流程...`);
 
-        const stripeSessionMatch = String(page.url() || '').match(/(oaics_[a-f0-9]+)/i);
+        const stripeSessionMatch = String(page.url() || '').match(/(oaics_[a-f0-9]+|cs_live_[a-zA-Z0-9]+|cs_test_[a-zA-Z0-9]+)/i);
         const stripeSessionId = stripeSessionMatch ? stripeSessionMatch[1] : null;
 
         // --- Phase 4: Execute Payment with Card Pool Retry ---
         console.log("[步骤] 正在使用 Stripe 信用卡卡池支付流程（单次尝试）...");
         const paymentResult = await executePaymentWithRetry(page, {
+            platform,
             planType,
             cdkCode,
-            email,
+            email: email || loginInfo?.email,
             stripeSessionId,
+            grokAccount: platform === 'grok' ? loginInfo : null,
+            grokCheckout: platform === 'grok' ? checkoutResult : null,
             ownerKey: process.env.JOB_KEY || `${cdkCode || 'job'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             onPaymentState: async (state, message) => {
                 console.log(`PAYMENT_STATE:${state}${message ? `:${message}` : ''}`);
@@ -606,6 +734,14 @@ async function run() {
         }
 
     } catch (e) {
+        if (diagnosticCancelled) e = Object.assign(new Error('诊断已取消，未提交支付'), { code: 'DIAGNOSTIC_CANCELLED' });
+        if (diagnostic) {
+            for (const check of e.diagnosticChecks || []) diagnostic.check(check.id, check.label, check.status, check.message);
+            const pending = diagnostic.report.checks.filter(check => check.status === 'running');
+            for (const check of pending) diagnostic.check(check.id, check.label, 'failed', e.message);
+            diagnostic.check('payment', '实际支付', 'skipped', '未进入支付流程');
+            diagnostic.finish(false, e.message, e.code || 'DIAGNOSTIC_FAILED');
+        }
         console.error("❌ [运行时错误]:", e.message);
         try {
             const errorShot = await captureDebugScreenshot(context, page, 'error');
@@ -618,11 +754,16 @@ async function run() {
         // 用 exitCode 而非 process.exit()，确保下方 finally 能完整执行（录像需 context 关闭后才落盘）
         process.exitCode = 1;
     } finally {
+        commerceObserver?.dispose();
         console.log("👋 [系统] 流程结束，正在关闭浏览器...");
         // 先关闭 context 以 flush 录像并取回路径，再关浏览器
         await finalizeVideo(context, page, { deleteOnSuccess: paymentSucceeded }).catch(() => { });
         await closeTaskBrowser(browserSession, browser);
         await proxyCleanup();
+        if (debugOnly) {
+            process.removeListener?.('SIGTERM', stopDiagnostic);
+            process.removeListener?.('SIGINT', stopDiagnostic);
+        }
     }
 }
 

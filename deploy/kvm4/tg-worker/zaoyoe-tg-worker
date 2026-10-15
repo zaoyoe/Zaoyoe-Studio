@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Deliberately no EnvironmentFile: the process always uses the existing
+# verify-server container environment, not a second copy of the TG secrets.
+CANONICAL_ROOT="/opt/zaoyoe-verify-server"
+EXPECTED_RELEASE_FILE="/etc/zaoyoe-tg-worker/expected-release"
+RUNNER_FILE="/usr/local/libexec/zaoyoe-tg-worker.cjs"
+CONTAINER_NAME="zaoyoe-verify-server"
+MODE="${1:---once}"
+
+die() { echo 'tg-worker: preflight failed; check release, container health and configuration' >&2; exit 78; }
+[[ $# -le 1 && ( "$MODE" == '--once' || "$MODE" == '--check' ) ]] || die
+[[ -z "${KVM4_ROOT:-}" || "$KVM4_ROOT" == "$CANONICAL_ROOT" ]] || die
+[[ -f "$EXPECTED_RELEASE_FILE" && -f "$RUNNER_FILE" ]] || die
+[[ -f "$CANONICAL_ROOT/.env" && -f "$CANONICAL_ROOT/.current-release" ]] || die
+[[ "$(stat -c '%a:%u' "$CANONICAL_ROOT/.env")" == '600:0' ]] || die
+
+# systemd oneshot already serializes timer ticks; this also covers manual runs.
+exec 9>/run/lock/zaoyoe-tg-worker.lock
+if ! flock -n 9; then
+  echo '{"success":true,"processed":false,"busy":true}'
+  exit 0
+fi
+
+expected_commit="$(cat "$EXPECTED_RELEASE_FILE")"
+[[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || die
+[[ "$(cat "$CANONICAL_ROOT/.current-release")" == "$expected_commit" ]] || die
+app_root="$(readlink -f "$CANONICAL_ROOT/app")"
+[[ "$app_root" == "$CANONICAL_ROOT/releases/"*/app ]] || die
+[[ "$(cat "$app_root/../.commit")" == "$expected_commit" ]] || die
+
+container_id="$(docker inspect --format '{{.Id}}' "$CONTAINER_NAME" 2>/dev/null)" || die
+[[ "$container_id" =~ ^[0-9a-f]{64}$ ]] || die
+[[ "$(docker inspect --format '{{.State.Running}}:{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container_id" 2>/dev/null)" == 'true:healthy' ]] || die
+[[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container_id" 2>/dev/null)" == 'verify-server' ]] || die
+[[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container_id" 2>/dev/null)" == "$CANONICAL_ROOT" ]] || die
+
+# Bind the actual container code to the selected host release. The current
+# image has no commit label, so the commit marker alone cannot prove this.
+expected_digest="$(
+  cd "$app_root"
+  {
+    printf '%s\0' package.json package-lock.json scripts/tg-fulfillment-worker.js
+    find server/tg -type f -name '*.js' -print0
+  } | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1
+)" || die
+[[ "$expected_digest" =~ ^[0-9a-f]{64}$ ]] || die
+[[ "$(cat "$CANONICAL_ROOT/.current-release")" == "$expected_commit" ]] || die
+
+# Only static source and non-secret digests appear in argv. The root-owned
+# compose env_file crosses stdin, is checked in memory and is never printed.
+# docker exec inherits the exact running API container environment.
+runner_source="$(cat "$RUNNER_FILE")"
+exec docker exec -i --workdir /app "$container_id" node -e "$runner_source" -- \
+  --tg-scheduler "$MODE" "$expected_digest" < "$CANONICAL_ROOT/.env"

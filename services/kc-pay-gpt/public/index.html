@@ -4,126 +4,145 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ChatGPT 订阅自动开通 | KC ChatGPT PLUS</title>
+    <title>AI 订阅自动开通 | KC ChatGPT · Claude · Grok</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=20261014_user_ui_restored_1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <script>
+        (function() {
+            try {
+                var saved = localStorage.getItem('fk-theme');
+                var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+                var theme = (saved === 'light' || saved === 'dark') ? saved : (prefersLight ? 'light' : 'dark');
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (e) {}
+        })();
+    </script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .bouncing-dots {
+            display: inline-flex;
+            align-items: center;
+            gap: 3.5px;
+            margin-left: 5px;
+            vertical-align: middle;
+            height: 1em;
+        }
+        .bouncing-dots .b-dot {
+            width: 4.5px;
+            height: 4.5px;
+            border-radius: 50%;
+            background-color: currentColor;
+            display: inline-block;
+            animation: dotBounce 1.25s infinite ease-in-out both;
+        }
+        .bouncing-dots .b-dot:nth-child(1) { animation-delay: -0.32s; }
+        .bouncing-dots .b-dot:nth-child(2) { animation-delay: -0.16s; }
+        .bouncing-dots .b-dot:nth-child(3) { animation-delay: 0s; }
+        @keyframes dotBounce {
+            0%, 80%, 100% {
+                transform: translateY(0);
+                opacity: 0.35;
+            }
+            40% {
+                transform: translateY(-5px);
+                opacity: 1;
+            }
+        }
+    </style>
+    <script src="/grok-plan-catalog.js"></script>
+    <script src="/task-messages.js"></script>
 </head>
 
 <body class="recharge-page">
+    <!-- 页面右上角亮暗主题切换按钮 -->
+    <button id="themeToggleBtn" class="theme-toggle-btn" type="button" aria-label="切换浅色/深色模式" title="切换浅色/深色模式">
+        <i data-lucide="sun" class="theme-icon icon-sun"></i>
+        <i data-lucide="moon" class="theme-icon icon-moon"></i>
+    </button>
+    <div id="capsuleToast" class="capsule-toast" style="display: none;" role="alert"></div>
+    <div class="hero-type" id="heroType" aria-hidden="true">
+        <span class="word word-plus">PLUS</span>
+        <span class="word word-feiniao">FEINIAO SI</span>
+        <span class="word word-topup">TOP-UP</span>
+        <span class="word word-pro">PRO</span>
+    </div>
     <div class="page-shell">
-        <header class="site-hero">
-            <div class="hero-eyebrow">Instant AI Top-Ups</div>
-            <h1>ChatGPT 订阅自动开通</h1>
-            <p class="hero-subtitle">通过官方 Checkout 流程自助开通 KC ChatGPT PLUS，兑换卡密后粘贴 Session 即可自动完成支付开通。</p>
-            <div class="feature-badges">
-                <span class="feature-badge"><i data-lucide="shield-check"></i> 官方结账</span>
-                <span class="feature-badge"><i data-lucide="zap"></i> 极速开通</span>
-                <span class="feature-badge"><i data-lucide="rotate-ccw"></i> 失败可回滚</span>
-                <a href="/subscription" class="feature-badge feature-link"><i data-lucide="receipt"></i> 发票助手</a>
-            </div>
-        </header>
-
-        <section class="plan-showcase">
-            <article class="plan-card">
-                <div class="plan-card-head">
-                    <h3>ChatGPT Plus</h3>
-                    <span class="plan-tag">标准版</span>
+        <main class="recharge-card" id="rechargeCard">
+            <div class="card-head is-centered" id="cardHead">
+                <div class="card-copy" id="cardCopy">
+                    <h2 id="cardTitle">AI代充</h2>
+                    <p id="cardSubtitle">验证卡密后，系统会自动识别服务类型</p>
                 </div>
-                <p>适合日常使用：GPT-5.5、高级数据分析、DALL·E 等 Plus 权益，按月订阅。</p>
-            </article>
-            <article class="plan-card highlight">
-                <div class="plan-card-head">
-                    <h3>Pro 5x</h3>
-                    <span class="plan-tag pro">高用量</span>
-                </div>
-                <p>在 Pro 基础上提供约 <strong>5 倍</strong> 的消息/推理额度，适合重度个人用户与创作者。</p>
-            </article>
-            <article class="plan-card">
-                <div class="plan-card-head">
-                    <h3>Pro 20x</h3>
-                    <span class="plan-tag pro">旗舰</span>
-                </div>
-                <p>最高约 <strong>20 倍</strong> Pro 用量上限，适合团队主力账号、开发测试与高并发场景。</p>
-            </article>
-        </section>
-        <p id="paymentRegionHint" class="region-hint">当前账单地区：菲律宾，结算币种：PHP</p>
-
-        <main class="recharge-card">
-            <div class="card-head">
-                <div>
-                    <h2>卡密兑换</h2>
-                    <p>按步骤完成自助开通</p>
-                </div>
-                <span id="flowStatusBadge" class="flow-badge pending">待开始</span>
+                <span id="flowStatusBadge" class="flow-badge pending" style="display: none;">待开始</span>
             </div>
 
-            <div class="stepper" id="flowStepper">
-                <div class="step-item active" data-step="1">
-                    <span class="step-num">1</span>
-                    <span class="step-label">输入卡密</span>
-                </div>
-                <div class="step-line"></div>
-                <div class="step-item" data-step="2">
-                    <span class="step-num">2</span>
-                    <span class="step-label">提交 Session</span>
-                </div>
-            </div>
 
-            <div class="notice-banner">
-                <i data-lucide="info"></i>
-                <p>ChatGPT Plus 自助开通：提交后系统将自动打开官方 Checkout 页面并完成订阅开通，无需提供账号密码。一卡一充，3-5分钟开通完毕，如遇到卡住，请联系客服进行处理。</p>
-            </div>
 
-            <nav class="tab-nav">
+            <nav class="tab-nav" id="tabNav" data-active-tab="redeem" style="display: none;">
+                <div class="tab-indicator" id="tabIndicator"></div>
                 <button class="tab-btn active" data-tab="redeem">兑换开通</button>
                 <button class="tab-btn" data-tab="query">查询状态</button>
             </nav>
 
-            <div id="redeemSection">
+            <div class="tab-stage" id="tabStage">
+            <div id="redeemSection" class="tab-pane">
                 <div id="step1">
-                    <label class="field-label" for="cdkInput">输入您的 Plus 充值码</label>
+                    <label class="field-label" for="cdkInput">验证卡密</label>
                     <section class="input-group">
-                        <input type="text" id="cdkInput" placeholder="请输入卡密 / CDK" maxlength="32">
-                        <button id="redeemBtn" class="btn-primary"><span class="btn-text">兑换卡密</span>
+                        <input type="text" id="cdkInput" placeholder="请输入卡密 / CDK" maxlength="32" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" data-lpignore="true" data-1p-ignore="true">
+                        <button id="redeemBtn" class="btn-primary btn-lg">
+                            <span class="btn-text">验证卡密</span>
                             <div class="loader"></div>
+                            <svg class="success-checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                <path class="checkmark-path" d="M4 12l5 5L20 6"></path>
+                            </svg>
                         </button>
                     </section>
                 </div>
 
                 <div id="step2" style="display: none;">
                     <div id="redeemCdkInfo" class="cdk-confirmed" style="display:none;"></div>
-                    <div id="redeemPlanInfo" class="plan-confirmed" style="display:none;"></div>
-                    <label class="field-label" for="tokenInput">粘贴完整 Session JSON</label>
+                    <label class="field-label" for="tokenInput" id="tokenInputLabel">Session</label>
                     <section class="input-group">
                         <div class="textarea-wrapper">
-                            <a href="https://chatgpt.com/api/auth/session" target="_blank"
-                                class="get-token-btn-floating">获取 Session</a>
-                            <textarea id="tokenInput" placeholder="打开上方链接，全选复制完整 JSON 粘贴到此处（保留 user、expires、accessToken 等全部字段）" rows="5"></textarea>
+                            <a href="https://chatgpt.com/api/auth/session" target="_blank" rel="noopener noreferrer"
+                                class="get-token-btn-floating" id="getTokenFloatingBtn">
+                                <i data-lucide="external-link" id="getTokenBtnIcon" style="width:12px;height:12px;"></i>
+                                <span id="getTokenBtnText">获取 Session</span>
+                            </a>
+                            <textarea id="tokenInput" placeholder="登录 gpt 后，点击‘获取 session ’按钮，复制网页内所有代码，粘贴到此处后点击‘充值’按钮充值。" rows="5" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" data-lpignore="true" data-1p-ignore="true"></textarea>
                         </div>
-                        <button id="startBtn" class="btn-primary btn-lg"><span class="btn-text">确认并启动自动化开通</span>
-                            <div class="loader"></div>
-                        </button>
-                        <p class="field-hint">必须点击「确认并启动」才会执行自动化；仅粘贴不会自动运行。</p>
-                        <button id="backToStep1" class="btn-secondary">返回重新输入卡密</button>
+                        <div class="action-btn-row">
+                            <button id="backToStep1" class="btn-secondary btn-lg">重置</button>
+                            <button id="startBtn" class="btn-primary btn-lg">
+                                <div class="btn-progress-fill" id="startBtnProgress"></div>
+                                <span class="btn-text">充值</span>
+                                <svg class="success-checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                    <path class="checkmark-path" d="M4 12l5 5L20 6"></path>
+                                </svg>
+                            </button>
+                        </div>
                     </section>
                 </div>
             </div>
 
-            <div id="querySection" style="display: none;">
+            <div id="querySection" class="tab-pane" style="display: none;">
                 <label class="field-label" for="queryInput">输入卡密查询状态</label>
                 <section class="input-group">
-                    <input type="text" id="queryInput" placeholder="请输入要查询的激活码" maxlength="32">
+                    <input type="text" id="queryInput" placeholder="请输入要查询的激活码" maxlength="32" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" data-lpignore="true" data-1p-ignore="true">
                     <button id="queryBtn" class="btn-primary"><span class="btn-text">查询状态</span>
                         <div class="loader"></div>
                     </button>
                 </section>
             </div>
+            </div>
 
-            <div id="taskProgress" class="task-progress" style="display: none;">
+            <div id="taskProgress" class="task-progress" style="display: none !important;">
                 <div class="task-progress-header">
-                    <span>开通进度</span>
+                    <span>自动化执行进度</span>
                     <b id="taskProgressPercent">0%</b>
                 </div>
                 <div class="task-progress-track">
@@ -133,24 +152,79 @@
             </div>
             <div id="statusMessage" class="status-message"></div>
         </main>
+    </div>
 
-        <details class="faq-panel">
-            <summary>常见问题 / 安全说明</summary>
-            <ul>
-                <li>Session 仅用于本次官方结账，不会保存您的账号密码。</li>
-                <li>开通失败时卡密会自动回滚，可更换账号或稍后重试。</li>
-                <li>若长时间停留在「开通中」，可在「查询状态」查看进度。</li>
-            </ul>
-        </details>
-
-        <aside id="publicRuntimeCard" class="public-runtime-panel load-low">
-            <div class="public-runtime-layout">
-                <div class="public-runtime-title">前台并发</div>
-                <div id="publicForegroundSlots" class="public-runtime-value">0/0</div>
-                <div id="publicForegroundSlotsMeta" class="public-runtime-meta">当前空闲</div>
-                <div id="publicForegroundSlotGrid" class="public-slot-grid"></div>
+    <!-- 凭证提取引导弹窗 (Token Helper Modal) -->
+    <div id="tokenHelperModal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title" id="modalTitle">
+                    <span id="modalIcon">🤖</span>
+                    <span id="modalHeading">如何获取凭证</span>
+                </div>
+                <button type="button" class="modal-close-btn" id="modalCloseBtn" aria-label="关闭">✕</button>
             </div>
-        </aside>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <!-- 前端交互式人机验证透传弹窗 (Interactive Captcha Pass-Through Modal) -->
+    <div id="captchaInteractiveModal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="captchaModalTitle">
+        <div class="modal-card captcha-modal-card" id="captchaModalCard">
+            <div class="modal-header">
+                <div class="modal-title" id="captchaModalTitle">
+                    <span>人机验证</span>
+                    <span id="captchaCountdownBadge" class="captcha-countdown-badge"><span id="captchaCountdownSec">60</span>s</span>
+                    <button type="button" class="captcha-header-refresh-btn" id="captchaHeaderRefreshBtn" title="题目太难或不清晰？点击向官方申请更换一组题目">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; vertical-align: -2px;"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 21h5v-5"></path></svg>
+                        <span>换一题</span>
+                    </button>
+                </div>
+                <button type="button" class="modal-close-btn" id="captchaModalCloseBtn" aria-label="关闭">✕</button>
+            </div>
+            <div class="captcha-modal-body" id="captchaModalBody">
+                <div class="captcha-guide-banner">
+                    <div class="captcha-guide-text">
+                        <strong id="captchaPromptHeading">人机验证</strong>
+                        <div id="captchaPromptDetail"></div>
+                    </div>
+                </div>
+
+                <div class="captcha-viewport-container" id="captchaViewportContainer">
+                    <div id="captchaLoadingState" class="captcha-loading-state" style="display: none;">
+                        <div class="captcha-loading-spinner"></div>
+                        <strong id="captchaLoadingTitle">正在等待安全验证加载...</strong>
+                        <span id="captchaLoadingText">正在检测官方人机验证弹窗，请稍候...</span>
+                    </div>
+                    <img id="captchaInteractiveImg" class="captcha-interactive-img" alt="人机验证画面加载中..." src="" draggable="false" style="display: none; user-select: none; -webkit-user-drag: none; touch-action: pan-y;" />
+
+                    <!-- 提交过渡动画遮罩 -->
+                    <div id="captchaSubmitOverlay" class="captcha-submit-overlay" style="display: none;">
+                        <div class="captcha-submit-icon-wrapper">
+                            <div id="captchaSubmitSpinner" class="captcha-submit-spinner"></div>
+                            <div id="captchaCheckmarkBox" class="captcha-checkmark-box">
+                                <svg class="captcha-checkmark-svg" viewBox="0 0 52 52">
+                                    <circle class="captcha-checkmark-circle" cx="26" cy="26" r="23.5" fill="none"/>
+                                    <path class="captcha-checkmark-check" fill="none" d="M15 26.5l7.5 7.5 15.5-16"/>
+                                </svg>
+                            </div>
+                        </div>
+                        <span id="captchaSubmitText" class="captcha-submit-text">已提交验证，交由官方处理…</span>
+                    </div>
+                </div>
+                <div id="captchaStatusTip" class="captcha-status-tip" role="status" aria-live="polite"></div>
+            </div>
+            <button type="button" id="captchaScrollHint" class="captcha-scroll-hint" aria-label="向下滚动查看完整验证区域" aria-controls="captchaModalBody" hidden>
+                <span>向下滚动</span>
+                <svg class="captcha-scroll-arrow" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="m5 5 5 5 5-5M5 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- 最小化悬浮恢复气泡 (Floating Restore Pill when Minimized) -->
+    <div id="captchaFloatingPill" class="captcha-floating-pill" style="display: none;">
+        <span class="captcha-floating-text">等待安全验证协助中...</span>
+        <span class="captcha-floating-badge" id="captchaFloatingSec">60s</span>
     </div>
 
     <script>
@@ -160,6 +234,7 @@
         const tokenInput = document.getElementById('tokenInput');
         const redeemBtn = document.getElementById('redeemBtn');
         const startBtn = document.getElementById('startBtn');
+        const startBtnProgress = document.getElementById('startBtnProgress');
         const statusMsg = document.getElementById('statusMessage');
         const queryBtn = document.getElementById('queryBtn');
         const queryInput = document.getElementById('queryInput');
@@ -170,43 +245,506 @@
         const taskProgressBar = document.getElementById('taskProgressBar');
         const taskProgressPercent = document.getElementById('taskProgressPercent');
         const taskProgressText = document.getElementById('taskProgressText');
-        const publicRuntimeCard = document.getElementById('publicRuntimeCard');
-        const publicForegroundSlots = document.getElementById('publicForegroundSlots');
-        const publicForegroundSlotGrid = document.getElementById('publicForegroundSlotGrid');
-        const publicForegroundSlotsMeta = document.getElementById('publicForegroundSlotsMeta');
         const flowStatusBadge = document.getElementById('flowStatusBadge');
-        const flowStepper = document.getElementById('flowStepper');
+        const cardHead = document.getElementById('cardHead');
+        const cardTitle = document.getElementById('cardTitle');
+        const cardSubtitle = document.getElementById('cardSubtitle');
+        const tabNav = document.getElementById('tabNav');
         const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
         let taskProgressValue = 0;
         let activationLocked = false;
-        let publicRuntimeTimer = null;
+        let currentPlanLabel = '';
+        let successTransitionTimer = null;
+        let successNoticeTimer = null;
+        const pageShell = document.querySelector('.page-shell');
+
+        function lockShellTopPosition() {
+            if (!pageShell) return;
+            if (pageShell.dataset.topLocked) return;
+            let statusOffset = 0;
+            if (statusMsg && statusMsg.style.display !== 'none') {
+                const style = window.getComputedStyle(statusMsg);
+                const marginTop = parseFloat(style.marginTop) || 18;
+                const marginBottom = parseFloat(style.marginBottom) || 0;
+                statusOffset = (statusMsg.offsetHeight || 0) + marginTop + marginBottom;
+            }
+            const shellHeight = Math.max(100, pageShell.offsetHeight - statusOffset);
+            const computedTop = Math.max(16, Math.round((window.innerHeight - shellHeight) / 2));
+            pageShell.style.marginTop = `${computedTop}px`;
+            pageShell.style.marginBottom = 'auto';
+            pageShell.dataset.topLocked = 'true';
+        }
+
+        function unlockShellTopPosition() {
+            if (!pageShell) return;
+            delete pageShell.dataset.topLocked;
+            pageShell.style.marginTop = '';
+            pageShell.style.marginBottom = '';
+        }
+
+        window.addEventListener('resize', () => {
+            if (pageShell && pageShell.dataset.topLocked) {
+                unlockShellTopPosition();
+                if (step2 && step2.style.display !== 'none') {
+                    lockShellTopPosition();
+                }
+            }
+        });
 
         const PLAN_LABELS = {
+            go: 'ChatGPT Go',
             plus: 'ChatGPT Plus',
-            pro_5x: 'ChatGPT Pro 5x',
-            pro_20x: 'ChatGPT Pro 20x'
+            pro_100: 'ChatGPT PRO 100',
+            pro_200: 'ChatGPT PRO 200',
+            pro_500: 'ChatGPT PRO 500',
+            pro_5x: 'ChatGPT PRO 100',
+            pro_20x: 'ChatGPT PRO 200',
+            pro5x: 'ChatGPT PRO 100',
+            pro20x: 'ChatGPT PRO 200',
+            claude_pro: 'Claude Pro',
+            claude_pro_annual: 'Claude Pro (年费)',
+            claude_pro_yearly: 'Claude Pro (年费)',
+            claude_max_100: 'Claude Max 100 (5x)',
+            claude_max_200: 'Claude Max 200 (20x)',
+            claude_max_5x: 'Claude Max 100 (5x)',
+            claude_max_20x: 'Claude Max 200 (20x)',
+            claude_team: 'Claude Team',
+            ...GrokPlanCatalog.labels,
         };
 
-        function updateFlowUI(step, status = 'pending') {
+        let currentPlatform = 'chatgpt';
+        const platformNav = document.getElementById('platformNav');
+        const platformButtons = Array.from(document.querySelectorAll('.platform-btn'));
+        const tokenInputLabel = document.getElementById('tokenInputLabel');
+        const getTokenFloatingBtn = document.getElementById('getTokenFloatingBtn');
+        const getTokenBtnText = document.getElementById('getTokenBtnText');
+        const tokenHelperModal = document.getElementById('tokenHelperModal');
+        const modalHeading = document.getElementById('modalHeading');
+        const modalIcon = document.getElementById('modalIcon');
+        const modalBody = document.getElementById('modalBody');
+        const modalCloseBtn = document.getElementById('modalCloseBtn');
+
+        function setPlatform(platform) {
+            const p = String(platform || 'chatgpt').toLowerCase();
+            if (!['chatgpt', 'claude', 'grok'].includes(p)) return;
+            currentPlatform = p;
+
+            if (platformNav) platformNav.setAttribute('data-active-platform', p);
+            platformButtons.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.platform === p);
+            });
+
+            if (document.body) {
+                document.body.setAttribute('data-platform', p);
+            }
+
+            const rechargeCard = document.querySelector('.recharge-card');
+            if (rechargeCard) {
+                rechargeCard.setAttribute('data-platform', p);
+            }
+
+            const tokenModal = document.getElementById('tokenHelperModal');
+            if (tokenModal) {
+                tokenModal.setAttribute('data-platform', p);
+            }
+
+            const heroType = document.getElementById('heroType');
+            if (heroType) {
+                const oldP = heroType.getAttribute('data-platform');
+                if (oldP !== p) {
+                    heroType.setAttribute('data-platform', p);
+                    heroType.className = `hero-type platform-${p}`;
+                    if (p === 'claude') {
+                        heroType.innerHTML = `
+                            <span class="word word-plus">CLAUDE</span>
+                            <span class="word word-feiniao">ANTHROPIC</span>
+                            <span class="word word-topup">SONNET</span>
+                            <span class="word word-pro">PRO</span>
+                        `;
+                    } else if (p === 'grok') {
+                        heroType.innerHTML = `
+                            <span class="word word-plus">GROK</span>
+                            <span class="word word-feiniao">X.COM</span>
+                            <span class="word word-topup">PREMIUM</span>
+                            <span class="word word-pro">SUPER</span>
+                        `;
+                    } else {
+                        heroType.innerHTML = `
+                            <span class="word word-plus">PLUS</span>
+                            <span class="word word-feiniao">FEINIAO SI</span>
+                            <span class="word word-topup">TOP-UP</span>
+                            <span class="word word-pro">PRO</span>
+                        `;
+                    }
+                }
+            }
+
+            if (cdkInput) {
+                cdkInput.placeholder = '请输入卡密 / CDK';
+            }
+
+            if (p === 'claude') {
+                if (tokenInputLabel) tokenInputLabel.textContent = 'Claude sessionKey';
+                if (tokenInput) {
+                    tokenInput.placeholder = '登录 claude.ai 后，从 Cookie 复制 sessionKey（以 sk-ant-sid 开头，如 sid01/sid02）或粘贴完整 Cookie 后充值。';
+                }
+                if (getTokenFloatingBtn) {
+                    getTokenFloatingBtn.removeAttribute('href');
+                    getTokenFloatingBtn.removeAttribute('target');
+                    getTokenFloatingBtn.style.cursor = 'pointer';
+                }
+                if (getTokenBtnText) getTokenBtnText.textContent = '如何获取凭证';
+            } else if (p === 'grok') {
+                if (tokenInputLabel) tokenInputLabel.textContent = 'Grok Cookie / auth_token';
+                if (tokenInput) {
+                    tokenInput.placeholder = '推荐：登录 grok.com 后按 F12 网络标头复制完整 Cookie 粘贴；或粘贴 X auth_token / Cookie-Editor 导出。';
+                }
+                if (getTokenFloatingBtn) {
+                    getTokenFloatingBtn.removeAttribute('href');
+                    getTokenFloatingBtn.removeAttribute('target');
+                    getTokenFloatingBtn.style.cursor = 'pointer';
+                }
+                if (getTokenBtnText) getTokenBtnText.textContent = '如何获取凭证';
+            } else {
+                if (tokenInputLabel) tokenInputLabel.textContent = 'Session';
+                if (tokenInput) {
+                    tokenInput.placeholder = '登录 gpt 后，点击‘获取 session ’按钮，复制网页内所有代码，粘贴到此处后点击‘充值’按钮充值。';
+                }
+                if (getTokenFloatingBtn) {
+                    getTokenFloatingBtn.href = 'https://chatgpt.com/api/auth/session';
+                    getTokenFloatingBtn.target = '_blank';
+                }
+                if (getTokenBtnText) getTokenBtnText.textContent = '获取 Session';
+            }
+
+            if (window.lucide) {
+                window.lucide?.createIcons();
+            }
+        }
+
+        function openTokenHelperModal(platform) {
+            if (!tokenHelperModal) return;
+            const p = platform || currentPlatform;
+            if (p === 'claude') {
+                if (modalIcon) modalIcon.textContent = '🤖';
+                if (modalHeading) modalHeading.textContent = '如何获取 Claude 登录凭证';
+                if (modalBody) {
+                    modalBody.innerHTML = `
+                        <div class="helper-guide-step">
+                            <div class="modal-step-title">🛠️ 方法一：开发者工具【应用】(Application) 查看 Cookie（推荐）</div>
+                            <ol style="margin: 0 0 10px 18px; padding: 0;">
+                                <li>登录 <a href="https://claude.ai" target="_blank" rel="noopener noreferrer" style="color:var(--lime);text-decoration:underline;">claude.ai</a> 页面后按 <b>F12</b> 打开开发者工具</li>
+                                <li>切换到顶部 <b>应用 (Application)</b> 或 <b>存储 (Storage)</b> 标签</li>
+                                <li>左侧展开 <b>Cookie</b> ➜ 点击 <code>https://claude.ai</code></li>
+                                <li>在表格中找到名为 <code>sessionKey</code> 的项，复制其值（形如 <code>sk-ant-sid01-...</code> 或 <code>sk-ant-sid02-...</code>）</li>
+                            </ol>
+                            <div style="background: rgba(245, 158, 11, 0.1); border-left: 3px solid #f59e0b; padding: 6px 10px; border-radius: 4px; font-size: 12px; color: #fbbf24;">
+                                ⚠️ 说明：Claude 的 sessionKey 带有 HttpOnly 保护，禁止任何控制台 JS 脚本读取，请在【应用】Cookie 表格中直接复制。
+                            </div>
+                        </div>
+                        <div class="helper-guide-step" style="margin-top: 14px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 12px;">
+                            <div class="modal-step-title">⚡ 方法二：【网络】(Network) 复制为 cURL</div>
+                            <ol style="margin: 0 0 0 18px; padding: 0;">
+                                <li>在开发者工具切换到 <b>网络 (Network)</b> 标签，刷新页面 (Cmd + R)</li>
+                                <li>在请求列表中右键任意请求 ➜ <b>复制 (Copy)</b> ➜ <b>复制为 cURL (bash)</b></li>
+                                <li>直接整段粘贴到输入框即可，系统会自动解析其中的 sessionKey</li>
+                            </ol>
+                        </div>
+                    `;
+                }
+            } else if (p === 'grok') {
+                if (modalIcon) modalIcon.textContent = '🚀';
+                if (modalHeading) modalHeading.textContent = '如何获取 Grok / X 登录凭证';
+                if (modalBody) {
+                    modalBody.innerHTML = `
+                        <div class="helper-guide-step">
+                            <div class="modal-step-title">⚡ 方法一：【网络】(Network) 右键复制为 cURL（最快最简单，推荐）</div>
+                            <ol style="margin: 0 0 10px 18px; padding: 0;">
+                                <li>在已登录 <a href="https://grok.com" target="_blank" rel="noopener noreferrer" style="color:var(--lime);text-decoration:underline;">grok.com</a> 的窗口按 <b>F12</b> 打开开发者工具</li>
+                                <li>点击顶部的 <b>网络 (Network)</b> 标签，按 <b>Cmd + R</b>（或 F5）刷新一下页面</li>
+                                <li>在左侧列表中找到第一个请求（通常叫 <code>grok.com</code>），在它上面 <b>单击鼠标右键</b> ➜ <b>复制 (Copy)</b> ➜ <b>复制为 cURL (bash)</b></li>
+                                <li>直接将复制的内容粘贴到输入框（系统内置智能解析，会自动提取全部 Cookie）</li>
+                            </ol>
+                            <div style="background: rgba(34, 197, 94, 0.1); border-left: 3px solid #22c55e; padding: 6px 10px; border-radius: 4px; font-size: 12px; color: #86efac;">
+                                💡 也可以点击该请求，在右侧 <b>标头 (Headers)</b> ➜ <b>请求标头</b> 中找到 <b>Cookie:</b> 右键复制值粘贴。
+                            </div>
+                        </div>
+                        <div class="helper-guide-step" style="margin-top: 14px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 12px;">
+                            <div class="modal-step-title">🛠️ 方法二：【应用】(Application) 标签查看 Cookie</div>
+                            <ol style="margin: 0 0 10px 18px; padding: 0;">
+                                <li>在开发者工具顶部切换到 <b>应用 (Application)</b> 标签</li>
+                                <li>左侧侧边栏展开 <b>存储 (Storage)</b> ➜ <b>Cookie</b> ➜ 点击 <code>https://grok.com</code></li>
+                                <li>在右侧表格中即可看到所有 Cookie（如 <code>sso</code> 或 <code>__Secure-next-auth.session-token</code>），可复制粘贴</li>
+                            </ol>
+                            <div style="background: rgba(245, 158, 11, 0.1); border-left: 3px solid #f59e0b; padding: 6px 10px; border-radius: 4px; font-size: 12px; color: #fbbf24;">
+                                ⚠️ 说明：Grok 与 X 的核心凭据均设置了 HttpOnly 安全防护，在控制台运行 document.cookie 必然返回空值，请通过【网络】或【应用】标签获取。
+                            </div>
+                        </div>
+                        <div class="helper-guide-step" style="margin-top: 14px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 12px;">
+                            <div class="modal-step-title">🍪 方法三：使用 Cookie-Editor 插件导出（一键导出）</div>
+                            <ol style="margin: 0 0 0 18px; padding: 0;">
+                                <li>在浏览器安装并打开 Cookie-Editor 插件</li>
+                                <li>在 grok.com 页面点击 Cookie-Editor ➜ 点击下方的 <b>Export ➜ Export as JSON</b></li>
+                                <li>直接将导出的 JSON 数组内容粘贴到输入框</li>
+                            </ol>
+                        </div>
+                    `;
+                }
+            }
+            tokenHelperModal.style.display = 'flex';
+        }
+
+        function closeTokenHelperModal() {
+            if (tokenHelperModal) tokenHelperModal.style.display = 'none';
+        }
+
+        if (modalCloseBtn) {
+            modalCloseBtn.addEventListener('click', closeTokenHelperModal);
+        }
+        if (tokenHelperModal) {
+            tokenHelperModal.addEventListener('click', (e) => {
+                if (e.target === tokenHelperModal) closeTokenHelperModal();
+            });
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && tokenHelperModal && tokenHelperModal.style.display !== 'none') {
+                closeTokenHelperModal();
+            }
+        });
+
+        platformButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (activationLocked) return;
+                const p = btn.dataset.platform;
+                setPlatform(p);
+            });
+        });
+
+        if (getTokenFloatingBtn) {
+            getTokenFloatingBtn.addEventListener('click', (e) => {
+                if (currentPlatform === 'claude' || currentPlatform === 'grok') {
+                    e.preventDefault();
+                    openTokenHelperModal(currentPlatform);
+                }
+            });
+        }
+
+        let morphTimer = null;
+        function cancelMorph() {
+            const card = document.querySelector('.recharge-card');
+            if (card) {
+                card.style.height = '';
+                card.classList.remove('is-morphing');
+            }
+            if (morphTimer) {
+                clearTimeout(morphTimer);
+                morphTimer = null;
+            }
+        }
+
+        function morphCardHeight(actionCallback, onComplete) {
+            const card = document.querySelector('.recharge-card');
+            if (!card) {
+                if (actionCallback) actionCallback();
+                if (onComplete) onComplete();
+                return;
+            }
+
+            cancelMorph();
+
+            const startHeight = card.offsetHeight;
+            card.classList.add('is-morphing');
+            card.style.height = `${startHeight}px`;
+
+            if (actionCallback) actionCallback();
+
+            // 临时重置以测量实际目标高度
+            card.style.height = 'auto';
+            card.classList.remove('is-morphing');
+            const targetHeight = card.offsetHeight;
+
+            // 回退到初始高度并触发强制重绘
+            card.style.height = `${startHeight}px`;
+            card.classList.add('is-morphing');
+            void card.offsetHeight;
+
+            // 平滑变形到目标高度
+            card.style.height = `${targetHeight}px`;
+
+            morphTimer = setTimeout(() => {
+                card.style.height = '';
+                card.classList.remove('is-morphing');
+                morphTimer = null;
+                if (onComplete) onComplete();
+            }, 420);
+        }
+
+
+        let tabMotionToken = 0;
+        let tabMotionTimer = null;
+
+        function clearPaneMotionStyles(pane) {
+            if (!pane) return;
+            pane.classList.remove(
+                'is-exit-left',
+                'is-exit-right',
+                'is-enter-left',
+                'is-enter-right',
+                'tab-pane-leaving',
+                'tab-pane-entering'
+            );
+            pane.style.position = '';
+            pane.style.left = '';
+            pane.style.right = '';
+            pane.style.top = '';
+            pane.style.width = '';
+            pane.style.visibility = '';
+            pane.style.zIndex = '';
+        }
+
+        function resetTabStage() {
+            tabMotionToken += 1;
+            if (tabMotionTimer) {
+                clearTimeout(tabMotionTimer);
+                tabMotionTimer = null;
+            }
+            const stage = document.getElementById('tabStage');
+            if (stage) {
+                stage.style.height = '';
+                stage.classList.remove('is-switching');
+            }
+            clearPaneMotionStyles(redeemSection);
+            clearPaneMotionStyles(querySection);
+            document.getElementById('cardCopy')?.classList.remove('is-tab-copy-forward', 'is-tab-copy-back');
+        }
+
+        function animateTabSwitch(outPane, inPane, direction) {
+            const stage = document.getElementById('tabStage');
+            const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            tabMotionToken += 1;
+            const token = tabMotionToken;
+            if (tabMotionTimer) {
+                clearTimeout(tabMotionTimer);
+                tabMotionTimer = null;
+            }
+
+            const finishInstant = () => {
+                clearPaneMotionStyles(outPane);
+                clearPaneMotionStyles(inPane);
+                if (stage) {
+                    stage.style.height = '';
+                    stage.classList.remove('is-switching');
+                }
+                if (outPane) {
+                    outPane.style.display = 'none';
+                    outPane.setAttribute('aria-hidden', 'true');
+                }
+                if (inPane) {
+                    inPane.style.display = 'block';
+                    inPane.removeAttribute('aria-hidden');
+                }
+            };
+
+            if (!stage || !outPane || !inPane || reduceMotion) {
+                finishInstant();
+                return;
+            }
+
+            const startHeight = Math.round(stage.getBoundingClientRect().height);
+            stage.classList.add('is-switching');
+            stage.style.height = `${startHeight}px`;
+
+            clearPaneMotionStyles(outPane);
+            clearPaneMotionStyles(inPane);
+
+            inPane.style.display = 'block';
+            inPane.style.visibility = 'hidden';
+            inPane.style.position = 'absolute';
+            inPane.style.left = '0';
+            inPane.style.right = '0';
+            inPane.style.top = '0';
+            inPane.style.width = '100%';
+            inPane.style.zIndex = '2';
+            const targetHeight = Math.round(inPane.offsetHeight);
+
+            outPane.style.display = 'block';
+            outPane.style.position = 'absolute';
+            outPane.style.left = '0';
+            outPane.style.right = '0';
+            outPane.style.top = '0';
+            outPane.style.width = '100%';
+            outPane.style.zIndex = '1';
+            outPane.setAttribute('aria-hidden', 'true');
+            inPane.removeAttribute('aria-hidden');
+
+            if (!targetHeight) {
+                finishInstant();
+                return;
+            }
+
+            void stage.offsetHeight;
+            outPane.classList.add(direction === 'forward' ? 'is-exit-left' : 'is-exit-right');
+            inPane.classList.add(direction === 'forward' ? 'is-enter-right' : 'is-enter-left');
+            inPane.style.visibility = '';
+            stage.style.height = `${targetHeight}px`;
+
+            tabMotionTimer = setTimeout(() => {
+                if (token !== tabMotionToken) return;
+                outPane.style.display = 'none';
+                inPane.style.display = 'block';
+                clearPaneMotionStyles(outPane);
+                clearPaneMotionStyles(inPane);
+                stage.style.height = '';
+                stage.classList.remove('is-switching');
+                tabMotionTimer = null;
+            }, 480);
+        }
+
+        function updateFlowUI(step, status = 'pending', planLabel = '') {
+            if (step === 1) {
+                resetTabStage();
+                if (cardHead) cardHead.classList.add('is-centered');
+                if (cardTitle) cardTitle.textContent = 'AI代充';
+                if (cardSubtitle) {
+                    cardSubtitle.className = '';
+                    cardSubtitle.textContent = '验证卡密后，系统会自动识别服务类型';
+                }
+                if (flowStatusBadge) flowStatusBadge.style.display = 'none';
+                if (tabNav) tabNav.style.display = 'none';
+                if (step1) step1.style.display = 'block';
+                if (step2) step2.style.display = 'none';
+                if (querySection) querySection.style.display = 'none';
+                if (redeemSection) redeemSection.style.display = 'block';
+                if (statusMsg) statusMsg.style.display = 'none';
+                return;
+            }
+
+            // step === 2
+            if (cardHead) cardHead.classList.remove('is-centered');
+            if (cardTitle) cardTitle.textContent = '套餐类型';
+            const resolvedPlan = planLabel || currentPlanLabel || 'ChatGPT Plus';
+            if (cardSubtitle) {
+                cardSubtitle.className = 'plan-subtitle';
+                cardSubtitle.textContent = resolvedPlan;
+            }
             if (flowStatusBadge) {
                 const labels = {
                     pending: '待开始',
                     cdk_ok: '待提交 Session',
                     running: '开通中',
-                    success: '已完成',
+                    success: '充值完成',
                     failed: '失败',
                     manual: '需人工'
                 };
-                flowStatusBadge.textContent = labels[status] || labels.pending;
+                flowStatusBadge.textContent = labels[status] || labels.cdk_ok;
                 flowStatusBadge.className = `flow-badge ${status}`;
+                flowStatusBadge.style.display = 'inline-flex';
             }
-            if (flowStepper) {
-                flowStepper.querySelectorAll('.step-item').forEach((el) => {
-                    const n = Number(el.getAttribute('data-step'));
-                    el.classList.toggle('active', n === step);
-                    el.classList.toggle('done', n < step);
-                });
+            if (tabNav) {
+                tabNav.style.display = 'flex';
             }
+            if (step1) step1.style.display = 'none';
+            if (step2) step2.style.display = 'block';
         }
 
         function decodeJwtPart(part) {
@@ -284,6 +822,9 @@
             tabButtons.forEach((btn) => {
                 btn.disabled = activationLocked;
             });
+            platformButtons.forEach((btn) => {
+                btn.disabled = activationLocked;
+            });
         }
 
         tabButtons.forEach(btn => {
@@ -291,15 +832,46 @@
                 if (activationLocked) {
                     return;
                 }
+                const tab = btn.dataset.tab;
+                const currentActive = document.querySelector('.tab-btn.active');
+                if (currentActive && currentActive.dataset.tab === tab) return;
+
+                unlockShellTopPosition();
+                cancelMorph();
+
+                // 1. 更新滑动指示器方向
+                if (tabNav) tabNav.setAttribute('data-active-tab', tab);
+
+                // 2. 更新按钮 active 态
                 document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                const tab = btn.dataset.tab;
+
+                // 3. 确定进出面板
+                const outPane = tab === 'redeem' ? querySection : redeemSection;
+                const inPane = tab === 'redeem' ? redeemSection : querySection;
+
+                // 4. 面板交叉淡入淡出，同时缓动内容区高度
+                animateTabSwitch(outPane, inPane, tab === 'query' ? 'forward' : 'back');
+
+                // 5. 更新头部文案，并让标题跟着方向轻轻滑入
+                const cardCopy = document.getElementById('cardCopy');
+                if (cardCopy && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                    cardCopy.classList.remove('is-tab-copy-forward', 'is-tab-copy-back');
+                    void cardCopy.offsetWidth;
+                    cardCopy.classList.add(tab === 'query' ? 'is-tab-copy-forward' : 'is-tab-copy-back');
+                }
                 if (tab === 'redeem') {
-                    redeemSection.style.display = 'block';
-                    querySection.style.display = 'none';
+                    if (cardTitle) cardTitle.textContent = '套餐类型';
+                    if (cardSubtitle) {
+                        cardSubtitle.className = 'plan-subtitle';
+                        cardSubtitle.textContent = currentPlanLabel || 'ChatGPT Plus';
+                    }
                 } else {
-                    redeemSection.style.display = 'none';
-                    querySection.style.display = 'block';
+                    if (cardTitle) cardTitle.textContent = '卡密查询';
+                    if (cardSubtitle) {
+                        cardSubtitle.className = '';
+                        cardSubtitle.textContent = '输入卡密实时查询开通状态与进度';
+                    }
                     hideProgress();
                 }
                 statusMsg.style.display = 'none';
@@ -308,7 +880,7 @@
 
         queryBtn.addEventListener('click', async () => {
             const cdk = queryInput.value.trim();
-            if (!cdk) return showStatus('请输入激活码', 'error');
+            if (!cdk) return showCapsule('请输入激活码', 'error');
 
             toggleLoading(queryBtn, true);
             statusMsg.style.display = 'none';
@@ -321,14 +893,37 @@
                     const isProcessing = statusText === '开通中';
                     const isUsed = statusText === '已使用';
                     const statusClass = isProcessing ? 'processing' : (isUsed ? 'used' : 'unused');
+
+                    const platformIcons = { chatgpt: '⚡ ChatGPT', claude: '🤖 Claude', grok: '🚀 Grok' };
+                    const platformKey = String(data.data.platform || currentPlatform).toLowerCase();
+                    const platformName = platformIcons[platformKey] || (data.data.platform ? data.data.platform.toUpperCase() : 'ChatGPT');
+                    const planLabel = data.data.plan_label || PLAN_LABELS[data.data.plan_type] || currentPlanLabel || '标准版';
+                    const boundAccount = String(data.data.boundAccount || '').trim();
+
+                    if (['chatgpt', 'claude', 'grok'].includes(platformKey)) {
+                        setPlatform(platformKey);
+                    }
+
                     const resultHtml = `
                         <div class="query-result-card">
-                            <div class="query-row"><span>CDK 类型</span><strong>自助激活码</strong></div>
+                            <div class="query-row"><span>所属业务</span><strong class="query-business-tag">${platformName} · ${escapeHtml(planLabel)}</strong></div>
                             <div class="query-row"><span>当前状态</span><strong class="status-${statusClass}">${statusText}</strong></div>
-                            ${isUsed ? `<div class="query-row"><span>使用时间</span><strong>${data.data.usedAt || '-'}</strong></div>` : ''}
+                            ${isUsed ? `
+                                <div class="query-row">
+                                    <span>开通账号</span>
+                                    <strong class="query-bound-account" title="${escapeHtml(boundAccount || '暂无记录')}">${boundAccount ? escapeHtml(boundAccount) : '<span style="color:var(--muted);font-weight:normal;">暂无记录</span>'}</strong>
+                                </div>
+                                ${data.data.usedAt ? `<div class="query-row"><span>使用时间</span><strong>${data.data.usedAt}</strong></div>` : ''}
+                            ` : ''}
+                            ${isProcessing && boundAccount ? `
+                                <div class="query-row">
+                                    <span>开通账号</span>
+                                    <strong class="query-bound-account" title="${escapeHtml(boundAccount)}">${escapeHtml(boundAccount)}</strong>
+                                </div>
+                            ` : ''}
                         </div>
                     `;
-                    showStatus(resultHtml, isUsed ? 'error' : 'success');
+                    showStatus(resultHtml, isUsed ? 'error' : (isProcessing ? 'warning' : 'success'));
                 } else {
                     showStatus(data.message, 'error');
                 }
@@ -340,8 +935,8 @@
         });
 
         let verifiedCdk = '';
-        const START_DEFAULT_TEXT = '确认并启动自动化开通';
-        const START_PENDING_TEXT = '开通中...';
+        const START_DEFAULT_TEXT = '充值';
+        const START_PENDING_TEXT = '开通中<span class="bouncing-dots"><span class="b-dot"></span><span class="b-dot"></span><span class="b-dot"></span></span>';
         const START_FAILED_TEXT = '重新尝试';
         const START_SUCCESS_TEXT = '激活成功';
 
@@ -381,7 +976,204 @@
             const { silent = false } = options;
             const content = String(rawValue || '').trim();
             if (!content) {
-                return { valid: false, message: '请粘贴完整 Session JSON', session: '', token: '' };
+                const emptyMsg = currentPlatform === 'claude'
+                    ? '请粘贴 Claude sessionKey 或完整 Cookie'
+                    : (currentPlatform === 'grok' ? '请粘贴 Grok / X auth_token 或完整 Cookie' : '请粘贴完整 Session JSON');
+                return { valid: false, message: emptyMsg, session: '', token: '' };
+            }
+
+            if (currentPlatform === 'claude') {
+                let key = '';
+                let email = '';
+                let accountName = '';
+
+                // 1. 尝试从输入中提取邮箱（JSON 中的 email 字段或直接附带的邮箱文本）
+                const emailMatch = content.match(/[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/);
+                if (emailMatch) {
+                    email = emailMatch[0].trim();
+                }
+
+                // 2. 尝试从 Cookie 的 routingHint 中解析用户名
+                const rhMatch = content.match(/routingHint=sk-ant-rh-([^;\s"']+)/);
+                if (rhMatch) {
+                    try {
+                        const parts = rhMatch[1].split('.');
+                        if (parts.length >= 2) {
+                            const payload = decodeJwtPart(parts[1]);
+                            if (payload && payload.name) {
+                                accountName = payload.name;
+                            }
+                        }
+                    } catch (_) {}
+                }
+
+                // 3. 提取 sessionKey
+                if (content.startsWith('sk-ant-sid')) {
+                    key = content.split(/[;\s]/)[0];
+                } else {
+                    const match = content.match(/sessionKey=([^;\s]+)/);
+                    if (match) {
+                        key = match[1].trim();
+                    } else if (content.includes('sk-ant-sid')) {
+                        const m2 = content.match(/sk-ant-sid[0-9a-zA-Z_-]+/);
+                        if (m2) key = m2[0];
+                    }
+                }
+
+                if (!key || !key.startsWith('sk-ant-sid') || key.length < 30) {
+                    const message = '请输入有效的 Claude sessionKey（形如 sk-ant-sid01-... / sk-ant-sid02-...）或包含 sessionKey 的完整 Cookie';
+                    if (!silent) showStatus(message, 'error');
+                    return { valid: false, message, session: content, token: '', email };
+                }
+
+                if (!silent) {
+                    if (email) {
+                        showStatus(`已识别 Claude 目标充值账号：${escapeHtml(email)}`, 'success');
+                    } else if (accountName) {
+                        showStatus(`已识别 Claude 用户：${escapeHtml(accountName)}（开通时自动绑定官方邮箱）`, 'success');
+                    } else {
+                        showStatus('Claude 登录凭证有效（已识别 sessionKey，开通后自动绑定官方邮箱）', 'success');
+                    }
+                }
+                return { valid: true, message: 'Claude 凭证校验通过', session: content, token: key, email };
+            }
+
+            if (currentPlatform === 'grok') {
+                let token = '';
+                let email = '';
+                let accountName = '';
+                let isValid = false;
+                let credMode = '';
+                const validXToken = value => /^[a-f0-9]{32,64}$/i.test(String(value || '').trim());
+                const belongsTo = (cookie, domains) => {
+                    if (!cookie || typeof cookie !== 'object') return false;
+                    let domain = String(cookie.domain || '').replace(/^\./, '').toLowerCase();
+                    if (!domain && cookie.url) {
+                        try { domain = new URL(cookie.url).hostname; } catch (_) { return false; }
+                    }
+                    return !domain || domains.some(root => domain === root || domain.endsWith(`.${root}`));
+                };
+                const validCookieArray = cookies => {
+                    if (!Array.isArray(cookies)) return false;
+                    const xCookie = cookies.find(cookie => belongsTo(cookie, ['x.com', 'twitter.com'])
+                        && ['auth_token', 'authToken'].includes(cookie.name));
+                    if (xCookie?.value) return validXToken(xCookie.value);
+                    return cookies.some(cookie => belongsTo(cookie, ['grok.com', 'x.ai'])
+                        && /^(?:sso|sso-rw|(?:__Secure-)?next-auth\.session-token(?:\.\d+)?)$/.test(cookie.name)
+                        && typeof cookie.value === 'string' && cookie.value.trim().length >= 10);
+                };
+
+                // 1. 全局嗅探输入内容中的目标邮箱（支持 cURL、文本、Cookie 中的邮箱）
+                const emailMatch = content.match(/[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/);
+                if (emailMatch) {
+                    email = emailMatch[0].trim();
+                }
+
+                // 2. 检查是否有 JWT (sso, sso-rw, 或 __Secure-next-auth.session-token) 并尝试解码 Payload 提取账号与昵称
+                const jwtMatch = content.match(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/);
+                if (jwtMatch) {
+                    try {
+                        const parts = jwtMatch[0].split('.');
+                        if (parts.length >= 2) {
+                            const payload = decodeJwtPart(parts[1]);
+                            if (payload) {
+                                if (!email && (payload.email || payload.googleEmail)) {
+                                    email = String(payload.email || payload.googleEmail).trim();
+                                }
+                                if (payload.name || payload.username || payload.screen_name) {
+                                    accountName = String(payload.name || payload.username || payload.screen_name).trim();
+                                }
+                            }
+                        }
+                    } catch (_) {}
+                }
+
+                if (/^[a-f0-9]{36,44}$/i.test(content)) {
+                    token = content;
+                    isValid = true;
+                    credMode = 'x_token';
+                } else if (content.startsWith('[') && content.endsWith(']')) {
+                    try {
+                        const arr = JSON.parse(content);
+                        if (validCookieArray(arr)) {
+                            isValid = true;
+                            credMode = 'cookie_array';
+                        }
+                    } catch (_) {}
+                } else if (content.startsWith('{')) {
+                        try {
+                            const data = JSON.parse(content);
+                            if (Array.isArray(data.cookies)) {
+                                isValid = validCookieArray(data.cookies);
+                                credMode = 'cookie_array';
+                            } else if (data.authToken || data.auth_token) {
+                                token = data.authToken || data.auth_token;
+                                isValid = validXToken(token);
+                                credMode = 'x_token';
+                            } else if (data.sessionToken || data.session_token || data['__Secure-next-auth.session-token'] || data.sso) {
+                                token = data.sessionToken || data.session_token || data['__Secure-next-auth.session-token'] || data.sso;
+                                if (!email) email = data.email || data.googleEmail || '';
+                                isValid = String(token).trim().length >= 10;
+                                credMode = 'cookie_str';
+                            } else if (data.status === 'authenticated' || (data.session && (data.session.userId || data.session.sessionId || data.session.email))) {
+                                credMode = 'profile_json';
+                            } else if (data.user) {
+                                credMode = 'profile_json';
+                            }
+                        } catch (_) {}
+                } else {
+                    const cookieHeader = content.match(/(?:-H|--header)\s+['"\^]*Cookie:\s*([^'"\^]+)['"\^]*/i)?.[1]
+                        || content.match(/['"]cookie['"]\s*:\s*['"]([^'"]+)['"]/i)?.[1]
+                        || content.match(/(?:^|;\s*|\n)Cookie:\s*(.+)$/im)?.[1] || content;
+                    const cookies = cookieHeader.split(';').flatMap(part => {
+                        const index = part.indexOf('=');
+                        return index > 0 ? [{ name: part.slice(0, index).trim(), value: part.slice(index + 1).trim() }] : [];
+                    });
+                    if (validCookieArray(cookies)) {
+                        const xCookie = cookies.find(cookie => cookie.name === 'auth_token' && validXToken(cookie.value));
+                        token = xCookie?.value || '';
+                        isValid = true;
+                        credMode = xCookie ? 'x_token' : 'cookie_str';
+                    } else if (cookies.some(cookie => /^(?:auth_token|sso|sso-rw|(?:__Secure-)?next-auth\.session-token(?:\.\d+)?)$/.test(cookie.name))) {
+                        // A named, invalid login cookie cannot become an opaque token.
+                        credMode = 'cookie_str';
+                    } else if (jwtMatch) {
+                        token = jwtMatch[0];
+                        isValid = true;
+                        credMode = 'jwt';
+                    } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(content)) {
+                        token = content;
+                        isValid = true;
+                        credMode = 'uuid';
+                    } else if (/^[A-Za-z0-9._-]{20,}$/.test(content)) {
+                        token = content;
+                        isValid = true;
+                        credMode = 'cookie_str';
+                    }
+                }
+
+                if (!isValid) {
+                    const message = credMode === 'profile_json' ? '账号资料 JSON 无法用于登录，请复制已登录 grok.com 的完整 Cookie' : '请输入有效的 Grok / X 登录凭证（推荐在已登录 grok.com 按 F12 复制 Cookie 标头，或粘贴 X auth_token）';
+                    if (!silent) showStatus(message, 'error');
+                    return { valid: false, message, session: content, token: '', email };
+                }
+
+                if (!silent) {
+                    if (email) {
+                        showStatus(`已识别 Grok 目标充值账号：${escapeHtml(email)}`, 'success');
+                    } else if (accountName) {
+                        showStatus(`已识别 Grok 用户：${escapeHtml(accountName)}（开通时自动绑定官方邮箱）`, 'success');
+                    } else if (credMode === 'jwt') {
+                        showStatus('已识别 Grok SSO 核心登录凭据（开通时自动绑定官方邮箱）', 'success');
+                    } else if (credMode === 'cookie_str' || credMode === 'cookie_array') {
+                        showStatus('已识别 Grok 完整 Cookie 登录凭证（开通时自动绑定官方邮箱）', 'success');
+                    } else if (credMode === 'x_token') {
+                        showStatus('已识别 X (Twitter) auth_token 凭证（开通时自动绑定账号）', 'success');
+                    } else {
+                        showStatus('Grok 登录凭证有效（开通后自动绑定官方邮箱）', 'success');
+                    }
+                }
+                return { valid: true, message: 'Grok 凭证校验通过', session: content, token: token || content, email };
             }
 
             const session = parseSessionJsonInput(content);
@@ -409,7 +1201,17 @@
 
             if (!silent) {
                 if (result.valid) {
-                    showStatus(email ? `Session 有效：${email}` : 'Session 校验通过', 'success');
+                    const hasSessionCookie = Boolean(
+                        session.sessionToken
+                        || session.session_token
+                        || session['__Secure-next-auth.session-token']
+                        || (Array.isArray(session.cookies) && session.cookies.length > 0)
+                    );
+                    if (hasSessionCookie) {
+                        showStatus(email ? `Session 完整有效（已包含 Session Token）：${email}` : 'Session 校验通过（已包含 Session Token）', 'success');
+                    } else {
+                        showStatus(email ? `已识别账号：${email}<br><span style="color:#d97706;font-size:12px;">⚠️ 当前内容仅包含 accessToken，缺少关键的 sessionToken Cookie。若启动后卡在 8% 访客界面，请补充 sessionToken 字段。</span>` : 'Session 缺少 sessionToken', 'success');
+                    }
                 } else {
                     showStatus(result.message, 'error');
                 }
@@ -417,8 +1219,46 @@
             return result;
         }
 
+        let probeDebounceTimer = null;
+        let lastProbedContent = '';
+
+        async function probeAccountInfo(platform, content) {
+            if (!content || content.length < 20 || content === lastProbedContent) return;
+            lastProbedContent = content;
+            try {
+                const res = await fetch('/api/public/probe-account', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ platform, content })
+                });
+                const data = await res.json();
+                if (data && data.success && data.valid !== false && data.email) {
+                    window.__taskCurrentEmail = data.email;
+                    const pMap = { chatgpt: 'ChatGPT', claude: 'Claude', grok: 'Grok' };
+                    const pName = pMap[platform] || (platform || '').toUpperCase();
+                    if (data.name) {
+                        showStatus(`已识别 ${pName} 目标充值账号：<b>${escapeHtml(data.email)}</b>（用户: ${escapeHtml(data.name)}）`, 'success');
+                    } else {
+                        showStatus(`已识别 ${pName} 目标充值账号：<b>${escapeHtml(data.email)}</b>`, 'success');
+                    }
+                }
+            } catch (_) {}
+        }
+
         function applyTokenInput(rawValue, options = {}) {
-            return validateSessionInput(rawValue, options);
+            const res = validateSessionInput(rawValue, options);
+            if (res && res.valid) {
+                if (res.email) {
+                    window.__taskCurrentEmail = res.email;
+                } else if (!options.silent && rawValue && rawValue.length >= 20) {
+                    // 本地未能直接提取出明文邮箱时，启动轻量防抖探针向后台权威探活目标账号
+                    clearTimeout(probeDebounceTimer);
+                    probeDebounceTimer = setTimeout(() => {
+                        probeAccountInfo(currentPlatform, rawValue);
+                    }, 500);
+                }
+            }
+            return res;
         }
 
         tokenInput.addEventListener('input', () => {
@@ -429,10 +1269,19 @@
             setTimeout(() => applyTokenInput(tokenInput.value.trim()), 0);
         });
 
+        cdkInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                redeemBtn.click();
+            }
+        });
+
         redeemBtn.addEventListener('click', async () => {
             const cdk = cdkInput.value.trim();
             if (!cdk) {
-                return showStatus('请输入兑换码', 'error');
+                cdkInput.focus();
+                if (statusMsg) statusMsg.style.display = 'none';
+                return showCapsule('请输入卡密', 'error');
             }
 
             toggleLoading(redeemBtn, true);
@@ -449,42 +1298,76 @@
                     verifiedCdk = cdk;
                     const isProcessing = data.data?.status === 'processing';
 
-                    if (isProcessing && data.data?.jobKey) {
-                        taskCompleted = false;
-                        activeJobKey = data.data.jobKey;
-                        setActivationLock(true);
-                        showProgress();
-                        setProgress(3, '正在恢复任务进度...');
-                        updateFlowUI(2, 'running');
-                        showStatus(data.data?.message || '检测到当前 CDK 正在开通中，正在恢复任务进度...', 'success');
-                        step1.style.display = 'none';
-                        step2.style.display = 'block';
-                        initWebSocket(data.data.jobKey);
-                        return;
-                    }
+                    // 1. 停止转圈加载，触发按钮收缩为正圆并丝滑绘制对号
+                    toggleLoading(redeemBtn, false);
+                    redeemBtn.classList.add('is-circle-success');
 
-                    step1.style.display = 'none';
-                    step2.style.display = 'block';
-                    updateFlowUI(2, 'cdk_ok');
+                    // 2. 完整等待圆按钮缩短(380ms) + 勾选对号(360ms)与视觉确认(240ms)，等动画完全播放完毕后再平滑进入第二步
+                    setTimeout(() => {
+                        if (step1) step1.classList.add('step-leaving');
+                        if (cardHead) cardHead.classList.add('head-crossfade');
 
-                    let infoDiv = document.getElementById('redeemCdkInfo');
-                    if (infoDiv) {
-                        infoDiv.style.display = 'block';
-                        infoDiv.innerHTML = `<span>已验证卡密</span><code>${cdk}</code>`;
-                    }
-                    const planDiv = document.getElementById('redeemPlanInfo');
-                    const planType = data.data?.plan_type || 'plus';
-                    const planLabel = data.data?.plan_label || PLAN_LABELS[planType] || PLAN_LABELS.plus;
-                    if (planDiv) {
-                        planDiv.style.display = 'block';
-                        planDiv.innerHTML = `<span>套餐类型</span><strong>${planLabel}</strong>`;
-                    }
-                    statusMsg.style.display = 'none';
+                        setTimeout(() => {
+                            morphCardHeight(() => {
+                                if (step1) step1.classList.remove('step-leaving');
+                                redeemBtn.classList.remove('is-circle-success');
+                                setButtonText(redeemBtn, '验证卡密');
+
+                                const planType = data.data?.plan_type || 'plus';
+                                const planLabel = data.data?.plan_label || PLAN_LABELS[planType] || PLAN_LABELS.plus;
+                                currentPlanLabel = planLabel;
+                                const cdkPlatform = data.data?.platform || 'chatgpt';
+                                setPlatform(cdkPlatform);
+
+                                if (isProcessing && data.data?.jobKey) {
+                                    taskCompleted = false;
+                                    activeJobKey = data.data.jobKey;
+                                    setActivationLock(true);
+                                    showProgress();
+                                    setProgress(3, '正在恢复任务进度...');
+                                    updateFlowUI(2, 'running', planLabel);
+                                    showStatus('当前卡密正在开通中，正在恢复任务进度…', 'success');
+                                    initWebSocket(data.data.jobKey);
+                                } else {
+                                    updateFlowUI(2, 'cdk_ok', planLabel);
+                                }
+
+                                // 级联优雅浮现动画
+                                [tabNav, step2].forEach((el) => {
+                                    if (el) {
+                                        el.classList.remove('cascade-enter');
+                                        void el.offsetWidth;
+                                        el.classList.add('cascade-enter');
+                                    }
+                                });
+
+                                if (cardHead) {
+                                    cardHead.classList.remove('head-crossfade');
+                                    cardHead.classList.add('head-entering');
+                                    setTimeout(() => cardHead.classList.remove('head-entering'), 350);
+                                }
+
+                                let infoDiv = document.getElementById('redeemCdkInfo');
+                                if (infoDiv) {
+                                    infoDiv.style.display = 'flex';
+                                    infoDiv.innerHTML = `<span>待使用</span><code>${cdk}</code>`;
+                                }
+                                statusMsg.style.display = 'none';
+                                setTimeout(() => tokenInput.focus(), 150);
+                            }, () => {
+                                void pageShell?.offsetHeight;
+                                lockShellTopPosition();
+                            });
+                        }, 180);
+                    }, 820);
+                    return;
                 } else {
-                    showStatus(data.message || '兑换码无效或已使用', 'error');
+                    if (statusMsg) statusMsg.style.display = 'none';
+                    showCapsule(data.message || '卡密无效或已使用', 'error');
                 }
             } catch (error) {
-                showStatus('网络请求失败', 'error');
+                if (statusMsg) statusMsg.style.display = 'none';
+                showCapsule('网络请求失败', 'error');
             } finally {
                 toggleLoading(redeemBtn, false);
             }
@@ -494,7 +1377,28 @@
             if (activationLocked) {
                 return;
             }
-            resetRedeemFlow();
+            if (step2) step2.classList.add('step-leaving');
+            if (tabNav) tabNav.classList.add('step-leaving');
+            if (cardHead) cardHead.classList.add('head-crossfade');
+
+            setTimeout(() => {
+                morphCardHeight(() => {
+                    [step2, tabNav].forEach((el) => {
+                        if (el) el.classList.remove('step-leaving', 'cascade-enter');
+                    });
+                    resetRedeemFlow();
+                    if (cardHead) {
+                        cardHead.classList.remove('head-crossfade');
+                        cardHead.classList.add('head-entering');
+                        setTimeout(() => cardHead.classList.remove('head-entering'), 350);
+                    }
+                    if (step1) {
+                        step1.classList.remove('step-leaving');
+                        step1.classList.add('step-entering');
+                        setTimeout(() => step1.classList.remove('step-entering'), 400);
+                    }
+                });
+            }, 180);
         });
 
         let socket = null;
@@ -550,6 +1454,9 @@
         }
 
         function resetRedeemFlow(options = {}) {
+            unlockShellTopPosition();
+            cancelMorph();
+            clearTimeout(successTransitionTimer);
             const preserveStatus = Boolean(options.preserveStatus);
             closeTaskSocket();
             taskCompleted = false;
@@ -557,16 +1464,56 @@
             toggleLoading(redeemBtn, false);
             toggleLoading(startBtn, false);
             redeemBtn.disabled = false;
+            redeemBtn.classList.remove('is-circle-success');
+            setButtonText(redeemBtn, '验证卡密');
             startBtn.disabled = false;
+            startBtn.classList.remove('is-running', 'is-success', 'is-error');
             setButtonText(startBtn, START_DEFAULT_TEXT);
-            step2.style.display = 'none';
-            step1.style.display = 'block';
+            if (startBtnProgress) {
+                startBtnProgress.style.width = '0%';
+                startBtnProgress.classList.remove('error', 'warning');
+            }
             cdkInput.value = '';
             tokenInput.value = '';
             verifiedCdk = '';
-            taskProgress.style.display = 'none';
+            currentPlanLabel = '';
+            window.__taskCurrentEmail = '';
+            if (taskProgress) taskProgress.style.display = 'none';
             hideProgress();
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            const redeemTabBtn = document.querySelector('.tab-btn[data-tab="redeem"]');
+            if (redeemTabBtn) redeemTabBtn.classList.add('active');
             updateFlowUI(1, 'pending');
+            currentPlatform = 'chatgpt';
+            const heroTypeEl = document.getElementById('heroType');
+            if (heroTypeEl) {
+                heroTypeEl.removeAttribute('data-platform');
+                heroTypeEl.className = 'hero-type';
+                heroTypeEl.innerHTML = `
+                    <span class="word word-plus">PLUS</span>
+                    <span class="word word-feiniao">FEINIAO SI</span>
+                    <span class="word word-topup">TOP-UP</span>
+                    <span class="word word-pro">PRO</span>
+                `;
+            }
+            if (document.body) {
+                document.body.removeAttribute('data-platform');
+            }
+            const rechargeCard = document.querySelector('.recharge-card');
+            if (rechargeCard) {
+                rechargeCard.removeAttribute('data-platform');
+            }
+            const tokenModal = document.getElementById('tokenHelperModal');
+            if (tokenModal) {
+                tokenModal.removeAttribute('data-platform');
+            }
+            if (tokenInputLabel) tokenInputLabel.textContent = 'Session';
+            if (getTokenBtnText) getTokenBtnText.textContent = '获取 Session';
+            if (getTokenFloatingBtn) {
+                getTokenFloatingBtn.href = 'https://chatgpt.com/api/auth/session';
+                getTokenFloatingBtn.target = '_blank';
+                getTokenFloatingBtn.style.cursor = '';
+            }
             const infoDiv = document.getElementById('redeemCdkInfo');
             if (infoDiv) {
                 infoDiv.style.display = 'none';
@@ -580,6 +1527,15 @@
             if (!preserveStatus) {
                 statusMsg.style.display = 'none';
             }
+            if (capsuleToast) {
+                capsuleToast.style.display = 'none';
+                capsuleToast.classList.remove('is-hiding', 'shake');
+            }
+            cdkInput.focus();
+        }
+
+        function formatTaskErrorMessage(status, rawMessage, options = {}) {
+            return window.KcTaskMessages.formatTaskErrorMessage(status, rawMessage, options);
         }
 
         function applyTaskState(data) {
@@ -591,31 +1547,25 @@
             if (status === 'success') {
                 taskCompleted = true;
                 closeTaskSocket();
+                closeCaptchaInteractiveModal(true);
                 setActivationLock(false);
-                setProgress(100, message || '激活成功', 'success', { force: true });
                 updateFlowUI(2, 'success');
-                showStatus(message || '激活成功！', 'success');
-                setButtonText(startBtn, START_SUCCESS_TEXT);
-                toggleLoading(startBtn, false);
-                startBtn.disabled = true;
+                const defaultLabel = currentPlatform === 'claude' ? 'Claude Pro' : (currentPlatform === 'grok' ? 'Grok 订阅' : 'ChatGPT Plus');
+                const successMsg = `🎉 恭喜！当前账号已成功开通 <strong>${escapeHtml(currentPlanLabel || defaultLabel)}</strong> 权益！`;
+                setProgress(100, '', 'success', { force: true, successMessage: successMsg });
                 return;
             }
 
             if (status === 'failed' || status === 'maintenance' || status === 'manual') {
                 taskCompleted = true;
                 closeTaskSocket();
+                closeCaptchaInteractiveModal(true);
                 setActivationLock(false);
                 const failPct = Number.isFinite(progress) && progress > 0 ? progress : Math.max(taskProgressValue, 1);
-                setProgress(failPct, message || '开通失败', 'error', { force: true });
+                setProgress(failPct, '', 'error', { force: true });
                 updateFlowUI(2, status === 'manual' ? 'manual' : 'failed');
-                showStatus(
-                    status === 'maintenance'
-                        ? (message || '系统维护中')
-                        : status === 'manual'
-                            ? (message || '需要人工操作，请联系管理员处理')
-                            : (message || '激活失败，请更换账号重试'),
-                    'error'
-                );
+                const displayMsg = formatTaskErrorMessage(status, message, data);
+                showStatus(displayMsg, status === 'manual' ? 'warning' : 'error');
                 setButtonText(startBtn, START_FAILED_TEXT);
                 toggleLoading(startBtn, false);
                 startBtn.disabled = false;
@@ -624,11 +1574,882 @@
 
             updateFlowUI(2, 'running');
             if (Number.isFinite(progress)) {
-                setProgress(progress, message || '正在开通中...', 'running', { force: forceProgress });
-                if (message) {
-                    showStatus(message, 'success');
+                if (data.email) {
+                    window.__taskCurrentEmail = data.email;
+                }
+                const progressLabel = window.__taskCurrentEmail
+                    ? `正在为账号 ${window.__taskCurrentEmail} 办理开通...`
+                    : '';
+                setProgress(progress, progressLabel, 'running', { force: forceProgress });
+            }
+
+            // 若当前人机验证弹窗处于提交后等待官方核验中 (pending)，仅当支付明确成功推进时关闭
+            if ((window.__captchaSubmitted || window.__captchaPending) && !window.__captchaSuccessTransitioning) {
+                if (data.paymentState === 'succeeded') {
+                    showCaptchaSuccessTransition();
                 }
             }
+        }
+
+        // ==================== 前端交互式人机验证透传控制器 ====================
+        const captchaModal = document.getElementById('captchaInteractiveModal');
+        const captchaModalCard = document.getElementById('captchaModalCard');
+        const captchaModalCloseBtn = document.getElementById('captchaModalCloseBtn');
+        const captchaHeaderRefreshBtn = document.getElementById('captchaHeaderRefreshBtn');
+        const captchaFloatingPill = document.getElementById('captchaFloatingPill');
+        const captchaInteractiveImg = document.getElementById('captchaInteractiveImg');
+        const captchaViewportContainer = document.getElementById('captchaViewportContainer');
+        const captchaLoadingState = document.getElementById('captchaLoadingState');
+        const captchaLoadingTitle = document.getElementById('captchaLoadingTitle');
+        const captchaLoadingText = document.getElementById('captchaLoadingText');
+        const captchaCountdownSec = document.getElementById('captchaCountdownSec');
+        const captchaFloatingSec = document.getElementById('captchaFloatingSec');
+        const captchaSubmitOverlay = document.getElementById('captchaSubmitOverlay');
+        const captchaSubmitSpinner = document.getElementById('captchaSubmitSpinner');
+        const captchaCheckmarkBox = document.getElementById('captchaCheckmarkBox');
+        const captchaSubmitText = document.getElementById('captchaSubmitText');
+        const captchaPromptHeading = document.getElementById('captchaPromptHeading');
+        const captchaPromptDetail = document.getElementById('captchaPromptDetail');
+        const captchaStatusTip = document.getElementById('captchaStatusTip');
+        const captchaModalBody = document.getElementById('captchaModalBody');
+        const captchaScrollHint = document.getElementById('captchaScrollHint');
+        let captchaLoadingLayoutActive = false;
+        let captchaDialogHeight = 0;
+
+        function setCaptchaLoadingLayout(loading) {
+            // 在隐藏题图前记录已加载弹窗的高度，整个换题期间保持这一尺寸。
+            if (loading && !captchaLoadingLayoutActive && captchaModal?.style.display === 'flex') {
+                const height = captchaModalCard?.getBoundingClientRect().height;
+                if (Number.isFinite(height) && height > 0) captchaDialogHeight = height;
+            }
+            captchaLoadingLayoutActive = loading;
+            if (captchaModal) captchaModal.classList[loading ? 'add' : 'remove']('is-loading');
+            if (captchaModalCard) captchaModalCard.style.height = loading && captchaDialogHeight > 0 ? `${captchaDialogHeight}px` : '';
+            scheduleCaptchaScrollHint();
+        }
+
+        function updateCaptchaScrollHint() {
+            if (!captchaScrollHint || !captchaModalBody) return;
+            const remaining = captchaModalBody.scrollHeight - captchaModalBody.clientHeight - captchaModalBody.scrollTop;
+            captchaScrollHint.hidden = captchaModal?.style.display !== 'flex' || captchaLoadingLayoutActive || remaining <= 8 || !Number.isFinite(remaining);
+        }
+
+        function scheduleCaptchaScrollHint() {
+            requestAnimationFrame(updateCaptchaScrollHint);
+        }
+
+        captchaModalBody?.addEventListener('scroll', updateCaptchaScrollHint, { passive: true });
+        captchaInteractiveImg?.addEventListener('load', scheduleCaptchaScrollHint);
+        window.addEventListener?.('resize', scheduleCaptchaScrollHint);
+        if (typeof ResizeObserver !== 'undefined') {
+            const captchaResizeObserver = new ResizeObserver(scheduleCaptchaScrollHint);
+            [captchaModalBody, captchaViewportContainer, captchaPromptDetail, captchaStatusTip].forEach(element => {
+                if (element) captchaResizeObserver.observe(element);
+            });
+        }
+        captchaScrollHint?.addEventListener('click', () => {
+            const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            captchaModalBody?.scrollBy({ top: Math.max(120, captchaModalBody.clientHeight * 0.65), behavior: reducedMotion ? 'instant' : 'smooth' });
+        });
+
+        let captchaCountdownTimer = null;
+        let captchaRemainingSeconds = 60;
+        let captchaLastClickTs = 0;
+        let currentCaptchaImageSrc = '';
+        let currentFrameSeq = 0;
+        let isClickLocked = false;
+        let clickLockTimer = null;
+        window.__userCaptchaClicks = 0;
+        window.__captchaSubmitted = false;
+        window.__captchaPending = false;
+        window.__captchaSuccessTransitioning = false;
+        let captchaSuccessTimer = null;
+        let captchaSuccessNotified = false;
+        let captchaLastSubmitTs = 0;
+        let currentCaptchaPromptEn = '';
+        let captchaSelectedPoints = [];
+        let captchaContentReady = true;
+        let captchaExpiresAt = 0;
+
+        function startCaptchaCountdown(initialSec = 60) {
+            clearInterval(captchaCountdownTimer);
+            captchaExpiresAt = captchaExpiresAt || Date.now() + initialSec * 1000;
+            captchaRemainingSeconds = Math.max(0, Math.ceil((captchaExpiresAt - Date.now()) / 1000));
+            if (captchaCountdownSec) captchaCountdownSec.textContent = captchaRemainingSeconds;
+            if (captchaFloatingSec) captchaFloatingSec.textContent = `${captchaRemainingSeconds}s`;
+
+            captchaCountdownTimer = setInterval(() => {
+                captchaRemainingSeconds = Math.max(0, Math.ceil((captchaExpiresAt - Date.now()) / 1000));
+                if (captchaRemainingSeconds <= 0) {
+                    clearInterval(captchaCountdownTimer);
+                    captchaCountdownTimer = null;
+                    if (captchaCountdownSec) captchaCountdownSec.textContent = '0';
+                    if (captchaFloatingSec) captchaFloatingSec.textContent = '0s';
+                    if (captchaStatusTip) {
+                        captchaStatusTip.textContent = '本次验证等待已结束，正在确认任务状态…';
+                    }
+                    return;
+                }
+                if (captchaCountdownSec) captchaCountdownSec.textContent = captchaRemainingSeconds;
+                if (captchaFloatingSec) captchaFloatingSec.textContent = `${captchaRemainingSeconds}s`;
+            }, 1000);
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function resolveCaptchaPromptAndGuide(promptEn = '', promptZh = '', rawTitle = '', rawMessage = '') {
+            const rawEn = String(promptEn || rawTitle || '').trim();
+            const lowerEn = rawEn.toLowerCase();
+            const guideMsg = String(rawMessage || '').toLowerCase();
+            const combined = `${lowerEn} ${guideMsg} ${String(promptZh || '').toLowerCase()}`;
+
+            let heading = String(promptZh || '').trim();
+            let guide = '';
+
+            // 兼容仅携带英文原题或旧进程尚未翻译的画面。
+            if (/^(?:please\s+)?(?:point\s+to|click(?:\s+on)?|tap(?:\s+on)?|select)\s+all\s+(?:the\s+)?machines\s+(?:containing|(?:that\s+)?(?:contain|have))\s+moving\s+parts$/.test(lowerEn.replace(/\s+/g, ' ').trim().replace(/[.:?!。？！]+$/, ''))) {
+                heading = '请点选所有含有运动部件的机器';
+            }
+            // 1. 场所与情境匹配（如 "Tap the thing you can take inside the place"）
+            else if (combined.includes('take inside the place') || combined.includes('take inside') || combined.includes('bring inside') || combined.includes('take into') || combined.includes('bring into')) {
+                heading = '【场景匹配】请点击能带进右上角场所的物品';
+                guide = '操作指引：请按原题要求，结合右上角的场所示例点选物品。橙色勾选是待发送的点击；提交后以官方画面中的选中标记为准。Next＝下一步，Verify＝验证，Skip＝跳过。';
+            } else if (combined.includes('wear inside the place') || combined.includes('wear inside') || combined.includes('wear in the place')) {
+                heading = '【场景穿戴】请点击适合在该场所穿戴的衣物';
+                guide = '操作指引：请观察右上角地点，在下方点击所有适合在当前场合穿戴的衣物/配饰（如泳衣、正装外套等）。选好后点击右下角按钮提交。';
+            } else if (combined.includes('belongs in the place') || combined.includes('belong in the place') || combined.includes('belongs in') || combined.includes('belongs to the place') || combined.includes('belongs inside')) {
+                heading = '【场景归属】请点击属于右上角场所的设施/物品';
+                guide = '操作指引：请观察右上角地点，在下方点击所有通常属于该场所内部配置的物品。选好后点击右下角按钮提交。';
+            }
+            // 2. 字母与拼图拖拽 (drag the letter / complete the pair / complete the puzzle)
+            else if (combined.includes('letter to the place') || combined.includes('drag the letter') || combined.includes('drag each letter')) {
+                heading = '【字母拖拽】请拖动字母至合适缺口处';
+                guide = '操作指引：请按住目标字母拖动至虚线位置释放；若操作不便，可点击上方「换一题」按钮更换简单题目。';
+            } else if (combined.includes('complete the pair') || combined.includes('complete the puzzle') || combined.includes('drag the object')) {
+                heading = '【配对拼图】请拖动物体完成拼图配对';
+                guide = '操作指引：请按住右侧物体拖动至左侧对应虚线框内匹配；若操作不便，可点击上方「换一题」更换题目。';
+            }
+            // 3. 找出异类 / 找不同 (different from the others / shapes that are different)
+            else if (combined.includes('different from the others') || combined.includes('shapes that are different') || combined.includes('shapes are different') || combined.includes('not like the others') || combined.includes('odd one out')) {
+                if (combined.includes('two') || combined.includes('2')) {
+                    heading = '【找出异类】请点击与其他图形不同的【两个形状】';
+                } else if (combined.includes('three') || combined.includes('3')) {
+                    heading = '【找出异类】请点击与其他图形不同的【三个形状】';
+                } else {
+                    heading = '【找出异类】请点击与其他项不同的【形状/物体】';
+                }
+                guide = '操作指引：请仔细观察图中的几何图形，找出其中形状、凹凸特征或纹理与其他项明显不同的目标点击选定，确认选好后点击右下角按钮完成验证。';
+            }
+            // 4. 动物眼神对视 / 避开目光 (meet your eye / looking away)
+            else if (combined.includes('meet your eye') || combined.includes('meet your eyes') || combined.includes('looking at you') || combined.includes('looking directly')) {
+                if (combined.includes('not meet') || combined.includes("don't meet") || combined.includes('away from you')) {
+                    heading = '【避开目光】请点击所有背对你（不看向你）的动物';
+                    guide = '操作指引：请仔细观察动物的眼神与朝向，点击所有【没有直视你、视线朝向其他方向或背对你】的动物。选全后点击右下角按钮完成验证。';
+                } else {
+                    heading = '【目光正视】请点击所有正视你（与你目光对视）的动物';
+                    guide = '操作指引：请仔细观察动物的眼神，点击所有【正在正视你、双眼直视屏幕与你对视】的动物。选全后点击右下角按钮完成验证。';
+                }
+            }
+            // 5. 遮盖与隐藏 (concealed by / covered by)
+            else if (combined.includes('concealed by') || combined.includes('concealed') || combined.includes('covered by')) {
+                heading = '【体积遮盖】请选出能被右上角物品完全遮住的物体';
+                guide = '操作指引：请观察右上角所示物品，在下方点击所有【体积比它小、能被它完全盖住】的物体（注意：绝对不能选体积比它大的物体！）。选全后点击右下角按钮继续。';
+            }
+            // 6. 容器装入 (fit inside / fits inside / fit into)
+            else if (combined.includes('fit inside') || combined.includes('fits inside') || combined.includes('fit into') || combined.includes('fits into')) {
+                heading = '【容器容纳】请选出能完全装进右上角物品内部的物体';
+                guide = '操作指引：请观察右上角所示物品，在下方点击所有【体积更小、能完全装进它内部】的小物体。选全后点击右下角按钮继续。';
+            }
+            // 7. 交通工具类别 (made for water travel / air travel / land travel)
+            else if (combined.includes('water travel') || combined.includes('water transport')) {
+                heading = '【水上交通】请点击所有水上交通工具（轮船/艇等）';
+                guide = '操作指引：请在下方选出所有航行于水上的船只、快艇或水上载具。选好后点击右下角按钮提交。';
+            } else if (combined.includes('air travel') || combined.includes('air transport')) {
+                heading = '【空中交通】请点击所有空中交通工具（飞机/直升机等）';
+                guide = '操作指引：请在下方选出所有飞行于空中的飞机、热气球或航空载具。选好后点击右下角按钮提交。';
+            } else if (combined.includes('land travel') || combined.includes('land transport')) {
+                heading = '【陆地交通】请点击所有陆地交通工具（汽车/自行车等）';
+                guide = '操作指引：请在下方选出所有地面行驶的机动车或非机动车。选好后点击右下角按钮提交。';
+            }
+            // 8. 旋转/功能特性物品 (things that spin when you use them)
+            else if (combined.includes('spin when you use them') || combined.includes('spin when used') || combined.includes('things that spin') || combined.includes('that spin')) {
+                heading = '请点击【使用时会旋转的物品】';
+                guide = '操作指引：请在下方找出所有在使用或运转时会旋转的物品（如电风扇、转椅、车轮、陀螺等）。选好后点击右下角按钮继续。';
+            }
+            // 9. 材质吸收液体 (materials that absorb liquid)
+            else if (combined.includes('absorb liquid') || combined.includes('absorbs liquid') || combined.includes('absorb water') || combined.includes('absorbs water')) {
+                heading = '请点击【能吸收液体的材料】';
+                guide = '操作指引：请在下方选出所有具备吸水性、能吸收液体的材料或物品（如海绵、厨房纸/纸巾、毛巾等）。选好后点击右下角按钮继续。';
+            }
+            // 10. 室内/室外物品 (typically kept outside / indoors)
+            else if (combined.includes('kept outside') || combined.includes('found outside') || combined.includes('placed outside') || combined.includes('kept outdoors')) {
+                heading = '请选出所有【通常放置在室外的物品】';
+                guide = '操作指引：请在下方选出所有通常在室外/户外使用的物品（如工程车辆、沙滩遮阳伞、户外长椅等，排除台灯、办公桌等室内用品）。选好后点击右下角按钮继续。';
+            } else if (combined.includes('kept indoors') || combined.includes('kept inside') || combined.includes('found indoors') || combined.includes('placed indoors')) {
+                heading = '请选出所有【通常放置在室内的物品】';
+                guide = '操作指引：请在下方选出所有通常在室内使用的物品（如台灯、办公桌椅、室内沙发等）。选好后点击右下角按钮继续。';
+            }
+            // 11. 阴影 / 投影 (shadow)
+            else if (combined.includes('shadow') || combined.includes('silhouette')) {
+                heading = '【影子匹配】请选出正确的投影/影子';
+                guide = '操作指引：请观察目标物体的轮廓特征，在下方找出与之完全对应的影子。选好后点击右下角按钮提交。';
+            }
+            // 12. 数量与示例匹配 (count shown / shown below / sample)
+            else if (guideMsg.includes('示例图') || guideMsg.includes('示例及其数量') || combined.includes('count shown') || combined.includes('shown below')) {
+                heading = heading || '【数量匹配】请选出符合目标数量的物体';
+                guide = '操作指引：请观察题目底部示例图与对应数量（如 1x 🐟、1x 🦔），在上方找出对应数量的目标点击。选全后点击右下角「Next / 下一步」或「Verify / 提交」。';
+            }
+            // 13. 兜底通用处理
+            else {
+                if (!heading || heading === '人机验证') {
+                    if (lowerEn.startsWith('tap on each ') || lowerEn.startsWith('tap all ') || lowerEn.startsWith('please select all ') || lowerEn.startsWith('click on each ') || lowerEn.startsWith('click on all ') || lowerEn.startsWith('click on ') || lowerEn.startsWith('find all ') || lowerEn.startsWith('find each ')) {
+                        const targetPhrase = rawEn.replace(/^(tap on each|tap all|please select all|click on each|click on all|click on|select all|tap the|find all|find each)\s+/i, '');
+                        heading = `【请点击】${targetPhrase}`;
+                    } else if (rawEn) {
+                        heading = rawEn;
+                    } else {
+                        heading = '人机验证';
+                    }
+                }
+                guide = '操作指引：请按题目要求点选或拖动，再点击右下角按钮。Next＝下一步，Verify＝验证，Skip＝跳过；选图发送到官方后，按钮文字可能变化。橙色勾选表示待发送的点击，官方选中点中的 × 用于移除选择。素材加载缓慢时可点击上方「换一题」。';
+            }
+
+            return { heading, guide };
+        }
+
+        function openCaptchaInteractiveModal(data) {
+            if (!captchaModal) return;
+
+            // 若正处于成功完成过渡并即将关闭，禁止旧帧打断
+            if (window.__captchaSuccessTransitioning) return;
+
+            const isAlreadyOpen = (captchaModal.style.display === 'flex' || captchaFloatingPill?.style.display === 'flex');
+            if (!isAlreadyOpen) {
+                captchaSuccessNotified = false;
+                localRefreshCount = 0;
+                refreshCooldownSec = 0;
+                updateRefreshBtnCooldown();
+            }
+            const hasImage = Boolean(data && data.image);
+            const isNewImage = Boolean(hasImage && data.image !== currentCaptchaImageSrc);
+            const incomingFrameSeq = (data && data.frameSeq !== undefined) ? Number(data.frameSeq) : 0;
+            if (incomingFrameSeq && incomingFrameSeq < currentFrameSeq) return;
+            const isNewFrame = Boolean(incomingFrameSeq && incomingFrameSeq > currentFrameSeq);
+            const wasSubmitted = Boolean(window.__captchaSubmitted || window.__captchaPending);
+            const wasLoading = !captchaContentReady;
+            captchaContentReady = data?.contentReady !== false && !data?.loading;
+            if (Number(data?.expiresAt) > 0) captchaExpiresAt = Number(data.expiresAt);
+
+            if (incomingFrameSeq) {
+                currentFrameSeq = Math.max(currentFrameSeq, incomingFrameSeq);
+            }
+
+            // 如果用户刚点击了提交/Next/刷新，且收到了全新画面（如多页验证跳转到第 2 页，或重试题目/换题），立即解封等待遮罩与交互锁
+            if (wasSubmitted && (isNewImage || isNewFrame)) {
+                window.__captchaSubmitted = false;
+                window.__captchaPending = false;
+                isClickLocked = false;
+                clearTimeout(clickLockTimer);
+                if (captchaSubmitOverlay) {
+                    captchaSubmitOverlay.classList.remove('is-active');
+                    captchaSubmitOverlay.style.display = 'none';
+                }
+                if (captchaSubmitSpinner) {
+                    captchaSubmitSpinner.style.display = 'block';
+                    captchaSubmitSpinner.style.opacity = '1';
+                }
+                if (captchaCheckmarkBox) {
+                    captchaCheckmarkBox.classList.remove('is-visible');
+                    captchaCheckmarkBox.style.display = 'none';
+                }
+            } else if (wasSubmitted && !isNewImage && !isNewFrame) {
+                // 若仍在提交核验中且非新图像帧，保持遮罩并更新文字，不被空帧覆盖
+                if (data && data.loading && captchaSubmitText) {
+                    captchaSubmitText.textContent = '已提交验证，交由官方处理…';
+                }
+                return;
+            }
+
+            setCaptchaLoadingLayout(!captchaContentReady);
+            if (data && data.image && captchaContentReady) {
+                currentCaptchaImageSrc = data.image;
+                isClickLocked = false;
+                clearTimeout(clickLockTimer);
+                refreshCooldownSec = 0;
+                if (refreshCooldownTimer) {
+                    clearInterval(refreshCooldownTimer);
+                    refreshCooldownTimer = null;
+                }
+                updateRefreshBtnCooldown();
+                if (data.promptEn) currentCaptchaPromptEn = data.promptEn;
+                captchaInteractiveImg.src = data.image;
+                captchaInteractiveImg.style.display = 'block';
+                if (captchaLoadingState) captchaLoadingState.style.display = 'none';
+                if (!window.__captchaSubmitted && !window.__captchaPending && captchaSubmitOverlay) {
+                    captchaSubmitOverlay.style.display = 'none';
+                    captchaSubmitOverlay.classList.remove('is-active');
+                }
+                if (captchaViewportContainer && (isNewImage || wasSubmitted)) {
+                    captchaViewportContainer.querySelectorAll('.captcha-click-dot, .captcha-click-ripple, .captcha-select-badge').forEach(el => el.remove());
+                }
+                if (isNewImage || wasSubmitted) captchaSelectedPoints = [];
+                window.__userCaptchaClicks = 0;
+                if (!isAlreadyOpen || isNewImage || !captchaCountdownTimer) {
+                    startCaptchaCountdown(60);
+                }
+                window.__captchaOpenProgress = taskProgressValue;
+                if (wasSubmitted && (isNewImage || isNewFrame) && captchaStatusTip) {
+                    captchaStatusTip.textContent = '官方画面已更新，请核对选中状态和按钮；多页题请继续完成下一页。';
+                }
+                if (wasLoading && captchaStatusTip) {
+                    captchaStatusTip.textContent = '题图已完整加载，请按题目要求操作。';
+                }
+            } else if (data && (data.loading || data.contentReady === false)) {
+                // 换题时展示明确的加载状态，不显示缺图截图或上一题的可操作画面。
+                captchaInteractiveImg.style.display = 'none';
+                if (captchaLoadingState) captchaLoadingState.style.display = 'flex';
+                isClickLocked = false;
+                clearTimeout(clickLockTimer);
+                captchaSelectedPoints = [];
+                if (captchaViewportContainer) {
+                    captchaViewportContainer.querySelectorAll('.captcha-click-dot, .captcha-click-ripple, .captcha-select-badge').forEach(el => el.remove());
+                }
+                const replacingDrag = data.title === '正在更换题型…';
+                if (captchaLoadingTitle) captchaLoadingTitle.textContent = replacingDrag ? data.title : '正在加载新题图片…';
+                if (captchaLoadingText) captchaLoadingText.textContent = replacingDrag ? data.message : '图片完整显示后即可操作。加载较慢时可点击上方「换一题」。';
+                if (captchaStatusTip) captchaStatusTip.textContent = replacingDrag ? '正在切换到点选题，请稍候。' : '系统正在自动更新题图，请稍候。';
+                if (!captchaCountdownTimer) {
+                    startCaptchaCountdown(60);
+                }
+            }
+
+            const promptResolution = resolveCaptchaPromptAndGuide(data?.promptEn, data?.promptZh, data?.title, data?.message);
+            const displayPrompt = promptResolution.heading;
+            if (captchaPromptHeading) {
+                captchaPromptHeading.textContent = displayPrompt;
+            }
+            if (captchaPromptDetail) {
+                let html = '';
+                if (data?.promptEn && data.promptEn !== displayPrompt) {
+                    html += `<div class="captcha-prompt-en">英文原题：${escapeHtml(data.promptEn)}</div>`;
+                }
+                captchaPromptDetail.innerHTML = html;
+            }
+
+            if (!isAlreadyOpen && captchaFloatingPill) captchaFloatingPill.style.display = 'none';
+            captchaModal.classList.remove('is-closing');
+            captchaModal.style.display = 'flex';
+            scheduleCaptchaScrollHint();
+        }
+
+        function minimizeCaptchaInteractiveModal() {
+            if (captchaModal) captchaModal.style.display = 'none';
+            if (captchaFloatingPill) captchaFloatingPill.style.display = 'flex';
+            updateCaptchaScrollHint();
+        }
+
+        function restoreCaptchaInteractiveModal() {
+            if (captchaFloatingPill) captchaFloatingPill.style.display = 'none';
+            if (captchaModal) captchaModal.style.display = 'flex';
+            scheduleCaptchaScrollHint();
+        }
+
+        function closeCaptchaInteractiveModal(force = false) {
+            if (captchaScrollHint) captchaScrollHint.hidden = true;
+            clearInterval(captchaCountdownTimer);
+            captchaCountdownTimer = null;
+            clearTimeout(captchaSuccessTimer);
+            captchaSuccessTimer = null;
+            clearTimeout(clickLockTimer);
+            clickLockTimer = null;
+            isClickLocked = false;
+            localRefreshCount = 0;
+            refreshCooldownSec = 0;
+            if (refreshCooldownTimer) {
+                clearInterval(refreshCooldownTimer);
+                refreshCooldownTimer = null;
+            }
+            updateRefreshBtnCooldown();
+            currentFrameSeq = 0;
+            currentCaptchaImageSrc = '';
+            captchaContentReady = true;
+            captchaExpiresAt = 0;
+            captchaSelectedPoints = [];
+            if (captchaViewportContainer) {
+                captchaViewportContainer.querySelectorAll('.captcha-select-badge').forEach(el => el.remove());
+            }
+            window.__userCaptchaClicks = 0;
+            window.__captchaSubmitted = false;
+            window.__captchaPending = false;
+            window.__captchaSuccessTransitioning = false;
+            if (!captchaModal || captchaModal.style.display === 'none') {
+                if (captchaFloatingPill) captchaFloatingPill.style.display = 'none';
+                setCaptchaLoadingLayout(false);
+                captchaDialogHeight = 0;
+                return;
+            }
+
+            const resetOverlays = () => {
+                setCaptchaLoadingLayout(false);
+                captchaDialogHeight = 0;
+                if (captchaSubmitOverlay) {
+                    captchaSubmitOverlay.style.display = 'none';
+                    captchaSubmitOverlay.classList.remove('is-active');
+                }
+                if (captchaCheckmarkBox) {
+                    captchaCheckmarkBox.classList.remove('is-visible');
+                    captchaCheckmarkBox.style.display = 'none';
+                }
+                if (captchaSubmitSpinner) {
+                    captchaSubmitSpinner.style.display = 'block';
+                    captchaSubmitSpinner.style.opacity = '1';
+                }
+            };
+
+            if (force) {
+                captchaModal.classList.remove('is-closing');
+                captchaModal.style.display = 'none';
+                if (captchaFloatingPill) captchaFloatingPill.style.display = 'none';
+                resetOverlays();
+                return;
+            }
+
+            // 触发丝滑关闭消失过渡动画 (300ms)
+            captchaModal.classList.add('is-closing');
+            setTimeout(() => {
+                captchaModal.classList.remove('is-closing');
+                captchaModal.style.display = 'none';
+                if (captchaFloatingPill) captchaFloatingPill.style.display = 'none';
+                resetOverlays();
+            }, 300);
+        }
+
+        function createCaptchaClickMarker(x, y) {
+            if (!captchaViewportContainer) return;
+            const ripple = document.createElement('div');
+            ripple.className = 'captcha-click-ripple';
+            ripple.style.left = `${x}px`;
+            ripple.style.top = `${y}px`;
+
+            const dot = document.createElement('div');
+            dot.className = 'captcha-click-dot';
+            dot.style.left = `${x}px`;
+            dot.style.top = `${y}px`;
+
+            captchaViewportContainer.appendChild(ripple);
+            captchaViewportContainer.appendChild(dot);
+
+            setTimeout(() => {
+                ripple.remove();
+                dot.remove();
+            }, 1200);
+        }
+
+        function showCaptchaPendingTransition(customText) {
+            if (!captchaSubmitOverlay) return;
+            window.__captchaSubmitted = true;
+            window.__captchaPending = true;
+            captchaLastSubmitTs = Date.now();
+
+            captchaSubmitOverlay.style.display = 'flex';
+            requestAnimationFrame(() => {
+                captchaSubmitOverlay.classList.add('is-active');
+            });
+
+            if (captchaSubmitSpinner) {
+                captchaSubmitSpinner.style.display = 'block';
+                captchaSubmitSpinner.style.opacity = '1';
+            }
+            if (captchaCheckmarkBox) {
+                captchaCheckmarkBox.classList.remove('is-visible');
+                captchaCheckmarkBox.style.display = 'none';
+            }
+            if (captchaSubmitText) {
+                captchaSubmitText.textContent = customText || '已提交操作，正在同步官方收银台…';
+                captchaSubmitText.style.display = 'block';
+            }
+            if (captchaStatusTip) {
+                captchaStatusTip.textContent = '';
+            }
+        }
+
+        function showCaptchaSubmitTransition() {
+            showCaptchaPendingTransition();
+        }
+
+        function showCaptchaSuccessTransition() {
+            if (window.__captchaSuccessTransitioning || captchaSuccessNotified) return;
+            captchaSuccessNotified = true;
+            closeCaptchaInteractiveModal(false);
+            window.__captchaSuccessTransitioning = true;
+            // 弹窗退场后使用独立胶囊提示，不在充值卡片或验证弹窗内展开成功文案。
+            captchaSuccessTimer = setTimeout(() => {
+                captchaSuccessTimer = null;
+                window.__captchaSuccessTransitioning = false;
+                showCapsule('安全验证已通过，系统正在继续执行支付…', 'success', 2800);
+            }, 300);
+        }
+
+        let captchaPointerDownData = null;
+
+        function handleCaptchaImageDrag(start, e) {
+            if (!activeJobKey) return;
+            if (window.__captchaSubmitted || window.__captchaPending || isClickLocked) return;
+            if (!captchaContentReady) return;
+            if (!captchaInteractiveImg || !captchaInteractiveImg.src || captchaInteractiveImg.style.display === 'none') return;
+
+            // 拖拽手势发送后立即锁定 1200ms，等待后端执行响应与新帧
+            isClickLocked = true;
+            clearTimeout(clickLockTimer);
+            clickLockTimer = setTimeout(() => {
+                isClickLocked = false;
+            }, 1200);
+
+            const fromX = start.startX - start.rectLeft;
+            const fromY = start.startY - start.rectTop;
+            const toX = e.clientX - start.rectLeft;
+            const toY = e.clientY - start.rectTop;
+
+            const fromRatioX = Math.max(0, Math.min(1, fromX / start.rectWidth));
+            const fromRatioY = Math.max(0, Math.min(1, fromY / start.rectHeight));
+            const toRatioX = Math.max(0, Math.min(1, toX / start.rectWidth));
+            const toRatioY = Math.max(0, Math.min(1, toY / start.rectHeight));
+
+            if (captchaViewportContainer) {
+                const containerRect = captchaViewportContainer.getBoundingClientRect();
+                createCaptchaClickMarker(start.startX - containerRect.left, start.startY - containerRect.top);
+                createCaptchaClickMarker(e.clientX - containerRect.left, e.clientY - containerRect.top);
+            }
+
+            if (captchaStatusTip) {
+                captchaStatusTip.textContent = '已发送拖拽操作，正在模拟移动…';
+            }
+
+            const payload = {
+                action: 'captcha_drag',
+                type: 'captcha_drag',
+                jobKey: activeJobKey,
+                fromRatioX,
+                fromRatioY,
+                toRatioX,
+                toRatioY,
+                frameSeq: currentFrameSeq,
+                timestamp: Date.now()
+            };
+
+            let sentViaWs = false;
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                try {
+                    socket.send(JSON.stringify(payload));
+                    sentViaWs = true;
+                } catch (_) {}
+            }
+
+            if (!sentViaWs && activeJobKey) {
+                fetch(`/api/public/task/${encodeURIComponent(activeJobKey)}/captcha-drag`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).catch(() => {});
+            }
+        }
+
+        let localRefreshCount = 0;
+        let refreshCooldownSec = 0;
+        let refreshCooldownTimer = null;
+
+        function updateRefreshBtnCooldown() {
+            if (!captchaHeaderRefreshBtn) return;
+            if (refreshCooldownSec > 0) {
+                captchaHeaderRefreshBtn.classList.add('disabled');
+                const span = captchaHeaderRefreshBtn.querySelector('span');
+                if (span) span.textContent = `换一题 (${refreshCooldownSec}s)`;
+            } else {
+                captchaHeaderRefreshBtn.classList.remove('disabled');
+                const span = captchaHeaderRefreshBtn.querySelector('span');
+                if (span) span.textContent = '换一题';
+            }
+        }
+
+        function triggerCaptchaRefresh(ratioX = 0.31, ratioY = 0.93) {
+            if (refreshCooldownSec > 0) {
+                showCapsule(`换题中，请稍候 ${refreshCooldownSec} 秒...`, 'info', 1200);
+                return;
+            }
+            if (isClickLocked) {
+                showCapsule('正在同步操作中，请稍候…', 'info', 1200);
+                return;
+            }
+            localRefreshCount += 1;
+
+            // 清空本地所有勾选标记
+            captchaSelectedPoints = [];
+            if (captchaViewportContainer) {
+                captchaViewportContainer.querySelectorAll('.captcha-select-badge').forEach(el => el.remove());
+            }
+
+            // 按钮冷却 2 秒防连击，换题无次数上限。
+            refreshCooldownSec = 2;
+            updateRefreshBtnCooldown();
+            clearInterval(refreshCooldownTimer);
+            refreshCooldownTimer = setInterval(() => {
+                refreshCooldownSec -= 1;
+                updateRefreshBtnCooldown();
+                if (refreshCooldownSec <= 0) {
+                    clearInterval(refreshCooldownTimer);
+                }
+            }, 1000);
+
+            // 换题期间显示有说明的加载状态。
+            if (captchaStatusTip) {
+                captchaStatusTip.textContent = `⟳ 正在向官方申请更换题目 (第 ${localRefreshCount} 次)，请稍候…`;
+            }
+            isClickLocked = true;
+            clearTimeout(clickLockTimer);
+            clickLockTimer = setTimeout(() => { isClickLocked = false; }, 2000);
+            captchaContentReady = false;
+            setCaptchaLoadingLayout(true);
+            captchaInteractiveImg.style.display = 'none';
+            if (captchaLoadingState) captchaLoadingState.style.display = 'flex';
+            if (captchaLoadingTitle) captchaLoadingTitle.textContent = '正在请求新题…';
+            if (captchaLoadingText) captchaLoadingText.textContent = '等待官方题图完整加载后即可继续操作。';
+
+            const payload = {
+                type: 'captcha_click',
+                action: 'refresh',
+                jobKey: activeJobKey,
+                ratioX: Number(ratioX) || 0.31,
+                ratioY: Number(ratioY) || 0.93,
+                frameSeq: currentFrameSeq
+            };
+
+            let sentViaWs = false;
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                try {
+                    socket.send(JSON.stringify(payload));
+                    sentViaWs = true;
+                } catch (_) {}
+            }
+
+            if (!sentViaWs && activeJobKey) {
+                fetch(`/api/public/task/${encodeURIComponent(activeJobKey)}/captcha-click`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).then(response => response.json())
+                    .then(data => handleCaptchaClickReceived({ ...data, handled: data.success === true && data.handled === true }))
+                    .catch(() => handleCaptchaClickReceived({ handled: false }));
+            }
+
+        }
+
+        function handleCaptchaImageClick(e) {
+            if (!activeJobKey) return;
+            if (window.__captchaSubmitted || window.__captchaPending || isClickLocked) return;
+            if (!captchaInteractiveImg || !captchaInteractiveImg.src || captchaInteractiveImg.style.display === 'none') return;
+
+            const now = Date.now();
+            if (now - captchaLastClickTs < 120) {
+                return;
+            }
+            captchaLastClickTs = now;
+
+            const rect = captchaInteractiveImg.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            if (clickX < 0 || clickY < 0 || clickX > rect.width || clickY > rect.height) {
+                return;
+            }
+
+            const ratioX = clickX / rect.width;
+            const ratioY = clickY / rect.height;
+
+            const isSubmitClick = (ratioY > 0.78 && ratioX >= 0.58);
+            const isRefreshClick = (ratioY > 0.78 && ratioX <= 0.44);
+
+            if (!captchaContentReady && !isRefreshClick) {
+                if (captchaStatusTip) captchaStatusTip.textContent = '题图仍在加载，画面就绪后再操作；也可点击「换一题」。';
+                return;
+            }
+
+            if (isSubmitClick) {
+                // 用户点击右下角「Verify / 提交」或「Next / 下一步」：
+                // 一次性打包当前所有已勾选目标坐标 + 提交按钮坐标回传云端
+                const selectedCount = captchaSelectedPoints.length;
+                if (selectedCount > 0) {
+                    showCaptchaPendingTransition(`已选 ${selectedCount} 项，正在同步官方收银台…`);
+                } else {
+                    showCaptchaPendingTransition('已提交操作，正在同步官方收银台…');
+                }
+                isClickLocked = true;
+
+                const payload = {
+                    type: 'captcha_click',
+                    action: 'submit',
+                    jobKey: activeJobKey,
+                    ratioX,
+                    ratioY,
+                    points: captchaSelectedPoints.map(p => ({ ratioX: p.ratioX, ratioY: p.ratioY })),
+                    submitPoint: { ratioX, ratioY },
+                    frameSeq: currentFrameSeq
+                };
+
+                let sentViaWs = false;
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    try {
+                        socket.send(JSON.stringify(payload));
+                        sentViaWs = true;
+                    } catch (_) {}
+                }
+
+                if (!sentViaWs && activeJobKey) {
+                    fetch(`/api/public/task/${encodeURIComponent(activeJobKey)}/captcha-click`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    }).then(response => response.json())
+                        .then(data => handleCaptchaClickReceived({ ...data, handled: data.success === true && data.handled === true }))
+                        .catch(() => handleCaptchaClickReceived({ handled: false }));
+                }
+
+            } else if (isRefreshClick) {
+                triggerCaptchaRefresh(ratioX, ratioY);
+            } else {
+                // 核心交互升级：普通选图点击 —— 本地即时勾选/取消勾选，0 网络往返，绝不卡顿！
+                const containerRect = captchaViewportContainer ? captchaViewportContainer.getBoundingClientRect() : rect;
+                const containerClickX = e.clientX - containerRect.left;
+                const containerClickY = e.clientY - containerRect.top;
+
+                // 距离判定：若点击位置与已有选中点欧氏距离小于约 0.08（一个格子的半径），则视为取消该格子的勾选
+                const existingIdx = captchaSelectedPoints.findIndex(pt => Math.hypot(pt.ratioX - ratioX, pt.ratioY - ratioY) < 0.08);
+                if (existingIdx !== -1) {
+                    // 取消已有勾选
+                    const removed = captchaSelectedPoints.splice(existingIdx, 1)[0];
+                    if (removed && removed.badgeEl) {
+                        removed.badgeEl.style.transform = 'translate(-50%, -50%) scale(0.2)';
+                        removed.badgeEl.style.opacity = '0';
+                        setTimeout(() => removed.badgeEl.remove(), 180);
+                    }
+                    if (captchaStatusTip) {
+                        captchaStatusTip.textContent = captchaSelectedPoints.length > 0
+                            ? '点击已选图片可取消勾选；确认无误后，请点击右下角「skip/Verify」 提交验证。'
+                            : '请在下方点选所有符合条件的图片；确认无误后，请点击右下角「skip/Verify」 提交验证。';
+                    }
+                } else {
+                    // 新增勾选标
+                    const badgeEl = document.createElement('div');
+                    badgeEl.className = 'captcha-select-badge';
+                    badgeEl.style.left = `${containerClickX}px`;
+                    badgeEl.style.top = `${containerClickY}px`;
+                    badgeEl.innerHTML = '✓';
+                    if (captchaViewportContainer) {
+                        captchaViewportContainer.appendChild(badgeEl);
+                        createCaptchaClickMarker(containerClickX, containerClickY);
+                    }
+
+                    captchaSelectedPoints.push({
+                        ratioX,
+                        ratioY,
+                        clientX: clickX,
+                        clientY: clickY,
+                        badgeEl
+                    });
+
+                    if (captchaStatusTip) {
+                        captchaStatusTip.textContent = '点击已选图片可取消勾选；确认无误后，请点击右下角「skip/Verify」 提交验证。';
+                    }
+                }
+            }
+        }
+
+        if (captchaInteractiveImg) {
+            captchaInteractiveImg.addEventListener('pointerdown', (e) => {
+                if (!activeJobKey) return;
+                if (window.__captchaSubmitted || window.__captchaPending || isClickLocked) return;
+                const rect = captchaInteractiveImg.getBoundingClientRect();
+                captchaPointerDownData = {
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    rectLeft: rect.left,
+                    rectTop: rect.top,
+                    rectWidth: rect.width,
+                    rectHeight: rect.height,
+                    time: Date.now()
+                };
+            });
+
+            captchaInteractiveImg.addEventListener('pointerup', (e) => {
+                if (!captchaPointerDownData) return;
+                if (window.__captchaSubmitted || window.__captchaPending || isClickLocked) {
+                    captchaPointerDownData = null;
+                    return;
+                }
+                const start = captchaPointerDownData;
+                captchaPointerDownData = null;
+
+                const deltaX = e.clientX - start.startX;
+                const deltaY = e.clientY - start.startY;
+                const dist = Math.hypot(deltaX, deltaY);
+
+                if (dist > 15) {
+                    handleCaptchaImageDrag(start, e);
+                } else {
+                    handleCaptchaImageClick(e);
+                }
+            });
+            captchaInteractiveImg.addEventListener('pointercancel', () => { captchaPointerDownData = null; });
+        }
+        if (captchaModalCloseBtn) {
+            captchaModalCloseBtn.addEventListener('click', minimizeCaptchaInteractiveModal);
+        }
+        if (captchaHeaderRefreshBtn) {
+            captchaHeaderRefreshBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                triggerCaptchaRefresh(0.31, 0.93);
+            });
+        }
+        if (captchaFloatingPill) {
+            captchaFloatingPill.addEventListener('click', restoreCaptchaInteractiveModal);
+        }
+
+        function handleCaptchaInteractiveRequired(data) {
+            openCaptchaInteractiveModal(data);
+        }
+
+        function handleCaptchaClickReceived(data) {
+            if (data?.handled === false) {
+                window.__captchaSubmitted = false;
+                window.__captchaPending = false;
+                isClickLocked = false;
+                clearTimeout(clickLockTimer);
+                if (captchaSubmitOverlay) {
+                    captchaSubmitOverlay.style.display = 'none';
+                    captchaSubmitOverlay.classList.remove('is-active');
+                }
+                if (captchaStatusTip) captchaStatusTip.textContent = '画面已更新或验证会话已结束，本次操作未执行；请等待最新画面后重新操作。';
+                return;
+            }
+            // 接收回执只确认传输状态，不覆盖加载或选图反馈。
+        }
+
+        function handleCaptchaInteractiveStatus(data) {
+            if (data && data.cleared) {
+                showCaptchaSuccessTransition();
+            } else if (data && data.failed) {
+                // 官方明确拦截或失败熔断
+                closeCaptchaInteractiveModal(true);
+            }
+            // 注意：中间轮次 cleared: false 不关闭弹窗，等待新题帧到达或任务终态关闭
         }
 
         function initWebSocket(jobKey) {
@@ -638,17 +2459,18 @@
 
             activeJobKey = jobKey;
 
-            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+            if (socket && socket.readyState === WebSocket.OPEN) {
                 socket.send(JSON.stringify({ type: 'subscribe', jobKey }));
                 return;
             }
+            if (socket && socket.readyState === WebSocket.CONNECTING) return;
 
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             socket = new WebSocket(`${protocol}//${window.location.host}`);
 
             socket.onopen = () => {
                 clearTimeout(reconnectTimer);
-                socket.send(JSON.stringify({ type: 'subscribe', jobKey }));
+                socket.send(JSON.stringify({ type: 'subscribe', jobKey: activeJobKey }));
                 startSocketHeartbeat();
             };
 
@@ -665,6 +2487,12 @@
                     scheduleSocketHeartbeatTimeout();
                     if (data.type === 'snapshot' || data.type === 'progress' || data.type === 'status') {
                         applyTaskState(data);
+                    } else if (data.type === 'captcha_interactive_required') {
+                        handleCaptchaInteractiveRequired(data);
+                    } else if (data.type === 'captcha_click_received') {
+                        handleCaptchaClickReceived(data);
+                    } else if (data.type === 'captcha_interactive_status') {
+                        handleCaptchaInteractiveStatus(data);
                     }
                 } catch (e) {
                     console.error('WS Message Error:', e);
@@ -702,10 +2530,19 @@
             activeJobKey = '';
             clearTimeout(reconnectTimer);
 
+            if (!pageShell?.dataset?.topLocked) {
+                lockShellTopPosition();
+            }
             statusMsg.style.display = 'none';
             resetProgressState();
             showProgress();
-            setProgress(3, '正在启动自动化...', 'running', { force: true });
+            if (sessionCheck.email) {
+                window.__taskCurrentEmail = sessionCheck.email;
+            }
+            const initLabel = window.__taskCurrentEmail
+                ? `正在为账号 ${window.__taskCurrentEmail} 准备开通...`
+                : '';
+            setProgress(3, initLabel, 'running', { force: true });
             updateFlowUI(2, 'running');
 
             try {
@@ -713,6 +2550,7 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        platform: currentPlatform,
                         session: sessionCheck.session,
                         cdk: verifiedCdk
                     })
@@ -720,13 +2558,12 @@
                 const data = await response.json();
 
                 if (data.success && data.jobKey) {
-                    setProgress(8, '任务已启动，正在开通中...');
-                    showStatus('任务已启动，正在为您开通中...', 'success');
+                    setProgress(8, '', 'running');
                     initWebSocket(data.jobKey);
                 } else {
                     hideProgress();
                     updateFlowUI(2, 'failed');
-                    showStatus(data.message || '启动失败', 'error');
+                    showStatus(formatTaskErrorMessage('failed', data.message, data), 'error');
                     setButtonText(startBtn, START_FAILED_TEXT);
                     toggleLoading(startBtn, false);
                     startBtn.disabled = false;
@@ -760,112 +2597,264 @@
         function setButtonText(btn, content) {
             const text = btn.querySelector('.btn-text');
             if (text) {
-                text.textContent = content;
+                if (typeof content === 'string' && content.includes('<')) {
+                    text.innerHTML = content;
+                } else {
+                    text.textContent = content;
+                }
             }
         }
 
         function resetProgressState() {
+            clearTimeout(successTransitionTimer);
+            clearTimeout(successNoticeTimer);
             taskProgressValue = 0;
-            taskProgressBar.style.width = '0%';
-            taskProgressBar.classList.remove('error');
-            taskProgressPercent.textContent = '0%';
+            if (taskProgressBar) {
+                taskProgressBar.style.width = '0%';
+                taskProgressBar.classList.remove('error', 'warning');
+            }
+            if (taskProgressPercent) taskProgressPercent.textContent = '0%';
             if (taskProgressText) {
                 taskProgressText.textContent = '';
+            }
+            if (startBtnProgress) {
+                startBtnProgress.style.width = '0%';
+                startBtnProgress.classList.remove('error', 'warning');
+            }
+            if (startBtn) {
+                startBtn.classList.remove('is-running', 'is-success', 'is-error');
             }
         }
 
         function showProgress() {
-            taskProgress.style.display = 'block';
+            // 进度条已直接集成在充值按钮内部，底部的独立进度框永久隐藏，仅保留 statusMessage
+            if (taskProgress) taskProgress.style.display = 'none';
         }
 
         function hideProgress() {
-            taskProgress.style.display = 'none';
+            if (taskProgress) taskProgress.style.display = 'none';
             resetProgressState();
         }
 
         function setProgress(percent, label = '', type = 'running', options = {}) {
             const force = Boolean(options.force);
-            const maxAllowed = (type === 'success' || type === 'error') ? 100 : 99;
+            const maxAllowed = (type === 'success' || type === 'error' || type === 'warning') ? 100 : 99;
             const requested = Math.max(0, Math.min(maxAllowed, Math.round(percent)));
             const next = (!force && requested < taskProgressValue) ? taskProgressValue : requested;
             taskProgressValue = next;
-            taskProgressBar.style.width = `${next}%`;
-            taskProgressPercent.textContent = `${next}%`;
+            if (taskProgressBar) taskProgressBar.style.width = `${next}%`;
+            if (taskProgressPercent) taskProgressPercent.textContent = `${next}%`;
             if (taskProgressText) {
                 taskProgressText.textContent = label || '';
             }
-            taskProgressBar.classList.toggle('error', type === 'error');
+            if (taskProgressBar) {
+                taskProgressBar.classList.toggle('error', type === 'error');
+                taskProgressBar.classList.toggle('warning', type === 'warning');
+            }
+
+            // 同步更新充值按钮内置进度条与状态
+            if (startBtnProgress) {
+                startBtnProgress.style.width = `${next}%`;
+                startBtnProgress.classList.toggle('error', type === 'error');
+                startBtnProgress.classList.toggle('warning', type === 'warning');
+            }
+
+            if (type === 'running') {
+                clearTimeout(successTransitionTimer);
+                startBtn.classList.add('is-running');
+                startBtn.classList.remove('is-success', 'is-error');
+            } else if (type === 'success') {
+                // 1. 进度条充满到 100%
+                if (startBtnProgress) {
+                    startBtnProgress.style.width = '100%';
+                }
+                clearTimeout(successTransitionTimer);
+                clearTimeout(successNoticeTimer);
+
+                const triggerSuccessNotice = () => {
+                    const msg = options.successMessage;
+                    if (msg) {
+                        showStatus(msg, 'success');
+                    }
+                };
+
+                if (options.immediate) {
+                    startBtn.classList.remove('is-running');
+                    startBtn.classList.add('is-success');
+                    toggleLoading(startBtn, false);
+                    setButtonText(startBtn, START_SUCCESS_TEXT);
+                    startBtn.disabled = true;
+
+                    // 对号绘制用时约 500ms (120ms 延时 + 380ms 绘制)，对号完全成型后再展示成功提示
+                    successNoticeTimer = setTimeout(triggerSuccessNotice, 520);
+                } else {
+                    // 保持运行态，让用户清晰看到进度条已充满整个按钮
+                    startBtn.classList.add('is-running');
+                    startBtn.classList.remove('is-success', 'is-error');
+
+                    // 2. 进度条充满后微停一下 (约 500ms)，再丝滑过度到纯色完成态与居中对号
+                    successTransitionTimer = setTimeout(() => {
+                        startBtn.classList.remove('is-running');
+                        startBtn.classList.add('is-success');
+                        toggleLoading(startBtn, false);
+                        setButtonText(startBtn, START_SUCCESS_TEXT);
+                        startBtn.disabled = true;
+
+                        // 对号完全成型后，再平滑向下展开成功提示
+                        successNoticeTimer = setTimeout(triggerSuccessNotice, 520);
+                    }, 500);
+                }
+            } else if (type === 'error') {
+                clearTimeout(successTransitionTimer);
+                startBtn.classList.remove('is-running', 'is-success');
+                startBtn.classList.add('is-error');
+                if (startBtnProgress) {
+                    startBtnProgress.style.width = '0%';
+                }
+            }
+
+            // 充值进行中不展示过程任务说明，仅在失败或非 running 态时若有 label 才展示
+            if (label && type !== 'running') {
+                showStatus(label, type);
+            }
         }
 
-        function showStatus(message, type) {
+        function showStatus(message, type = 'error') {
             statusMsg.innerHTML = message;
-            statusMsg.className = `status-message ${type === 'success' ? 'status-success' : 'status-error'}`;
-            statusMsg.style.display = 'block';
+            let statusClass = 'status-error';
+            if (type === 'success') statusClass = 'status-success';
+            else if (type === 'warning' || type === 'manual') statusClass = 'status-warning';
+            statusMsg.className = `status-message ${statusClass}`;
+
+            lockShellTopPosition();
+            morphCardHeight(() => {
+                statusMsg.style.display = 'block';
+            });
         }
 
-        function renderPublicSlotGrid(active, max) {
-            if (!publicRuntimeCard || !publicForegroundSlotGrid || !publicForegroundSlotsMeta) {
-                return;
-            }
+        const capsuleToast = document.getElementById('capsuleToast');
+        let capsuleTimer = null;
+        let capsuleHideTimer = null;
 
-            const safeMax = Math.max(1, Number(max) || 1);
-            const safeActive = Math.max(0, Math.min(safeMax, Number(active) || 0));
-            const usageRate = safeMax > 0 ? (safeActive / safeMax) : 0;
-            let loadClass = 'load-low';
-            let loadText = '当前空闲';
+        function showCapsule(message, type = 'error', duration = 2800) {
+            if (!capsuleToast) return;
+            clearTimeout(capsuleTimer);
+            clearTimeout(capsuleHideTimer);
 
-            if (usageRate >= 0.8) {
-                loadClass = 'load-high';
-                loadText = '并发占用较高';
-            } else if (usageRate >= 0.6) {
-                loadClass = 'load-mid';
-                loadText = '并发占用过半';
-            } else if (safeActive > 0) {
-                loadText = '运行中';
-            }
+            capsuleToast.className = `capsule-toast capsule-${type}`;
+            capsuleToast.classList.remove('is-hiding');
 
-            publicRuntimeCard.classList.remove('load-low', 'load-mid', 'load-high');
-            publicRuntimeCard.classList.add(loadClass);
-            publicForegroundSlotsMeta.textContent = loadText;
-            publicForegroundSlotGrid.innerHTML = Array.from({ length: safeMax }, (_, index) => {
-                const occupied = index < safeActive;
-                return `<div class="public-slot-box ${occupied ? 'occupied' : 'idle'}"></div>`;
-            }).join('');
-        }
+            const iconSvg = type === 'success'
+                ? '<svg class="capsule-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"></path></svg>'
+                : '<svg class="capsule-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
 
-        async function loadPublicRuntime() {
-            try {
-                const response = await fetch('/api/public/runtime');
-                const data = await response.json();
-                if (!data.success) {
-                    return;
-                }
-                const active = Number(data.runtime?.active_foreground_jobs || 0);
-                const max = Number(data.runtime?.max_foreground_jobs || 1);
-                if (publicForegroundSlots) {
-                    publicForegroundSlots.textContent = `${active}/${max}`;
-                }
-                renderPublicSlotGrid(active, max);
-            } catch (_) { }
-        }
+            capsuleToast.innerHTML = `${iconSvg}<span>${message}</span>`;
+            capsuleToast.style.display = 'inline-flex';
 
-        async function loadPaymentRegionHint() {
-            const hint = document.getElementById('paymentRegionHint');
-            if (!hint) return;
-            try {
-                const res = await fetch('/api/public/payment-region');
-                const data = await res.json();
-                if (data.success) {
-                    hint.textContent = `当前账单地区：${data.label || data.region}，结算币种：${data.currency || 'USD'}`;
-                }
-            } catch (_) { }
+            capsuleToast.classList.remove('shake');
+            capsuleToast.style.animation = 'none';
+            void capsuleToast.offsetWidth;
+            capsuleToast.style.animation = '';
+            if (type === 'error') capsuleToast.classList.add('shake');
+
+            capsuleTimer = setTimeout(() => {
+                capsuleToast.classList.add('is-hiding');
+                capsuleHideTimer = setTimeout(() => {
+                    capsuleToast.style.display = 'none';
+                    capsuleToast.classList.remove('is-hiding', 'shake');
+                }, 240);
+            }, duration);
+
+            capsuleToast.onclick = () => {
+                clearTimeout(capsuleTimer);
+                clearTimeout(capsuleHideTimer);
+                capsuleToast.classList.add('is-hiding');
+                capsuleHideTimer = setTimeout(() => {
+                    capsuleToast.style.display = 'none';
+                    capsuleToast.classList.remove('is-hiding', 'shake');
+                }, 240);
+            };
         }
 
         updateFlowUI(1, 'pending');
-        loadPaymentRegionHint();
-        loadPublicRuntime();
-        publicRuntimeTimer = setInterval(loadPublicRuntime, 3000);
-        lucide.createIcons();
+        window.lucide?.createIcons();
+
+        // 核心秘钥同款：鼠标移动视差浮动交互 (Mouse Parallax Interaction)
+        window.addEventListener('mousemove', (event) => {
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            const x = ((event.clientX / window.innerWidth) - 0.5) * 36;
+            const y = ((event.clientY / window.innerHeight) - 0.5) * 24;
+            document.documentElement.style.setProperty('--pointer-x', `${x.toFixed(1)}px`);
+            document.documentElement.style.setProperty('--pointer-y', `${y.toFixed(1)}px`);
+        }, { passive: true });
+
+        window.addEventListener('mouseleave', () => {
+            document.documentElement.style.setProperty('--pointer-x', '0px');
+            document.documentElement.style.setProperty('--pointer-y', '0px');
+        });
+
+        // ============ 亮暗主题切换与持久化 (Theme Management) ============
+        (function initTheme() {
+            const THEME_KEY = 'fk-theme';
+            const toggleBtn = document.getElementById('themeToggleBtn');
+
+            function getPreferredTheme() {
+                const saved = localStorage.getItem(THEME_KEY);
+                if (saved === 'light' || saved === 'dark') {
+                    return saved;
+                }
+                return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+            }
+
+            function applyTheme(theme) {
+                document.documentElement.setAttribute('data-theme', theme);
+                document.body.setAttribute('data-theme', theme);
+                localStorage.setItem(THEME_KEY, theme);
+                if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                    window.lucide.createIcons();
+                }
+            }
+
+            // 初始化当前主题
+            const currentTheme = getPreferredTheme();
+            applyTheme(currentTheme);
+
+            // 切换按钮点击交互
+            toggleBtn?.addEventListener('click', () => {
+                const current = document.documentElement.getAttribute('data-theme') || 'dark';
+                const nextTheme = current === 'light' ? 'dark' : 'light';
+                applyTheme(nextTheme);
+            });
+
+            // 跟随系统主题动态变化 (用户未手动设置时跟随系统偏好)
+            if (window.matchMedia) {
+                window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+                    if (!localStorage.getItem(THEME_KEY)) {
+                        applyTheme(e.matches ? 'light' : 'dark');
+                    }
+                });
+            }
+        })();
+
+        // ============ 输入框/文本域滚动条自动显隐 (Hide scrollbar when idle) ============
+        (function initScrollbarAutoHide() {
+            const bindScrollEvents = () => {
+                document.querySelectorAll('textarea, input').forEach(el => {
+                    if (el.dataset.scrollbarBound) return;
+                    el.dataset.scrollbarBound = 'true';
+                    let scrollTimer = null;
+                    el.addEventListener('scroll', () => {
+                        el.classList.add('is-scrolling');
+                        clearTimeout(scrollTimer);
+                        scrollTimer = setTimeout(() => {
+                            el.classList.remove('is-scrolling');
+                        }, 750);
+                    }, { passive: true });
+                });
+            };
+            bindScrollEvents();
+            window.addEventListener('DOMContentLoaded', bindScrollEvents);
+        })();
     </script>
 </body>
 

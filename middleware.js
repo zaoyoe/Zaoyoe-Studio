@@ -3,6 +3,7 @@ import { next } from '@vercel/functions';
 
 const ADMIN_STUDIO_PATHS = new Set(['/admin-studio', '/admin-studio.html']);
 const ROOT_ENTRY_PATHS = new Set(['/', '/index.html']);
+const INDEPENDENT_TG_HOSTS = new Set(['tg.fatherkey.com', 'tg.adm.fatherkey.com']);
 const PUBLIC_SUPABASE_URL_ENV_NAMES = Object.freeze([
     'SUPABASE_URL',
     'NEXT_PUBLIC_SUPABASE_URL',
@@ -101,6 +102,10 @@ function isRootEntryPath(pathname = '') {
     return ROOT_ENTRY_PATHS.has(String(pathname || ''));
 }
 
+function isIndependentTgHost(requestUrl) {
+    return INDEPENDENT_TG_HOSTS.has(String(requestUrl?.hostname || '').toLowerCase());
+}
+
 function detectRequestSite(requestUrl) {
     const url = requestUrl instanceof URL
         ? requestUrl
@@ -136,7 +141,7 @@ export function buildSiteLayoutRedirectUrl(requestUrl, layouts = {}, pageOptions
         ? requestUrl
         : new URL(String(requestUrl || '/'), 'https://www.fatherkey.com');
 
-    if (!isRootEntryPath(url.pathname)) {
+    if (!isRootEntryPath(url.pathname) || isIndependentTgHost(url)) {
         return null;
     }
 
@@ -206,7 +211,7 @@ async function loadResolvedSiteLayouts() {
 }
 
 async function maybeHandleSiteLayoutRootRedirect(requestUrl) {
-    if (!isRootEntryPath(requestUrl.pathname)) {
+    if (!isRootEntryPath(requestUrl.pathname) || isIndependentTgHost(requestUrl)) {
         return null;
     }
 

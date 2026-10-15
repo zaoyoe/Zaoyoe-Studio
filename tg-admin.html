@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <meta name="referrer" content="no-referrer">
+    <title>TG Premium &amp; Stars · 渠道管理</title>
+    <link rel="stylesheet" href="/css/tg.css?v=653f5ae0137e">
+    <link rel="stylesheet" href="/css/tg-admin.css?v=20261015-google-login">
+</head>
+<body class="tg-shell tg-admin-shell">
+    <header class="tg-header">
+        <a class="tg-brand" href="/" aria-label="TG 管理后台首页"><span class="tg-brand-mark">TG</span><span>Telegram 渠道管理</span></a>
+        <div class="tg-admin-account"><span id="tgAdminIdentity" class="tg-header-note">独立业务管理</span><button id="tgAdminLogout" class="tg-link-button" type="button" hidden>退出登录</button></div>
+    </header>
+    <main class="tg-admin-main">
+        <section class="tg-panel tg-login-panel" id="tgLoginPanel">
+            <p class="tg-eyebrow">TELEGRAM PREMIUM &amp; STARS</p><h1>管理员登录</h1>
+            <p class="tg-muted">使用商城现有超级管理员账号登录。通过 Google 注册的账号，请选择 Google 登录。</p>
+            <button id="tgGoogleLogin" class="tg-button tg-google-login" type="button" disabled><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-1.99 3.02v2.51h3.23c1.89-1.74 2.98-4.31 2.98-7.36Z"/><path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.41l-3.23-2.51c-.89.6-2.03.96-3.39.96-2.6 0-4.8-1.76-5.59-4.13H3.07v2.59A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.41 13.91a6 6 0 0 1 0-3.82V7.5H3.07a10 10 0 0 0 0 9l3.34-2.59Z"/><path fill="#EA4335" d="M12 5.96c1.47 0 2.79.51 3.83 1.5L18.7 4.6A9.62 9.62 0 0 0 12 2a10 10 0 0 0-8.93 5.5l3.34 2.59C7.2 7.72 9.4 5.96 12 5.96Z"/></svg><span id="tgGoogleLoginLabel">使用 Google 账号登录</span></button>
+            <div class="tg-login-divider"><span>或使用邮箱和密码</span></div>
+            <form id="tgLoginForm" class="tg-form">
+                <label>邮箱<input name="email" type="email" autocomplete="username" maxlength="254" required></label>
+                <label>密码<input name="password" type="password" autocomplete="current-password" maxlength="256" required></label>
+                <button id="tgLoginSubmit" class="tg-button tg-button-primary" type="submit" disabled>使用邮箱登录</button>
+            </form>
+            <p id="tgLoginMessage" class="tg-form-message" role="status" aria-live="polite">正在检查登录状态…</p>
+        </section>
+        <div id="tgAdminApp" hidden data-codes-endpoint="/api/admin/tg/codes" data-orders-endpoint="/api/admin/tg/orders">
+            <div class="tg-admin-toolbar"><div><p class="tg-eyebrow">TELEGRAM OPERATIONS</p><h1>Telegram 业务管理</h1></div><button class="tg-button tg-button-secondary" id="tgAdminRefresh" type="button">刷新数据</button></div>
+            <div class="tg-admin-alert" id="tgAdminAlert" role="status" aria-live="polite"></div>
+            <section class="tg-admin-grid">
+                <article class="tg-panel"><div class="tg-panel-head"><div><p class="tg-kicker">批量生成</p><h2>创建兑换码</h2></div></div>
+                    <form class="tg-form tg-generate-grid" id="tgGenerateForm">
+                        <label>兑换产品<select name="product_family" id="tgProductFamily"><option value="telegram_premium">Premium 会员</option><option value="telegram_stars">Stars 星星</option></select></label>
+                        <label id="tgPremiumTermField">每码会员时长<select id="tgPremiumTerm" name="term_months"><option value="3">3 个月</option><option value="6">6 个月</option><option value="12">12 个月</option></select></label>
+                        <label id="tgStarsQuantityField" hidden>每码星星数量<input id="tgStarsQuantity" name="stars_quantity" type="number" min="50" max="1000000" step="1" placeholder="50–1,000,000" disabled><small>每枚兑换码固定发放此数量的 Stars。</small></label>
+                        <label>兑换码张数<input name="count" type="number" min="1" max="1000" step="1" value="10" required></label>
+                        <label>批次名称<input name="name" maxlength="120" placeholder="例如：Stars 首发批次"></label>
+                        <label>有效期（可选）<input name="valid_until" type="datetime-local"></label>
+                        <p class="tg-generation-note tg-muted">生成兑换码不会立即扣款。用户兑换后才按每码绑定的产品与权益处理。</p>
+                        <button id="tgGenerateSubmit" class="tg-button tg-button-primary" type="submit">生成兑换码</button>
+                        <p class="tg-form-message" id="tgGenerateMessage" role="status" aria-live="polite"></p>
+                    </form>
+                </article>
+                <article class="tg-panel tg-admin-summary"><p class="tg-kicker">上游服务 · GRAMIX</p><h2 id="tgProviderStatus">尚未检查</h2><dl class="tg-provider-balances"><div><dt>GRAM 余额</dt><dd id="tgGramBalance">—</dd></div><div><dt>USDT 余额</dt><dd id="tgUsdtBalance">—</dd></div></dl><p id="tgProviderCurrency" class="tg-muted">当前扣款：未确认</p><p id="tgProviderSwitches" class="tg-muted"></p><p id="tgProviderChecked" class="tg-muted"></p><div class="tg-admin-counts"><span>兑换码批次 <strong id="tgBatchCount">—</strong></span><span>兑换订单 <strong id="tgOrderCount">—</strong></span></div></article>
+            </section>
+            <section class="tg-panel"><div class="tg-panel-head"><div><p class="tg-kicker">DIRECT SALES</p><h2>即时购买商品价格</h2></div><span class="tg-muted">人民币 · 保存后版本递增</span></div><p class="tg-muted tg-price-note">价格未配置或商品关闭时，用户端不会接受购买。Stars 按每颗单价报价，最终金额以服务端核价为准。</p><div class="tg-table-wrap"><table class="tg-price-table"><thead><tr><th>商品</th><th>售价 / 单价（CNY）</th><th>销售状态</th><th>版本</th><th>操作</th></tr></thead><tbody>
+                <tr><td>Premium · 3 个月</td><td><label class="tg-price-input"><span>¥</span><input id="tgPrice-premium_3" inputmode="decimal" placeholder="未配置" aria-label="Premium 3 个月售价"></label></td><td><label class="tg-toggle"><input id="tgEnabled-premium_3" type="checkbox"><span>上架</span></label></td><td id="tgVersion-premium_3">—</td><td><button class="tg-button tg-button-secondary tg-save-price" id="tgSave-premium_3" type="button">保存</button></td></tr>
+                <tr><td>Premium · 6 个月</td><td><label class="tg-price-input"><span>¥</span><input id="tgPrice-premium_6" inputmode="decimal" placeholder="未配置" aria-label="Premium 6 个月售价"></label></td><td><label class="tg-toggle"><input id="tgEnabled-premium_6" type="checkbox"><span>上架</span></label></td><td id="tgVersion-premium_6">—</td><td><button class="tg-button tg-button-secondary tg-save-price" id="tgSave-premium_6" type="button">保存</button></td></tr>
+                <tr><td>Premium · 12 个月</td><td><label class="tg-price-input"><span>¥</span><input id="tgPrice-premium_12" inputmode="decimal" placeholder="未配置" aria-label="Premium 12 个月售价"></label></td><td><label class="tg-toggle"><input id="tgEnabled-premium_12" type="checkbox"><span>上架</span></label></td><td id="tgVersion-premium_12">—</td><td><button class="tg-button tg-button-secondary tg-save-price" id="tgSave-premium_12" type="button">保存</button></td></tr>
+                <tr><td>Telegram Stars · 每颗</td><td><label class="tg-price-input"><span>¥</span><input id="tgPrice-stars" inputmode="decimal" placeholder="未配置" aria-label="Stars 每颗售价"></label></td><td><label class="tg-toggle"><input id="tgEnabled-stars" type="checkbox"><span>上架</span></label></td><td id="tgVersion-stars">—</td><td><button class="tg-button tg-button-secondary tg-save-price" id="tgSave-stars" type="button">保存</button></td></tr>
+            </tbody></table></div><p id="tgPriceMessage" class="tg-form-message" role="status" aria-live="polite"></p></section>
+            <section class="tg-panel"><div class="tg-panel-head"><div><p class="tg-kicker">CODE BATCHES</p><h2>批次列表</h2></div><span class="tg-muted">明文仅在生成时显示一次</span></div><div class="tg-table-wrap"><table><thead><tr><th>批次 / 名称</th><th>产品 / 每码权益</th><th>生成张数</th><th>状态</th><th>创建时间</th><th class="tg-actions-col">操作</th></tr></thead><tbody id="tgBatchesBody"></tbody></table></div><nav id="tgBatchesPager" class="tg-pagination" aria-label="批次分页"></nav></section>
+            <section class="tg-panel"><div class="tg-panel-head"><div><p class="tg-kicker">FULFILLMENT</p><h2>兑换订单</h2></div><select id="tgOrderFilter" aria-label="订单状态筛选"><option value="">全部状态</option><option value="pending">待处理</option><option value="processing">处理中</option><option value="retry_waiting">等待重试</option><option value="succeeded">已完成</option><option value="failed">失败</option><option value="manual_review">人工复核</option><option value="cancelled">已取消</option></select></div><div class="tg-table-wrap"><table><thead><tr><th>订单号</th><th>Telegram 用户名</th><th>产品 / 权益</th><th>状态</th><th>更新时间</th><th class="tg-actions-col">操作</th></tr></thead><tbody id="tgOrdersBody"></tbody></table></div><nav id="tgOrdersPager" class="tg-pagination" aria-label="订单分页"></nav></section>
+            <section class="tg-panel"><div class="tg-panel-head"><div><p class="tg-kicker">DIRECT SALES</p><h2>即时购买订单</h2></div><span class="tg-muted">支付核对与发货状态</span></div><div class="tg-table-wrap"><table><thead><tr><th>订单号</th><th>Telegram 用户名</th><th>商品 / 数量</th><th>金额</th><th>渠道</th><th>支付状态</th><th>发货状态</th><th>创建时间</th></tr></thead><tbody id="tgPurchasesBody"></tbody></table></div><nav id="tgPurchasesPager" class="tg-pagination" aria-label="购买订单分页"></nav></section>
+        </div>
+    </main>
+    <dialog class="tg-admin-dialog" id="tgCodesModal" aria-labelledby="tgCodesTitle"><div class="tg-panel-head"><h2 id="tgCodesTitle">请保存本次兑换码</h2><button class="tg-icon-button" id="tgCodesClose" type="button" aria-label="关闭兑换码窗口">×</button></div><p class="tg-warning">明文只显示这一次。请立即复制到安全位置，关闭后会从页面清除。</p><textarea id="tgCodesText" readonly aria-label="本次生成的兑换码" spellcheck="false"></textarea><button class="tg-button tg-button-primary" id="tgCodesCopy" type="button">复制全部兑换码</button><p id="tgCodesCopyMessage" class="tg-form-message" role="status" aria-live="polite"></p><label class="tg-save-confirm"><input type="checkbox" id="tgCodesSaved">我已将全部兑换码保存在安全位置</label></dialog>
+    <dialog class="tg-admin-dialog tg-admin-dialog-wide" id="tgDetailModal" aria-labelledby="tgDetailTitle"><div class="tg-panel-head"><h2 id="tgDetailTitle">详情</h2><button class="tg-icon-button" id="tgDetailClose" type="button" aria-label="关闭详情">×</button></div><div id="tgDetailContent"></div></dialog>
+    <script src="/api/runtime/supabase-config"></script>
+    <script src="/js/runtime-supabase-config.js"></script>
+    <script src="/vendor/supabase/2.95.3/supabase.js"></script>
+    <script src="/js/admin-access.js?v=20261015-google-login"></script>
+    <script src="/js/tg-admin.js?v=20261015-google-login" defer></script>
+</body>
+</html>

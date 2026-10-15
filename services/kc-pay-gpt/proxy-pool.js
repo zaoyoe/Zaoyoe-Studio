@@ -28,9 +28,45 @@ function hashProxyUrl(url) {
     return crypto.createHash('sha256').update(String(url || '').trim()).digest('hex');
 }
 
+/**
+ * 将任意格式的代理文本智能标准化为标准的代理 URL
+ * 兼容支持：
+ * 1. 标准 URL：http://user:pass@host:port、socks5://user:pass@host:port
+ * 2. 传统冒号格式：host:port:user:pass -> http://user:pass@host:port
+ * 3. 简化冒号格式：host:port -> http://host:port
+ * 4. 带认证无协议：user:pass@host:port -> http://user:pass@host:port
+ */
+function formatToStandardProxyUrl(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    let line = raw.trim();
+    if (!line) return '';
+
+    // 已包含标准协议头
+    if (/^[a-zA-Z0-9+.-]+:\/\//.test(line)) {
+        return line;
+    }
+
+    // 格式: user:pass@host:port
+    if (line.includes('@')) {
+        return `http://${line}`;
+    }
+
+    // 格式: host:port:user:pass 或 host:port
+    const parts = line.split(':');
+    if (parts.length === 4) {
+        const [host, port, user, pass] = parts;
+        return `http://${user}:${pass}@${host}:${port}`;
+    } else if (parts.length === 2 && /^\d+$/.test(parts[1])) {
+        return `http://${line}`;
+    }
+
+    return `http://${line}`;
+}
+
 function parseProxyMeta(url) {
     try {
-        const parsed = new URL(String(url || '').trim());
+        const stdUrl = formatToStandardProxyUrl(url);
+        const parsed = new URL(String(stdUrl || '').trim());
         return {
             protocol: String(parsed.protocol || '').replace(':', '').toLowerCase(),
             host: parsed.hostname || ''
@@ -44,11 +80,12 @@ function normalizeProxyLines(input) {
     const lines = Array.isArray(input)
         ? input
         : String(input || '').split(/\r?\n/);
-    return [...new Set(lines.map((line) => String(line || '').trim()).filter(Boolean))];
+    return [...new Set(lines.map((line) => formatToStandardProxyUrl(line)).filter(Boolean))];
 }
 
 async function testProxyUrl(raw, options = {}) {
-    const proxyUrl = substituteProxySession(String(raw || '').trim());
+    const formatted = formatToStandardProxyUrl(raw);
+    const proxyUrl = substituteProxySession(String(formatted || '').trim());
     const t0 = Date.now();
     if (!proxyUrl) {
         return { ok: false, error: '代理 URL 为空', latencyMs: 0 };
@@ -94,6 +131,55 @@ async function testProxyUrl(raw, options = {}) {
     };
 }
 
+/**
+ * 智能判定代理是否与目标地区匹配
+ * 优先匹配：
+ * 1. 代理备注 label（如 "智利", "CL", "菲律宾", "PH"）
+ * 2. 代理 URL 中的区域标识参数（如 region-CL, region-PH, country-CL, country_code=ph, etc.）
+ * @param {string} proxyUrl
+ * @param {string} label
+ * @param {string} targetRegion
+ * @returns {boolean}
+ */
+function matchProxyRegion(proxyUrl, label, targetRegion) {
+    if (!targetRegion) return true;
+    const code = String(targetRegion).trim().toUpperCase();
+    if (!code) return true;
+
+    const urlStr = String(proxyUrl || '');
+    const labelStr = String(label || '');
+
+    // 1. 检查 label 是否包含地区标识或中文别名
+    const regionAliases = {
+        PH: ['PH', '菲律宾', 'Philippines', 'Pilipinas'],
+        CL: ['CL', '智利', 'Chile'],
+        US: ['US', 'USA', '美国', 'United States'],
+        SG: ['SG', '新加坡', 'Singapore'],
+        MY: ['MY', '马来西亚', 'Malaysia'],
+        HK: ['HK', '香港', 'Hong Kong'],
+        JP: ['JP', '日本', 'Japan'],
+        TW: ['TW', '台湾', 'Taiwan'],
+        GB: ['GB', 'UK', '英国', 'United Kingdom']
+    };
+    const aliases = regionAliases[code] || [code];
+    for (const alias of aliases) {
+        const re = new RegExp(`(^|[^a-zA-Z0-9])${alias}([^a-zA-Z0-9]|$)`, 'i');
+        if (re.test(labelStr)) return true;
+    }
+
+    // 2. 检查 URL 中常见的地区参数 (例如 -region-PH-, country-PH, _region_PH, country_code=ph, etc.)
+    const urlPatterns = [
+        new RegExp(`(?:region|country|zone|geo)[-_=:]+${code}\\b`, 'i'),
+        new RegExp(`[-_:]+${code}[-_:]+`, 'i'),
+        new RegExp(`\\b${code}\\.(?:prox|cliprox|smartprox)`, 'i')
+    ];
+    for (const pat of urlPatterns) {
+        if (pat.test(urlStr)) return true;
+    }
+
+    return false;
+}
+
 module.exports = {
     PROBE_URLS,
     substituteProxySession,
@@ -101,5 +187,6 @@ module.exports = {
     hashProxyUrl,
     parseProxyMeta,
     normalizeProxyLines,
-    testProxyUrl
+    testProxyUrl,
+    matchProxyRegion
 };

@@ -32,6 +32,16 @@ services:
       - ./.env
     environment:
       NODE_ENV: production
+      # Keep existing application settings from env_file, but isolate TG credentials.
+      TG_REDEMPTION_ENABLED: "false"
+      TG_FULFILLMENT_ENABLED: "false"
+      TG_PURCHASE_ENABLED: "false"
+      TG_PURCHASE_ZPAY_KEY: ""
+      TG_PURCHASE_NOWPAYMENTS_API_KEY: ""
+      TG_PURCHASE_NOWPAYMENTS_IPN_SECRET: ""
+      TG_REDEMPTION_CODE_PEPPER: ""
+      TG_REDEMPTION_CODE_ENCRYPTION_KEY: ""
+      GRAMIX_API_KEY: ""
     command:
       - npm
       - run
@@ -58,6 +68,16 @@ services:
       - ./.env
     environment:
       NODE_ENV: production
+      # Keep existing application settings from env_file, but isolate TG credentials.
+      TG_REDEMPTION_ENABLED: "false"
+      TG_FULFILLMENT_ENABLED: "false"
+      TG_PURCHASE_ENABLED: "false"
+      TG_PURCHASE_ZPAY_KEY: ""
+      TG_PURCHASE_NOWPAYMENTS_API_KEY: ""
+      TG_PURCHASE_NOWPAYMENTS_IPN_SECRET: ""
+      TG_REDEMPTION_CODE_PEPPER: ""
+      TG_REDEMPTION_CODE_ENCRYPTION_KEY: ""
+      GRAMIX_API_KEY: ""
       PROMPT_IMPORT_WORKER_CONCURRENCY: "10"
       PROMPT_IMPORT_WORKER_INITIAL_CONCURRENCY: "3"
       PROMPT_IMPORT_WORKER_INTERVAL_MS: "2000"

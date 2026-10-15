@@ -10,9 +10,10 @@ const {
     hasVisibleLoginChrome,
     hasLoggedInChatUi,
     waitForLoggedInChatUi,
-    hasLoggedInSessionApi,
+    assertNoExpiredSession,
     buildSessionNotLoggedInError
 } = require('./auth-page-detect');
+const { assertLocalSessionFresh, verifyChatGptAccessToken, buildChatGptAuthError } = require('./chatgpt-auth-state');
 
 function decodeJwtPayload(token) {
     const parts = String(token || '').split('.');
@@ -52,8 +53,8 @@ function buildSessionPayload(accessToken, sessionJson = null) {
         name: profile.email || undefined
     } : null);
 
-    const expires = base.expires
-        || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const exp = Number(decodeJwtPayload(token)?.exp);
+    const expires = base.expires || (Number.isFinite(exp) && exp > 0 ? new Date(exp * 1000).toISOString() : undefined);
 
     return {
         ...base,
@@ -361,18 +362,20 @@ async function verifyRealSessionApi(context) {
         } catch (_) {
             data = null;
         }
-        if (data?.accessToken || data?.user?.email || data?.user?.id) {
+        if (status === 401) return { ok: false, status, expired: true };
+        if (status === 200 && data?.accessToken && (data?.user?.email || data?.user?.id)) {
             return { ok: true, data, status };
         }
-        const isCloudflareChallenge = headerText.includes('cf-mitigated: challenge')
-            || /just a moment|verify you are human/i.test(bodyText);
+        const isCloudflareChallenge = status === 403
+            || headerText.includes('cf-mitigated: challenge')
+            || /just a moment|verify you are human|forbidden|access denied/i.test(bodyText);
         if (isCloudflareChallenge) {
             return {
                 ok: false,
                 status,
                 challenge: true,
-                error: `Cloudflare 人机验证拦截（HTTP ${status}，cf-mitigated: challenge）`
-                    + '。当前出口/代理 IP 被 ChatGPT 风控，请更换干净的住宅代理后重试'
+                error: `Cloudflare/地区风控拦截（HTTP ${status}）`
+                    + '。当前出口/代理 IP 被 ChatGPT 风控，请配置干净的海外代理后重试'
             };
         }
         const snippet = String(bodyText || '').replace(/\s+/g, ' ').slice(0, 120);
@@ -445,6 +448,7 @@ function resolveSessionInput(raw) {
 }
 
 async function assertChatGptLoggedIn(page, label = '页面') {
+    await assertNoExpiredSession(page);
     const url = page.url();
     if (isLoginRedirectUrl(url)) {
         throw new Error(`Session 未生效：${label} 跳转到 Google/登录页 (${url.slice(0, 80)})`);
@@ -452,27 +456,6 @@ async function assertChatGptLoggedIn(page, label = '页面') {
     if (await isLoginPageContent(page)) {
         throw new Error(`Session 未生效：${label} 显示 Google 登录界面，请粘贴完整 Session JSON`);
     }
-}
-
-function attachLoginRedirectGuard(page) {
-    page.on('framenavigated', async (frame) => {
-        if (frame !== page.mainFrame() || page.isClosed()) {
-            return;
-        }
-        const url = frame.url();
-        const current = page.url();
-        if (isCheckoutPageUrl(current) || isCheckoutPageUrl(url)) {
-            return;
-        }
-        if (!isHardLoginRedirectUrl(url)) {
-            return;
-        }
-        console.warn(`[Warn] 检测到登录页跳转，正在拉回 ChatGPT: ${url.slice(0, 80)}`);
-        await page.goto(`${CHATGPT_ORIGIN}/`, {
-            waitUntil: 'domcontentloaded',
-            timeout: 60000
-        }).catch(() => {});
-    });
 }
 
 /**
@@ -486,6 +469,7 @@ async function installChatGptSession(context, sessionRaw) {
     }
 
     const { accessToken: token, sessionData, sessionJson } = resolved;
+    assertLocalSessionFresh(token, sessionJson);
     const sessionBody = JSON.stringify(sessionData);
     const cookieSpecs = collectCookieSpecs(sessionData, sessionJson);
 
@@ -528,16 +512,17 @@ async function installChatGptSession(context, sessionRaw) {
     let cookieVerified = false;
     if (injectResult.hasSessionToken) {
         const apiCheck = await verifyRealSessionApi(context);
+        if (apiCheck.expired) throw buildChatGptAuthError();
         if (apiCheck.ok) {
             cookieVerified = true;
             const email = apiCheck.data?.user?.email || '';
             console.log(`[Session] Cookie 校验通过${email ? `: ${email}` : ''}`);
-        } else if (apiCheck.error && !/cloudflare|challenge|captcha/i.test(apiCheck.error)) {
+        } else if (apiCheck.status === 200) {
             throw new Error(
-                `${apiCheck.error}。请确认 Cookie 未过期，并尽量粘贴浏览器全部 chatgpt.com Cookies（cookies[] 或 cookieHeader）`
+                `session-token 未被 ChatGPT 接受（/api/auth/session 返回空用户）。请确认 Cookie 未过期，并尽量粘贴浏览器全部 chatgpt.com Cookies（cookies[] 或 cookieHeader）`
             );
         } else {
-            console.warn(`[Session] Cookie 在线校验跳过: ${apiCheck.error || 'unknown'}`);
+            console.warn(`[Session] Cookie 在线预检跳过（HTTP ${apiCheck.status || 'unknown'}: ${apiCheck.error || ''}），转由后续首页流程验证`);
         }
     }
 
@@ -606,7 +591,7 @@ async function installChatGptSession(context, sessionRaw) {
         await route.continue();
     });
 
-    return { sessionData, cookieVerified };
+    return { sessionData, cookieVerified, hasSessionToken: Boolean(injectResult.hasSessionToken) };
 }
 
 /**
@@ -626,6 +611,7 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
     }
 
     const sessionData = options.sessionData || resolved.sessionData;
+    assertLocalSessionFresh(resolved.accessToken, resolved.sessionJson);
     const email = sessionData?.user?.email || extractProfileFromToken(resolved.accessToken).email || '';
 
     if (!email && !sessionData?.user?.id) {
@@ -633,13 +619,13 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
     }
 
     console.log('🔐 [步骤] 正在使用 Session 登录 ChatGPT...');
-    attachLoginRedirectGuard(page);
 
     await page.goto(`${CHATGPT_ORIGIN}/`, {
         waitUntil: 'domcontentloaded',
         timeout: 90000
     });
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(options.cookieVerified ? 500 : 2500);
+    await assertNoExpiredSession(page);
 
     const { clearHumanVerification } = require('./human-verification');
     const captchaResult = await clearHumanVerification(page, {
@@ -653,27 +639,33 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
 
     if (await hasVisibleLoginChrome(page)) {
         await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(1500);
     }
 
     await assertChatGptLoggedIn(page, '首页');
 
     const cookieVerified = options.cookieVerified === true;
-    const uiReady = await waitForLoggedInChatUi(page, cookieVerified ? 12000 : 8000);
-    const apiReady = cookieVerified ? await hasLoggedInSessionApi(page) : false;
+    const officialAccount = await verifyChatGptAccessToken(page, resolved.accessToken);
+    if (email && officialAccount.email && email.toLowerCase() !== officialAccount.email.toLowerCase()) {
+        throw buildChatGptAuthError('CHATGPT_ACCOUNT_MISMATCH');
+    }
+    const uiReady = await waitForLoggedInChatUi(page, cookieVerified ? 4000 : 8000);
+    await assertNoExpiredSession(page);
+
+    const hasSessionToken = options.hasSessionToken ?? (Array.isArray(sessionData?.cookies) || Boolean(sessionData?.sessionToken || sessionData?.session_token || sessionData?.['__Secure-next-auth.session-token']));
+    const failureReason = !hasSessionToken
+        ? '未检测到 sessionToken / __Secure-next-auth.session-token Cookie，请补充复制 sessionToken'
+        : 'sessionToken 凭证已在 OpenAI 端失效或过期，请在浏览器中重新登录并导出最新 Session';
 
     if (await hasVisibleLoginChrome(page)) {
-        throw new Error(buildSessionNotLoggedInError('ChatGPT 首页'));
+        throw new Error(buildSessionNotLoggedInError('ChatGPT 首页', failureReason));
     }
-    if (!uiReady && !apiReady) {
-        throw new Error(buildSessionNotLoggedInError('ChatGPT 首页'));
-    }
-    if (!uiReady && apiReady) {
-        console.log('[Session] 首页 UI 探针未命中，但 /api/auth/session 已确认登录，继续流程');
+    if (!uiReady) {
+        console.log('[Session] 首页 UI 尚未就绪，官方只读账号接口已确认凭证有效，继续流程');
     }
 
-    const resolvedEmail = sessionData?.user?.email || email || extractProfileFromToken(resolved.accessToken).email;
-    console.log(`✅ [步骤] Session 登录成功: ${resolvedEmail}`);
+    const resolvedEmail = officialAccount.email || email;
+    console.log(`✅ [步骤] Session 登录成功（官方鉴权已确认）: ${resolvedEmail}`);
     return {
         email: resolvedEmail,
         session: sessionData,
@@ -691,6 +683,17 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
 }
 
 function extractSessionPreview(raw) {
+    if (typeof raw === 'object' && raw) {
+        if (raw.session?.email || raw.session?.googleEmail) return String(raw.session.email || raw.session.googleEmail).trim();
+        if (raw.user?.email) return String(raw.user.email).trim();
+    }
+    if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+        try {
+            const data = JSON.parse(raw);
+            if (data.session?.email || data.session?.googleEmail) return String(data.session.email || data.session.googleEmail).trim();
+            if (data.user?.email) return String(data.user.email).trim();
+        } catch (_) {}
+    }
     const resolved = resolveSessionInput(raw);
     if (!resolved) {
         return String(raw || '').slice(0, 32);
@@ -703,6 +706,17 @@ function extractSessionPreview(raw) {
 }
 
 function extractEmailFromSession(raw) {
+    if (typeof raw === 'object' && raw) {
+        if (raw.session?.email || raw.session?.googleEmail) return String(raw.session.email || raw.session.googleEmail).trim();
+        if (raw.user?.email) return String(raw.user.email).trim();
+    }
+    if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+        try {
+            const data = JSON.parse(raw);
+            if (data.session?.email || data.session?.googleEmail) return String(data.session.email || data.session.googleEmail).trim();
+            if (data.user?.email) return String(data.user.email).trim();
+        } catch (_) {}
+    }
     const resolved = resolveSessionInput(raw);
     if (!resolved) {
         return '';

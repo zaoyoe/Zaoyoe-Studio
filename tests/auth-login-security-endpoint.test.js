@@ -289,22 +289,125 @@ test('login security endpoint returns 429 when rate limited before touching Supa
             }
         }
     }, async (handler) => {
-        const req = {
-            method: 'POST',
-            body: {
-                action: 'preflight',
-                email: 'member@example.com'
-            },
-            headers: {}
-        };
-        const res = createMockResponse();
+        for (const action of ['preflight', 'preflight_ip']) {
+            const req = {
+                method: 'POST',
+                body: action === 'preflight_ip' ? { action } : { action, email: 'member@example.com' },
+                headers: {}
+            };
+            const res = createMockResponse();
 
-        await handler(req, res);
-        const payload = res.json();
+            await handler(req, res);
+            const payload = res.json();
 
-        assert.equal(res.statusCode, 429);
-        assert.equal(payload.success, false);
-        assert.equal(payload.retry_after_seconds, 30);
-        assert.equal(getSupabaseAdminCalled, false);
+            assert.equal(res.statusCode, 429);
+            assert.equal(payload.success, false);
+            assert.equal(payload.retry_after_seconds, 30);
+            assert.equal(getSupabaseAdminCalled, false);
+        }
     });
+});
+
+function ipPreflightFixture({ rpc, clientIp = '203.0.113.11', getSupabaseAdmin } = {}) {
+    return {
+        adminModule: {
+            getSupabaseAdmin: getSupabaseAdmin || (() => ({ rpc })),
+            async parseJsonBody(req) { return req.body || {}; },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+            }
+        },
+        requestSecurityModule: {
+            resolveClientIp() { return clientIp; },
+            takeRateLimitToken() {
+                return { allowed: true, limit: 20, remaining: 19, resetAt: Date.now() + 60_000 };
+            },
+            applyRateLimitHeaders() {}
+        }
+    };
+}
+
+test('IP preflight does not require an email and never checks or changes account state', async () => {
+    for (const blocked of [false, true]) {
+        const rpcCalls = [];
+        await withLoginSecurityHandler(ipPreflightFixture({
+            rpc(name, args) {
+                rpcCalls.push({ name, args });
+                assert.equal(name, 'check_ip_blacklisted');
+                return Promise.resolve({ data: { blocked }, error: null });
+            }
+        }), async (handler) => {
+            for (const body of [{ action: 'preflight_ip' }, { action: 'preflight_ip', email: 'ignored@example.com' }]) {
+                const res = createMockResponse();
+                await handler({ method: 'POST', body, headers: {} }, res);
+                assert.equal(res.statusCode, 200);
+                assert.equal(res.json().success, true);
+                assert.equal(res.json().action, 'preflight_ip');
+                assert.equal(res.json().security.ip_blocked, blocked);
+                assert.equal(res.json().security.account_locked, false);
+            }
+            assert.deepEqual(rpcCalls, Array.from({ length: 2 }, () => ({
+                name: 'check_ip_blacklisted', args: { client_ip: '203.0.113.11' }
+            })));
+        });
+    }
+});
+
+test('account preflight and password failure still require an email', async () => {
+    await withLoginSecurityHandler(ipPreflightFixture({
+        getSupabaseAdmin() { throw new Error('database must not be reached'); }
+    }), async (handler) => {
+        for (const action of ['preflight', 'record_failure']) {
+            for (const email of [undefined, '', '   ']) {
+                const res = createMockResponse();
+                await handler({ method: 'POST', body: { action, email }, headers: {} }, res);
+                assert.equal(res.statusCode, 400);
+                assert.equal(res.json().success, false);
+                assert.equal(res.json().message, 'Email is required');
+            }
+        }
+    });
+});
+
+test('IP preflight fails closed when the security database is unconfigured or unavailable', async () => {
+    const fixtures = [
+        ipPreflightFixture({ getSupabaseAdmin() { throw new Error('security database unavailable'); } }),
+        ipPreflightFixture({ rpc() { return Promise.resolve({ data: null, error: new Error('IP lookup unavailable') }); } })
+    ];
+    for (const fixture of fixtures) {
+        await withLoginSecurityHandler(fixture, async (handler) => {
+            const res = createMockResponse();
+            await handler({ method: 'POST', body: { action: 'preflight_ip' }, headers: {} }, res);
+            assert.equal(res.statusCode, 500);
+            assert.equal(res.json().success, false);
+            assert.equal(res.json().security, undefined);
+        });
+    }
+});
+
+test('IP preflight fails closed when no client IP can be resolved', async () => {
+    await withLoginSecurityHandler(ipPreflightFixture({
+        clientIp: '', rpc() { throw new Error('empty IP must not be checked'); }
+    }), async (handler) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: { action: 'preflight_ip' }, headers: {} }, res);
+        assert.equal(res.statusCode, 503);
+        assert.equal(res.json().success, false);
+        assert.equal(res.json().security, undefined);
+    });
+});
+
+test('IP preflight requires an explicit boolean decision from the security lookup', async () => {
+    for (const data of [null, {}, { blocked: 'false' }, { blocked: 0 }]) {
+        await withLoginSecurityHandler(ipPreflightFixture({
+            rpc() { return Promise.resolve({ data, error: null }); }
+        }), async (handler) => {
+            const res = createMockResponse();
+            await handler({ method: 'POST', body: { action: 'preflight_ip' }, headers: {} }, res);
+            assert.equal(res.statusCode, 503);
+            assert.equal(res.json().success, false);
+            assert.equal(res.json().security, undefined);
+        });
+    }
 });

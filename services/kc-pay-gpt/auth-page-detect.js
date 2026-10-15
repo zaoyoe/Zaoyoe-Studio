@@ -3,6 +3,22 @@
 /** 页面 URL / 登录态检测（无依赖，避免 session-auth ↔ human-verification 循环引用） */
 
 const SESSION_COOKIE_HINT = '请粘贴完整 Session JSON（含 sessionToken 字段，超长会自动分块），或从浏览器导出 chatgpt.com 的 cookies[]（含 __Secure-next-auth.session-token.0/.1）';
+const { buildChatGptAuthError } = require('./chatgpt-auth-state');
+
+async function hasVisibleExpiredSession(page) {
+    if (!page || page.isClosed?.()) return false;
+    const matches = page.getByText(/^(?:Your session has expired|Please log in again to continue using the app\.?|Session expired|会话已过期|您的会话已过期|登录状态已(?:过期|失效))$/i);
+    for (let i = 0, count = await matches.count(); i < Math.min(count, 20); i += 1) {
+        const candidate = matches.nth(i);
+        if (await candidate.isVisible().catch(() => false)
+            && await candidate.evaluate(node => !node.closest('[data-message-author-role], [contenteditable], textarea')).catch(() => false)) return true;
+    }
+    return false;
+}
+
+async function assertNoExpiredSession(page) {
+    if (await hasVisibleExpiredSession(page)) throw buildChatGptAuthError();
+}
 
 function isHardLoginRedirectUrl(url) {
     const value = String(url || '').toLowerCase();
@@ -22,12 +38,36 @@ function isCheckoutPageUrl(url) {
     return /chatgpt\.com\/checkout\//i.test(String(url || ''));
 }
 
+const TELEMETRY_HOSTS = [
+    'statsig.com',
+    'statsigapi.net',
+    'segment.io',
+    'segment.com',
+    'browser-intake-datadoghq.com',
+    'datadoghq.com',
+    'intercom.io',
+    'intercomcdn.com',
+    'sentry.io',
+    'launchdarkly.com',
+    'clarity.ms',
+    'google-analytics.com',
+    'googletagmanager.com'
+];
+
 function shouldBlockLoginNavigation(url, resourceType = '') {
     const value = String(url || '').toLowerCase();
     if (value.includes('accounts.google.com') || value.includes('login.microsoftonline.com')) {
         return true;
     }
     if (resourceType === 'document' && isHardLoginRedirectUrl(url) && !isCheckoutPageUrl(url)) {
+        return true;
+    }
+    // 拦截无意义音视频媒体请求，节省代理带宽
+    if (resourceType === 'media') {
+        return true;
+    }
+    // 拦截高耗时第三方埋点分析/遥测（完全不影响 OpenAI 与 Stripe 核心业务，显著加速网络与页面就绪）
+    if (TELEMETRY_HOSTS.some(host => value.includes(host))) {
         return true;
     }
     return false;
@@ -69,7 +109,7 @@ async function hasVisibleLoginChrome(page) {
 }
 
 async function hasLoggedInChatUi(page) {
-    if (await hasVisibleLoginChrome(page)) {
+    if (await hasVisibleExpiredSession(page) || await hasVisibleLoginChrome(page)) {
         return false;
     }
     const probes = [
@@ -94,6 +134,7 @@ async function hasLoggedInChatUi(page) {
 async function waitForLoggedInChatUi(page, timeoutMs = 15000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+        await assertNoExpiredSession(page);
         if (await hasLoggedInChatUi(page)) {
             return true;
         }
@@ -105,10 +146,14 @@ async function waitForLoggedInChatUi(page, timeoutMs = 15000) {
 async function hasLoggedInSessionApi(page) {
     try {
         const data = await page.evaluate(async () => {
-            const response = await fetch('/api/auth/session', { credentials: 'include' });
-            return response.json();
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 10000);
+            try {
+                const response = await fetch('/backend-api/me', { credentials: 'include', cache: 'no-store', signal: controller.signal });
+                return response.status === 200 ? await response.json() : null;
+            } finally { clearTimeout(timer); }
         });
-        return Boolean(data?.accessToken || data?.user?.email || data?.user?.id);
+        return Boolean(typeof data?.id === 'string' && data.id);
     } catch (_) {
         return false;
     }
@@ -129,11 +174,14 @@ async function isCheckoutLoginGate(page) {
     }
 }
 
-function buildSessionNotLoggedInError(contextLabel = '页面') {
-    return `Session 未在${contextLabel}生效（仍显示 Log in 访客界面）。${SESSION_COOKIE_HINT}`;
+function buildSessionNotLoggedInError(contextLabel = '页面', reason = '') {
+    const reasonText = reason ? `【${reason}】` : '';
+    return `Session 未在${contextLabel}生效（仍显示 Log in 访客界面）。${reasonText}${SESSION_COOKIE_HINT}`;
 }
 
 module.exports = {
+    hasVisibleExpiredSession,
+    assertNoExpiredSession,
     SESSION_COOKIE_HINT,
     isLoginRedirectUrl,
     isHardLoginRedirectUrl,

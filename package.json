@@ -26,6 +26,7 @@
     "install:kvm4:ai-image-worker": "bash scripts/install-kvm4-ai-image-worker.sh",
     "install:kvm4:prompt-import-worker": "bash scripts/install-kvm4-prompt-import-worker.sh",
     "install:kvm4:guest-shop-worker": "bash scripts/install-kvm4-guest-shop-worker.sh",
+    "install:kvm4:tg-worker": "bash scripts/install-kvm4-tg-worker.sh",
     "install:kvm4:watchdog": "bash scripts/install-kvm4-health-watchdog.sh",
     "inspect:proxy-chain": "node scripts/inspect-proxy-chain.js",
     "lockdown:supabase-image-buckets": "node scripts/lockdown-supabase-image-buckets.js",
@@ -44,6 +45,7 @@
     "readiness:external-monitoring": "node scripts/external-monitoring-readiness.js",
     "readiness:financial-recovery-drill": "node scripts/financial-recovery-drill-readiness.js",
     "readiness:guest-shop": "node -- scripts/guest-shop-readiness.js",
+    "readiness:tg": "node scripts/tg-readiness.js",
     "reconcile:guest-shop": "node -- scripts/guest-shop-reconcile.js",
     "readiness:payment": "node scripts/payment-readiness-gate.js",
     "readiness:payment-recovery": "node scripts/payment-readiness-gate.js --fail-on-missing",
@@ -63,7 +65,8 @@
     "sync:payment-channel": "node scripts/payment-channel-config-sync.js",
     "verify:payment-rollout": "node scripts/payment-rollout-verify.js",
     "upload-to-r2": "node scripts/upload-to-r2.js",
-    "test:security": "node --test --test-force-exit tests/*.test.js"
+    "test:security": "node --test --test-force-exit tests/*.test.js",
+    "tg:worker": "node scripts/tg-fulfillment-worker.js --once"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.985.0",

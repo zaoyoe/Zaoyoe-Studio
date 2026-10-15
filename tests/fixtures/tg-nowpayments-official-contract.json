@@ -1,0 +1,38 @@
+{
+  "source": "https://documenter.getpostman.com/view/7907941/S1a32n38?version=latest",
+  "note": "Public official GET finished example, unmodified. Tests adapt identifiers, pricing and the USDT network/address to their isolated local order.",
+  "finished_payment": {
+    "payment_id": 5524759814,
+    "payment_status": "finished",
+    "pay_address": "TNDFkiSmBQorNFacb3735q8MnT29sn8BLn",
+    "price_amount": 5,
+    "price_currency": "usd",
+    "pay_amount": 165.652609,
+    "actually_paid": 180,
+    "pay_currency": "trx",
+    "order_id": "RGDBP-21314",
+    "order_description": "Apple Macbook Pro 2019 x 1",
+    "purchase_id": "4944856743",
+    "created_at": "2020-12-16T14:30:43.306Z",
+    "updated_at": "2020-12-16T14:40:46.523Z",
+    "outcome_amount": 178.9005,
+    "outcome_currency": "trx"
+  },
+  "ipn_payment": {
+    "payment_id": 5077125051,
+    "payment_status": "waiting",
+    "pay_address": "0xd1cDE08A07cD25adEbEd35c3867a59228C09B606",
+    "price_amount": 170,
+    "price_currency": "usd",
+    "pay_amount": 155.38559757,
+    "actually_paid": 0,
+    "pay_currency": "mana",
+    "order_id": "2",
+    "order_description": "Apple Macbook Pro 2019 x 1",
+    "purchase_id": "6084744717",
+    "created_at": "2021-04-12T14:22:54.942Z",
+    "updated_at": "2021-04-12T14:23:06.244Z",
+    "outcome_amount": 1131.7812095,
+    "outcome_currency": "trx"
+  }
+}

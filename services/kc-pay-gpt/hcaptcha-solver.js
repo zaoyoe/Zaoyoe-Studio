@@ -16,6 +16,8 @@ const DEFAULT_OUT_DIR = '/tmp/hcaptcha_auto_solver_live';
 function resolveSolverPython() {
     const candidates = [
         process.env.HCAPTCHA_SOLVER_PYTHON,
+        '/usr/local/bin/python3',
+        '/Library/Frameworks/Python.framework/Versions/3.13/bin/python3',
         process.env.CTFML_PYTHON,
         path.join(os.homedir(), '.venvs', 'ctfml', 'bin', 'python'),
         path.join(os.homedir(), '.venvs', 'ctfml', 'bin', 'python3'),
@@ -33,7 +35,7 @@ function resolveSolverPython() {
         }
         return candidate;
     }
-    return 'python3';
+    return '/usr/local/bin/python3';
 }
 
 function isHcaptchaSolverEnabled() {
@@ -141,7 +143,7 @@ function solveHcaptchaOnPage(options = {}) {
         });
     }
 
-    const timeoutSec = Number(options.timeoutSec || process.env.HCAPTCHA_SOLVER_TIMEOUT || 240);
+    const timeoutSec = Number(options.timeoutSec || process.env.HCAPTCHA_SOLVER_TIMEOUT || 50);
     const outDir = process.env.HCAPTCHA_SOLVER_OUT_DIR || DEFAULT_OUT_DIR;
     fs.mkdirSync(outDir, { recursive: true });
 
@@ -156,7 +158,7 @@ function solveHcaptchaOnPage(options = {}) {
         '-u',
         scriptPath,
         '--timeout',
-        String(Math.max(60, timeoutSec)),
+        String(Math.max(30, timeoutSec)),
         '--out-dir',
         outDir,
         '--cdp-url',
@@ -285,7 +287,7 @@ function checkHcaptchaSolverHealth(options = {}) {
     return new Promise((resolve) => {
         const proc = spawn(
             pythonBin,
-            ['-c', 'import cv2, numpy, torch, transformers, playwright; print("ok")'],
+            ['-c', 'import cv2, numpy, requests, playwright, PIL; print("ok")'],
             { env: buildSolverEnv() }
         );
         let stdout = '';

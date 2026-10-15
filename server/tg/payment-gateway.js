@@ -1,0 +1,106 @@
+'use strict';
+
+// TG keeps its own configuration snapshot, order namespace and callback URLs.
+// The merchant account may be shared with the shop; no wallet or shop RPC is used.
+const crypto = require('node:crypto');
+const { buildZpaySign, normalizeZpayDevice } = require('../../api/_lib/payments/zpay');
+const { createTgNowpaymentsGateway, CHANNEL: CRYPTO_CHANNEL } = require('./nowpayments-gateway');
+const CHANNELS = new Set(['alipay', 'wxpay']);
+const ALL_CHANNELS = new Set([...CHANNELS, CRYPTO_CHANNEL]);
+const ORDER_NO = /^TGP-[A-Z0-9]{20}$/;
+function failure(code = 'tg_payment_unavailable') { return Object.assign(new Error('TG 支付服务暂不可用，请稍后重试'), { code, statusCode: 503 }); }
+function httpsUrl(value) {
+    try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password && !url.hash ? url.href : null; } catch (_) { return null; }
+}
+function httpsOrigin(value) {
+    const safe = httpsUrl(value);
+    if (!safe) return null;
+    const url = new URL(safe);
+    return url.pathname === '/' && !url.search ? url.origin : null;
+}
+function amountMinor(value) {
+    if (typeof value !== 'string' || !/^(?:0|[1-9]\d{0,12})(?:\.\d{1,2})?$/.test(value)) return null;
+    const [major, decimal = ''] = value.split('.');
+    const minor = BigInt(major) * 100n + BigInt(decimal.padEnd(2, '0'));
+    return minor > 0n && minor <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(minor) : null;
+}
+function decimal(minor) { return `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, '0')}`; }
+function createTgPaymentGateway({ env = process.env, fetchImpl = globalThis.fetch } = {}) {
+    const nowpayments = createTgNowpaymentsGateway({ env, fetchImpl });
+    function configuredChannels() {
+        const channels = String(env.TG_PURCHASE_CHANNELS || 'alipay,wxpay').split(',').map((value) => value.trim());
+        if (!channels.length || channels.some((value) => !ALL_CHANNELS.has(value)) || new Set(channels).size !== channels.length) throw failure('tg_payment_configuration_invalid');
+        return channels;
+    }
+    function config() {
+        const pid = String(env.TG_PURCHASE_ZPAY_PID || '').trim();
+        const rawKey = String(env.TG_PURCHASE_ZPAY_KEY || '');
+        const key = rawKey.trim();
+        const base = httpsOrigin(String(env.TG_PURCHASE_ZPAY_API_BASE_URL || 'https://zpayz.cn').trim());
+        const publicUrl = httpsOrigin(String(env.TG_PUBLIC_ORIGIN || 'https://tg.fatherkey.com').trim());
+        const forbiddenSecrets = ['GRAMIX_API_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'DATABASE_URL', 'CRON_SECRET', 'TG_WORKER_SECRET', 'TG_REDEMPTION_CODE_PEPPER', 'TG_REDEMPTION_CODE_ENCRYPTION_KEY'].map((name) => String(env[name] || '').trim()).filter(Boolean);
+        if (!/^\d{1,32}$/.test(pid) || key.length < 16 || key.length > 200 || /[\r\n]/.test(rawKey) || forbiddenSecrets.includes(key)
+            || !base || publicUrl !== 'https://tg.fatherkey.com') throw failure('tg_payment_configuration_invalid');
+        const channels = configuredChannels().filter((value) => CHANNELS.has(value));
+        if (!channels.length) throw failure('tg_payment_configuration_invalid');
+        return { pid, key, base, origin: publicUrl, channels };
+    }
+    async function request(url, payload) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 12000);
+        try {
+            const response = await fetchImpl(url, { method: 'POST', redirect: 'error', signal: controller.signal, headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8' }, body: new URLSearchParams(payload).toString() });
+            if (!response.ok) throw failure('tg_payment_provider_unconfirmed');
+            // Provider payloads can contain URLs and error strings. Never log or
+            // forward raw responses, and bound them before JSON parsing.
+            const raw = await response.text();
+            if (Buffer.byteLength(raw) > 65536) throw failure('tg_payment_provider_unconfirmed');
+            const data = JSON.parse(raw);
+            if (!data || typeof data !== 'object' || Array.isArray(data)) throw failure('tg_payment_provider_unconfirmed');
+            return data;
+        } catch (_) { throw failure('tg_payment_provider_unconfirmed'); } finally { clearTimeout(timer); }
+    }
+    return {
+        channels() {
+            let selected; try { selected = configuredChannels(); } catch (_) { return []; }
+            let zpay = []; try { zpay = config().channels; } catch (_) { /* Each configured provider fails closed independently. */ }
+            return selected.filter((id) => id === CRYPTO_CHANNEL ? nowpayments.ready() : zpay.includes(id))
+                .map((id) => ({ id, label: id === CRYPTO_CHANNEL ? 'USDT · BSC (BEP20)' : id === 'alipay' ? '支付宝' : '微信支付' }));
+        },
+        identity(channel) { if (channel === CRYPTO_CHANNEL && configuredChannels().includes(channel)) return nowpayments.identity(); const value = config(); return { provider: 'zpay', merchant_id: value.pid }; },
+        async createPayment({ order, clientIp = '127.0.0.1', userAgent = '' } = {}) {
+            if (order?.payment_channel === CRYPTO_CHANNEL && configuredChannels().includes(CRYPTO_CHANNEL)) return nowpayments.createPayment({ order });
+            const value = config();
+            if (!ORDER_NO.test(order?.order_no) || order.currency !== 'CNY' || !Number.isSafeInteger(order.total_minor) || order.total_minor < 1
+                || !value.channels.includes(order.payment_channel) || order.payment_provider !== 'zpay' || order.payment_merchant_id !== value.pid) throw failure('tg_payment_order_invalid');
+            const payload = { pid: value.pid, type: order.payment_channel, out_trade_no: order.order_no,
+                notify_url: `${value.origin}/api/tg/purchase/webhooks/zpay`, return_url: `${value.origin}/?purchase_order=${order.order_no}`,
+                name: order.product_family === 'telegram_stars' ? `Telegram Stars ${order.stars_quantity}` : `Telegram Premium ${order.term_months}个月`,
+                money: decimal(order.total_minor), clientip: String(clientIp || '127.0.0.1').slice(0, 64), device: normalizeZpayDevice(userAgent), sign_type: 'MD5' };
+            payload.sign = buildZpaySign(payload, value.key);
+            const data = await request(`${value.base}/mapi.php`, payload);
+            const checkoutUrl = httpsUrl(data.payurl);
+            const tradeNo = typeof data.trade_no === 'string' ? data.trade_no : '';
+            if (Number(data.code) !== 1 || !checkoutUrl || !/^[A-Za-z0-9_-]{1,128}$/.test(tradeNo)) throw failure('tg_payment_provider_unconfirmed');
+            return { checkout_url: checkoutUrl, provider_trade_no: tradeNo };
+        },
+        verifyCryptoSignature(payload, signature) { return nowpayments.verifySignature(payload, signature); },
+        verifyCryptoPayment(options) { return nowpayments.verifyPayment(options); },
+        verifyWebhook(payload) {
+            const value = config();
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+                || Object.keys(payload).length > 40 || Object.values(payload).some((item) => typeof item !== 'string' || item.length > 4096)) return null;
+            if (payload.pid !== value.pid || payload.sign_type !== 'MD5' || !/^[a-fA-F0-9]{32}$/.test(payload.sign || '')
+                || !ORDER_NO.test(payload.out_trade_no || '') || !CHANNELS.has(payload.type) || payload.trade_status !== 'TRADE_SUCCESS'
+                || !/^[A-Za-z0-9_-]{1,128}$/.test(payload.trade_no || '')) return null;
+            const expected = Buffer.from(buildZpaySign(payload, value.key), 'hex');
+            if (!crypto.timingSafeEqual(expected, Buffer.from(payload.sign, 'hex'))) return null;
+            const minor = amountMinor(payload.money);
+            if (minor === null || (payload.currency != null && payload.currency !== 'CNY')) return null;
+            return { order_no: payload.out_trade_no, provider: 'zpay', merchant_id: value.pid, provider_trade_no: payload.trade_no,
+                payment_channel: payload.type, amount_minor: minor, currency: 'CNY',
+                verified_payload: { verified_by: 'signed_notify', event_status: 'paid' } };
+        }
+    };
+}
+module.exports = { createTgPaymentGateway, httpsUrl, amountMinor, decimal };

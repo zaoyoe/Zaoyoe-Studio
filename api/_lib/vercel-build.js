@@ -17,6 +17,7 @@ const PRIVATE_SOURCE_DIRS = new Set([
     '.wrangler',
     'api',
     'cloud-functions',
+    'deploy',
     'docs',
     'functions',
     'node_modules',

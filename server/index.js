@@ -7,6 +7,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const { isTgNowpaymentsWebhookRequest } = require('./tg/raw-body');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const {
@@ -325,11 +326,45 @@ const envOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
 const allOrigins = normalizeAllowedOrigins([...defaultOrigins, ...envOrigins], {
     productionLike: productionLikeRuntime
 });
-app.use(cors({
-    origin: allOrigins,
+const TG_PUBLIC_ORIGINS = Object.freeze(['https://tg.fatherkey.com', 'https://tg.adm.fatherkey.com']);
+const TG_ADMIN_ORIGINS = Object.freeze(['https://tg.adm.fatherkey.com']);
+
+function resolveTgCorsOrigins(req = {}) {
+    const url = new URL(String(req.originalUrl || req.url || '/'), 'http://verify.local');
+    const pathname = url.pathname.replace(/\/+$/, '');
+    const normalizedQuery = (value) => String(value || '').trim().replace(/[?#][\s\S]*$/, '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    const publicPath = pathname === '/api/public' || pathname.startsWith('/api/public/');
+    const tgPath = pathname === '/api/tg' || pathname.startsWith('/api/tg/');
+    const authPath = pathname === '/api/auth' || pathname.startsWith('/api/auth/');
+    const pathSegments = pathname.split('/').filter(Boolean);
+    const publicScope = normalizedQuery(url.searchParams.get('scope'))
+        || (publicPath ? pathSegments[2] : tgPath ? 'tg' : authPath ? 'auth' : '');
+    const publicRoute = normalizedQuery(url.searchParams.get('route'))
+        || pathSegments.slice(publicPath ? 3 : 2).join('/');
+    if ((publicPath || tgPath) && publicScope === 'tg') {
+        return TG_PUBLIC_ORIGINS;
+    }
+    if ((publicPath || authPath) && publicScope === 'auth' && publicRoute === 'login-security') {
+        return TG_ADMIN_ORIGINS;
+    }
+
+    const adminRoute = normalizedQuery(url.searchParams.get('route'))
+        || pathname.replace(/^\/api\/admin\//, '');
+    if ((pathname === '/api/admin' || pathname.startsWith('/api/admin/'))
+        && (adminRoute === 'tg' || adminRoute.startsWith('tg/') || adminRoute === 'access/session')) {
+        return TG_ADMIN_ORIGINS;
+    }
+    return [];
+}
+
+// TG hosts only gain access to their own namespace and the two endpoints
+// needed for admin login. Existing shop/wallet/verify CORS stays unchanged.
+app.use(cors((req, callback) => callback(null, {
+    origin: [...allOrigins, ...resolveTgCorsOrigins(req)],
     credentials: true
-}));
+})));
 const defaultJsonBodyParser = express.json();
+const tgNowpaymentsJsonBodyParser = express.json({ limit: '8kb', verify(req, _res, buffer) { req.rawBody = Buffer.from(buffer); } });
 const aiImageUploadJsonBodyParser = express.json({ limit: '18mb' });
 
 // Capture signed guest webhook bytes before any global parser can consume the
@@ -348,6 +383,7 @@ function isAiImageReferenceUploadRequest(req = {}) {
 
 app.use((req, res, next) => {
     if (isGuestShopWebhookRequest(req) || isGuestShopWorkerRequest(req)) return next();
+    if (isTgNowpaymentsWebhookRequest(req)) return tgNowpaymentsJsonBodyParser(req, res, next);
     const parser = isAiImageReferenceUploadRequest(req)
         ? aiImageUploadJsonBodyParser
         : defaultJsonBodyParser;
@@ -6743,7 +6779,9 @@ app.all([
     '/api/ops/*',
     '/api/engagement/*',
     '/api/shop/*',
-    '/api/wallet/*'
+    '/api/wallet/*',
+    '/api/tg',
+    '/api/tg/*'
 ], dispatchSharedApiHandler(publicApiHandler));
 
 app.all([
@@ -6801,5 +6839,6 @@ if (require.main === module) {
 module.exports = {
     app,
     isAiImageReferenceUploadRequest,
+    resolveTgCorsOrigins,
     startServer
 };

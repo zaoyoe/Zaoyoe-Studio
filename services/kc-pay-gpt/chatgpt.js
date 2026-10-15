@@ -4,6 +4,8 @@ const axios = require('axios');
 const store = require('./mysql-store');
 const { getRegionConfig } = require('./region-config');
 const { executePaymentWithRetry } = require('./payment-retry');
+const { summarizeCheckoutErrorBody, buildCheckoutHttpFailure, isCheckoutUnusualActivityError } = require('./checkout-diagnostics');
+const { isChatGptAuthFailure } = require('./chatgpt-auth-state');
 
 function buildCheckoutPayload(planName, country, currency) {
     const uiMode = String(process.env.CHECKOUT_UI_MODE || 'custom').trim() || 'custom';
@@ -13,6 +15,26 @@ function buildCheckoutPayload(planName, country, currency) {
         billing_details: { country, currency },
         checkout_ui_mode: uiMode
     };
+}
+
+function isBillingCountryMismatchError(message) {
+    return /billing country must match request country|账单地区与请求地区不一致/i.test(String(message || ''));
+}
+
+function shouldFallbackToPricingCheckout(error, { checkoutMode = 'ui', debugOnly = false } = {}) {
+    const mode = String(checkoutMode || '').toLowerCase();
+    const isApiVariant = mode === 'api' || mode === 'auto' || mode === 'hybrid';
+    return isApiVariant && !debugOnly
+        && !isChatGptAuthFailure(error)
+        && !isBillingCountryMismatchError(error?.message);
+}
+
+function buildBillingCountryMismatchError({ country = '', currency = '' } = {}) {
+    const requested = [String(country || '').trim().toUpperCase(), String(currency || '').trim().toUpperCase()]
+        .filter(Boolean)
+        .join('/');
+    const requestedHint = requested ? `（当前请求：${requested}）` : '';
+    return `上游拒绝创建 Checkout：账号账单地区与请求地区不一致${requestedHint}。已停止回退到 UI 和银行卡支付，未发起扣款；请将 KC 支付地区配置为该账号实际账单地区，或改用账单地区匹配的账号。不能仅通过请求参数强行切换账单地区。`;
 }
 
 function formatApiErrorDetail(detail, fallback = '') {
@@ -38,11 +60,9 @@ function parseCheckoutApiResponse(status, bodyText) {
     }
 
     if (status !== 200) {
-        const detail = formatApiErrorDetail(
-            data.detail ?? data.message ?? data.error,
-            bodyText.slice(0, 500) || `HTTP ${status}`
-        );
-        return { ok: false, status, data, error: detail };
+        const detail = summarizeCheckoutErrorBody(bodyText);
+        const failure = buildCheckoutHttpFailure(status, detail);
+        return { ok: false, status, data, error: detail, code: failure.code };
     }
 
     const service = new ChatGPTService(null, '');
@@ -52,7 +72,7 @@ function parseCheckoutApiResponse(status, bodyText) {
             ok: false,
             status,
             data,
-            error: `API 未返回 checkout_session_id 或 url: ${JSON.stringify(data).slice(0, 300)}`
+            error: `API 未返回 checkout_session_id 或 url: ${summarizeCheckoutErrorBody(bodyText)}`
         };
     }
 
@@ -197,7 +217,7 @@ class ChatGPTService {
                 } else if (String(detail).includes('permission') || String(detail).includes('already_subscribed')) {
                     console.error("❌ [提示] 该账号可能已订阅或无权重复开通");
                 }
-                return { sessionId: null, checkoutUrl: null, error: detail };
+                return { sessionId: null, checkoutUrl: null, error: detail, httpStatus: parsed.status, code: parsed.code };
             }
 
             console.log(`✅ 订单创建成功 (session: ${parsed.sessionId ? parsed.sessionId.slice(0, 24) + '...' : 'unknown'})`);
@@ -265,13 +285,24 @@ class ChatGPTService {
      * @returns {number} 预估金额
      */
     getPlanAmount(planType, currency) {
+        const key = String(planType || '').trim().toLowerCase();
         // 基础美元定价
         const baseAmounts = {
+            go: 5.00,
             plus: 20.00,
+            pro_100: 100.00,
+            pro_200: 200.00,
+            pro_500: 500.00,
+            // 兼容历史标识
             pro_5x: 100.00,
-            pro_20x: 200.00
+            pro_20x: 200.00,
+            pro5x: 100.00,
+            pro20x: 200.00,
+            pro100: 100.00,
+            pro200: 200.00,
+            pro500: 500.00
         };
-        const amount = baseAmounts[planType] || baseAmounts.plus;
+        const amount = baseAmounts[key] || baseAmounts.plus;
 
         // 非 USD 币种的简单转换（实际金额由 Stripe 返回，这里仅用于记录参考）
         if (currency === 'SGD') return Math.round(amount * 1.35 * 100) / 100;
@@ -394,6 +425,16 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
     const gpt = new ChatGPTService(page.context().request, token);
     const checkout = await gpt.createCheckoutSession(planType, region, billingCurrency, planNameOverride);
     if (!checkout.checkoutUrl) {
+        if (isBillingCountryMismatchError(checkout.error)) {
+            throw new Error(buildBillingCountryMismatchError({ country: region, currency: billingCurrency }));
+        }
+        if (checkout.httpStatus != null && checkout.httpStatus !== 200) {
+            const failure = buildCheckoutHttpFailure(checkout.httpStatus, checkout.error);
+            const error = new Error(`${failure.message} [${failure.code}]`);
+            error.code = failure.code;
+            error.httpStatus = checkout.httpStatus;
+            throw error;
+        }
         throw new Error(`API 创建 Checkout 失败: ${checkout.error || '未返回 data.url'}`);
     }
 
@@ -406,8 +447,12 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
     }
 
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
-    await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
-    await page.waitForTimeout(2000);
+    // 快速等待页面主要元素加载或短暂网络平稳，最多等待 2.5 秒，绝不硬卡 30 秒 networkidle 超时
+    await Promise.race([
+        page.waitForSelector('iframe, input, button', { timeout: 8000 }),
+        page.waitForLoadState('networkidle', { timeout: 2500 })
+    ]).catch(() => {});
+    await page.waitForTimeout(500);
 
     const { hasVisibleLoginChrome, isCheckoutLoginGate, buildSessionNotLoggedInError } = require('./auth-page-detect');
     if (await isCheckoutLoginGate(page) || await hasVisibleLoginChrome(page)) {
@@ -436,6 +481,10 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
     const currentUrl = await assertCheckoutPageReady(page);
 
     await assertChatGptLoggedIn(page, 'Checkout');
+    const { ensureChatGptProUsageTier } = require('./pricing-checkout');
+    await ensureChatGptProUsageTier(page, planType).catch((err) => {
+        console.warn('⚠️ [Checkout] Pro 档位选择异常 (非阻塞):', err.message);
+    });
     console.log(`✅ [步骤] Checkout 页面已打开: ${currentUrl.slice(0, 100)}...`);
     return { checkoutUrl: currentUrl, sessionId: checkout.sessionId };
 }
@@ -447,3 +496,7 @@ module.exports.openApiCheckout = openApiCheckout;
 module.exports.createHostedCheckoutLink = createHostedCheckoutLink;
 module.exports.buildCheckoutPayload = buildCheckoutPayload;
 module.exports.formatApiErrorDetail = formatApiErrorDetail;
+module.exports.isBillingCountryMismatchError = isBillingCountryMismatchError;
+module.exports.buildBillingCountryMismatchError = buildBillingCountryMismatchError;
+
+module.exports.shouldFallbackToPricingCheckout = shouldFallbackToPricingCheckout;

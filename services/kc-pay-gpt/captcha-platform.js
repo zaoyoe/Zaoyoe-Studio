@@ -142,6 +142,9 @@ function getCaptchaPlatformConfig() {
 }
 
 function isCaptchaPlatformEnabled() {
+    if (process.env.HCAPTCHA_SOLVER_ENABLED === '0') {
+        return false;
+    }
     const { apiKey, apiUrl } = getCaptchaPlatformConfig();
     if (!apiKey || !apiUrl) {
         return false;
@@ -299,23 +302,34 @@ function buildHcaptchaTaskVariants({
             continue;
         }
 
-        for (const isEnterprise of [true, false]) {
-            const base = {
-                type: 'HCaptchaTaskProxyless',
+        // Capsolver 策略构建：企业版（带 rqdata）与普通版
+        if (rqdata) {
+            strategies.push({
+                type: 'HCaptchaEnterpriseTaskProxyLess',
                 websiteURL,
                 websiteKey: siteKey,
-                isEnterprise
-            };
-            if (isInvisible) {
-                base.isInvisible = true;
-            }
-            if (rqdata) {
-                base.rqdata = rqdata;
-            }
-            if (userAgent) {
-                base.userAgent = userAgent;
-            }
-            strategies.push(base);
+                rqdata,
+                enterprisePayload: { rqdata },
+                isInvisible: Boolean(isInvisible),
+                userAgent: userAgent || undefined
+            });
+            strategies.push({
+                type: 'HCaptchaTaskProxyLess',
+                websiteURL,
+                websiteKey: siteKey,
+                rqdata,
+                enterprisePayload: { rqdata },
+                isInvisible: Boolean(isInvisible),
+                userAgent: userAgent || undefined
+            });
+        } else {
+            strategies.push({
+                type: 'HCaptchaTaskProxyLess',
+                websiteURL,
+                websiteKey: siteKey,
+                isInvisible: Boolean(isInvisible),
+                userAgent: userAgent || undefined
+            });
         }
     }
     return strategies;
@@ -455,9 +469,12 @@ async function extractHcaptchaParamsFromPage(page) {
         } catch (_) { /* ignore */ }
     }
 
-    const websiteUrls = new Set(extracted.urls);
+    const websiteUrls = new Set();
     if (pageUrl) {
         websiteUrls.add(pageUrl);
+    }
+    for (const u of extracted.urls) {
+        websiteUrls.add(u);
     }
     websiteUrls.add('https://js.stripe.com/');
     websiteUrls.add('https://b.stripecdn.com/stripethirdparty-srv/assets/v1/HCaptcha.html');

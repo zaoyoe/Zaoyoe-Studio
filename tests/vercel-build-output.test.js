@@ -27,6 +27,10 @@ test('vercel static output keeps public assets while excluding function sources'
     writeTempFile(tempRoot, 'api/public.js', 'module.exports = {};');
     writeTempFile(tempRoot, 'server/api-handlers/public/runtime-supabase-config.js', 'module.exports = {};');
     writeTempFile(tempRoot, 'scripts/local-preview-server.js', 'console.log("preview");');
+    writeTempFile(tempRoot, 'deploy/kvm4/tg-worker/zaoyoe-tg-worker.cjs', 'module.exports = {};');
+    writeTempFile(tempRoot, 'deploy/kvm4/tg-worker/zaoyoe-tg-worker.service', '[Service]');
+    writeTempFile(tempRoot, 'deploy/kvm4/tg-worker/zaoyoe-tg-worker.timer', '[Timer]');
+    writeTempFile(tempRoot, 'deploy/kvm4/tg-worker/zaoyoe-tg-worker', '#!/bin/sh');
     writeTempFile(tempRoot, 'tests/example.test.js', 'assert.ok(true);');
     writeTempFile(tempRoot, 'package.json', '{}');
     writeTempFile(tempRoot, 'debug-realtime.html', '<!doctype html>');
@@ -42,6 +46,9 @@ test('vercel static output keeps public assets while excluding function sources'
     assert.equal(files.has('api/public.js'), false);
     assert.equal(files.has('server/api-handlers/public/runtime-supabase-config.js'), false);
     assert.equal(files.has('scripts/local-preview-server.js'), false);
+    for (const file of ['zaoyoe-tg-worker.cjs', 'zaoyoe-tg-worker.service', 'zaoyoe-tg-worker.timer', 'zaoyoe-tg-worker']) {
+        assert.equal(files.has(`deploy/kvm4/tg-worker/${file}`), false);
+    }
     assert.equal(files.has('tests/example.test.js'), false);
     assert.equal(files.has('package.json'), false);
     assert.equal(files.has('debug-realtime.html'), false);

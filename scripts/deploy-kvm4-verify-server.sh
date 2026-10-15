@@ -22,6 +22,7 @@ PACKAGE_PATHS=(
   scripts
   docs
   supabase
+  deploy/kvm4/tg-worker
 )
 
 usage() {

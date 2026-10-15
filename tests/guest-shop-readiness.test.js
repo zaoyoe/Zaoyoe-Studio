@@ -126,6 +126,7 @@ function linkKvm4PackageFixture(tempRoot) {
             }
             continue;
         }
+        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
         fs.symlinkSync(sourcePath, targetPath, fs.statSync(sourcePath).isDirectory() ? 'dir' : 'file');
     }
     return packagePaths;
@@ -1000,9 +1001,10 @@ test('the async production gate replaces local page presence with hosted commit-
             'js',
             'scripts',
             'docs',
-            'supabase'
+            'supabase',
+            'deploy/kvm4/tg-worker'
         ]);
-        assert.equal(fs.existsSync(path.join(tempRoot, 'deploy')), false);
+        assert.equal(fs.existsSync(path.join(tempRoot, 'deploy', 'kvm4', 'guest-shop-worker')), false);
         assert.equal(fs.existsSync(path.join(tempRoot, 'tests')), false);
         const serverRoot = path.join(tempRoot, 'server');
         fs.writeFileSync(path.join(serverRoot, '.release-commit'), `${releaseCommit}\n`, 'utf8');

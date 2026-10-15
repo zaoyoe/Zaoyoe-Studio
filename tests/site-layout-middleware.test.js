@@ -87,3 +87,29 @@ test('site layout middleware still guards admin studio with the admin-entry redi
         'https://www.fatherkey.com/admin-entry?next=%2Fadmin-studio%3Ftab%3Dhomepage'
     );
 });
+
+test('TG roots never load or apply the existing cn/intl site layout', async () => {
+    const middlewareModule = await loadFreshMiddlewareModule();
+    const layouts = { cn: { root_page_key: 'shop' }, intl: { root_page_key: 'shop' } };
+    const pages = [{ key: 'home', path: '/' }, { key: 'shop', path: '/shop.html' }];
+    for (const host of ['tg.fatherkey.com', 'tg.adm.fatherkey.com']) {
+        for (const pathname of ['/', '/index.html']) {
+            const requestUrl = `https://${host}${pathname}?site=intl`;
+            assert.equal(middlewareModule.buildSiteLayoutRedirectUrl(requestUrl, layouts, pages), null);
+            const response = await middlewareModule.default(new Request(requestUrl));
+            assert.equal(response.status, 200);
+            assert.equal(response.headers.get('x-middleware-next'), '1');
+            assert.equal(response.headers.get('location'), null);
+        }
+    }
+});
+
+test('TG admin serves its login shell while protected APIs enforce administrator access', async () => {
+    const middlewareModule = await loadFreshMiddlewareModule();
+    for (const pathname of ['/tg-admin', '/tg-admin.html']) {
+        const response = await middlewareModule.default(new Request(`https://tg.adm.fatherkey.com${pathname}`));
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get('x-middleware-next'), '1');
+        assert.equal(response.headers.get('location'), null);
+    }
+});
