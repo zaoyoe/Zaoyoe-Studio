@@ -40,6 +40,7 @@ test('TG host rewrites and private cache headers do not alter the existing site 
             assert.equal(rule?.destination, destination);
             const cacheRule = config.headers.find((entry) => entry.source === source && entry.has?.some((item) => item.value === host));
             assert.equal(cacheRule?.headers.find((item) => item.key === 'Cache-Control')?.value, 'no-store, max-age=0');
+            assert.equal(cacheRule?.headers.find((item) => item.key === 'Referrer-Policy')?.value, 'no-referrer');
         }
         const privateReferrer = config.headers.find((entry) => entry.source === '/:path*' && entry.has?.some((item) => item.value === host));
         assert.equal(privateReferrer?.headers.find((item) => item.key === 'Referrer-Policy')?.value, 'no-referrer');

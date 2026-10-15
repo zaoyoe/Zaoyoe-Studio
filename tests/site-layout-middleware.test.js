@@ -88,20 +88,57 @@ test('site layout middleware still guards admin studio with the admin-entry redi
     );
 });
 
-test('TG roots never load or apply the existing cn/intl site layout', async () => {
+test('TG roots never load or apply the existing cn/intl site layout and rewrite directly to TG entry pages', async () => {
     const middlewareModule = await loadFreshMiddlewareModule();
     const layouts = { cn: { root_page_key: 'shop' }, intl: { root_page_key: 'shop' } };
     const pages = [{ key: 'home', path: '/' }, { key: 'shop', path: '/shop.html' }];
-    for (const host of ['tg.fatherkey.com', 'tg.adm.fatherkey.com']) {
-        for (const pathname of ['/', '/index.html']) {
+    const expectedTargets = [
+        ['tg.fatherkey.com', '/tg.html'],
+        ['tg.adm.fatherkey.com', '/tg-admin.html']
+    ];
+    for (const [host, targetPath] of expectedTargets) {
+        for (const pathname of ['/', '/index', '/index.html']) {
             const requestUrl = `https://${host}${pathname}?site=intl`;
             assert.equal(middlewareModule.buildSiteLayoutRedirectUrl(requestUrl, layouts, pages), null);
+            assert.equal(
+                middlewareModule.buildIndependentTgRootRewriteUrl(requestUrl)?.toString(),
+                `https://${host}${targetPath}?site=intl`
+            );
             const response = await middlewareModule.default(new Request(requestUrl));
             assert.equal(response.status, 200);
-            assert.equal(response.headers.get('x-middleware-next'), '1');
+            assert.equal(response.headers.get('x-middleware-rewrite'), `https://${host}${targetPath}?site=intl`);
+            assert.equal(response.headers.get('x-middleware-next'), null);
             assert.equal(response.headers.get('location'), null);
+            assert.equal(response.headers.get('cache-control'), 'no-store, max-age=0');
+            assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
         }
     }
+});
+
+test('TG root middleware rewrite preserves order lookup and OAuth callback query parameters', async () => {
+    const middlewareModule = await loadFreshMiddlewareModule();
+
+    const storeOrdersResponse = await middlewareModule.default(
+        new Request('https://tg.fatherkey.com/?view=orders&tab=redeem')
+    );
+    assert.equal(storeOrdersResponse.status, 200);
+    assert.equal(
+        storeOrdersResponse.headers.get('x-middleware-rewrite'),
+        'https://tg.fatherkey.com/tg.html?view=orders&tab=redeem'
+    );
+    assert.equal(storeOrdersResponse.headers.get('cache-control'), 'no-store, max-age=0');
+    assert.equal(storeOrdersResponse.headers.get('referrer-policy'), 'no-referrer');
+
+    const adminCallbackResponse = await middlewareModule.default(
+        new Request('https://tg.adm.fatherkey.com/?code=pkce_code_123&state=state_abc')
+    );
+    assert.equal(adminCallbackResponse.status, 200);
+    assert.equal(
+        adminCallbackResponse.headers.get('x-middleware-rewrite'),
+        'https://tg.adm.fatherkey.com/tg-admin.html?code=pkce_code_123&state=state_abc'
+    );
+    assert.equal(adminCallbackResponse.headers.get('cache-control'), 'no-store, max-age=0');
+    assert.equal(adminCallbackResponse.headers.get('referrer-policy'), 'no-referrer');
 });
 
 test('TG admin serves its login shell while protected APIs enforce administrator access', async () => {
