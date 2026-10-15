@@ -54,7 +54,7 @@ function validateAddressFields(data) {
 
 /**
  * 获取指定地区的所有活跃地址模板
- * @param {string} region - 地区代码 (PH/US/SG/MY)
+ * @param {string} region - 地区代码 (PH/US/EG/CL)
  * @returns {Promise<Array>}
  */
 async function listAddresses(region) {
@@ -213,6 +213,35 @@ const US_STREET_NAMES = [
     'Washington St', 'Lake View Rd', 'Highland Ave', 'Pine St', 'Elm St'
 ];
 
+// Retain the established Oregon-only fallback; an explicit Oregon policy
+// must never fall back to an address in another state.
+const OREGON_LOCATIONS = [
+    { city: 'Portland', state: 'Oregon', postalCodes: ['97201', '97205', '97209', '97214', '97202', '97210'] },
+    { city: 'Salem', state: 'Oregon', postalCodes: ['97301', '97302', '97306', '97304'] },
+    { city: 'Eugene', state: 'Oregon', postalCodes: ['97401', '97402', '97404', '97403'] },
+    { city: 'Gresham', state: 'Oregon', postalCodes: ['97030', '97080'] },
+    { city: 'Hillsboro', state: 'Oregon', postalCodes: ['97123', '97124'] },
+    { city: 'Beaverton', state: 'Oregon', postalCodes: ['97005', '97008'] },
+    { city: 'Bend', state: 'Oregon', postalCodes: ['97701', '97702'] },
+    { city: 'Medford', state: 'Oregon', postalCodes: ['97501', '97504'] }
+];
+
+const OREGON_STREET_NAMES = [
+    'SW Broadway', 'SW 5th Ave', 'SW Morrison St', 'NW 23rd Ave',
+    'SE Hawthorne Blvd', 'NE Broadway St', 'SW Alder St', 'SW Washington St',
+    'Commercial St SE', 'Liberty St NE', 'Willamette St', 'Franklin Blvd',
+    'Main St', 'Oak Ave', 'Maple Dr', 'Pine St', 'Park Ave'
+];
+
+function generateRandomOregonTaxFreeAddress() {
+    const loc = OREGON_LOCATIONS[Math.floor(Math.random() * OREGON_LOCATIONS.length)];
+    const streetNum = Math.floor(Math.random() * 8900) + 100;
+    const street = OREGON_STREET_NAMES[Math.floor(Math.random() * OREGON_STREET_NAMES.length)];
+    const postal_code = loc.postalCodes[Math.floor(Math.random() * loc.postalCodes.length)];
+    return { line1: `${streetNum} ${street}`, city: loc.city, state: 'Oregon',
+        postal_code, country: 'US', generated: true };
+}
+
 /**
  * 随机生成一条美国免税州地址（不落库）
  * @returns {{ line1: string, city: string, state: string, postal_code: string, country: string, generated: true }}
@@ -259,21 +288,66 @@ async function batchGenerateUsAddresses(count = 10) {
 }
 
 /**
- * 支付结账时选取账单地址：优先 US 地址池，池空则即时随机生成
+ * 支付结账时按地区选取账单地址，兼容旧的单参数地址 ID。
+ * Grok 显式 Oregon 策略与 PH 默认策略使用完整的 US/Oregon 地址。
+ * 不将其他州的地址改写成 Oregon，也不将其他地区的空池回退到 US。
+ * @param {string|number|null} regionOrLastUsedId
  * @param {number|null} lastUsedId
+ * @param {{ strategy?: 'regional'|'oregon' }} options
  * @returns {Promise<{ id: number, line1: string, city: string, state: string, postal_code: string, country: string, generated?: boolean }>}
  */
-async function pickBillingAddressForCheckout(lastUsedId = null) {
+async function pickBillingAddressForCheckout(regionOrLastUsedId = 'US', lastUsedId = null, { strategy = 'regional' } = {}) {
+    let region = 'US';
+    let prevId = lastUsedId;
+    if (typeof regionOrLastUsedId === 'number') {
+        prevId = regionOrLastUsedId;
+    } else if (typeof regionOrLastUsedId === 'string' && regionOrLastUsedId.trim()) {
+        region = regionOrLastUsedId.trim().toUpperCase();
+    }
+    if (!['regional', 'oregon'].includes(strategy)) throw new Error('不支持的账单地址选取策略');
+    if (strategy === 'oregon' && region !== 'US') throw new Error('显式俄勒冈账单策略仅支持美国支付地区');
+
+    const phBillingStrategy = (process.env.PH_BILLING_ADDRESS_STRATEGY || 'oregon').trim().toLowerCase();
+    if (strategy === 'oregon' || region === 'PH' && phBillingStrategy === 'oregon') {
+        let picked;
+        try {
+            picked = await pickOregonTaxFreeAddress(prevId);
+        } catch (_) {
+            picked = { id: 0, ...generateRandomOregonTaxFreeAddress() };
+        }
+        return { ...picked, country: 'US', state: 'Oregon' };
+    }
+
     let picked;
     try {
-        picked = await pickTaxFreeAddress('US', lastUsedId);
-    } catch (_) {
+        picked = await pickTaxFreeAddress(region, prevId);
+    } catch (error) {
+        if (region !== 'US') throw error;
         picked = { id: 0, ...generateRandomUsTaxFreeAddress() };
     }
     return {
         ...picked,
-        state: normalizeUsStateName(picked.state)
+        state: region === 'US' ? normalizeUsStateName(picked.state) : (picked.state || '')
     };
+}
+
+async function pickOregonTaxFreeAddress(lastUsedId = null) {
+    const addresses = await store.runQuery(
+        `SELECT id, region, line1, city, state, postal_code, country
+         FROM tax_free_addresses
+         WHERE is_active = 1 AND COALESCE(is_bound, 0) = 0
+           AND country = 'US'
+           AND (LOWER(TRIM(state)) = 'oregon' OR UPPER(TRIM(state)) = 'OR')
+         ORDER BY (CASE WHEN region = 'PH' THEN 0 ELSE 1 END), id ASC`
+    );
+    if (!addresses.length) throw new Error('地址池中无可用俄勒冈免税地址模板');
+    const candidates = lastUsedId != null
+        ? addresses.filter(address => Number(address.id) !== Number(lastUsedId))
+        : addresses;
+    const pool = candidates.length ? candidates : addresses;
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    await store.setAppConfigValue('last_used_address_id', String(picked.id));
+    return { ...picked, country: 'US', state: 'Oregon' };
 }
 
 /**
@@ -309,7 +383,7 @@ async function clearUnboundAddresses(region = 'US') {
 
 /**
  * 从当前地区的模板池中随机选取一个免税地址（不连续重复）
- * @param {string} region - 地区代码 (PH/US/SG/MY)
+ * @param {string} region - 地区代码 (PH/US/EG/CL)
  * @param {number|null} lastUsedId - 上次使用的地址模板 ID（避免连续重复）
  * @returns {Promise<{ id: number, line1: string, city: string, state: string, postal_code: string, country: string }>}
  * @throws {Error} 当该地区无可用免税地址模板时抛出错误
@@ -360,7 +434,10 @@ module.exports = {
     updateAddress,
     deleteAddress,
     pickTaxFreeAddress,
+    pickOregonTaxFreeAddress,
     generateRandomUsTaxFreeAddress,
+    generateRandomOregonTaxFreeAddress,
+    OREGON_LOCATIONS,
     batchGenerateUsAddresses,
     pickBillingAddressForCheckout,
     normalizeUsStateName,

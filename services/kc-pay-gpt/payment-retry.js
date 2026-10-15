@@ -12,9 +12,14 @@
 
 const store = require('./mysql-store');
 const { completeStripeCardPayment, readCheckoutDueAmount, estimateTaxFreeAmount } = require('./stripe-payment');
+const { ensureChatGptProUsageTier } = require('./pricing-checkout');
 const { pickBillingAddressForCheckout, markAddressBound } = require('./tax-free-address');
 const { getRegionConfig } = require('./region-config');
-const { classifyPaymentResult } = require('./task-safety');
+const { classifyPaymentResult, classifyOpenAiCardMethodFailure } = require('./task-safety');
+const { validateCardNumber } = require('./card-validator');
+const { isBundle: isGrokBundlePlan } = require('./public/grok-plan-catalog');
+const { grokError } = require('./grok-checkout-state');
+const { assertNativeBillingRegion, normalizeNativeBillingAddress } = require('./grok-billing-address');
 
 const MAX_CARD_ATTEMPTS = Number(process.env.PAYMENT_MAX_CARD_ATTEMPTS) || 3;
 const MAX_AUTOMATION_ATTEMPTS = MAX_CARD_ATTEMPTS;
@@ -27,7 +32,11 @@ function isPaymentDeclined(errorMsg) {
         'lost_card', 'stolen_card', 'do_not_honor',
         '拒绝', '被拒', 'your card was declined',
         'payment was not successful', 'payment was not approved',
-        'not approved'
+        'not approved',
+        'invalid', 'card number is invalid', 'card_invalid', 'invalid_card',
+        '卡号无效', '卡片格式', '不被支持', 'incomplete', '不完整', '未通过 luhn',
+        '账单地址未显示', '账单地址未展示',
+        '无法完成此次购买', '无法完成此购买', 'unable to complete this purchase', '未能完成购买'
     ];
     const lower = errorMsg.toLowerCase();
     return declinedKeywords.some((kw) => lower.includes(kw));
@@ -50,7 +59,7 @@ async function resolveBilledAmountForRecord(page, paymentResult, preTaxAmount, c
         }
     } catch (_) { /* ignore */ }
     if (preTaxAmount > 0) {
-        const estimated = estimateTaxFreeAmount(preTaxAmount);
+        const estimated = estimateTaxFreeAmount(preTaxAmount, currency);
         if (estimated && estimated < preTaxAmount * 0.98) {
             return { amount: estimated, currency };
         }
@@ -65,7 +74,7 @@ async function resolveBilledAmountForRecord(page, paymentResult, preTaxAmount, c
  * @returns {Promise<{ success: boolean, error?: string, cardLast4?: string, manualIntervention?: boolean, screenshots?: string[] }>}
  */
 async function executePaymentWithRetry(page, options) {
-    const { planType, cdkCode, email, onProgress, stripeSessionId, onPaymentState } = options || {};
+    const { platform = 'chatgpt', planType, cdkCode, email, onProgress, stripeSessionId, onPaymentState } = options || {};
     let lastPersistedPaymentState = 'not_started';
     const persistPaymentState = async (state, message = '') => {
         if (typeof onPaymentState === 'function') {
@@ -90,12 +99,29 @@ async function executePaymentWithRetry(page, options) {
     const { currency } = regionConfig;
     progress(`支付地区: ${region}, 币种: ${currency}`);
 
-    const lastUsedIdRaw = await store.getAppConfigValue('last_used_address_id', null);
-    const lastUsedId = lastUsedIdRaw ? Number(lastUsedIdRaw) : null;
-
-    const address = await pickBillingAddressForCheckout(lastUsedId);
+    const grokBundle = platform === 'grok' && isGrokBundlePlan(planType);
+    let address;
+    try {
+        if (grokBundle) assertNativeBillingRegion(region, currency);
+        const lastUsedIdRaw = await store.getAppConfigValue('last_used_address_id', null);
+        const lastUsedId = lastUsedIdRaw ? Number(lastUsedIdRaw) : null;
+        address = grokBundle
+            ? normalizeNativeBillingAddress(await pickBillingAddressForCheckout(region, lastUsedId, { strategy: 'oregon' }))
+            : await pickBillingAddressForCheckout(region, lastUsedId);
+    } catch (error) {
+        if (!grokBundle) throw error;
+        const billingError = error.code === 'GROK_BILLING_UNCONFIRMED' ? error
+            : grokError('GROK_BILLING_UNCONFIRMED', '无法取得符合新版组合订阅要求的账单地址，尚未提交支付');
+        await persistPaymentState('not_started');
+        progress('新版 Grok 账单检查未通过，尚未预留银行卡或提交支付');
+        return { success: false, error: billingError.message, code: billingError.code,
+            manualIntervention: true, paymentState: 'not_started', screenshots: [] };
+    }
     const addressSource = address.generated ? '随机生成' : `地址池 #${address.id}`;
-    progress(`已选取美国免税账单地址 (${addressSource}): ${address.line1}, ${address.city}, ${address.state}`);
+    const addressLabel = (address.country === 'US' && /oregon|or\b/i.test(address.state || ''))
+        ? '美国俄勒冈免税'
+        : (region === 'US' ? '美国免税' : regionConfig.label || region);
+    progress(`已选取${addressLabel}账单地址 (${addressSource}): ${address.line1}, ${address.city}, ${address.state}`);
 
     const ownerKey = options?.ownerKey
         ? `payment_${String(options.ownerKey).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48)}`
@@ -110,6 +136,11 @@ async function executePaymentWithRetry(page, options) {
     let billedAmount = 0;
     let billedCurrency = currency;
     try {
+        if (platform === 'chatgpt' || !platform) {
+            await ensureChatGptProUsageTier(page, planType).catch((err) => {
+                console.warn('⚠️ [PaymentRetry] Pro 档位选择异常 (非阻塞):', err.message);
+            });
+        }
         const due = await readCheckoutDueAmount(page);
         if (due?.amount) {
             billedAmount = due.amount;
@@ -142,30 +173,70 @@ async function executePaymentWithRetry(page, options) {
             break;
         }
 
+        const cardLast4 = String(card.card_number || '').slice(-4);
+        lastCardLast4 = cardLast4;
+
+        const cardValidation = validateCardNumber(card.card_number);
+        if (!cardValidation.valid) {
+            progress(`卡片 ...${cardLast4} 本地校验未通过 (${cardValidation.error})，标记已报废并更换下一张`);
+            await store.markCardExhausted(card.id);
+            declinedLast4s.push(cardLast4);
+            cardAttempt -= 1;
+            continue;
+        }
+
         const cardInfo = {
             number: card.card_number,
             expiry: card.card_expiry,
             cvc: card.card_cvc,
             holder: card.card_holder
         };
-        const cardLast4 = String(card.card_number || '').slice(-4);
-        lastCardLast4 = cardLast4;
         progress(`已预留卡片 #${cardAttempt}: ...${cardLast4}`);
 
         let cardHandled = false;
+        let attemptStarted = false;
+        lastPersistedPaymentState = 'not_started';
 
         try {
-            const paymentResult = await completeStripeCardPayment(page, cardInfo, address, {
-                cardAttempt,
-                holderName: billingHolderName,
-                onPaymentAttemptStarted: () => persistPaymentState('started', '正在提交银行卡支付')
-            });
+            let paymentResult;
+            try {
+                paymentResult = await completeStripeCardPayment(page, cardInfo, address, {
+                    cardAttempt, holderName: billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
+                    grokCheckout: options.grokCheckout,
+                    onPaymentAttemptStarted: async () => {
+                        attemptStarted = true;
+                        await persistPaymentState('started', '正在提交银行卡支付');
+                    }
+                });
+            } catch (error) {
+                paymentResult = { success: false, error: error.message,
+                    submitted: attemptStarted, submissionAttempted: attemptStarted };
+            }
+            if (paymentResult.dueAmount > 0) {
+                billedAmount = paymentResult.dueAmount;
+                billedCurrency = paymentResult.dueCurrency || billedCurrency;
+            }
+            // Recognize method/field guard errors before broad decline keywords
+            // such as "不完整". Payment activity is still classified separately below.
+            const cardMethodFailure = classifyOpenAiCardMethodFailure(paymentResult.error);
+            const isCaptchaOrNonCard = Boolean(
+                cardMethodFailure
+                ||
+                paymentResult.captchaRequired
+                || /安全验证|人机验证|hcaptcha|cloudflare|turnstile|captcha|verification|购买未成功|表单|超时|timeout/i.test(paymentResult.error || '')
+            );
+
+            const isDeclined = Boolean(paymentResult.declined || paymentResult.canRetryCard
+                || (!options.grokCheckout?.native && !isCaptchaOrNonCard && paymentResult.code !== 'PAYMENT_RESULT_UNKNOWN' && isPaymentDeclined(paymentResult.error || '')));
+
             const paymentState = classifyPaymentResult({
                 success: Boolean(paymentResult.success),
-                declined: Boolean(paymentResult.declined || isPaymentDeclined(paymentResult.error || '')),
+                declined: isDeclined,
                 submitted: paymentResult.submitted,
                 submissionAttempted: paymentResult.submissionAttempted,
-                previousState: lastPersistedPaymentState
+                previousState: lastPersistedPaymentState,
+                captchaRequired: paymentResult.captchaRequired,
+                error: paymentResult.error
             });
             await persistPaymentState(paymentState, paymentState === 'unknown'
                 ? '支付结果未知，暂停自动重试并保留 CDK 与银行卡供人工复核'
@@ -200,6 +271,7 @@ async function executePaymentWithRetry(page, options) {
                     amount: billedAmount,
                     currency: billedCurrency,
                     plan_type: planType || 'plus',
+                    platform: options.platform,
                     cdk_code: cdkCode,
                     email,
                     stripe_session_id: stripeSessionId || null,
@@ -210,7 +282,7 @@ async function executePaymentWithRetry(page, options) {
                     screenshots.push(paymentResult.screenshot);
                     progress(`SUCCESS_SCREENSHOT: ${paymentResult.screenshot}`);
                 }
-                return { success: true, cardLast4, holderName, screenshots };
+                return { success: true, cardLast4, holderName, screenshots, subscriptionId: paymentResult.subscriptionId || null };
             }
 
             lastError = paymentResult.error || '支付失败';
@@ -219,14 +291,19 @@ async function executePaymentWithRetry(page, options) {
                 progress(`FAILURE_SCREENSHOT: ${paymentResult.screenshot}`);
             }
 
-            const declined = paymentState === 'declined';
+            const declined = paymentState === 'declined' || isDeclined;
             if (paymentState === 'unknown') {
+                // Even if bookkeeping fails, an unresolved submitted payment must
+                // never reach finally's normal release path.
+                cardHandled = true;
+                await store.quarantineCardForReview(card.id);
                 await store.createBillingRecord({
                     card_number: card.card_number,
                     card_last4: cardLast4,
                     amount: billedAmount,
                     currency: billedCurrency,
                     plan_type: planType || 'plus',
+                    platform: options.platform,
                     cdk_code: cdkCode,
                     email,
                     stripe_session_id: stripeSessionId || null,
@@ -234,8 +311,6 @@ async function executePaymentWithRetry(page, options) {
                     error_code: 'payment_result_unknown',
                     error_message: '提交后未能确认支付结果；禁止自动重试，需人工核对 Stripe 账单'
                 });
-                await store.quarantineCardForReview(card.id);
-                cardHandled = true;
                 progress('支付结果未知，已暂停自动重试并保留 CDK 和银行卡，需人工核对 Stripe 账单');
                 return {
                     success: false,
@@ -248,12 +323,23 @@ async function executePaymentWithRetry(page, options) {
             }
 
             if (declined) {
+                // Protect the card before bookkeeping so a database error cannot
+                // send an explicitly declined card through finally's release path.
+                cardHandled = true;
+                progress(`Stripe 拒绝支付，将卡片置入 30 分钟智能冷却避让 (ID: ${card.id}, ...${cardLast4})`);
+                try {
+                    await store.cooldownCard(card.id, 30, 'Stripe拒付');
+                } catch (error) {
+                    await store.quarantineCardForReview(card.id, 'decline_cooldown_failed');
+                    throw error;
+                }
                 await store.createBillingRecord({
                     card_number: card.card_number,
                     card_last4: cardLast4,
                     amount: billedAmount,
                     currency: billedCurrency,
                     plan_type: planType || 'plus',
+                    platform: options.platform,
                     cdk_code: cdkCode,
                     email,
                     stripe_session_id: stripeSessionId || null,
@@ -261,9 +347,6 @@ async function executePaymentWithRetry(page, options) {
                     error_code: 'card_declined',
                     error_message: lastError
                 });
-                progress(`Stripe 拒绝支付，标记卡片已报废 (ID: ${card.id}, ...${cardLast4})`);
-                await store.markCardExhausted(card.id);
-                cardHandled = true;
                 declinedLast4s.push(cardLast4);
 
                 if (cardAttempt < MAX_CARD_ATTEMPTS && paymentResult.canRetryCard !== false) {
@@ -285,8 +368,8 @@ async function executePaymentWithRetry(page, options) {
                 };
             }
 
-            if (paymentResult.captchaRequired) {
-                progress('检测到 Cloudflare/hCaptcha 人机验证，自动化无法可靠通过');
+            if (paymentResult.captchaRequired || isCaptchaOrNonCard) {
+                progress('非卡片故障（人机验证/页面超时/安全检查未完成），已安全释放银行卡');
             }
 
             await store.createBillingRecord({
@@ -295,15 +378,25 @@ async function executePaymentWithRetry(page, options) {
                 amount: billedAmount,
                 currency: billedCurrency,
                 plan_type: planType || 'plus',
+                platform: options.platform,
                 cdk_code: cdkCode,
                 email,
                 stripe_session_id: stripeSessionId || null,
                 status: 'failed',
-                error_code: 'form_validation_failed',
+                error_code: paymentResult.captchaRequired ? 'captcha_required' : 'form_validation_failed',
                 error_message: lastError
             });
 
-            progress('支付自动化失败，需人工操作');
+            if (paymentResult.code === 'GROK_TAX_ADDRESS_REFUSED' && address?.id) {
+                await store.runExecute?.('UPDATE tax_free_addresses SET is_active = 0 WHERE id = ?', [address.id]).catch(() => {});
+                progress(`地址模板 #${address.id} 未通过官方税费校验，已自动移出可用地址池`);
+            }
+
+            // 非银行拒付：立即将卡片安全释放回卡池，保证处于正常可用状态
+            await store.releaseCard(card.id, true);
+            cardHandled = true;
+
+            progress(`卡片 ...${cardLast4} 已恢复可用状态（非卡片问题，无需报废或冷却）`);
             return {
                 success: false,
                 error: `需要人工操作：${lastError}`,
@@ -314,7 +407,7 @@ async function executePaymentWithRetry(page, options) {
             };
         } finally {
             if (card?.id && !cardHandled) {
-                await store.releaseCard(card.id).catch(() => { });
+                await store.releaseCard(card.id, true).catch(() => { });
             }
         }
     }

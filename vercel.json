@@ -14,14 +14,14 @@
     "functions": {
         "api/admin.js": {
             "maxDuration": 60,
-            "includeFiles": "{adapters/xianyu/core.js,api/_lib/*.js,api/public.js,docs/*.md,js/runtime-supabase-config.js,node_modules/@jsquash/avif/codec/dec/avif_dec.wasm,scripts/*.js,server/api-handlers/**/*.js,server/prompt-*.js,supabase/migrations/*.sql}"
+            "includeFiles": "{adapters/xianyu/core.js,api/_lib/*.js,api/public.js,docs/*.md,js/runtime-supabase-config.js,node_modules/@jsquash/avif/codec/dec/avif_dec.wasm,scripts/*.js,server/api-handlers/**/*.js,server/prompt-*.js,supabase/migrations/*.sql,server/tg/**}"
         },
         "api/newapi-support.js": {
             "maxDuration": 30,
             "includeFiles": "api/_lib/chat-image-upload.js"
         },
         "api/public.js": {
-            "includeFiles": "{adapters/xianyu/core.js,api/_lib/*.js,api/public.js,docs/*.md,js/runtime-supabase-config.js,node_modules/@jsquash/avif/codec/dec/avif_dec.wasm,scripts/*.js,server/api-handlers/**/*.js,supabase/migrations/*.sql}"
+            "includeFiles": "{adapters/xianyu/core.js,api/_lib/*.js,api/public.js,docs/*.md,js/runtime-supabase-config.js,node_modules/@jsquash/avif/codec/dec/avif_dec.wasm,scripts/*.js,server/api-handlers/**/*.js,supabase/migrations/*.sql,server/tg/**}"
         }
     },
     "redirects": [
@@ -114,6 +114,66 @@
     ],
     "rewrites": [
         {
+            "source": "/",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "destination": "/tg.html"
+        },
+        {
+            "source": "/",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.adm.fatherkey.com"
+                }
+            ],
+            "destination": "/tg-admin.html"
+        },
+        {
+            "source": "/index",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "destination": "/tg.html"
+        },
+        {
+            "source": "/index.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "destination": "/tg.html"
+        },
+        {
+            "source": "/index",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.adm.fatherkey.com"
+                }
+            ],
+            "destination": "/tg-admin.html"
+        },
+        {
+            "source": "/index.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.adm.fatherkey.com"
+                }
+            ],
+            "destination": "/tg-admin.html"
+        },
+        {
             "source": "/api/admin",
             "destination": "https://verify-api.fatherkey.com/api/admin"
         },
@@ -132,6 +192,10 @@
         {
             "source": "/api/wallet/:path*",
             "destination": "https://verify-api.fatherkey.com/api/wallet/:path*"
+        },
+        {
+            "source": "/api/tg/:path*",
+            "destination": "https://verify-api.fatherkey.com/api/tg/:path*"
         },
         {
             "source": "/api/ops/:path*",
@@ -184,6 +248,10 @@
         {
             "source": "/api/wallet/:path*",
             "destination": "/api/public?scope=wallet&route=:path*"
+        },
+        {
+            "source": "/api/tg/:path*",
+            "destination": "/api/public?scope=tg&route=:path*"
         },
         {
             "source": "/api/:path*",
@@ -454,6 +522,171 @@
                 {
                     "key": "Content-Security-Policy",
                     "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.sheetjs.com https://accounts.google.com https://www.gstatic.com; script-src-elem 'self' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.sheetjs.com https://accounts.google.com https://www.gstatic.com; script-src-attr 'none'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://verify-api.fatherkey.com https://ipinfo.io https://ipwho.is https://ipapi.co https://api.ipify.org https://api.qrserver.com https://accounts.google.com https://api.emailjs.com; frame-src https://accounts.google.com;"
+                }
+            ]
+        },
+        {
+            "source": "/api/tg/:path*",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
+                }
+            ]
+        },
+        {
+            "source": "/tg",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
+                }
+            ]
+        },
+        {
+            "source": "/tg.html",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
+                }
+            ]
+        },
+        {
+            "source": "/tg-admin",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
+                }
+            ]
+        },
+        {
+            "source": "/tg-admin.html",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
+                }
+            ]
+        },
+        {
+            "source": "/:path*",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "headers": [
+                {
+                    "key": "Referrer-Policy",
+                    "value": "no-referrer"
+                }
+            ]
+        },
+        {
+            "source": "/",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
+                }
+            ]
+        },
+        {
+            "source": "/index",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
+                }
+            ]
+        },
+        {
+            "source": "/index.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
+                }
+            ]
+        },
+        {
+            "source": "/:path*",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.adm.fatherkey.com"
+                }
+            ],
+            "headers": [
+                {
+                    "key": "Referrer-Policy",
+                    "value": "no-referrer"
+                }
+            ]
+        },
+        {
+            "source": "/",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.adm.fatherkey.com"
+                }
+            ],
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
+                }
+            ]
+        },
+        {
+            "source": "/index",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.adm.fatherkey.com"
+                }
+            ],
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
+                }
+            ]
+        },
+        {
+            "source": "/index.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.adm.fatherkey.com"
+                }
+            ],
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
                 }
             ]
         }

@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const express = require('express');
 const dotenv = require('dotenv');
+const { isTgNowpaymentsWebhookRequest } = require('../server/tg/raw-body');
 
 const { buildSupabaseRuntimeScript } = require('../api/_lib/public-runtime-config');
 const {
@@ -149,6 +150,15 @@ function buildLocalPreviewPublicHandlerUrl(rawUrl = '/api/public') {
     return `${handlerUrl.pathname}${handlerUrl.search}`;
 }
 
+function resolveLocalPreviewTgPage(rawUrl = '/', hostname = '') {
+    const pathname = new URL(String(rawUrl || '/'), 'http://preview.local').pathname;
+    if (!['/', '/index', '/index.html'].includes(pathname)) return '';
+    const normalizedHost = String(hostname || '').trim().toLowerCase().replace(/:\d+$/, '');
+    if (normalizedHost === 'tg.fatherkey.com') return 'tg.html';
+    if (normalizedHost === 'tg.adm.fatherkey.com') return 'tg-admin.html';
+    return '';
+}
+
 function normalizeRequireCachePath(targetPath = '') {
     const normalizedTargetPath = String(targetPath || '').trim();
     if (!normalizedTargetPath) {
@@ -187,7 +197,8 @@ function loadFreshAdminApiHandler(repoRoot = path.resolve(__dirname, '..')) {
     const normalizedRepoRoot = path.resolve(repoRoot);
     clearRequireCacheByPrefixes([
         path.join(normalizedRepoRoot, 'api'),
-        path.join(normalizedRepoRoot, 'server', 'api-handlers')
+        path.join(normalizedRepoRoot, 'server', 'api-handlers'),
+        path.join(normalizedRepoRoot, 'server', 'tg')
     ]);
     return require(path.join(normalizedRepoRoot, 'api', 'admin'));
 }
@@ -196,7 +207,8 @@ function loadFreshPublicApiHandler(repoRoot = path.resolve(__dirname, '..')) {
     const normalizedRepoRoot = path.resolve(repoRoot);
     clearRequireCacheByPrefixes([
         path.join(normalizedRepoRoot, 'api'),
-        path.join(normalizedRepoRoot, 'server', 'api-handlers')
+        path.join(normalizedRepoRoot, 'server', 'api-handlers'),
+        path.join(normalizedRepoRoot, 'server', 'tg')
     ]);
     return require(path.join(normalizedRepoRoot, 'api', 'public'));
 }
@@ -508,6 +520,7 @@ function createLocalPreviewApp(options = {}) {
             }
         }
     });
+    const tgNowpaymentsJsonBodyParser = express.json({ limit: '8kb', verify(req, _res, buffer) { req.rawBody = Buffer.from(buffer); } });
 
     // Guest ZPay IPN is form-urlencoded and signed over the exact wire bytes.
     // Capture those bytes before Express parsers consume the stream, matching
@@ -516,7 +529,7 @@ function createLocalPreviewApp(options = {}) {
     app.use(captureGuestShopWebhookRawBody());
     app.use((req, res, next) => {
         if (isGuestShopWebhookRequest(req) || isGuestShopWorkerRequest(req)) return next();
-        return defaultJsonBodyParser(req, res, next);
+        return (isTgNowpaymentsWebhookRequest(req) ? tgNowpaymentsJsonBodyParser : defaultJsonBodyParser)(req, res, next);
     });
     const defaultUrlencodedBodyParser = express.urlencoded({
         extended: false,
@@ -741,6 +754,28 @@ function createLocalPreviewApp(options = {}) {
         });
     });
 
+    app.all(['/api/tg', '/api/tg/*'], async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'TG public api',
+            buildHandlerUrl: (rawUrl) => buildLocalPreviewPublicHandlerUrl(
+                String(rawUrl || '/api/tg').replace(/^\/api\/tg/, '/api/public/tg')
+            ),
+            loadHandler: loadFreshPublicApiHandler,
+            repoRoot
+        });
+    });
+
+    app.all('/api/auth/login-security', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'auth security api',
+            buildHandlerUrl: (rawUrl) => buildLocalPreviewPublicHandlerUrl(
+                String(rawUrl || '/api/auth/login-security').replace(/^\/api\/auth/, '/api/public/auth')
+            ),
+            loadHandler: loadFreshPublicApiHandler,
+            repoRoot
+        });
+    });
+
     app.all('/api/support', async (req, res) => {
         await dispatchLocalPreviewApiRequest(req, res, {
             kind: 'support api',
@@ -755,6 +790,14 @@ function createLocalPreviewApp(options = {}) {
             loadHandler: loadFreshNewApiSupportApiHandler,
             repoRoot
         });
+    });
+
+    app.use((req, res, next) => {
+        const tgPage = resolveLocalPreviewTgPage(req.originalUrl || req.url, req.hostname);
+        if (!tgPage || !['GET', 'HEAD'].includes(req.method)) return next();
+        setLocalPreviewNoStoreHeaders(res);
+        res.setHeader('Referrer-Policy', 'no-referrer');
+        return res.sendFile(path.join(repoRoot, tgPage));
     });
 
     app.use(express.static(repoRoot, {
@@ -825,6 +868,7 @@ module.exports = {
     resolveLocalPreviewListenHost,
     resolveLocalPreviewStandaloneApiRoute,
     resolveLocalPreviewSourceCommit,
+    resolveLocalPreviewTgPage,
     resolveLocalPreviewRuntimeScript,
     setLocalPreviewNoStoreHeaders,
     shouldCaptureNewApiSupportRawBody,

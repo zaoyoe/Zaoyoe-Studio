@@ -45,6 +45,11 @@ const pointsCatalogHandler = require('../server/api-handlers/admin/points/catalo
 const pointsLookupHandler = require('../server/api-handlers/admin/points/lookup');
 const pointsManageHandler = require('../server/api-handlers/admin/points/manage');
 const pointsPackagesHandler = require('../server/api-handlers/admin/points/packages');
+const tgCodesHandler = require('../server/api-handlers/admin/tg/codes');
+const tgOrdersHandler = require('../server/api-handlers/admin/tg/orders');
+const tgProviderHandler = require('../server/api-handlers/admin/tg/provider');
+const tgProductsHandler = require('../server/api-handlers/admin/tg/products');
+const tgPurchasesHandler = require('../server/api-handlers/admin/tg/purchases');
 const promptsImageBase64Handler = require('../server/api-handlers/admin/prompts/image-base64');
 const promptsImageThumbnailHandler = require('../server/api-handlers/admin/prompts/image-thumbnail');
 const promptsImportsHandler = require('../server/api-handlers/admin/prompts/imports');
@@ -154,6 +159,11 @@ const ROUTE_HANDLERS = {
     'points/lookup': pointsLookupHandler,
     'points/manage': pointsManageHandler,
     'points/packages': pointsPackagesHandler,
+    'tg/codes': tgCodesHandler,
+    'tg/orders': tgOrdersHandler,
+    'tg/provider': tgProviderHandler,
+    'tg/products': tgProductsHandler,
+    'tg/purchases': tgPurchasesHandler,
     'prompts/image-base64': promptsImageBase64Handler,
     'prompts/image-thumbnail': promptsImageThumbnailHandler,
     'prompts/imports': promptsImportsHandler,

@@ -28,6 +28,23 @@ Emergency rollback is allowed with `npx vercel rollback <deployment-url-or-id> -
 
 The build command also blocks production builds when `VERCEL_ENV=production` and `VERCEL_GIT_COMMIT_REF` is not `main`.
 
+## Worktree Baseline, Remote Hygiene &Isolated Subsystems
+
+To prevent developing or previewing against stale worktree snapshots or split Git remotes, enforce these baseline checks before modifying files, starting a local preview server, or preparing a release:
+
+1. **Single Canonical HTTPS Remote**:
+   - `origin` must point to `https://github.com/zaoyoe/Zaoyoe-Studio.git`. Do not maintain separate `origin` (SSH) and `https-origin` remotes that can drift when port 22 is blocked by a local proxy.
+2. **Pre-Work & Pre-Preview Freshness Gate**:
+   - Before editing files or starting `scripts/local-preview-server.js` in any worktree, run `git fetch origin main` and check `git rev-list --count HEAD..origin/main`.
+   - If the worktree is behind `origin/main` (count `> 0`), rebase onto `origin/main` and fast-forward local `refs/heads/main` (`git branch -f main origin/main`) before continuing. Never run local preview or build features on an outdated snapshot.
+3. **Pre-PR Ancestor Gate**:
+   - Before creating or merging a PR, verify `git merge-base --is-ancestor origin/main HEAD` so shared entrypoints (`api/public.js`, `api/admin.js`, `.vercelignore`, `vercel.json`) never regress newer `main` commits.
+4. **Worktree Hygiene**:
+   - Periodically prune clean, already-merged detached worktrees (`git worktree remove` / `git worktree prune`) and never leave `refs/heads/main` locked to an old worktree checkout.
+5. **Isolated Subsystems (`tg.fatherkey.com` & `/opt/kc-pay-gpt`)**:
+   - **Telegram Standalone Store (`tg.fatherkey.com` / `tg.adm.fatherkey.com`)**: Static pages are served by Vercel and `/api/tg/:path*` routes to KVM4 Verify Server (`/opt/zaoyoe-verify-server`). After Verify Server is on the matching `main` commit, install the TG fulfillment worker via `scripts/install-kvm4-tg-worker.sh` (canonical root `/opt/zaoyoe-verify-server`).
+   - **KC Auto-Recharge Service (`redeem.fatherkey.com` / `adm.fatherkey.com`)**: Source lives in `services/kc-pay-gpt/` and deploys to KVM4 `/opt/kc-pay-gpt` (`kc-pay-gpt-app` on `127.0.0.1:3100`, `kc-pay-gpt-mysql` on `127.0.0.1:3311`). Never overwrite `/opt/kc-pay-gpt/.env`, host-level `/opt/kc-pay-gpt/docker-compose.yml`, `data/`, `debug_screenshots/`, `product_files/`, or the `mysql_data` volume.
+
 ## Release Integrity and Recovery Rules
 
 The release unit is a complete Git commit, not the current working directory,

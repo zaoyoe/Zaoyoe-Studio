@@ -301,6 +301,7 @@ function releaseSlot(slotId) {
     }
     const next = waitQueue.shift();
     clearTimeout(next.timer);
+    next.cleanup?.();
     free.inUse = true;
     free.jobKey = next.jobKey;
     free.uses += 1;
@@ -311,8 +312,13 @@ function releaseSlot(slotId) {
     });
 }
 
-function acquireSlot(jobKey) {
+function abortError() {
+    return Object.assign(new Error('浏览器任务已取消'), { code: 'DIAGNOSTIC_CANCELLED' });
+}
+
+function acquireSlot(jobKey, signal) {
     return new Promise((resolve, reject) => {
+        if (signal?.aborted) { reject(abortError()); return; }
         if (!initialized || !slots.length) {
             resolve(null);
             return;
@@ -339,22 +345,38 @@ function acquireSlot(jobKey) {
                 if (idx >= 0) {
                     waitQueue.splice(idx, 1);
                 }
+                entry.cleanup?.();
                 reject(new Error(`浏览器池繁忙，${Math.round(ACQUIRE_TIMEOUT_MS / 1000)}s 内无空闲槽位`));
             }, ACQUIRE_TIMEOUT_MS)
         };
         waitQueue.push(entry);
+        if (signal) {
+            const abort = () => {
+                const idx = waitQueue.indexOf(entry);
+                if (idx < 0) return;
+                waitQueue.splice(idx, 1);
+                clearTimeout(entry.timer);
+                entry.cleanup();
+                reject(abortError());
+            };
+            entry.cleanup = () => signal.removeEventListener('abort', abort);
+            signal.addEventListener('abort', abort, { once: true });
+            if (signal.aborted) abort();
+        }
     });
 }
 
-async function withBrowserSlot(jobKey, fn) {
+async function withBrowserSlot(jobKey, fn, signal) {
+    if (signal?.aborted) throw abortError();
     if (!isEnabled() || !initialized || !slots.length) {
         return fn(null);
     }
-    const slot = await acquireSlot(jobKey);
+    const slot = await acquireSlot(jobKey, signal);
     if (!slot) {
         return fn(null);
     }
     try {
+        if (signal?.aborted) throw abortError();
         return await fn(slot);
     } finally {
         releaseSlot(slot.slotId);
@@ -377,6 +399,7 @@ function buildPoolEnv(slot) {
 async function shutdownBrowserPool() {
     for (const waiter of waitQueue) {
         clearTimeout(waiter.timer);
+        waiter.cleanup?.();
         waiter.reject(new Error('浏览器池正在关闭'));
     }
     waitQueue = [];

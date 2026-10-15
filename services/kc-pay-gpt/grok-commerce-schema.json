@@ -1,0 +1,1798 @@
+{
+  "provenance": "Read-only descriptors from official grok.com /plans public assets, 2026-10-13; no private API calls.",
+  "methods": {
+    "commerce.billing.v1.AcquisitionService/Acquire": {
+      "input": ".commerce.billing.v1.AcquireRequest",
+      "output": ".commerce.billing.v1.AcquireResponse"
+    },
+    "commerce.billing.v1.AcquisitionService/GetAcquisitionStatus": {
+      "input": ".commerce.billing.v1.GetAcquisitionStatusRequest",
+      "output": ".commerce.billing.v1.GetAcquisitionStatusResponse"
+    },
+    "commerce.billing.v1.AcquisitionService/CancelAcquisition": {
+      "input": ".commerce.billing.v1.CancelAcquisitionRequest",
+      "output": ".commerce.billing.v1.CancelAcquisitionResponse"
+    },
+    "commerce.billing.v1.AcquisitionService/EstimateTax": {
+      "input": ".commerce.billing.v1.EstimateTaxRequest",
+      "output": ".commerce.billing.v1.EstimateTaxResponse"
+    },
+    "commerce.prepurchase.v1.PrePurchaseService/CreateCheckoutSession": {
+      "input": ".commerce.prepurchase.v1.CreateCheckoutSessionRequest",
+      "output": ".commerce.prepurchase.v1.CreateCheckoutSessionResponse"
+    },
+    "commerce.prepurchase.v1.PrePurchaseService/GetCartForSession": {
+      "input": ".commerce.prepurchase.v1.GetCartForSessionRequest",
+      "output": ".commerce.prepurchase.v1.GetCartResponse"
+    },
+    "commerce.prepurchase.v1.PrePurchaseService/AdoptCheckoutSession": {
+      "input": ".commerce.prepurchase.v1.AdoptCheckoutSessionRequest",
+      "output": ".commerce.prepurchase.v1.AdoptCheckoutSessionResponse"
+    },
+    "commerce.prepurchase.v1.PrePurchaseService/GetCheckoutSession": {
+      "input": ".commerce.prepurchase.v1.GetCheckoutSessionRequest",
+      "output": ".commerce.prepurchase.v1.CreateCheckoutSessionResponse"
+    },
+    "commerce.subscription.v1.SubscriptionService/GetSubscriptions": {
+      "input": ".commerce.subscription.v1.GetSubscriptionsRequest",
+      "output": ".commerce.subscription.v1.GetSubscriptionsResponse"
+    }
+  },
+  "messages": {
+    ".commerce.billing.v1.AcquireRequest": {
+      "1": {
+        "name": "cartId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "native",
+        "type": 11,
+        "ref": ".commerce.billing.v1.NativePayment",
+        "repeated": false
+      },
+      "3": {
+        "name": "store",
+        "type": 11,
+        "ref": ".commerce.billing.v1.StoreProof",
+        "repeated": false
+      },
+      "4": {
+        "name": "idempotencyKey",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "7": {
+        "name": "billingAddress",
+        "type": 11,
+        "ref": ".commerce.billing.v1.TaxAddress",
+        "repeated": false
+      },
+      "8": {
+        "name": "waitFor",
+        "type": 14,
+        "ref": ".commerce.billing.v1.AcquireWait",
+        "repeated": false
+      },
+      "9": {
+        "name": "billingEmail",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "10": {
+        "name": "returnUrl",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.NativePayment": {
+      "1": {
+        "name": "paymentMethodId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.StoreProof": {
+      "1": {
+        "name": "apple",
+        "type": 11,
+        "ref": ".commerce.billing.v1.AppleProof",
+        "repeated": false
+      },
+      "2": {
+        "name": "google",
+        "type": 11,
+        "ref": ".commerce.billing.v1.GoogleProof",
+        "repeated": false
+      },
+      "3": {
+        "name": "sandbox",
+        "type": 11,
+        "ref": ".commerce.billing.v1.SandboxProof",
+        "repeated": false
+      },
+      "4": {
+        "name": "stripeLegacy",
+        "type": 11,
+        "ref": ".commerce.billing.v1.StripeLegacyProof",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.AppleProof": {
+      "1": {
+        "name": "signedTransactionJws",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.GoogleProof": {
+      "1": {
+        "name": "purchaseToken",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.SandboxProof": {
+      "1": {
+        "name": "token",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.StripeLegacyProof": {
+      "1": {
+        "name": "subscriptionId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.TaxAddress": {
+      "1": {
+        "name": "regionCode",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "postalCode",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "administrativeAreaCode",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "addressLines",
+        "type": 9,
+        "ref": "",
+        "repeated": true
+      },
+      "5": {
+        "name": "locality",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.AcquireResponse": {
+      "1": {
+        "name": "status",
+        "type": 14,
+        "ref": ".commerce.billing.v1.AcquisitionStatus",
+        "repeated": false
+      },
+      "2": {
+        "name": "purchaseId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "subscriptionId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "metadata",
+        "type": 11,
+        "ref": ".commerce.billing.v1.AcquisitionMetadata",
+        "repeated": false
+      },
+      "5": {
+        "name": "error",
+        "type": 11,
+        "ref": ".commerce.shared.v1.ErrorDetail",
+        "repeated": false
+      },
+      "6": {
+        "name": "declineReason",
+        "type": 14,
+        "ref": ".commerce.billing.v1.DeclineReason",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.AcquisitionMetadata": {
+      "1": {
+        "name": "clientSecret",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "approvalUrl",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "publishableKey",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.shared.v1.ErrorDetail": {
+      "1": {
+        "name": "code",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "message",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "retriable",
+        "type": 8,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.GetAcquisitionStatusRequest": {
+      "1": {
+        "name": "purchaseId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.GetAcquisitionStatusResponse": {
+      "1": {
+        "name": "status",
+        "type": 14,
+        "ref": ".commerce.billing.v1.AcquisitionStatus",
+        "repeated": false
+      },
+      "2": {
+        "name": "purchaseId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "subscriptionId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "metadata",
+        "type": 11,
+        "ref": ".commerce.billing.v1.AcquisitionMetadata",
+        "repeated": false
+      },
+      "5": {
+        "name": "error",
+        "type": 11,
+        "ref": ".commerce.shared.v1.ErrorDetail",
+        "repeated": false
+      },
+      "6": {
+        "name": "declineReason",
+        "type": 14,
+        "ref": ".commerce.billing.v1.DeclineReason",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.CancelAcquisitionRequest": {
+      "1": {
+        "name": "subscriptionId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "idempotencyKey",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.CancelAcquisitionResponse": {
+      "1": {
+        "name": "effectiveAt",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      },
+      "2": {
+        "name": "storeManagementUrl",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "error",
+        "type": 11,
+        "ref": ".commerce.shared.v1.ErrorDetail",
+        "repeated": false
+      }
+    },
+    ".google.protobuf.Timestamp": {
+      "1": {
+        "name": "seconds",
+        "type": 3,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "nanos",
+        "type": 5,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.EstimateTaxRequest": {
+      "1": {
+        "name": "cartId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "billingAddress",
+        "type": 11,
+        "ref": ".commerce.billing.v1.TaxAddress",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.EstimateTaxResponse": {
+      "1": {
+        "name": "subtotal",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Money",
+        "repeated": false
+      },
+      "2": {
+        "name": "tax",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Money",
+        "repeated": false
+      },
+      "3": {
+        "name": "total",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Money",
+        "repeated": false
+      },
+      "4": {
+        "name": "taxLines",
+        "type": 11,
+        "ref": ".commerce.billing.v1.TaxLine",
+        "repeated": true
+      },
+      "5": {
+        "name": "error",
+        "type": 11,
+        "ref": ".commerce.shared.v1.ErrorDetail",
+        "repeated": false
+      }
+    },
+    ".commerce.shared.v1.Money": {
+      "1": {
+        "name": "currencyCode",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "unitMicros",
+        "type": 3,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.billing.v1.TaxLine": {
+      "1": {
+        "name": "authorityType",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "amount",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Money",
+        "repeated": false
+      },
+      "3": {
+        "name": "rate",
+        "type": 1,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "description",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.CreateCheckoutSessionRequest": {
+      "1": {
+        "name": "paywall",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "country",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "billingPlatforms",
+        "type": 14,
+        "ref": ".commerce.shared.v1.BillingPlatform",
+        "repeated": true
+      },
+      "4": {
+        "name": "teamId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "5": {
+        "name": "acquisition",
+        "type": 11,
+        "ref": ".commerce.shared.v1.AcquisitionContext",
+        "repeated": false
+      },
+      "6": {
+        "name": "marketingContext",
+        "type": 11,
+        "ref": ".commerce.shared.v1.MarketingContext",
+        "repeated": false
+      },
+      "7": {
+        "name": "promoCode",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.shared.v1.AcquisitionContext": {
+      "1": {
+        "name": "paywall",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "entrypoint",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "campaign",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "referrer",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "5": {
+        "name": "clientPlatform",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "6": {
+        "name": "sessionId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.shared.v1.MarketingContext": {
+      "1": {
+        "name": "product",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "anonymousId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "eventSource",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "analyticsConsent",
+        "type": 8,
+        "ref": "",
+        "repeated": false
+      },
+      "5": {
+        "name": "advertisingConsent",
+        "type": 8,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.CreateCheckoutSessionResponse": {
+      "1": {
+        "name": "error",
+        "type": 11,
+        "ref": ".commerce.shared.v1.ErrorDetail",
+        "repeated": false
+      },
+      "2": {
+        "name": "checkoutSession",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.CheckoutSession",
+        "repeated": false
+      },
+      "3": {
+        "name": "skuPricings",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.SkuPricing",
+        "repeated": true
+      },
+      "4": {
+        "name": "promoBenefitId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.CheckoutSession": {
+      "1": {
+        "name": "token",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "expiresAt",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.SkuPricing": {
+      "1": {
+        "name": "skuId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "grants",
+        "type": 9,
+        "ref": "",
+        "repeated": true
+      },
+      "4": {
+        "name": "pricing",
+        "type": 11,
+        "ref": ".commerce.catalog.v1.Pricing",
+        "repeated": false
+      },
+      "5": {
+        "name": "benefits",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.AppliedBenefit",
+        "repeated": true
+      },
+      "7": {
+        "name": "relation",
+        "type": 11,
+        "ref": ".commerce.catalog.v1.SkuRelation",
+        "repeated": false
+      },
+      "8": {
+        "name": "displayOnly",
+        "type": 8,
+        "ref": "",
+        "repeated": false
+      },
+      "9": {
+        "name": "skuName",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.catalog.v1.Pricing": {
+      "1": {
+        "name": "id",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "skuId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "details",
+        "type": 11,
+        "ref": ".commerce.catalog.v1.PricingDetails",
+        "repeated": false
+      },
+      "4": {
+        "name": "status",
+        "type": 14,
+        "ref": ".commerce.catalog.v1.PricingStatus",
+        "repeated": false
+      },
+      "5": {
+        "name": "name",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "6": {
+        "name": "unlisted",
+        "type": 8,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.catalog.v1.PricingDetails": {
+      "1": {
+        "name": "amount",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Money",
+        "repeated": false
+      },
+      "2": {
+        "name": "interval",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Interval",
+        "repeated": false
+      },
+      "3": {
+        "name": "country",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "billingPlatform",
+        "type": 14,
+        "ref": ".commerce.shared.v1.BillingPlatform",
+        "repeated": false
+      },
+      "5": {
+        "name": "taxBehavior",
+        "type": 14,
+        "ref": ".commerce.catalog.v1.TaxBehavior",
+        "repeated": false
+      },
+      "6": {
+        "name": "taxCategory",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "8": {
+        "name": "externalIdsByApp",
+        "type": 11,
+        "ref": ".commerce.catalog.v1.PricingDetails.ExternalIdsByAppEntry",
+        "repeated": true
+      }
+    },
+    ".commerce.shared.v1.Interval": {
+      "1": {
+        "name": "count",
+        "type": 5,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "unit",
+        "type": 14,
+        "ref": ".commerce.shared.v1.Interval.Unit",
+        "repeated": false
+      }
+    },
+    ".commerce.catalog.v1.PricingDetails.ExternalIdsByAppEntry": {
+      "1": {
+        "name": "key",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "value",
+        "type": 11,
+        "ref": ".commerce.catalog.v1.PricingExternalIds",
+        "repeated": false
+      }
+    },
+    ".commerce.catalog.v1.PricingExternalIds": {
+      "1": {
+        "name": "googleExternalPricingId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "stripePricingId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "appleProductId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "appleSubscriptionGroupId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.AppliedBenefit": {
+      "1": {
+        "name": "benefitId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "benefitName",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "value",
+        "type": 11,
+        "ref": ".commerce.catalog.v1.BenefitValue",
+        "repeated": false
+      },
+      "4": {
+        "name": "redeemBy",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      }
+    },
+    ".commerce.catalog.v1.BenefitValue": {
+      "1": {
+        "name": "discount",
+        "type": 11,
+        "ref": ".commerce.catalog.v1.Discount",
+        "repeated": false
+      },
+      "2": {
+        "name": "trialInterval",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Interval",
+        "repeated": false
+      },
+      "3": {
+        "name": "creditAmount",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Money",
+        "repeated": false
+      },
+      "4": {
+        "name": "payUpfront",
+        "type": 11,
+        "ref": ".commerce.catalog.v1.PayUpfront",
+        "repeated": false
+      }
+    },
+    ".commerce.catalog.v1.Discount": {
+      "1": {
+        "name": "percent",
+        "type": 1,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "fixedAmount",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Money",
+        "repeated": false
+      },
+      "3": {
+        "name": "times",
+        "type": 5,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.catalog.v1.PayUpfront": {
+      "1": {
+        "name": "periodsCovered",
+        "type": 5,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "fixedTotal",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Money",
+        "repeated": false
+      },
+      "3": {
+        "name": "percentOffTotal",
+        "type": 1,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "periodsPaid",
+        "type": 5,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.catalog.v1.SkuRelation": {
+      "1": {
+        "name": "fromSkuId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "toSkuId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "type",
+        "type": 14,
+        "ref": ".commerce.catalog.v1.RelationType",
+        "repeated": false
+      },
+      "4": {
+        "name": "proration",
+        "type": 14,
+        "ref": ".commerce.catalog.v1.ProrationPolicy",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.GetCartForSessionRequest": {
+      "1": {
+        "name": "sessionToken",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "selections",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.GetCartForSessionRequest.Selection",
+        "repeated": true
+      },
+      "3": {
+        "name": "billingPlatform",
+        "type": 14,
+        "ref": ".commerce.shared.v1.BillingPlatform",
+        "repeated": false
+      },
+      "4": {
+        "name": "castleToken",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "5": {
+        "name": "marketingContext",
+        "type": 11,
+        "ref": ".commerce.shared.v1.MarketingContext",
+        "repeated": false
+      },
+      "6": {
+        "name": "migratedFrom",
+        "type": 11,
+        "ref": ".commerce.shared.v1.MigratedFrom",
+        "repeated": false
+      },
+      "7": {
+        "name": "crossgrade",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.GetCartForSessionRequest.Crossgrade",
+        "repeated": false
+      },
+      "8": {
+        "name": "idempotencyKey",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.GetCartForSessionRequest.Selection": {
+      "1": {
+        "name": "skuId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "quantity",
+        "type": 5,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "recurrence",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Interval",
+        "repeated": false
+      }
+    },
+    ".commerce.shared.v1.MigratedFrom": {
+      "1": {
+        "name": "system",
+        "type": 14,
+        "ref": ".commerce.shared.v1.MigratedFrom.System",
+        "repeated": false
+      },
+      "2": {
+        "name": "externalId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "plan",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.GetCartForSessionRequest.Crossgrade": {
+      "1": {
+        "name": "flavor",
+        "type": 14,
+        "ref": ".commerce.prepurchase.v1.GetCartRequest.Crossgrade.Flavor",
+        "repeated": false
+      },
+      "2": {
+        "name": "completeTarget",
+        "type": 8,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.GetCartResponse": {
+      "1": {
+        "name": "cartId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "subtotal",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Money",
+        "repeated": false
+      },
+      "3": {
+        "name": "tax",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Money",
+        "repeated": false
+      },
+      "4": {
+        "name": "total",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Money",
+        "repeated": false
+      },
+      "5": {
+        "name": "expiresAt",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      },
+      "6": {
+        "name": "error",
+        "type": 11,
+        "ref": ".commerce.shared.v1.ErrorDetail",
+        "repeated": false
+      },
+      "7": {
+        "name": "catalogVersion",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "8": {
+        "name": "teamId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "10": {
+        "name": "stripe",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.StripeCartPayload",
+        "repeated": false
+      },
+      "11": {
+        "name": "apple",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.AppleCartPayload",
+        "repeated": false
+      },
+      "12": {
+        "name": "google",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.GoogleCartPayload",
+        "repeated": false
+      },
+      "13": {
+        "name": "paypal",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.PaypalCartPayload",
+        "repeated": false
+      },
+      "14": {
+        "name": "appleIap",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.AppleIapCartPayload",
+        "repeated": false
+      },
+      "18": {
+        "name": "xMoney",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.XMoneyCartPayload",
+        "repeated": false
+      },
+      "15": {
+        "name": "chargeSchedule",
+        "type": 11,
+        "ref": ".commerce.shared.v1.ChargeSchedule",
+        "repeated": false
+      },
+      "16": {
+        "name": "crossgradeFlavor",
+        "type": 14,
+        "ref": ".commerce.prepurchase.v1.GetCartRequest.Crossgrade.Flavor",
+        "repeated": false
+      },
+      "17": {
+        "name": "effectiveAt",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      },
+      "19": {
+        "name": "planFamilyConflict",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.PlanFamilyConflict",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.StripeCartPayload": {
+      "2": {
+        "name": "publishableKey",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "hasDefaultPaymentMethod",
+        "type": 8,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "defaultPaymentMethod",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.StripePaymentMethod",
+        "repeated": false
+      },
+      "5": {
+        "name": "paymentMethodTypes",
+        "type": 9,
+        "ref": "",
+        "repeated": true
+      },
+      "6": {
+        "name": "currentPaymentMethodType",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "7": {
+        "name": "wallets",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.StripeWallets",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.StripePaymentMethod": {
+      "1": {
+        "name": "paymentMethodId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "paymentType",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "displayBrand",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "last4",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "5": {
+        "name": "expMonth",
+        "type": 5,
+        "ref": "",
+        "repeated": false
+      },
+      "6": {
+        "name": "expYear",
+        "type": 5,
+        "ref": "",
+        "repeated": false
+      },
+      "7": {
+        "name": "isDefault",
+        "type": 8,
+        "ref": "",
+        "repeated": false
+      },
+      "8": {
+        "name": "addedAt",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.StripeWallets": {
+      "1": {
+        "name": "names",
+        "type": 9,
+        "ref": "",
+        "repeated": true
+      }
+    },
+    ".commerce.prepurchase.v1.AppleCartPayload": {
+      "1": {
+        "name": "genericProductId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "advancedCommerceJws",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.GoogleCartPayload": {
+      "1": {
+        "name": "items",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.GoogleCartPayload.LineItem",
+        "repeated": true
+      },
+      "2": {
+        "name": "currentPlan",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.GoogleCartPayload.CurrentPlan",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.GoogleCartPayload.LineItem": {
+      "1": {
+        "name": "externalProductId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "externalPriceId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "externalOfferId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.GoogleCartPayload.CurrentPlan": {
+      "1": {
+        "name": "externalProductId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "externalPriceId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.PaypalCartPayload": {
+      "1": {
+        "name": "tokenizationKey",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.AppleIapCartPayload": {
+      "1": {
+        "name": "productId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "offerSignatureJws",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.XMoneyCartPayload": {
+      "1": {
+        "name": "hasLinkedAccount",
+        "type": 8,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "linkedAccountId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.shared.v1.ChargeSchedule": {
+      "1": {
+        "name": "startTime",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      },
+      "2": {
+        "name": "segments",
+        "type": 11,
+        "ref": ".commerce.shared.v1.ChargeSegment",
+        "repeated": true
+      }
+    },
+    ".commerce.shared.v1.ChargeSegment": {
+      "1": {
+        "name": "amount",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Money",
+        "repeated": false
+      },
+      "2": {
+        "name": "period",
+        "type": 11,
+        "ref": ".commerce.shared.v1.Interval",
+        "repeated": false
+      },
+      "3": {
+        "name": "count",
+        "type": 5,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "benefitId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.PlanFamilyConflict": {
+      "1": {
+        "name": "heldSkuId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "requestedSkuId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "heldSubscriptionId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.AdoptCheckoutSessionRequest": {
+      "1": {
+        "name": "sessionToken",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.AdoptCheckoutSessionResponse": {
+      "1": {
+        "name": "error",
+        "type": 11,
+        "ref": ".commerce.shared.v1.ErrorDetail",
+        "repeated": false
+      },
+      "2": {
+        "name": "checkoutSession",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.CheckoutSession",
+        "repeated": false
+      }
+    },
+    ".commerce.prepurchase.v1.GetCheckoutSessionRequest": {
+      "1": {
+        "name": "sessionToken",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.subscription.v1.GetSubscriptionsRequest": {
+      "1": {
+        "name": "includeTerminated",
+        "type": 8,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.subscription.v1.GetSubscriptionsResponse": {
+      "1": {
+        "name": "subscriptions",
+        "type": 11,
+        "ref": ".commerce.subscription.v1.Subscription",
+        "repeated": true
+      },
+      "2": {
+        "name": "error",
+        "type": 11,
+        "ref": ".commerce.shared.v1.ErrorDetail",
+        "repeated": false
+      }
+    },
+    ".commerce.subscription.v1.Subscription": {
+      "1": {
+        "name": "subscriptionId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "state",
+        "type": 11,
+        "ref": ".commerce.subscription.v1.SubscriptionDetails",
+        "repeated": false
+      },
+      "3": {
+        "name": "scheduledChange",
+        "type": 11,
+        "ref": ".commerce.subscription.v1.ScheduledChange",
+        "repeated": false
+      }
+    },
+    ".commerce.subscription.v1.SubscriptionDetails": {
+      "1": {
+        "name": "status",
+        "type": 14,
+        "ref": ".commerce.subscription.v1.SubscriptionDetails.SubscriptionStatus",
+        "repeated": false
+      },
+      "4": {
+        "name": "components",
+        "type": 9,
+        "ref": "",
+        "repeated": true
+      },
+      "5": {
+        "name": "catalogVersion",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "6": {
+        "name": "billingPlatform",
+        "type": 14,
+        "ref": ".commerce.shared.v1.BillingPlatform",
+        "repeated": false
+      },
+      "7": {
+        "name": "nextRecurringTimeTs",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      },
+      "8": {
+        "name": "expiryTimeTs",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      },
+      "9": {
+        "name": "paymentFailure",
+        "type": 11,
+        "ref": ".commerce.subscription.v1.PaymentFailureDetails",
+        "repeated": false
+      },
+      "10": {
+        "name": "terminatedReason",
+        "type": 14,
+        "ref": ".commerce.subscription.v1.SubscriptionDetails.TerminatedReason",
+        "repeated": false
+      },
+      "11": {
+        "name": "startsAt",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      },
+      "12": {
+        "name": "supersedesSubscriptionId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "13": {
+        "name": "supersededBySubscriptionId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "15": {
+        "name": "items",
+        "type": 11,
+        "ref": ".commerce.subscription.v1.SubscriptionItem",
+        "repeated": true
+      },
+      "16": {
+        "name": "resumesAtTs",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      },
+      "17": {
+        "name": "app",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "18": {
+        "name": "marketingContext",
+        "type": 11,
+        "ref": ".commerce.shared.v1.MarketingContext",
+        "repeated": false
+      },
+      "20": {
+        "name": "benefit",
+        "type": 11,
+        "ref": ".commerce.subscription.v1.BenefitDetails",
+        "repeated": false
+      },
+      "21": {
+        "name": "changeKind",
+        "type": 14,
+        "ref": ".commerce.subscription.v1.ChangeKind",
+        "repeated": false
+      },
+      "22": {
+        "name": "skuDetails",
+        "type": 11,
+        "ref": ".commerce.subscription.v1.SubscriptionDetails.SkuDetails",
+        "repeated": false
+      }
+    },
+    ".commerce.subscription.v1.PaymentFailureDetails": {
+      "1": {
+        "name": "nextRetryTs",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      },
+      "2": {
+        "name": "lastPaymentError",
+        "type": 11,
+        "ref": ".commerce.shared.v1.ErrorDetail",
+        "repeated": false
+      },
+      "3": {
+        "name": "gracePeriodEndsTs",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      }
+    },
+    ".commerce.subscription.v1.SubscriptionItem": {
+      "1": {
+        "name": "skuId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "pricingId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "3": {
+        "name": "quantity",
+        "type": 5,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "skuPricing",
+        "type": 11,
+        "ref": ".commerce.prepurchase.v1.SkuPricing",
+        "repeated": false
+      },
+      "5": {
+        "name": "benefitId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.subscription.v1.BenefitDetails": {
+      "1": {
+        "name": "benefitId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      },
+      "2": {
+        "name": "kind",
+        "type": 14,
+        "ref": ".commerce.subscription.v1.BenefitDetails.BenefitKind",
+        "repeated": false
+      },
+      "3": {
+        "name": "value",
+        "type": 1,
+        "ref": "",
+        "repeated": false
+      },
+      "4": {
+        "name": "cyclesTotal",
+        "type": 5,
+        "ref": "",
+        "repeated": false
+      },
+      "5": {
+        "name": "cyclesUsed",
+        "type": 5,
+        "ref": "",
+        "repeated": false
+      },
+      "6": {
+        "name": "startedAt",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      },
+      "7": {
+        "name": "endsAt",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      },
+      "8": {
+        "name": "storeOfferId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.subscription.v1.SubscriptionDetails.SkuDetails": {
+      "1": {
+        "name": "storeProductId",
+        "type": 9,
+        "ref": "",
+        "repeated": false
+      }
+    },
+    ".commerce.subscription.v1.ScheduledChange": {
+      "1": {
+        "name": "items",
+        "type": 11,
+        "ref": ".commerce.subscription.v1.SubscriptionItem",
+        "repeated": true
+      },
+      "2": {
+        "name": "effectiveAt",
+        "type": 11,
+        "ref": ".google.protobuf.Timestamp",
+        "repeated": false
+      }
+    }
+  },
+  "enums": {
+    ".commerce.billing.v1.AcquireWait": {
+      "0": "ACQUIRE_WAIT_UNSPECIFIED",
+      "1": "ACQUIRE_WAIT_AFTER_CHARGE",
+      "2": "ACQUIRE_WAIT_AFTER_SUBSCRIPTION"
+    },
+    ".commerce.billing.v1.AcquisitionStatus": {
+      "0": "ACQUISITION_STATUS_UNSPECIFIED",
+      "1": "ACQUISITION_STATUS_SUCCEEDED",
+      "2": "ACQUISITION_STATUS_FAILED",
+      "3": "ACQUISITION_STATUS_PENDING",
+      "4": "ACQUISITION_STATUS_REQUIRES_ACTION"
+    },
+    ".commerce.billing.v1.DeclineReason": {
+      "0": "DECLINE_REASON_UNSPECIFIED",
+      "1": "DECLINE_REASON_GENERIC",
+      "2": "DECLINE_REASON_INSUFFICIENT_FUNDS",
+      "3": "DECLINE_REASON_LIMIT_EXCEEDED",
+      "4": "DECLINE_REASON_EXPIRED_CARD",
+      "5": "DECLINE_REASON_INCORRECT_NUMBER",
+      "6": "DECLINE_REASON_INCORRECT_CVC",
+      "7": "DECLINE_REASON_INCORRECT_POSTAL_CODE",
+      "8": "DECLINE_REASON_CARD_NOT_SUPPORTED",
+      "9": "DECLINE_REASON_TRY_AGAIN_LATER",
+      "10": "DECLINE_REASON_AUTHENTICATION_FAILED",
+      "11": "DECLINE_REASON_AUTHENTICATION_EXPIRED",
+      "12": "DECLINE_REASON_AUTHORIZATION_REVOKED"
+    },
+    ".commerce.shared.v1.BillingPlatform": {
+      "0": "BILLING_PLATFORM_UNSPECIFIED",
+      "1": "BILLING_PLATFORM_STRIPE",
+      "2": "BILLING_PLATFORM_GOOGLE_PLAY",
+      "3": "BILLING_PLATFORM_APPLE",
+      "4": "BILLING_PLATFORM_PAYPAL",
+      "5": "BILLING_PLATFORM_STRIPE_LEGACY",
+      "6": "BILLING_PLATFORM_APPLE_IAP",
+      "7": "BILLING_PLATFORM_ADHOC",
+      "8": "BILLING_PLATFORM_ENTERPRISE",
+      "9": "BILLING_PLATFORM_X_MONEY"
+    },
+    ".commerce.shared.v1.Interval.Unit": {
+      "0": "UNIT_UNSPECIFIED",
+      "1": "UNIT_DAY",
+      "2": "UNIT_MONTH",
+      "3": "UNIT_YEAR",
+      "4": "UNIT_WEEK",
+      "5": "UNIT_MINUTE"
+    },
+    ".commerce.catalog.v1.TaxBehavior": {
+      "0": "TAX_BEHAVIOR_UNSPECIFIED",
+      "1": "TAX_BEHAVIOR_INCLUSIVE",
+      "2": "TAX_BEHAVIOR_EXCLUSIVE"
+    },
+    ".commerce.catalog.v1.PricingStatus": {
+      "0": "PRICING_STATUS_UNSPECIFIED",
+      "1": "PRICING_STATUS_DRAFT",
+      "2": "PRICING_STATUS_ACTIVE",
+      "3": "PRICING_STATUS_RETIRED"
+    },
+    ".commerce.catalog.v1.RelationType": {
+      "0": "RELATION_TYPE_UNSPECIFIED",
+      "1": "RELATION_TYPE_CROSS_GRADE",
+      "2": "RELATION_TYPE_DISALLOW"
+    },
+    ".commerce.catalog.v1.ProrationPolicy": {
+      "0": "PRORATION_POLICY_UNSPECIFIED",
+      "1": "PRORATION_POLICY_IMMEDIATE_PRORATE",
+      "2": "PRORATION_POLICY_NEXT_CYCLE",
+      "3": "PRORATION_POLICY_NONE",
+      "4": "PRORATION_POLICY_ANY"
+    },
+    ".commerce.shared.v1.MigratedFrom.System": {
+      "0": "SYSTEM_UNSPECIFIED",
+      "1": "SYSTEM_CURSOR_STRIPE",
+      "2": "SYSTEM_LEGACY_GROK",
+      "3": "SYSTEM_X_SUBMGR",
+      "4": "SYSTEM_COMMERCE"
+    },
+    ".commerce.prepurchase.v1.GetCartRequest.Crossgrade.Flavor": {
+      "0": "FLAVOR_UNSPECIFIED",
+      "1": "SCHEDULED",
+      "2": "IMMEDIATE"
+    },
+    ".commerce.subscription.v1.SubscriptionDetails.SubscriptionStatus": {
+      "0": "SUBSCRIPTION_STATUS_UNSPECIFIED",
+      "1": "SUBSCRIPTION_STATUS_ACTIVE",
+      "2": "SUBSCRIPTION_STATUS_GRACE",
+      "3": "SUBSCRIPTION_STATUS_TERMINATED",
+      "4": "SUBSCRIPTION_STATUS_EXPIRING",
+      "5": "SUBSCRIPTION_STATUS_PAUSED"
+    },
+    ".commerce.subscription.v1.SubscriptionDetails.TerminatedReason": {
+      "0": "TERMINATED_REASON_UNSPECIFIED",
+      "1": "TERMINATED_REASON_VOLUNTARY",
+      "2": "TERMINATED_REASON_DUNNING_EXHAUSTED",
+      "3": "TERMINATED_REASON_REVOKED_REFUND",
+      "4": "TERMINATED_REASON_STORE_EXPIRED",
+      "5": "TERMINATED_REASON_SUPERSEDED",
+      "6": "TERMINATED_REASON_STORE_TRANSACTION_GONE"
+    },
+    ".commerce.subscription.v1.BenefitDetails.BenefitKind": {
+      "0": "BENEFIT_KIND_UNSPECIFIED",
+      "1": "BENEFIT_KIND_TRIAL",
+      "2": "BENEFIT_KIND_DISCOUNT_PERCENT",
+      "3": "BENEFIT_KIND_DISCOUNT_FIXED",
+      "4": "BENEFIT_KIND_PAY_UPFRONT",
+      "5": "BENEFIT_KIND_STORE_INTRO_OFFER",
+      "6": "BENEFIT_KIND_CREDIT"
+    },
+    ".commerce.subscription.v1.ChangeKind": {
+      "0": "CHANGE_KIND_UNSPECIFIED",
+      "1": "CHANGE_KIND_UPGRADE",
+      "2": "CHANGE_KIND_DOWNGRADE",
+      "3": "CHANGE_KIND_LATERAL",
+      "4": "CHANGE_KIND_UNKNOWN"
+    }
+  }
+}

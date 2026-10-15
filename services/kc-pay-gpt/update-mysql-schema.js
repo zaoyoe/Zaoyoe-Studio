@@ -51,6 +51,27 @@ async function ensureColumn(connection, tableName, columnName, definition) {
     console.log(`+ 已添加列 ${tableName}.${columnName}`);
 }
 
+async function ensureVarcharMinLength(connection, tableName, columnName, minLength, definition) {
+    const [rows] = await connection.query(
+        `SELECT DATA_TYPE AS dataType, CHARACTER_MAXIMUM_LENGTH AS maxLength
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = ?
+           AND TABLE_NAME = ?
+           AND COLUMN_NAME = ?
+         LIMIT 1`,
+        [DB_NAME, tableName, columnName]
+    );
+    if (!rows || rows.length === 0) return;
+    const dataType = String(rows[0].dataType || "").toLowerCase();
+    const maxLength = Number(rows[0].maxLength || 0);
+    if (dataType === "varchar" && maxLength > 0 && maxLength < minLength) {
+        await connection.query(`ALTER TABLE \`${tableName}\` MODIFY COLUMN \`${columnName}\` ${definition}`);
+        console.log(`~ 已扩展列长度 ${tableName}.${columnName} -> ${definition}`);
+    } else {
+        console.log(`= 列长度满足要求 ${tableName}.${columnName} (${dataType}(${maxLength}))`);
+    }
+}
+
 async function ensureIndex(connection, tableName, indexName, definitionSql) {
     if (await hasIndex(connection, tableName, indexName)) {
         console.log(`= 索引已存在 ${tableName}.${indexName}`);
@@ -143,8 +164,28 @@ async function run() {
         console.log(`连接成功: ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME}`);
 
         await ensureColumn(connection, 'cdk_codes', 'type', "VARCHAR(16) NOT NULL DEFAULT '自助'");
+        await ensureColumn(connection, 'cdk_codes', 'plan_type', "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+        await ensureVarcharMinLength(connection, 'cdk_codes', 'plan_type', 64, "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+        await ensureColumn(connection, 'cdk_codes', 'platform', "VARCHAR(32) NOT NULL DEFAULT 'chatgpt'");
+        await ensureColumn(connection, 'cdk_codes', 'payment_region', "VARCHAR(16) NULL DEFAULT NULL COMMENT '绑定支付地区代码 PH/US/EG/CL'");
         await ensureColumn(connection, 'cdk_codes', 'fail_count', 'INT NOT NULL DEFAULT 0');
         await ensureColumn(connection, 'cdk_codes', 'cooldown_until', 'TIMESTAMP NULL DEFAULT NULL');
+
+        if (await hasTable(connection, 'task_logs')) {
+            await ensureColumn(connection, 'task_logs', 'platform', "VARCHAR(32) NOT NULL DEFAULT 'chatgpt'");
+            await ensureColumn(connection, 'task_logs', 'plan_type', "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+            await ensureVarcharMinLength(connection, 'task_logs', 'plan_type', 64, "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+            await ensureColumn(connection, 'task_logs', 'gpt_api_topup_code', "VARCHAR(255) NULL DEFAULT NULL");
+            await ensureColumn(connection, 'task_logs', 'gpt_api_order_id', "VARCHAR(128) NULL DEFAULT NULL");
+            await ensureColumn(connection, 'task_logs', 'gpt_api_task_id', "VARCHAR(128) NULL DEFAULT NULL");
+            await ensureColumn(connection, 'task_logs', 'gpt_api_raw', "MEDIUMTEXT NULL");
+        }
+
+        if (await hasTable(connection, 'billing_records')) {
+            await ensureColumn(connection, 'billing_records', 'platform', "VARCHAR(32) NOT NULL DEFAULT 'chatgpt'");
+            await ensureColumn(connection, 'billing_records', 'plan_type', "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+            await ensureVarcharMinLength(connection, 'billing_records', 'plan_type', 64, "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+        }
 
         await ensureProductAssetsTable(connection);
         await ensureActivationAttemptLimitsTable(connection);

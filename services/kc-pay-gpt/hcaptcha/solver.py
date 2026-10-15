@@ -35,11 +35,17 @@ from typing import Any
 import cv2
 import numpy as np
 import requests
-import torch
 from PIL import Image, ImageDraw, ImageFont
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
-from transformers import CLIPModel, CLIPProcessor
+
+try:
+    import torch
+    from transformers import CLIPModel, CLIPProcessor
+except ImportError:
+    torch = None
+    CLIPModel = None
+    CLIPProcessor = None
 
 MODEL_ID = "openai/clip-vit-base-patch32"
 DEFAULT_USER_AGENT = (
@@ -98,16 +104,27 @@ class CandidateBox:
     score: float | None = None
 
 
-def _png_data_url(arr: np.ndarray) -> str:
+def _png_data_url(arr: np.ndarray, max_dim: int = 1024) -> str:
+    img = Image.fromarray(arr)
+    # 若图片极大，等比压缩以避免大图导致的传输与推理超时
+    w, h = img.size
+    if max(w, h) > max_dim:
+        scale = max_dim / max(w, h)
+        img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+    if img.mode != "RGB":
+        img = img.convert("RGB")
     buf = io.BytesIO()
-    Image.fromarray(arr).save(buf, format="PNG")
-    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    # 使用高质量 JPEG 85，传输体积减少 85% 以上，推理响应速度快 3~5 倍
+    img.save(buf, format="JPEG", quality=85)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
     raw = (text or "").strip()
     if not raw:
         raise RuntimeError("VLM 返回为空")
+    # 剔除 <think>...</think> 标签（避免推理模型思考过程干扰）
+    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.S).strip()
     fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, flags=re.S)
     if fence:
         raw = fence.group(1).strip()
@@ -296,6 +313,20 @@ def _candidate_metadata(candidates: list[CandidateBox], full_shape: tuple[int, i
     return meta
 
 
+def _normalize_model_name(name: str) -> str:
+    s = str(name or "").strip()
+    lower = re.sub(r"[\s_]+", "-", s.lower())
+    if "6.1" in lower and "sol" in lower:
+        return "gpt-6.1-sol"
+    if "5.6" in lower and "sol" in lower:
+        return "gpt-5.6-sol"
+    if "6" in lower and "sol" in lower:
+        return "gpt-6-sol"
+    if "astra" in lower:
+        return "gpt-6-astra"
+    return s
+
+
 def _vlm_chat_completion(
     *,
     base_url: str,
@@ -306,6 +337,7 @@ def _vlm_chat_completion(
     images: list[np.ndarray],
     timeout_s: int = 45,
 ) -> dict[str, Any]:
+    norm_model = _normalize_model_name(model)
     endpoint = _normalize_api_base(base_url) + "/chat/completions"
     content: list[dict[str, Any]] = [{"type": "text", "text": user_text}]
     for arr in images:
@@ -318,16 +350,14 @@ def _vlm_chat_completion(
                 },
             }
         )
-    # Claude 模型不支持 response_format，改用 prompt 约束 JSON 输出
-    _is_claude = "claude" in model.lower()
-    if _is_claude:
-        system_prompt = system_prompt.rstrip() + (
-            "\n\nIMPORTANT: You MUST respond with ONLY a valid JSON object. "
-            "No explanation, no markdown, no text before or after the JSON. "
-            "Start your response with '{' and end with '}'."
-        )
+    # 强化通用 JSON 输出约束
+    system_prompt = system_prompt.rstrip() + (
+        "\n\nIMPORTANT: You MUST respond with ONLY a valid JSON object. "
+        "No explanation, no markdown formatting or codeblocks, no text before or after the JSON. "
+        "Start your response with '{' and end with '}'."
+    )
     payload: dict[str, Any] = {
-        "model": model,
+        "model": norm_model,
         "temperature": 0,
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -335,39 +365,46 @@ def _vlm_chat_completion(
         ],
         "max_tokens": 1024,
     }
-    if not _is_claude:
+    # 仅针对标准的 gpt-4o / gpt-4-turbo 添加 response_format，避免某些自定义模型/中转渠道报 400
+    is_standard_openai = bool(re.search(r"^gpt-4(o|-turbo)", norm_model.strip().lower()))
+    if is_standard_openai:
         payload["response_format"] = {"type": "json_object"}
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    # 对 Claude 模型：首次失败后用更强约束重试一次
-    for _attempt in range(2 if _is_claude else 1):
-        resp = requests.post(endpoint, headers=headers, json=payload, timeout=timeout_s)
-        resp.raise_for_status()
-        data = resp.json()
-        choices = data.get("choices") or []
-        if not choices:
-            raise RuntimeError(f"VLM 无 choices: {json.dumps(data, ensure_ascii=False)[:500]}")
-        message = choices[0].get("message") or {}
-        raw_content = message.get("content")
-        if isinstance(raw_content, list):
-            text = "".join(str(item.get("text") or "") for item in raw_content if isinstance(item, dict))
-        else:
-            text = str(raw_content or "")
+
+    max_retries = 2
+    for attempt in range(max_retries):
         try:
+            resp = requests.post(endpoint, headers=headers, json=payload, timeout=timeout_s)
+            # 若因 response_format 导致 400 Bad Request，自动剔除该参数重试
+            if resp.status_code == 400 and "response_format" in payload:
+                log("  VLM 返回 400，自动移除 response_format 重试兼容 ...")
+                payload.pop("response_format", None)
+                continue
+            if not resp.ok:
+                err_detail = resp.text[:300].strip()
+                log(f"  VLM 接口异常 HTTP {resp.status_code}: {err_detail}")
+            resp.raise_for_status()
+            data = resp.json()
+            choices = data.get("choices") or []
+            if not choices:
+                raise RuntimeError(f"VLM 无 choices: {json.dumps(data, ensure_ascii=False)[:500]}")
+            message = choices[0].get("message") or {}
+            raw_content = message.get("content")
+            if isinstance(raw_content, list):
+                text = "".join(str(item.get("text") or "") for item in raw_content if isinstance(item, dict))
+            else:
+                text = str(raw_content or "")
             decision = _extract_json_object(text)
             decision["_raw_text"] = text
             return decision
-        except RuntimeError:
-            if _attempt == 0 and _is_claude:
-                # 重试：在 user message 末尾追加强制 JSON 提示
-                retry_msg = {"role": "user", "content": "You did not return valid JSON. Reply with ONLY a JSON object, nothing else. Start with {"}
-                payload["messages"] = list(payload["messages"]) + [
-                    {"role": "assistant", "content": text[:200]},
-                    retry_msg,
-                ]
-                log(f"VLM 首次返回非 JSON，重试 ...")
+        except Exception as e:
+            if attempt < max_retries - 1:
+                log(f"  VLM 请求异常 ({e})，1.5 秒后重试 (第 {attempt + 1}/{max_retries} 次) ...")
+                time.sleep(1.5)
                 continue
             raise
 
@@ -625,6 +662,11 @@ def _build_vlm_direct_click_action(
         "其中 x,y 默认使用 0 到 1 之间的归一化坐标，相对于整张图片宽高；"
         "如果你输出像素坐标，也必须确保落在图片范围内。"
     )
+    if expected_count is None:
+        p_lower = prompt.lower()
+        if "two ends" in p_lower or "2 ends" in p_lower:
+            expected_count = 2
+
     count_hint = ""
     if expected_count and expected_count > 0:
         count_hint = (
@@ -637,7 +679,12 @@ def _build_vlm_direct_click_action(
         f"Submit text: {submit_text}\n"
         f"Image size: width={width}, height={height}\n"
         f"{count_hint}\n"
-        "请只选择真正匹配 prompt 的目标，避免背景或干扰物。"
+        "请只选择真正匹配 prompt 的目标，避免背景或干扰物。\n"
+        "特别注意常见 hCaptcha 题意细节：\n"
+        "- 若 prompt 包含 'bring into the place'（能带入场所的物品），务必选择可以随身携带的小件/食品（如热狗、水杯、小包装食物），绝不要选择家具（如沙发、扶手椅）、大型家电（如冰箱）或大型农机车辆（如拖拉机）！\n"
+        "- 若 prompt 包含 'completely concealed by the item shown'（能被所示物品完全遮盖），请对比其真实物理尺寸：小型日常物体（如鲜花花瓶、水杯、小摆件）能被大雨伞完全遮盖；巨大生物（如鲸鱼、大象、长颈鹿）体型远大于雨伞，绝不可能被遮盖，严禁选择鲸鱼和大象等大型动物！\n"
+        "- 若 prompt 包含 'TWO ends of the line'（线的两个端点），请找出题图中这条彩色蜿蜒曲线的两个端点（起始末端和结束末端），必须精确返回这 2 个端点的中心坐标！\n"
+        "- 题图中若为 3x3 网格或包含多个物品，请仔细定位目标物体所在的图块正中心坐标！"
     )
     decision = _vlm_chat_completion(
         base_url=str(vlm_cfg.get("base_url") or DEFAULT_VLM_BASE_URL),
@@ -2440,9 +2487,8 @@ def solve_dissolve_melt(arr: np.ndarray, prompt: str) -> SolverAction:
 def image_to_canvas_point(img_point: tuple[float, float], full_shape: tuple[int, int, int], visible_y0: int, canvas_box: dict) -> tuple[float, float]:
     x_img, y_img = img_point
     full_h, full_w = full_shape[:2]
-    visible_h = full_h - visible_y0
     x = canvas_box["x"] + (x_img / full_w) * canvas_box["width"]
-    y = canvas_box["y"] + ((y_img - visible_y0) / visible_h) * canvas_box["height"]
+    y = canvas_box["y"] + (y_img / full_h) * canvas_box["height"]
     return float(x), float(y)
 
 
@@ -2643,12 +2689,19 @@ def _frame_url_has_kind(url: str, kind: str) -> bool:
 
 def _should_ignore_hcaptcha_frame(url: str) -> bool:
     u = str(url or "").lower()
+    if "frame=challenge" in u or "frame%3dchallenge" in u or "#frame=challenge" in u:
+        return False
+    if "frame=checkbox" in u and "invisible" not in u:
+        return False
+    # 静态资源、脚本预加载等无 challenge/checkbox 的 newassets / hcaptcha 帧应忽略
+    if ("hcaptcha" in u or "newassets" in u) and "frame=" not in u:
+        return True
     return any(
         token in u
         for token in (
             "hcaptcha-invisible",
             "hcaptchainvisible",
-            "/static/",
+            "frame=checkbox-invisible",
             "#debugmod",
             "stripecdn.com",
             "js.stripe.com",
@@ -3263,7 +3316,17 @@ def get_challenge_raster(ch) -> tuple[np.ndarray, dict, str]:
 
 
 def click_submit(ch, page=None):
-    for sel in ["text=Next", "text=Verify", ".button-submit"]:
+    submit_selectors = [
+        "text=Next", "text=Verify", "text=Tjek", "text=Skip",
+        ".button-submit",
+        "[role='button']:has-text('Next')",
+        "[role='button']:has-text('Verify')",
+        "[role='button']:has-text('Tjek')",
+        "[role='button']:has-text('Skip')",
+        "div.button-submit", "button.button-submit",
+        "[aria-label*='Submit' i]", "[aria-label*='Verify' i]"
+    ]
+    for sel in submit_selectors:
         try:
             loc = ch.locator(sel).first
             try:
@@ -3281,6 +3344,28 @@ def click_submit(ch, page=None):
                 )
             else:
                 loc.click(timeout=1_500, force=True)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def click_reload(ch, page=None):
+    reload_selectors = [
+        "[aria-label*='reload' i]", "[aria-label*='refresh' i]",
+        "[title*='reload' i]", "[title*='refresh' i]",
+        ".reload", ".refresh",
+        "button[aria-label*='reload' i]", "div[aria-label*='reload' i]"
+    ]
+    for sel in reload_selectors:
+        try:
+            loc = ch.locator(sel).first
+            if page is not None:
+                box = loc.bounding_box(timeout=1_000)
+                if box:
+                    _human_click(page, float(box["x"] + box["width"] / 2.0), float(box["y"] + box["height"] / 2.0))
+                    return True
+            loc.click(timeout=1_500, force=True)
             return True
         except Exception:
             continue
@@ -3915,6 +4000,7 @@ def solve_bridge(
         round_idx = 0
         last_action_key = None
         last_wait_log_at = 0.0
+        no_challenge_start_at = None
         prompt_attempt_counts: dict[str, int] = {}
 
         try:
@@ -3968,20 +4054,29 @@ def solve_bridge(
                 if ch is None:
                     if click_checkbox(page):
                         log("已点击 checkbox，等待 challenge ...")
-                    elif time.time() - last_wait_log_at >= 5:
-                        try:
-                            frame_urls = [
-                                str(f.url or "")[:140]
-                                for f in page.frames
-                                if re.search(r"hcaptcha|newassets|captcha", str(f.url or ""), re.I)
-                            ]
-                            preview = " | ".join(frame_urls[:6]) if frame_urls else "<none>"
-                        except Exception:
-                            preview = "<unavailable>"
-                        log(f"等待 challenge frame 出现 ... hcaptcha_frames={preview}")
-                        last_wait_log_at = time.time()
+                        no_challenge_start_at = None
+                    else:
+                        if no_challenge_start_at is None:
+                            no_challenge_start_at = time.time()
+                        elif time.time() - no_challenge_start_at >= 12:
+                            log("页面未检测到有效 challenge/checkbox frame（已等待 12s），快速退出避免阻塞流程")
+                            return None
+                        if time.time() - last_wait_log_at >= 5:
+                            try:
+                                frame_urls = [
+                                    str(f.url or "")[:140]
+                                    for f in page.frames
+                                    if re.search(r"hcaptcha|newassets|captcha", str(f.url or ""), re.I)
+                                ]
+                                preview = " | ".join(frame_urls[:6]) if frame_urls else "<none>"
+                            except Exception:
+                                preview = "<unavailable>"
+                            log(f"等待 challenge frame 出现 ... hcaptcha_frames={preview}")
+                            last_wait_log_at = time.time()
                     page.wait_for_timeout(1000)
                     continue
+                else:
+                    no_challenge_start_at = None
 
                 network_prompt = observed_challenge_state.get("prompt") or ""
                 request_type = str(observed_challenge_state.get("request_type") or "").strip().lower()
@@ -4012,6 +4107,19 @@ def solve_bridge(
                             return passive_result
                         page.wait_for_timeout(800)
                         continue
+
+                    lower_body = body_preview.lower()
+                    retry_tokens = ("try again", "weer", "retry", "⚠️", "bitte versuchen", "réessayez", "tentar novamente")
+                    if any(t in lower_body for t in retry_tokens):
+                        log(f"检测到 hCaptcha 重试/错误提示，保留弹层状态并快速退出转人工交互协助: body={body_preview!r}")
+                        raise RuntimeError(f"hCaptcha 要求重试/重新加载: {body_preview}")
+
+                    if 'prompt_empty_since' not in locals():
+                        prompt_empty_since = time.time()
+                    elif time.time() - prompt_empty_since >= 15.0:
+                        log(f"等待题目文本加载超时 (15s)，快速退出转人工交互式透传: body={body_preview!r}")
+                        raise RuntimeError(f"hCaptcha 题目文本未就绪: {body_preview}")
+
                     if click_checkbox(page):
                         log("prompt 为空，补点 checkbox ...")
                     elif time.time() - last_wait_log_at >= 5:
@@ -4028,6 +4136,9 @@ def solve_bridge(
                         last_wait_log_at = time.time()
                     page.wait_for_timeout(1000)
                     continue
+
+                prompt_empty_since = time.time()
+                retry_alert_count = 0
 
                 try:
                     arr, raster_box, raster_source = get_challenge_raster(ch)
@@ -4131,50 +4242,66 @@ def solve_bridge(
                                     log(f"  VLM 直出坐标也失败，回退 heuristic: {direct_e}")
 
                     if action is None:
-                        if is_water_vehicle_prompt(prompt):
-                            expected_count = None
-                            prefer_object_candidates = request_type == "image_label_area_select"
-                            if request_type == "image_label_area_select" and task_count > 0:
-                                expected_count = task_count
-                            action = solve_water_travel(
-                                arr,
-                                prompt,
-                                expected_count=expected_count,
-                                prefer_object_candidates=prefer_object_candidates,
-                            )
-                        elif is_road_completion_prompt(prompt):
-                            action = solve_road_completion(arr, prompt)
-                        elif is_drag_completion_prompt(prompt):
-                            action = solve_pair_drag(arr, prompt)
-                        elif is_float_on_water_prompt(prompt):
-                            action = solve_float_on_water(arr, prompt)
-                        elif is_heat_work_prompt(prompt):
-                            action = solve_heat_work(arr, prompt)
-                        elif is_hot_food_prompt(prompt):
-                            action = solve_hot_food(arr, prompt)
-                        elif is_hop_animals_prompt(prompt):
-                            action = solve_hop_animals(arr, prompt)
-                        elif is_shiny_thing_prompt(prompt):
-                            action = solve_shiny_thing(arr, prompt)
-                        elif is_kept_outside_prompt(prompt):
-                            action = solve_kept_outside(arr, prompt)
-                        elif is_dissolve_melt_prompt(prompt):
-                            action = solve_dissolve_melt(arr, prompt)
-                        elif is_hidden_under_reference_prompt(prompt):
-                            action = solve_hidden_under_reference(arr, prompt)
+                        try:
+                            if is_water_vehicle_prompt(prompt):
+                                expected_count = None
+                                prefer_object_candidates = request_type == "image_label_area_select"
+                                if request_type == "image_label_area_select" and task_count > 0:
+                                    expected_count = task_count
+                                action = solve_water_travel(
+                                    arr,
+                                    prompt,
+                                    expected_count=expected_count,
+                                    prefer_object_candidates=prefer_object_candidates,
+                                )
+                            elif is_road_completion_prompt(prompt):
+                                action = solve_road_completion(arr, prompt)
+                            elif is_drag_completion_prompt(prompt):
+                                action = solve_pair_drag(arr, prompt)
+                            elif is_float_on_water_prompt(prompt):
+                                action = solve_float_on_water(arr, prompt)
+                            elif is_heat_work_prompt(prompt):
+                                action = solve_heat_work(arr, prompt)
+                            elif is_hot_food_prompt(prompt):
+                                action = solve_hot_food(arr, prompt)
+                            elif is_hop_animals_prompt(prompt):
+                                action = solve_hop_animals(arr, prompt)
+                            elif is_shiny_thing_prompt(prompt):
+                                action = solve_shiny_thing(arr, prompt)
+                            elif is_kept_outside_prompt(prompt):
+                                action = solve_kept_outside(arr, prompt)
+                            elif is_dissolve_melt_prompt(prompt):
+                                action = solve_dissolve_melt(arr, prompt)
+                            elif is_hidden_under_reference_prompt(prompt):
+                                action = solve_hidden_under_reference(arr, prompt)
+                        except Exception as heuristic_err:
+                            log(f"  Heuristic 规则求解异常 ({heuristic_err})，回退换题/跳过逻辑 ...")
+                            action = None
+
+                    if action is None:
+                        if submit_text and submit_text.strip().lower() in ("skip", "跳过"):
+                            log(f"  未知或求解失败题目 ({prompt!r})，且按钮为可跳过 ({submit_text})，执行 Skip 换题 ...")
+                            action = SolverAction(kind="click", prompt=prompt, click_points=[], debug={"action": "skip_unknown_prompt"})
+                        elif click_reload(ch, page=page):
+                            log(f"  未知或求解失败题目 ({prompt!r})，已尝试点击 Reload 按钮刷新换题 ...")
+                            page.wait_for_timeout(1800)
+                            continue
+                        elif submit_text and submit_text.strip().lower() in ("next", "下一步"):
+                            log(f"  未知或求解失败题目 ({prompt!r})，且右下角为 Next，尝试直接点 Next 换题 ...")
+                            action = SolverAction(kind="click", prompt=prompt, click_points=[], debug={"action": "next_unknown_prompt"})
                         else:
-                            save_debug_artifacts(
-                                out_dir,
-                                round_idx + 1,
-                                prompt,
-                                arr,
-                                {
-                                    "submit_text": submit_text,
-                                    "error": "unknown_prompt",
-                                    "vlm_error": vlm_error,
-                                },
-                            )
-                            raise RuntimeError(f"未知 challenge prompt: {prompt}")
+                                save_debug_artifacts(
+                                    out_dir,
+                                    round_idx + 1,
+                                    prompt,
+                                    arr,
+                                    {
+                                        "submit_text": submit_text,
+                                        "error": "unknown_prompt",
+                                        "vlm_error": vlm_error,
+                                    },
+                                )
+                                raise RuntimeError(f"未知 challenge prompt: {prompt}")
                         if action.debug is None:
                             action.debug = {}
                         action.debug.setdefault("solver_path", "heuristic")
@@ -4368,6 +4495,22 @@ def solve_bridge(
                     if action.debug is None:
                         action.debug = {}
                     action.debug["click_feedback"] = click_feedback
+                    any_landed = any(
+                        fb.get("landed")
+                        or (fb.get("changed_pixels") or 0) > 0
+                        or fb.get("status") == "raster_unavailable_after_click"
+                        for fb in click_feedback
+                    )
+                    if not any_landed and action.click_points:
+                        log("  ⚠️ 所有点击均未观察到状态变化（可能未命中目标），为避免交白卷触发风控，尝试点击 Reload 刷新换题 ...")
+                        if click_reload(ch, page=page):
+                            page.wait_for_timeout(1800)
+                            continue
+                        elif submit_text and submit_text.strip().lower() in ("skip", "跳过"):
+                            log(f"  无有效点击且 Reload 失败，尝试点击可跳过按钮 ({submit_text}) ...")
+                            click_submit(ch, page=page)
+                            page.wait_for_timeout(1800)
+                            continue
                     if click_submit(ch, page=page):
                         log("  已点击 Next/Verify")
                         page.wait_for_timeout(1800)

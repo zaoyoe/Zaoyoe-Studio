@@ -24,6 +24,7 @@ node_modules/
 /tools/
 /scripts/
 /docs/
+/deploy/
 /cloud-functions/
 /functions/
 
@@ -164,6 +165,8 @@ server/*
 # registry and adapters in the serverless function bundle as well.
 !server/integrations/
 !server/integrations/**
+!server/tg/
+!server/tg/**
 !supabase/
 supabase/*
 !supabase/migrations/

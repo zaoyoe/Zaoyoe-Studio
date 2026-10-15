@@ -25,6 +25,7 @@ const DEFAULT_ADMIN_SECONDARY_PASSWORD = String(process.env.ADMIN_SECONDARY_PASS
 const DEFAULT_ADMIN_LOGIN_PATH = String(process.env.ADMIN_LOGIN_PATH || 'admin-login').trim().toLowerCase();
 const DEFAULT_ADMIN_PANEL_PATH = String(process.env.ADMIN_PANEL_PATH || 'admin').trim().toLowerCase();
 const { normalizeAdminPaths } = require('./admin-paths');
+const { REGION_CONFIG, SUPPORTED_REGIONS, DEFAULT_REGION, isSupportedRegion, getRegionConfig, getPlatformForPlan } = require('./region-config');
 
 let pool = null;
 
@@ -54,8 +55,11 @@ function getPool() {
 // 资产占用最长保留时间（ms），超过这个时长仍未释放视为崩溃，自动回收
 const ASSET_LOCK_STALE_MS = Number(process.env.ASSET_LOCK_STALE_MS || 15 * 60 * 1000);
 
-// CDK 套餐类型 → OpenAI plan_name 映射（custom checkout API）
+const { PLAN_NAME_MAP: CATALOG_PLAN_NAME_MAP, resolvePlanName: catalogResolvePlanName } = require('./cdk-plan-catalog');
+
+// CDK 套餐类型 → 官方 plan_name 映射（custom checkout API）
 const PLAN_NAME_MAP = {
+    ...CATALOG_PLAN_NAME_MAP,
     plus: 'chatgptplusplan',
     pro_5x: 'chatgptprolite',
     pro_20x: 'chatgptpro'
@@ -64,12 +68,17 @@ const PLAN_NAME_MAP = {
 const VALID_PLAN_TYPES = new Set(Object.keys(PLAN_NAME_MAP));
 
 /**
- * 将 plan_type 解析为 OpenAI plan_name
- * @param {string} planType - 'plus' | 'pro_5x' | 'pro_20x'
+ * 将 plan_type 解析为 OpenAI / 平台 plan_name
+ * @param {string} planType - 'plus' | 'pro_100' | 'pro_200' | 'pro_5x' | 'pro_20x'
  * @returns {string} 对应的 plan_name，未知值默认返回 'chatgptplusplan'
  */
 function resolvePlanName(planType) {
-    return PLAN_NAME_MAP[planType] || PLAN_NAME_MAP.plus;
+    if (!planType) return PLAN_NAME_MAP.plus;
+    try {
+        return catalogResolvePlanName(planType);
+    } catch (_) {
+        return PLAN_NAME_MAP[planType] || PLAN_NAME_MAP.plus;
+    }
 }
 
 function createPasswordHash(password) {
@@ -260,7 +269,7 @@ async function ensureGptApiColumns() {
 async function ensureGptApiConfigDefaults() {
     const defaults = [
         ['gpt_api_enabled', '0'],
-        ['gpt_api_base_url', 'https://kc.vpss.eu.cc/'],
+        ['gpt_api_base_url', ''],
         ['gpt_api_key', ''],
         ['gpt_api_plan_key', 'plus'],
         ['gpt_api_country', 'PH'],
@@ -284,12 +293,15 @@ async function getGptApiConfig() {
         GPT_API_CONFIG_KEYS
     );
     const map = Object.fromEntries(rows.map((row) => [row.config_key, row.config_value]));
+    const planConfig = decodeGptApiPlanConfig(map.gpt_api_plan_key);
     return {
         enabled: String(map.gpt_api_enabled || '0') === '1',
-        base_url: String(map.gpt_api_base_url || 'https://kc.vpss.eu.cc/').trim()
-            || 'https://kc.vpss.eu.cc/',
+        // An empty endpoint is intentional: administrators must explicitly
+        // configure the provider before the channel can dispatch funds.
+        base_url: String(map.gpt_api_base_url || '').trim(),
         api_key: String(map.gpt_api_key || '').trim(),
-        plan_key: String(map.gpt_api_plan_key || 'plus').trim() || 'plus',
+        plan_key: planConfig.legacy_plan_key,
+        plan_mapping: planConfig.plan_mapping,
         country: String(map.gpt_api_country || 'PH').trim().toUpperCase() || 'PH',
         currency: String(map.gpt_api_currency || 'PHP').trim().toUpperCase() || 'PHP'
     };
@@ -298,20 +310,47 @@ async function getGptApiConfig() {
 async function saveGptApiConfig(config = {}) {
     const existing = await getGptApiConfig();
     const apiKey = String(config.api_key || '').trim() || existing.api_key || '';
+    const planConfig = {
+        version: 1,
+        legacy_plan_key: String(config.plan_key || existing.plan_key || 'plus').trim() || 'plus',
+        plan_mapping: normalizeGptApiPlanMapping(config.plan_mapping === undefined ? existing.plan_mapping : config.plan_mapping)
+    };
     await runExecute(
         `INSERT INTO app_config (config_key, config_value)
          VALUES (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)
          ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
         [
             'gpt_api_enabled', config.enabled ? '1' : '0',
-            'gpt_api_base_url', String(config.base_url || existing.base_url || 'https://kc.vpss.eu.cc/').trim()
-                .replace(/\/+$/, '') || 'https://kc.vpss.eu.cc/',
+            'gpt_api_base_url', String((
+                Object.prototype.hasOwnProperty.call(config, 'base_url')
+                    ? config.base_url
+                    : existing.base_url
+            ) || '').trim().replace(/\/+$/, ''),
             'gpt_api_key', apiKey,
-            'gpt_api_plan_key', String(config.plan_key || existing.plan_key || 'plus').trim() || 'plus',
+            'gpt_api_plan_key', JSON.stringify(planConfig),
             'gpt_api_country', String(config.country || existing.country || 'PH').trim().toUpperCase() || 'PH',
             'gpt_api_currency', String(config.currency || existing.currency || 'PHP').trim().toUpperCase() || 'PHP'
         ]
     );
+}
+
+function normalizeGptApiPlanMapping(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return Object.fromEntries(['go', 'plus', 'pro_100', 'pro_200', 'pro_500']
+        .map((key) => [key, String(value[key] || '').trim()])
+        .filter(([, providerKey]) => providerKey && providerKey.length <= 128 && /^[a-zA-Z0-9_.:-]+$/.test(providerKey)));
+}
+
+// Reuse the existing configuration row, avoiding a schema migration. Legacy
+// defaults prove only Plus; no other local product inherits that mapping.
+function decodeGptApiPlanConfig(value) {
+    try {
+        const parsed = JSON.parse(String(value || ''));
+        if (parsed && parsed.version === 1 && parsed.plan_mapping && typeof parsed.plan_mapping === 'object') {
+            return { legacy_plan_key: String(parsed.legacy_plan_key || 'plus'), plan_mapping: normalizeGptApiPlanMapping(parsed.plan_mapping) };
+        }
+    } catch (_) { /* legacy scalar configuration */ }
+    return { legacy_plan_key: String(value || 'plus').trim() || 'plus', plan_mapping: { plus: 'plus' } };
 }
 
 async function hasColumn(tableName, columnName) {
@@ -333,6 +372,26 @@ async function ensureColumn(tableName, columnName, columnDefinition) {
     }
 
     await runQuery(`ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${columnDefinition}`);
+}
+
+async function ensureVarcharMinLength(tableName, columnName, minLength, columnDefinition) {
+    const rows = await runQuery(
+        `SELECT DATA_TYPE AS dataType, CHARACTER_MAXIMUM_LENGTH AS maxLength
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = ?
+           AND TABLE_NAME = ?
+           AND COLUMN_NAME = ?
+         LIMIT 1`,
+        [DB_NAME, tableName, columnName]
+    );
+    if (!rows || rows.length === 0) {
+        return;
+    }
+    const dataType = String(rows[0].dataType || "").toLowerCase();
+    const maxLength = Number(rows[0].maxLength || 0);
+    if (dataType === "varchar" && maxLength > 0 && maxLength < minLength) {
+        await runQuery(`ALTER TABLE \`${tableName}\` MODIFY COLUMN \`${columnName}\` ${columnDefinition}`);
+    }
 }
 
 async function ensureLegacyColumns() {
@@ -379,7 +438,10 @@ async function ensureLegacyColumns() {
     await ensureColumn('cdk_codes', 'created_at', 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
     await ensureColumn('cdk_codes', 'updated_at', 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
     await ensureColumn('cdk_codes', 'type', "VARCHAR(16) NOT NULL DEFAULT '自助'");
-    await ensureColumn('cdk_codes', 'plan_type', "VARCHAR(16) NOT NULL DEFAULT 'plus'");
+    await ensureColumn('cdk_codes', 'plan_type', "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+    await ensureVarcharMinLength('cdk_codes', 'plan_type', 64, "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+    await ensureColumn('cdk_codes', 'platform', "VARCHAR(32) NOT NULL DEFAULT 'chatgpt'");
+    await ensureColumn('cdk_codes', 'payment_region', "VARCHAR(16) NULL DEFAULT NULL COMMENT '绑定支付地区代码 PH/US/EG/CL'");
 
     await ensureColumn('task_logs', 'token_preview', "VARCHAR(64) NOT NULL DEFAULT ''");
     await ensureColumn('task_logs', 'phone', 'VARCHAR(32) NULL');
@@ -403,6 +465,9 @@ async function ensureLegacyColumns() {
     await ensureColumn('task_logs', 'finished_at', 'TIMESTAMP NULL DEFAULT NULL');
     await ensureColumn('task_logs', 'last_heartbeat_at', 'TIMESTAMP NULL DEFAULT NULL');
     await ensureColumn('task_logs', 'gpt_api_topup_code', "VARCHAR(255) NULL DEFAULT NULL");
+    await ensureColumn('task_logs', 'platform', "VARCHAR(32) NOT NULL DEFAULT 'chatgpt'");
+    await ensureColumn('task_logs', 'plan_type', "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+    await ensureVarcharMinLength('task_logs', 'plan_type', 64, "VARCHAR(64) NOT NULL DEFAULT 'plus'");
     await ensureColumn('task_logs', 'created_at', 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
     await ensureColumn('task_logs', 'updated_at', 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
 
@@ -421,6 +486,9 @@ async function ensureLegacyColumns() {
     await ensureColumn('product_assets', 'updated_at', 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
 
     await ensureColumn('billing_records', 'card_number', 'VARCHAR(32) NULL');
+    await ensureColumn('billing_records', 'platform', "VARCHAR(32) NOT NULL DEFAULT 'chatgpt'");
+    await ensureColumn('billing_records', 'plan_type', "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+    await ensureVarcharMinLength('billing_records', 'plan_type', 64, "VARCHAR(64) NOT NULL DEFAULT 'plus'");
     await ensureColumn('tax_free_addresses', 'is_bound', 'TINYINT(1) NOT NULL DEFAULT 0 COMMENT \'是否已绑定成功支付\'');
     await ensureColumn('tax_free_addresses', 'bound_card_id', 'BIGINT UNSIGNED NULL DEFAULT NULL COMMENT \'绑定的卡片ID\'');
     await ensureColumn('tax_free_addresses', 'bound_at', 'TIMESTAMP NULL DEFAULT NULL COMMENT \'绑定时间\'');
@@ -443,12 +511,6 @@ async function ensureLegacyColumns() {
 }
 
 async function seedTaxFreeAddresses() {
-    // Only seed if the table is empty (avoid duplicate seeding)
-    const countRows = await runQuery(`SELECT COUNT(*) AS count FROM tax_free_addresses`);
-    if (Number(countRows[0]?.count || 0) > 0) {
-        return;
-    }
-
     const seeds = [
         // ─── PH (Philippines) — tax-free economic zones ───────────────────────
         ['PH', '32nd Street corner 9th Avenue', 'Taguig', 'Metro Manila', '1634', 'PH'],
@@ -464,25 +526,40 @@ async function seedTaxFreeAddresses() {
         ['US', '890 Market Street', 'Wilmington', 'DE', '19801', 'US'],
         ['US', '45 Elm Street', 'Concord', 'NH', '03301', 'US'],
 
-        // ─── SG (Singapore) — no state-level sales tax on digital services ───
+        // ─── EG (Egypt) ───────────────────────────────────────────────────────
+        ['EG', '90th Street, Sector 1, Fifth Settlement', 'New Cairo', 'Cairo', '11835', 'EG'],
+        ['EG', '26th of July Corridor, Sheikh Zayed', 'Giza', 'Giza', '12588', 'EG'],
+        ['EG', 'Corniche El Nil, Maadi', 'Cairo', 'Cairo', '11431', 'EG'],
+
+        // ─── CL (Chile) ───────────────────────────────────────────────────────
+        ['CL', 'Avenida Apoquindo 4700', 'Las Condes', 'Región Metropolitana', '7550000', 'CL'],
+        ['CL', 'Avenida Providencia 1208', 'Providencia', 'Región Metropolitana', '7500000', 'CL'],
+        ['CL', 'Avenida Libertador Bernardo O Higgins 1058', 'Santiago', 'Región Metropolitana', '8320000', 'CL'],
+
+        // ─── SG (Singapore) — 历史保留 ─────────────────────────────────────────
         ['SG', '1 Raffles Place #20-01', 'Singapore', 'Singapore', '048616', 'SG'],
         ['SG', '80 Robinson Road #02-00', 'Singapore', 'Singapore', '068898', 'SG'],
         ['SG', '1 Harbourfront Walk #01-153', 'Singapore', 'Singapore', '098585', 'SG'],
 
-        // ─── MY (Malaysia) — Labuan / duty-free zones ─────────────────────────
+        // ─── MY (Malaysia) — 历史保留 ─────────────────────────────────────────
         ['MY', 'Level 15, Main Office Tower', 'Labuan', 'Labuan FT', '87000', 'MY'],
         ['MY', 'Lot 3A-1, Level 3A, Labuan Times Square', 'Labuan', 'Labuan FT', '87000', 'MY'],
         ['MY', 'Ground Floor, Wisma Oceanic', 'Labuan', 'Labuan FT', '87007', 'MY']
     ];
 
-    const placeholders = seeds.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
-    const flatValues = seeds.flat();
-
-    await runQuery(
-        `INSERT IGNORE INTO tax_free_addresses (region, line1, city, state, postal_code, country)
-         VALUES ${placeholders}`,
-        flatValues
-    );
+    for (const [region, line1, city, state, postal_code, country] of seeds) {
+        const rows = await runQuery(
+            `SELECT id FROM tax_free_addresses WHERE region = ? AND line1 = ? LIMIT 1`,
+            [region, line1]
+        );
+        if (rows.length === 0) {
+            await runQuery(
+                `INSERT INTO tax_free_addresses (region, line1, city, state, postal_code, country)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [region, line1, city, state, postal_code, country]
+            );
+        }
+    }
 }
 
 async function cleanupStaleLegacyTasks() {
@@ -806,6 +883,7 @@ async function listAdminTaskLogs(limit = 200) {
          FROM task_logs l
          LEFT JOIN cdk_codes c ON l.cdk_code = c.cdk_code
          WHERE (l.cdk_code IS NULL OR l.cdk_code NOT LIKE 'ADMIN_PRODUCT_GEN:%')
+           AND COALESCE(l.execution_mode, '') <> 'checkout_diagnostic'
            AND (c.type IS NULL OR c.type = '' OR c.type = '自助')
          ORDER BY l.created_at DESC, l.id DESC
          LIMIT ?`,
@@ -871,7 +949,8 @@ async function getAdminData() {
                 COALESCE(SUM(status IN ('failed', 'card_invalid', 'manual', 'retry', 'maintenance')), 0) AS failed,
                 COALESCE(SUM(status = 'running'), 0) AS running
              FROM task_logs
-             WHERE cdk_code IS NULL OR cdk_code NOT LIKE 'ADMIN_PRODUCT_GEN:%'`
+             WHERE (cdk_code IS NULL OR cdk_code NOT LIKE 'ADMIN_PRODUCT_GEN:%')
+               AND COALESCE(execution_mode, '') <> 'checkout_diagnostic'`
         ),
         runQuery(
             `SELECT
@@ -1070,7 +1149,7 @@ async function saveConfig(config = {}) {
                 const cardPlaceholders = cardNumbers.map(() => '?').join(', ');
                 await runExecute(
                     `DELETE FROM card_assets
-                     WHERE card_number NOT IN (${cardPlaceholders})`,
+                     WHERE in_use = 0 AND card_number NOT IN (${cardPlaceholders})`,
                     cardNumbers,
                     { connection }
                 );
@@ -1095,7 +1174,7 @@ async function saveConfig(config = {}) {
                     }
                 }
             } else {
-                await runExecute(`DELETE FROM card_assets`, [], { connection });
+                await runExecute(`DELETE FROM card_assets WHERE in_use = 0`, [], { connection });
             }
         }
     });
@@ -1103,7 +1182,7 @@ async function saveConfig(config = {}) {
 
 async function listCdks() {
     const rows = await runQuery(
-        `SELECT c.cdk_code, c.shipped_at, c.used_at, c.type, c.plan_type, c.created_at,
+        `SELECT c.cdk_code, c.shipped_at, c.used_at, c.type, c.plan_type, c.platform, c.payment_region, c.created_at,
                 (
                     SELECT l.token_preview
                     FROM task_logs l
@@ -1144,6 +1223,8 @@ async function listCdks() {
             : (row.used_at ? 'used' : 'unused'),
         type: row.type || '自助',
         plan_type: row.plan_type || 'plus',
+        platform: row.platform || (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(row.plan_type) : 'chatgpt'),
+        payment_region: row.payment_region ? String(row.payment_region).toUpperCase() : null,
         shipped: Boolean(row.shipped_at),
         shipped_at: row.shipped_at
             ? new Date(row.shipped_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
@@ -1171,6 +1252,7 @@ async function listSessions(options = {}) {
          WHERE l.token_preview IS NOT NULL
            AND l.token_preview != ''
            AND (l.cdk_code IS NULL OR l.cdk_code NOT LIKE 'ADMIN_PRODUCT_GEN:%')
+           AND COALESCE(l.execution_mode, '') <> 'checkout_diagnostic'
            AND (c.type IS NULL OR c.type = '' OR c.type = '自助')
          ORDER BY l.created_at DESC, l.id DESC
          LIMIT ?`,
@@ -1276,12 +1358,17 @@ async function insertCdks(cdks, options = {}) {
     }
 
     const type = options.type || '自助';
-    const planType = VALID_PLAN_TYPES.has(options.plan_type) ? options.plan_type : 'plus';
-    const values = normalized.map((cdk) => [cdk, 1, type, planType]);
-    console.log(`正在插入 ${values.length} 个 CDK, 类型: ${type}, 套餐: ${planType}`);
+    const planType = options.plan_type || 'plus';
+    const platform = options.platform || (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(planType) : 'chatgpt');
+    const paymentRegion = isSupportedRegion(options.payment_region)
+        ? String(options.payment_region).toUpperCase()
+        : (options.payment_region ? String(options.payment_region).toUpperCase() : null);
+
+    const values = normalized.map((cdk) => [cdk, 1, type, planType, platform, paymentRegion]);
+    console.log(`正在插入 ${values.length} 个 CDK, 类型: ${type}, 平台: ${platform}, 套餐: ${planType}, 地区: ${paymentRegion || '默认'}`);
 
     const [result] = await getPool().query(
-        `INSERT INTO cdk_codes (cdk_code, is_active, type, plan_type) VALUES ?`,
+        `INSERT INTO cdk_codes (cdk_code, is_active, type, plan_type, platform, payment_region) VALUES ?`,
         [values]
     );
 
@@ -1417,7 +1504,13 @@ async function markCdkUnused(cdk) {
         `UPDATE cdk_codes
          SET used_at = NULL
          WHERE cdk_code = ?
-           AND is_active = 1`,
+           AND is_active = 1
+           AND NOT EXISTS (
+               SELECT 1 FROM task_logs provider_task
+               WHERE provider_task.cdk_code = cdk_codes.cdk_code
+                 AND (provider_task.execution_mode = 'third_party_api' OR provider_task.gpt_api_order_id IS NOT NULL OR provider_task.gpt_api_task_id IS NOT NULL)
+                 AND ${GPT_API_UNSETTLED_TASK_SQL}
+           )`,
         [String(cdk)]
     );
 }
@@ -1459,11 +1552,11 @@ async function reserveAssetRow(connection, table, columns, ownerKey) {
         `SELECT ${colList}
          FROM ${table}
          WHERE is_active = 1
-           AND (in_use = 0 OR locked_at IS NULL OR locked_at < ?)
+           AND ${table === 'card_assets' ? "in_use = 0 AND status = '正常' AND (cooldown_until IS NULL OR cooldown_until < NOW())" : '(in_use = 0 OR locked_at IS NULL OR locked_at < ?)'}
          ORDER BY usage_count ASC, COALESCE(locked_at, '1970-01-01') ASC, id ASC
          LIMIT 1
          FOR UPDATE SKIP LOCKED`,
-        [staleThreshold]
+        table === 'card_assets' ? [] : [staleThreshold]
     );
 
     if (!rows.length) {
@@ -1538,6 +1631,22 @@ async function releaseRuntimeAssets({ phoneAssetId, cardAssetId } = {}) {
 }
 
 // 兜底：把超过 ASSET_LOCK_STALE_MS 仍未释放的锁强制清理（任务进程崩溃后回收用）
+// Provider orders may still charge after a local timeout. Their owned locks are
+// released only by the correlated, transactional provider settlement below.
+const GPT_API_UNSETTLED_TASK_SQL = `COALESCE(CASE WHEN JSON_VALID(provider_task.gpt_api_raw)
+        THEN JSON_UNQUOTE(JSON_EXTRACT(provider_task.gpt_api_raw, '$.attempt.settlement')) ELSE NULL END, '') NOT IN ('success', 'no_charge')
+    AND (provider_task.status IN ('running', 'manual') OR provider_task.recovery_required = 1
+        OR provider_task.payment_state IN ('started', 'unknown')
+        OR provider_task.gpt_api_order_id IS NOT NULL OR provider_task.gpt_api_task_id IS NOT NULL
+        OR CASE WHEN JSON_VALID(provider_task.gpt_api_raw)
+            THEN JSON_UNQUOTE(JSON_EXTRACT(provider_task.gpt_api_raw, '$.attempt.dispatchStarted')) ELSE NULL END = 'true')`;
+const GPT_API_PROTECTED_CARD_SQL = `NOT EXISTS (
+    SELECT 1 FROM task_logs provider_task
+    WHERE card_assets.locked_by = CONCAT('gptapi_', provider_task.job_key)
+      AND (provider_task.execution_mode = 'third_party_api' OR provider_task.gpt_api_order_id IS NOT NULL OR provider_task.gpt_api_task_id IS NOT NULL)
+      AND ${GPT_API_UNSETTLED_TASK_SQL}
+)`;
+
 async function releaseStaleAssetLocks() {
     const staleThreshold = new Date(Date.now() - ASSET_LOCK_STALE_MS);
     const [phoneResult, cardResult, poolResult] = await Promise.all([
@@ -1550,7 +1659,8 @@ async function releaseStaleAssetLocks() {
         runExecute(
             `UPDATE card_assets
              SET in_use = 0, locked_at = NULL, locked_by = NULL
-             WHERE in_use = 1 AND status NOT IN ('待人工复核', '支付结果未知') AND (locked_at IS NULL OR locked_at < ?)`,
+             WHERE in_use = 1 AND status NOT IN ('待人工复核', '支付结果未知') AND (locked_at IS NULL OR locked_at < ?)
+               AND ${GPT_API_PROTECTED_CARD_SQL}`,
             [staleThreshold]
         ),
         runExecute(
@@ -1583,7 +1693,7 @@ async function resetAllAssetLocks() {
     }
     await Promise.all([
         runExecute(`UPDATE phone_assets SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE in_use = 1`),
-        runExecute(`UPDATE card_assets SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE in_use = 1 AND status NOT IN ('待人工复核', '支付结果未知')`),
+        runExecute(`UPDATE card_assets SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE in_use = 1 AND status NOT IN ('待人工复核', '支付结果未知') AND ${GPT_API_PROTECTED_CARD_SQL}`),
         runExecute(`UPDATE pool_emails SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE registered = 0 AND in_use = 1`)
     ]);
 }
@@ -2715,7 +2825,8 @@ async function deleteTaskLogByJobKey(jobKey) {
         return { deleted: 0, mediaDeleted: 0 };
     }
     const rows = await runQuery(
-        `SELECT raw_output, failure_screenshots
+        `SELECT raw_output, failure_screenshots, execution_mode, status, recovery_required,
+                gpt_api_order_id, gpt_api_task_id, gpt_api_raw, payment_state
          FROM task_logs
          WHERE job_key = ?
          LIMIT 1`,
@@ -2723,6 +2834,15 @@ async function deleteTaskLogByJobKey(jobKey) {
     );
     let mediaDeleted = 0;
     if (rows.length) {
+        const row = rows[0];
+        const providerAttempt = parseGptApiEnvelope(row.gpt_api_raw).attempt;
+        if ((row.execution_mode === 'third_party_api' || row.gpt_api_order_id || row.gpt_api_task_id)
+            && !GPT_API_FINAL_OUTCOMES.has(providerAttempt?.settlement)
+            && (['running', 'manual'].includes(row.status) || Number(row.recovery_required) === 1
+                || ['started', 'unknown'].includes(row.payment_state) || row.gpt_api_order_id || row.gpt_api_task_id
+                || providerAttempt?.dispatchStarted)) {
+            throw gptApiStoreError('GPT_API_ORDER_UNRESOLVED', '外包订单结果尚未确认，不能删除恢复记录');
+        }
         mediaDeleted = deleteTaskMediaFiles(rows[0]).deleted;
     }
     const result = await runExecute('DELETE FROM task_logs WHERE job_key = ? LIMIT 1', [key]);
@@ -2738,7 +2858,7 @@ async function updateTaskLog(jobKey, {
     const screenshotsJson = Array.isArray(failureScreenshots)
         ? JSON.stringify(failureScreenshots)
         : null;
-    const terminal = ['success', 'failed', 'manual', 'maintenance'].includes(String(status));
+    const terminal = ['success', 'failed', 'manual', 'maintenance', 'cancelled'].includes(String(status));
     await runExecute(
         `UPDATE task_logs
          SET status = ?,
@@ -3149,6 +3269,30 @@ async function releaseCard(cardId) {
 }
 
 /**
+ * 将官方明确拒付的卡片置入短期冷却，并释放本次任务锁。
+ * 冷却依靠 cooldown_until 参与 reserveCard 的可用性筛选，避免同一张卡立即重试。
+ * @param {number} cardId - 卡片 ID
+ * @param {number} minutes - 冷却分钟数
+ */
+async function cooldownCard(cardId, minutes = 30) {
+    const id = Number(cardId);
+    const duration = Number(minutes);
+    if (!Number.isSafeInteger(id) || id <= 0) return;
+    if (!Number.isSafeInteger(duration) || duration <= 0 || duration > 24 * 60) {
+        throw new Error('卡片冷却时长无效');
+    }
+    await runExecute(
+        `UPDATE card_assets
+         SET cooldown_until = GREATEST(COALESCE(cooldown_until, NOW()), DATE_ADD(NOW(), INTERVAL ? MINUTE)),
+             in_use = 0,
+             locked_at = NULL,
+             locked_by = NULL
+         WHERE id = ? AND is_active = 1 AND status = '正常'`,
+        [duration, id]
+    );
+}
+
+/**
  * 将卡片标记为已报废（Stripe 明确拒绝）。
  * @param {number} cardId - 卡片 ID
  */
@@ -3386,8 +3530,6 @@ async function importCards(cards) {
 
 // ─── Region Selector ────────────────────────────────────────────────────────
 
-const { SUPPORTED_REGIONS, DEFAULT_REGION } = require('./region-config');
-
 /**
  * 获取当前支付地区代码
  * @returns {Promise<string>} 地区代码（如 'PH'）
@@ -3614,6 +3756,285 @@ async function getCardBillingSummary(cardLast4) {
     };
 }
 
+const GPT_API_ATTEMPT_FIELDS = new Set([
+    'version', 'jobKey', 'attemptId', 'clientRef', 'idempotencyKey', 'endpoint', 'apiKeyFingerprint',
+    'planType', 'planKey', 'planName', 'country', 'currency', 'requestFingerprint',
+    'cardAssetId', 'cardLast4', 'state', 'dispatchStarted', 'orderId', 'taskId',
+    'recoveryRequired', 'settlement', 'createdAt', 'updatedAt', 'submittedAt', 'checkedAt',
+    'finishedAt', 'lastCheckAt', 'lastErrorCode', 'nextCheckAt', 'providerStatus', 'paymentState',
+    'stage', 'dispatchAt', 'guardCode', 'accountFingerprint', 'lastCheckedAt', 'upstreamStatus', 'resultSource', 'existingOrderReused'
+]);
+const GPT_API_IMMUTABLE_FIELDS = [
+    'jobKey', 'attemptId', 'clientRef', 'idempotencyKey', 'endpoint', 'apiKeyFingerprint',
+    'planType', 'planKey', 'planName', 'country', 'currency', 'requestFingerprint', 'cardAssetId', 'cardLast4', 'accountFingerprint', 'existingOrderReused', 'orderId', 'taskId'
+];
+const GPT_API_FINAL_OUTCOMES = new Set(['success', 'no_charge']);
+
+function gptApiStoreError(code, message) {
+    return Object.assign(new Error(message), { code });
+}
+
+function safeGptApiText(value, maxLength = 400) {
+    return redactSensitiveText(String(value || ''))
+        .replace(/\b(?:gptk_|sk-|sk_)[a-zA-Z0-9_-]+\b/g, '[KEY_REDACTED]')
+        .replace(/(["']?(?:cvc|cvv|api[_-]?key|secret)["']?\s*[:=]\s*["']?)[^\s,"'};]+/gi, '$1[REDACTED]')
+        .slice(0, maxLength);
+}
+
+function sanitizeGptApiAttempt(value = {}) {
+    const out = {};
+    for (const key of GPT_API_ATTEMPT_FIELDS) {
+        if (value[key] === undefined) continue;
+        if (['dispatchStarted', 'recoveryRequired', 'existingOrderReused'].includes(key)) out[key] = value[key] === true || value[key] === 1;
+        else if (['version', 'cardAssetId'].includes(key)) {
+            const number = Number(value[key]);
+            if (Number.isSafeInteger(number) && number > 0) out[key] = number;
+        } else if (value[key] === null) out[key] = null;
+        else if (['orderId', 'taskId', 'attemptId', 'clientRef', 'idempotencyKey', 'planKey', 'requestFingerprint', 'apiKeyFingerprint', 'accountFingerprint', 'endpoint'].includes(key)) {
+            // These identifiers can legitimately be long numeric strings. Do
+            // not apply the PAN redactor to them and corrupt the recovery key.
+            out[key] = String(value[key]).slice(0, key === 'endpoint' ? 1000 : 200);
+        } else out[key] = safeGptApiText(value[key], 200);
+    }
+    if (out.endpoint) {
+        try {
+            const endpoint = new URL(out.endpoint);
+            if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+                throw new Error('endpoint_credentials');
+            }
+            out.endpoint = endpoint.href.replace(/\/+$/, '');
+        } catch (_) { throw gptApiStoreError('GPT_API_BINDING_INVALID', '渠道地址不可包含凭证或查询参数'); }
+    }
+    return out;
+}
+
+function sanitizeGptApiResponse(value, depth = 0) {
+    if (depth > 3 || value == null) return null;
+    if (typeof value === 'boolean' || typeof value === 'number') return value;
+    if (typeof value === 'string') return safeGptApiText(value);
+    if (Array.isArray(value)) return value.slice(0, 8).map((item) => sanitizeGptApiResponse(item, depth + 1));
+    if (typeof value !== 'object') return null;
+    const allowed = new Set(['success', 'ok', 'status', 'state', 'code', 'error', 'reason', 'message', 'order_id', 'task_id',
+        'orderId', 'taskId', 'id', 'result', 'order', 'task', 'amount', 'currency', 'plan_key', 'client_ref',
+        'payment_state', 'payment_status', 'payment_submitted', 'charged', 'recharge_status', 'phase',
+        'plan', 'account_fingerprint', 'no_charge', 'payment_charged', 'has_charge', 'settlement']);
+    return Object.fromEntries(Object.entries(value).filter(([key]) => allowed.has(key))
+        .map(([key, item]) => [key, sanitizeGptApiResponse(item, depth + 1)]));
+}
+
+function parseGptApiEnvelope(raw) {
+    try {
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (parsed && parsed.attempt && typeof parsed.attempt === 'object' && !Array.isArray(parsed.attempt)) {
+            return { attempt: sanitizeGptApiAttempt(parsed.attempt), lastResponse: sanitizeGptApiResponse(parsed.lastResponse) };
+        }
+    } catch (_) { /* previous releases stored only the supplier response */ }
+    return { attempt: null, lastResponse: null };
+}
+
+function mergeGptApiAttempt(previous, patch, jobKey) {
+    const next = sanitizeGptApiAttempt({ ...previous, ...patch, jobKey, version: 1, updatedAt: new Date().toISOString() });
+    for (const key of GPT_API_IMMUTABLE_FIELDS) {
+        if (previous?.[key] !== undefined && previous[key] !== null && previous[key] !== '' &&
+            String(previous[key]) !== String(next[key])) {
+            throw gptApiStoreError('GPT_API_BINDING_CONFLICT', `外包订单绑定不可变更: ${key}`);
+        }
+    }
+    if (previous?.dispatchStarted && !next.dispatchStarted) throw gptApiStoreError('GPT_API_BINDING_CONFLICT', '外包订单已派发，不能撤销派发记录');
+    if (GPT_API_FINAL_OUTCOMES.has(previous?.settlement) && next.settlement !== previous.settlement) {
+        throw gptApiStoreError('GPT_API_SETTLEMENT_CONFLICT', '已结算外包订单不能变更终态');
+    }
+    if (GPT_API_FINAL_OUTCOMES.has(previous?.settlement) && (next.state !== 'finished' || next.recoveryRequired)) {
+        throw gptApiStoreError('GPT_API_SETTLEMENT_CONFLICT', '已结算外包订单不能重新进入处理中');
+    }
+    if (!next.createdAt) next.createdAt = new Date().toISOString();
+    return next;
+}
+
+async function lockGptApiTask(connection, jobKey, { allowLegacy = false } = {}) {
+    const [rows] = await connection.query('SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE', [String(jobKey)]);
+    const task = rows[0];
+    if (!task || (task.execution_mode !== 'third_party_api' && !(allowLegacy && (task.gpt_api_order_id || task.gpt_api_task_id)))) {
+        throw gptApiStoreError('GPT_API_TASK_INVALID', '外包充值任务不存在或模式不一致');
+    }
+    return task;
+}
+
+async function writeGptApiEnvelope(connection, jobKey, attempt, lastResponse) {
+    await connection.query(
+        `UPDATE task_logs SET gpt_api_raw = ?, gpt_api_order_id = COALESCE(?, gpt_api_order_id),
+            gpt_api_task_id = COALESCE(?, gpt_api_task_id), card_last4 = COALESCE(?, card_last4),
+            recovery_required = ?, last_heartbeat_at = CURRENT_TIMESTAMP WHERE job_key = ?`,
+        [JSON.stringify({ attempt, lastResponse: sanitizeGptApiResponse(lastResponse) }), attempt.orderId || null,
+            attempt.taskId || null, attempt.cardLast4 || null, attempt.recoveryRequired ? 1 : 0, String(jobKey)]
+    );
+}
+
+function gptApiAttemptFromTask(task) {
+    if (!task) return null;
+    const { attempt } = parseGptApiEnvelope(task.gpt_api_raw);
+    return {
+        ...(attempt || { version: 0, legacy: true, state: 'legacy_unknown', dispatchStarted: true }),
+        jobKey: task.job_key, cdkCode: task.cdk_code, status: task.status, message: task.message,
+        progress: Number(task.progress || 0), paymentState: task.payment_state || 'not_started',
+        recoveryRequired: Boolean(task.recovery_required) || Boolean(attempt?.recoveryRequired) || !attempt,
+        orderId: attempt?.orderId || task.gpt_api_order_id || null,
+        taskId: attempt?.taskId || task.gpt_api_task_id || null
+    };
+}
+
+async function getGptApiAttempt(jobKey) {
+    const rows = await runQuery("SELECT * FROM task_logs WHERE job_key = ? AND (execution_mode = 'third_party_api' OR gpt_api_order_id IS NOT NULL OR gpt_api_task_id IS NOT NULL) LIMIT 1", [String(jobKey)]);
+    return gptApiAttemptFromTask(rows[0]);
+}
+
+async function saveGptApiAttempt(jobKey, patch = {}) {
+    return withTransaction(async (connection) => {
+        const task = await lockGptApiTask(connection, jobKey);
+        const envelope = parseGptApiEnvelope(task.gpt_api_raw);
+        const attempt = mergeGptApiAttempt(envelope.attempt, patch, jobKey);
+        await writeGptApiEnvelope(connection, jobKey, attempt, patch.lastResponse === undefined ? envelope.lastResponse : patch.lastResponse);
+        return attempt;
+    });
+}
+
+async function reserveGptApiCard(jobKey, attemptPatch = {}) {
+    return withTransaction(async (connection) => {
+        const task = await lockGptApiTask(connection, jobKey);
+        const envelope = parseGptApiEnvelope(task.gpt_api_raw);
+        const attempt = mergeGptApiAttempt(envelope.attempt, attemptPatch, jobKey);
+        if (attempt.dispatchStarted || GPT_API_FINAL_OUTCOMES.has(attempt.settlement)) {
+            throw gptApiStoreError('GPT_API_ALREADY_DISPATCHED', '订单已派发或结算，不能重新取卡');
+        }
+        const [cdkRows] = await connection.query(
+            'SELECT cdk_code, used_at FROM cdk_codes WHERE cdk_code = ? AND is_active = 1 FOR UPDATE',
+            [task.cdk_code]
+        );
+        const [ownerRows] = await connection.query(
+            `SELECT job_key FROM task_logs WHERE cdk_code = ?
+             ORDER BY id DESC LIMIT 1 FOR UPDATE`,
+            [task.cdk_code]
+        );
+        if (!cdkRows.length || !cdkRows[0].used_at || ownerRows[0]?.job_key !== String(jobKey)) {
+            throw gptApiStoreError('GPT_API_CDK_OWNER_MISMATCH', 'CDK 已被其他任务占用，已停止取卡');
+        }
+        const owner = `gptapi_${jobKey}`;
+        let rows;
+        if (attempt.cardAssetId) {
+            [rows] = await connection.query(
+                'SELECT * FROM card_assets WHERE id = ? AND in_use = 1 AND locked_by = ? LIMIT 1 FOR UPDATE',
+                [attempt.cardAssetId, owner]);
+            if (!rows.length) throw gptApiStoreError('GPT_API_CARD_OWNER_MISMATCH', '原订单银行卡锁不匹配，已停止');
+        } else {
+            [rows] = await connection.query(
+                `SELECT id, card_number, card_expiry, card_cvc, card_holder, usage_count FROM card_assets
+                 WHERE is_active = 1 AND in_use = 0 AND status = '正常'
+                   AND (cooldown_until IS NULL OR cooldown_until < NOW())
+                 ORDER BY usage_count ASC, COALESCE(last_used_at, '1970-01-01') ASC, id ASC LIMIT 1 FOR UPDATE SKIP LOCKED`);
+            if (!rows.length) return null;
+            await connection.query('UPDATE card_assets SET in_use = 1, locked_at = CURRENT_TIMESTAMP, locked_by = ? WHERE id = ?', [owner, rows[0].id]);
+        }
+        const card = rows[0];
+        attempt.cardAssetId = Number(card.id);
+        attempt.cardLast4 = String(card.card_number || '').slice(-4);
+        await writeGptApiEnvelope(connection, jobKey, attempt, envelope.lastResponse);
+        return { card, attempt };
+    });
+}
+
+async function finalizeGptApiAttempt(jobKey, { outcome, record = {}, message = '', paymentState } = {}) {
+    if (!['success', 'no_charge', 'hold'].includes(outcome)) throw gptApiStoreError('GPT_API_OUTCOME_INVALID', '外包结算状态无效');
+    return withTransaction(async (connection) => {
+        const task = await lockGptApiTask(connection, jobKey, { allowLegacy: outcome === 'hold' });
+        const envelope = parseGptApiEnvelope(task.gpt_api_raw);
+        const previous = envelope.attempt;
+        if (GPT_API_FINAL_OUTCOMES.has(previous?.settlement)) {
+            if (outcome !== previous.settlement) throw gptApiStoreError('GPT_API_SETTLEMENT_CONFLICT', '外包订单已经结算，不能修改结果');
+            return { applied: false, attempt: gptApiAttemptFromTask(task), assetsHeld: false, alreadySettled: true };
+        }
+        const attempt = mergeGptApiAttempt(previous, record, jobKey);
+        let guardCode = '';
+        let card = null;
+        // Lock the CDK row before checking its latest task owner. A late old
+        // response cannot roll back a new task that has already claimed it.
+        const [cdks] = await connection.query('SELECT * FROM cdk_codes WHERE cdk_code = ? LIMIT 1 FOR UPDATE', [task.cdk_code]);
+        const [owners] = await connection.query('SELECT job_key FROM task_logs WHERE cdk_code = ? ORDER BY id DESC LIMIT 1 FOR UPDATE', [task.cdk_code]);
+        if (!cdks.length || owners[0]?.job_key !== String(jobKey)) guardCode = 'GPT_API_CDK_OWNER_MISMATCH';
+        if (attempt.cardAssetId) {
+            const [cards] = await connection.query('SELECT * FROM card_assets WHERE id = ? LIMIT 1 FOR UPDATE', [attempt.cardAssetId]);
+            card = cards[0];
+            if (!card || Number(card.in_use) !== 1 || card.locked_by !== `gptapi_${jobKey}`) guardCode = 'GPT_API_CARD_OWNER_MISMATCH';
+        } else if (attempt.dispatchStarted && outcome !== 'hold') {
+            guardCode = 'GPT_API_CARD_BINDING_MISSING';
+        }
+        const requestedOutcome = outcome;
+        if (attempt.existingOrderReused && outcome !== 'hold') guardCode = 'GPT_API_REUSED_ORDER_UNCONFIRMED';
+        if (guardCode) outcome = 'hold';
+        attempt.settlement = outcome;
+        attempt.recoveryRequired = outcome === 'hold';
+        attempt.state = outcome === 'hold' ? (record.state || 'unknown') : 'finished';
+        attempt.paymentState = outcome === 'success' ? 'succeeded' : outcome === 'no_charge' ? (paymentState || 'declined') : 'unknown';
+        if (guardCode) attempt.guardCode = guardCode;
+        if (outcome !== 'hold') attempt.finishedAt = new Date().toISOString();
+        let cardUsage = null;
+        if (outcome !== 'hold') {
+            if (outcome === 'no_charge') {
+                await connection.query('UPDATE cdk_codes SET used_at = NULL WHERE cdk_code = ?', [task.cdk_code]);
+            } else {
+                await connection.query('UPDATE cdk_codes SET used_at = COALESCE(used_at, CURRENT_TIMESTAMP), fail_count = 0, cooldown_until = NULL WHERE cdk_code = ?', [task.cdk_code]);
+                if (card) {
+                    const now = new Date();
+                    const resetAt = card.daily_usage_reset_at ? new Date(card.daily_usage_reset_at) : null;
+                    const reset = !resetAt || resetAt < new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                    const dailyUsageCount = reset ? 1 : Number(card.daily_usage_count || 0) + 1;
+                    await connection.query(
+                        `UPDATE card_assets SET daily_usage_count = ?, daily_usage_reset_at = ?, usage_count = usage_count + 1,
+                         last_used_at = NOW(), cooldown_until = CASE WHEN ? THEN GREATEST(COALESCE(cooldown_until, NOW()), DATE_ADD(NOW(), INTERVAL 24 HOUR)) ELSE cooldown_until END WHERE id = ? AND locked_by = ?`,
+                        [dailyUsageCount, reset ? now : resetAt, dailyUsageCount >= 3 ? 1 : 0, card.id, `gptapi_${jobKey}`]);
+                    cardUsage = { dailyUsageCount, cooledDown: dailyUsageCount >= 3 };
+                }
+            }
+            if (card) await connection.query(
+                'UPDATE card_assets SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE id = ? AND locked_by = ?', [card.id, `gptapi_${jobKey}`]);
+        }
+        await writeGptApiEnvelope(connection, jobKey, attempt, record.lastResponse === undefined ? envelope.lastResponse : record.lastResponse);
+        const status = outcome === 'hold' ? 'manual' : outcome === 'success' ? 'success' : 'failed';
+        await connection.query(
+            `UPDATE task_logs SET status = ?, message = ?, progress = GREATEST(progress, ?), payment_state = ?, recovery_required = ?,
+             finished_at = CASE WHEN ? THEN COALESCE(finished_at, CURRENT_TIMESTAMP) ELSE finished_at END,
+             session_payload = CASE WHEN ? THEN NULL ELSE session_payload END,
+             session_payload_encrypted = CASE WHEN ? THEN NULL ELSE session_payload_encrypted END WHERE job_key = ?`,
+            [status, safeGptApiText(guardCode ? '充值结果待确认，请联系客服处理' : message, 255), outcome === 'success' ? 100 : 99,
+                attempt.paymentState, attempt.recoveryRequired ? 1 : 0, outcome !== 'hold' ? 1 : 0,
+                outcome !== 'hold' ? 1 : 0, outcome !== 'hold' ? 1 : 0, String(jobKey)]);
+        return { applied: outcome === requestedOutcome, attempt: { ...attempt, cdkCode: task.cdk_code, status,
+            progress: Math.max(Number(task.progress || 0), outcome === 'success' ? 100 : 99) }, status,
+            assetsHeld: outcome === 'hold', cardUsage, ...(guardCode ? { guardCode } : {}) };
+    });
+}
+
+async function listGptApiAttempts({ limit = 20, offset = 0, status = '' } = {}) {
+    const safeLimit = Math.max(1, Math.min(Math.trunc(Number(limit) || 20), 100));
+    const safeOffset = Math.max(0, Math.trunc(Number(offset) || 0));
+    const where = `(execution_mode = 'third_party_api' OR gpt_api_order_id IS NOT NULL OR gpt_api_task_id IS NOT NULL)` + (status ? ' AND status = ?' : '');
+    const params = status ? [String(status)] : [];
+    const [rows, totals] = await Promise.all([
+        runQuery(`SELECT job_key, cdk_code, status, message, progress, updated_at, execution_mode, payment_state, recovery_required,
+            gpt_api_order_id, gpt_api_task_id, gpt_api_topup_code, gpt_api_raw FROM task_logs WHERE ${where} ORDER BY id DESC LIMIT ? OFFSET ?`, [...params, safeLimit, safeOffset]),
+        runQuery(`SELECT COUNT(*) AS total FROM task_logs WHERE ${where}`, params)
+    ]);
+    return { orders: rows, total: Number(totals[0]?.total || 0), limit: safeLimit, offset: safeOffset };
+}
+
+async function getGptApiPendingAttempts() {
+    const rows = await runQuery(
+        `SELECT job_key, cdk_code, status, message, progress, updated_at, execution_mode, payment_state, recovery_required,
+            gpt_api_order_id, gpt_api_task_id, gpt_api_raw FROM task_logs provider_task
+         WHERE (execution_mode = 'third_party_api' OR gpt_api_order_id IS NOT NULL OR gpt_api_task_id IS NOT NULL)
+           AND ${GPT_API_UNSETTLED_TASK_SQL} ORDER BY id ASC`);
+    return rows.map((row) => ({ ...row, attempt: gptApiAttemptFromTask(row) }));
+}
+
 async function listRecentGptApiOrders(limit = 10) {
     const safeLimit = Math.max(1, Math.min(Number(limit) || 10, 50));
     return runQuery(
@@ -3690,6 +4111,12 @@ module.exports = {
     saveTelegramConfig,
     getGptApiConfig,
     saveGptApiConfig,
+    getGptApiAttempt,
+    saveGptApiAttempt,
+    reserveGptApiCard,
+    finalizeGptApiAttempt,
+    listGptApiAttempts,
+    getGptApiPendingAttempts,
     getHcaptchaConfig,
     saveHcaptchaConfig,
     syncHcaptchaConfigPersistence,
@@ -3723,6 +4150,7 @@ module.exports = {
     reserveCard,
     hasAvailableCard,
     releaseCard,
+    cooldownCard,
     quarantineCardForReview,
     markCardExhausted,
     recordCardUsage,

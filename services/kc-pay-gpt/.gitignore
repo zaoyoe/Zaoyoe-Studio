@@ -42,3 +42,7 @@ Thumbs.db
 
 # Sister project (kept as a separate repo)
 plus_gopay/
+
+server.log
+*.log
+__pycache__/

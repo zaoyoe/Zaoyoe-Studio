@@ -76,7 +76,7 @@ async function loadSecurityConfig(supabase) {
     }
 }
 
-async function checkIpBlockState(supabase, clientIp) {
+async function checkIpBlockState(supabase, clientIp, { requireConfirmed = false } = {}) {
     const normalizedIp = String(clientIp || '').trim();
     if (!normalizedIp) {
         return buildSecurityPayload();
@@ -88,6 +88,9 @@ async function checkIpBlockState(supabase, clientIp) {
 
     if (error) {
         throw error;
+    }
+    if (requireConfirmed && typeof data?.blocked !== 'boolean') {
+        throw Object.assign(new Error('Login security is temporarily unavailable'), { statusCode: 503 });
     }
 
     return buildSecurityPayload({
@@ -157,8 +160,11 @@ async function recordFailureState(supabase, email, clientIp, securityConfig) {
 }
 
 async function runSecurityAction({ supabase, action, email, clientIp }) {
-    const ipState = await checkIpBlockState(supabase, clientIp);
-    if (ipState.ip_blocked) {
+    if (action === 'preflight_ip' && !String(clientIp || '').trim()) {
+        throw Object.assign(new Error('Login security is temporarily unavailable'), { statusCode: 503 });
+    }
+    const ipState = await checkIpBlockState(supabase, clientIp, { requireConfirmed: action === 'preflight_ip' });
+    if (ipState.ip_blocked || action === 'preflight_ip') {
         return ipState;
     }
 
@@ -239,14 +245,14 @@ function createLoginSecurityHandler({
             const action = String(body?.action || '').trim();
             const email = sanitizeEmail(body?.email);
 
-            if (!email) {
+            if (!email && action !== 'preflight_ip') {
                 return sendJson(res, 400, {
                     success: false,
                     message: 'Email is required'
                 });
             }
 
-            if (action !== 'preflight' && action !== 'record_failure') {
+            if (action !== 'preflight' && action !== 'preflight_ip' && action !== 'record_failure') {
                 return sendJson(res, 400, {
                     success: false,
                     message: 'Unsupported action'

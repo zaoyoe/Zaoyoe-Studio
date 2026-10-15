@@ -12,7 +12,13 @@ const BILLING_PAGE_URL = 'https://chatgpt.com/account/manage';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 
 const PLAN_LABELS = {
+    go: 'ChatGPT Go',
     plus: 'ChatGPT Plus',
+    pro_100: 'ChatGPT PRO 100',
+    pro_200: 'ChatGPT PRO 200',
+    pro_500: 'ChatGPT PRO 500',
+    pro_5x: 'ChatGPT PRO 100',
+    pro_20x: 'ChatGPT PRO 200',
     pro: 'ChatGPT Pro',
     team: 'ChatGPT Team',
     free: '免费版',
@@ -38,8 +44,17 @@ function normalizeSubscriptionPlan(subPlan, hasActive) {
     if (raw.includes('team')) {
         return 'team';
     }
+    if (raw.includes('go')) {
+        return 'go';
+    }
+    if (raw.includes('prolite') || raw.includes('pro_100') || raw.includes('pro100') || raw.includes('pro_5x') || raw.includes('pro5x')) {
+        return 'pro_100';
+    }
+    if (raw.includes('promax') || raw.includes('pro_500') || raw.includes('pro500')) {
+        return 'pro_500';
+    }
     if (raw.includes('pro') && !raw.includes('plus')) {
-        return 'pro';
+        return 'pro_200';
     }
     if (raw.includes('plus')) {
         return 'plus';

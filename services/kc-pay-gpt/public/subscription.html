@@ -6,12 +6,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>发票助手 | AI 自助充值中心</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=20261010_v41">
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <script>
+        (function() {
+            try {
+                var saved = localStorage.getItem('fk-theme');
+                var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+                var theme = (saved === 'light' || saved === 'dark') ? saved : (prefersLight ? 'light' : 'dark');
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (e) {}
+        })();
+    </script>
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
 <body class="recharge-page subscription-page">
+    <!-- 页面右上角亮暗主题切换按钮 -->
+    <button id="themeToggleBtn" class="theme-toggle-btn" type="button" aria-label="切换浅色/深色模式" title="切换浅色/深色模式">
+        <i data-lucide="sun" class="theme-icon icon-sun"></i>
+        <i data-lucide="moon" class="theme-icon icon-moon"></i>
+    </button>
+    <div class="hero-type" id="heroType" aria-hidden="true">
+        <span class="word word-plus">PLUS</span>
+        <span class="word word-feiniao">FEINIAO SI</span>
+        <span class="word word-topup">TOP-UP</span>
+        <span class="word word-pro">PRO</span>
+    </div>
     <div class="page-shell">
         <header class="site-hero compact-hero">
             <a href="/" class="back-home-link"><i data-lucide="arrow-left"></i> 返回充值中心</a>
@@ -32,7 +53,7 @@
                         class="get-token-btn-floating">获取 Session</a>
                     <textarea id="sessionInput"
                         placeholder="打开上方链接，全选复制完整 JSON 粘贴到此处（保留 user、expires、accessToken 等全部字段）"
-                        rows="5"></textarea>
+                        rows="5" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" data-lpignore="true" data-1p-ignore="true"></textarea>
                 </div>
                 <p class="field-hint subscription-field-hint">Session 仅用于本次查询，不会被保存。查询完成后可在下方打开官方账单页面。</p>
                 <div class="subscription-query-actions">
@@ -291,6 +312,83 @@
 
         checkBtn.addEventListener('click', checkSubscription);
         lucide.createIcons();
+
+        // 核心秘钥同款：鼠标移动视差浮动交互 (Mouse Parallax Interaction)
+        window.addEventListener('mousemove', (event) => {
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            const x = ((event.clientX / window.innerWidth) - 0.5) * 36;
+            const y = ((event.clientY / window.innerHeight) - 0.5) * 24;
+            document.documentElement.style.setProperty('--pointer-x', `${x.toFixed(1)}px`);
+            document.documentElement.style.setProperty('--pointer-y', `${y.toFixed(1)}px`);
+        }, { passive: true });
+
+        window.addEventListener('mouseleave', () => {
+            document.documentElement.style.setProperty('--pointer-x', '0px');
+            document.documentElement.style.setProperty('--pointer-y', '0px');
+        });
+
+        // ============ 亮暗主题切换与持久化 (Theme Management) ============
+        (function initTheme() {
+            const THEME_KEY = 'fk-theme';
+            const toggleBtn = document.getElementById('themeToggleBtn');
+
+            function getPreferredTheme() {
+                const saved = localStorage.getItem(THEME_KEY);
+                if (saved === 'light' || saved === 'dark') {
+                    return saved;
+                }
+                return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+            }
+
+            function applyTheme(theme) {
+                document.documentElement.setAttribute('data-theme', theme);
+                document.body.setAttribute('data-theme', theme);
+                localStorage.setItem(THEME_KEY, theme);
+                if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                    window.lucide.createIcons();
+                }
+            }
+
+            // 初始化当前主题
+            const currentTheme = getPreferredTheme();
+            applyTheme(currentTheme);
+
+            // 切换按钮点击交互
+            toggleBtn?.addEventListener('click', () => {
+                const current = document.documentElement.getAttribute('data-theme') || 'dark';
+                const nextTheme = current === 'light' ? 'dark' : 'light';
+                applyTheme(nextTheme);
+            });
+
+            // 跟随系统主题动态变化
+            if (window.matchMedia) {
+                window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+                    if (!localStorage.getItem(THEME_KEY)) {
+                        applyTheme(e.matches ? 'light' : 'dark');
+                    }
+                });
+            }
+        })();
+
+        // ============ 输入框/文本域滚动条自动显隐 (Hide scrollbar when idle) ============
+        (function initScrollbarAutoHide() {
+            const bindScrollEvents = () => {
+                document.querySelectorAll('textarea, input').forEach(el => {
+                    if (el.dataset.scrollbarBound) return;
+                    el.dataset.scrollbarBound = 'true';
+                    let scrollTimer = null;
+                    el.addEventListener('scroll', () => {
+                        el.classList.add('is-scrolling');
+                        clearTimeout(scrollTimer);
+                        scrollTimer = setTimeout(() => {
+                            el.classList.remove('is-scrolling');
+                        }, 750);
+                    }, { passive: true });
+                });
+            };
+            bindScrollEvents();
+            window.addEventListener('DOMContentLoaded', bindScrollEvents);
+        })();
     </script>
 </body>
 

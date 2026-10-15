@@ -257,6 +257,24 @@ function createRouteHandlersForScope(scope) {
             'guest/webhook': guestHandlers.webhook
         };
     }
+    case 'tg': {
+        const { createTgHandlers } = require('../server/api-handlers/public/tg');
+        const { createTgPurchaseHandlers } = require('../server/api-handlers/public/tg-purchase');
+        const { createTgRecipientHandler } = require('../server/api-handlers/public/tg-recipient');
+        const tgHandlers = createTgHandlers({ admin, env: process.env, requestSecurity });
+        const purchases = createTgPurchaseHandlers({ admin, env: process.env, requestSecurity });
+        return {
+            catalog: tgHandlers.catalog,
+            recipient: createTgRecipientHandler({ admin, env: process.env, requestSecurity }),
+            redeem: tgHandlers.redeem,
+            status: tgHandlers.status,
+            'purchase/quote': purchases.quote,
+            'purchase/orders': purchases.orders,
+            'purchase/status': purchases.status,
+            'purchase/webhooks/zpay': purchases.webhook,
+            'purchase/webhooks/nowpayments': purchases.webhookNowpayments
+        };
+    }
     case 'verify': {
         const {
             createPublicVerifyHandlers

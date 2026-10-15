@@ -8,8 +8,10 @@ const WebSocket = require('ws');
 const axios = require('axios');
 const store = require('./mysql-store');
 const runtimeLog = require('./runtime-log');
-const { REGION_CONFIG, isSupportedRegion, getPlanTypeLabel } = require('./region-config');
+const { REGION_CONFIG, isSupportedRegion, getRegionConfig, getPlatformForPlan, getPlanTypeLabel } = require('./region-config');
 const taxFreeAddress = require('./tax-free-address');
+const { extractClaudeSessionKey, isValidClaudeSessionKey, fetchClaudeAccount } = require('./claude-auth');
+const { extractGrokCredential, isValidGrokCredential, grokSessionCookieHeader, parseOfficialGrokSession } = require('./grok-auth');
 const { testProxyUrl, normalizeProxyLines } = require('./proxy-pool');
 const { extractSessionPreview, extractAccessTokenFromRaw, parseSessionJson, extractEmailFromSession } = require('./session-auth');
 const { notifyTelegramEvent, notifyAdminSecurityEvent, sendTelegramLoginCode, sendTelegramTest, isCardPoolExhaustedIssue } = require('./telegram-notify');
@@ -22,8 +24,22 @@ const browserPool = require('./browser-pool');
 const { buildWorkerRuntimeEnv } = require('./browser-runtime');
 const { querySubscriptionBySession, validateSessionTokenForQuery, cancelAutoRenew, resumeAutoRenew } = require('./subscription-check');
 const gptApi = require('./gpt-api-client');
+const { validateOutsourceConfig, canonicalizeOutsourcePlan } = require('./gpt-outsourcing');
+const { createGptOutsourcingService } = require('./gpt-outsourcing-worker');
+const { createGptOutsourcingAdmin } = require('./gpt-outsourcing-admin');
 const { redactSensitiveText } = require('./session-security');
-const { classifyInterruptedTask, classifyAutoRenewCancellation, normalizePaymentState, mergePaymentState } = require('./task-safety');
+const { formatTaskErrorMessage, publicTaskUpdate } = require('./public/task-messages');
+const { resolveActivationInput, buildActivationCredentialEnv } = require('./activation-routing');
+const { reportTaskFailure } = require('./task-diagnostics');
+const { validateCdkPlan } = require('./cdk-plan-catalog');
+const { resolveDiagnosticInput, getDiagnosticCatalog, parseDiagnosticOutput, buildDiagnosticRuntimeEnv } = require('./checkout-diagnostic');
+const { EXECUTION_MODE: CHECKOUT_DIAGNOSTIC_MODE, diagnosticError, throwIfDiagnosticAborted,
+    waitForDiagnosticAbort, redactDiagnosticLogs, sanitizeDiagnosticReport, appendDiagnosticReport,
+    pendingDiagnosticReport, diagnosticProgress, finishDiagnosticReport, createCheckoutDebugManager } = require('./checkout-debug-manager');
+const { classifyInterruptedTask, classifyAutoRenewCancellation, normalizePaymentState, mergePaymentState,
+    shouldRetainCdk, classifyChatGptAuthFailure, classifyCheckoutFailure, classifyProxyPreflightFailure,
+    classifyClaudeNavigationFailure, classifyClaudeCheckoutReadinessFailure, classifyGrokFailure,
+    classifyOpenAiCardMethodFailure, finalizeRetryAnalysis } = require('./task-safety');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -57,8 +73,16 @@ function cleanupProcesses() {
 
 // WebSocket 客户端映射: jobKey -> Set<WebSocket>
 const taskClients = new Map();
-const TERMINAL_TASK_STATUSES = new Set(['success', 'failed', 'manual', 'maintenance']);
+const TERMINAL_TASK_STATUSES = new Set(['success', 'failed', 'manual', 'maintenance', 'cancelled']);
 const activeForegroundJobs = new Set();
+const checkoutDebugManager = createCheckoutDebugManager();
+const gptOutsourcing = createGptOutsourcingService({
+    store,
+    client: gptApi,
+    onUpdate: (jobKey, update) => broadcastToTask(jobKey, { type: update.status === 'running' ? 'progress' : 'status', jobKey, ...update }),
+    onLog: (jobKey, message, level = 'warn') => logTask(jobKey, message, level),
+    onOutcome: (jobKey, status, message) => notifyTaskOutcome({ event: status === 'success' ? 'success' : 'failure', jobKey, message })
+});
 
 let systemMetricsCache = {
     ts: 0,
@@ -216,13 +240,144 @@ function parseFlexibleTimestamp(value) {
 function broadcastToTask(jobKey, data) {
     const clients = taskClients.get(jobKey);
     if (clients) {
-        const message = JSON.stringify(data);
+        const message = JSON.stringify(publicTaskUpdate(data));
         for (const client of clients) {
             if (client.readyState === WebSocket.OPEN) {
                 client.send(message);
             }
         }
     }
+}
+
+// In-memory state for interactive human verification (透传给前端让充值用户点击)
+const interactiveCaptchaMap = new Map();
+
+function getOrCreateCaptchaState(jobKey) {
+    if (!interactiveCaptchaMap.has(jobKey)) {
+        interactiveCaptchaMap.set(jobKey, {
+            jobKey,
+            image: null,
+            width: 1280,
+            height: 800,
+            title: '请协助完成人机验证',
+            message: '请点击下方画面中的验证区域',
+            promptZh: '',
+            promptEn: '',
+            updatedAt: Date.now(),
+            active: false,
+            frameSeq: 0,
+            pendingClicks: [],
+            waitingRequests: []
+        });
+    }
+    return interactiveCaptchaMap.get(jobKey);
+}
+
+function notifyCaptchaClick(jobKey, options = {}) {
+    if (!jobKey || !interactiveCaptchaMap.has(jobKey)) return false;
+    const state = interactiveCaptchaMap.get(jobKey);
+    if (!state || !state.active || (state.expiresAt && Date.now() >= state.expiresAt)) return false;
+    if (!state.pendingClicks) state.pendingClicks = [];
+
+    const { ratioX, ratioY, clientX, clientY, frameSeq, points, submitPoint, action } = options;
+    if (state.contentReady === false && action !== 'refresh') return false;
+
+    // 版本/帧对齐：若携带了 frameSeq 且与当前活跃画面序号不匹配，说明是上一旧画面的过时点击，直接丢弃
+    if (frameSeq && state.frameSeq && Number(frameSeq) !== Number(state.frameSeq)) {
+        console.log(`[Captcha] 丢弃已失效旧画面(frameSeq=${frameSeq}, 当前=${state.frameSeq})的迟到点击`);
+        return false;
+    }
+
+    // 防抖：仅在单点普通点击时检查
+    const now = Date.now();
+    if (!points && state.lastClick && (now - state.lastClick.ts < 300)) {
+        const dx = Math.abs(Number(ratioX) - Number(state.lastClick.ratioX));
+        const dy = Math.abs(Number(ratioY) - Number(state.lastClick.ratioY));
+        if (dx < 0.04 && dy < 0.04) {
+            return true;
+        }
+    }
+    state.lastClick = { ratioX: Number(ratioX || 0), ratioY: Number(ratioY || 0), ts: now };
+
+    const clickData = {
+        success: true,
+        clicked: true,
+        action: action || 'click',
+        ratioX: Number(ratioX || 0),
+        ratioY: Number(ratioY || 0),
+        clientX: clientX ? Number(clientX) : undefined,
+        clientY: clientY ? Number(clientY) : undefined,
+        points: Array.isArray(points) ? points : undefined,
+        submitPoint: submitPoint || undefined,
+        frameSeq: state.frameSeq || 0
+    };
+
+    if (state.waitingRequests && state.waitingRequests.length > 0) {
+        const { res, timer } = state.waitingRequests.shift();
+        clearTimeout(timer);
+        try {
+            if (!res.headersSent) {
+                res.json(clickData);
+            }
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // 交互锁与防积压：若当前 Playwright 暂时还在模拟上一动作或等待下一轮，
+    // 最多只保留最新 1 次点击，绝对不积压多个点击导致在新画面里“连点乱点”
+    state.pendingClicks = [clickData];
+    return true;
+}
+
+function notifyCaptchaDrag(jobKey, dragOptions = {}) {
+    if (!jobKey || !interactiveCaptchaMap.has(jobKey)) return false;
+    const state = interactiveCaptchaMap.get(jobKey);
+    if (!state || !state.active || state.contentReady === false || (state.expiresAt && Date.now() >= state.expiresAt)) return false;
+    if (!state.pendingClicks) state.pendingClicks = [];
+
+    // 版本/帧对齐：若携带了 frameSeq 且与当前活跃画面序号不匹配，丢弃失效旧画面的拖拽
+    if (dragOptions.frameSeq && state.frameSeq && Number(dragOptions.frameSeq) !== Number(state.frameSeq)) {
+        console.log(`[Captcha] 丢弃已失效旧画面(frameSeq=${dragOptions.frameSeq}, 当前=${state.frameSeq})的迟到拖拽`);
+        return false;
+    }
+
+    const fX = Number(dragOptions.fromRatioX ?? dragOptions.startRatioX ?? 0);
+    const fY = Number(dragOptions.fromRatioY ?? dragOptions.startRatioY ?? 0);
+    const tX = Number(dragOptions.toRatioX ?? dragOptions.endRatioX ?? 0);
+    const tY = Number(dragOptions.toRatioY ?? dragOptions.endRatioY ?? 0);
+
+    const dragData = {
+        success: true,
+        clicked: true,
+        action: 'drag',
+        fromRatioX: fX,
+        fromRatioY: fY,
+        toRatioX: tX,
+        toRatioY: tY,
+        startRatioX: fX,
+        startRatioY: fY,
+        endRatioX: tX,
+        endRatioY: tY,
+        frameSeq: Number(dragOptions.frameSeq || state.frameSeq || 0)
+    };
+
+    if (state.waitingRequests && state.waitingRequests.length > 0) {
+        const { res, timer } = state.waitingRequests.shift();
+        clearTimeout(timer);
+        try {
+            if (!res.headersSent) {
+                res.json(dragData);
+            }
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    state.pendingClicks = [dragData];
+    return true;
 }
 
 function unsubscribeTaskClient(jobKey, ws) {
@@ -251,19 +406,21 @@ async function sendTaskSnapshot(ws, jobKey) {
     }
     const media = extractTaskMediaFromOutput(task.raw_output || '');
 
-    ws.send(JSON.stringify({
+    ws.send(JSON.stringify(publicTaskUpdate({
         type: 'snapshot',
         jobKey,
         status: task.status,
         message: task.message,
         progress: Number(task.progress || 0),
+        paymentState: task.payment_state || 'not_started',
+        recoveryRequired: Boolean(task.recovery_required),
         cdkCode: task.cdk_code || null,
         phone: task.phone || null,
         cardLast4: task.card_last4 || null,
         screenshots: [...new Set([...storedMedia.screenshots, ...media.screenshots])],
         videos: [...new Set([...storedMedia.videos, ...media.videos])],
         isTerminal: TERMINAL_TASK_STATUSES.has(task.status)
-    }));
+    })));
 }
 
 function logTask(jobKey, message, level = 'log') {
@@ -417,8 +574,7 @@ function buildStoredSessionPayload(rawSession, sessionJson, token) {
     if (token) {
         return JSON.stringify({
             accessToken: token,
-            user: null,
-            expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+            user: null
         });
     }
     return rawSession;
@@ -726,9 +882,9 @@ function analyzeProcessOutput(output, timedOut) {
     const paymentState = paymentStateMatch?.length
         ? paymentStateMatch[paymentStateMatch.length - 1].split(':')[1]
         : (normalized.includes('支付结果未知') ? 'unknown' : null);
-    const success = normalized.includes('PAYMENT_SUCCESS') || normalized.includes('最终校验：支付成功') || normalized.includes('支付成功');
+    const success = normalized.includes('PAYMENT_SUCCESS') || normalized.includes('最终校验：支付成功');
 
-    if (paymentState === 'unknown') {
+    if (paymentState === 'unknown' || (paymentState === 'started' && !success)) {
         return {
             status: 'manual',
             message: '支付结果未确认，已保留 CDK 与银行卡，需人工复核',
@@ -741,6 +897,16 @@ function analyzeProcessOutput(output, timedOut) {
         };
     }
 
+    const failureState = success ? 'succeeded' : paymentState;
+    const guardedFailure = classifyChatGptAuthFailure(runtimeError, failureState)
+        || classifyCheckoutFailure(runtimeError, failureState)
+        || classifyProxyPreflightFailure(runtimeError, failureState)
+        || classifyClaudeNavigationFailure(runtimeError, failureState)
+        || classifyClaudeCheckoutReadinessFailure(runtimeError, failureState)
+        || classifyGrokFailure(runtimeError, failureState)
+        || classifyOpenAiCardMethodFailure(runtimeError, failureState);
+    if (guardedFailure) return guardedFailure;
+
     if (success) {
         return {
             status: 'success',
@@ -748,7 +914,8 @@ function analyzeProcessOutput(output, timedOut) {
             reachedPayment: true,
             shouldRetry: false,
             deletePhone: false,
-            deleteCard: false
+            deleteCard: false,
+            paymentState: 'succeeded'
         };
     }
 
@@ -1156,8 +1323,13 @@ function normalizeTaskProgress(progress, status = 'running', previous = 0) {
     return Math.max(Math.max(0, Number(previous) || 0), cappedProgress);
 }
 
-function runCheckoutScript(jobKey, scriptPath, env, attempt = 1, onProgress = null, onPaymentState = null) {
+function runCheckoutScript(jobKey, scriptPath, env, attempt = 1, onProgress = null, onPaymentState = null, abortSignal = null) {
     return new Promise((resolve) => {
+        if (abortSignal?.aborted) {
+            resolve({ attempt, code: null, signal: 'SIGTERM', timedOut: false, aborted: true,
+                timeoutReason: '', output: '', analysis: null });
+            return;
+        }
         logTask(jobKey, `启动子进程 attempt=${attempt} script=${scriptPath}`);
         const child = spawn('node', [scriptPath], {
             env,
@@ -1170,12 +1342,19 @@ function runCheckoutScript(jobKey, scriptPath, env, attempt = 1, onProgress = nu
         let finished = false;
         let timedOut = false;
         let timeoutReason = '';
+        let aborted = false;
+        let killTimer = null;
+        const diagnostic = checkoutDebugManager.has(jobKey);
 
         activeProcesses.add(child);
+        checkoutDebugManager.bindChild(jobKey, child);
         const cleanup = () => {
             activeProcesses.delete(child);
+            checkoutDebugManager.unbindChild(jobKey, child);
             if (idleTimer) clearTimeout(idleTimer);
             if (totalTimer) clearTimeout(totalTimer);
+            if (killTimer) clearTimeout(killTimer);
+            abortSignal?.removeEventListener('abort', abort);
         };
 
         const finish = (result) => {
@@ -1187,6 +1366,24 @@ function runCheckoutScript(jobKey, scriptPath, env, attempt = 1, onProgress = nu
             resolve({ attempt, ...result });
         };
 
+        const stopChild = () => {
+            try { child.kill('SIGTERM'); } catch (_) { }
+            if (!killTimer && !finished) killTimer = setTimeout(() => {
+                if (finished) return;
+                try { child.kill('SIGKILL'); } catch (_) { }
+                finish({ code: null, signal: 'SIGKILL', timedOut, aborted, timeoutReason, output,
+                    analysis: diagnostic ? null : analyzeProcessOutput(output, timedOut) });
+            }, 5000);
+        };
+        const abort = () => {
+            if (finished) return;
+            aborted = true;
+            output += '\n[DIAGNOSTIC_CANCELLED] 诊断已取消，未提交支付。\n';
+            stopChild();
+        };
+        abortSignal?.addEventListener('abort', abort, { once: true });
+        if (abortSignal?.aborted) abort();
+
         const resetIdleTimer = () => {
             if (idleTimer) {
                 clearTimeout(idleTimer);
@@ -1196,7 +1393,7 @@ function runCheckoutScript(jobKey, scriptPath, env, attempt = 1, onProgress = nu
                 timeoutReason = 'idle';
                 output += `\n[TIMEOUT] 超过 ${PROCESS_IDLE_TIMEOUT_MS / 1000} 秒没有打印，任务终止。\n`;
                 logTask(jobKey, `attempt=${attempt} 超过 ${PROCESS_IDLE_TIMEOUT_MS / 1000} 秒无输出，终止子进程`, 'warn');
-                child.kill();
+                stopChild();
             }, PROCESS_IDLE_TIMEOUT_MS);
         };
 
@@ -1205,7 +1402,9 @@ function runCheckoutScript(jobKey, scriptPath, env, attempt = 1, onProgress = nu
         const appendChunk = (source, chunk) => {
             const text = chunk.toString();
             output += text;
-            logTaskChunk(jobKey, attempt, source, text);
+            // Diagnostic protocol lines contain private checkout links. Only the
+            // structured, redacted report reaches diagnostic log persistence.
+            if (!diagnostic) logTaskChunk(jobKey, attempt, source, text);
             paymentStateBuffer += text;
             const matches = paymentStateBuffer.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)(?::[^\n\r]*)?/g) || [];
             if (matches.length && typeof onPaymentState === 'function') {
@@ -1231,18 +1430,16 @@ function runCheckoutScript(jobKey, scriptPath, env, attempt = 1, onProgress = nu
             timeoutReason = 'total';
             output += `\n[TOTAL_TIMEOUT] 任务总时长超过 ${PROCESS_TOTAL_TIMEOUT_MS / 1000} 秒，任务终止。\n`;
             logTask(jobKey, `attempt=${attempt} 超过 ${PROCESS_TOTAL_TIMEOUT_MS / 1000} 秒总时限，终止子进程`, 'warn');
-            try { child.kill('SIGTERM'); } catch (_) { }
-            setTimeout(() => {
-                if (!finished) {
-                    try { child.kill('SIGKILL'); } catch (_) { }
-                }
-            }, 5000).unref();
+            stopChild();
         }, PROCESS_TOTAL_TIMEOUT_MS);
         child.stdout.on('data', (chunk) => appendChunk('stdout', chunk));
         child.stderr.on('data', (chunk) => appendChunk('stderr', chunk));
         child.on('error', (error) => {
-            output += `\n[SPAWN_ERROR] ${error.message}\n`;
-            logTask(jobKey, `attempt=${attempt} 子进程启动失败: ${error.message}`, 'error');
+            const message = diagnostic ? redactDiagnosticLogs(error.message) : error.message;
+            output += `\n[SPAWN_ERROR] ${message}\n`;
+            logTask(jobKey, `attempt=${attempt} 子进程启动失败: ${message}`, 'error');
+            finish({ code: null, signal: null, timedOut, aborted, timeoutReason, output,
+                analysis: diagnostic ? null : analyzeProcessOutput(output, timedOut) });
         });
         child.on('close', (code, signal) => {
             cleanup();
@@ -1251,9 +1448,10 @@ function runCheckoutScript(jobKey, scriptPath, env, attempt = 1, onProgress = nu
                 code,
                 signal,
                 timedOut,
+                aborted,
                 timeoutReason,
                 output,
-                analysis: analyzeProcessOutput(output, timedOut)
+                analysis: diagnostic ? null : analyzeProcessOutput(output, timedOut)
             });
         });
     });
@@ -1647,6 +1845,151 @@ app.post('/api/public/subscription/check', async (req, res) => {
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
     }
+});
+
+// ==================== 交互式人机验证透传 API ====================
+// 内部 API：Playwright 进程向服务端推送验证画面提示
+app.post('/api/internal/captcha-prompt', (req, res) => {
+    try {
+        const { jobKey, image, width, height, title, message, promptZh, promptEn, loading, contentReady, expiresAt } = req.body || {};
+        if (!jobKey) {
+            return res.status(400).json({ success: false, message: 'jobKey is required' });
+        }
+        if (!image && !loading) {
+            return res.status(400).json({ success: false, message: 'image is required when not loading' });
+        }
+
+        const state = getOrCreateCaptchaState(jobKey);
+        state.image = image || null;
+        state.loading = Boolean(loading);
+        state.contentReady = contentReady !== false && !state.loading;
+        state.expiresAt = Number(expiresAt) || state.expiresAt || 0;
+        state.width = Number(width) || (state.image ? 400 : 0);
+        state.height = Number(height) || (state.image ? 500 : 0);
+        state.title = title || (state.loading ? '正在等待安全验证加载...' : '请协助完成人机验证');
+        state.message = message || (state.loading ? '正在检测官方人机验证弹窗，请稍候...' : '检测到官方人机验证，请点击画面中对应验证区域');
+        state.promptZh = promptZh || '';
+        state.promptEn = promptEn || '';
+        state.updatedAt = Date.now();
+        state.active = true;
+
+        // 核心优化 1：新画面就绪，自增画面序列号（用于时序防旧帧错位）
+        state.frameSeq = (state.frameSeq || 0) + 1;
+
+        // 核心优化 2：彻底清空前序画面的积压点击队列，严禁旧画面残留点击污染新画面！
+        state.pendingClicks = [];
+
+        broadcastToTask(jobKey, {
+            type: 'captcha_interactive_required',
+            jobKey,
+            image: state.image,
+            loading: state.loading,
+            contentReady: state.contentReady,
+            expiresAt: state.expiresAt,
+            frameSeq: state.frameSeq,
+            width: state.width,
+            height: state.height,
+            title: state.title,
+            message: state.message,
+            promptZh: state.promptZh,
+            promptEn: state.promptEn
+        });
+
+        return res.json({ success: true, frameSeq: state.frameSeq });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 内部 API：Playwright 进程挂起等待前端用户点击（长轮询）
+app.get('/api/internal/captcha-wait-click/:jobKey', (req, res) => {
+    const { jobKey } = req.params;
+    const timeoutMs = Math.min(Math.max(Number(req.query.timeout || 35000), 500), 60000);
+    const state = getOrCreateCaptchaState(jobKey);
+
+    if (state.pendingClicks && state.pendingClicks.length > 0) {
+        const clickData = state.pendingClicks.shift();
+        return res.json(clickData);
+    }
+
+    const timer = setTimeout(() => {
+        state.waitingRequests = state.waitingRequests.filter(item => item.res !== res);
+        if (!res.headersSent) {
+            res.json({ success: true, clicked: false, timeout: true });
+        }
+    }, timeoutMs);
+
+    state.waitingRequests.push({ res, timer });
+
+    req.on('close', () => {
+        clearTimeout(timer);
+        state.waitingRequests = state.waitingRequests.filter(item => item.res !== res);
+    });
+});
+
+// 内部 API：Playwright 进程报告验证清除或结束状态
+app.post('/api/internal/captcha-status', (req, res) => {
+    try {
+        const { jobKey, cleared, failed, reason, message } = req.body || {};
+        if (!jobKey) {
+            return res.status(400).json({ success: false, message: 'jobKey is required' });
+        }
+
+        const state = interactiveCaptchaMap.get(jobKey);
+        if (state) {
+            for (const item of state.waitingRequests) {
+                clearTimeout(item.timer);
+                try { item.res.json({ success: true, clicked: false, cancelled: true }); } catch (_) {}
+            }
+            state.waitingRequests = [];
+            state.pendingClicks = [];
+            state.active = false;
+            if (cleared || failed) {
+                interactiveCaptchaMap.delete(jobKey);
+            }
+        }
+
+        broadcastToTask(jobKey, {
+            type: 'captcha_interactive_status',
+            jobKey,
+            cleared: Boolean(cleared),
+            failed: Boolean(failed),
+            reason: reason || '',
+            message: message || (cleared ? '验证已通过' : (failed ? '验证失败' : '验证已结束'))
+        });
+
+        return res.json({ success: true });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 公开 API：前端用户点击坐标回传（HTTP 回退通道）
+app.post('/api/public/task/:jobKey/captcha-click', async (req, res) => {
+    const { jobKey } = req.params;
+    try {
+        if (await isCheckoutDiagnosticJob(jobKey)) return res.status(403).json({ success: false, message: '诊断任务需管理员二级验证' });
+    } catch (_) { return res.status(503).json({ success: false, message: '验证通道暂时不可用' }); }
+    const { ratioX, ratioY, clientX, clientY, frameSeq, points, submitPoint, action } = req.body || {};
+
+    const hasPoints = Array.isArray(points) && points.length > 0;
+    if (!hasPoints && (!Number.isFinite(Number(ratioX)) || !Number.isFinite(Number(ratioY)))) {
+        return res.status(400).json({ success: false, message: 'Invalid coordinates' });
+    }
+
+    const handled = notifyCaptchaClick(jobKey, { ratioX, ratioY, clientX, clientY, frameSeq, points, submitPoint, action });
+
+    broadcastToTask(jobKey, {
+        type: 'captcha_click_received',
+        jobKey,
+        ratioX: Number(ratioX || 0),
+        ratioY: Number(ratioY || 0),
+        pointsCount: hasPoints ? points.length : 0,
+        frameSeq: Number(frameSeq || 0),
+        handled
+    });
+
+    return res.json({ success: true, handled });
 });
 
 app.use('/api/admin', authenticateAdmin);
@@ -2180,7 +2523,7 @@ app.post('/api/admin/subscription/batch-renewal-status', async (req, res) => {
     }
 });
 
-app.get('/api/admin/screenshots', async (req, res) => {
+app.get('/api/admin/screenshots', requireSecondaryAuth, async (req, res) => {
     try {
         const rel = String(req.query.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
         if (!rel || rel.includes('..') || !rel.endsWith('.png')) {
@@ -2206,7 +2549,7 @@ app.get('/api/admin/screenshots', async (req, res) => {
     }
 });
 
-app.get('/api/admin/video', async (req, res) => {
+app.get('/api/admin/video', requireSecondaryAuth, async (req, res) => {
     try {
         const rel = String(req.query.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
         if (!rel || rel.includes('..') || !rel.endsWith('.webm')) {
@@ -2225,7 +2568,7 @@ app.get('/api/admin/video', async (req, res) => {
     }
 });
 
-app.get('/api/admin/screenshots/:subdir/:filename', async (req, res) => {
+app.get('/api/admin/screenshots/:subdir/:filename', requireSecondaryAuth, async (req, res) => {
     try {
         const subdir = path.basename(String(req.params.subdir || ''));
         const filename = path.basename(String(req.params.filename || ''));
@@ -2244,12 +2587,17 @@ app.get('/api/admin/screenshots/:subdir/:filename', async (req, res) => {
     }
 });
 
-app.delete('/api/admin/task-logs/:jobKey', async (req, res) => {
+app.delete('/api/admin/task-logs/:jobKey', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const jobKey = decodeURIComponent(String(req.params.jobKey || '').trim());
         if (!jobKey) {
             return res.status(400).json({ success: false, message: '缺少任务标识' });
+        }
+        const diagnostic = checkoutDebugManager.get(jobKey);
+        if (diagnostic) {
+            checkoutDebugManager.cancel(jobKey);
+            if (diagnostic.promise) await diagnostic.promise;
         }
         const { deleted, mediaDeleted } = await store.deleteTaskLogByJobKey(jobKey);
         if (!deleted) {
@@ -2443,118 +2791,16 @@ app.get('/api/admin/hcaptcha/logs', async (req, res) => {
     }
 });
 
-// ─── 第三方 GPT 代充 API 配置 ──────────────────────────────────────────────
-
-app.get('/api/admin/gpt-api', async (req, res) => {
-    try {
-        await ensureStoreReady();
-        const cfg = await store.getGptApiConfig();
-        const masked = gptApi.maskApiKey(cfg.api_key);
-        res.json({
-            success: true,
-            config: {
-                enabled: cfg.enabled,
-                base_url: cfg.base_url,
-                api_key_saved: Boolean(cfg.api_key),
-                api_key_preview: masked,
-                plan_key: cfg.plan_key,
-                country: cfg.country,
-                currency: cfg.currency
-            }
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-app.post('/api/admin/gpt-api', async (req, res) => {
-    try {
-        await ensureStoreReady();
-        const body = req.body || {};
-        await store.saveGptApiConfig({
-            enabled: Boolean(body.enabled),
-            base_url: body.base_url,
-            api_key: body.api_key,
-            plan_key: body.plan_key,
-            country: body.country,
-            currency: body.currency
-        });
-        res.json({ success: true, message: '第三方代充 API 配置已保存' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-app.post('/api/admin/gpt-api/test', async (req, res) => {
-    try {
-        await ensureStoreReady();
-        const body = req.body || {};
-        const saved = await store.getGptApiConfig();
-        const merged = {
-            base_url: String(body.base_url || '').trim() || saved.base_url,
-            api_key: String(body.api_key || '').trim() || saved.api_key
-        };
-        const result = await gptApi.testConnection(merged);
-        if (!result.success) {
-            return res.status(400).json({ success: false, message: result.error || '连接失败' });
-        }
-        res.json({ success: true, message: result.message, plans: result.plans, balance: result.balance });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-app.get('/api/admin/gpt-api/status', async (req, res) => {
-    try {
-        await ensureStoreReady();
-        const cfg = await store.getGptApiConfig();
-        // 本地银行卡池模式不依赖第三方代充 API；未启用时不得主动请求其 /plans 或 /balance。
-        if (!cfg.enabled) {
-            return res.json({
-                success: true,
-                enabled: false,
-                gpt_plans: [],
-                credit_plans: [],
-                balance: null,
-                balance_error: null,
-                recent_orders: [],
-                message: '第三方代充 API 未启用，当前使用本地银行卡池充值模式，不查询第三方积分或余额'
-            });
-        }
-        if (!cfg.api_key) {
-            return res.status(400).json({ success: false, message: '尚未配置第三方代充 API Key' });
-        }
-        const [plansResult, balanceResult, recentOrders] = await Promise.all([
-            gptApi.fetchPlans(cfg),
-            gptApi.queryBalance(cfg),
-            store.listRecentGptApiOrders(10)
-        ]);
-        if (!plansResult.success) {
-            return res.status(400).json({ success: false, message: `套餐查询失败: ${plansResult.error || '未知错误'}` });
-        }
-        const orders = recentOrders.map((order) => ({
-            job_key: order.job_key,
-            cdk_code: order.cdk_code,
-            status: order.status,
-            message: order.message,
-            updated_at: order.updated_at,
-            order_id: order.gpt_api_order_id,
-            task_id: order.gpt_api_task_id,
-            topup_code: order.gpt_api_topup_code || null
-        }));
-        res.json({
-            success: true,
-            enabled: true,
-            gpt_plans: plansResult.gptPlans,
-            credit_plans: plansResult.creditPlans,
-            balance: balanceResult.success ? balanceResult.data : null,
-            balance_error: balanceResult.success ? null : balanceResult.error,
-            recent_orders: orders
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
+// GPT 外包代充渠道：后台加载只读本地数据，供应商查询由管理员明确触发。
+const outsourceAdmin = createGptOutsourcingAdmin({ store, client: gptApi, service: gptOutsourcing,
+    ensureStoreReady, log: message => logTask('', message, 'warn') });
+app.get('/api/admin/gpt-api', outsourceAdmin.getConfig);
+app.post('/api/admin/gpt-api', outsourceAdmin.saveConfig);
+app.post('/api/admin/gpt-api/test', outsourceAdmin.test);
+app.get('/api/admin/gpt-api/status', outsourceAdmin.status);
+app.get('/api/admin/gpt-api/orders', outsourceAdmin.orders);
+app.post('/api/admin/gpt-api/orders/:jobKey/recheck', requireSecondaryAuth, outsourceAdmin.recheck);
+app.post('/api/admin/gpt-api/orders/:jobKey/credentials', requireSecondaryAuth, outsourceAdmin.credentials);
 
 app.post('/api/admin/config', async (req, res) => {
     try {
@@ -2616,131 +2862,228 @@ app.put('/api/admin/region', async (req, res) => {
 
 // ─── Checkout Link Debug API ────────────────────────────────────────────────
 
+function checkoutDiagnosticResponse(task) {
+    const report = sanitizeDiagnosticReport(parseDiagnosticOutput(task.raw_output || ''));
+    let storedMedia = [];
+    try {
+        const parsed = typeof task.failure_screenshots === 'string'
+            ? JSON.parse(task.failure_screenshots) : task.failure_screenshots;
+        if (Array.isArray(parsed)) storedMedia = parsed;
+    } catch (_) { /* optional media */ }
+    const media = extractTaskMediaFromOutput(task.raw_output || '');
+    const stored = splitTaskMediaPaths(storedMedia);
+    const jobKey = task.job_key || task.jobKey;
+    const captchaState = interactiveCaptchaMap.get(jobKey);
+    const captcha = captchaState?.active && (!captchaState.expiresAt || Date.now() < captchaState.expiresAt) ? {
+        active: true, image: captchaState.image || null, loading: Boolean(captchaState.loading),
+        contentReady: captchaState.contentReady !== false, expiresAt: Number(captchaState.expiresAt || 0),
+        frameSeq: Number(captchaState.frameSeq || 0), width: Number(captchaState.width || 0), height: Number(captchaState.height || 0),
+        title: redactDiagnosticLogs(captchaState.title || ''), message: redactDiagnosticLogs(captchaState.message || ''),
+        promptZh: redactDiagnosticLogs(captchaState.promptZh || ''), promptEn: redactDiagnosticLogs(captchaState.promptEn || '')
+    } : null;
+    return {
+        jobKey,
+        status: task.status, message: redactDiagnosticLogs(task.message || ''),
+        progress: Number(task.progress || 0), execution_mode: CHECKOUT_DIAGNOSTIC_MODE,
+        created_at: task.created_at || null, started_at: task.started_at || null,
+        finished_at: task.finished_at || null, report,
+        stages: report?.stages || report?.checks || [], checks: report?.checks || [], checkout: report?.checkout || null,
+        checkout_url: report?.checkout?.url || null,
+        captcha,
+        raw_output: redactDiagnosticLogs(task.raw_output || ''),
+        screenshots: [...new Set([...stored.screenshots, ...media.screenshots])],
+        videos: [...new Set([...stored.videos, ...media.videos])]
+    };
+}
+
+async function getCheckoutDiagnosticTask(jobKey) {
+    const rows = await store.runQuery(
+        `SELECT job_key, status, message, progress, raw_output, execution_mode,
+                failure_screenshots, created_at, started_at, finished_at
+         FROM task_logs WHERE job_key = ? AND execution_mode = ? LIMIT 1`,
+        [jobKey, CHECKOUT_DIAGNOSTIC_MODE]
+    );
+    return rows[0] || null;
+}
+
+async function isCheckoutDiagnosticJob(jobKey) {
+    if (checkoutDebugManager.has(jobKey)) return true;
+    await ensureStoreReady();
+    return Boolean(await getCheckoutDiagnosticTask(jobKey));
+}
+
+async function recoverInterruptedCheckoutDiagnostic(task) {
+    if (task.execution_mode !== CHECKOUT_DIAGNOSTIC_MODE) return false;
+    const previous = parseDiagnosticOutput(task.raw_output || '');
+    const message = '服务重启导致诊断中断，未提交支付';
+    const report = previous ? sanitizeDiagnosticReport(finishDiagnosticReport(previous, previous, {
+        code: 'DIAGNOSTIC_INTERRUPTED', message, success: false,
+        startedAt: previous.startedAt || task.started_at
+    })) : { version: 1, code: 'DIAGNOSTIC_INTERRUPTED', message, success: false, paymentSubmitted: false };
+    await store.updateTaskLog(task.job_key, {
+        status: 'failed', message, paymentState: 'not_started', recoveryRequired: false,
+        executionMode: CHECKOUT_DIAGNOSTIC_MODE,
+        rawOutput: appendDiagnosticReport(redactDiagnosticLogs(task.raw_output || ''), report)
+    });
+    return true;
+}
+
+function sendCheckoutDiagnosticError(res, error) {
+    return res.status(error.statusCode || 500).json({
+        success: false, code: error.code || 'DIAGNOSTIC_ERROR',
+        error: redactDiagnosticLogs(error.message || '诊断请求失败')
+    });
+}
+
 app.get('/api/admin/checkout/plans', async (req, res) => {
     try {
         await ensureStoreReady();
-        const regionCode = await store.getPaymentRegion();
-        const config = REGION_CONFIG[regionCode] || REGION_CONFIG.PH;
-        res.json({
-            success: true,
-            plans: store.PLAN_NAME_MAP,
-            resolved: {
-                plus: store.resolvePlanName('plus'),
-                pro_5x: store.resolvePlanName('pro_5x'),
-                pro_20x: store.resolvePlanName('pro_20x')
-            },
-            region: regionCode,
-            currency: config.currency,
-            label: config.label
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
+        const catalog = getDiagnosticCatalog();
+        const configuredRegion = String(await store.getPaymentRegion()).toUpperCase();
+        const defaultRegion = catalog.regions.some(region => region.id === configuredRegion)
+            ? configuredRegion : catalog.defaultRegion;
+        const rechargeConfig = await store.getGptApiConfig();
+        const configuredRechargeMode = rechargeConfig.enabled && Boolean(rechargeConfig.api_key)
+            ? 'third_party_api' : 'local_card_pool';
+        res.json({ success: true, ...catalog, defaultRegion, configuredRechargeMode });
+    } catch (error) { sendCheckoutDiagnosticError(res, error); }
 });
 
-app.post('/api/admin/checkout/generate', async (req, res) => {
+app.post('/api/admin/checkout/generate', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const body = req.body || {};
-        const rawSession = String(body.session || '').trim();
-        if (!rawSession) {
-            return res.status(400).json({ success: false, error: '请提供 Session JSON' });
-        }
-
-        const sessionJson = parseSessionJson(rawSession);
-        const token = normalizeSessionToken(rawSession);
-        if (!token) {
-            return res.status(400).json({ success: false, error: 'Session 无效，无法提取 accessToken' });
-        }
-        const tokenCheck = validateAccessToken(token);
-        if (!tokenCheck.valid) {
-            return res.status(400).json({ success: false, error: tokenCheck.message });
-        }
-
-        const planType = String(body.plan_type || 'plus').trim();
-        const planNameOverride = body.plan_name ? String(body.plan_name).trim() : '';
-        const resolvedPlanName = planNameOverride || store.resolvePlanName(planType);
-        const regionCode = String(body.country || body.region || await store.getPaymentRegion()).toUpperCase();
-        if (!isSupportedRegion(regionCode)) {
-            return res.status(400).json({ success: false, error: `不支持的地区: ${regionCode}` });
-        }
-
-        const storedSession = buildStoredSessionPayload(rawSession, sessionJson, token);
-        const email = extractEmailFromSession(sessionJson);
-        const task = await store.createTaskLog({
-            tokenPreview: extractSessionPreview(storedSession),
-            sessionPayload: storedSession,
-            cdkCode: '[checkout-debug]',
-            phone: null,
-            cardLast4: null,
-            status: 'running',
-            progress: 5
+        const input = resolveDiagnosticInput({
+            body, defaultRegion: await store.getPaymentRegion(),
+            validateChatGpt: raw => {
+                const token = normalizeSessionToken(raw);
+                const tokenCheck = validateAccessToken(token);
+                if (!tokenCheck.valid) throw diagnosticError('DIAGNOSTIC_CREDENTIAL_INVALID', tokenCheck.message);
+                return { token, storedSession: buildStoredSessionPayload(raw, parseSessionJson(raw), token) };
+            }
         });
-
-        await store.updateTaskLog(task.jobKey, {
-            status: 'running',
-            message: `支付链接调试：${planType} / ${regionCode}`,
-            progress: 5
+        validateCdkPlan(input.planType, input.platform, { activation: true });
+        const requestId = body.request_id == null || body.request_id === '' ? crypto.randomUUID() : String(body.request_id).trim();
+        if (!/^[A-Za-z0-9._:-]{1,128}$/.test(requestId)) {
+            throw diagnosticError('DIAGNOSTIC_REQUEST_ID_INVALID', 'request_id 格式无效');
+        }
+        const requestKey = `${req.admin?.email || 'admin'}:${requestId}`;
+        const fingerprint = crypto.createHash('sha256').update(JSON.stringify({
+            platform: input.platform, planType: input.planType, region: input.region, mode: input.mode,
+            session: input.storedSession, token: input.token, planName: input.planNameOverride || ''
+        })).digest('hex');
+        const result = await checkoutDebugManager.submit(requestKey, fingerprint, async () => {
+            const maintenance = await store.getMaintenanceModeState();
+            if (maintenance.enabled) throw diagnosticError('MAINTENANCE', '系统维护中，请稍后再试', 503);
+            const maximum = Math.max(1, Number(await store.getMaxConcurrentActivations()) || 1);
+            // The check and reservation must occur together before task creation can yield.
+            const reservation = `checkout-diagnostic:${crypto.randomUUID()}`;
+            if (activeForegroundJobs.size >= maximum) throw diagnosticError('CONCURRENCY_LIMIT', '当前任务过多，请稍后再试', 429);
+            reserveForegroundSlot(reservation);
+            let task = null;
+            let dispatched = false;
+            try {
+                task = await store.createTaskLog({
+                    tokenPreview: input.tokenPreview, sessionPayload: input.storedSession,
+                    cdkCode: '[checkout-diagnostic]', phone: null, cardLast4: null,
+                    status: 'running', progress: 1, paymentState: 'not_started',
+                    executionMode: CHECKOUT_DIAGNOSTIC_MODE
+                });
+                const entry = checkoutDebugManager.register(task.jobKey, input);
+                reserveForegroundSlot(task.jobKey);
+                releaseForegroundSlot(reservation);
+                await store.updateTaskLog(task.jobKey, {
+                    status: 'running', message: `Checkout 诊断：${input.platform} / ${input.planType} / ${input.region}`,
+                    progress: 1, executionMode: CHECKOUT_DIAGNOSTIC_MODE,
+                    rawOutput: appendDiagnosticReport('', pendingDiagnosticReport(input, entry.startedAt))
+                });
+                entry.promise = spawnCheckoutDebugWorker({ task, input, entry });
+                dispatched = true;
+                return { success: true, jobKey: task.jobKey, request_id: requestId,
+                    email: input.email || null, message: 'Checkout 诊断任务已启动' };
+            } catch (error) {
+                if (task) {
+                    checkoutDebugManager.complete(task.jobKey);
+                    releaseForegroundSlot(task.jobKey);
+                    await store.updateTaskLog(task.jobKey, { status: 'failed', progress: 1,
+                        message: redactDiagnosticLogs(error.message), executionMode: CHECKOUT_DIAGNOSTIC_MODE }).catch(() => {});
+                }
+                throw error;
+            } finally {
+                if (!dispatched) releaseForegroundSlot(reservation);
+            }
         });
-
-        logTask(task.jobKey, `支付链接调试任务已创建 plan=${planType} plan_name=${resolvedPlanName} region=${regionCode} email=${email || '-'}`);
-        spawnCheckoutDebugWorker({
-            task,
-            token,
-            sessionRaw: storedSession,
-            planType,
-            region: regionCode,
-            planNameOverride: resolvedPlanName,
-            email
-        });
-
-        return res.json({
-            success: true,
-            jobKey: task.jobKey,
-            email: email || null,
-            message: '浏览器调试任务已启动，请查看下方运行日志'
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
+        return res.json(result);
+    } catch (error) { return sendCheckoutDiagnosticError(res, error); }
 });
 
-app.get('/api/admin/checkout/status/:jobKey', async (req, res) => {
+app.get('/api/admin/checkout/status/:jobKey', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
-        const jobKey = decodeURIComponent(String(req.params.jobKey || '').trim());
-        if (!jobKey) {
-            return res.status(400).json({ success: false, error: '缺少 jobKey' });
+        const jobKey = String(req.params.jobKey || '').trim();
+        if (!jobKey) throw diagnosticError('DIAGNOSTIC_JOB_INVALID', '缺少 jobKey');
+        const task = await getCheckoutDiagnosticTask(jobKey);
+        if (!task) throw diagnosticError('DIAGNOSTIC_NOT_FOUND', '诊断任务不存在', 404);
+        res.json({ success: true, ...checkoutDiagnosticResponse(task) });
+    } catch (error) { sendCheckoutDiagnosticError(res, error); }
+});
+
+app.get('/api/admin/checkout/history', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const page = Math.min(100000, Math.max(1, Math.floor(Number(req.query.page) || 1)));
+        const limit = Math.min(100, Math.max(1, Math.floor(Number(req.query.limit) || 20)));
+        const tasks = await store.runQuery(
+            `SELECT job_key, status, message, progress, raw_output, execution_mode,
+                    failure_screenshots, created_at, started_at, finished_at
+             FROM task_logs WHERE execution_mode = ? ORDER BY id DESC LIMIT ? OFFSET ?`,
+            [CHECKOUT_DIAGNOSTIC_MODE, limit, (page - 1) * limit]
+        );
+        const counts = await store.runQuery('SELECT COUNT(*) AS total FROM task_logs WHERE execution_mode = ?', [CHECKOUT_DIAGNOSTIC_MODE]);
+        res.json({ success: true, tasks: tasks.map(checkoutDiagnosticResponse), total: Number(counts[0]?.total || 0), page, limit });
+    } catch (error) { sendCheckoutDiagnosticError(res, error); }
+});
+
+app.post('/api/admin/checkout/cancel/:jobKey', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const jobKey = String(req.params.jobKey || '').trim();
+        if (!jobKey) throw diagnosticError('DIAGNOSTIC_JOB_INVALID', '缺少 jobKey');
+        const task = await getCheckoutDiagnosticTask(jobKey);
+        if (!task) throw diagnosticError('DIAGNOSTIC_NOT_FOUND', '诊断任务不存在', 404);
+        const entry = checkoutDebugManager.get(jobKey);
+        const cancelled = checkoutDebugManager.cancel(jobKey);
+        if (entry?.promise) await entry.promise;
+        res.json({ success: true, jobKey, cancelled, message: cancelled ? '诊断已取消' : '诊断任务已结束' });
+    } catch (error) { sendCheckoutDiagnosticError(res, error); }
+});
+
+app.post('/api/admin/checkout/captcha-click/:jobKey', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const jobKey = String(req.params.jobKey || '').trim();
+        if (!await getCheckoutDiagnosticTask(jobKey)) throw diagnosticError('DIAGNOSTIC_NOT_FOUND', '诊断任务不存在', 404);
+        const { ratioX, ratioY, clientX, clientY, frameSeq, points, submitPoint, action } = req.body || {};
+        if (!(Array.isArray(points) && points.length) && (!Number.isFinite(Number(ratioX)) || !Number.isFinite(Number(ratioY)))) {
+            throw diagnosticError('DIAGNOSTIC_CAPTCHA_COORDINATES', '无效的验证坐标');
         }
-        const task = await store.getTaskStatus(jobKey);
-        if (!task) {
-            return res.status(404).json({ success: false, error: '任务不存在' });
-        }
-        const checkoutUrl = extractCheckoutUrlFromOutput(task.raw_output || '');
-        let screenshots = [];
-        if (task.failure_screenshots) {
-            try {
-                const parsed = JSON.parse(task.failure_screenshots);
-                if (Array.isArray(parsed)) screenshots = parsed;
-            } catch (_) { /* ignore */ }
-        }
-        if (!screenshots.length) {
-            screenshots = extractScreenshotsFromOutput(task.raw_output || '');
-        }
-        const videos = extractVideosFromOutput(task.raw_output || '');
-        res.json({
-            success: true,
-            jobKey,
-            status: task.status,
-            message: task.message,
-            progress: Number(task.progress || 0),
-            checkout_url: checkoutUrl || null,
-            screenshots,
-            videos
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
+        const handled = notifyCaptchaClick(jobKey, { ratioX, ratioY, clientX, clientY, frameSeq, points, submitPoint, action });
+        res.json({ success: true, handled });
+    } catch (error) { sendCheckoutDiagnosticError(res, error); }
+});
+
+app.post('/api/admin/checkout/captcha-drag/:jobKey', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const jobKey = String(req.params.jobKey || '').trim();
+        if (!await getCheckoutDiagnosticTask(jobKey)) throw diagnosticError('DIAGNOSTIC_NOT_FOUND', '诊断任务不存在', 404);
+        const { fromRatioX, fromRatioY, startRatioX, startRatioY, toRatioX, toRatioY, endRatioX, endRatioY, frameSeq } = req.body || {};
+        const coordinates = [fromRatioX ?? startRatioX, fromRatioY ?? startRatioY, toRatioX ?? endRatioX, toRatioY ?? endRatioY].map(Number);
+        if (!coordinates.every(Number.isFinite)) throw diagnosticError('DIAGNOSTIC_CAPTCHA_COORDINATES', '无效的验证坐标');
+        const handled = notifyCaptchaDrag(jobKey, { fromRatioX: coordinates[0], fromRatioY: coordinates[1],
+            toRatioX: coordinates[2], toRatioY: coordinates[3], frameSeq });
+        res.json({ success: true, handled });
+    } catch (error) { sendCheckoutDiagnosticError(res, error); }
 });
 
 // ─── Card Pool Management API ───────────────────────────────────────────────
@@ -2817,6 +3160,34 @@ app.delete('/api/admin/cards/:id', requireSecondaryAuth, async (req, res) => {
             return res.status(404).json({ success: false, error: '卡片不存在' });
         }
         res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.post('/api/admin/cards/:id/reset-cooldown', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const cardId = Number(req.params.id);
+        if (!cardId || !Number.isFinite(cardId)) {
+            return res.status(400).json({ success: false, error: '无效的卡片 ID' });
+        }
+        const result = await store.runExecute(
+            `UPDATE card_assets
+             SET cooldown_until = NULL,
+                 daily_usage_count = 0,
+                 status = '正常',
+                 is_active = 1,
+                 in_use = 0,
+                 locked_at = NULL,
+                 locked_by = NULL
+             WHERE id = ?`,
+            [cardId]
+        );
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, error: '卡片不存在' });
+        }
+        res.json({ success: true, message: '卡片已重置并恢复正常可用' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -3023,14 +3394,23 @@ app.post('/api/admin/cdks/generate', requireSecondaryAuth, async (req, res) => {
         await ensureStoreReady();
         const count = req.body?.count;
         const planType = req.body?.plan_type || 'plus';
+        const platform = req.body?.platform || (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(planType) : 'chatgpt');
+        const paymentRegion = req.body?.payment_region || req.body?.region || null;
         const newCdks = createCdks(count);
-        const result = await store.insertCdks(newCdks, { type: '自助', plan_type: planType });
+        const result = await store.insertCdks(newCdks, {
+            type: '自助',
+            plan_type: planType,
+            platform,
+            payment_region: paymentRegion
+        });
         res.json({
             success: true,
             message: `成功生成 ${result.insertedCount} 个自助 CDK`,
             cdks: newCdks,
             insertedCount: result.insertedCount,
-            plan_type: planType
+            plan_type: planType,
+            platform,
+            payment_region: paymentRegion
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -3046,7 +3426,14 @@ app.post('/api/admin/cdks/import', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const planType = req.body?.plan_type || 'plus';
-        const summary = await store.insertCdks(cdks, { plan_type: planType });
+        const platform = req.body?.platform || (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(planType) : 'chatgpt');
+        const paymentRegion = req.body?.payment_region || req.body?.region || null;
+        const summary = await store.insertCdks(cdks, {
+            type: '自助',
+            plan_type: planType,
+            platform,
+            payment_region: paymentRegion
+        });
         res.json({
             success: true,
             message: `导入完成，新增 ${summary.insertedCount} 个，重复 ${summary.duplicateCount} 个`,
@@ -3167,341 +3554,193 @@ async function syncBrowserPoolModeFromStore() {
     return { ...info, mode: 'pool' };
 }
 
-async function spawnWorkerWithBrowser({ jobKey, runtimeEnv, runScript }) {
+async function spawnWorkerWithBrowser({ jobKey, runtimeEnv, runScript, signal = null }) {
+    throwIfDiagnosticAborted(signal);
     const poolEnabled = browserPool.getRuntimeEnabled();
     if (!poolEnabled) {
         logTask(jobKey, '浏览器模式: 独立启动（后台已关闭浏览器池）');
+        throwIfDiagnosticAborted(signal);
         return runScript(buildWorkerRuntimeEnv(runtimeEnv, null, 'standalone'));
     }
-    return browserPool.withBrowserSlot(jobKey, async (poolSlot) => {
-        if (poolSlot) {
-            logTask(jobKey, `浏览器模式: 池 slot=${poolSlot.slotId} ${poolSlot.cdpUrl}`);
-        } else {
-            logTask(jobKey, '浏览器模式: 池未就绪，回退独立启动');
-        }
+    const operation = browserPool.withBrowserSlot(jobKey, async (poolSlot) => {
+        // A cancelled queued request must never launch a child after its slot arrives.
+        throwIfDiagnosticAborted(signal);
+        if (poolSlot) logTask(jobKey, `浏览器模式: 池 slot=${poolSlot.slotId}`);
+        else logTask(jobKey, '浏览器模式: 池未就绪，回退独立启动');
         const mode = poolSlot ? 'pool' : 'standalone';
         return runScript(buildWorkerRuntimeEnv(runtimeEnv, poolSlot, mode));
-    });
+    }, signal);
+    // Await active children so they finish shutting down before their slot is released.
+    // The pool receives the signal to remove queued waiters immediately.
+    return operation;
 }
 
-function spawnCheckoutDebugWorker({ task, token, sessionRaw, planType, region, planNameOverride, email }) {
-    (async () => {
-        const checkoutScript = path.join(__dirname, 'index.js');
-        try {
-            const proxy = await store.getActiveProxy();
-            const hcaptchaCfg = await store.getHcaptchaConfig();
-            const { env: hcaptchaEnv } = buildHcaptchaEnvFromConfig(hcaptchaCfg);
-            const runtimeEnv = {
-                ...process.env,
-                ...hcaptchaEnv,
-                CHECKOUT_DEBUG_ONLY: '1',
-                CHECKOUT_MODE: 'api',
-                CHATGPT_TOKEN: token,
-                CHATGPT_SESSION_JSON: String(sessionRaw || '').startsWith('{') ? sessionRaw : '',
-                CDK_PLAN_TYPE: planType,
-                PAYMENT_REGION_OVERRIDE: region,
-                PLAN_NAME_OVERRIDE: planNameOverride || '',
-                CDK_CODE: '',
-                ACTIVATION_EMAIL: email || '',
-                PROXY: proxy
-            };
-
-            logTask(task.jobKey, `启动 Playwright 浏览器 proxy=${proxy ? 'yes' : 'no'}`);
-            const run = await spawnWorkerWithBrowser({
-                jobKey: task.jobKey,
-                runtimeEnv,
-                runScript: (workerEnv) => runCheckoutScript(task.jobKey, checkoutScript, workerEnv, 1, async (progress) => {
-                    if (progress > 0) {
-                        await store.updateTaskLog(task.jobKey, {
-                            status: 'running',
-                            message: '浏览器调试进行中...',
-                            progress: Math.min(progress, 99)
-                        });
-                    }
-                })
-            });
-
-            const analysis = analyzeCheckoutDebugOutput(run.output, run.timedOut);
-            const checkoutUrl = analysis.checkoutUrl || extractCheckoutUrlFromOutput(run.output);
-            const failureScreenshots = extractScreenshotsFromOutput(run.output);
-            const finalStatus = analysis.status || 'failed';
-            const finalProgress = finalStatus === 'success' ? 100 : Math.min(getCheckoutProgress(run.output, finalStatus), 99);
-            const finalMessage = finalStatus === 'success' && checkoutUrl
-                ? `支付链接: ${checkoutUrl}`
-                : (analysis.message || '支付链接调试失败');
-
-            await store.updateTaskLog(task.jobKey, {
-                status: finalStatus,
-                message: finalMessage,
-                rawOutput: run.output,
-                progress: finalProgress,
-                failureScreenshots,
-                paymentState: finalPaymentState,
-                recoveryRequired: finalPaymentState === 'unknown'
-            });
-
-            logTask(
-                task.jobKey,
-                `调试结束 status=${finalStatus} url=${checkoutUrl ? 'yes' : 'no'} screenshots=${failureScreenshots.length}`
-            );
-        } catch (error) {
-            console.error(`[Checkout Debug] ${task.jobKey}:`, error);
-            logTask(task.jobKey, `调试任务异常: ${error.message}`, 'error');
-            await store.updateTaskLog(task.jobKey, {
-                status: 'failed',
-                message: error.message,
-                progress: 0
-            });
-        }
-    })();
-}
-
-/**
- * 第三方 GPT 代充 API 任务 Worker（协议见 协议api.md）
- *
- * 流程：
- * 1. 读取后台配置（base_url / api_key / plan_key / country / currency / enabled）
- * 2. 从银行卡池预留一张卡作为 new_card（可选，失败则跳过）
- * 3. POST /pay 提交代充（带 Idempotency-Key = `cdk-${cdk}`）
- * 4. 轮询订单/任务状态，直到终态（success / failed）
- * 5. 将结果写回 task_logs（含 gpt_api_order_id / gpt_api_task_id / gpt_api_raw）
- */
-const GPT_API_PLAN_MAP = Object.freeze({ plus: 'plus', pro_5x: 'pro5x', pro_20x: 'pro20x' });
-
-function mapGptApiPlanKey(planType) {
-    return GPT_API_PLAN_MAP[String(planType || '').trim()] || 'plus';
-}
-
-function parseCardExpiry(value) {
-    const match = String(value || '').trim().match(/^(0?[1-9]|1[0-2])\s*\/?\s*(\d{2}|\d{4})$/);
-    if (!match) throw new Error('银行卡有效期格式错误，应为 MMYY、MM/YY 或 MM/YYYY');
-    const year = Number(match[2].length === 2 ? `20${match[2]}` : match[2]);
-    return { month: Number(match[1]), year };
-}
-
-async function runGptApiWorker({ task, token, session, cdk, planType }) {
+async function spawnCheckoutDebugWorker({ task, input, entry }) {
     const { jobKey } = task;
-    const sessionPayload = session && typeof session === 'object'
-        ? session
-        : { access_token: token };
-    const accountEmail = task.tokenPreview || '';
-    let shouldRollbackCdk = true;
-    let reservedCard = null;
-
-    const setProgress = async (status, progress, message, extra = {}) => {
-        await store.updateTaskLog(jobKey, { status, progress, message, ...extra });
-        broadcastToTask(jobKey, {
-            type: status === 'running' ? 'progress' : 'status',
-            jobKey,
-            status,
-            progress,
-            message,
-            cdkCode: cdk
+    const signal = entry.controller.signal;
+    const startedAt = entry.startedAt;
+    const secrets = [input.token, input.storedSession];
+    let latestReport = null;
+    let liveOutput = '';
+    let progressWrites = Promise.resolve();
+    let pendingProgress = null;
+    let progressTimer = null;
+    let lastProgressReport = '';
+    let lastProgressWriteAt = 0;
+    let progressWriteError = null;
+    let progressClosed = false;
+    const readReport = output => {
+        const report = parseDiagnosticOutput(output);
+        return report && ['platform', 'planType', 'region', 'mode'].every(key => report[key] === input[key]) ? report : null;
+    };
+    const persist = async (report, status, rawOutput, media = { screenshots: [], videos: [] }) => {
+        const cleanReport = sanitizeDiagnosticReport(report, secrets);
+        const output = redactDiagnosticLogs(rawOutput, secrets);
+        await store.updateTaskLog(jobKey, {
+            status, message: redactDiagnosticLogs(cleanReport?.message || 'Checkout 诊断进行中', secrets),
+            rawOutput: appendDiagnosticReport(output, cleanReport), progress: diagnosticProgress(cleanReport),
+            executionMode: CHECKOUT_DIAGNOSTIC_MODE, failureScreenshots: [...media.screenshots, ...media.videos],
+            paymentState: 'not_started', recoveryRequired: false
         });
     };
-
+    const closeProgress = () => {
+        progressClosed = true;
+        if (progressTimer) clearTimeout(progressTimer);
+        progressTimer = null;
+    };
+    const saveProgress = (force = false) => {
+        if (progressClosed || signal.aborted || !pendingProgress) return;
+        const reportKey = JSON.stringify(pendingProgress.report);
+        const elapsed = Date.now() - lastProgressWriteAt;
+        if (!force && reportKey === lastProgressReport && elapsed < 500) {
+            if (!progressTimer) progressTimer = setTimeout(() => {
+                progressTimer = null;
+                saveProgress(true);
+            }, 500 - elapsed);
+            return;
+        }
+        if (progressTimer) clearTimeout(progressTimer);
+        progressTimer = null;
+        lastProgressReport = reportKey;
+        lastProgressWriteAt = Date.now();
+        const { report, output } = pendingProgress;
+        progressWrites = progressWrites.then(async () => {
+            if (signal.aborted) return;
+            await persist(report, 'running', output, extractTaskMediaFromOutput(output));
+        }).catch(error => { progressWriteError = error; });
+    };
     try {
-        const cfg = await store.getGptApiConfig();
-        if (!cfg.enabled) {
-            throw new Error('第三方代充 API 未启用，请在后台「系统配置」中开启并填写 API 地址与 Key');
-        }
-        if (!cfg.api_key) {
-            throw new Error('第三方代充 API Key 未配置');
-        }
-
-        const apiPlanKey = mapGptApiPlanKey(planType);
-        await setProgress('running', 10, '正在检查 Session 格式...');
-        const inspect = await gptApi.inspectPay(cfg, {
-            planKey: apiPlanKey,
-            session: sessionPayload
-        });
-        if (!inspect.success) {
-            const statusText = inspect.status ? ` (HTTP ${inspect.status})` : '';
-            const detail = [inspect.error, inspect.reason, inspect.upstreamStatus ? `upstream ${inspect.upstreamStatus}` : ''].filter(Boolean).join(' / ');
-            throw new Error(`Session 格式或有效期检查失败${statusText}: ${detail || 'session_invalid'}`);
-        }
-        logTask(jobKey, 'Session 本機格式／有效期檢查通過；第三方代充服務將於代充任務中驗證登入狀態');
-
-        const proxy = await store.getActiveProxy();
-        logTask(jobKey, proxy
-            ? `第三方 API 协议代理 ${maskProxyForLog(proxy)}`
-            : '第三方 API 使用平台启用代理池');
-
-        // 本機检查通过后才从卡池预留一张卡，避免无效 Session 占用资产。
-        let newCard = null;
-        reservedCard = await store.reserveCard(`gptapi_${jobKey}`);
-        if (!reservedCard) {
-            throw new Error('银行卡池暂无可用卡片，请在后台「银行卡池」导入银行卡后再试');
-        }
-        const expiry = parseCardExpiry(reservedCard.card_expiry);
-        newCard = {
-            number: reservedCard.card_number,
-            exp_month: expiry.month,
-            exp_year: expiry.year,
-            cvc: reservedCard.card_cvc,
-            name: reservedCard.card_holder || 'API User',
-            country: cfg.country || 'PH'
-        };
-        logTask(jobKey, `第三方 API 使用卡池预留卡 ...${String(reservedCard.card_number || '').slice(-4)}`);
-
-        // 套餐从 CDK 的 plan_type 同步；国家币种使用协议默认值（PH / PHP）
-        await setProgress('running', 20, '正在提交代充订单...');
-        const idempotencyKey = `cdk-${cdk}`;
-        const submit = await gptApi.submitPay(cfg, {
-            planKey: apiPlanKey,
-            session: sessionPayload,
-            country: cfg.country,
-            currency: cfg.currency,
-            newCard,
-            proxy,
-            clientRef: `kc-cdk-${cdk}-${jobKey}`,
-            idempotencyKey
-        });
-
-        if (!submit.success) {
-            const statusText = submit.status ? ` (HTTP ${submit.status})` : '';
-            const detail = submit.error
-                || (submit.data && typeof submit.data === 'object' ? JSON.stringify(submit.data).slice(0, 300) : '');
-            throw new Error(`代充提交失败${statusText}: ${detail || '未知错误'}`);
-        }
-
-        const orderId = submit.orderId || submit.taskId || submit.id;
-        const taskId = submit.taskId || null;
-        if (!orderId) {
-            throw new Error(`代充提交成功但未返回订单号: ${JSON.stringify(submit.data).slice(0, 300)}`);
-        }
-
-        await setProgress('running', 35, `代充订单已创建 ${orderId}，正在等待第三方代充服务处理...`, {
-            gptApiOrderId: orderId,
-            gptApiTaskId: taskId,
-            gptApiRaw: JSON.stringify(submit.data),
-            gptApiTopupCode: submit.topupCode
-        });
-
-        // 轮询状态
-        let finalStatus = 'running';
-        let finalMessage = '第三方代充进行中';
-        let lastRaw = submit.data;
-        const maxPolls = Number(process.env.GPT_API_MAX_POLLS || 120);
-        const pollIntervalMs = Number(process.env.GPT_API_POLL_INTERVAL_MS || 5000);
-
-        for (let poll = 1; poll <= maxPolls; poll += 1) {
-            await sleep(pollIntervalMs);
-
-            let queryRes = null;
-            if (taskId) {
-                queryRes = await gptApi.queryTask(cfg, taskId);
-            }
-            if (!queryRes || !queryRes.success || !queryRes.rawStatus) {
-                queryRes = await gptApi.queryOrder(cfg, orderId);
-            }
-
-            if (!queryRes || !queryRes.success) {
-                logTask(jobKey, `状态轮询第 ${poll} 次失败: ${queryRes?.error || '未知错误'}`, 'warn');
-                continue;
-            }
-
-            lastRaw = queryRes.data;
-            const rawStatus = String(queryRes.rawStatus || '').toLowerCase();
-            const progress = Math.min(95, 40 + poll);
-
-            if (isTerminalGptApiStatus(rawStatus)) {
-                const businessResult = lastRaw && typeof lastRaw.result === 'object' ? lastRaw.result : {};
-                const succeeded = businessResult.ok === false ? false : isSuccessGptApiStatus(rawStatus);
-                const failureDetail = businessResult.error || lastRaw?.error || businessResult.status || rawStatus || 'unknown';
-                finalStatus = succeeded ? 'success' : 'failed';
-                finalMessage = succeeded ? '第三方代充开通成功' : `第三方代充失败: ${failureDetail}`;
-                await setProgress(
-                    finalStatus,
-                    succeeded ? 100 : 99,
-                    finalMessage,
-                    {
-                        gptApiRaw: JSON.stringify(lastRaw),
-                        gptApiTopupCode: gptApi.extractTopupCode(lastRaw)
+        throwIfDiagnosticAborted(signal);
+        const proxy = await waitForDiagnosticAbort(store.getActiveProxy(), signal);
+        const hcaptchaCfg = await waitForDiagnosticAbort(store.getHcaptchaConfig(), signal);
+        const { env: hcaptchaEnv } = buildHcaptchaEnvFromConfig(hcaptchaCfg);
+        throwIfDiagnosticAborted(signal);
+        const runtimeEnv = buildDiagnosticRuntimeEnv(input, { ...process.env, ...hcaptchaEnv, PROXY: proxy }, jobKey);
+        logTask(jobKey, `启动 Checkout 诊断 platform=${input.platform} plan=${input.planType} region=${input.region} mode=${input.mode}`);
+        const run = await spawnWorkerWithBrowser({
+            jobKey, runtimeEnv, signal,
+            runScript: workerEnv => runCheckoutScript(jobKey, path.join(__dirname, 'index.js'), workerEnv, 1,
+                (_progress, output) => {
+                    liveOutput = output;
+                    const report = readReport(output);
+                    if (report) latestReport = report;
+                    // Never persist a partial final line: a credential split across
+                    // stdout chunks must be fully available to the redactor first.
+                    if (report) {
+                        pendingProgress = { report, output: output.slice(0, output.lastIndexOf('\n') + 1) };
+                        saveProgress();
                     }
-                );
-                break;
+                    return progressWrites;
+                }, null, signal)
+        });
+        liveOutput = run.output || liveOutput;
+        closeProgress();
+        await progressWrites;
+        if (progressWriteError) throw progressWriteError;
+        latestReport = readReport(liveOutput) || latestReport;
+        const aborted = signal.aborted || run.aborted;
+        const success = !aborted && !run.timedOut && run.code === 0 && latestReport?.success === true;
+        const code = aborted ? 'DIAGNOSTIC_CANCELLED' : run.timedOut ? 'DIAGNOSTIC_TIMEOUT'
+            : success ? latestReport.code : run.code !== 0 && latestReport?.success !== false
+                ? 'DIAGNOSTIC_PROCESS_FAILED' : latestReport?.code || 'DIAGNOSTIC_REPORT_MISSING';
+        const message = aborted ? '诊断已取消' : run.timedOut ? '诊断超时，未提交支付'
+            : run.code !== 0 && latestReport?.success !== false ? '诊断进程异常退出，未提交支付'
+                : latestReport?.message || (success ? 'Checkout 诊断完成，未提交支付' : '诊断失败或未返回有效完成报告，未提交支付');
+        const report = finishDiagnosticReport(latestReport, input, { code, message, success, startedAt });
+        await persist(report, aborted ? 'cancelled' : success ? 'success' : 'failed', liveOutput, extractTaskMediaFromOutput(liveOutput));
+        logTask(jobKey, `Checkout 诊断结束 status=${success ? 'success' : 'failed'} code=${code || '-'} paymentSubmitted=false`);
+    } catch (error) {
+        closeProgress();
+        await progressWrites.catch(() => {});
+        const aborted = signal.aborted || error.code === 'DIAGNOSTIC_CANCELLED';
+        const message = aborted ? '诊断已取消' : redactDiagnosticLogs(error.message, secrets);
+        const report = finishDiagnosticReport(latestReport, input, {
+            code: aborted ? 'DIAGNOSTIC_CANCELLED' : error.code || 'DIAGNOSTIC_RUNTIME_ERROR',
+            message, success: false, startedAt
+        });
+        logTask(jobKey, `Checkout 诊断异常: ${message}`, 'error');
+        try { await persist(report, aborted ? 'cancelled' : 'failed', liveOutput, extractTaskMediaFromOutput(liveOutput)); }
+        catch (persistError) { logTask(jobKey, `诊断结果保存失败: ${redactDiagnosticLogs(persistError.message, secrets)}`, 'error'); }
+    } finally {
+        closeProgress();
+        const captcha = interactiveCaptchaMap.get(jobKey);
+        if (captcha) {
+            for (const waiter of captcha.waitingRequests || []) {
+                clearTimeout(waiter.timer);
+                try { if (!waiter.res.headersSent) waiter.res.json({ success: false, cancelled: true }); } catch (_) { /* disconnected client */ }
             }
-
-            await setProgress('running', progress, `第三方代充服务处理中 (${rawStatus || 'pending'})...`);
+            interactiveCaptchaMap.delete(jobKey);
         }
+        checkoutDebugManager.complete(jobKey);
+        releaseForegroundSlot(jobKey);
+    }
+}
 
-        if (finalStatus === 'running') {
-            finalStatus = 'failed';
-            finalMessage = '第三方代充超时未完成，请稍后在第三方平台查询订单状态';
-            await setProgress(finalStatus, 99, finalMessage, {
-                gptApiRaw: JSON.stringify(lastRaw),
-                gptApiTopupCode: gptApi.extractTopupCode(lastRaw)
-            });
+// GPT 外包代充渠道：资金状态与供应商协议在独立组件中处理。
+async function runGptApiWorker(input) {
+    try {
+        await gptOutsourcing.run(input);
+    } finally {
+        releaseForegroundSlot(input.task.jobKey);
+        if (getTotalActiveJobs() === 0) {
+            const maintenance = await store.getMaintenanceModeState();
+            if (maintenance.enabled && maintenance.drain) await store.setMaintenanceModeState(true, false);
         }
+    }
+}
 
-        if (finalStatus === 'success') {
-            shouldRollbackCdk = false;
-            await store.resetCdkFailure(cdk);
-            await store.recordCardUsage(reservedCard?.id);
-            await store.releaseCard(reservedCard?.id).catch(() => { });
-            notifyTaskOutcome({ event: 'success', email: accountEmail, cdk, jobKey, message: finalMessage });
-        } else {
-            await store.releaseCard(reservedCard?.id).catch(() => { });
-            notifyTaskOutcome({ event: 'failure', email: accountEmail, cdk, jobKey, message: finalMessage });
+let outsourceRecoveryRunning = false;
+let outsourceRecoveryOffset = 0;
+async function recoverGptOutsourcingAttempts() {
+    if (outsourceRecoveryRunning) return;
+    outsourceRecoveryRunning = true;
+    try {
+        const rows = await store.getGptApiPendingAttempts();
+        if (!rows.length) { outsourceRecoveryOffset = 0; return; }
+        const start = outsourceRecoveryOffset % rows.length;
+        const batch = rows.slice(start).concat(rows.slice(0, start)).slice(0, 10);
+        outsourceRecoveryOffset = (start + batch.length) % rows.length;
+        for (const row of batch) {
+            const jobKey = row.job_key;
+            if (gptOutsourcing.isBusy(jobKey)) continue;
+            try {
+                const attempt = row.attempt || {};
+                if (attempt.version !== 1) {
+                    if (row.status === 'running') await store.updateTaskLog(jobKey, { status: 'manual',
+                        message: '历史外包订单缺少绑定信息，结果待确认，请人工核对',
+                        paymentState: 'unknown', recoveryRequired: true });
+                    continue;
+                }
+                // Recovery reads original orders only. It never calls submitPay
+                // or supplies credentials, even after a lost submit response.
+                await gptOutsourcing.recheck(jobKey);
+            } catch (error) {
+                logTask(jobKey, '外包原订单恢复核查未完成，保留资产等待下次核查', 'warn');
+            }
         }
     } catch (error) {
-        console.error(`[GPT API Task Error] ${jobKey}:`, error);
-        logTask(jobKey, `第三方代充任务异常: ${error.message}`, 'error');
-        await store.releaseCard(reservedCard?.id).catch(() => { });
-        await store.updateTaskLog(jobKey, {
-            status: 'failed',
-            message: error.message,
-            progress: 0,
-            cdkCode: cdk
-        });
-        broadcastToTask(jobKey, {
-            type: 'status',
-            jobKey,
-            status: 'failed',
-            message: error.message,
-            cdkCode: cdk,
-            progress: 0
-        });
-        notifyTaskOutcome({ event: 'failure', email: accountEmail, cdk, jobKey, message: error.message });
-    } finally {
-        releaseForegroundSlot(jobKey);
-        if (shouldRollbackCdk) {
-            await store.markCdkUnused(cdk).catch(() => { });
-            logTask(jobKey, `CDK ${cdk} 已回滚为未使用`);
-        }
-        if (getTotalActiveJobs() === 0) {
-            const maintenanceModeState = await store.getMaintenanceModeState();
-            if (maintenanceModeState.enabled && maintenanceModeState.drain) {
-                await store.setMaintenanceModeState(true, false);
-            }
-        }
-    }
-}
-
-function maskProxyForLog(proxyUrl) {
-    const raw = String(proxyUrl || '');
-    try {
-        const masked = raw.replace(/\/\/([^@/]+)@/, '//***:***@');
-        return masked || '(空)';
-    } catch (_) {
-        return '(已配置)';
-    }
-}
-
-const GPT_API_TERMINAL_SUCCESS = new Set(['success', 'succeeded', 'completed', 'paid', 'active', '开通成功', '成功']);
-const GPT_API_TERMINAL_FAILED = new Set(['failed', 'declined', 'canceled', 'cancelled', 'error', 'expired', 'rejected', '失败', '取消']);
-
-function isSuccessGptApiStatus(rawStatus) {
-    const s = String(rawStatus || '').toLowerCase().trim();
-    return [...GPT_API_TERMINAL_SUCCESS].some((kw) => s.includes(kw.toLowerCase()));
-}
-
-function isTerminalGptApiStatus(rawStatus) {
-    const s = String(rawStatus || '').toLowerCase().trim();
-    if (!s) return false;
-    if (isSuccessGptApiStatus(s)) return true;
-    return [...GPT_API_TERMINAL_FAILED].some((kw) => s.includes(kw.toLowerCase()));
+        logTask('', '外包订单恢复查询暂不可用，保留原订单和资产', 'warn');
+    } finally { outsourceRecoveryRunning = false; }
 }
 
 function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clientIp }) {
@@ -3510,8 +3749,10 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
         let finalRun = null;
         const allOutputs = [];
         let shouldRollbackCdk = true;
+        let observedPaymentState = 'not_started';
         let lastProgress = 0;
-        const accountEmail = extractEmailFromSession(sessionRaw) || task.tokenPreview || '';
+        const accountEmail = extractEmailFromSession(sessionRaw) || '';
+        const platform = getPlatformForPlan(cdkDetails.plan_type);
 
         try {
             for (let attempt = 1; attempt <= MAX_PROCESS_ATTEMPTS; attempt += 1) {
@@ -3527,6 +3768,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     cdkCode: cdk
                 });
 
+                const targetRegion = String(task.paymentRegion || cdkDetails?.payment_region || '').trim().toUpperCase() || await store.getPaymentRegion();
                 const proxy = await store.getActiveProxy();
                 const hcaptchaCfg = await store.getHcaptchaConfig();
                 const { env: hcaptchaEnv } = buildHcaptchaEnvFromConfig(hcaptchaCfg);
@@ -3534,14 +3776,14 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     ...process.env,
                     ...hcaptchaEnv,
                     JOB_KEY: task.jobKey,
-                    CHATGPT_TOKEN: token,
-                    CHATGPT_SESSION_JSON: String(sessionRaw || '').startsWith('{') ? sessionRaw : '',
+                    ...buildActivationCredentialEnv({ platform, token, sessionRaw }),
                     CDK_CODE: cdk,
                     CDK_PLAN_TYPE: cdkDetails.plan_type || 'plus',
+                    PAYMENT_REGION_OVERRIDE: targetRegion,
                     PROXY: proxy
                 };
 
-                logTask(task.jobKey, `尝试 ${attempt} 启动自动化 proxy=${proxy ? 'yes' : 'no'}`);
+                logTask(task.jobKey, `尝试 ${attempt} 启动自动化 proxy=${proxy ? 'yes' : 'no'} 地区=${targetRegion}`);
 
                 const run = await spawnWorkerWithBrowser({
                     jobKey: task.jobKey,
@@ -3577,6 +3819,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                             });
                         }
                     }, async (state, message) => {
+                        observedPaymentState = normalizePaymentState(state);
                         await store.updateTaskLog(task.jobKey, {
                             status: state === 'unknown' ? 'manual' : 'running',
                             message: message || (state === 'started' ? '正在提交银行卡支付' : '支付状态已更新'),
@@ -3595,6 +3838,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     || (run.output.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g)?.slice(-1)[0]?.split(':')[1])
                     || (run.output.includes('支付结果未知') ? 'unknown' : 'not_started')
                 );
+                observedPaymentState = attemptPaymentState;
                 if (attemptPaymentState) {
                     await store.updateTaskLog(task.jobKey, {
                         status: run.analysis.status === 'success' ? 'success' : 'running',
@@ -3636,7 +3880,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     cardLast4
                 });
 
-                if (attemptPaymentState === 'unknown' || !run.analysis.shouldRetry || attempt >= MAX_PROCESS_ATTEMPTS) {
+                if (shouldRetainCdk({ paymentState: attemptPaymentState }) || !run.analysis.shouldRetry || attempt >= MAX_PROCESS_ATTEMPTS) {
                     logTask(task.jobKey, `尝试 ${attempt} 结束，status=${run.analysis.status} shouldRetry=${run.analysis.shouldRetry}`);
                     break;
                 }
@@ -3644,19 +3888,18 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
             }
 
             const rawOutput = finalRun?.output || '';
-            const normalizedAnalysis = finalRun?.analysis?.status === 'retry'
-                ? { ...finalRun.analysis, status: 'failed', message: String(finalRun.analysis.message || '激活失败').replace('，准备重试', '') }
-                : finalRun?.analysis;
+            const normalizedAnalysis = finalizeRetryAnalysis(finalRun?.analysis);
             const outputPaymentState = rawOutput.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g)?.slice(-1)[0]?.split(':')[1]
                 || (rawOutput.includes('支付结果未知') ? 'unknown' : 'not_started');
             const finalPaymentState = mergePaymentState(
                 outputPaymentState,
                 normalizedAnalysis?.paymentState || 'not_started'
             );
-            const finalStatus = finalPaymentState === 'unknown'
+            const finalStatus = ['started', 'unknown'].includes(finalPaymentState)
                 ? 'manual'
                 : (normalizedAnalysis?.status || 'failed');
-            if (finalPaymentState === 'unknown') {
+            observedPaymentState = finalPaymentState;
+            if (shouldRetainCdk({ paymentState: finalPaymentState })) {
                 shouldRollbackCdk = false;
             }
 
@@ -3679,6 +3922,8 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 jobKey: task.jobKey,
                 status: finalStatus,
                 message: normalizedAnalysis?.message,
+                paymentState: finalPaymentState,
+                recoveryRequired: ['started', 'unknown'].includes(finalPaymentState),
                 cdkCode: cdk,
                 progress: finalProgress,
                 screenshots: taskMedia.screenshots,
@@ -3696,10 +3941,11 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 if (task.executionMode === 'local_card_pool' || !task.executionMode) {
                     let autoRenewResult;
                     try {
-                        autoRenewResult = await cancelAutoRenew(token, {
+                        autoRenewResult = platform === 'chatgpt' ? await cancelAutoRenew(token, {
                             email: accountEmail,
                             timezoneOffsetMin: -new Date().getTimezoneOffset()
-                        });
+                        }) : { ok: false, data: { verificationUnknown: true },
+                            error: `${platform} 充值已完成，自动续费状态需人工核实` };
                     } catch (error) {
                         autoRenewResult = {
                             ok: false,
@@ -3771,7 +4017,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
             if (finalStatus !== 'success' && shouldRollbackCdk && finalPaymentState !== 'unknown') {
                 await store.markCdkUnused(cdk);
                 logTask(task.jobKey, `CDK ${cdk} 已回滚为未使用`);
-            } else if (finalPaymentState === 'unknown') {
+            } else if (shouldRetainCdk({ paymentState: finalPaymentState })) {
                 logTask(task.jobKey, `CDK ${cdk} 保留，等待人工核对支付结果`, 'warn');
             }
 
@@ -3810,43 +4056,35 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 }
             }
         } catch (bgError) {
-            console.error(`[Background Task Error] ${task.jobKey}:`, bgError);
-            logTask(task.jobKey, `后台任务异常: ${bgError.message}`, 'error');
-            await store.updateTaskLog(task.jobKey, {
-                status: 'failed',
-                message: bgError.message,
-                rawOutput: bgError.message,
-                cdkCode: cdk,
-                progress: normalizeTaskProgress(lastProgress, 'failed', lastProgress)
+            logTask(task.jobKey, `后台任务异常: ${redactSensitiveText(bgError.message)}`, 'error');
+            let retainCdk = !shouldRollbackCdk || shouldRetainCdk({ paymentState: observedPaymentState });
+            try {
+                const latestTask = await store.getTaskStatus(task.jobKey);
+                retainCdk = retainCdk || (latestTask && shouldRetainCdk({ paymentState: latestTask.payment_state }))
+                    || Boolean(latestTask?.recovery_required);
+            } catch (_) { retainCdk = true; }
+            const status = retainCdk ? 'manual' : 'failed';
+            const paymentState = retainCdk && observedPaymentState === 'not_started' ? 'unknown' : observedPaymentState;
+            const message = retainCdk ? '支付结果未确认，已保留 CDK 与银行卡，需人工复核' : bgError.message;
+            const update = { status, message, rawOutput: redactSensitiveText(bgError.message), cdkCode: cdk,
+                paymentState, recoveryRequired: retainCdk, progress: normalizeTaskProgress(lastProgress, status, lastProgress) };
+            await reportTaskFailure({
+                persist: () => store.updateTaskLog(task.jobKey, update),
+                report: () => {
+                    broadcastToTask(task.jobKey, { ...update, type: 'status', jobKey: task.jobKey });
+                    notifyTaskOutcome({ event: 'failure', email: accountEmail, cdk, jobKey: task.jobKey, message });
+                },
+                cleanup: async () => {
+                    if (!retainCdk) {
+                        await store.markCdkUnused(cdk);
+                        logTask(task.jobKey, `CDK ${cdk} 已回滚为未使用`);
+                    } else {
+                        logTask(task.jobKey, `CDK ${cdk} 保留，等待人工复核`, 'warn');
+                    }
+                },
+                onSecondaryError: (stage, error) => logTask(task.jobKey,
+                    `异常处理 ${stage} 未完成: ${redactSensitiveText(error.message)}`, 'error')
             });
-            broadcastToTask(task.jobKey, {
-                type: 'status',
-                jobKey: task.jobKey,
-                status: 'failed',
-                message: bgError.message,
-                cdkCode: cdk,
-                progress: normalizeTaskProgress(lastProgress, 'failed', lastProgress)
-            });
-            notifyTaskOutcome({
-                event: 'failure',
-                email: accountEmail,
-                cdk,
-                jobKey: task.jobKey,
-                message: bgError.message
-            });
-            if (shouldRollbackCdk) {
-                let retainCdk = false;
-                try {
-                    const latestTask = await store.getTaskStatus(task.jobKey);
-                    retainCdk = latestTask?.payment_state === 'unknown' || latestTask?.recovery_required === 1;
-                } catch (_) { /* keep conservative local fallback */ }
-                if (!retainCdk) {
-                    await store.markCdkUnused(cdk);
-                    logTask(task.jobKey, `CDK ${cdk} 已回滚为未使用`);
-                } else {
-                    logTask(task.jobKey, `CDK ${cdk} 保留，等待人工复核`, 'warn');
-                }
-            }
         } finally {
             releaseForegroundSlot(task.jobKey);
             if (getTotalActiveJobs() === 0) {
@@ -3861,71 +4099,109 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
 
 async function handleActivationRequest(req, res) {
     const rawSession = String(req.body?.session || req.body?.token || '').trim();
-    const sessionJson = parseSessionJson(rawSession);
-    const token = normalizeSessionToken(rawSession);
     const cdk = String(req.body?.cdk || '').trim();
     const clientIp = getClientIp(req);
-    console.log(`[Activation] 收到开通请求 path=${req.path} cdk=${cdk} session_json=${Boolean(sessionJson)} token_len=${token.length}`);
-    if (!token) {
-        return res.status(400).json({ success: false, message: '缺少 Session JSON 或 AccessToken' });
+    console.log(`[Activation] 收到开通请求 path=${req.path} cdk=${cdk}`);
+    if (!rawSession) {
+        return res.status(400).json({ success: false, message: '缺少登录凭证或 Session' });
     }
     if (!cdk) {
         return res.status(400).json({ success: false, message: '缺少 CDK' });
     }
-    const tokenCheck = validateAccessToken(token);
-    if (!tokenCheck.valid) {
-        return res.status(400).json({ success: false, message: tokenCheck.message });
-    }
-
+    let ownsCdkLock = false;
+    let workerDispatched = false;
+    let activationStage = 'request_received';
+    const rejectActivation = (statusCode, code, message) => {
+        logTask('', `充值请求未启动 stage=${activationStage} code=${code} cdk=${cdk}`, 'warn');
+        return res.status(statusCode).json({ success: false, message });
+    };
     try {
+        activationStage = 'store_ready';
         await ensureStoreReady();
+        activationStage = 'maintenance_check';
         const maintenanceModeState = await store.getMaintenanceModeState();
         if (maintenanceModeState.enabled) {
-            return res.status(503).json({ success: false, message: '系统维护中，请稍后再试' });
+            return rejectActivation(503, 'MAINTENANCE', '系统维护中，请稍后再试');
         }
+        activationStage = 'concurrency_check';
         const maxConcurrentActivations = await store.getMaxConcurrentActivations();
         if (activeForegroundJobs.size >= maxConcurrentActivations) {
-            return res.status(429).json({ success: false, message: '当前任务过多，请稍后再试' });
+            return rejectActivation(429, 'CONCURRENCY_LIMIT', '当前任务过多，请稍后再试');
         }
 
+        activationStage = 'cdk_lookup';
         const cdkDetails = await store.verifyCdkDetails(cdk);
         const runningTask = cdkDetails ? await store.getRunningTaskByCdk(cdk) : null;
         if (runningTask) {
             return res.json({
                 success: true,
                 jobKey: runningTask.job_key,
-                message: runningTask.message || '该 CDK 正在开通中，已为您恢复等待进度'
+                message: '该 CDK 正在开通中，已为您恢复等待进度'
             });
         }
         if (!cdkDetails || cdkDetails.used_at || cdkDetails.type !== '自助') {
-            return res.status(403).json({ success: false, message: 'CDK 无效、已使用或非自助激活码' });
+            return rejectActivation(403, 'CDK_UNAVAILABLE', 'CDK 无效、已使用或非自助激活码');
         }
 
+        activationStage = 'credential_validation';
+        const { platform, planType, token, storedSession, tokenPreview } = resolveActivationInput({
+            cdkDetails,
+            requestedPlatform: req.body?.platform,
+            rawSession,
+            validateChatGpt: raw => {
+                const token = normalizeSessionToken(raw);
+                const tokenCheck = validateAccessToken(token);
+                if (!tokenCheck.valid) throw Object.assign(new Error(tokenCheck.message), { statusCode: 400 });
+                return { token, storedSession: buildStoredSessionPayload(raw, parseSessionJson(raw), token) };
+            }
+        });
+
+        activationStage = 'eligibility_check';
         const cdkCooldownMinutes = getRemainingCooldownMinutes(cdkDetails.cooldown_until);
         if (cdkCooldownMinutes > 0) {
-            return res.status(403).json({
-                success: false,
-                message: `该卡密连续无资格尝试过多，请冷静 ${cdkCooldownMinutes} 分钟后再试`
-            });
+            return rejectActivation(403, 'CDK_COOLDOWN', `该卡密连续无资格尝试过多，请冷静 ${cdkCooldownMinutes} 分钟后再试`);
         }
 
         if (clientIp) {
+            activationStage = 'ip_attempt_limit';
             const ipAttemptLimit = await store.getActivationAttemptLimit('ip', clientIp);
             const ipCooldownMinutes = getRemainingCooldownMinutes(ipAttemptLimit?.cooldown_until);
             if (ipCooldownMinutes > 0) {
-                return res.status(403).json({
-                    success: false,
-                    message: `当前 IP 连续无资格尝试过多，请冷静 ${ipCooldownMinutes} 分钟后再试`
-                });
+                return rejectActivation(403, 'IP_COOLDOWN', `当前 IP 连续无资格尝试过多，请冷静 ${ipCooldownMinutes} 分钟后再试`);
             }
         }
 
-        // 判断是否走第三方代充 API 模式（后台「系统配置」开启后生效）
-        const gptApiConfig = await store.getGptApiConfig();
-        const useGptApi = gptApiConfig.enabled && Boolean(gptApiConfig.api_key);
+        // GPT 外包代充渠道仅影响 GPT；其它平台继续使用本地卡池。
+        activationStage = 'payment_mode_check';
+        const gptApiConfig = platform === 'chatgpt' ? await store.getGptApiConfig() : { enabled: false };
+        const useGptApi = platform === 'chatgpt' && gptApiConfig.enabled;
         const executionMode = useGptApi ? 'third_party_api' : 'local_card_pool';
 
+        // Validate the selected outsourced channel before locking the CDK or
+        // creating a task. An enabled but incomplete channel must fail closed;
+        // silently switching to local card payment would route funds through a
+        // different provider than the administrator selected.
+        if (useGptApi) {
+            let normalizedOutsource;
+            try {
+                normalizedOutsource = validateOutsourceConfig(gptApiConfig);
+                const canonicalPlan = canonicalizeOutsourcePlan(planType);
+                if (!normalizedOutsource.plan_mapping[canonicalPlan]) {
+                    const error = new Error('当前 GPT 套餐尚未配置外包商品映射');
+                    error.code = 'GPT_OUTSOURCE_MAPPING_MISSING';
+                    error.statusCode = 503;
+                    throw error;
+                }
+            } catch (error) {
+                const code = /^GPT_OUTSOURCE_/.test(String(error.code || ''))
+                    ? error.code : 'GPT_OUTSOURCE_CONFIG_INVALID';
+                logTask('', `GPT 外包渠道未就绪 code=${code}`, 'error');
+                return rejectActivation(503, code, formatTaskErrorMessage('failed', 'GPT 外包代充渠道尚未配置完成'));
+            }
+        }
+
         if (!useGptApi) {
+            activationStage = 'card_pool_check';
             const hasCard = await store.hasAvailableCard();
             if (!hasCard) {
                 const poolEmail = extractEmailFromSession(rawSession);
@@ -3934,21 +4210,20 @@ async function handleActivationRequest(req, res) {
                     cdk,
                     message: '银行卡池暂无可用卡片，任务未启动'
                 });
-                return res.status(503).json({
-                    success: false,
-                    message: '银行卡池暂无可用卡片，请先在后台「银行卡池」导入银行卡后再试'
-                });
+                return rejectActivation(503, 'CARD_POOL_UNAVAILABLE', formatTaskErrorMessage('failed', '卡池暂无可用卡片'));
             }
         }
 
+        activationStage = 'cdk_lock';
         const lockSuccess = await store.markCdkUsed(cdk);
         if (!lockSuccess) {
-            return res.status(403).json({ success: false, message: 'CDK 不可用或正在被他人使用' });
+            return rejectActivation(403, 'CDK_LOCK_UNAVAILABLE', 'CDK 不可用或正在被他人使用');
         }
+        ownsCdkLock = true;
 
-        const storedSession = buildStoredSessionPayload(rawSession, sessionJson, token);
+        activationStage = 'task_create';
         const task = await store.createTaskLog({
-            tokenPreview: extractSessionPreview(storedSession),
+            tokenPreview,
             sessionPayload: storedSession,
             cdkCode: cdk,
             phone: null,
@@ -3957,17 +4232,20 @@ async function handleActivationRequest(req, res) {
             progress: 3,
             executionMode
         });
+        Object.assign(task, { executionMode, tokenPreview, platform, planType });
 
         logTask(task.jobKey, `任务已创建，CDK=${cdk} mode=${executionMode}`);
         reserveForegroundSlot(task.jobKey);
 
+        activationStage = 'worker_dispatch';
         if (useGptApi) {
-            runGptApiWorker({ task, token, session: JSON.parse(storedSession), cdk, planType: cdkDetails.plan_type || 'plus' }).catch((error) => {
+            runGptApiWorker({ task, token, session: JSON.parse(storedSession), cdk, planType }).catch((error) => {
                 console.error(`[GPT API Worker] ${task.jobKey}:`, error);
             });
         } else {
             spawnActivationWorker({ task, token, sessionRaw: storedSession, cdk, cdkDetails, clientIp });
         }
+        workerDispatched = true;
 
         return res.json({
             success: true,
@@ -3975,14 +4253,137 @@ async function handleActivationRequest(req, res) {
             message: '任务已启动，正在为您开通中...'
         });
     } catch (error) {
-        try { await store.markCdkUnused(cdk); } catch (_) { }
-        return res.status(500).json({ success: false, message: error.message });
+        if (ownsCdkLock && !workerDispatched) {
+            try { await store.markCdkUnused(cdk); } catch (_) { }
+        }
+        const safeError = redactSensitiveText(error.message);
+        logTask('', `启动充值失败 stage=${activationStage} code=${redactSensitiveText(error.code || 'UNSPECIFIED')}: ${safeError}`, 'error');
+        return res.status(error.statusCode || 500).json({ success: false,
+            message: formatTaskErrorMessage('failed', safeError) });
     }
 }
 
 app.post('/api/run-process', handleActivationRequest);
 
 app.post('/api/admin/trigger-activation', handleActivationRequest);
+
+app.post('/api/public/task/:jobKey/captcha-drag', async (req, res) => {
+    const jobKey = decodeURIComponent(String(req.params.jobKey || '').trim());
+    try {
+        if (await isCheckoutDiagnosticJob(jobKey)) return res.status(403).json({ success: false, message: '诊断任务需管理员二级验证' });
+    } catch (_) { return res.status(503).json({ success: false, message: '验证通道暂时不可用' }); }
+    const body = req.body || {};
+    const fromRatioX = Number(body.fromRatioX ?? body.startRatioX ?? 0);
+    const fromRatioY = Number(body.fromRatioY ?? body.startRatioY ?? 0);
+    const toRatioX = Number(body.toRatioX ?? body.endRatioX ?? 0);
+    const toRatioY = Number(body.toRatioY ?? body.endRatioY ?? 0);
+    const frameSeq = body.frameSeq;
+    const handled = notifyCaptchaDrag(jobKey, { fromRatioX, fromRatioY, toRatioX, toRatioY, frameSeq });
+    return res.json({ success: true, handled });
+});
+
+app.post('/api/public/probe-account', async (req, res) => {
+    try {
+        const { platform, credential, content } = req.body || {};
+        const targetCredential = String(credential || content || '').trim();
+        if (!targetCredential) {
+            return res.status(400).json({ success: false, message: '缺少凭证' });
+        }
+        const plat = String(platform || '').toLowerCase().trim();
+
+        // 1. ChatGPT
+        if (plat === 'chatgpt') {
+            const raw = targetCredential;
+            const tokenCheck = validateAccessToken(extractAccessTokenFromRaw(raw));
+            if (!tokenCheck.valid) return res.json({ success: true, valid: false, message: tokenCheck.message });
+            const emailMatch = raw.match(/[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/);
+            let email = emailMatch ? emailMatch[0].trim() : '';
+            if (!email && raw.startsWith('{')) {
+                try {
+                    const data = JSON.parse(raw);
+                    email = data.user?.email || data.email || '';
+                } catch (_) {}
+            }
+            return res.json({ success: true, valid: true, email, verification: 'input_only' });
+        }
+
+        // 2. Grok
+        if (plat === 'grok') {
+            const cred = extractGrokCredential(targetCredential);
+            const valid = isValidGrokCredential(targetCredential);
+            let email = cred.email || '';
+            let name = cred.name || '';
+            const cookieStr = grokSessionCookieHeader(cred.cookies);
+
+            if (valid && cred.type !== 'x_auth_token' && !email && cookieStr) {
+                try {
+                    const sessionRes = await axios.get('https://grok.com/api/auth/session', {
+                        headers: {
+                            'Cookie': cookieStr,
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/136.0.0.0 Safari/537.36',
+                            'Accept': 'application/json'
+                        },
+                        timeout: 3500,
+                        maxRedirects: 0
+                    });
+                    const account = parseOfficialGrokSession(sessionRes.data);
+                    if (account) {
+                        email = account.email;
+                        name = account.name;
+                    }
+                } catch (_) {}
+            }
+
+            return res.json({
+                success: true,
+                valid,
+                verification: 'input_only',
+                message: valid ? '' : '未识别到有效的登录 Cookie，请重新复制完整 Cookie',
+                email,
+                name
+            });
+        }
+
+        // 3. Claude
+        if (plat === 'claude') {
+            const key = extractClaudeSessionKey(targetCredential);
+            if (!isValidClaudeSessionKey(targetCredential)) {
+                return res.status(400).json({ success: false, valid: false, message: '未识别到有效的 Claude sessionKey' });
+            }
+            let textEmail = targetCredential.match(/[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/)?.[0]?.trim() || '';
+            let accountName = '';
+            const routingHintMatch = targetCredential.match(/routingHint=sk-ant-rh-([^;]+)/);
+            if (routingHintMatch && routingHintMatch[1]) {
+                try {
+                    const parts = routingHintMatch[1].split('.');
+                    if (parts.length >= 2) {
+                        const payload = decodeJwtPart(parts[1]);
+                        if (payload && payload.name) accountName = String(payload.name).trim();
+                    }
+                } catch (_) {}
+            }
+            if (!textEmail) {
+                try {
+                    const claudeAcc = await fetchClaudeAccount(key, { timeout: 3500 });
+                    if (claudeAcc && claudeAcc.email) {
+                        textEmail = claudeAcc.email;
+                    }
+                } catch (_) {}
+            }
+            return res.json({
+                success: true,
+                valid: true,
+                verification: 'input_only',
+                email: textEmail,
+                name: accountName
+            });
+        }
+
+        return res.json({ success: true, valid: true });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
 
 app.post('/api/verify-cdk', async (req, res) => {
     const cdk = String(req.body?.cdk || '').trim();
@@ -3996,12 +4397,20 @@ app.post('/api/verify-cdk', async (req, res) => {
         const cdkData = await store.verifyCdkDetails(cdk);
         const runningTask = cdkData ? await store.getRunningTaskByCdk(cdk) : null;
         if (cdkData && runningTask) {
+            const effectiveRegion = cdkData.payment_region || await store.getPaymentRegion();
+            const regionCfg = getRegionConfig(effectiveRegion) || REGION_CONFIG.PH;
+            const platform = (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(cdkData.plan_type || 'plus') : 'chatgpt') || 'chatgpt';
             return res.json({
                 success: true,
                 data: {
                     type: cdkData.type || '自助',
+                    platform,
                     plan_type: cdkData.plan_type || 'plus',
                     plan_label: getPlanTypeLabel(cdkData.plan_type || 'plus'),
+                    payment_region: effectiveRegion,
+                    region_label: regionCfg.label,
+                    currency: regionCfg.currency,
+                    is_bound_region: Boolean(cdkData.payment_region),
                     status: 'processing',
                     jobKey: runningTask.job_key,
                     message: runningTask.message || '当前 CDK 正在开通中'
@@ -4028,12 +4437,20 @@ app.post('/api/verify-cdk', async (req, res) => {
                     }
                 }
             }
+            const effectiveRegion = cdkData.payment_region || await store.getPaymentRegion();
+            const regionCfg = getRegionConfig(effectiveRegion) || REGION_CONFIG.PH;
+            const platform = (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(cdkData.plan_type || 'plus') : 'chatgpt') || 'chatgpt';
             return res.json({
                 success: true,
                 data: {
                     type: cdkData.type || '自助',
+                    platform,
                     plan_type: cdkData.plan_type || 'plus',
-                    plan_label: getPlanTypeLabel(cdkData.plan_type || 'plus')
+                    plan_label: getPlanTypeLabel(cdkData.plan_type || 'plus'),
+                    payment_region: effectiveRegion,
+                    region_label: regionCfg.label,
+                    currency: regionCfg.currency,
+                    is_bound_region: Boolean(cdkData.payment_region)
                 }
             });
         }
@@ -4111,6 +4528,8 @@ async function start() {
     try {
         const staleTasks = await store.listStaleRunningTasks();
         for (const staleTask of staleTasks) {
+            if (await recoverInterruptedCheckoutDiagnostic(staleTask)) continue;
+            if (staleTask.execution_mode === 'third_party_api' || staleTask.gpt_api_order_id || staleTask.gpt_api_task_id) continue;
             const decision = classifyInterruptedTask(staleTask);
             await store.updateTaskLog(staleTask.job_key, {
                 status: decision.status,
@@ -4141,6 +4560,9 @@ async function start() {
             console.warn(`⚠️  [资产锁] 周期清理失败: ${error.message}`);
         }
     }, 60 * 1000).unref();
+
+    setTimeout(() => { void recoverGptOutsourcingAttempts(); }, 0).unref();
+    setInterval(() => { void recoverGptOutsourcingAttempts(); }, 60 * 1000).unref();
 
     const server = app.listen(PORT, () => {
         const conn = store.connectionInfo;
@@ -4173,6 +4595,10 @@ async function start() {
                     return;
                 }
                 if (data.type === 'subscribe' && data.jobKey) {
+                    if (await isCheckoutDiagnosticJob(data.jobKey)) {
+                        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', message: '诊断任务需管理员二级验证' }));
+                        return;
+                    }
                     if (currentJobKey && currentJobKey !== data.jobKey) {
                         unsubscribeTaskClient(currentJobKey, ws);
                     }
@@ -4183,6 +4609,71 @@ async function start() {
                     taskClients.get(currentJobKey).add(ws);
                     console.log(`Client subscribed to task: ${currentJobKey}`);
                     await sendTaskSnapshot(ws, currentJobKey);
+
+                    // 若该任务当前有人机验证等待，立即向订阅者推送验证画面
+                    const captchaState = interactiveCaptchaMap.get(currentJobKey);
+                    if (captchaState && captchaState.active && (captchaState.image || captchaState.loading) && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'captcha_interactive_required',
+                            jobKey: currentJobKey,
+                            image: captchaState.image,
+                            loading: captchaState.loading,
+                            contentReady: captchaState.contentReady,
+                            expiresAt: captchaState.expiresAt,
+                            frameSeq: captchaState.frameSeq || 0,
+                            width: captchaState.width,
+                            height: captchaState.height,
+                            title: captchaState.title,
+                            message: captchaState.message,
+                            promptZh: captchaState.promptZh || '',
+                            promptEn: captchaState.promptEn || ''
+                        }));
+                    }
+                    return;
+                }
+                if (data.type === 'captcha_click' && data.jobKey) {
+                    if (await isCheckoutDiagnosticJob(data.jobKey)) return;
+                    const handled = notifyCaptchaClick(data.jobKey, {
+                        ratioX: data.ratioX,
+                        ratioY: data.ratioY,
+                        clientX: data.clientX,
+                        clientY: data.clientY,
+                        points: data.points,
+                        submitPoint: data.submitPoint,
+                        action: data.action,
+                        frameSeq: data.frameSeq
+                    });
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'captcha_click_received',
+                            jobKey: data.jobKey,
+                            ratioX: data.ratioX,
+                            ratioY: data.ratioY,
+                            pointsCount: Array.isArray(data.points) ? data.points.length : 0,
+                            frameSeq: data.frameSeq,
+                            handled
+                        }));
+                    }
+                    return;
+                }
+                if (data.type === 'captcha_drag' && data.jobKey) {
+                    if (await isCheckoutDiagnosticJob(data.jobKey)) return;
+                    const handled = notifyCaptchaDrag(data.jobKey, {
+                        fromRatioX: data.fromRatioX ?? data.startRatioX,
+                        fromRatioY: data.fromRatioY ?? data.startRatioY,
+                        toRatioX: data.toRatioX ?? data.endRatioX,
+                        toRatioY: data.toRatioY ?? data.endRatioY,
+                        frameSeq: data.frameSeq
+                    });
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'captcha_drag_received',
+                            jobKey: data.jobKey,
+                            frameSeq: data.frameSeq,
+                            handled
+                        }));
+                    }
+                    return;
                 }
             } catch (e) {
                 console.error('WebSocket message error:', e);

@@ -1,0 +1,127 @@
+/* Give the CDK list room without changing the other admin pages. */
+.main-content:has(> #cdks.active) {
+    max-width: 1720px;
+}
+
+#cdks .cdk-table {
+    width: 100%;
+    min-width: 1260px;
+    table-layout: fixed;
+}
+
+#cdks .cdk-table th,
+#cdks .cdk-table td {
+    padding-left: 12px;
+    padding-right: 12px;
+    white-space: nowrap;
+}
+
+#cdks .cdk-table .select-header,
+#cdks .cdk-table .select-cell {
+    text-align: center;
+}
+
+#cdks .cdk-table .cdk-code-cell .cdk-copy,
+#cdks .cdk-table .cdk-session-cell .cdk-copy {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+}
+
+#cdks .cdk-table .cdk-copy code {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#cdks .cdk-table .cdk-plan-cell .status-badge {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+
+#cdks .cdk-table .cdk-copy code {
+    padding: 4px 7px;
+}
+
+#cdks .cdk-table .cdk-copy:hover code {
+    border-color: var(--border-strong);
+}
+
+#cdks .cdk-table .cdk-time-cell {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* The action column stays visible while the remaining columns scroll. */
+#cdks .cdk-table .cdk-actions-cell {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    text-align: center;
+    background-color: var(--card-bg);
+    border-left: 1px solid var(--border);
+    box-shadow: -5px 0 8px -8px rgba(15, 23, 42, 0.55);
+}
+
+#cdks .cdk-table thead .cdk-actions-cell {
+    z-index: 2;
+    background-color: var(--surface-soft);
+}
+
+#cdks .cdk-table tbody tr:hover .cdk-actions-cell {
+    background-color: var(--surface-soft);
+}
+
+/* Reserve two icon slots so delete never moves between rows. */
+#cdks .cdk-actions-cell .table-action-group {
+    display: inline-grid;
+    grid-template-columns: 32px 32px;
+    gap: 8px;
+}
+
+#cdks .cdk-reset-action {
+    grid-column: 1;
+}
+
+#cdks .cdk-delete-action {
+    grid-column: 2;
+}
+
+#cdks .readonly-switch {
+    position: relative;
+    display: inline-block;
+    width: 26px;
+    height: 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: var(--surface-soft);
+    vertical-align: middle;
+}
+
+#cdks .readonly-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+}
+
+#cdks .readonly-switch.active {
+    border-color: color-mix(in srgb, var(--success) 40%, var(--border));
+    background: var(--success-soft);
+}
+
+#cdks .readonly-switch.active::after {
+    left: 14px;
+    background: var(--success);
+}

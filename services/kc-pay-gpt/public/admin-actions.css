@@ -1,0 +1,224 @@
+/* Admin-only button refinement. Load after admin.html's existing style block. */
+:root {
+    --admin-action-bg: var(--surface, #ffffff);
+    --admin-action-hover-bg: var(--surface-soft, #f1f5f9);
+    --admin-action-text: var(--text-secondary, #334155);
+    --admin-action-border: var(--border, #e2e8f0);
+    --admin-action-hover-border: var(--border-strong, #cbd5e1);
+    --admin-action-danger-bg: #fbf4f3;
+    --admin-action-danger-hover-bg: #f7e9e7;
+    --admin-action-danger-text: #a14743;
+    --admin-action-danger-border: #edd9d6;
+    --admin-action-danger-hover-border: #dfbdb8;
+    --admin-action-success-bg: #f0f7f3;
+    --admin-action-success-hover-bg: #e6f1ea;
+    --admin-action-success-text: #34735b;
+    --admin-action-success-border: #d6e9de;
+    --admin-action-success-hover-border: #b8d7c5;
+    --admin-action-focus: var(--primary, #2563eb);
+}
+
+[data-theme="dark"] {
+    --admin-action-danger-bg: rgba(221, 133, 124, 0.08);
+    --admin-action-danger-hover-bg: rgba(221, 133, 124, 0.14);
+    --admin-action-danger-text: #e3a29b;
+    --admin-action-danger-border: rgba(221, 133, 124, 0.2);
+    --admin-action-danger-hover-border: rgba(221, 133, 124, 0.34);
+    --admin-action-success-bg: rgba(124, 189, 151, 0.08);
+    --admin-action-success-hover-bg: rgba(124, 189, 151, 0.14);
+    --admin-action-success-text: #8bc3a6;
+    --admin-action-success-border: rgba(124, 189, 151, 0.2);
+    --admin-action-success-hover-border: rgba(124, 189, 151, 0.34);
+}
+
+body .btn,
+body button.btn-delete:not(.btn),
+body button.btn-unfreeze:not(.btn) {
+    --admin-action-icon-size: 15px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    gap: 6px;
+    height: 34px;
+    min-height: 34px;
+    padding: 0 13px;
+    border: 1px solid var(--admin-action-border);
+    border-radius: 8px;
+    background: var(--admin-action-bg);
+    color: var(--admin-action-text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    text-decoration: none;
+    vertical-align: middle;
+    cursor: pointer;
+    box-shadow: none;
+    transform: none;
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+/* Lucide replaces <i> with <svg> and carries over inline width/height. */
+body .btn > :is(i, svg),
+body button.btn-delete:not(.btn) > :is(i, svg),
+body button.btn-unfreeze:not(.btn) > :is(i, svg) {
+    width: var(--admin-action-icon-size) !important;
+    height: var(--admin-action-icon-size) !important;
+    display: block;
+    flex: 0 0 auto;
+    stroke-width: 1.8;
+}
+
+body .btn:active,
+body button.btn-delete:not(.btn):active,
+body button.btn-unfreeze:not(.btn):active {
+    transform: none;
+}
+
+body .btn-primary {
+    background: var(--primary, #2563eb);
+    color: #ffffff;
+    border-color: var(--primary, #2563eb);
+    box-shadow: none;
+}
+
+body .btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--primary-hover, #1d4ed8);
+    border-color: var(--primary-hover, #1d4ed8);
+    color: #ffffff;
+    box-shadow: none;
+}
+
+/* btn-action is an explicit neutral alias for routine copy/export/reset actions. */
+body .btn-secondary,
+body .btn-action,
+body .btn[data-copy-session],
+body .btn[data-export-session],
+body button.btn-unfreeze:not(.btn) {
+    background: var(--admin-action-bg);
+    color: var(--admin-action-text);
+    border-color: var(--admin-action-border);
+}
+
+body .btn-secondary:hover:not(:disabled):not([aria-disabled="true"]),
+body .btn-action:hover:not(:disabled):not([aria-disabled="true"]),
+body .btn[data-copy-session]:hover:not(:disabled):not([aria-disabled="true"]),
+body .btn[data-export-session]:hover:not(:disabled):not([aria-disabled="true"]),
+body button.btn-unfreeze:not(.btn):hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--admin-action-hover-bg);
+    color: var(--text-main, #0f172a);
+    border-color: var(--admin-action-hover-border);
+    box-shadow: none;
+}
+
+body .btn-success {
+    background: var(--admin-action-success-bg);
+    color: var(--admin-action-success-text);
+    border-color: var(--admin-action-success-border);
+}
+
+body .btn-success:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--admin-action-success-hover-bg);
+    color: var(--admin-action-success-text);
+    border-color: var(--admin-action-success-hover-border);
+    box-shadow: none;
+}
+
+body .btn-danger,
+body .btn.btn-delete,
+body button.btn-delete:not(.btn) {
+    background: var(--admin-action-danger-bg);
+    color: var(--admin-action-danger-text);
+    border-color: var(--admin-action-danger-border);
+}
+
+body .btn-danger:hover:not(:disabled):not([aria-disabled="true"]),
+body .btn.btn-delete:hover:not(:disabled):not([aria-disabled="true"]),
+body button.btn-delete:not(.btn):hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--admin-action-danger-hover-bg);
+    color: var(--admin-action-danger-text);
+    border-color: var(--admin-action-danger-hover-border);
+    box-shadow: none;
+    transform: none;
+}
+
+body .table-action-group {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: nowrap;
+    gap: 6px;
+    vertical-align: middle;
+}
+
+/* Only row geometry overrides legacy inline dimensions; colors follow classes. */
+body .table-action-group .btn {
+    --admin-action-icon-size: 14px;
+    height: 32px !important;
+    min-height: 32px;
+    padding: 0 9px !important;
+    border-radius: 6px;
+    font-size: 12px;
+}
+
+body .table-action-group .btn-xs {
+    width: 64px;
+    min-width: 64px;
+}
+
+body .btn.btn-icon,
+body .table-action-group .btn.btn-icon,
+body button.btn-delete:not(.btn),
+body button.btn-unfreeze:not(.btn) {
+    --admin-action-icon-size: 14px;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    min-height: 32px;
+    padding: 0;
+    border-radius: 6px;
+}
+
+body .table-action-group .btn.btn-icon {
+    padding: 0 !important;
+}
+
+body .btn:focus-visible,
+body button.btn-delete:not(.btn):focus-visible,
+body button.btn-unfreeze:not(.btn):focus-visible {
+    outline: 2px solid var(--admin-action-focus);
+    outline-offset: 2px;
+}
+
+body .btn:disabled,
+body .btn[aria-disabled="true"],
+body button.btn-delete:not(.btn):disabled,
+body button.btn-delete:not(.btn)[aria-disabled="true"],
+body button.btn-unfreeze:not(.btn):disabled,
+body button.btn-unfreeze:not(.btn)[aria-disabled="true"] {
+    background: var(--surface-soft, #f1f5f9);
+    color: var(--text-dim, #64748b);
+    border-color: var(--admin-action-border);
+    opacity: 0.65;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+/* Native disabled buttons still expose their disabled cursor. */
+body button.btn:disabled,
+body button.btn-delete:not(.btn):disabled,
+body button.btn-unfreeze:not(.btn):disabled {
+    pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body .btn,
+    body button.btn-delete:not(.btn),
+    body button.btn-unfreeze:not(.btn) {
+        transition: none;
+    }
+}

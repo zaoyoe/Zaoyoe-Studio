@@ -1,10 +1,10 @@
 # KC GPT 自动充值系统
 
-> **KC ChatGPT PLUS 訂閱開通平台**
-> 使用者貼上 Session 與兌換 CDK 後，可使用本地 Stripe 自動化流程，或啟用第三方代充 API 建立並輪詢代充訂單。
-> 配套管理後台：卡池管理、CDK 管理、任務監控、帳單稽核、第三方代充積分與套餐狀態、並發控制。
+> **KC ChatGPT PLUS 訂閱開通平台**  
+> 使用者貼上 Session 與兌換 CDK 後，可使用本地 Stripe 自動化流程，或選擇啟用 GPT 外包代充渠道。  
+> 配套管理後台：卡池管理、CDK 管理、任務監控、帳單稽核、GPT 外包代充渠道狀態、並發控制。
 
-| 开发者 | TG |
+| 开发者 | TG | 
 |--------|-----|
 | **KC** | KcCatk |
 
@@ -22,9 +22,9 @@
 - **用户前台**（`/public/index.html`）：卡密兑换、Session 提交、订阅自动开通、状态查询
 - **管理后台**（`/admin`）：卡池 / CDK / 任务 / 账单 / 系统配置 / 运行日志
 - **本地自動化引擎（默认模式）**：使用后台「银行卡池」中的银行卡，通过 Stripe Checkout 完成充值；包含信用卡轮换、hCaptcha 求解、反指纹浏览器与失败重试
-- **第三方代充 API（可选模式）**：支援套餐／積分查詢、Session 預檢、代充建單、訂單輪詢，以及失敗訂單的第三方卡密前綴顯示
+- **GPT 外包代充渠道（可选模式）**：将 GPT 订单交由上游供应商执行；支持显式套餐映射、账户查询、协议检查、订单记录与原单核查
 
-默认情况下，前台兑换走本地银行卡池模式，不依赖第三方代充 API 的积分或余额。只有在后台明确启用第三方代充 API 且配置 API Key 后，才会完全切换到第三方代充流程。
+默认情况下，前台兑换走本地银行卡池模式，不依赖上游服务积分或余额。只有在后台明确启用 GPT 外包代充渠道且配置 API Key 后，GPT 才切换到供应商流程；Claude、Grok 仍使用本地流程。
 
 > ⚠️ **仅供学习与研究**。使用前请确保符合目标平台 ToS 与所在地法律法规。**开发者不对任何滥用导致的封号、扣款、法律纠纷负责。**
 
@@ -120,24 +120,26 @@ docker compose exec app bash
 
 任务开始前，系统只做可用银行卡预检查：没有可用卡时不启动任务；支付过程中如果银行卡被拒绝、额度不足或触发风控，则按支付重试策略换卡或进入人工处理。
 
-## 第三方代充 API（可选）
+## GPT 外包代充渠道（可选）
 
-在後台「系統配置 → 第三方代充 API」填寫 API Key 後啟用。預設 Base URL 為：
+在后台「系统配置 → GPT 外包代充渠道」配置供应商地址、API Key、地区/币种及每个本地 GPT 套餐对应的供应商 `plan_key` 后启用。空映射表示该套餐不可通过外包渠道提交，不会默认映射为 Plus。供应商地址必须由管理员按供应商文档填写，包括 API 路径前缀，例如：
 
 ```text
-https://kc.vpss.eu.cc/
+https://供应商域名/api/v1
 ```
 
-啟用後，系統會：
+当前面向单一已适配的 GPT-KCCatk Bearer 协议供应商。启用后，系统会：
 
-1. 使用供應商 `/plans` 取得 GPT 與積分套餐資訊。
-2. 以 `/balance` 顯示可用積分與 USD 餘額。
-3. 以 `/pay/inspect` 檢查 Session 格式與 JWT 有效期，再以 `/pay` 建立代充訂單。
-4. 輪詢第三方代充服務訂單結果；後台僅顯示失敗代充訂單及第三方服务公开的 `topup_code` 前綴，不會保存或展示完整卡密。
+1. 管理员手动查询供应商 `/plans` 与 `/balance`，页面启动不会自动请求供应商。
+2. 管理员可手动运行不创建充值订单的协议检查；提供 Session 时仅用于本次供应商预检，不会保存到渠道配置。
+3. 每种本地套餐仅使用明确配置的供应商 `plan_key`；缺少映射即拒绝该套餐的外包流程。
+4. 后台显示本地外包订单记录，并允许管理员查询已有供应商订单。补交 CVC / Session 会使原供应商订单继续执行，属于可能触发扣款的操作，需管理员明确确认。
 
-API Key 至少需要 `plans:read`、`balance:read`、`pay:write` Scope；如需使用任務查詢，另需 `tasks:read`。完整供應商協議見 [對接 API 文件](对接api.md)。
+需要的授权范围取决于使用的检查与订单查询能力，参见供应商 [对接 API 文件](对接api.md)。当前供应商协议不提供签名报价、付款金额上限保证、验证托管页或业务请求号订单找回；请求结果不明时不得盲目重新建单，需核查原订单或人工处理。供应商服务积分与官方订阅支付金额是不同费用。
 
-> 瀏覽器池預設關閉（`BROWSER_POOL=0`）。第三方代充模式不使用本地瀏覽器開通流程。
+渠道配置和操作说明见 [GPT 外包代充渠道](docs/gpt-outsourcing-channel.md)。
+
+> 该渠道仅影响 GPT。供应商会使用本系统提供的银行卡、账号凭证和代理信息；Claude、Grok 不受此开关影响。
 
 ---
 
@@ -385,18 +387,18 @@ sudo certbot --nginx -d your-domain.com
 ├── Dockerfile
 ├── mysql-schema.sql
 ├── .env.example
-└── 对接api.md             # 第三方代充 API 對接文件
+└── 对接api.md             # 上游 GPT 外包代充供应商协议
 ```
 
 ---
 
 ## 接口文档
 
-本系統 REST API 請依 `server.js` 路由使用；第三方代充接口見 [對接 API 文件](对接api.md)。常用接口：
+本系统 REST API 请依 `server.js` 路由使用；上游供应商协议见 [对接 API 文件](对接api.md)，该文件不是面向代理用户的 KC 开放 API。常用接口：
 
 | 用途 | Method + Path | 鉴权 |
 |------|---------------|------|
-| 用户兑换开通 | `POST /api/redeem-product` | 无 |
+| 用户兑换开通 | `POST /api/run-process` | 无 |
 | 查询 CDK 状态 | `GET /api/cdk/query?cdk=...` | 无 |
 | 后台登录 | `POST /api/admin/login` | 密码 |
 | 卡池批量导入 | `POST /api/admin/cards/import` | Bearer |
@@ -408,25 +410,25 @@ sudo certbot --nginx -d your-domain.com
 
 ## 常见问题
 
-**Q: Docker 里浏览器崩溃？**
+**Q: Docker 里浏览器崩溃？**  
 A: `docker-compose.yml` 已配置 `shm_size: 2gb`。仍崩溃可改为 `4gb`，并确保宿主机内存 ≥ 4 GB。
 
-**Q: Linux 上 Chromium 启动失败？**
+**Q: Linux 上 Chromium 启动失败？**  
 A: 执行 `npx playwright install-deps chromium`，确认 `HEADFUL=0`（无头模式）。
 
-**Q: MySQL 连接被拒绝？**
+**Q: MySQL 连接被拒绝？**  
 A: Docker 模式下 `DB_HOST=mysql`（compose 服务名）；裸机模式下 `DB_HOST=127.0.0.1`。确认 MySQL 服务已启动。
 
-**Q: Stripe 一直 `redirect_status=failed`？**
+**Q: Stripe 一直 `redirect_status=failed`？**  
 A: 多为银行卡 BIN 被风控、银行卡额度不足或代理 IP 不干净。换卡、换代理、确认支付地区设置；KC 无法在支付前可靠读取银行卡真实额度。
 
-**Q: 卡池枯竭怎么办？**
+**Q: 卡池枯竭怎么办？**  
 A: 后台批量导入，或配置 Webhook `POST /api/external/cards/push` 自动补货。
 
-**Q: 修改哪些文件需要重启？**
+**Q: 修改哪些文件需要重启？**  
 A: `server.js`、`mysql-store.js`、`product_activator.js` 等主进程文件需重启；`index.js`、`stripe-payment.js` 等子进程文件下次任务自动加载。
 
-**Q: Windows 上 Playwright 安装失败？**
+**Q: Windows 上 Playwright 安装失败？**  
 A: 管理员 PowerShell 执行：`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`，再 `npx playwright install chromium`。
 
 ---

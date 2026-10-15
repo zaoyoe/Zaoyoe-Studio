@@ -6,7 +6,29 @@
  */
 
 /**
- * 验证卡号格式：13-19 位纯数字
+ * 校验银行卡号是否符合 Luhn (Mod 10) 算法
+ * @param {string} cardNumber
+ * @returns {boolean}
+ */
+function luhnCheck(cardNumber) {
+    const str = String(cardNumber || '').replace(/\D/g, '');
+    if (str.length < 13 || str.length > 19) return false;
+    let sum = 0;
+    let shouldDouble = false;
+    for (let i = str.length - 1; i >= 0; i--) {
+        let digit = parseInt(str.charAt(i), 10);
+        if (shouldDouble) {
+            digit *= 2;
+            if (digit > 9) digit -= 9;
+        }
+        sum += digit;
+        shouldDouble = !shouldDouble;
+    }
+    return sum % 10 === 0;
+}
+
+/**
+ * 验证卡号格式：13-19 位纯数字，且符合 Luhn 校验算法
  * @param {string} cardNumber
  * @returns {{ valid: boolean, error?: string }}
  */
@@ -27,6 +49,10 @@ function validateCardNumber(cardNumber) {
 
     if (trimmed.length < 13 || trimmed.length > 19) {
         return { valid: false, error: '卡号长度必须为 13-19 位' };
+    }
+
+    if (!luhnCheck(trimmed)) {
+        return { valid: false, error: '卡号未通过 Luhn 校验（无效卡号）' };
     }
 
     return { valid: true };
@@ -120,6 +146,7 @@ function validateCard(cardObj) {
 }
 
 module.exports = {
+    luhnCheck,
     validateCardNumber,
     validateExpiry,
     validateCVC,

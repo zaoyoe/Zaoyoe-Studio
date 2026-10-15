@@ -10,69 +10,150 @@
         :root {
             --primary: #2563eb;
             --primary-hover: #1d4ed8;
-            --primary-soft: #eff6ff;
-            --bg: #f4f7fb;
+            --primary-soft: rgba(37, 99, 235, 0.08);
+            --bg: #f8fafc;
             --panel: #ffffff;
-            --border: #e5e7eb;
+            --border: #e2e8f0;
+            --border-focus: rgba(37, 99, 235, 0.4);
             --text: #0f172a;
             --text-dim: #64748b;
             --error: #ef4444;
-            --success: #059669;
-            --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.10);
-            --shadow-focus: 0 0 0 4px rgba(37, 99, 235, 0.14);
+            --success: #10b981;
+            --shadow-lg: 0 10px 25px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.05);
+            --shadow-focus: 0 0 0 3px rgba(37, 99, 235, 0.18);
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --primary: #3b82f6;
+                --primary-hover: #2563eb;
+                --primary-soft: rgba(59, 130, 246, 0.12);
+                --bg: #090d16;
+                --panel: #0f172a;
+                --border: #1e293b;
+                --border-focus: rgba(59, 130, 246, 0.4);
+                --text: #f8fafc;
+                --text-dim: #94a3b8;
+                --shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.45);
+            }
+        }
+        html[data-theme="dark"] {
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --primary-soft: rgba(59, 130, 246, 0.12);
+            --bg: #090d16;
+            --panel: #0f172a;
+            --border: #1e293b;
+            --border-focus: rgba(59, 130, 246, 0.4);
+            --text: #f8fafc;
+            --text-dim: #94a3b8;
+            --shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.45);
+        }
+        html[data-theme="light"] {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --primary-soft: rgba(37, 99, 235, 0.08);
+            --bg: #f8fafc;
+            --panel: #ffffff;
+            --border: #e2e8f0;
+            --border-focus: rgba(37, 99, 235, 0.4);
+            --text: #0f172a;
+            --text-dim: #64748b;
+            --shadow-lg: 0 10px 25px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.05);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans SC", sans-serif; }
         body {
             min-height: 100vh;
             display: grid;
             place-items: center;
             background:
-                radial-gradient(circle at 12% 8%, rgba(37, 99, 235, 0.10), transparent 45%),
-                radial-gradient(circle at 90% 92%, rgba(14, 165, 233, 0.08), transparent 45%),
+                radial-gradient(circle at 12% 8%, rgba(37, 99, 235, 0.08), transparent 45%),
+                radial-gradient(circle at 90% 92%, rgba(14, 165, 233, 0.06), transparent 45%),
                 var(--bg);
             color: var(--text);
             padding: 24px;
+            transition: background 0.2s ease, color 0.2s ease;
         }
         .card {
             width: 100%;
             max-width: 440px;
             background: var(--panel);
             border: 1px solid var(--border);
-            border-radius: 20px;
+            border-radius: 16px;
             padding: 36px;
             box-shadow: var(--shadow-lg);
+            transition: background 0.2s ease, border-color 0.2s ease;
         }
-        h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
-        p { color: var(--text-dim); margin-bottom: 20px; line-height: 1.55; font-size: 14px; }
+        .brand-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .brand-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+            flex-shrink: 0;
+        }
+        .brand-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.2px;
+        }
+        .brand-subtitle {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-top: 1px;
+        }
+        h1 { font-size: 20px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+        p { color: var(--text-dim); margin-bottom: 20px; line-height: 1.55; font-size: 13.5px; }
         label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 8px; font-weight: 600; }
         input {
             width: 100%;
-            padding: 12px 14px;
-            border-radius: 12px;
+            padding: 11px 14px;
+            border-radius: 10px;
             border: 1px solid var(--border);
             background: var(--panel);
             color: var(--text);
             outline: none;
             font-size: 14px;
             margin-bottom: 14px;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
         input:focus { border-color: var(--primary); box-shadow: var(--shadow-focus); }
         button {
             width: 100%;
             margin-top: 6px;
-            padding: 12px 16px;
+            padding: 11px 16px;
             border: 1px solid var(--primary);
-            border-radius: 12px;
+            border-radius: 10px;
             background: var(--primary);
             color: #fff;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        button:hover {
+            background: var(--primary-hover);
         }
         button.secondary {
-            background: #fff;
-            color: var(--primary);
+            background: transparent;
+            border-color: var(--border);
+            color: var(--text);
             margin-top: 10px;
+        }
+        button.secondary:hover {
+            background: var(--primary-soft);
+            border-color: var(--primary);
+            color: var(--primary);
         }
         button:disabled { opacity: 0.6; cursor: not-allowed; }
         .message { margin-top: 14px; min-height: 22px; font-size: 13px; color: var(--error); }
@@ -84,26 +165,26 @@
             gap: 8px;
             margin-bottom: 14px;
             padding: 4px;
-            background: #f8fafc;
+            background: var(--bg);
             border: 1px solid var(--border);
-            border-radius: 12px;
+            border-radius: 10px;
         }
         .method-tab {
             flex: 1;
             margin: 0;
-            padding: 10px 8px;
+            padding: 8px 8px;
             border: 1px solid transparent;
-            border-radius: 10px;
+            border-radius: 8px;
             background: transparent;
             color: var(--text-dim);
             font-size: 13px;
             font-weight: 600;
         }
         .method-tab.active {
-            background: #fff;
+            background: var(--panel);
             color: var(--primary);
-            border-color: #bfdbfe;
-            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.12);
+            border-color: var(--border);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
         }
         .method-single {
             margin-bottom: 14px;
@@ -122,9 +203,29 @@
         }
         .hint { margin-top: 12px; font-size: 12px; color: var(--text-dim); line-height: 1.55; }
     </style>
+    <script>
+        (function() {
+            try {
+                const saved = localStorage.getItem('kc_admin_theme');
+                if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                }
+            } catch (_) {}
+        })();
+    </script>
 </head>
 <body>
     <main class="card">
+        <div class="brand-header">
+            <div class="brand-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/><rect width="14" height="10" x="5" y="7" rx="2"/></svg>
+            </div>
+            <div>
+                <div class="brand-title">KC GPT 自动充值</div>
+                <div class="brand-subtitle">自动化发卡 · 会话管理 · 代理池控制台</div>
+            </div>
+        </div>
+
         <div id="stepLogin" class="step active">
             <h1>后台登录</h1>
             <p>使用管理员邮箱和密码登录。若已启用二次验证，登录后还需验证。</p>
