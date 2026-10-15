@@ -1,9 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
-import { next } from '@vercel/functions';
+import { next, rewrite } from '@vercel/functions';
 
 const ADMIN_STUDIO_PATHS = new Set(['/admin-studio', '/admin-studio.html']);
-const ROOT_ENTRY_PATHS = new Set(['/', '/index.html']);
-const INDEPENDENT_TG_HOSTS = new Set(['tg.fatherkey.com', 'tg.adm.fatherkey.com']);
+const ROOT_ENTRY_PATHS = new Set(['/', '/index', '/index.html']);
+const INDEPENDENT_TG_ROOT_TARGETS = Object.freeze({
+    'tg.fatherkey.com': '/tg.html',
+    'tg.adm.fatherkey.com': '/tg-admin.html'
+});
+const INDEPENDENT_TG_HOSTS = new Set(Object.keys(INDEPENDENT_TG_ROOT_TARGETS));
+const INDEPENDENT_TG_ROOT_HEADERS = Object.freeze({
+    'Cache-Control': 'no-store, max-age=0',
+    'Referrer-Policy': 'no-referrer'
+});
 const PUBLIC_SUPABASE_URL_ENV_NAMES = Object.freeze([
     'SUPABASE_URL',
     'NEXT_PUBLIC_SUPABASE_URL',
@@ -102,8 +110,43 @@ function isRootEntryPath(pathname = '') {
     return ROOT_ENTRY_PATHS.has(String(pathname || ''));
 }
 
+function resolveIndependentTgRootTarget(requestUrl) {
+    const hostname = String(requestUrl?.hostname || '').trim().toLowerCase();
+    return INDEPENDENT_TG_ROOT_TARGETS[hostname] || '';
+}
+
 function isIndependentTgHost(requestUrl) {
-    return INDEPENDENT_TG_HOSTS.has(String(requestUrl?.hostname || '').toLowerCase());
+    return INDEPENDENT_TG_HOSTS.has(String(requestUrl?.hostname || '').trim().toLowerCase());
+}
+
+export function buildIndependentTgRootRewriteUrl(requestUrl) {
+    const url = requestUrl instanceof URL
+        ? requestUrl
+        : new URL(String(requestUrl || '/'), 'https://www.fatherkey.com');
+
+    if (!isRootEntryPath(url.pathname)) {
+        return null;
+    }
+
+    const targetPath = resolveIndependentTgRootTarget(url);
+    if (!targetPath) {
+        return null;
+    }
+
+    const targetUrl = new URL(targetPath, url);
+    targetUrl.search = url.search;
+    return targetUrl;
+}
+
+function maybeHandleIndependentTgRootRewrite(requestUrl) {
+    const targetUrl = buildIndependentTgRootRewriteUrl(requestUrl);
+    if (!targetUrl) {
+        return null;
+    }
+
+    return rewrite(targetUrl, {
+        headers: INDEPENDENT_TG_ROOT_HEADERS
+    });
 }
 
 function detectRequestSite(requestUrl) {
@@ -264,6 +307,11 @@ async function handleAdminStudioAccess(request, requestUrl) {
 
 export default async function middleware(request) {
     const requestUrl = new URL(request.url);
+
+    const tgRootRewrite = maybeHandleIndependentTgRootRewrite(requestUrl);
+    if (tgRootRewrite) {
+        return tgRootRewrite;
+    }
 
     const siteLayoutRedirect = await maybeHandleSiteLayoutRootRedirect(requestUrl);
     if (siteLayoutRedirect) {
