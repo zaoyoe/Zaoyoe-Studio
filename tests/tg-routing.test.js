@@ -32,12 +32,14 @@ function getWithHost(url, host) {
     });
 }
 
-test('TG host rewrites and private cache headers do not alter the existing site entry', () => {
+test('TG host redirects precede static index serving and private cache headers do not alter the existing site entry', () => {
     const config = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../vercel.json'), 'utf8'));
-    for (const [host, destination] of [['tg.fatherkey.com', '/tg.html'], ['tg.adm.fatherkey.com', '/tg-admin.html']]) {
+    for (const [host, destination] of [['tg.fatherkey.com', '/tg'], ['tg.adm.fatherkey.com', '/tg-admin']]) {
         for (const source of ['/', '/index', '/index.html']) {
-            const rule = config.rewrites.find((entry) => entry.source === source && entry.has?.some((item) => item.type === 'host' && item.value === host));
+            const rule = config.redirects.find((entry) => entry.source === source && entry.has?.some((item) => item.type === 'host' && item.value === host));
             assert.equal(rule?.destination, destination);
+            assert.equal(rule.permanent, false);
+            assert.ok(!config.rewrites.some((entry) => entry.source === source && entry.has?.some((item) => item.value === host)), 'filesystem fallback rewrites cannot route existing index.html');
             const cacheRule = config.headers.find((entry) => entry.source === source && entry.has?.some((item) => item.value === host));
             assert.equal(cacheRule?.headers.find((item) => item.key === 'Cache-Control')?.value, 'no-store, max-age=0');
             assert.equal(cacheRule?.headers.find((item) => item.key === 'Referrer-Policy')?.value, 'no-referrer');

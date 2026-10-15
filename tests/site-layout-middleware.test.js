@@ -88,43 +88,43 @@ test('site layout middleware still guards admin studio with the admin-entry redi
     );
 });
 
-test('TG roots never load or apply the existing cn/intl site layout and rewrite directly to TG entry pages', async () => {
+test('TG roots never load or apply the existing cn/intl site layout and redirect directly to canonical TG entry pages', async () => {
     const middlewareModule = await loadFreshMiddlewareModule();
     const layouts = { cn: { root_page_key: 'shop' }, intl: { root_page_key: 'shop' } };
     const pages = [{ key: 'home', path: '/' }, { key: 'shop', path: '/shop.html' }];
     const expectedTargets = [
-        ['tg.fatherkey.com', '/tg.html'],
-        ['tg.adm.fatherkey.com', '/tg-admin.html']
+        ['tg.fatherkey.com', '/tg'],
+        ['tg.adm.fatherkey.com', '/tg-admin']
     ];
     for (const [host, targetPath] of expectedTargets) {
         for (const pathname of ['/', '/index', '/index.html']) {
             const requestUrl = `https://${host}${pathname}?site=intl`;
             assert.equal(middlewareModule.buildSiteLayoutRedirectUrl(requestUrl, layouts, pages), null);
             assert.equal(
-                middlewareModule.buildIndependentTgRootRewriteUrl(requestUrl)?.toString(),
+                middlewareModule.buildIndependentTgRootRedirectUrl(requestUrl)?.toString(),
                 `https://${host}${targetPath}?site=intl`
             );
             const response = await middlewareModule.default(new Request(requestUrl));
-            assert.equal(response.status, 200);
-            assert.equal(response.headers.get('x-middleware-rewrite'), `https://${host}${targetPath}?site=intl`);
+            assert.equal(response.status, 307);
+            assert.equal(response.headers.get('location'), `https://${host}${targetPath}?site=intl`);
+            assert.equal(response.headers.get('x-middleware-rewrite'), null);
             assert.equal(response.headers.get('x-middleware-next'), null);
-            assert.equal(response.headers.get('location'), null);
             assert.equal(response.headers.get('cache-control'), 'no-store, max-age=0');
             assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
         }
     }
 });
 
-test('TG root middleware rewrite preserves order lookup and OAuth callback query parameters', async () => {
+test('TG root middleware redirect preserves order lookup and OAuth callback query parameters', async () => {
     const middlewareModule = await loadFreshMiddlewareModule();
 
     const storeOrdersResponse = await middlewareModule.default(
         new Request('https://tg.fatherkey.com/?view=orders&tab=redeem')
     );
-    assert.equal(storeOrdersResponse.status, 200);
+    assert.equal(storeOrdersResponse.status, 307);
     assert.equal(
-        storeOrdersResponse.headers.get('x-middleware-rewrite'),
-        'https://tg.fatherkey.com/tg.html?view=orders&tab=redeem'
+        storeOrdersResponse.headers.get('location'),
+        'https://tg.fatherkey.com/tg?view=orders&tab=redeem'
     );
     assert.equal(storeOrdersResponse.headers.get('cache-control'), 'no-store, max-age=0');
     assert.equal(storeOrdersResponse.headers.get('referrer-policy'), 'no-referrer');
@@ -132,10 +132,10 @@ test('TG root middleware rewrite preserves order lookup and OAuth callback query
     const adminCallbackResponse = await middlewareModule.default(
         new Request('https://tg.adm.fatherkey.com/?code=pkce_code_123&state=state_abc')
     );
-    assert.equal(adminCallbackResponse.status, 200);
+    assert.equal(adminCallbackResponse.status, 307);
     assert.equal(
-        adminCallbackResponse.headers.get('x-middleware-rewrite'),
-        'https://tg.adm.fatherkey.com/tg-admin.html?code=pkce_code_123&state=state_abc'
+        adminCallbackResponse.headers.get('location'),
+        'https://tg.adm.fatherkey.com/tg-admin?code=pkce_code_123&state=state_abc'
     );
     assert.equal(adminCallbackResponse.headers.get('cache-control'), 'no-store, max-age=0');
     assert.equal(adminCallbackResponse.headers.get('referrer-policy'), 'no-referrer');
