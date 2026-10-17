@@ -3170,12 +3170,11 @@ test('points chat stream finalizes after upstream sends content but leaves SSE o
     assert.equal(persistedTask.metadata.stream_idle_timed_out, true);
 });
 
-test('points chat stream finalizes after visible answer when hidden reasoning keeps streaming', { timeout: 1000 }, async () => {
+test('points chat stream finalizes after visible answer when hidden reasoning keeps streaming', { timeout: 1000 }, async (t) => {
     const requests = [];
     const encoder = new TextEncoder();
     let hiddenChunksSent = 0;
     let streamCancelled = false;
-    let hiddenInterval = null;
     const state = {
         pricingRules: [{
             id: 'pricing-sub2api-stream-hidden-reasoning',
@@ -3230,6 +3229,10 @@ test('points chat stream finalizes after visible answer when hidden reasoning ke
                     })
                 };
             }
+            // Every mocked response owns its stream timer, including auxiliary
+            // requests whose response body is never consumed by the handler.
+            let hiddenInterval = null;
+            t.after(() => clearInterval(hiddenInterval));
             return {
                 ok: true,
                 status: 200,
