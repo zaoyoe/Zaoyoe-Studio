@@ -6,7 +6,9 @@
     <meta name="robots" content="noindex,nofollow">
     <meta name="referrer" content="no-referrer">
     <title>Telegram Premium 与 Stars</title>
-    <link rel="stylesheet" href="/css/tg.css?v=20261015-gramix-ui-v4">
+    <link rel="stylesheet" href="/css/cash-payment-dialog.css?v=20261017-reconciled-v1">
+    <link rel="stylesheet" href="/css/tg.css?v=20261017-reconciled-v1">
+    <link rel="stylesheet" href="/css/tg-order-query.css?v=20261017-order-center-v1">
 </head>
 <body class="tg-shell">
     <header class="tg-header">
@@ -41,7 +43,7 @@
                             <path d="M8.88 13.45l2.89-5.71c.33-.66 1.14-.93 1.8-.6.25.13.46.35.59.61l2.73 5.51c.22.45.66.76 1.16.82l5.7.68c.78.09 1.33.79 1.24 1.57-.04.31-.18.61-.41.84l-4.52 4.42c-.18.18-.27.43-.23.68l.75 5.98c.1.85-.5 1.63-1.36 1.74-.32.04-.65-.02-.94-.18l-4.77-2.59c-.34-.19-.76-.19-1.11-.01l-4.93 2.52c-.7.35-1.55.07-1.91-.62-.13-.26-.18-.55-.14-.84l.4-2.74c.19-1.34 1.03-2.51 2.23-3.12l5.49-2.78c.15-.08.2-.26.13-.4-.06-.12-.18-.18-.31-.16l-6.71.95c-1.02.15-2.06-.14-2.87-.79l-2.23-1.82c-.64-.51-.73-1.45-.22-2.09.24-.29.59-.48.97-.53l5.73-.74c.36-.04.68-.27.85-.6z" fill="currentColor"></path>
                         </svg>
                     </span>
-                    <span>Premium 会员<small>3 / 6 / 12 个月</small></span>
+                    <span>Premium 会员</span>
                 </button>
                 <button id="tgStarsPreview" class="tg-product-option tg-product-option-stars" type="button" aria-pressed="false">
                     <span class="tg-product-icon tg-product-icon-stars" aria-hidden="true">
@@ -49,10 +51,9 @@
                             <path d="M8.88 13.45l2.89-5.71c.33-.66 1.14-.93 1.8-.6.25.13.46.35.59.61l2.73 5.51c.22.45.66.76 1.16.82l5.7.68c.78.09 1.33.79 1.24 1.57-.04.31-.18.61-.41.84l-4.52 4.42c-.18.18-.27.43-.23.68l.75 5.98c.1.85-.5 1.63-1.36 1.74-.32.04-.65-.02-.94-.18l-4.77-2.59c-.34-.19-.76-.19-1.11-.01l-4.93 2.52c-.7.35-1.55.07-1.91-.62-.13-.26-.18-.55-.14-.84l.4-2.74c.19-1.34 1.03-2.51 2.23-3.12l5.49-2.78c.15-.08.2-.26.13-.4-.06-.12-.18-.18-.31-.16l-6.71.95c-1.02.15-2.06-.14-2.87-.79l-2.23-1.82c-.64-.51-.73-1.45-.22-2.09.24-.29.59-.48.97-.53l5.73-.74c.36-.04.68-.27.85-.6z" fill="currentColor"></path>
                         </svg>
                     </span>
-                    <span>Stars 星星<small>按需购买，或兑换码领取</small></span>
+                    <span>Stars 星星</span>
                 </button>
             </div>
-            <p id="tgProductDescription" class="tg-product-description" aria-live="polite">开通 Telegram Premium，时长以兑换码绑定的 3、6 或 12 个月套餐为准。</p>
         </section>
         <section class="tg-panel" id="tgPurchasePanel" aria-labelledby="purchase-title">
             <div class="tg-panel-head">
@@ -62,7 +63,7 @@
                 </div>
                 <span class="tg-secure">支付后自动处理</span>
             </div>
-            <form id="tgPurchaseForm" class="tg-form" novalidate>
+            <form id="tgPurchaseForm" data-catalog-state="loading" aria-busy="true" class="tg-form" novalidate>
                 <div class="tg-field-group">
                     <label for="tgPurchaseUsername" class="tg-field-label">收件人</label>
                     <div id="tgPurchaseUsernameBox" class="tg-input-wrap">
@@ -81,7 +82,23 @@
                         <option value="premium_6">6 个月</option>
                         <option value="premium_3">3 个月</option>
                     </select>
-                    <div id="tgPurchaseProductCards" class="tg-option-grid tg-plan-grid" role="group" aria-label="选择会员时长"></div>
+                    <div id="tgPurchaseProductCards" class="tg-option-grid tg-plan-grid" role="group" aria-label="选择会员时长">
+                        <button type="button" class="tg-option-card tg-plan-card is-selected" aria-pressed="true" disabled>
+                            <span class="tg-option-card-head"><strong class="tg-option-card-title">12 个月</strong></span>
+                            <span class="tg-option-card-price"><span class="tg-skeleton tg-skeleton-plan-price" aria-hidden="true"></span></span>
+                            <small class="tg-option-card-meta">年度超值</small>
+                        </button>
+                        <button type="button" class="tg-option-card tg-plan-card" aria-pressed="false" disabled>
+                            <span class="tg-option-card-head"><strong class="tg-option-card-title">6 个月</strong></span>
+                            <span class="tg-option-card-price"><span class="tg-skeleton tg-skeleton-plan-price" aria-hidden="true"></span></span>
+                            <small class="tg-option-card-meta">半年进阶</small>
+                        </button>
+                        <button type="button" class="tg-option-card tg-plan-card" aria-pressed="false" disabled>
+                            <span class="tg-option-card-head"><strong class="tg-option-card-title">3 个月</strong></span>
+                            <span class="tg-option-card-price"><span class="tg-skeleton tg-skeleton-plan-price" aria-hidden="true"></span></span>
+                            <small class="tg-option-card-meta">季度体验</small>
+                        </button>
+                    </div>
                 </div>
 
                 <div id="tgPurchaseStarsField" class="tg-field-group" hidden>
@@ -111,29 +128,62 @@
                     </div>
                 </div>
 
-                <div class="tg-field-group">
-                    <label for="tgPurchaseChannel" class="tg-field-label">支付方式</label>
-                    <select id="tgPurchaseChannel" class="tg-sr-only" aria-label="支付方式" tabindex="-1" aria-hidden="true">
-                        <option value="">正在读取支付方式…</option>
-                    </select>
-                    <div id="tgPurchaseChannelCards" class="tg-option-grid tg-channel-grid" role="group" aria-label="选择支付方式"></div>
+                <div class="tg-payment-options">
+                    <div class="tg-field-group">
+                        <label for="tgPurchaseChannel" class="tg-field-label">支付方式</label>
+                        <select id="tgPurchaseChannel" class="tg-sr-only" aria-label="支付方式" tabindex="-1" aria-hidden="true">
+                            <option value="">正在读取支付方式…</option>
+                        </select>
+                        <div id="tgPurchaseChannelCards" class="tg-option-grid tg-channel-grid" role="group" aria-label="选择支付方式">
+                            <div class="tg-option-card tg-channel-card tg-channel-skeleton" aria-hidden="true"><span class="tg-skeleton tg-skeleton-channel-icon"></span><span class="tg-skeleton tg-skeleton-channel-title"></span></div>
+                            <div class="tg-option-card tg-channel-card tg-channel-skeleton" aria-hidden="true"><span class="tg-skeleton tg-skeleton-channel-icon"></span><span class="tg-skeleton tg-skeleton-channel-title"></span></div>
+                        </div>
+                    </div>
+                    <div id="tgPurchaseNetworkField" class="tg-network-reveal" aria-hidden="true" inert hidden>
+                        <div class="tg-network-clip">
+                            <div class="tg-field-group tg-network-content">
+                                <span class="tg-field-label">USDT 转账网络</span>
+                                <div id="tgPurchaseNetworkChoices" class="tg-network-choices" role="group" aria-label="选择 USDT 网络"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
+
                 <div class="tg-checkout-bar">
-                    <div id="tgPurchasePrice" class="tg-purchase-price" aria-live="polite">正在读取售价…</div>
-                    <button class="tg-button tg-button-primary tg-submit-btn" type="submit" id="tgPurchaseButton" disabled>正在检查服务…</button>
+                    <div id="tgPurchasePrice" class="tg-purchase-price" aria-live="polite">
+                        <span class="tg-skeleton tg-skeleton-price-label" aria-hidden="true"></span>
+                        <span class="tg-skeleton tg-skeleton-price-amount" aria-hidden="true"></span>
+                        <dl class="tg-price-breakdown">
+                            <div><dt>商品规格</dt><dd><span class="tg-skeleton tg-skeleton-price-detail" aria-hidden="true"></span></dd></div>
+                            <div><dt>商品金额</dt><dd><span class="tg-skeleton tg-skeleton-price-detail" aria-hidden="true"></span></dd></div>
+                            <div><dt>通道手续费</dt><dd><span class="tg-skeleton tg-skeleton-price-detail" aria-hidden="true"></span></dd></div>
+                        </dl>
+                    </div>
+                    <button class="tg-button tg-button-primary tg-submit-btn" type="submit" id="tgPurchaseButton" disabled>正在加载…</button>
                 </div>
-                <p id="tgPurchaseMessage" class="tg-form-message" role="status" aria-live="polite"></p>
             </form>
             <div id="tgPurchaseConfirmation" class="tg-purchase-confirmation" hidden>
                 <p class="tg-kicker">请确认订单</p>
-                <p id="tgPurchaseQuoteSummary"></p>
-                <p class="tg-muted">请再次核对接收者和金额。确认后将创建支付订单。</p>
+                <div id="tgPurchaseQuoteSummary" class="tg-confirm-summary"></div>
+                <fieldset id="tgPurchaseQueryCredentials" class="tg-order-credentials" hidden>
+                    <legend>设置订单查询信息</legend>
+                    <div class="tg-orders-credential-grid">
+                        <label class="tg-orders-field" for="tgPurchaseQueryEmail"><span>查询邮箱</span><input id="tgPurchaseQueryEmail" type="email" inputmode="email" autocomplete="off" maxlength="320" placeholder="用于查询订单，不发送邮件" required></label>
+                        <label class="tg-orders-field" for="tgPurchaseQueryPassword"><span>查询密码</span><span class="tg-orders-password-control"><input id="tgPurchaseQueryPassword" type="password" autocomplete="new-password" maxlength="64" placeholder="至少 8 位，含大小写、数字和符号" required><button id="tgPurchaseQueryTogglePassword" class="tg-orders-eye" type="button" aria-label="显示查询密码" aria-pressed="false">显示</button></span></label>
+                        <label class="tg-orders-field" for="tgPurchaseQueryPasswordConfirm"><span>确认查询密码</span><input id="tgPurchaseQueryPasswordConfirm" type="password" autocomplete="new-password" maxlength="64" placeholder="再次输入查询密码" required></label>
+                    </div>
+                    <div class="tg-orders-credential-actions"><small>这是独立的订单查询密码，请勿使用邮箱或 Telegram 登录密码。同一邮箱和查询密码可查询多笔订单。</small><button id="tgPurchaseQueryGeneratePassword" class="tg-link-button" type="button">帮我生成</button><button id="tgPurchaseQueryCopyPassword" class="tg-link-button" type="button">复制查询密码</button></div>
+                    <p id="tgPurchaseQueryCredentialMessage" class="tg-orders-hint" role="status" aria-live="polite"></p>
+                </fieldset>
+                <p id="tgPurchaseConfirmationHint" class="tg-muted">请再次核对接收者和金额。确认后将创建支付订单。</p>
                 <div class="tg-confirm-actions">
                     <button id="tgPurchaseConfirm" class="tg-button tg-button-primary" type="button">确认并创建订单</button>
+                    <button id="tgPurchaseViewOriginal" class="tg-button tg-button-secondary" type="button" hidden>查看原订单</button>
                     <button id="tgPurchaseCancel" class="tg-button tg-button-secondary" type="button">返回修改</button>
                 </div>
             </div>
+            <p id="tgPurchaseMessage" class="tg-form-message" role="status" aria-live="polite"></p>
         </section>
         <section class="tg-panel" id="tgRedeemPanel" aria-labelledby="redeem-title" hidden>
             <div class="tg-panel-head">
@@ -156,9 +206,21 @@
                 </div>
                 <div class="tg-field-group">
                     <label for="tgCode" class="tg-field-label">兑换码</label>
-                    <input id="tgCode" name="code" autocomplete="off" autocapitalize="characters" placeholder="输入 Premium 或 Stars 兑换码" required>
+                    <input id="tgCode" name="code" autocomplete="off" autocapitalize="characters" placeholder="输入 Premium 或 Stars 兑换码" aria-describedby="tgCodePreview" required>
+                    <div id="tgCodePreview" class="tg-gift-preview" role="status" aria-live="polite" aria-busy="false" data-state="empty"><div class="tg-gift-preview-clip"><div id="tgCodePreviewContent" class="tg-gift-preview-card"></div></div></div>
                     <small class="tg-field-hint">系统按兑换码确定产品、会员时长或星星数量。上方切换仅展示产品说明。</small>
                 </div>
+                <div id="tgRedeemConfirmation" class="tg-status-result" role="status" aria-live="polite" hidden></div>
+                <fieldset id="tgRedeemQueryCredentials" class="tg-order-credentials" hidden>
+                    <legend>设置订单查询信息</legend>
+                    <div class="tg-orders-credential-grid">
+                        <label class="tg-orders-field" for="tgRedeemQueryEmail"><span>查询邮箱</span><input id="tgRedeemQueryEmail" type="email" inputmode="email" autocomplete="off" maxlength="320" placeholder="用于查询订单，不发送邮件" required></label>
+                        <label class="tg-orders-field" for="tgRedeemQueryPassword"><span>查询密码</span><span class="tg-orders-password-control"><input id="tgRedeemQueryPassword" type="password" autocomplete="new-password" maxlength="64" placeholder="至少 8 位，含大小写、数字和符号" required><button id="tgRedeemQueryTogglePassword" class="tg-orders-eye" type="button" aria-label="显示查询密码" aria-pressed="false">显示</button></span></label>
+                        <label class="tg-orders-field" for="tgRedeemQueryPasswordConfirm"><span>确认查询密码</span><input id="tgRedeemQueryPasswordConfirm" type="password" autocomplete="new-password" maxlength="64" placeholder="再次输入查询密码" required></label>
+                    </div>
+                    <div class="tg-orders-credential-actions"><small>这是独立的订单查询密码，请勿使用邮箱或 Telegram 登录密码。同一邮箱和查询密码可查询多笔订单。</small><button id="tgRedeemQueryGeneratePassword" class="tg-link-button" type="button">帮我生成</button><button id="tgRedeemQueryCopyPassword" class="tg-link-button" type="button">复制查询密码</button></div>
+                    <p id="tgRedeemQueryCredentialMessage" class="tg-orders-hint" role="status" aria-live="polite"></p>
+                </fieldset>
                 <button class="tg-button tg-button-primary tg-submit-btn" type="submit" id="tgRedeemButton" disabled><span>正在检查服务…</span></button>
                 <p class="tg-form-message" id="tgFormMessage" role="status" aria-live="polite"></p>
             </form>
@@ -168,7 +230,7 @@
             <div class="tg-subpage-header">
                 <div class="tg-subpage-title-group">
                     <p class="tg-kicker">ORDER CENTER</p>
-                    <h1 id="tgOrderLookupPageTitle">订单查询与支付发货</h1>
+                    <h1 id="tgOrderLookupPageTitle">订单查询</h1>
                 </div>
                 <a id="tgOrderLookupBack" class="tg-subpage-back" href="/">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -178,38 +240,104 @@
                     <span>返回购买与兑换</span>
                 </a>
             </div>
-            <div class="tg-order-lookup-bar">
-                <div class="tg-order-lookup-tabs" role="group" aria-label="选择订单查询类型">
-                    <span class="tg-order-lookup-indicator" aria-hidden="true"></span>
-                    <button id="tgLookupTabPurchase" type="button" aria-pressed="true">购买订单 · 支付与发货</button>
-                    <button id="tgLookupTabRedeem" type="button" aria-pressed="false">兑换码订单 · 进度追踪</button>
+            <section id="tgOrdersQueryCard" class="tg-panel tg-orders-query-card" aria-labelledby="tgOrdersQueryTitle">
+                <h2 id="tgOrdersQueryTitle" class="tg-visually-hidden">查询订单</h2>
+                <div class="tg-orders-query-kinds" role="group" aria-label="选择订单查询类型">
+                    <button id="tgLookupTabPurchase" class="tg-button tg-button-secondary" type="button" aria-pressed="true">购买订单</button>
+                    <button id="tgLookupTabRedeem" class="tg-button tg-button-secondary" type="button" aria-pressed="false">兑换订单</button>
                 </div>
-            </div>
-            <section class="tg-panel tg-status-panel" id="tgPurchaseStatusPanel" aria-labelledby="purchase-status-title">
-                <div class="tg-panel-head"><div><p class="tg-kicker">支付与发货</p><h2 id="purchase-status-title">查询购买进度</h2></div></div>
-                <form id="tgPurchaseStatusForm" class="tg-status-form" novalidate><label for="tgPurchaseOrderNo">订单号<input id="tgPurchaseOrderNo" autocomplete="off" placeholder="购买订单号" maxlength="40" required></label><label for="tgPurchaseStatusToken">查询凭证<input id="tgPurchaseStatusToken" type="password" autocomplete="off" placeholder="创建订单后自动生成" maxlength="128" required></label><button class="tg-button tg-button-secondary" type="submit">查询状态</button></form>
-                <p class="tg-muted">订单号和查询凭证是查询依据，请妥善保存。系统以实际到账为准确认支付。</p>
-                <button class="tg-link-button" id="tgPurchaseCopyTracking" type="button" hidden>复制订单号和查询凭证</button>
-                <div id="tgPurchaseStatusResult" class="tg-status-result" hidden></div>
-                <a id="tgPurchaseCheckout" class="tg-button tg-button-primary tg-checkout-link" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>前往支付 ↗</a>
+                <p id="tgOrdersAvailability" class="tg-orders-hint" role="status">正在检查邮箱查询服务…</p>
+                <div class="tg-orders-query-layout">
+                    <div class="tg-orders-field"><span id="tgOrdersSearchByLabel">查询方式</span><select id="tgOrdersSearchBy" aria-label="查询方式"><option value="email">邮箱与查询密码</option><option value="tracking">订单号与原凭证</option></select></div>
+                    <form id="tgOrdersQueryForm" class="tg-orders-query-form" autocomplete="off" novalidate>
+                        <label class="tg-orders-field" for="tgOrdersEmail"><span>邮箱</span><input id="tgOrdersEmail" type="email" inputmode="email" autocomplete="off" maxlength="320" placeholder="下单时填写的邮箱" required></label>
+                        <label class="tg-orders-field" for="tgOrdersPassword"><span>查询密码</span><span class="tg-orders-password-control"><input id="tgOrdersPassword" type="password" autocomplete="new-password" maxlength="64" placeholder="下单时设置的密码" required><button id="tgOrdersTogglePassword" class="tg-orders-eye" type="button" aria-label="显示查询密码" aria-pressed="false">显示</button></span></label>
+                        <label class="tg-orders-field" for="tgOrdersOrderNo"><span>订单号 <small>可选</small></span><input id="tgOrdersOrderNo" type="text" autocomplete="off" maxlength="40" placeholder="留空查询全部"></label>
+                        <button id="tgOrdersSubmit" class="tg-button tg-button-primary" type="submit" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 5 5"></path></svg><span>查询订单</span></button>
+                    </form>
+                    <div id="tgPurchaseStatusPanel" hidden>
+                        <div id="tgPurchaseLegacyQuery" class="tg-orders-legacy">
+                            <form id="tgPurchaseStatusForm" class="tg-orders-tracking-form" novalidate>
+                                <label class="tg-orders-field" for="tgPurchaseOrderNo"><span>订单号</span><input id="tgPurchaseOrderNo" autocomplete="off" placeholder="TGP- 开头的购买订单号" maxlength="40" required></label>
+                                <label class="tg-orders-field" for="tgPurchaseStatusToken"><span>查询凭证</span><input id="tgPurchaseStatusToken" type="password" autocomplete="off" placeholder="下单后保存的原查询凭证" maxlength="128" required></label>
+                                <button class="tg-button tg-button-primary" type="submit">查询订单</button>
+                            </form>
+                        </div>
+                    </div>
+                    <div id="tgRedeemStatusPanel" hidden>
+                        <div id="tgRedeemLegacyQuery" class="tg-orders-legacy">
+                            <form id="tgStatusForm" class="tg-orders-tracking-form" novalidate>
+                                <label class="tg-orders-field" for="tgOrderNo"><span>订单号</span><input id="tgOrderNo" placeholder="TG- 开头的兑换订单号" autocomplete="off" maxlength="27" required></label>
+                                <label class="tg-orders-field" for="tgStatusToken"><span>查询凭证</span><input id="tgStatusToken" type="password" placeholder="兑换后保存的原查询凭证" autocomplete="off" maxlength="128" required></label>
+                                <button class="tg-button tg-button-primary" type="submit">查询订单</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                <div id="tgOrdersError" class="tg-orders-error" role="alert" hidden></div>
+                <div class="tg-orders-query-footer"><small id="tgOrdersAccessHint">使用下单时填写的邮箱和查询密码。</small><button id="tgOrdersClear" class="tg-link-button" type="button">清空查询</button></div>
             </section>
-            <section class="tg-panel tg-status-panel" id="tgRedeemStatusPanel" aria-labelledby="status-title" hidden>
-                <div class="tg-panel-head">
-                    <div><p class="tg-kicker">订单追踪</p><h2 id="status-title">查询兑换进度</h2></div>
-                </div>
-                <form id="tgStatusForm" class="tg-status-form" novalidate>
-                    <label for="tgOrderNo">订单号<input id="tgOrderNo" placeholder="TG-..." autocomplete="off" maxlength="27" required></label>
-                    <label for="tgStatusToken">查询凭证<input id="tgStatusToken" type="password" placeholder="提交兑换后自动生成" autocomplete="off" maxlength="128" required></label>
-                    <button class="tg-button tg-button-secondary" type="submit">查询状态</button>
-                </form>
-                <p class="tg-muted">查询凭证用于查看订单，请和订单号一起妥善保存。当前标签页关闭后，浏览器内的凭证将被清除。</p>
-                <button class="tg-link-button" id="tgCopyTracking" type="button" hidden>复制订单号和查询凭证</button>
-                <div id="tgStatusResult" class="tg-status-result" hidden></div>
+            <section id="tgOrdersResults" class="tg-orders-results" aria-label="查询结果" aria-live="polite" hidden>
+                <div class="tg-orders-results-head"><h2 id="tgOrdersResultTitle">订单记录</h2><span id="tgOrdersResultCount" class="tg-muted"></span></div>
+                <div id="tgOrdersEmpty" class="tg-panel tg-orders-empty" hidden><strong>暂无匹配订单</strong><p>请核对邮箱和查询密码；未绑定邮箱的订单可切换为原凭证查询。</p></div>
+                <div id="tgOrdersList" class="tg-orders-list"></div>
+                <nav id="tgOrdersPager" class="tg-orders-pager" aria-label="订单分页" hidden><button id="tgOrdersPrevious" class="tg-button tg-button-secondary" type="button">上一页</button><span id="tgOrdersPageLabel"></span><button id="tgOrdersNext" class="tg-button tg-button-secondary" type="button">下一页</button></nav>
+            </section>
+            <section id="tgLegacyOrdersResults" class="tg-orders-results" aria-label="原凭证查询结果" aria-live="polite" hidden>
+                <div class="tg-orders-results-head"><h2>查询结果</h2><span class="tg-muted">共 1 笔</span></div>
+                <div id="tgLegacyOrdersList" class="tg-orders-list"></div>
+            </section>
+            <section id="tgRecentPurchases" class="tg-orders-results" aria-labelledby="tg-recent-purchases-title" hidden>
+                <div class="tg-orders-results-head"><h2 id="tg-recent-purchases-title">本标签页最近订单</h2><span id="tgRecentPurchaseCount" class="tg-muted"></span></div>
+                <div id="tgRecentPurchaseList" class="tg-orders-list"></div>
             </section>
         </section>
         <p class="tg-help">遇到问题？请保留订单号联系客服。我们不会索取 Telegram 密码或验证码。</p>
     </main>
     <footer class="tg-footer">Telegram Premium &amp; Stars 独立服务</footer>
-    <script src="/js/tg.js?v=20261015-gramix-ui-v4" defer></script>
+    <dialog id="tgOrderDetailDialog" class="tg-orders-detail-dialog" aria-labelledby="tgOrderDetailTitle" aria-describedby="tgOrderDetailNumber">
+        <div class="tg-orders-detail-head">
+            <div><p class="tg-kicker">ORDER DETAILS</p><h2 id="tgOrderDetailTitle">订单详情</h2><p id="tgOrderDetailNumber" class="tg-muted"></p></div>
+            <button id="tgOrderDetailClose" class="tg-orders-detail-close" type="button" aria-label="关闭订单详情" autofocus><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"></path></svg></button>
+        </div>
+        <div id="tgOrderDetailContent" class="tg-orders-detail-content" aria-busy="false">
+            <div id="tgOrderDetailPurchase"><div id="tgPurchaseStatusResult" class="tg-orders-detail-result" hidden></div></div>
+            <div id="tgOrderDetailRedeem" hidden><div id="tgStatusResult" class="tg-orders-detail-result" hidden></div></div>
+        </div>
+        <div class="tg-orders-detail-footer">
+            <button id="tgOrderDetailRefresh" class="tg-button tg-button-secondary" type="button">刷新状态</button>
+            <div id="tgOrderDetailPurchaseActions" class="tg-orders-detail-actions">
+                <button id="tgPurchaseCopyTracking" class="tg-button tg-button-secondary" type="button" hidden>复制查询凭证</button>
+                <button id="tgPurchaseClose" class="tg-button tg-button-secondary" type="button" hidden>关闭未付款订单</button>
+                <button id="tgPurchaseCheckout" class="tg-button tg-button-primary" type="button" hidden>继续支付</button>
+            </div>
+            <div id="tgOrderDetailRedeemActions" class="tg-orders-detail-actions" hidden><button id="tgCopyTracking" class="tg-button tg-button-secondary" type="button" hidden>复制查询凭证</button></div>
+        </div>
+    </dialog>
+    <dialog id="tgPaymentDialog" class="tg-payment-dialog" aria-labelledby="tgPaymentTitle">
+        <div class="tg-payment-head"><h2 id="tgPaymentTitle">订单支付</h2><button id="tgPaymentClose" class="tg-link-button" type="button" autofocus>关闭弹窗</button></div>
+        <ol id="tgPaymentSteps" class="guest-shop-modal__steps" aria-label="购买流程">
+            <li id="tgPaymentStepConfigure" class="guest-shop-modal__step is-done" data-step-key="configure"><span class="guest-shop-modal__step-index" aria-hidden="true"></span><span class="guest-shop-modal__step-label">确认订单</span></li>
+            <li id="tgPaymentStepPayment" class="guest-shop-modal__step is-current" data-step-key="payment" aria-current="step"><span class="guest-shop-modal__step-index" aria-hidden="true"></span><span class="guest-shop-modal__step-label">支付</span></li>
+            <li id="tgPaymentStepDelivery" class="guest-shop-modal__step is-upcoming" data-step-key="delivery"><span class="guest-shop-modal__step-index" aria-hidden="true"></span><span class="guest-shop-modal__step-label">发货</span></li>
+        </ol>
+        <div class="guest-shop-modal__state tg-payment-status" role="status">
+            <span id="tgPaymentStateMessage" aria-live="polite"></span>
+            <span id="tgPaymentCountdown" class="guest-shop-modal__state-countdown" role="timer" aria-live="off" hidden>付款剩余 <strong id="tgPaymentCountdownValue">--:--</strong></span>
+        </div>
+        <div id="tgPaymentContent" aria-live="polite"></div>
+        <p id="tgPaymentFooterHint" class="tg-muted">关闭弹窗后订单保留，可在订单查询中继续支付。请保存订单号和查询凭证；支付以实际足额到账为准。</p>
+        <p id="tgPaymentActionMessage" class="tg-muted" role="status" hidden></p>
+        <div class="tg-payment-actions">
+            <button id="tgPaymentRefresh" class="tg-button tg-button-secondary" type="button">查询支付状态</button>
+            <button id="tgPaymentCancelOrder" class="tg-button tg-button-secondary tg-payment-cancel" type="button" hidden>取消订单</button>
+        </div>
+    </dialog>
+    <script src="/js/vendor/qrcode-generator-2.0.4.js" defer></script>
+    <script src="/js/tg-payment-pricing.js?v=20261017-reconciled-v1" defer></script>
+    <script src="/js/guest-query-password.js" defer></script>
+    <script src="/js/tg-admin-selects.js?v=20261017-order-center-v1" data-select-scope="#tgOrdersQueryCard" defer></script>
+    <script src="/js/tg-order-query.js?v=20261017-order-center-v1" defer></script>
+    <script src="/js/tg.js?usdtNetworks=20261016_1&v=20261017-reconciled-v1" defer></script>
 </body>
 </html>

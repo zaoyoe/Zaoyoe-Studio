@@ -3,13 +3,10 @@
 const crypto = require('node:crypto');
 const { createGramixClient, isDecimalString, normalizeRecipient } = require('./gramix-client');
 
+const { describeGramixError } = require('./gramix-errors');
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PROVIDER_STATES = new Set(['created', 'processing', 'completed', 'failed', 'canceled']);
-const SAFE_ERROR_CODES = new Set([
-    'gramix_timeout', 'gramix_network_error', 'gramix_http_error',
-    'gramix_invalid_response', 'gramix_configuration_error'
-]);
-
 function enabled(value) {
     return value === true || /^(true|1)$/i.test(String(value ?? '').trim());
 }
@@ -17,10 +14,6 @@ function enabled(value) {
 function boundedInteger(value, fallback, min, max) {
     const parsed = Number(value);
     return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
-}
-
-function safeErrorCode(error) {
-    return SAFE_ERROR_CODES.has(error?.code) ? error.code : 'tg_provider_request_failed';
 }
 
 function orderProduct(order) {
@@ -156,8 +149,10 @@ function createTgWorker({ supabase, client, env = process.env, now = () => Date.
         } catch (error) {
             // Even a timeout may have created and charged an upstream order.
             // Keep the code locked for reconciliation instead of buying again.
+            const diagnostic = describeGramixError(error);
             return finish(order, 'manual_review', {
-                errorCode: safeErrorCode(error), errorMessage: '上游订单提交结果尚未确认，等待人工核查'
+                errorCode: diagnostic.error_code,
+                errorMessage: `${diagnostic.message}。${diagnostic.action} 上游订单提交结果仍需核对，已保留原任务并停止自动重试。`
             });
         }
         const data = response?.data;
@@ -185,8 +180,10 @@ function createTgWorker({ supabase, client, env = process.env, now = () => Date.
             provider ||= createGramixClient({ env });
             response = await provider.getOrder(order.provider_order_id);
         } catch (error) {
+            const diagnostic = describeGramixError(error);
             return finish(order, error?.retryable === true ? 'retry_waiting' : 'manual_review', {
-                errorCode: safeErrorCode(error), errorMessage: '上游订单状态查询未完成，尚未确认兑换成功'
+                errorCode: diagnostic.error_code,
+                errorMessage: `${diagnostic.message}。${diagnostic.action} 上游订单状态查询未完成，尚未确认兑换成功。`
             });
         }
         const checked = normalizeOrderSnapshot(response, order);

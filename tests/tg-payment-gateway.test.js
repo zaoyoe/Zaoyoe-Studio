@@ -96,3 +96,76 @@ test('TG payment configuration is fail closed and does not reuse application sec
     for (const pid of ['1', '9'.repeat(32)]) assert.notDeepEqual(createTgPaymentGateway({ env: { ...ENV, TG_PURCHASE_ZPAY_PID: pid } }).channels(), []);
     for (const pid of ['', '0'.repeat(33), '123abc']) assert.deepEqual(createTgPaymentGateway({ env: { ...ENV, TG_PURCHASE_ZPAY_PID: pid } }).channels(), []);
 });
+
+test('ZPay requests the full fee-inclusive amount; a signed lower amount remains subject to SQL binding', async () => {
+    let request;
+    const gateway = createTgPaymentGateway({ env: ENV, fetchImpl: async (_, options) => {
+        request = new URLSearchParams(options.body);
+        return response({ code: 1, payurl: 'https://qr.alipay.com/example', trade_no: 'ZP-REMOTE-123' });
+    } });
+    await gateway.createPayment({ order: { ...ORDER, subtotal_minor: 1234, payment_fee_minor: 13, payment_fee_rate_bps: 100, total_minor: 1247 } });
+    assert.equal(request.get('money'), '12.47');
+    assert.equal(gateway.verifyWebhook(signed({ money: '12.34' })).amount_minor, 1234);
+    assert.equal(gateway.verifyWebhook(signed({ money: '12.47' })).amount_minor, 1247);
+});
+
+test('ZPay uses the order QR payload, falls back to the cashier URL, and rejects generic downloads', async () => {
+    for (const [payload, expected] of [
+        [{ qrcode: 'https://qr.alipay.com/opaque-payment-token', payurl: 'https://d.alipay.com/' }, 'https://qr.alipay.com/opaque-payment-token'],
+        [{ qrcode: 'https://pay.example/qr-image.png', payurl: 'https://pay.example/cashier/opaque' }, 'https://pay.example/cashier/opaque'],
+        [{ qrcode: 'https://pay.example/loading.png', payurl: 'https://pay.example/cashier/opaque' }, 'https://pay.example/cashier/opaque'],
+        [{ qrcode: 'https://pay.example/cashier/opaque' }, 'https://pay.example/cashier/opaque']
+    ]) {
+        const gateway = createTgPaymentGateway({ env: ENV, fetchImpl: async () => response({ code: 1, trade_no: 'ZP-REMOTE-123', ...payload }) });
+        assert.equal((await gateway.createPayment({ order: ORDER })).checkout_url, expected);
+    }
+    for (const payurl of ['https://d.alipay.com/', 'https://mobile.alipay.com/download/app', 'https://pay.example/', 'https://pay.example/sample/qr', 'https://pay.example/download/app']) {
+        const gateway = createTgPaymentGateway({ env: ENV, fetchImpl: async () => response({ code: 1, trade_no: 'ZP-REMOTE-123', payurl }) });
+        await assert.rejects(gateway.createPayment({ order: ORDER }), error => error.code === 'tg_payment_provider_unconfirmed');
+    }
+});
+
+test('ZPay cancellation checks the authenticated official order query with exact merchant, trade, order, channel and amount', async () => {
+    const order = { ...ORDER, provider_trade_no: 'ZP-REMOTE-123' };
+    const idle = { code: 1, pid: ENV.TG_PURCHASE_ZPAY_PID, trade_no: order.provider_trade_no, out_trade_no: order.order_no, type: 'alipay', money: '12.34', status: 0 };
+    const gateway = createTgPaymentGateway({ env: ENV, fetchImpl: async (url, options) => {
+        const target = new URL(url); assert.equal(target.origin, 'https://zpayz.cn'); assert.equal(target.pathname, '/api.php');
+        assert.equal(target.searchParams.get('act'), 'order'); assert.equal(target.searchParams.get('out_trade_no'), order.order_no);
+        assert.equal(target.searchParams.get('pid'), ENV.TG_PURCHASE_ZPAY_PID); assert.equal(target.searchParams.get('key'), KEY);
+        assert.equal(options.method, 'GET'); assert.equal(options.body, undefined); assert.equal(options.redirect, 'error');
+        return response(idle);
+    } });
+    assert.equal(await gateway.canCancel({ order }), true);
+    assert.equal(await createTgPaymentGateway({ env: ENV, fetchImpl: async () => response({ ...idle, status: '1' }) }).canCancel({ order }), false);
+    for (const changes of [{ code: 0 }, { pid: '999' }, { trade_no: 'other' }, { out_trade_no: 'other' }, { type: 'wxpay' }, { money: '12.33' }, { status: null }, { status: 2 }]) {
+        await assert.rejects(createTgPaymentGateway({ env: ENV, fetchImpl: async () => response({ ...idle, ...changes }) }).canCancel({ order }));
+    }
+    await assert.rejects(createTgPaymentGateway({ env: ENV, fetchImpl: async url => { throw new Error(url); } }).canCancel({ order }), error => !error.message.includes(KEY));
+});
+
+test('authenticated ZPay reads reconcile checkout aliases while binding every paid-order identity', async () => {
+    const order = { ...ORDER, provider_trade_no: ORDER.order_no };
+    const paid = { code: 1, pid: ENV.TG_PURCHASE_ZPAY_PID, out_trade_no: ORDER.order_no,
+        trade_no: '2026101623001484951454703399', type: 'alipay', money: '12.34', status: 1 };
+    let target;
+    const gateway = createTgPaymentGateway({ env: ENV, fetchImpl: async url => { target = new URL(url); return response(paid); } });
+    const verified = await gateway.queryPayment({ order });
+    assert.equal(target.pathname, '/api.php'); assert.equal(target.searchParams.get('act'), 'order');
+    assert.equal(target.searchParams.get('out_trade_no'), order.order_no);
+    assert.equal(target.searchParams.get('key'), KEY);
+    assert.equal(verified.provider_trade_no, paid.trade_no);
+    assert.equal(verified.amount_minor, order.total_minor);
+    assert.equal(verified.verified_payload.verified_by, 'authenticated_query');
+    assert.equal(verified.verified_payload.checkout_trade_no, order.order_no);
+    assert.equal(verified.verified_payload.provider_order_no, order.order_no);
+    assert.ok(!JSON.stringify(verified).includes(KEY));
+    assert.equal(await createTgPaymentGateway({ env: ENV, fetchImpl: async () => response({ ...paid, status: 0 }) }).queryPayment({ order }), null);
+    for (const fields of [{ code: 0 }, { pid: 'other' }, { out_trade_no: 'TGP-ZYXWVUTSRQPONMLKJIHG' }, { type: 'wxpay' },
+        { money: '12.33' }, { money: '12.35' }, { currency: 'USD' }, { status: 2 }, { status: null }, { trade_no: 'invalid/id' }]) {
+        await assert.rejects(createTgPaymentGateway({ env: ENV, fetchImpl: async () => response({ ...paid, ...fields }) }).queryPayment({ order }));
+    }
+    await assert.rejects(gateway.queryPayment({ order: { ...order, provider_trade_no: 'an-already-bound-real-transaction' } }));
+    await assert.rejects(gateway.queryPayment({ order: { ...order, payment_merchant_id: 'other' } }));
+    const failing = createTgPaymentGateway({ env: ENV, fetchImpl: async url => { throw new Error(url); } });
+    await assert.rejects(failing.queryPayment({ order }), error => !error.message.includes(KEY));
+});

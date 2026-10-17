@@ -986,6 +986,63 @@ test('hosted frontend verification aligns Vercel asset versions with the KVM4 re
     }
 });
 
+async function verifyHostedOrderPageBody(bodyTag) {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guest-shop-hosted-body-'));
+    const releaseCommit = 'a'.repeat(40);
+    const pageUrl = 'https://www.fatherkey.com/guest-orders.html';
+    const clientUrl = `${new URL('/js/guest-orders-client.js', pageUrl)}?v=${releaseCommit.slice(0, 12)}`;
+    try {
+        fs.mkdirSync(path.join(tempRoot, 'server'), { recursive: true });
+        fs.writeFileSync(path.join(tempRoot, 'server', '.release-commit'), `${releaseCommit}\n`, 'utf8');
+        const page = [
+            bodyTag,
+            '<section id="guestOrdersFeatureGate"></section>',
+            '<div id="guestOrdersProtectedContent"></div>',
+            '<form id="guestOrdersQueryForm"></form>',
+            `<script src="./js/guest-orders-client.js?v=${releaseCommit.slice(0, 12)}"></script>`
+        ].join('\n');
+        const client = [
+            "const ACCESS_AVAILABILITY_ENDPOINT = '/api/shop/guest/access/availability';",
+            "const CREDENTIAL_HEADER = 'X-Guest-Order-Credential';",
+            "fetch('/api', { credentials: 'same-origin' });"
+        ].join('\n');
+        return await inspectHostedBuyerCredentialFrontend({
+            env: { APP_BASE_URL: 'https://www.fatherkey.com' },
+            repoRoot: tempRoot,
+            fetchImpl: async (url) => createFetchResponse(String(url), {
+                text: String(url) === pageUrl ? page : client,
+                status: [pageUrl, clientUrl].includes(String(url)) ? 200 : 404
+            })
+        });
+    } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+}
+
+test('hosted page identity accepts the real order-page body and additional layout classes', async () => {
+    const actualBody = fs.readFileSync(path.join(REPO_ROOT, 'guest-orders.html'), 'utf8').match(/<body\b[^>]*>/iu)?.[0];
+    assert.ok(actualBody, 'the shipped order page must declare a body');
+    for (const body of [actualBody, "<body id='orders' class='guestbook-page guest-orders-page'>"]) {
+        const checks = await verifyHostedOrderPageBody(body);
+        assert.equal(checks.length, 3, body);
+        assert.equal(checks.every((check) => check.ok === true), true, body);
+        assert.equal(checks.find((check) => check.key === 'frontend:guest-orders-commit').expected_commit, 'a'.repeat(12));
+    }
+});
+
+test('hosted page identity rejects absent, lookalike and data-only body classes', async () => {
+    for (const body of [
+        '<body class="guestbook-page">',
+        '<body class="guest-orders-page-old guestbook-page">',
+        '<body data-class="guest-orders-page">'
+    ]) {
+        const checks = await verifyHostedOrderPageBody(body);
+        assert.equal(checks[0].key, 'frontend:guest-orders.html', body);
+        assert.equal(checks[0].ok, false, body);
+        assert.equal(checks[0].blocking, true, body);
+    }
+});
+
 test('the async production gate replaces local page presence with hosted commit-aligned evidence', async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guest-shop-readiness-overlay-'));
     const releaseCommit = 'c'.repeat(40);

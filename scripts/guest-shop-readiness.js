@@ -481,7 +481,6 @@ const BUYER_CREDENTIAL_FRONTEND_FILES = Object.freeze([
 ]);
 const KVM4_RELEASE_COMMIT_FILE = 'server/.release-commit';
 const GUEST_ORDERS_PAGE_CONTRACT_MARKERS = Object.freeze([
-    '<body class="guest-orders-page">',
     'id="guestOrdersFeatureGate"',
     'id="guestOrdersProtectedContent"',
     'id="guestOrdersQueryForm"'
@@ -620,8 +619,10 @@ async function inspectHostedBuyerCredentialFrontend({
         })];
     }
 
+    const bodyTag = pageResponse.text.match(/<body\b[^>]*>/iu)?.[0] || '';
+    const bodyClasses = bodyTag.match(/\sclass\s*=\s*(["'])(.*?)\1/iu)?.[2]?.split(/\s+/u) || [];
     const missingPageMarker = GUEST_ORDERS_PAGE_CONTRACT_MARKERS.find((marker) => !pageResponse.text.includes(marker));
-    if (missingPageMarker) {
+    if (!bodyClasses.includes('guest-orders-page') || missingPageMarker) {
         return [invalidCheck('buyer_credentials', 'frontend:guest-orders.html', '线上 guest-orders.html 缺少必要的凭证查询合同标记；可能是旧版、错误页或不完整构建。', {
             hosted_url: pageUrl,
             deployment_surface: 'vercel'

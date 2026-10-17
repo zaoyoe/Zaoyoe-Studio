@@ -1,5 +1,7 @@
 'use strict';
 
+const { providerReason } = require('./gramix-errors');
+
 const DEFAULT_BASE_URL = 'https://api.gramix.io/api/v1';
 const DEFAULT_TIMEOUT_MS = 15_000;
 const SUPPORTED_PREMIUM_DURATIONS = Object.freeze([3, 6, 12]);
@@ -20,6 +22,7 @@ class GramixApiError extends Error {
         this.code = details.code || 'gramix_api_error';
         this.statusCode = Number.isInteger(details.statusCode) ? details.statusCode : undefined;
         this.retryable = Boolean(details.retryable);
+        this.providerReason = typeof details.providerReason === 'string' ? details.providerReason : null;
     }
 }
 
@@ -101,6 +104,36 @@ function normalizeRecipient(value) {
     return recipientName;
 }
 
+// Bound the error body before parsing. Only documented, exact messages survive
+// classification; arbitrary fields and proxy HTML never leave this boundary.
+async function readProviderReason(response, status, signal) {
+    const limit = 8192;
+    const type = response.headers?.get?.('content-type');
+    if (type && !/^application\/(?:[a-z0-9.+-]+\+)?json(?:;|$)/i.test(type)) return null;
+    if (Number(response.headers?.get?.('content-length') || 0) > limit) {
+        response.body?.cancel?.().catch(() => {});
+        return null;
+    }
+    const reader = response.body?.getReader?.();
+    if (!reader) return null;
+    const abort = () => { reader.cancel().catch(() => {}); };
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+    try {
+        const chunks = [];
+        let size = 0;
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            size += value.byteLength;
+            if (size > limit) { reader.cancel().catch(() => {}); return null; }
+            chunks.push(Buffer.from(value));
+        }
+        return providerReason(status, JSON.parse(Buffer.concat(chunks).toString('utf8')));
+    } catch (_) { return null; }
+    finally { signal.removeEventListener('abort', abort); reader.releaseLock(); }
+}
+
 function retryableStatus(status) {
     return status === 408 || status === 425 || status === 429 || status >= 500;
 }
@@ -133,10 +166,13 @@ class GramixClient {
         const controller = new AbortController();
         const duration = normalizeTimeout(timeoutMs ?? this.timeoutMs);
         let timer;
+        let receivedStatus = null;
         const timeoutPromise = new Promise((_resolve, reject) => {
             timer = setTimeout(() => {
                 controller.abort();
-                reject(new GramixApiError('Gramix request timed out', { code: 'gramix_timeout', retryable: true }));
+                reject(receivedStatus >= 400
+                    ? new GramixApiError('Gramix request was rejected', { code: 'gramix_http_error', statusCode: receivedStatus, retryable: retryableStatus(receivedStatus) })
+                    : new GramixApiError('Gramix request timed out', { code: 'gramix_timeout', retryable: true }));
             }, duration);
         });
         try {
@@ -151,13 +187,13 @@ class GramixClient {
                     redirect: 'error'
                 });
                 const status = Number(response?.status || 0);
+                receivedStatus = status;
                 const ok = response?.ok === true || (response?.ok === undefined && status >= 200 && status < 300);
                 if (!ok) {
-                    // Provider error bodies may contain credentials or personal
-                    // data. Keep only the HTTP status, never their message/cause.
+                    const reason = await readProviderReason(response, status, controller.signal);
                     controller.abort();
                     throw new GramixApiError('Gramix request was rejected', {
-                        code: 'gramix_http_error', statusCode: status || 502,
+                        code: 'gramix_http_error', statusCode: status || undefined, providerReason: reason,
                         retryable: retryableStatus(status)
                     });
                 }

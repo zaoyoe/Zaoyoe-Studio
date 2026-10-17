@@ -2,7 +2,7 @@
 
 ## 范围与业务边界
 
-提供 Telegram Premium **3 / 6 / 12 个月**和 Telegram Stars 的即时支付购买、兑换码兑换、上游履约、订单查询与只读对账。用户可直接选商品付款，也可使用已有兑换码，两种入口并存。
+提供 Telegram Premium **3 / 6 / 12 个月**和 Telegram Stars 的即时支付购买、兑换码兑换、上游履约、订单查询、只读对账与人工复核。用户可直接选商品付款，也可使用已有兑换码，两种入口并存。
 
 - 用户端：`https://tg.fatherkey.com`，页面入口 `tg.html`。
 - 管理端：`https://tg.adm.fatherkey.com`，页面入口 `tg-admin.html`。
@@ -183,8 +183,10 @@ USDT 新增配置为独立的 `TG_PURCHASE_NOWPAYMENTS_*`，不能因为既有 Z
 | `POST /api/tg/purchase/quote` | JSON：商品 ID、用户名和可选 Stars 数量；返回服务端报价、价格版本和到期时间 |
 | `POST /api/tg/purchase/orders` | JSON：报价 ID、商品/数量/用户名、确认金额/版本、渠道、查询凭证和幂等键；创建或恢复独立 TG 购买订单 |
 | `GET /api/tg/purchase/status?order_no=...` | 凭证使用 `X-TG-Status-Token`；返回付款及发货状态 |
+| `POST /api/tg/purchase/cancel` | JSON：`order_no`，查询凭证仅放 `X-TG-Status-Token`；安全关闭允许关闭的未付款订单 |
 | `GET/POST /api/tg/purchase/webhooks/zpay` | 支付平台签名回调；到账事务核验并创建唯一履约任务 |
 | `POST /api/tg/purchase/webhooks/nowpayments` | USDT 独立 IPN 回调；核对签名、币种、网络、金额、支付 ID 和本地订单绑定 |
+| `POST /api/tg/preview` | JSON：`code`；只读返回实际产品、权益和期限，不预约兑换码；每 IP 每分钟 10 次 |
 | `POST /api/tg/redeem` | JSON：`code`、`username`、`status_token`、`idempotency_key`；首次成功返回订单及凭证 |
 | `GET /api/tg/status?order_no=...` | 凭证仅使用 `X-TG-Status-Token` header；URL query token 不接受 |
 | `GET /api/admin/tg/codes?page=1&pageSize=50` | 批次分页，`pageSize` 最大 100 |
@@ -192,10 +194,13 @@ USDT 新增配置为独立的 `TG_PURCHASE_NOWPAYMENTS_*`，不能因为既有 Z
 | `POST /api/admin/tg/codes` | JSON `action=generate`：产品类型、时长或 Stars 数量、`count`、可选 `name`、`notes`、`valid_until` |
 | `POST /api/admin/tg/codes` | JSON `action=revoke`：`code_id` 或 `batch_id` 二选一，可选 `reason` |
 | `GET /api/admin/tg/orders?page=1&pageSize=50&status=...` | 订单分页与状态筛选 |
-| `GET /api/admin/tg/orders?orderId=UUID&reconcile=1` | 本地订单详情及已知上游订单的只读核验 |
+| `GET /api/admin/tg/orders?orderId=UUID&reconcile=1` | 本地订单详情、最近处理记录及已知上游订单的只读核验 |
+| `POST /api/admin/tg/orders` | `order_id`、`action`、`note`、`expected_updated_at`；操作为 `reconcile` / `resume_unsubmitted` / `close` / `note` |
 | `GET /api/admin/tg/provider` | 只读余额、当前扣款币种、配置健康状态及业务开关；不返回密钥 |
 | `GET/POST /api/admin/tg/products` | 查询、配置 Premium 售价或 Stars 单价、控制商品停售/开售 |
-| `GET /api/admin/tg/purchases?page=1&pageSize=50` | 购买订单分页，付款和履约状态；不返回查询凭证 |
+| `GET /api/admin/tg/purchases?page=1&pageSize=50` | 购买订单分页与组合筛选，付款和履约状态；不返回查询凭证 |
+| `GET /api/admin/tg/purchases?order_no=...&reconcile=1` | 购买详情、关联履约单、处理记录和可选只读上游核验 |
+| `POST /api/admin/tg/purchases` | `order_no`、`action`、`note`、`expected_updated_at`；操作为 `close` / `approve_payment` / `note` |
 
 客户端应在发出兑换前生成足够随机的 `status_token`（32–128 位允许字符）和 `idempotency_key`（16–128 位允许字符），重试时保持四项兑换参数一致。也支持 `Idempotency-Key` header。服务器可以代生成未提供的凭证，但自定义客户端若需在首个响应丢失后恢复，必须预先生成并保存它们。
 
@@ -283,3 +288,146 @@ npm run readiness:tg -- --env-file /private/path/verify.env --json --fail-on-inv
 推荐交接顺序：在已有只读核验基础上完成完整 ACL、真实并发/运行时 RPC 验证 → 配置域名且开关保持关闭 → PR/CI 合并最新 main 并验证既有三条发布链路 → 合并生产私有 TG 与支付配置并按 env_file 重建流程载入 → 安装但不启动 TG timer → 配置后台售价并保持停售 → 确认 USDT 余额并完成获准的受控支付/上游联调和告警演练 → 另行开放兑换或即时购买。此顺序不构成自动部署或真实购买授权。
 
 日志、审计和异常输出不得包含 API key、明文兑换码、查询凭证或完整上游响应。对外错误使用通俗提示，管理员通过订单号和脱敏错误码排查。
+
+
+## 2026-10-17 操作闭环补齐（本地工作区，尚未发布）
+
+本节记录本次新增操作能力及其验收边界。上文关于“238 项测试”“第 1–8 份执行确认”“第 9 份待执行”和环境配置的叙述是前一轮的历史记录，原样保留；不代表本次已重新核验数据库、生产配置或完成部署。本次基于 `6e322240721059eac6909d923cf61148077ef5c0` 的 `codex/tg-operations-closure` 工作区实现。工作区改动尚不是生产发布证据。
+
+### 已补齐的业务操作
+
+| 能力 | 用户或管理员操作 | 系统保护与结果 |
+| --- | --- | --- |
+| 兑换码预览 | 用户输入兑换码和收件人，首次点击预览实际权益，再次确认才兑换 | 使用摘要只读查询；不预约、不返回码内容或其他用户信息；预览仅在当前页面内保留 60 秒，输入变化后失效；提交时原兑换事务重新校验 |
+| 用户关闭购买单 | 查询原订单后点击“关闭未付款订单”并确认 | 查询凭证校验及购买单行锁；有付款、支付请求结果不明、租约或履约任务时拒绝关闭；提交关单后隐藏付款入口，响应丢失时保留原订单凭证用于查询 |
+| 管理员关闭订单 | 在购买详情关闭安全的未付款单；在兑换详情关闭从未提交上游的兑换单 | 必填处理原因及订单版本；兑换单只有无提交标记、无上游身份、无币种、无 attempt 证据才可释放原码；不能关闭已提交或付款后履约单 |
+| 到账人工复核 | 对已保存验证到账证据的 `manual_review` 购买单核准发货 | 仅使用数据库中回调已验证的付款事实，保留原账号、金额和权益；在同一事务创建唯一履约单，不接受浏览器传入的付款证明 |
+| 履约人工复核 | 对 `manual_review` 履约单核验同步，或恢复从未提交的任务 | 核验同步时服务端重新 GET 上游并核对订单身份、账号、权益、币种、method 和状态，再复用 worker 结案函数；不会重新购买；缺少提交身份的未知结果继续冻结 |
+| 上游只读查询 | 购买详情或履约详情点击“只读核对上游订单” | 返回脱敏核验结果和检查时间，不改变本地状态；“核验上游并同步结果”是另一次明确写操作 |
+| 后台组合筛选 | 按编号、产品、用户名、来源、支付/履约状态、渠道与创建时间筛选 | 各列表使用其适用字段；输入经服务端白名单验证；分页保留筛选，重置回第一页；创建时间起点包含、终点不包含 |
+| 处理记录 | 详情中保存核对记录、查看最近 50 条审计 | 操作人取服务端管理员会话，原因必填；旧版本写入拒绝并保留输入；审计只返回允许字段，备注按纯文本渲染 |
+
+关单只关闭本站订单，**不会撤销已发出的支付平台收款请求，也不是退款**。关单、过期或待复核订单后续收到合法回调时，仍保留验证后的到账事实并进入人工核对，禁止自动发货。管理员确认客户原收件人和权益后可按原单核准；若需退款，应走独立的支付渠道处理流程并记录结果，本次没有退款接口或退款自动结案能力。
+
+已保存原兑换请求凭证时，重试仍使用原参数；已有订单直接查询，避免已预约兑换码被新预览阻断。批次仍有效且预约已过期、从未尝试提交的码允许只读预览，真正回收由原兑换 RPC 加锁处理。上游结果未知且缺少订单 ID、历史币种或提交证据不完整时，不能强制成功、释放原码或重新购买；应保留冻结状态，通过上游支持核查并在详情记录进展。
+
+### 追加 SQL 与部署前置
+
+本次新增两份 SQL，均由用户或数据库管理员执行，**Codex 未执行 SQL**。必须先确认上文第 9 份 `20261015_tg_purchase_usdt_payments.sql` 及全部前置 TG 迁移已完成，然后依次执行：
+
+10. `supabase/migrations/20261017_tg_operations_closure.sql`：追加 `cancelled` 支付状态、预览/关单/人工复核 RPC；保留最新版 USDT 订单字段、支付绑定和精度校验，更新迟到付款处理；新 RPC 只授权 `service_role`。
+11. `supabase/migrations/20261017_verify_tg_operations_closure.sql`：只读检查结构、ACL 与函数保护。其通过不代表事务、并发或真实交易验收通过。
+
+不要重跑较早的 worker、购买或 USDT 迁移覆盖本次函数。此次变更不自动启用购买、兑换、履约或商品。API 和共享 `server/tg/operations.js` 属于 KVM4 Verify Server，静态页面属于 Vercel；发布时两端须来自同一最新 `main`，并按 AGENTS.md 核验 worker 的匹配版本。离线 readiness 已将新模块和两份 SQL 纳入源码文件检查。
+
+### 本次本地验证记录
+
+以下结果对应上述基线提交上的本地工作区改动；API、数据库、支付、上游及浏览器登录均使用模拟数据，未产生真实交易。历史记录中的 238 项结果继续保留，本表单独记录本次回归结果。
+
+| 检查 | 本次结果 | 证据与边界 |
+| --- | --- | --- |
+| 完整 TG 定向测试 | PASS：272 项通过，0 失败、0 取消、0 跳过、0 待办 | `node --test --test-reporter=spec --test-force-exit tests/tg-*.test.js`；包含 API、页面、worker、路由、打包、readiness 和 SQL 源码契约 |
+| JavaScript 语法检查 | PASS：16 个新增或修改的 JS 文件 | 逐文件运行 `node --check`，不代表真实服务联调 |
+| SQL 静态解析 | PASS：主迁移 17 条语句、5 个 PL/pgSQL 函数体；验证脚本 4 条语句、1 个 PL/pgSQL 代码块 | 使用 pglast `parse_sql` / `parse_plpgsql`，没有连接数据库或执行 SQL |
+| Chromium 页面交互 | PASS：6 项，1440px 桌面 / 390px 手机 | 预览后确认兑换、关单隐藏付款入口、组合筛选、关联履约、只读上游查询与明确同步、审计；无页面脚本错误、意外网络请求或页面横向溢出；全部接口由本地 mock 响应 |
+| 离线 readiness | 50 项 ok、18 项 pending、0 项 invalid；`ready: false` | `runReadiness({ env: {} })`，未加载密钥；缺失配置与人工验收继续 pending，不能据此启用业务 |
+
+本地临时证据位于 `/tmp/tg-closure-full-tests.log`、`/tmp/tg-closure-readiness.json` 和 `/tmp/tg-closure-browser-20261017/`（交互报告及截图）；这些路径不属于生产证据或持久发布归档。浏览器报告明确记录 `working_tree: true`、`all_network_mocked: true`、`production_evidence: false`。
+
+### 尚待真实环境验收
+
+| 验收项 | 本次状态 | 必须确认的结果 |
+| --- | --- | --- |
+| 两份追加 SQL 应用及真实 ACL/RPC | NOT RUN | 新函数仅 service role 可用、预览无状态写入，返回字段与页面/API 一致 |
+| 关单与回调、重复关单并发 | NOT RUN | 无漏款、无重复履约；合法迟到付款进入人工复核；已付款不可误关 |
+| 人工放行与 worker 并发 | NOT RUN | 版本冲突、锁顺序、租约及唯一履约约束生效，旧页面不能覆盖新结果 |
+| 上游真实状态核验与同步 | NOT RUN | 已知成功/失败/处理中状态核验一致；状态同步不产生第二次购买 |
+| 真实兑换码预览与预约到期回收 | NOT RUN | 预览不占用库存，最终兑换重新校验；失效/已使用码不可兑换 |
+| 真实付款、USDT 到账与 Gramix 交付 | NOT RUN | 签名、独立 GET、金额/地址/网络绑定及实际交付均有受控证据 |
+| 生产部署、配置、业务启用 | NOT RUN | 本轮未推送、合并、部署、修改生产配置或打开任何业务开关 |
+
+自动测试、SQL 静态解析及模拟浏览器交互仅用于验证实现，不能替代上述真实环境证据。
+
+
+## 2026-10-17 本地预览合并恢复补充记录
+
+较早工作区的支付弹窗、USDT 四网络、hover 和后台六分栏已恢复到当前操作闭环工作区。
+来源备份、组合迁移依赖、677 项 TG 回归、276 项共享样式回归，以及用户登录后发现的
+`closed_at` 缺字段问题，分别记录于 `docs/tg-preview-reconciliation-20261017.md`。
+此补充不改变上文历史结果。原 `approve_payment` 快捷核准在组合版本中已停用，
+统一使用重新核对渠道收款且确认退款/发货状态的审核流程。
+最终组合 SQL、真实业务与并发验收仍为 NOT RUN；恢复预览不代表生产发布或业务验收完成。
+
+
+### 2026-10-17 review_resolution 前置门禁失败补充更正
+
+用户实际执行返回 `TG purchase fulfillment review is not ready`。已确认原安装顺序中
+operations_closure 会覆盖 payment reconciliation 所需定义，使后续门禁失败。
+当前恢复入口为 `supabase/migrations/20261017_tg_runtime_recovery.sql`，把恢复支付证明、
+复核、关闭状态、最终组合与结构检查封装在一个事务中；具体操作见
+`docs/tg-preview-reconciliation-20261017.md` 文末。原迁移及历史结果保留。
+此文件由操作者手动执行；Codex 本轮未执行 SQL，业务及并发验收仍为 NOT RUN。
+
+
+### 原上游订单恢复与凭据结案（2026-10-17 追加）
+
+本节补齐原请求已经提交但缺少上游单号的处理入口。当前管理页购买详情内可只读核验并补录
+本次原上游单，或登记上游明确未受理且不会后续发货的凭据后结案；两条路径均在提交时重新查单，
+并核对购买/任务两个版本和工作租约。原请求标识、提交时间、币种与尝试历史保留，不重买、不自动退款。
+本节与后续手册描述当前增量行为；上文历史结果继续保留，不改写既有 NOT RUN。
+
+操作顺序、字段要求、阻断情况和独立验收矩阵见
+`docs/tg-purchase-upstream-recovery.md`。安装时在已有 runtime recovery/reconciliation 与
+purchase review resolution 就绪后，手动执行
+`supabase/migrations/20261017_tg_purchase_upstream_recovery.sql`，再执行
+`supabase/migrations/20261017_verify_tg_purchase_upstream_recovery.sql`。
+结构成功提示仍明确保留 concurrent/business acceptance remains NOT RUN。Codex 本轮未执行 SQL。
+
+
+### 2026-10-17 兑换码复制与弹窗交互补充（本地工作区）
+
+本节更新上文“只在生成时显示完整兑换码、没有重新查看入口”的历史描述：超级管理员
+可在批次详情点击兑换码尾号，将完整码复制到剪贴板。只有此次显式点击才会调用
+POST /api/admin/tg/codes 的 reveal 动作；列表和详情 GET 继续只返回摘要。
+服务端校验 TG 管理来源、JSON 请求及超级管理员权限，验证原有 AES-GCM 加密原文、
+码格式、尾号与 HMAC 摘要，严格写入不含完整码的审计记录后才返回结果，响应禁止缓存。
+缺少加密原文的旧码会明确提示使用生成时保存的原码；本次不需要新增数据库迁移。
+
+较早的本地资源版本 20261017-dialog-copy-v7 在复制后展开完整码，并在自动复制失败时
+选中完整码供手动复制。该版回归为 832/832、定向为 179/179，记录保留为历史证据。
+依据用户后续要求，当前版本 20261017-copy-toast-v8 始终只显示尾号，移除“查看并复制”
+和展开原码的输入框；悬停只变色并轻微下压，不显示矩形底色或边框。
+点击会复制完整码，在浏览器底部浮出“复制成功”胶囊，约 2.4 秒后隐藏；失败仅提示
+允许浏览器访问剪贴板后重试，不展开原码。详情关闭、重新打开或会话失效后，旧响应
+不能更新页面或显示成功提示；原码不进入页面字段、存储或 URL。
+
+本轮同时保留三个弹窗的遮罩点击关闭、提交中及新生成兑换码未确认保存时的关闭保护，
+以及输入框聚焦的一层高亮边框。当前相关回归 834/834、定向 181/181，通过了真实批次
+只读恢复及剪贴板格式/尾号核验。实际生成、撤销、付款、退款、订单关闭/补发/结案、
+数据库并发及生产部署仍为 NOT RUN；上述界面证据不能替代业务验收。
+
+
+### 2026-10-17 批次使用率与撤销操作区补充（本地工作区）
+
+当前本地资源版本为 20261017-batch-usage-v9。批次列表在“生成张数”与“状态”之间
+新增“使用率”，以已成功兑换张数 redeemed_count / 实际生成张数 generated_count
+计算，显示百分比、已用/生成数量与细进度条。预留中、履约中、已撤销的码不计入成功
+兑换；quantity 是申请生成量，不作为使用率分母。0/0 显示 0%，缺失或非法统计显示
+“—”；使用原有列表统计字段，不额外读取完整兑换码，也不新增数据库迁移。
+
+批次详情的“撤销此批次”移入独立操作区，与兑换码表格相隔 24px，避免中间隐藏的
+复制反馈元素使原相邻选择器失效。撤销成功后清除旧提示、刷新列表及当前详情，移除
+右下角“撤销操作已完成”；撤销确认、失败错误和原有复制胶囊继续保留。实际列表、
+空态和加载骨架同步为七列。桌面与 390×844 窄屏均核对了按钮间距与内部表格滚动。
+
+本轮定向测试 186/186、完整 TG / Gramix / USDT / local-preview 相关回归 839/839，
+失败、取消、跳过和 todo 均为 0。本轮仅只读核对真实批次；实际生成、撤销、兑换、
+付款/退款、订单关闭/补发/结案、数据库并发和生产部署仍为 NOT RUN。测试成功不替代
+业务验收；历史记录和前序授权改动继续保留。
+
+
+## 2026-10-17 数据中心增量
+
+本地新增数据中心、只读聚合与列表筛选联动；统计口径、数据库接入顺序及独立验证记录见
+`docs/tg-data-center.md`。迁移尚未应用，真实数据/并发/业务验收与生产部署均为 NOT RUN。
+此增量不修改前文历史验收结果。

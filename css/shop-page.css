@@ -8695,135 +8695,8 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
    is-done / is-current / is-upcoming plus aria-current="step" on the live step.
    Dujiao's keys are cart/checkout/payment; a guest single-product flow has no
    cart, so the rail is 确认订单 -> 支付 -> 发货. */
-.guest-shop-modal__steps {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: start;
-    margin: 0 0 16px;
-    padding: 12px 14px;
-    border: 1px solid rgba(255,255,255,.09);
-    border-radius: 12px;
-    background: rgba(255,255,255,.045);
-    list-style: none;
-}
-.guest-shop-modal__step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; text-align: center; }
-.guest-shop-modal__step + .guest-shop-modal__step::before {
-    content: "";
-    position: absolute;
-    top: 7px;
-    right: 50%;
-    width: 100%;
-    height: 2px;
-    border-radius: 999px;
-    background: rgba(255,255,255,.14);
-    transition: background-color .2s ease;
-    z-index: 0;
-}
-.guest-shop-modal__step.is-done::before,
-.guest-shop-modal__step.is-current::before { background: #53c7df; }
-.guest-shop-modal__step-index {
-    flex: 0 0 auto;
-    display: block;
-    width: 14px;
-    height: 14px;
-    border: 0;
-    border-radius: 50%;
-    background: #94a3b8;
-    position: relative;
-    z-index: 1;
-    transition: background-color .2s ease;
-}
-.guest-shop-modal__step.is-done .guest-shop-modal__step-index,
-.guest-shop-modal__step.is-current .guest-shop-modal__step-index {
-    background: rgb(var(--guest-step-rgb));
-    box-shadow: none;
-}
-.guest-shop-modal__step-label { color: rgba(226,232,240,.58); font-size: 12px; font-weight: 600; line-height: 1.25; white-space: nowrap; }
-.guest-shop-modal__step.is-done .guest-shop-modal__step-label,
-.guest-shop-modal__step.is-current .guest-shop-modal__step-label { color: rgba(248,250,252,.94); font-weight: 600; }
-/* Each checkout phase has its own accent. */
-.guest-shop-modal__step[data-step-key="configure"] .guest-shop-modal__step-index { --guest-step-rgb: 83,199,223; }
-.guest-shop-modal__step[data-step-key="payment"] .guest-shop-modal__step-index { --guest-step-rgb: 169,151,231; }
-.guest-shop-modal__step[data-step-key="delivery"] .guest-shop-modal__step-index { --guest-step-rgb: 101,207,172; }
-.guest-shop-modal__step[data-step-key="payment"].is-done::before,
-.guest-shop-modal__step[data-step-key="payment"].is-current::before { background: #a997e7; }
-.guest-shop-modal__step[data-step-key="delivery"].is-done::before,
-.guest-shop-modal__step[data-step-key="delivery"].is-current::before { background: #65cfac; }
-.guest-shop-modal__eyebrow { margin: 0 0 4px; color: #93c5fd; font-size: 12px; letter-spacing: .02em; }
-.guest-shop-modal__state { margin-bottom: 16px; padding: 10px 12px; border: 1px solid rgba(147,197,253,.16); border-radius: 10px; color: rgba(226,232,240,.78); font-size: 13px; }
-.guest-shop-modal__state-countdown { display: inline; white-space: nowrap; }
-.guest-shop-modal__state-countdown[hidden] { display: none !important; }
-.guest-shop-modal__state-countdown strong { color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 13px; font-weight: 800; letter-spacing: 0; }
-.guest-shop-modal__state-countdown.is-warning strong { color: #fde68a; }
-.guest-shop-modal__state-countdown.is-expired strong { color: #fecaca; }
-.guest-shop-modal__state[data-state="error"], .guest-shop-modal__state[data-state="manual_review"] { color: #fecaca; border-color: rgba(248,113,113,.35); }
-.guest-shop-modal__summary, .guest-shop-modal__panel { margin-top: 14px; padding: 14px; border: 1px solid rgba(255,255,255,.09); border-radius: 12px; background: rgba(255,255,255,.045); }
-.guest-shop-modal__summary { min-height: 124px; box-sizing: border-box; }
-.guest-shop-modal__order-overview { display: grid; gap: 14px; margin-top: 14px; }
-.guest-shop-modal__order-overview > .guest-shop-modal__summary,
-.guest-shop-modal__order-overview > .guest-shop-modal__amount { margin-top: 0; }
-@media (min-width: 769px) {
-    .guest-shop-modal__order-overview {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        align-items: stretch;
-        min-height: 124px;
-    }
-}
-.guest-shop-modal__summary-row + .guest-shop-modal__summary-row { margin-top: 9px; }
-.guest-shop-modal__summary-row[hidden] { display: none !important; }
-.guest-shop-modal__summary-row span { color: rgba(226,232,240,.58); font-size: 13px; }
-.guest-shop-modal__summary-row strong { max-width: 72%; overflow-wrap: anywhere; text-align: right; font-size: 12px; font-weight: 600; letter-spacing: .015em; line-height: 1.35; font-variant-numeric: tabular-nums; }
+/* Shared checkout presentation: css/cash-payment-dialog.css. */
 #guestCashOrderNo { font-size: 12px; font-weight: 600; letter-spacing: .015em; line-height: 1.35; font-variant-numeric: tabular-nums; }
-
-/* Dujiao alignment (PaymentAmountBreakdown.vue): the payable figure is promoted
-   to a hero number under an uppercase muted label, the line items sit below it
-   as a compact 12px list, discounts read destructive, and the polling hint
-   stays in the phase status line so the payment deadline is visible without
-   competing with the QR code. */
-.guest-shop-modal__amount {
-    margin-top: 14px;
-    padding: 14px;
-    border: 1px solid rgba(255,255,255,.09);
-    border-radius: 12px;
-    background: rgba(255,255,255,.045);
-    min-height: 124px;
-    box-sizing: border-box;
-}
-.guest-shop-modal__amount-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 16px;
-}
-.guest-shop-modal__amount-label { color: rgba(226,232,240,.58); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
-.guest-shop-modal__amount-value {
-    margin: 0;
-    max-width: 70%;
-    color: #f8fafc;
-    font-size: 26px;
-    font-weight: 700;
-    line-height: 1.2;
-    letter-spacing: -.01em;
-    overflow-wrap: anywhere;
-    text-align: right;
-    display: inline-flex;
-    align-items: baseline;
-    justify-content: flex-end;
-}
-.guest-shop-modal__amount-value,
-.guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong {
-    font-variant-numeric: tabular-nums;
-}
-.guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong {
-    display: inline-flex;
-    align-items: baseline;
-    justify-content: flex-end;
-}
-.guest-amount-currency {
-    display: inline-block;
-    flex: 0 0 auto;
-    margin-right: 0.12em;
-}
 .guest-shop-modal__amount-value.is-amount-placeholder,
 .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong.is-amount-placeholder {
     color: rgba(226,232,240,.46);
@@ -8925,12 +8798,6 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
         display: none;
     }
 }
-.guest-shop-modal__amount-rows { display: grid; gap: 8px; margin-top: 14px; min-height: 42px; }
-/* Rows keep the modal's shared __summary-row idiom, but inside the breakdown
-   card the stack is driven by grid gap, not by the sibling margin. */
-.guest-shop-modal__amount-rows .guest-shop-modal__summary-row + .guest-shop-modal__summary-row { margin-top: 0; }
-.guest-shop-modal__amount-rows .guest-shop-modal__summary-row span { font-size: 12px; }
-.guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong { font-size: 12px; font-weight: 600; }
 .guest-shop-modal__row--discount strong { color: #f87171; }
 .guest-shop-modal__amount-footer { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.09); }
 .guest-shop-modal__amount-footer .guest-shop-modal__hint { margin-top: 0; }

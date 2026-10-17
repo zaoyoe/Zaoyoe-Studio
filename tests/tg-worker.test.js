@@ -383,3 +383,41 @@ test('ambiguous Stars purchase and submitted claims never automatically buy agai
     assert.equal(buys, 1);
     assert.equal(restarted.calls.some((call) => call.name === 'fn_tg_mark_submitted'), false);
 });
+
+
+test('a documented purchase rejection is persisted with HTTP and reason while the original task stays locked', async () => {
+    const { GramixClient } = require('../server/tg/gramix-client');
+    let submissions = 0;
+    const client = new GramixClient({ apiKey: 'private-key', baseUrl: 'https://provider.test/api/v1', fetchImpl: async () => {
+        submissions++;
+        return new Response(JSON.stringify({ statusCode: 403, message: 'Insufficient balance', debug: 'private-key' }), { status: 403, headers: { 'content-type': 'application/json' } });
+    } });
+    const { worker, calls } = setup({ client });
+    assert.equal((await worker.runOnce()).status, 'manual_review');
+    const finished = calls.at(-1).args;
+    assert.equal(finished.p_error_code, 'gramix_insufficient_balance');
+    assert.match(finished.p_error_message, /\[HTTP 403\].*上游余额不足/);
+    assert.match(finished.p_error_message, /提交结果仍需核对/);
+    assert.equal(finished.p_provider_order_id, null); assert.equal(finished.p_next_attempt_at, null);
+    assert.equal(submissions, 1); assert.ok(!JSON.stringify(calls).includes('private-key'));
+});
+
+test('an unknown HTTP 403 is not mislabeled as insufficient funds and never copies the upstream text', async () => {
+    const { worker, calls } = setup({ client: { async purchasePremium() {
+        throw Object.assign(new Error('private-key'), { code: 'gramix_http_error', statusCode: 403, providerReason: 'unknown-private-key' });
+    } } });
+    assert.equal((await worker.runOnce()).status, 'manual_review');
+    const args = calls.at(-1).args;
+    assert.equal(args.p_error_code, 'gramix_http_error'); assert.match(args.p_error_message, /HTTP 403/);
+    assert.doesNotMatch(args.p_error_message, /余额不足|private-key/); assert.equal(args.p_next_attempt_at, null);
+});
+
+test('poll errors retain safe HTTP details without enabling another purchase', async () => {
+    const { worker, calls } = setup({ action: 'poll', currentOrder: order({ provider_order_id: providerId, provider_payment_currency: 'usdt', submitted_at: '2026-10-15T00:00:00Z' }),
+        client: { async getOrder() { throw Object.assign(new Error('private-key'), { code: 'gramix_http_error', statusCode: 401, providerReason: 'unauthorized', retryable: false }); },
+            async purchasePremium() { assert.fail('must not buy again'); } } });
+    assert.equal((await worker.runOnce()).status, 'manual_review');
+    assert.equal(calls.at(-1).args.p_error_code, 'gramix_unauthorized');
+    assert.match(calls.at(-1).args.p_error_message, /HTTP 401.*身份验证失败/);
+    assert.ok(!JSON.stringify(calls).includes('private-key'));
+});

@@ -14,10 +14,13 @@ const { _private: { isProductionLikeRuntime } } = require('../api/_lib/request-s
 const REPO_ROOT = path.resolve(__dirname, '..');
 const REQUIRED_FILES = Object.freeze([
     'tg.html', 'tg-admin.html', 'server/api-handlers/public/tg.js',
+    'js/tg-admin-data-center.js', 'css/tg-admin-data-center.css',
+    'server/api-handlers/admin/tg/data-center.js', 'server/tg/data-center.js',
     'server/api-handlers/admin/tg/codes.js', 'server/api-handlers/admin/tg/orders.js',
     'server/api-handlers/admin/tg/provider.js', 'server/api-handlers/admin/tg/products.js',
     'server/api-handlers/admin/tg/purchases.js', 'server/api-handlers/public/tg-purchase.js',
-    'server/tg/payment-gateway.js', 'server/tg/nowpayments-gateway.js', 'server/tg/raw-body.js',
+    'server/tg/operations.js', 'server/tg/purchase-review.js', 'server/tg/purchase-resolution.js',
+    'server/tg/purchase-recovery.js', 'server/tg/upstream-status.js', 'server/tg/payment-gateway.js', 'server/tg/nowpayments-gateway.js', 'server/tg/raw-body.js',
     'server/tg/recipient-profile.js', 'server/api-handlers/public/tg-recipient.js', 'scripts/tg-fulfillment-worker.js',
     'scripts/install-kvm4-tg-worker.sh',
     'deploy/kvm4/tg-worker/zaoyoe-tg-worker',
@@ -33,11 +36,19 @@ const REQUIRED_FILES = Object.freeze([
     'supabase/migrations/20261015_tg_stars_redemption.sql',
     'supabase/migrations/20261015_tg_purchase_domain.sql',
     'supabase/migrations/20261015_verify_tg_stars_purchase_domain.sql',
-    'supabase/migrations/20261015_tg_purchase_usdt_payments.sql'
+    'supabase/migrations/20261015_tg_purchase_usdt_payments.sql',
+    'supabase/migrations/20261017_tg_operations_closure.sql',
+    'supabase/migrations/20261017_verify_tg_operations_closure.sql',
+    'supabase/migrations/20261017_tg_purchase_review_resolution.sql',
+    'supabase/migrations/20261017_tg_purchase_upstream_recovery.sql',
+    'supabase/migrations/20261017_verify_tg_purchase_upstream_recovery.sql',
+    'supabase/migrations/20261017_tg_data_center.sql',
+    'supabase/migrations/20261017_verify_tg_data_center.sql'
 ]);
 // Verify serves only the API; static pages are hosted by Vercel, while systemd
 // files live on the KVM4 host. Do not mistake a compact image for lost code.
-const RUNTIME_FILES = Object.freeze(REQUIRED_FILES.filter((file) => !file.endsWith('.html') && !file.startsWith('deploy/')));
+const RUNTIME_FILES = Object.freeze(REQUIRED_FILES.filter((file) => !file.endsWith('.html')
+    && !['deploy/', 'js/', 'css/'].some((prefix) => file.startsWith(prefix))));
 const OPERATOR_CHECKS = Object.freeze([
     ['database', '需由数据库管理员确认全部 TG 迁移及结构/权限核验文件已按顺序执行，并验证真实并发、service-role RPC 权限及 take_rate_limit_token。本离线检查不会连接数据库，也不验证 SQL 执行结果。'],
     ['domains', '核对两个 TG 域名的 DNS、TLS、Vercel 绑定、路由、CORS 与管理端登录。'],
@@ -152,7 +163,8 @@ function runReadiness({ env = process.env, repoRoot = REPO_ROOT, envFile = '', n
         ].map((key) => value(env, key)).filter(Boolean);
         return raw === raw.trim() && raw.length >= 16 && raw.length <= 300 && !/[\r\n]/.test(raw) && !forbidden.includes(raw);
     }, 'TG USDT 密钥需有效、彼此独立且不复用其他应用秘密');
-    paymentRequired('TG_PURCHASE_NOWPAYMENTS_CNY_TO_USD_RATE', usdtSelected, () => {
+    validate('PAYMENT_USDT_FX_MODE', () => ['fixed', 'market'].includes(value(env, 'PAYMENT_USDT_FX_MODE') || 'fixed'), 'USDT 汇率模式为 fixed 或 market；market 需完成共享汇率迁移及行情验证');
+    paymentRequired('TG_PURCHASE_NOWPAYMENTS_CNY_TO_USD_RATE', usdtSelected && value(env, 'PAYMENT_USDT_FX_MODE') !== 'market', () => {
         const rate = String(env.TG_PURCHASE_NOWPAYMENTS_CNY_TO_USD_RATE ?? '');
         return /^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/.test(rate) && Number(rate) > 0 && Number(rate) < 10;
     }, 'TG USDT 报价须明确配置有效 CNY/USD 十进制汇率，无默认值');

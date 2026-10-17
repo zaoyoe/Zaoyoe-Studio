@@ -42,6 +42,7 @@ function stubAdmin(supabase = {}, overrides = {}) {
 function security(result = { allowed: true }) {
     return { resolveClientIp: () => '192.0.2.10', _private: { isProductionLikeRuntime: () => true }, applyRateLimitHeaders() {}, takeRateLimitToken: async () => result };
 }
+function auditQuery() { return { select() { return this; }, eq() { return this; }, order() { return this; }, async limit() { return { data: [] }; } }; }
 function order(extra = {}) { return { success: true, order_no: 'TG-1234567890ABCDEF', status: 'pending', product_family: 'telegram_premium', term_months: 3, stars_quantity: null, ...extra }; }
 function publicHandlers(rpc = async () => ({ data: order({ existing: false }) }), extra = {}) {
     return createTgHandlers({ admin: stubAdmin({ rpc }), env: ENV, requestSecurity: security(), ...extra });
@@ -302,7 +303,7 @@ test('unconfigured or unavailable provider never reports healthy or leaks upstre
 test('admin reconciliation never updates orders and suppresses a mismatched upstream snapshot', async () => {
     const calls = [];
     const localOrder = { id: UUID, order_no: 'TG-1234567890ABCDEF', term_months: 3, telegram_username: 'telegram_user', provider_order_id: UUID, provider_payment_currency: 'usdt', provider_idempotency_key: KEY };
-    const supabase = { from(table) { assert.equal(table, 'tg_redemption_orders'); return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: localOrder }; } }; } };
+    const supabase = { from(table) { if (table === 'tg_audit_events') return auditQuery(); assert.equal(table, 'tg_redemption_orders'); return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: localOrder }; } }; } };
     const handler = createOrdersHandler({ admin: stubAdmin(supabase), clientFactory: () => ({ async getOrder(id) { calls.push(id); return { statusCode: 200, data: { id: UUID, recipientName: 'other_user', type: 'premium_3_month', method: 'api', status: 'completed' } }; } }) });
     const res = await call(handler, { url: `/?orderId=${UUID}&reconcile=1` });
     assert.equal(res.statusCode, 200);
@@ -312,10 +313,49 @@ test('admin reconciliation never updates orders and suppresses a mismatched upst
     assert.deepEqual(calls, [UUID]);
 });
 
+test('redemption list defaults to codes and explicit purchase fulfillment details remain accessible', async () => {
+    const rows = [
+        { id: UUID, order_no: 'TG-1234567890ABCDEF', order_source: 'purchase', provider: 'alipay' },
+        { id: 'f47ac10b-58cc-4372-a567-0e02b2c3d480', order_no: 'TG-1234567890ABCDEG', order_source: 'redemption', provider: null }
+    ];
+    const queries = [];
+    const supabase = {
+        from(table) {
+            if (table === 'tg_audit_events') return auditQuery();
+            assert.equal(table, 'tg_redemption_orders');
+            const query = { filters: [] };
+            queries.push(query);
+            query.select = function () { return this; };
+            query.eq = function (field, value) { this.filters.push([field, value]); return this; };
+            query.order = function () { return this; };
+            query.range = function () { return this; };
+            query.maybeSingle = async function () {
+                return { data: rows.find(row => this.filters.every(([field, value]) => row[field] === value)) || null };
+            };
+            query.then = function (resolve, reject) {
+                const matches = rows.filter(row => this.filters.every(([field, value]) => row[field] === value));
+                return Promise.resolve({ data: matches, count: matches.length }).then(resolve, reject);
+            };
+            return query;
+        }
+    };
+    const handler = createOrdersHandler({ admin: stubAdmin(supabase) });
+
+    const list = await call(handler, { url: '/?page=1&pageSize=50' });
+    assert.equal(list.statusCode, 200);
+    assert.deepEqual(list.body.orders.map(row => row.order_no), ['TG-1234567890ABCDEG']);
+    assert.equal(list.body.orders.some(row => row.order_no === 'TG-1234567890ABCDEF'), false);
+    assert.deepEqual(queries[0].filters[0], ['order_source', 'redemption']);
+
+    const purchaseDetail = await call(handler, { url: `/?orderId=${UUID}` });
+    assert.equal(purchaseDetail.statusCode, 200);
+    assert.deepEqual(queries[1].filters, [['id', UUID]]);
+});
+
 test('admin reconciliation verifies saved payment currency without exposing correlation keys or writing data', async () => {
     for (const currency of ['usd', 'gram', null]) {
         const localOrder = { id: UUID, order_no: 'TG-1234567890ABCDEF', term_months: 3, telegram_username: 'telegram_user', provider_order_id: UUID, provider_payment_currency: 'usdt', provider_idempotency_key: KEY };
-        const supabase = { from() { return {
+        const supabase = { from(table) { if (table === 'tg_audit_events') return auditQuery(); return {
             select(columns) { assert.ok(columns.includes('provider_payment_currency')); return this; },
             eq() { return this; }, async maybeSingle() { return { data: localOrder }; }
         }; } };
@@ -411,7 +451,7 @@ test('local public preview origins are allowed only outside production', async (
 test('admin Stars reconciliation verifies official quantity and does not mutate orders', async () => {
     for (const quantity of [500, '500', 501, null]) {
         const localOrder = { id: UUID, order_no: 'TG-1234567890ABCDEF', product_family: 'telegram_stars', term_months: null, stars_quantity: 500, telegram_username: 'telegram_user', provider_order_id: UUID, provider_payment_currency: 'usdt', provider_idempotency_key: KEY };
-        const supabase = { from() { return {
+        const supabase = { from(table) { if (table === 'tg_audit_events') return auditQuery(); return {
             select(columns) { assert.ok(columns.includes('product_family')); assert.ok(columns.includes('stars_quantity')); return this; },
             eq() { return this; }, async maybeSingle() { return { data: localOrder }; }
         }; } };
@@ -425,4 +465,185 @@ test('admin Stars reconciliation verifies official quantity and does not mutate 
         if (quantity === 500) assert.equal(result.body.reconciliation.snapshot.stars_quantity, 500);
         else assert.equal(result.body.reconciliation.snapshot, null);
     }
+});
+
+test('admin upstream query explains an unsubmitted fulfillment without calling the provider or writing data', async () => {
+    const localOrder = { id: UUID, order_no: 'TG-ABCDEFGHIJKLMNOPQRST', status: 'pending', provider_order_id: null, submitted_at: null, provider_idempotency_key: KEY };
+    const supabase = { from(table) { if (table === 'tg_audit_events') return auditQuery(); assert.equal(table, 'tg_redemption_orders'); return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: localOrder }; } }; } };
+    const handler = createOrdersHandler({ admin: stubAdmin(supabase), env: { TG_FULFILLMENT_ENABLED: 'false' }, clientFactory() { assert.fail('queued task must not contact provider'); } });
+    const res = await call(handler, { url: `/?orderId=${UUID}&reconcile=1` });
+    assert.equal(res.statusCode, 200); assert.equal(res.body.reconciliation.status, 'not_submitted'); assert.equal(res.body.runtime.scope, 'current_api');
+    assert.equal(res.body.runtime.worker_status, 'unverified'); assert.equal(res.body.order.provider_idempotency_key, undefined); assert.equal(res.headers['cache-control'], 'no-store');
+});
+
+test('admin upstream query searches an uncertain submission without returning correlation keys or altering the task', async () => {
+    const localOrder = { id: UUID, order_no: 'TG-ABCDEFGHIJKLMNOPQRST', status: 'manual_review', provider_order_id: null, submitted_at: '2026-10-16T11:00:00Z', provider_idempotency_key: KEY };
+    const supabase = { from(table) { if (table === 'tg_audit_events') return auditQuery(); return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: { ...localOrder } }; } }; } };
+    let searches = 0;
+    const handler = createOrdersHandler({ admin: stubAdmin(supabase), clientFactory: () => ({ async listOrders({ limit, offset }) { searches++; return { statusCode: 200, data: { data: [], total: 0, limit, offset } }; } }) });
+    const res = await call(handler, { url: `/?orderId=${UUID}&reconcile=1` });
+    assert.equal(res.statusCode, 200); assert.equal(res.body.reconciliation.status, 'not_found'); assert.equal(res.body.order.status, 'manual_review');
+    assert.equal(searches, 1); assert.ok(!JSON.stringify(res.body).includes(KEY)); assert.equal(localOrder.provider_order_id, null);
+});
+
+test('admin upstream query preserves a readable local task when the provider rejects the query', async () => {
+    const supabase = { from(table) { if (table === 'tg_audit_events') return auditQuery(); return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: { id: UUID, provider_order_id: UUID, provider_idempotency_key: KEY } }; } }; } };
+    const handler = createOrdersHandler({ admin: stubAdmin(supabase), clientFactory: () => ({ async getOrder() { throw Object.assign(new Error('private upstream response'), { code: 'gramix_http_error', statusCode: 403 }); } }) });
+    const res = await call(handler, { url: `/?orderId=${UUID}&reconcile=1` });
+    assert.equal(res.statusCode, 200); assert.equal(res.body.order.id, UUID); assert.equal(res.body.reconciliation.status, 'unavailable');
+    assert.equal(res.body.reconciliation.http_status, 403); assert.ok(!JSON.stringify(res.body).includes('private')); assert.ok(!JSON.stringify(res.body).includes(KEY));
+});
+
+// Plaintext recovery uses offline, non-redeemable fixtures only.
+function encryptedCodeFixture(code = CODE) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(ENV.TG_REDEMPTION_CODE_ENCRYPTION_KEY, 'hex'), iv);
+    const encrypted = Buffer.concat([cipher.update(code, 'utf8'), cipher.final()]);
+    return {
+        id: UUID, batch_id: UUID, code_last4: code.slice(-4), code_digest: digest(code, ENV),
+        code_ciphertext: `v1.${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`
+    };
+}
+function codeRecoveryBackend(record, options = {}) {
+    const reads = []; const audits = [];
+    const supabase = {
+        from(table) {
+            if (table === 'admin_audit_logs') return { async insert(row) { audits.push(row); if (options.auditThrows) throw new Error('private database failure'); return { error: options.auditError || null }; } };
+            assert.equal(table, 'tg_redemption_codes');
+            const read = {}; reads.push(read);
+            return { select(columns) { read.columns = columns; return this; }, eq(column, value) { read.column = column; read.value = value; return this; }, async maybeSingle() { return { data: record, error: options.readError || null }; } };
+        }
+    };
+    return { reads, audits, handler: createCodesHandler({ admin: stubAdmin(supabase, options.admin), env: options.env || ENV }) };
+}
+
+test('complete Premium and Stars codes are recovered on demand with no-store and a plaintext-free audit', async () => {
+    for (const code of [CODE, CODE.replace('PREM', 'STAR')]) {
+        const record = encryptedCodeFixture(code); const backend = codeRecoveryBackend(record);
+        const res = await call(backend.handler, adminWriteRequest({ action: 'reveal', code_id: UUID }));
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(res.body, { success: true, code_id: UUID, code });
+        assert.equal(res.headers['cache-control'], 'no-store');
+        assert.equal(res.headers['x-content-type-options'], 'nosniff');
+        assert.deepEqual(backend.reads, [{ columns: 'id, batch_id, code_ciphertext, code_digest, code_last4', column: 'id', value: UUID }]);
+        assert.deepEqual(backend.audits, [{ admin_id: UUID, target_user_id: null, action_type: 'tg_code_revealed', details: { module: 'tg_redemption', code_id: UUID, batch_id: UUID, code_last4: code.slice(-4) } }]);
+        for (const secret of [code, record.code_ciphertext, record.code_digest]) assert.equal(JSON.stringify(backend.audits).includes(secret), false);
+        assert.equal(Object.hasOwn(res.body, 'code_ciphertext'), false);
+        assert.equal(Object.hasOwn(res.body, 'code_digest'), false);
+    }
+});
+
+test('code recovery denies anonymous and ordinary administrators before reading encrypted codes', async () => {
+    for (const [requireAdmin, expected] of [
+        [async () => ({ isSuperAdmin: false }), 403],
+        [async () => { throw Object.assign(new Error('Unauthorized'), { statusCode: 401 }); }, 401]
+    ]) {
+        const backend = codeRecoveryBackend(encryptedCodeFixture(), { admin: { requireAdmin } });
+        const res = await call(backend.handler, adminWriteRequest({ action: 'reveal', code_id: UUID }));
+        assert.equal(res.statusCode, expected); assert.equal(res.headers['cache-control'], 'no-store');
+        assert.equal(backend.reads.length, 0); assert.equal(backend.audits.length, 0);
+    }
+});
+
+test('code recovery rejects sibling origins and non-JSON requests before reading any code', async () => {
+    for (const headers of [
+        {}, { ...ADMIN_WRITE_HEADERS, origin: 'https://tg.fatherkey.com' },
+        { ...ADMIN_WRITE_HEADERS, origin: 'https://tg.adm.fatherkey.com.evil.test' },
+        { ...ADMIN_WRITE_HEADERS, 'content-type': 'text/plain' }
+    ]) {
+        const backend = codeRecoveryBackend(encryptedCodeFixture());
+        const res = await call(backend.handler, adminWriteRequest({ action: 'reveal', code_id: UUID }, { headers }));
+        assert.ok([403, 415].includes(res.statusCode));
+        assert.equal(backend.reads.length, 0); assert.equal(backend.audits.length, 0);
+    }
+});
+
+test('code recovery accepts exactly one valid code identifier and reports missing or legacy plaintext', async () => {
+    for (const input of [{}, { code_id: 'invalid' }, { code_id: [UUID] }, { code_id: UUID, batch_id: UUID }]) {
+        const backend = codeRecoveryBackend(encryptedCodeFixture());
+        const res = await call(backend.handler, adminWriteRequest({ action: 'reveal', ...input }));
+        assert.equal(res.statusCode, 400); assert.equal(backend.reads.length, 0);
+    }
+    for (const [record, expected, code] of [
+        [null, 404, 'tg_code_not_found'],
+        [{ ...encryptedCodeFixture(), code_ciphertext: null }, 409, 'tg_code_plaintext_unavailable'],
+        [{ ...encryptedCodeFixture(), code_ciphertext: '' }, 409, 'tg_code_plaintext_unavailable']
+    ]) {
+        const backend = codeRecoveryBackend(record);
+        const res = await call(backend.handler, adminWriteRequest({ action: 'reveal', code_id: UUID }));
+        assert.equal(res.statusCode, expected); assert.equal(res.body.code, code);
+        assert.equal(JSON.stringify(res.body).includes(CODE), false); assert.equal(backend.audits.length, 0);
+    }
+});
+
+test('code recovery rejects broken ciphertext, wrong keys and integrity mismatches without exposing secrets', async () => {
+    const record = encryptedCodeFixture();
+    const parts = record.code_ciphertext.split('.');
+    const tag = Buffer.from(parts[2], 'base64url'); tag[0] ^= 1;
+    for (const [altered, env] of [
+        [{ ...record, code_ciphertext: `${parts[0]}.${parts[1]}.${tag.toString('base64url')}.${parts[3]}` }, ENV],
+        [{ ...record, code_ciphertext: 'v2.a.b.c' }, ENV],
+        [{ ...record, code_ciphertext: 'v1.a.b.c' }, ENV],
+        [{ ...record, code_ciphertext: 'v1.' + 'x'.repeat(2048) }, ENV],
+        [{ ...record, code_last4: 'FFFF' }, ENV],
+        [{ ...record, code_digest: '0'.repeat(64) }, ENV],
+        [{ ...record, code_digest: 'invalid' }, ENV],
+        [record, { ...ENV, TG_REDEMPTION_CODE_ENCRYPTION_KEY: 'cd'.repeat(32) }],
+        [record, { ...ENV, TG_REDEMPTION_CODE_PEPPER: 'different-pepper-for-offline-test-only' }],
+        [record, {}], [encryptedCodeFixture('invalid-plaintext'), ENV]
+    ]) {
+        const backend = codeRecoveryBackend(altered, { env });
+        const res = await call(backend.handler, adminWriteRequest({ action: 'reveal', code_id: UUID }));
+        assert.equal(res.statusCode, 503); assert.equal(res.body.code, 'tg_service_error');
+        for (const secret of [CODE, record.code_ciphertext, record.code_digest, 'invalid-plaintext']) assert.equal(JSON.stringify(res.body).includes(secret), false);
+        assert.equal(backend.audits.length, 0);
+    }
+});
+
+test('code recovery returns no plaintext if the read or mandatory audit fails', async () => {
+    for (const options of [{ readError: new Error('private database failure') }, { auditError: new Error('audit unavailable') }, { auditThrows: true }]) {
+        const backend = codeRecoveryBackend(encryptedCodeFixture(), options);
+        const res = await call(backend.handler, adminWriteRequest({ action: 'reveal', code_id: UUID }));
+        assert.ok(res.statusCode >= 500);
+        assert.equal(res.body.success, false);
+        assert.equal(JSON.stringify(res.body).includes(CODE), false);
+        assert.equal(JSON.stringify(res.body).includes('private database failure'), false);
+    }
+});
+
+test('batch details keep using summary columns and do not request plaintext recovery data', async () => {
+    const columns = [];
+    const record = { ...encryptedCodeFixture(), status: 'available' };
+    const supabase = { from(table) { return {
+        select(value) { columns.push({ table, value }); return this; }, eq() { return this; }, order() { return this; },
+        async maybeSingle() { assert.equal(table, 'tg_redemption_batches'); return { data: { id: UUID, batch_no: 'TGB-OFFLINE' } }; },
+        async limit() { assert.equal(table, 'tg_redemption_codes'); const requested = columns.at(-1).value.split(',').map(key => key.trim()); return { data: [Object.fromEntries(requested.filter(key => Object.hasOwn(record, key)).map(key => [key, record[key]]))] }; }
+    }; } };
+    const res = await call(createCodesHandler({ admin: stubAdmin(supabase), env: ENV }), { url: `/?batchId=${UUID}` });
+    assert.equal(res.statusCode, 200);
+    const selected = columns.find(item => item.table === 'tg_redemption_codes').value;
+    assert.doesNotMatch(selected, /code_ciphertext|code_digest|\*/);
+    assert.equal(res.body.codes[0].code_last4, CODE.slice(-4));
+    for (const secret of [CODE, record.code_digest, record.code_ciphertext]) assert.equal(JSON.stringify(res.body).includes(secret), false);
+});
+
+test('a closed redemption replay fetches the original credential-bound public note and never issues a new status token', async () => {
+    const calls = []; const closed = order({ status: 'closed', closed_at: '2026-10-17T10:00:00Z', completion_note: '已完成实际处理，兑换订单现已完结。',
+        note: 'private staff evidence', provider_idempotency_key: KEY, code_disposition: 'revoked' });
+    const handlers = publicHandlers(async (name, params) => {
+        calls.push({ name, params });
+        if (name === 'fn_tg_reserve_code') return { data: order({ existing: true, status: 'closed' }) };
+        assert.equal(name, 'fn_tg_order_status'); assert.equal(params.p_status_token_hash, tokenHash(TOKEN)); return { data: closed };
+    });
+    const res = await call(handlers.redeem, { method: 'POST', body: { code: CODE, username: 'recipient_test', status_token: TOKEN, idempotency_key: KEY } });
+    assert.equal(res.statusCode, 200); assert.equal(res.body.existing, true); assert.equal(res.body.status, 'closed');
+    assert.equal(res.body.completion_note, closed.completion_note); assert.equal(res.body.status_token, undefined); assert.equal(calls.length, 2);
+    assert.doesNotMatch(JSON.stringify(res.body), /private staff|provider|disposition/);
+});
+
+test('a lost or mismatched credential-bound closure snapshot cannot acknowledge a redemption replay', async () => {
+    const handlers = publicHandlers(async name => name === 'fn_tg_reserve_code'
+        ? { data: order({ existing: true, status: 'closed' }) } : { data: { success: false, code: 'not_found' } });
+    const res = await call(handlers.redeem, { method: 'POST', body: { code: CODE, username: 'recipient_test', status_token: TOKEN, idempotency_key: KEY } });
+    assert.ok(res.statusCode >= 500); assert.equal(res.body.success, false);
 });

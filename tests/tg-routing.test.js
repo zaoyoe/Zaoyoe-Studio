@@ -70,8 +70,8 @@ test('Verify archive and image include TG runtime while scheduler artifacts rema
         'server/api-handlers/public/tg-purchase.js', 'server/api-handlers/public/tg-recipient.js',
         'server/api-handlers/admin/tg/codes.js', 'server/api-handlers/admin/tg/orders.js',
         'server/api-handlers/admin/tg/provider.js', 'server/api-handlers/admin/tg/products.js',
-        'server/api-handlers/admin/tg/purchases.js', 'server/tg/payment-gateway.js', 'server/tg/admin-access.js',
-        'server/tg/code-secrets.js', 'server/tg/gramix-client.js', 'server/tg/worker.js',
+        'server/api-handlers/admin/tg/purchases.js', 'server/api-handlers/admin/tg/data-center.js', 'server/tg/data-center.js', 'server/tg/payment-gateway.js', 'server/tg/admin-access.js',
+        'server/tg/operations.js', 'server/tg/code-secrets.js', 'server/tg/gramix-client.js', 'server/tg/worker.js',
         'server/tg/recipient-profile.js', 'server/tg/nowpayments-gateway.js', 'server/tg/raw-body.js',
         'scripts/tg-fulfillment-worker.js', 'scripts/tg-readiness.js',
         'supabase/migrations/20261015_add_tg_premium_redemption_domain.sql',
@@ -112,7 +112,7 @@ test('local preview serves TG pages by host and dispatches TG/auth APIs without 
             assert.equal((await catalog.json()).url, '/api/public?scope=tg&route=catalog');
             const redeem = await fetch(`${base}/api/tg/redeem`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
             assert.equal((await redeem.json()).url, '/api/public?scope=tg&route=redeem');
-            for (const route of ['recipient', 'purchase/quote', 'purchase/orders', 'purchase/status', 'purchase/webhooks/zpay', 'purchase/webhooks/nowpayments']) {
+            for (const route of ['recipient', 'preview', 'purchase/quote', 'purchase/orders', 'purchase/status', 'purchase/cancel', 'purchase/webhooks/zpay', 'purchase/webhooks/nowpayments']) {
                 const response = await fetch(`${base}/api/tg/${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
                 const routed = new URL((await response.json()).url, base);
                 assert.equal(routed.pathname, '/api/public');
@@ -149,6 +149,8 @@ test('verify CORS grants TG hosts only TG and required admin login endpoints', a
                 ['/api/tg/purchase/quote', 'https://tg.fatherkey.com', true],
                 ['/api/tg/purchase/orders', 'https://tg.fatherkey.com', true],
                 ['/api/tg/purchase/status', 'https://tg.fatherkey.com', true],
+                ['/api/tg/purchase/cancel', 'https://tg.fatherkey.com', true],
+                ['/api/tg/preview', 'https://tg.fatherkey.com', true],
                 ['/api/admin/tg/orders', 'https://tg.adm.fatherkey.com', true],
                 ['/api/admin/tg/products', 'https://tg.adm.fatherkey.com', true],
                 ['/api/admin/tg/purchases', 'https://tg.adm.fatherkey.com', true],
