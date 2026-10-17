@@ -1602,6 +1602,55 @@ test('cancellation wins over a late status response that started before the canc
     assert.equal(runtime.element('guestCashState').textContent, '订单已取消，库存已释放。请重新选择支付方式创建新订单。');
 });
 
+test('single-order cancellation failure preserves its handle and can be retried after a stale status response', async () => {
+    const currentPurchase = purchase();
+    const orderNo = 'GUEST-CANCEL-RETRY-1';
+    const pendingStatus = deferred();
+    const cancelBodies = [];
+    let statusCalls = 0;
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
+            if (parsed.pathname.endsWith('/orders')) return jsonResponse(createOrderPayload(orderNo, currentPurchase));
+            if (parsed.pathname.endsWith('/status')) {
+                statusCalls += 1;
+                return pendingStatus.promise;
+            }
+            if (parsed.pathname.endsWith('/cancel')) {
+                cancelBodies.push(JSON.parse(options.body));
+                return cancelBodies.length === 1
+                    ? jsonResponse({ success: false, code: 'guest_shop_request_failed', message: '游客购买请求失败' }, { status: 500 })
+                    : jsonResponse({ success: true, cancelled: true });
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    clickPaymentOption(runtime);
+    await waitFor(() => statusCalls === 1);
+    runtime.click('guestCashAbandonOrderBtn');
+    const failureMessage = '取消订单暂时失败，原订单已保留。请稍后重试或查询支付状态。';
+    await waitFor(() => runtime.element('guestCashState').textContent === failureMessage);
+    assert.equal(runtime.element('guestCashOrderNo').textContent, orderNo);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, orderNo);
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').disabled, false);
+    assert.equal(runtime.element('guestCashCheckStatusBtn').disabled, false);
+
+    pendingStatus.resolve(jsonResponse(statusPayload(orderNo, currentPurchase)));
+    await flushEventLoop();
+    assert.equal(runtime.element('guestCashState').textContent, failureMessage);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, orderNo);
+
+    runtime.click('guestCashAbandonOrderBtn');
+    await waitFor(() => runtime.element('guestCashOrderNo').textContent === '-');
+    assert.deepEqual(cancelBodies, [{ orderNo }, { orderNo }]);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY), null);
+    assert.equal(runtime.element('guestCashState').dataset.state, 'configure');
+});
+
 test('a transient background status failure keeps the unpaid-order actions in place', async () => {
     const currentPurchase = purchase();
     const pendingStatus = deferred();

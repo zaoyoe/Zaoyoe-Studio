@@ -206,6 +206,39 @@ function createHandlers(options = {}) {
     return { handlers, state: supabase.state };
 }
 
+for (const currency of ['usdtbsc', 'usdtton', 'usdtmatic', 'usdttrc20']) test(`guest ${currency} settlement binds the order network and Memo and refuses atomic underpayment`, async () => {
+    const { createGuestShopPaymentAdapter } = require('../api/_lib/payments/guest-shop-adapter');
+    const { buildNowpaymentsIpnSignature } = require('../api/_lib/payments/nowpayments');
+    const secret = 'network-webhook-test-secret-12345678';
+    const paymentAdapter = createGuestShopPaymentAdapter({ supabase: {}, env: { APP_ENV: 'test', APP_BASE_URL: 'https://www.fatherkey.com' },
+        config: { providers: { nowpayments: { enabled: true, pay_currency: currency, cny_to_usd_rate: .14 } } },
+        fetchImpl: async () => { throw Error('webhook must not create a payment'); },
+        resolveSecrets: async () => ({ nowpayments_api_key: 'network-webhook-test-key-12345678', nowpayments_ipn_secret: secret }) });
+    const memo = currency === 'usdtton' ? '556677' : '';
+    for (const failure of ['', 'network', 'memo', 'amount']) {
+        const { handlers, state } = createHandlers({ provider: 'nowpayments', paymentAdapter,
+            env: { APP_ENV: 'test', APP_BASE_URL: 'https://www.fatherkey.com' }, payment: {
+            provider: 'nowpayments', channel: currency, provider_order_no: ORDER_NO,
+            provider_metadata: { payment_id: '1234567890', pay_currency: currency, pay_amount_text: '1.73', price_amount: 1.73,
+                price_currency: currency, ...(memo ? { payin_extra_id: memo } : {}) } } });
+        const payload = { order_id: ORDER_NO, payment_id: '1234567890', payment_status: 'finished',
+            price_amount: '1.73', price_currency: currency, pay_amount: '1.73', actually_paid: '1.73',
+            pay_currency: failure === 'network' ? 'usdterc20' : currency, outcome_currency: 'btc',
+            ...(memo ? { extra_id: memo } : {}), ...(failure === 'memo' ? { extra_id: 'wrong' } : {}) };
+        const rawBody = JSON.stringify(payload).replace('"actually_paid":"1.73"', failure === 'amount' ? '"actually_paid":1.729999999999999999' : '"actually_paid":1.73');
+        const req = { method: 'POST', headers: { 'content-type': 'application/json',
+            'x-nowpayments-sig': buildNowpaymentsIpnSignature(JSON.parse(rawBody), secret) }, body: Buffer.from(rawBody) };
+        const res = createResponse();
+        if (!failure) {
+            const verified = await paymentAdapter.verifyGuestWebhook({ provider: 'nowpayments', payload: JSON.parse(rawBody), rawBody,
+                headers: req.headers, site: 'cn' });
+            assert.equal(verified.valid, true, JSON.stringify(verified));
+        }
+        await handlers.webhook(req, res, 'nowpayments');
+        assert.equal(state.rpcCalls.length, failure ? 0 : 1, `${currency} ${failure || 'valid'}: ${JSON.stringify(res.payload)}`);
+    }
+});
+
 test('a forged webhook cannot reserve the business event key before the valid callback', async () => {
     const { handlers, state } = createHandlers();
 

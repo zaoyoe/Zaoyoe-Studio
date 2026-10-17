@@ -873,11 +873,19 @@
                     <div id="guestCashNowpaymentsPanel" class="guest-shop-modal__crypto" hidden>
                         <div id="guestCashNowQrHost" class="guest-shop-modal__qr" hidden>
                             <div id="guestCashNowQrCard" class="guest-shop-modal__qr-card">
-                                <img id="guestCashNowQrImage" class="guest-shop-modal__qr-image" alt="USDT-BEP20 收款地址二维码" hidden loading="eager" decoding="async">
+                                <img id="guestCashNowQrImage" class="guest-shop-modal__qr-image" alt="USDT 收款地址二维码" hidden loading="eager" decoding="async">
                             </div>
                         </div>
-                        <p class="guest-shop-modal__hint">请使用钱包向以下地址支付指定金额，仅支持 USDT-BEP20（扫码自动识别收款地址）。</p>
+                        <p id="guestCashNowWarning" class="guest-shop-modal__hint">请核对所选网络和完整应付金额，链上 Gas 另付。</p>
+                        <p id="guestCashNowFx" class="guest-shop-modal__hint" hidden></p>
                         <div class="guest-shop-modal__crypto-list">
+                            <div id="guestCashNowMemoRow" class="guest-shop-modal__crypto-row" hidden>
+                                <span class="guest-shop-modal__crypto-label">Memo（必填）</span>
+                                <div class="guest-shop-modal__crypto-address-wrap">
+                                    <code id="guestCashNowMemo" class="guest-shop-modal__crypto-value"></code>
+                                    <button id="guestCashNowCopyMemoBtn" type="button" class="shop-btn shop-btn-secondary guest-shop-modal__crypto-copy" title="复制 Memo" aria-label="复制 Memo"><i class="fas fa-copy" aria-hidden="true"></i></button>
+                                </div>
+                            </div>
                             <div class="guest-shop-modal__crypto-row">
                                 <span class="guest-shop-modal__crypto-label">网络</span>
                                 <strong id="guestCashNowNetwork" class="guest-shop-modal__crypto-value">BNB Smart Chain</strong>
@@ -1047,7 +1055,7 @@
 
     <script src="js/guest-query-password.js?v=20260921_GUEST_ORDER_ACCESS_A2_1" defer></script>
     <script src="js/vendor/qrcode-generator-2.0.4.js?v=2.0.4" defer></script>
-    <script src="js/guest-shop-client.js?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestPaymentLock=20260923_GUEST_PAYMENT_LOCK_1&guestOrderAccess=20260921_GUEST_ORDER_ACCESS_DIRECT_1&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1&guestCheckoutUi=20260918_GUEST_CHECKOUT_DUJIAO_UI_1&guestPromo=20260923_GUEST_PROMO_L1L2_1&guestTask21=20260920_GUEST_TASK_2_1_TERMINAL_RESTART_1&guestModalScrollLock=20260920_GUEST_MODAL_SCROLL_LOCK_1&guestDiscountUnified=20260923_GUEST_DISCOUNT_UNIFIED_1&flashSaleStart=20260923_FLASH_SALE_START_1&guestModalClose=20260924_GUEST_MODAL_CLOSE_1&guestPaymentActions=20260925_STABLE_POLL_1&guestPaymentEntry=20260925_DIRECT_PAYMENT_1&guestPaymentSurface=20260926_PAYMENT_STATE_SURFACE_1&guestCountdownFix=20260926_GUEST_COUNTDOWN_2&guestStatusFeedback=20260926_GUEST_STATUS_FEEDBACK_1&guestCartBatchAmount=20260927_GUEST_CART_BATCH_AMOUNT_1&guestQrLocal=20260927_GUEST_QR_LOCAL_1&guestBatchDeliveryGroups=20260929_GUEST_BATCH_DELIVERY_GROUPS_1" defer></script>
+    <script src="js/guest-shop-client.js?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestPaymentLock=20260923_GUEST_PAYMENT_LOCK_1&guestOrderAccess=20260921_GUEST_ORDER_ACCESS_DIRECT_1&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1&guestCheckoutUi=20260918_GUEST_CHECKOUT_DUJIAO_UI_1&guestPromo=20260923_GUEST_PROMO_L1L2_1&guestTask21=20260920_GUEST_TASK_2_1_TERMINAL_RESTART_1&guestModalScrollLock=20260920_GUEST_MODAL_SCROLL_LOCK_1&guestDiscountUnified=20260923_GUEST_DISCOUNT_UNIFIED_1&flashSaleStart=20260923_FLASH_SALE_START_1&guestModalClose=20260924_GUEST_MODAL_CLOSE_1&guestPaymentActions=20260925_STABLE_POLL_1&guestPaymentEntry=20260925_DIRECT_PAYMENT_1&guestPaymentSurface=20260926_PAYMENT_STATE_SURFACE_1&guestCountdownFix=20260926_GUEST_COUNTDOWN_2&guestStatusFeedback=20260926_GUEST_STATUS_FEEDBACK_1&guestCartBatchAmount=20260927_GUEST_CART_BATCH_AMOUNT_1&guestQrLocal=20260927_GUEST_QR_LOCAL_1&guestBatchDeliveryGroups=20260929_GUEST_BATCH_DELIVERY_GROUPS_1&guestMarketFx=20261016_1&usdtNetworks=20261018_RECOVERY_1&guestCancel=20261018_ATOMIC_1" defer></script>
     <script src="js/shop-list-layout.js?v=20260926_SHOP_LIST_PRICE_CHIP_2&categoryScrollReset=20261001_CATEGORY_SCROLL_RESET_1" defer></script>
 
     <!-- Chat Widget -->

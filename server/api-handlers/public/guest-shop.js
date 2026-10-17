@@ -15,6 +15,7 @@ const { loadProductGuidanceRow, buildProductGuidancePayload } = require('./shop'
 
 const GUEST_WEBHOOK_PROVIDERS = new Set(['zpay', 'nowpayments']);
 const FINAL_PAYMENT_STATUSES = new Set(['paid', 'confirmed', 'finished', 'success', 'succeeded', 'completed', 'captured']);
+const usdtNetworks = require('../../../api/_lib/payments/usdt-networks');
 const NOWPAYMENTS_GUEST_PAY_CURRENCY = 'usdtbsc';
 // Payment provider calls are external side effects.  Keep a short-lived
 // creation lease in the existing payment row so two HTTP instances cannot
@@ -920,25 +921,26 @@ function providerQuoteChecks(provider, normalized, expected, security = defaultS
     const failures = [];
     if (provider !== 'nowpayments') return { valid: true, failures };
 
+    const metadata = expected?.provider_metadata && typeof expected.provider_metadata === 'object'
+        ? expected.provider_metadata : {};
+    const expectedCurrency = metadata.pay_currency || (usdtNetworks.network(expected?.channel) ? expected.channel : NOWPAYMENTS_GUEST_PAY_CURRENCY);
     const paidCurrency = String(normalized?.pay_currency || normalized?.paid_currency || '').trim().toLowerCase();
-    if (paidCurrency !== NOWPAYMENTS_GUEST_PAY_CURRENCY || normalized?.network_verified !== true) {
+    if (!usdtNetworks.network(paidCurrency) || paidCurrency !== expectedCurrency || normalized?.network_verified !== true) {
         failures.push('network');
     }
-
-    const metadata = expected?.provider_metadata && typeof expected.provider_metadata === 'object'
-        ? expected.provider_metadata
-        : {};
     const expectedQuote = normalizeObservedAmount(metadata.price_amount);
     const receivedQuote = normalizeObservedAmount(normalized?.price_amount ?? normalized?.paid_amount ?? normalized?.amount);
     const quoteCurrency = String(metadata.price_currency || '').trim().toLowerCase();
     const receivedQuoteCurrency = String(normalized?.provider_currency || normalized?.currency || '').trim().toLowerCase();
-    const isUsdtFamily = (c) => ['usdt', 'usdtbsc'].includes(c);
+    const isUsdtFamily = (c) => ['usdt', 'usdtbsc'].includes(c); // legacy BSC aliases only; other networks require exact equality
     const quoteCurrencyMatches = Boolean(quoteCurrency) && (
         quoteCurrency === receivedQuoteCurrency
         || (isUsdtFamily(quoteCurrency) && isUsdtFamily(receivedQuoteCurrency))
     );
-    if (!(expectedQuote > 0) || !(receivedQuote > 0) || !quoteCurrency || !quoteCurrencyMatches
-        || !amountMinorMatches(security, expectedQuote, receivedQuote, quoteCurrency)) {
+    const quoteAmountMatches = usdtNetworks.network(quoteCurrency) || quoteCurrency === 'usdt'
+        ? decimalEqual(normalized?.response_payload?.price_amount ?? normalized?.price_amount ?? receivedQuote, metadata.price_amount)
+        : amountMinorMatches(security, expectedQuote, receivedQuote, quoteCurrency);
+    if (!(expectedQuote > 0) || !(receivedQuote > 0) || !quoteCurrency || !quoteCurrencyMatches || !quoteAmountMatches) {
         failures.push('quote');
     }
 
@@ -951,6 +953,7 @@ function providerQuoteChecks(provider, normalized, expected, security = defaultS
     if (!decimalAtLeast(actuallyPaid, expectedPayAmount)) {
         failures.push('actually_paid');
     }
+    if (usdtNetworks.paymentMemo(normalized?.response_payload) !== (metadata.payin_extra_id || '')) failures.push('memo');
     return { valid: failures.length === 0, failures };
 }
 
@@ -2262,7 +2265,7 @@ function createGuestShopHandlers({
         const parser = paymentAdapter?.parseGuestWebhook || paymentAdapter?.parseWebhook;
         if (typeof verifier !== 'function' || typeof parser !== 'function') throw webhookError('支付通道未配置', 'guest_payment_provider_unavailable', 503, false);
         const verification = await verifier({ provider, payload, rawBody, headers: req.headers || {}, signature: provider === 'zpay' ? payload.sign : webhookHeader(req, 'x-nowpayments-sig'), site: payment.site, expectedPayment: { ...payment, merchant_order_no: payment.merchant_order_no, expected_amount: payment.expected_amount }, requestOrigin: '', requestHost: webhookHeader(req, 'host'), env });
-        const normalized = await parser({ provider, payload, site: payment.site, env });
+        const normalized = await parser({ provider, payload, rawBody, site: payment.site, env });
         const observedStatus = String(normalized?.final_status || normalized?.status || '').trim().toLowerCase();
         const providerOrderNo = normalizeWebhookReference(normalized?.provider_order_no || normalized?.provider_payment_id || payload.out_trade_no || payload.order_id || '');
         const observedAmount = normalizeObservedAmount(normalized?.amount ?? normalized?.paid_amount);
@@ -3005,8 +3008,8 @@ function createGuestShopHandlers({
             if (!paymentId || !payAddress || !payAmountSnapshot
                 || (payAmountText && !storedNumericPayAmount)
                 || (payAmountText && !decimalEqual(payAmountText, metadata.pay_amount))
-                || payCurrency !== NOWPAYMENTS_GUEST_PAY_CURRENCY
-                || !priceAmountSnapshot || !['cny', 'usd', 'usdt', 'usdtbsc'].includes(priceCurrency)) return null;
+                || !usdtNetworks.network(payCurrency)
+                || !priceAmountSnapshot || !['cny', 'usd', 'usdt', ...usdtNetworks.NETWORKS.map(item => item.currency)].includes(priceCurrency)) return null;
             const payAmount = payAmountSnapshot.numeric;
             const priceAmount = priceAmountSnapshot.amount;
             return {
@@ -3025,6 +3028,8 @@ function createGuestShopHandlers({
                 pay_amount: payAmount,
                 pay_amount_text: payAmountText || String(payAmount),
                 pay_currency: payCurrency,
+                network_name: usdtNetworks.network(payCurrency).name,
+                ...(metadata.payin_extra_id ? { payin_extra_id: metadata.payin_extra_id } : {}),
                 price_amount: priceAmount,
                 price_currency: priceCurrency,
                 amount,
@@ -3035,11 +3040,14 @@ function createGuestShopHandlers({
                 checkout: {
                     provider,
                     channel,
+                    fx_cny_per_usdt: storedText(metadata.fx_cny_per_usdt, 40) || null,
                     payment_id: paymentId,
                     pay_address: payAddress,
                     pay_amount: payAmount,
                     pay_amount_text: payAmountText || String(payAmount),
                     pay_currency: payCurrency,
+                    network_name: usdtNetworks.network(payCurrency).name,
+                    ...(metadata.payin_extra_id ? { payin_extra_id: metadata.payin_extra_id } : {}),
                     price_amount: priceAmount,
                     price_currency: priceCurrency,
                     qr_data: payAddress,
@@ -4803,48 +4811,25 @@ function responseOrder(order, extras = {}) {
                     });
                 }
             }
+            const db = getSupabase();
+            if (!db?.from || typeof db.rpc !== 'function') {
+                throw new security.GuestShopSecurityError('数据库服务不可用', {
+                    statusCode: 503,
+                    code: 'guest_database_unavailable',
+                    expose: false
+                });
+            }
             const order = await loadOrderByNo(body.orderNo || body.order_no);
             await authorizeClaim(req, order);
-            let cancelError = null;
-            try {
-                const result = await db.rpc('fn_guest_shop_cancel_order', {
-                    p_order_id: order.id,
-                    p_reason: 'buyer_cancelled'
-                });
-                if (result?.error) throw result.error;
-            } catch (err) {
-                cancelError = err;
-            }
-            if (cancelError) {
-                const payment = await loadPaymentIntent(order).catch(() => null);
-                const orderPaymentStatus = String(order.payment_status || '').trim().toLowerCase();
-                const paymentStatus = String(payment?.status || '').trim().toLowerCase();
-                const canFallbackCancel = (orderPaymentStatus === 'review' || paymentStatus === 'review')
-                    && String(order.fulfillment_status || '').trim().toLowerCase() === 'pending'
-                    && String(order.refund_status || '').trim().toLowerCase() === 'none'
-                    && (!payment?.provider_order_no || !paymentStatusIsTerminal(paymentStatus));
-                if (canFallbackCancel) {
-                    await db.rpc('guest_shop_release_held_reservations', {
-                        p_order_id: order.id,
-                        p_reason: 'buyer_cancelled'
-                    }).catch(() => null);
-                    const nowIso = new Date().toISOString();
-                    await db.from('guest_shop_payment_orders').update({
-                        status: 'expired',
-                        last_error_code: 'guest_order_cancelled',
-                        last_error_message: 'buyer cancelled the unpaid guest order',
-                        updated_at: nowIso
-                    }).eq('guest_order_id', order.id).catch(() => null);
-                    await db.from('guest_shop_orders').update({
-                        payment_status: 'expired',
-                        last_error_code: 'guest_order_cancelled',
-                        last_error_message: 'buyer cancelled the unpaid guest order',
-                        updated_at: nowIso
-                    }).eq('id', order.id).catch(() => null);
-                } else {
-                    throw cancelError;
-                }
-            }
+            // The RPC serializes with payment confirmation and releases stock,
+            // the payment intent and the discount ledger in one transaction.
+            // Never replace a refused/failed RPC with separate updates: a
+            // concurrent confirmation may already have accepted payment.
+            const result = await db.rpc('fn_guest_shop_cancel_order', {
+                p_order_id: order.id,
+                p_reason: 'buyer_cancelled'
+            });
+            if (result?.error) throw result.error;
             const refreshed = await loadOrderByNo(order.order_no);
             return sendJson(res, 200, {
                 success: true,
@@ -5746,7 +5731,7 @@ function responseOrder(order, extras = {}) {
             if (typeof verifier !== 'function') throw webhookError('支付通道未配置', 'guest_payment_provider_unavailable', 503, false);
             const verification = await verifier({ provider, payload, rawBody, headers: req.headers || {}, signature: provider === 'zpay' ? payload.sign : webhookHeader(req, 'x-nowpayments-sig'), site: expected?.site || 'cn', expectedPayment: expected, requestOrigin: '', requestHost: webhookHeader(req, 'host'), env });
             const parser = paymentAdapter?.parseGuestWebhook || paymentAdapter?.parseWebhook;
-            const normalized = typeof parser === 'function' ? await parser({ provider, payload, site: expected?.site || 'cn', env }) : null;
+            const normalized = typeof parser === 'function' ? await parser({ provider, payload, rawBody, site: expected?.site || 'cn', env }) : null;
             const bodySha256 = rawBodyHash(security, rawBody);
             const merchantOrderNo = normalizeWebhookReference(normalized?.merchant_order_no || merchantHint);
             const providerOrderNo = normalizeWebhookReference(normalized?.provider_order_no || normalized?.provider_payment_id || merchantOrderNo);

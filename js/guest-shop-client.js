@@ -1135,6 +1135,7 @@
         return payload;
     }
 
+    const usdtNetworkNames = { usdtbsc: 'BSC (BEP20)', usdtton: 'TON', usdtmatic: 'Polygon', usdttrc20: 'TRON (TRC20)' };
     function normalizePaymentOptions(channels) {
         const result = [];
         const seen = new Set();
@@ -1153,15 +1154,18 @@
             } else if (['alipay', 'wxpay', 'qqpay', 'tenpay', 'unionpay'].includes(token)) {
                 provider = 'zpay';
                 channel = token;
-            } else if (token === 'usdtbsc') {
+            } else if (Object.hasOwn(usdtNetworkNames, token)) {
                 provider = 'nowpayments';
                 channel = token;
             }
             if (!provider || !channel || ['mock', 'test', 'fake'].includes(provider)) return;
-            const key = `${provider}:${channel}`;
-            if (seen.has(key)) return;
-            seen.add(key);
-            result.push({ provider, channel, key });
+            const channelChoices = token === 'nowpayments' ? Object.keys(usdtNetworkNames) : [channel];
+            channelChoices.forEach((selectedChannel) => {
+                if (provider === 'nowpayments' && !Object.hasOwn(usdtNetworkNames, selectedChannel)) return;
+                const key = `${provider}:${selectedChannel}`;
+                if (seen.has(key)) return;
+                seen.add(key); result.push({ provider, channel: selectedChannel, key });
+            });
         });
         return result;
     }
@@ -1177,7 +1181,7 @@
         };
         const channelLabel = channelLabels[option.channel]
             || normalizeText(option.channel, 80).replace(/[_-]+/gu, ' ').toUpperCase();
-        if (option.provider === 'nowpayments') return channelLabel || '数字货币';
+        if (option.provider === 'nowpayments') return `USDT · ${usdtNetworkNames[option.channel] || channelLabel}`;
         return channelLabel || normalizeText(option.provider, 80).toUpperCase();
     }
 
@@ -1262,7 +1266,7 @@
             const icon = document.createElement('span');
             icon.className = 'guest-shop-modal__payment-icon';
             icon.setAttribute('aria-hidden', 'true');
-            const isTether = option.provider === 'nowpayments' && option.channel === 'usdtbsc';
+            const isTether = option.provider === 'nowpayments' && Object.hasOwn(usdtNetworkNames, option.channel);
             const iconGlyph = document.createElement(isTether ? 'img' : 'i');
             if (isTether) {
                 iconGlyph.src = 'assets/tether-mark.svg';
@@ -2505,7 +2509,9 @@
             address: normalizeText(source.pay_address || source.qr_data || source.address, 240),
             payAmount: normalizeText(source.pay_amount_text || source.pay_amount || source.payAmount, 80),
             payCurrency: normalizeText(source.pay_currency || source.payCurrency, 40).toUpperCase(),
-            network: normalizeText(source.network_name || 'BNB Smart Chain', 80),
+            fxCnyPerUsdt: normalizeText(source.fx_cny_per_usdt || source.fxCnyPerUsdt, 40),
+            network: normalizeText(source.network_name || source.network || usdtNetworkNames[normalizeText(source.pay_currency || source.payCurrency, 40).toLowerCase()], 80),
+            memo: normalizeText(source.payin_extra_id || source.memo, 128),
             quoteExpiresAt: normalizeText(source.quote_expires_at || source.expiration_estimate_date || source.quoteExpiresAt, 80)
         };
     }
@@ -3065,7 +3071,7 @@
             && Boolean(state.batchMode ? orderScopedQr : (orderScopedQr || directImageFallback)))
             || (details.provider === 'nowpayments'
                 && Boolean(details.address)
-                && details.payCurrency === 'USDTBSC');
+                && Object.hasOwn(usdtNetworkNames, details.payCurrency.toLowerCase()));
         if (!valid) {
             state.checkout = null;
             state.paymentCreationUnknown = true;
@@ -3095,6 +3101,9 @@
             resetZpayHostedQr();
         }
         setText('guestCashNowNetwork', details.network);
+        setText('guestCashNowWarning', `请仅通过 ${details.network} 网络转账，按完整应付金额支付，链上 Gas 另付。二维码仅含收款地址。${details.memo ? ' 必须同时填写下方 Memo。' : ''}`);
+        setText('guestCashNowMemo', details.memo);
+        setHidden('guestCashNowMemoRow', !details.memo);
         const displayCurrency = /^usdt/i.test(details.payCurrency)
             ? 'USDT'
             : (details.payCurrency || '');
@@ -3102,6 +3111,10 @@
             ? `${details.payAmount} ${displayCurrency}`
             : '-');
         setText('guestCashNowAddress', details.address || '-');
+        const fxPrice = Number(details.fxCnyPerUsdt);
+        setText('guestCashNowFx', fxPrice >= 2 && fxPrice <= 20
+            ? `下单汇率：1 USDT ≈ ¥${fxPrice.toFixed(4)}。本订单应付金额已锁定，链上 Gas 另付。` : '');
+        setHidden('guestCashNowFx', !(fxPrice >= 2 && fxPrice <= 20));
         const nowQrImage = element('guestCashNowQrImage');
         if (nowQrImage) {
             const qrSource = details.address || details.qrcodeUrl || '';
@@ -4035,6 +4048,8 @@
                         ? '订单状态已变化，无法取消；请点击查询支付状态确认最新结果。'
                         : error?.name === 'AbortError'
                             ? '取消订单请求超时，服务端状态未确认；请稍后重试或查询支付状态。'
+                        : error?.status >= 500
+                            ? '取消订单暂时失败，原订单已保留。请稍后重试或查询支付状态。'
                         : (error?.message || '取消订单失败，请稍后重试。'),
                     'checking'
                 );
@@ -4804,7 +4819,7 @@
                     details
                     && details.provider === 'nowpayments'
                     && Boolean(details.address)
-                    && details.payCurrency === 'USDTBSC'
+                    && Object.hasOwn(usdtNetworkNames, details.payCurrency.toLowerCase())
                 );
                 // A pending NOWPayments order without a usable wallet address is
                 // not actionable. This occurs when provider creation was
@@ -5299,6 +5314,12 @@
                 'checking'
             );
             void pollStatus({ immediate: true, resetWindow: true, forceProviderRefresh: true });
+            return;
+        }
+        const memoButton = target.closest('#guestCashNowCopyMemoBtn');
+        if (memoButton) {
+            event.preventDefault();
+            void copyText(element('guestCashNowMemo')?.textContent || '', memoButton);
             return;
         }
         const addressButton = target.closest('#guestCashNowCopyAddressBtn');

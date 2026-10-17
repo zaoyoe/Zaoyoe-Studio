@@ -14,6 +14,9 @@
 
 const crypto = require('node:crypto');
 const net = require('node:net');
+const networks = require('./usdt-networks');
+const marketFx = require('./usdt-market-fx');
+const cashPricing = require('../../../js/tg-payment-pricing');
 const {
     buildZpayOutTradeNo,
     createZpayPayment,
@@ -502,7 +505,8 @@ function buildSafeMetadata(provider, metadata = {}) {
     const source = isPlainObject(metadata) ? metadata : {};
     const allowed = provider === 'zpay'
         ? ['provider_order_no', 'trade_no', 'gateway_order_id', 'payment_type', 'checkout_url', 'qrcode_url', 'qrcode_image_url']
-        : ['provider_order_no', 'payment_id', 'pay_address', 'pay_amount', 'pay_amount_text', 'pay_currency', 'price_amount', 'price_currency', 'network_name', 'quote_expires_at', 'is_fixed_rate', 'is_fee_paid_by_user', 'local_currency', 'local_amount', 'cny_to_usd_rate'];
+        : ['provider_order_no', 'payment_id', 'pay_address', 'pay_amount', 'pay_amount_text', 'pay_currency', 'price_amount', 'price_currency', 'network_name', 'payin_extra_id', 'quote_expires_at', 'is_fixed_rate', 'is_fee_paid_by_user', 'local_currency', 'local_amount', 'cny_to_usd_rate',
+            'fx_snapshot_id', 'fx_source', 'fx_source_updated_at', 'fx_expires_at', 'fx_usdt_per_cny', 'fx_cny_per_usdt'];
     const result = {};
     allowed.forEach((key) => {
         const value = source[key];
@@ -563,25 +567,25 @@ function getNowpaymentsActuallyPaidCurrency(payload = {}) {
     if (Object.prototype.hasOwnProperty.call(payload, 'actually_paid_currency') && payload.actually_paid_currency) {
         return normalizeNowpaymentsCurrency(payload.actually_paid_currency);
     }
-    // 2. Official NOWPayments IPN and status query responses provide outcome_currency and pay_currency.
-    // We only resolve paidCurrency from these fields if funds were actually paid.
-    const actuallyPaid = getNowpaymentsActuallyPaid(payload);
-    if (actuallyPaid !== null) {
-        if (Object.prototype.hasOwnProperty.call(payload, 'outcome_currency') && payload.outcome_currency) {
-            return normalizeNowpaymentsCurrency(payload.outcome_currency);
-        }
-        if (Object.prototype.hasOwnProperty.call(payload, 'pay_currency') && payload.pay_currency) {
-            return normalizeNowpaymentsCurrency(payload.pay_currency);
-        }
+    // actually_paid is denominated in pay_currency. outcome_currency describes
+    // merchant payout and may legitimately differ after automatic conversion.
+    if (getNowpaymentsActuallyPaid(payload) !== null && payload.pay_currency) {
+        return normalizeNowpaymentsCurrency(payload.pay_currency);
     }
     return '';
 }
 
-function normalizeNowpaymentsSettlement(payload = {}, status = 'unknown') {
+function normalizeNowpaymentsSettlement(payload = {}, status = 'unknown', rawBody = null) {
+    if (rawBody) {
+        const { exact } = require('../../../server/tg/nowpayments-gateway').parsePaymentJson(String(rawBody));
+        // Keep the original signature/response object unchanged, but compare
+        // the received amount using its exact wire representation.
+        payload = { ...payload, actually_paid: exact.actually_paid };
+    }
     const actuallyPaid = getNowpaymentsActuallyPaid(payload);
     const actuallyPaidText = getNowpaymentsActuallyPaidText(payload);
     const paidCurrency = getNowpaymentsActuallyPaidCurrency(payload);
-    const networkVerified = paidCurrency === NOWPAYMENTS_GUEST_PAY_CURRENCY;
+    const networkVerified = Boolean(networks.network(paidCurrency)) && normalizeNowpaymentsCurrency(payload.pay_currency) === paidCurrency;
     const actualPaymentVerified = actuallyPaid !== null
         && actuallyPaidText !== null
         && networkVerified;
@@ -871,8 +875,8 @@ function createGuestShopPaymentAdapter({
                     expose: false
                 });
             }
-            if (normalizeNowpaymentsCurrency(integration.payCurrency) !== NOWPAYMENTS_GUEST_PAY_CURRENCY) {
-                throw new GuestShopPaymentError('游客 NOWPayments 仅允许 USDT-BEP20（usdtbsc）', {
+            if (!networks.network(normalizeNowpaymentsCurrency(integration.payCurrency))) {
+                throw new GuestShopPaymentError('游客 NOWPayments 仅支持已登记的 USDT 网络', {
                     code: 'guest_payment_network_unsupported',
                     statusCode: 503,
                     expose: false
@@ -917,6 +921,7 @@ function createGuestShopPaymentAdapter({
                 allowedChannels,
                 { required: requireChannelAllowlist }
             );
+            if (context.provider === 'nowpayments') networks.requireNetwork(channel === 'nowpayments' ? context.integration.payCurrency : channel);
             return {
                 ready: true,
                 provider: context.provider,
@@ -990,6 +995,12 @@ function createGuestShopPaymentAdapter({
             secretValues,
             returnOrderNo: merchantOrderNo
         });
+        if (provider === 'nowpayments') {
+            const selected = networks.requireNetwork(channelName === 'nowpayments' ? context.integration.payCurrency : channelName);
+            context.channelConfig = { ...context.channelConfig, pay_currency: selected.currency, network_name: selected.name, is_fee_paid_by_user: false };
+            context.integration.isFeePaidByUser = false;
+            context.integration.payCurrency = selected.currency;
+        }
         const providerOrderNo = buildProviderOrderReference(merchantOrderNo, provider);
         const fetchDependencies = typeof fetchImpl === 'function' ? { fetchImpl } : {};
         const productName = text(order?.snapshot_product_name || order?.product_name || order?.name, '商品', 80);
@@ -1096,17 +1107,37 @@ function createGuestShopPaymentAdapter({
             };
         }
 
+        // Only new guest cash payments resolve market FX. Query, cancel and
+        // webhook verification continue using the saved checkout amounts.
+        let fxSnapshot;
+        try { fxSnapshot = marketFx.marketMode(env) ? await marketFx.getMarketUsdtFx({ supabase, fetchImpl }) : null; }
+        catch (_) {
+            // No provider request has been sent. Existing reservation cleanup
+            // can safely release this definite pre-creation failure.
+            throw new GuestShopPaymentError('USDT 市场汇率暂不可用，请稍后重试或选择其他支付方式', {
+                code: 'guest_payment_provider_not_ready', statusCode: 503
+            });
+        }
+        if (fxSnapshot) {
+            context.integration.cnyToUsdRate = Number(fxSnapshot.usdt_per_cny);
+            context.integration.isFixedRate = false;
+            context.integration.isFeePaidByUser = false;
+            context.channelConfig = { ...context.channelConfig, cny_to_usd_rate: Number(fxSnapshot.usdt_per_cny),
+                is_fixed_rate: false, is_fee_paid_by_user: false };
+        }
         let priceAmount;
         const configuredPriceCurrency = normalizeCurrency(context.integration.priceCurrency).toLowerCase();
         // If configured as 'usd' and pay currency is 'usdtbsc', or configured as 'usdtbsc'/'usdt':
         // USDT is pegged 1:1 to USD, and quoting in crypto (usdtbsc) avoids NOWPayments'
         // fiat-to-crypto liquidity engine which enforces a ~$18.57 USD minimum.
-        const isUsdPegged = ['usd', 'usdt', 'usdtbsc', 'usdc', 'busd'].includes(configuredPriceCurrency);
-        const priceCurrency = (configuredPriceCurrency === 'usd' && context.integration.payCurrency === 'usdtbsc')
-            ? 'usdtbsc'
+        const isUsdPegged = ['usd', 'usdt', 'usdtbsc', 'usdc', 'busd'].includes(configuredPriceCurrency) || Boolean(networks.network(configuredPriceCurrency));
+        const priceCurrency = fxSnapshot || isUsdPegged
+            ? context.integration.payCurrency
             : configuredPriceCurrency;
 
-        if (isUsdPegged || priceCurrency === 'usdtbsc' || priceCurrency === 'usdt') {
+        if (fxSnapshot) {
+            priceAmount = Number(marketFx.convertCnyMinorToUsdt(amountSnapshot.minor, fxSnapshot.usdt_per_cny));
+        } else if (isUsdPegged || priceCurrency === 'usdtbsc' || priceCurrency === 'usdt') {
             // Guest settlement is always CNY. NOWPayments quotes in USD or crypto on both
             // sites using the same recharge conversion path.
             priceAmount = convertCnyAmountToPriceAmount(amountSnapshot.amount, {
@@ -1143,12 +1174,27 @@ function createGuestShopPaymentAdapter({
             throw mapNowpaymentsCreateError(error);
         }
         const payload = result.response?.data && typeof result.response.data === 'object' ? result.response.data : {};
+        if (fxSnapshot || context.integration.payCurrency !== 'usdtbsc') {
+            // The raw decimal tokens avoid accepting an atomic-unit difference
+            // that JSON.parse could round away. No TG orders or RPCs are used.
+            const { parsePaymentJson } = require('../../../server/tg/nowpayments-gateway');
+            let exact;
+            try { exact = parsePaymentJson(result.response.text).exact; } catch (_) {}
+            if (!exact || payload.price_currency !== context.integration.payCurrency
+                || !cashPricing.cryptoAmountsEqual(exact.price_amount, priceAmount.toFixed(2))
+                || !cashPricing.cryptoAmountsEqual(exact.pay_amount, priceAmount.toFixed(2))) {
+                throw new GuestShopPaymentError('USDT 付款金额未能与市场汇率报价一致，请稍后查询订单', {
+                    code: 'guest_provider_quote_mismatch', statusCode: 502
+                });
+            }
+        }
         const paymentId = extractNowpaymentsPaymentId(payload);
         const payAddress = text(payload.pay_address || payload.payment_address || payload.address, '', 240);
         const payAmountRaw = safePositiveNumber(payload.pay_amount);
         const payCurrency = normalizeNowpaymentsCurrency(payload.pay_currency || context.integration.payCurrency);
-        if (!paymentId || !payAddress || !(payAmountRaw > 0) || payCurrency !== NOWPAYMENTS_GUEST_PAY_CURRENCY) {
-            throw new GuestShopPaymentError('NOWPayments 未返回完整的 USDT-BEP20 付款信息', {
+        const payinExtraId = networks.paymentMemo(payload);
+        if (!paymentId || !payAddress || !(payAmountRaw > 0) || payCurrency !== context.integration.payCurrency || !networks.validAddress(payCurrency, payAddress) || payinExtraId === null) {
+            throw new GuestShopPaymentError('NOWPayments 未返回所选网络的完整 USDT 付款信息', {
                 code: 'guest_provider_checkout_missing',
                 statusCode: 502
             });
@@ -1168,15 +1214,19 @@ function createGuestShopPaymentAdapter({
             pay_amount: Number(payAmountText || payAmountRaw),
             pay_amount_text: payAmountText || String(payAmountRaw),
             pay_currency: payCurrency,
+            ...(payinExtraId ? { payin_extra_id: payinExtraId } : {}),
             price_amount: Number(priceAmount),
             price_currency: priceCurrency,
-            network_name: context.channelConfig.network_name || 'BNB Smart Chain',
+            network_name: networks.network(payCurrency)?.name || context.channelConfig.network_name,
             quote_expires_at: quoteExpiresAt,
             is_fixed_rate: context.integration.isFixedRate,
             is_fee_paid_by_user: context.integration.isFeePaidByUser,
             local_currency: 'cny',
             local_amount: amountSnapshot.amount,
-            cny_to_usd_rate: context.integration.cnyToUsdRate
+            cny_to_usd_rate: context.integration.cnyToUsdRate,
+            ...(fxSnapshot ? { fx_snapshot_id: fxSnapshot.id, fx_source: fxSnapshot.source,
+                fx_source_updated_at: fxSnapshot.source_updated_at, fx_expires_at: fxSnapshot.expires_at,
+                fx_usdt_per_cny: fxSnapshot.usdt_per_cny, fx_cny_per_usdt: fxSnapshot.cny_per_usdt } : {})
         });
         return {
             supported: true,
@@ -1194,6 +1244,7 @@ function createGuestShopPaymentAdapter({
             pay_amount: Number(payAmountText || payAmountRaw),
             pay_amount_text: payAmountText || String(payAmountRaw),
             pay_currency: payCurrency,
+            ...(payinExtraId ? { payin_extra_id: payinExtraId } : {}),
             price_amount: Number(priceAmount),
             price_currency: priceCurrency,
             amount: amountSnapshot.amount,
@@ -1210,11 +1261,14 @@ function createGuestShopPaymentAdapter({
             checkout: {
                 provider,
                 channel: channelName,
+                network_name: networks.network(payCurrency).name,
+                ...(fxSnapshot ? { fx_cny_per_usdt: fxSnapshot.cny_per_usdt } : {}),
                 payment_id: paymentId,
                 pay_address: payAddress,
                 pay_amount: Number(payAmountText || payAmountRaw),
                 pay_amount_text: payAmountText || String(payAmountRaw),
                 pay_currency: payCurrency,
+                ...(payinExtraId ? { payin_extra_id: payinExtraId } : {}),
                 price_amount: Number(priceAmount),
                 price_currency: priceCurrency,
                 qr_data: payAddress,
@@ -1307,6 +1361,7 @@ function createGuestShopPaymentAdapter({
     async function parseGuestWebhook({
         provider: providerInput,
         payload = {},
+        rawBody = null,
         site: siteInput = '',
         requestOrigin = '',
         requestHost = '',
@@ -1352,7 +1407,7 @@ function createGuestShopPaymentAdapter({
             };
         }
         const quoteAmount = getNowpaymentsQuoteAmount(payload);
-        const settlement = normalizeNowpaymentsSettlement(payload, status);
+        const settlement = normalizeNowpaymentsSettlement(payload, status, rawBody);
         const priceCurrency = normalizeCurrency(payload.price_currency);
         const paymentId = extractNowpaymentsPaymentId(payload);
         return {
@@ -1445,7 +1500,7 @@ function createGuestShopPaymentAdapter({
         const statusRaw = text(payload.payment_status || payload.status, '', 64).toLowerCase();
         const status = normalizeNowpaymentsPaymentStatus(statusRaw);
         const quoteAmount = getNowpaymentsQuoteAmount(payload);
-        const settlement = normalizeNowpaymentsSettlement(payload, status);
+        const settlement = normalizeNowpaymentsSettlement(payload, status, result.response?.text);
         return {
             supported: true,
             provider,

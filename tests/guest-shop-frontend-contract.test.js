@@ -1057,6 +1057,7 @@ test('guest checkout auto-adds a 1% channel fee to Alipay and USDT payable amoun
     assert.match(markup, /id="guestCashFeeRow"[^>]*hidden/);
     assert.match(markup, /id="guestCashFeeLabel"[^>]*>通道手续费</);
     assert.match(markup, /id="guestCashFeeAmount"/);
+    assert.match(markup, /id="guestCashNowFx"[^>]*class="guest-shop-modal__hint"[^>]*hidden/);
     assert.match(markup, /class="guest-shop-modal__amount-header"[\s\S]*id="guestCashAmountLabel"[\s\S]*id="guestCashPrice"/);
     assert.match(styles, /\.guest-shop-modal__amount-header[\s\S]*display: flex[\s\S]*justify-content: space-between/);
     assert.match(markup, /应付金额/);
@@ -1182,7 +1183,9 @@ test('the guest checkout modal mirrors the Dujiao payment and delivery layout', 
     // Payment.vue cryptoPaymentDetails -> bordered label/value list + its own copy row.
     assert.match(modal, /id="guestCashNowpaymentsPanel"[^>]*class="guest-shop-modal__crypto"[^>]*hidden/);
     assert.match(modal, /class="guest-shop-modal__crypto-list"/);
-    assert.equal((modal.match(/class="guest-shop-modal__crypto-row"/g) || []).length, 3, '网络 / 支付金额 / 付款地址');
+    assert.equal((modal.match(/class="guest-shop-modal__crypto-row"/g) || []).length, 4, '网络 / 支付金额 / 付款地址 / 可选 Memo');
+    assert.match(modal, /id="guestCashNowMemoRow"[^>]*hidden/);
+    assert.match(modal, /id="guestCashNowCopyMemoBtn"/);
     assert.match(modal, /id="guestCashNowAddress"[^>]*class="guest-shop-modal__crypto-value guest-shop-modal__crypto-address"/);
     assert.match(modal, /id="guestCashNowCopyAddressBtn"[^>]*class="shop-btn shop-btn-secondary guest-shop-modal__crypto-copy"/);
     // The copy confirmation lives in its own node, never inside the address.

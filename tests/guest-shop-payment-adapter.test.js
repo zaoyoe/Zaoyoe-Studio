@@ -85,6 +85,69 @@ function nowpaymentsConfig(overrides = {}) {
     };
 }
 
+function marketSnapshot() {
+    const timestamp = Date.now();
+    return { id: '41444444-4444-4444-8444-444444444444', source: 'coingecko:tether/cny', cny_per_usdt: '6.68000000',
+        usdt_per_cny: '0.14970060', source_updated_at: new Date(timestamp).toISOString(), fetched_at: new Date(timestamp).toISOString(),
+        expires_at: new Date(timestamp + 240000).toISOString() };
+}
+
+for (const selected of require('../api/_lib/payments/usdt-networks').NETWORKS) test(`guest ${selected.name} creates native USDT checkout and preserves Memo without broadening an exact allowlist`, async () => {
+    const address = selected.currency === 'usdtton' ? 'EQ' + 'a'.repeat(46)
+        : selected.currency === 'usdttrc20' ? 'T' + 'a'.repeat(33) : '0x' + 'a'.repeat(40);
+    const requests = [];
+    const adapter = makeAdapter(nowpaymentsConfig(), { nowpayments_api_key: NOWPAYMENTS_API_KEY, nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET },
+        async (url, options) => { requests.push({ url, options }); const body = JSON.parse(options.body);
+            return responseJson({ payment_id: '1234567890', order_id: 'GS20260913-000001', pay_address: address,
+                pay_currency: selected.currency, price_currency: selected.currency, price_amount: body.price_amount, pay_amount: body.price_amount,
+                expiration_estimate_date: '2026-10-16T12:00:00Z', ...(selected.currency === 'usdtton' ? { extra_id: '556677' } : {}) }); });
+    const input = { order: makeOrder({ provider: 'nowpayments', channel: selected.currency }), provider: 'nowpayments',
+        channel: selected.currency, site: 'cn', allowedChannels: [`nowpayments:${selected.currency}`], requireChannelAllowlist: true };
+    const result = await adapter.createGuestPayment(input);
+    assert.equal(result.pay_currency, selected.currency);
+    assert.equal(result.checkout.network_name, selected.name);
+    assert.equal(result.checkout.payin_extra_id, selected.currency === 'usdtton' ? '556677' : undefined);
+    assert.equal(JSON.parse(requests[0].options.body).pay_currency, selected.currency);
+    const other = selected.currency === 'usdtbsc' ? 'usdtton' : 'usdtbsc';
+    await assert.rejects(adapter.createGuestPayment({ ...input, channel: other, order: makeOrder({ provider: 'nowpayments', channel: other }) }));
+    assert.equal(requests.length, 1, 'disallowed networks must never reach NOWPayments');
+});
+function marketAdapter({ supabase, fetchImpl }) {
+    return createGuestShopPaymentAdapter({ supabase,
+        env: { APP_ENV: 'test', APP_BASE_URL: ORIGIN, PAYMENT_USDT_FX_MODE: 'market' },
+        config: { providers: { nowpayments: nowpaymentsConfig({ cny_to_usd_rate: .1536, is_fixed_rate: true, is_fee_paid_by_user: true }) } },
+        fetchImpl, resolveSecrets: async () => ({ nowpayments_api_key: NOWPAYMENTS_API_KEY, nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET }) });
+}
+const marketInput = () => ({ order: makeOrder({ provider: 'nowpayments', channel: 'nowpayments', total_amount: '98.98' }),
+    provider: 'nowpayments', channel: 'nowpayments', allowedChannels: ['nowpayments'] });
+
+test('guest market checkout uses TG canonical FX and saves the rate with no second conversion or fee', async () => {
+    const snapshot = marketSnapshot(); let calls = 0;
+    const adapter = marketAdapter({ supabase: { rpc: async name => { assert.equal(name, 'fn_payment_usdt_fx_current'); return { data: snapshot }; } },
+        fetchImpl: async (url, options) => { calls++; assert.equal(url, 'https://api.nowpayments.io/v1/payment');
+            const body = JSON.parse(options.body); assert.equal(body.price_amount, '14.82'); assert.equal(body.price_currency, 'usdtbsc');
+            assert.equal(body.is_fixed_rate, false); assert.equal(body.is_fee_paid_by_user, false);
+            return responseJson({ payment_id: 'NP-MARKET-1', pay_address: `0x${'a'.repeat(40)}`, pay_currency: 'usdtbsc',
+                price_currency: 'usdtbsc', price_amount: '14.82', pay_amount: '14.82' }); } });
+    const result = await adapter.createGuestPayment(marketInput());
+    assert.equal(calls, 1); assert.equal(result.pay_amount_text, '14.82');
+    assert.equal(result.provider_metadata.fx_snapshot_id, snapshot.id);
+    assert.equal(result.provider_metadata.fx_usdt_per_cny, snapshot.usdt_per_cny);
+    assert.equal(result.checkout.fx_cny_per_usdt, snapshot.cny_per_usdt);
+    assert.equal(result.provider_metadata.local_amount, 98.98);
+});
+test('unavailable FX is a definite guest pre-creation failure and sends no provider request', async () => {
+    let calls = 0;
+    const adapter = marketAdapter({ supabase: { rpc: async () => ({ error: { code: 'PGRST202' } }) }, fetchImpl: async () => { calls++; } });
+    await assert.rejects(adapter.createGuestPayment(marketInput()), error => error.code === 'guest_payment_provider_not_ready' && error.statusCode === 503);
+    assert.equal(calls, 0);
+});
+test('guest market checkout rejects a provider amount difference even if JSON.parse rounds it to the same number', async () => {
+    const adapter = marketAdapter({ supabase: { rpc: async () => ({ data: marketSnapshot() }) },
+        fetchImpl: async () => ({ ok: true, status: 200, text: async () => '{"payment_id":"NP-MARKET-1","price_currency":"usdtbsc","price_amount":14.82,"pay_amount":14.820000000000000001}' }) });
+    await assert.rejects(adapter.createGuestPayment(marketInput()), error => error.code === 'guest_provider_quote_mismatch');
+});
+
 test('guest payment channel allowlist matches the database exact-token contract', () => {
     assert.deepEqual(
         normalizeAllowedChannels([' ZPAY ', 'alipay', 'zpay:alipay', 'ALIPAY']),
@@ -361,7 +424,7 @@ test('adapter rejects a client amount that differs from the server snapshot', as
     assert.throws(() => normalizeDecimalAmount('1e-2'), (error) => error.code === 'guest_invalid_payment_amount');
 });
 
-test('NOWPayments checkout requires USDT-BEP20 and returns payment details without secrets', async () => {
+test('NOWPayments checkout rejects unsupported networks and returns payment details without secrets', async () => {
     let request;
     const adapter = makeAdapter(nowpaymentsConfig(), {
         nowpayments_api_key: NOWPAYMENTS_API_KEY,
@@ -409,7 +472,7 @@ test('NOWPayments checkout requires USDT-BEP20 and returns payment details witho
     assert.equal(result.provider_metadata.local_amount, 12.34);
     assert.equal(result.provider_metadata.cny_to_usd_rate, 0.14);
 
-    const wrongNetworkAdapter = makeAdapter(nowpaymentsConfig({ pay_currency: 'usdttrc20' }), {
+    const wrongNetworkAdapter = makeAdapter(nowpaymentsConfig({ pay_currency: 'btc' }), {
         nowpayments_api_key: NOWPAYMENTS_API_KEY,
         nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET
     }, async () => responseJson({}));
@@ -724,7 +787,7 @@ test('webhook parser normalizes provider references, status and network without 
     assert.equal(parsed.paid_currency, 'usdtbsc');
 });
 
-test('NOWPayments finished callbacks require explicit actually_paid and actually_paid_currency', async () => {
+test('NOWPayments finished callbacks require actual receipt in a supported and consistent incoming currency', async () => {
     const adapter = makeAdapter(nowpaymentsConfig(), {
         nowpayments_api_key: NOWPAYMENTS_API_KEY,
         nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET
@@ -772,9 +835,9 @@ test('NOWPayments finished callbacks require explicit actually_paid and actually
         site: 'cn',
         payload: { ...base, pay_currency: 'usdttrc20', actually_paid: '1.73' }
     });
-    assert.equal(wrongPayCurrency.actual_payment_verified, false);
-    assert.equal(wrongPayCurrency.status, 'wrong_asset');
-    assert.equal(wrongPayCurrency.network_verified, false);
+    assert.equal(wrongPayCurrency.actual_payment_verified, true);
+    assert.equal(wrongPayCurrency.status, 'paid');
+    assert.equal(wrongPayCurrency.network_verified, true); // Order-specific matching rejects this against a BSC order.
 
     const validSynthetic = await adapter.parseGuestWebhook({
         provider: 'nowpayments',
