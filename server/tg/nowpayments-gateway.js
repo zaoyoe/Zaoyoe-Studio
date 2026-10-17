@@ -2,10 +2,13 @@
 
 const crypto = require('node:crypto');
 const { buildNowpaymentsIpnSignature } = require('../../api/_lib/payments/nowpayments');
+const pricing = require('../../js/tg-payment-pricing');
+const fx = require('../../api/_lib/payments/usdt-market-fx');
+const networks = require('../../api/_lib/payments/usdt-networks');
+const { webhookUrl } = require('./payment-urls');
 const CHANNEL = 'usdt_bep20';
 const ORDER_NO = /^TGP-[A-Z0-9]{20}$/;
 const PAYMENT_ID = /^[0-9]{1,32}$/;
-const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const MERCHANT_ID = /^nowpayments:[a-f0-9]{64}$/;
 const EXACT_FIELDS = new Set(['payment_id', 'id', 'price_amount', 'pay_amount', 'actually_paid']);
 function unavailable() { return Object.assign(new Error('TG USDT 支付服务暂不可用，请稍后重试'), { code: 'tg_payment_provider_unconfirmed', statusCode: 503 }); }
@@ -61,28 +64,34 @@ function usdPriceMinor(totalMinor, rate) {
 }
 function cents(value) { return `${Math.floor(value / 100)}.${String(value % 100).padStart(2, '0')}`; }
 function safeCryptoCheckout(value) {
-    if (!value || typeof value !== 'object' || Array.isArray(value) || value.pay_currency !== 'usdtbsc'
-        || !ADDRESS.test(value.pay_address || '') || !PAYMENT_ID.test(value.payment_id || '')
-        || !Number.isSafeInteger(value.price_amount_minor) || value.price_amount_minor < 1 || value.price_currency !== 'usd'
+    const selected = networks.network(value?.pay_currency);
+    const memo = networks.memo(value?.payin_extra_id);
+    if (!selected || !networks.validAddress(selected.currency, value.pay_address) || memo === null
+        || !PAYMENT_ID.test(value.payment_id || '')
+        || !Number.isSafeInteger(value.price_amount_minor) || value.price_amount_minor < 1
+        || !['usd', selected.currency].includes(value.price_currency)
+        || (value.price_currency === selected.currency && decimalUnits(value.pay_amount, 2) !== BigInt(value.price_amount_minor))
         || decimalText(value.pay_amount) !== value.pay_amount || !Number.isFinite(Date.parse(value.quote_expires_at))) return null;
-    return { payment_id: value.payment_id, network: 'BSC (BEP20)', pay_currency: 'usdtbsc', pay_amount: value.pay_amount,
-        pay_address: value.pay_address, quote_expires_at: value.quote_expires_at, price_currency: 'usd', price_amount_minor: value.price_amount_minor };
+    return { payment_id: value.payment_id, network: selected.name, pay_currency: selected.currency, pay_amount: value.pay_amount,
+        pay_address: value.pay_address, quote_expires_at: value.quote_expires_at, price_currency: value.price_currency,
+        price_amount_minor: value.price_amount_minor, ...(memo ? { payin_extra_id: memo } : {}) };
 }
 function createTgNowpaymentsGateway({ env = process.env, fetchImpl = globalThis.fetch, now = () => Date.now() } = {}) {
     function config() {
         const apiKey = String(env.TG_PURCHASE_NOWPAYMENTS_API_KEY || '');
         const ipnSecret = String(env.TG_PURCHASE_NOWPAYMENTS_IPN_SECRET || '');
         const rate = String(env.TG_PURCHASE_NOWPAYMENTS_CNY_TO_USD_RATE || '');
+        const usdtRate = String(env.TG_PURCHASE_USDT_PER_CNY || rate);
         const forbidden = ['GRAMIX_API_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'DATABASE_URL', 'CRON_SECRET', 'ADMIN_CONFIG_ENCRYPTION_KEY', 'ADMIN_STUDIO_ACCESS_SECRET', 'TG_WORKER_SECRET', 'TG_REDEMPTION_CODE_PEPPER', 'TG_REDEMPTION_CODE_ENCRYPTION_KEY', 'TG_PURCHASE_ZPAY_KEY'].map((name) => String(env[name] || '').trim()).filter(Boolean);
         if (![apiKey, ipnSecret].every((item) => item === item.trim() && item.length >= 16 && item.length <= 300 && !/[\r\n]/.test(item) && !forbidden.includes(item))
-            || apiKey === ipnSecret || usdPriceMinor(100, rate) === null
+            || apiKey === ipnSecret || (!fx.marketMode(env) && (usdPriceMinor(100, rate) === null || pricing.usdtPayAmount(100, usdtRate) === null))
             || (env.TG_PUBLIC_ORIGIN || 'https://tg.fatherkey.com') !== 'https://tg.fatherkey.com') throw unavailable();
-        return { apiKey, ipnSecret, rate, merchantId: `nowpayments:${crypto.createHash('sha256').update(apiKey).digest('hex')}` };
+        return { apiKey, ipnSecret, rate, usdtRate, merchantId: `nowpayments:${crypto.createHash('sha256').update(apiKey).digest('hex')}`, notifyUrl: webhookUrl('nowpayments', env) };
     }
     async function request(path, payload, value) {
         const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 12000);
         try {
-            const response = await fetchImpl(`https://api.nowpayments.io/v1/payment${path}`, { method: payload ? 'POST' : 'GET', redirect: 'error', signal: controller.signal,
+            const response = await fetchImpl(`https://api.nowpayments.io/v1${path}`, { method: payload ? 'POST' : 'GET', redirect: 'error', signal: controller.signal,
                 headers: { 'Content-Type': 'application/json', 'x-api-key': value.apiKey }, ...(payload ? { body: JSON.stringify(payload) } : {}) });
             if (!response.ok) throw unavailable();
             return parsePaymentJson(await response.text());
@@ -90,14 +99,27 @@ function createTgNowpaymentsGateway({ env = process.env, fetchImpl = globalThis.
     }
     function matches(payload, order, checkout, exact) {
         return payload?.order_id === order.order_no && exact?.payment_id === checkout.payment_id
-            && payload.pay_currency === 'usdtbsc' && payload.price_currency === 'usd'
+            && payload.pay_currency === checkout.pay_currency && payload.price_currency === checkout.price_currency
             && decimalUnits(exact?.price_amount, 2) === BigInt(checkout.price_amount_minor)
             && decimalUnits(exact?.pay_amount) === decimalUnits(checkout.pay_amount)
-            && payload.pay_address === checkout.pay_address;
+            && payload.pay_address === checkout.pay_address
+            && networks.paymentMemo(payload) === (checkout.payin_extra_id || '');
     }
     return {
         ready() { try { config(); return true; } catch (_) { return false; } },
         identity() { return { provider: 'nowpayments', merchant_id: config().merchantId }; },
+        quoteRate({ fxSnapshot } = {}) {
+            const value = config();
+            if (!fx.marketMode(env)) return value.usdtRate;
+            const snapshot = fx.safeSnapshot(fxSnapshot, { now: now() });
+            if (!snapshot) throw fx.unavailable();
+            return snapshot.usdt_per_cny;
+        },
+        quotePayment({ totalMinor, fxSnapshot } = {}) {
+            const amount = pricing.usdtPayAmount(totalMinor, this.quoteRate({ fxSnapshot }));
+            if (!amount) throw unavailable();
+            return amount;
+        },
         verifySignature(payload, signature) {
             try {
                 if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !/^[a-fA-F0-9]{128}$/.test(signature || '')) return false;
@@ -105,18 +127,25 @@ function createTgNowpaymentsGateway({ env = process.env, fetchImpl = globalThis.
                 return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'));
             } catch (_) { return false; }
         },
-        async createPayment({ order } = {}) {
-            const value = config(); const priceMinor = usdPriceMinor(order?.total_minor, value.rate);
+        async createPayment({ order, usdtQuote, payCurrency = 'usdtbsc' } = {}) {
+            const selected = networks.requireNetwork(payCurrency);
+            const value = config();
+            const locked = usdtQuote && fx.safeLockedQuote(usdtQuote, order?.total_minor, order?.quote_id);
+            if ((usdtQuote && !locked) || (fx.marketMode(env) && !locked)) throw unavailable();
+            const payAmount = locked ? locked.usdt_pay_amount : pricing.usdtPayAmount(order?.total_minor, value.usdtRate);
+            const priceMinor = payAmount ? Number(decimalUnits(payAmount, 2)) : null;
             if (!ORDER_NO.test(order?.order_no || '') || order.currency !== 'CNY' || priceMinor === null
-                || order.payment_provider !== 'nowpayments' || order.payment_channel !== CHANNEL || order.payment_merchant_id !== value.merchantId) throw unavailable();
-            let { data, exact } = await request('', { price_amount: cents(priceMinor), price_currency: 'usd', pay_currency: 'usdtbsc',
+                || !payAmount || order.payment_provider !== 'nowpayments' || order.payment_channel !== CHANNEL || order.payment_merchant_id !== value.merchantId) throw unavailable();
+            let { data, exact } = await request('/payment', { price_amount: cents(priceMinor), price_currency: selected.currency, pay_currency: selected.currency,
                 order_id: order.order_no, order_description: order.product_family === 'telegram_stars' ? `Telegram Stars ${order.stars_quantity}` : `Telegram Premium ${order.term_months} months`,
-                ipn_callback_url: 'https://tg.fatherkey.com/api/tg/purchase/webhooks/nowpayments', is_fixed_rate: true, is_fee_paid_by_user: true }, value);
+                // total_minor already includes the disclosed 1% channel fee.
+                // Keep the provider from adding another customer surcharge.
+                ipn_callback_url: value.notifyUrl, is_fixed_rate: false, is_fee_paid_by_user: false }, value);
             // The shop uses this official endpoint because create-payment can
             // omit its estimate deadline. Refresh this same payment once; never
             // create a replacement payment or invent a provider expiry.
             if (!Number.isFinite(Date.parse(data.expiration_estimate_date)) && PAYMENT_ID.test(exact.payment_id || '')) {
-                const refreshed = await request(`/${exact.payment_id}/update-merchant-estimate`, {}, value);
+                const refreshed = await request(`/payment/${exact.payment_id}/update-merchant-estimate`, {}, value);
                 // The documented estimate response uses `id`; older responses
                 // may use `payment_id`. Every supplied identity must agree.
                 const refreshedId = refreshed.exact.id || refreshed.exact.payment_id;
@@ -126,31 +155,51 @@ function createTgNowpaymentsGateway({ env = process.env, fetchImpl = globalThis.
             const localExpiry = Date.parse(order.payment_expires_at || order.expires_at);
             const providerExpiry = Date.parse(data.expiration_estimate_date);
             if (!Number.isFinite(localExpiry) || !Number.isFinite(providerExpiry) || providerExpiry <= now()) throw unavailable();
-            const expiry = Math.min(now() + 300000, localExpiry, providerExpiry);
+            const expiry = Math.min(localExpiry, providerExpiry);
             const checkout = safeCryptoCheckout({ payment_id: exact.payment_id, pay_currency: data.pay_currency, pay_amount: decimalText(exact.pay_amount), pay_address: data.pay_address,
-                price_currency: 'usd', price_amount_minor: priceMinor, quote_expires_at: new Date(expiry).toISOString() });
-            if (!checkout || expiry <= now() || !matches(data, order, checkout, exact) || !['waiting', 'confirming'].includes(data.payment_status)) throw unavailable();
+                payin_extra_id: networks.paymentMemo(data), price_currency: selected.currency, price_amount_minor: priceMinor, quote_expires_at: new Date(expiry).toISOString() });
+            if (!checkout || networks.paymentMemo(data) === null || expiry <= now() || decimalUnits(checkout.pay_amount) !== decimalUnits(payAmount)
+                || !matches(data, order, checkout, exact) || !['waiting', 'confirming'].includes(data.payment_status)) throw unavailable();
             return { provider_trade_no: checkout.payment_id, crypto_checkout: checkout };
+        },
+        async canCancel({ order } = {}) {
+            const value = config(); const checkout = safeCryptoCheckout(order?.crypto_checkout);
+            if (!checkout || !ORDER_NO.test(order?.order_no || '') || order.payment_provider !== 'nowpayments'
+                || order.payment_channel !== CHANNEL || order.payment_merchant_id !== value.merchantId
+                || order.provider_trade_no !== checkout.payment_id) throw unavailable();
+            const { data, exact } = await request(`/payment/${checkout.payment_id}`, null, value);
+            if (!matches(data, order, checkout, exact)) throw unavailable();
+            // No public API revokes a blockchain deposit address. Only a known
+            // unpaid payment can be cancelled locally; in-flight/partial funds
+            // keep their existing reconciliation path.
+            if (!['waiting', 'expired', 'failed'].includes(data.payment_status)) return false;
+            // NOWPayments may omit actually_paid while a payment is still in
+            // its initial waiting state. A waiting status itself means no
+            // detected deposit; once any amount is reported, require exact
+            // zero before allowing local cancellation.
+            return !Object.hasOwn(exact, 'actually_paid')
+                ? data.payment_status === 'waiting'
+                : /^0(?:\.0{1,18})?$/.test(String(exact.actually_paid));
         },
         async verifyPayment({ payload, exact, order } = {}) {
             const value = config(); const checkout = safeCryptoCheckout(order?.crypto_checkout);
             if (!checkout || !ORDER_NO.test(order?.order_no || '') || order.payment_provider !== 'nowpayments' || order.payment_channel !== CHANNEL
                 || order.payment_merchant_id !== value.merchantId || order.provider_trade_no !== checkout.payment_id || !matches(payload, order, checkout, exact)
                 || payload.payment_status !== 'finished'
-                || (Object.hasOwn(payload, 'actually_paid_currency') && payload.actually_paid_currency !== 'usdtbsc')
+                || (Object.hasOwn(payload, 'actually_paid_currency') && payload.actually_paid_currency !== checkout.pay_currency)
                 || decimalUnits(exact?.actually_paid) === null || decimalUnits(exact?.actually_paid) < decimalUnits(checkout.pay_amount)) return null;
-            const { data: canonical, exact: canonicalExact } = await request(`/${checkout.payment_id}`, null, value);
+            const { data: canonical, exact: canonicalExact } = await request(`/payment/${checkout.payment_id}`, null, value);
             if (!matches(canonical, order, checkout, canonicalExact) || canonical.payment_status !== 'finished'
-                || (Object.hasOwn(canonical, 'actually_paid_currency') && canonical.actually_paid_currency !== 'usdtbsc')
+                || (Object.hasOwn(canonical, 'actually_paid_currency') && canonical.actually_paid_currency !== checkout.pay_currency)
                 || decimalUnits(canonicalExact.actually_paid) === null || decimalUnits(canonicalExact.actually_paid) < decimalUnits(checkout.pay_amount)) return null;
             // Official IPN/GET examples omit actually_paid_currency: their
             // actually_paid is denominated in pay_currency. Both independently
-            // authenticated records must match the saved usdtbsc payment and
+            // authenticated records must match the saved incoming network and
             // report sufficient actually_paid; outcome_currency is payout only.
             return { order_no: order.order_no, provider: 'nowpayments', merchant_id: value.merchantId, provider_trade_no: checkout.payment_id,
                 payment_channel: CHANNEL, amount_minor: order.total_minor, currency: 'CNY', verified_payload: { verified_by: 'signed_notify_and_query', event_status: 'paid',
-                    price_currency: 'usd', price_amount_minor: checkout.price_amount_minor, pay_currency: 'usdtbsc', pay_amount: checkout.pay_amount,
-                    pay_address: checkout.pay_address, actually_paid_currency: 'usdtbsc', actually_paid: decimalText(canonicalExact.actually_paid) } };
+                    price_currency: checkout.price_currency, price_amount_minor: checkout.price_amount_minor, pay_currency: checkout.pay_currency, pay_amount: checkout.pay_amount,
+                    pay_address: checkout.pay_address, ...(checkout.payin_extra_id ? { payin_extra_id: checkout.payin_extra_id } : {}), actually_paid_currency: checkout.pay_currency, actually_paid: decimalText(canonicalExact.actually_paid) } };
         }
     };
 }

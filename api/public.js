@@ -261,16 +261,23 @@ function createRouteHandlersForScope(scope) {
         const { createTgHandlers } = require('../server/api-handlers/public/tg');
         const { createTgPurchaseHandlers } = require('../server/api-handlers/public/tg-purchase');
         const { createTgRecipientHandler } = require('../server/api-handlers/public/tg-recipient');
+        const { createTgOrderQueryHandlers } = require('../server/api-handlers/public/tg-order-query');
         const tgHandlers = createTgHandlers({ admin, env: process.env, requestSecurity });
         const purchases = createTgPurchaseHandlers({ admin, env: process.env, requestSecurity });
+        const orderQuery = createTgOrderQueryHandlers({ admin, env: process.env, requestSecurity });
         return {
             catalog: tgHandlers.catalog,
             recipient: createTgRecipientHandler({ admin, env: process.env, requestSecurity }),
+            preview: tgHandlers.preview,
+            'code/preview': tgHandlers.codePreview,
             redeem: tgHandlers.redeem,
             status: tgHandlers.status,
+            'orders/query': orderQuery.query,
+            'orders/bind': orderQuery.bind,
             'purchase/quote': purchases.quote,
             'purchase/orders': purchases.orders,
             'purchase/status': purchases.status,
+            'purchase/cancel': purchases.cancel,
             'purchase/webhooks/zpay': purchases.webhook,
             'purchase/webhooks/nowpayments': purchases.webhookNowpayments
         };

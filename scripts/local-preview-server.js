@@ -198,7 +198,8 @@ function loadFreshAdminApiHandler(repoRoot = path.resolve(__dirname, '..')) {
     clearRequireCacheByPrefixes([
         path.join(normalizedRepoRoot, 'api'),
         path.join(normalizedRepoRoot, 'server', 'api-handlers'),
-        path.join(normalizedRepoRoot, 'server', 'tg')
+        path.join(normalizedRepoRoot, 'server', 'tg'),
+        path.join(normalizedRepoRoot, 'js', 'tg-payment-pricing.js')
     ]);
     return require(path.join(normalizedRepoRoot, 'api', 'admin'));
 }
@@ -208,7 +209,8 @@ function loadFreshPublicApiHandler(repoRoot = path.resolve(__dirname, '..')) {
     clearRequireCacheByPrefixes([
         path.join(normalizedRepoRoot, 'api'),
         path.join(normalizedRepoRoot, 'server', 'api-handlers'),
-        path.join(normalizedRepoRoot, 'server', 'tg')
+        path.join(normalizedRepoRoot, 'server', 'tg'),
+        path.join(normalizedRepoRoot, 'js', 'tg-payment-pricing.js')
     ]);
     return require(path.join(normalizedRepoRoot, 'api', 'public'));
 }

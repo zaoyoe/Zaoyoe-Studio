@@ -1,6 +1,8 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { filters } = require('../../../tg/operations');
+const dataCenter = require('../../../tg/data-center');
 const sharedAdmin = require('../../../../api/_lib/admin');
 const { requireTgAdmin, requireTgAdminWriteRequest, secureAdminResponse, adminErrorResponse } = require('../../../tg/admin-access');
 const { codePepper, encryptionKey } = require('../../../tg/code-secrets');
@@ -37,6 +39,33 @@ function buildCode(family) {
 }
 function digest(code, secret) { return crypto.createHmac('sha256', secret).update(code).digest('hex'); }
 
+function decryptCode(record, env) {
+    if (typeof record.code_ciphertext !== 'string' || !record.code_ciphertext.trim()) {
+        throw Object.assign(new Error('此兑换码没有可恢复的加密原文，请使用生成时保存的原码'), { statusCode: 409, code: 'tg_code_plaintext_unavailable' });
+    }
+    const key = encryptionKey(env);
+    const pepper = codePepper(env);
+    try {
+        if (record.code_ciphertext.length > 1024) throw new Error('invalid_ciphertext');
+        const parts = record.code_ciphertext.split('.');
+        if (parts.length !== 4 || parts[0] !== 'v1' || !parts.slice(1).every(part => /^[A-Za-z0-9_-]+$/.test(part))) throw new Error('invalid_ciphertext');
+        const [, encodedIv, encodedTag, encodedCiphertext] = parts;
+        const iv = Buffer.from(encodedIv, 'base64url');
+        const tag = Buffer.from(encodedTag, 'base64url');
+        const ciphertext = Buffer.from(encodedCiphertext, 'base64url');
+        if (iv.length !== 12 || tag.length !== 16 || ciphertext.length < 1 || ciphertext.length > 512) throw new Error('invalid_ciphertext');
+        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+        decipher.setAuthTag(tag);
+        const code = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+        if (!/^TG-(?:PREM|STAR)-(?:[A-F0-9]{8}-){3}[A-F0-9]{8}$/.test(code)
+            || code.slice(-4) !== record.code_last4 || !/^[a-f0-9]{64}$/i.test(record.code_digest || '')
+            || !crypto.timingSafeEqual(Buffer.from(digest(code, pepper), 'hex'), Buffer.from(record.code_digest, 'hex'))) throw new Error('code_integrity_mismatch');
+        return code;
+    } catch (_) {
+        throw Object.assign(new Error('兑换码暂时无法读取，请核对加密配置或使用原码'), { statusCode: 503, code: 'tg_code_decryption_unavailable' });
+    }
+}
+
 function createCodesHandler({ admin = sharedAdmin, env = process.env } = {}) {
     return async function handler(req, res) {
         secureAdminResponse(res);
@@ -51,6 +80,12 @@ function createCodesHandler({ admin = sharedAdmin, env = process.env } = {}) {
                     const { data: batch, error: batchError } = await supabase.from('tg_redemption_batches').select('*').eq('id', batchId).maybeSingle();
                     if (batchError) throw batchError;
                     if (!batch) return admin.sendJson(res, 404, { success: false, message: '批次不存在' });
+                    if (url.searchParams.get('data_center') === '1' && url.searchParams.get('inventory')) {
+                        const codeParams = new URLSearchParams(url.searchParams);
+                        codeParams.delete('batchId'); codeParams.set('batch_id', batchId);
+                        const result = await dataCenter.list(supabase, codeParams, 'code', 1, 1000);
+                        return admin.sendJson(res, 200, { success: true, batch, codes: result.rows, filtered: true, total: result.total });
+                    }
                     const { data: codes, error } = await supabase.from('tg_redemption_codes')
                         .select('id, batch_id, code_last4, status, expires_at, reserved_at, reservation_expires_at, fulfillment_started_at, fulfilled_at, revoked_at, telegram_username, created_at')
                         .eq('batch_id', batchId).order('created_at').limit(1000);
@@ -59,8 +94,14 @@ function createCodesHandler({ admin = sharedAdmin, env = process.env } = {}) {
                 }
                 const page = positive(url.searchParams.get('page') || 1, 'page', 100000);
                 const pageSize = positive(url.searchParams.get('pageSize') || 50, 'pageSize', 100);
-                const { data, error, count } = await supabase.from('tg_redemption_batches').select('*', { count: 'exact' })
-                    .order('created_at', { ascending: false }).range((page - 1) * pageSize, page * pageSize - 1);
+                if (url.searchParams.get('data_center') === '1') {
+                    const result = await dataCenter.list(supabase, url.searchParams, 'batch', page, pageSize);
+                    return admin.sendJson(res, 200, { success: true, batches: result.rows, total: result.total, matching_codes: result.matching_codes, page, page_size: pageSize, snapshot_at: result.snapshot_at });
+                }
+                let query = supabase.from('tg_redemption_batches').select('*', { count: 'exact' })
+                    .order('created_at', { ascending: false }).order('id', { ascending: false }).range((page - 1) * pageSize, page * pageSize - 1);
+                query = filters(query, url.searchParams, 'batch');
+                const { data, error, count } = await query;
                 if (error) throw error;
                 return admin.sendJson(res, 200, { success: true, batches: data || [], total: count || 0, page, page_size: pageSize });
             }
@@ -71,6 +112,23 @@ function createCodesHandler({ admin = sharedAdmin, env = process.env } = {}) {
             let input;
             try { input = await admin.parseJsonBody(req); } catch (_) { throw invalid('请求内容格式无效'); }
             const action = text(input.action || 'generate').toLowerCase();
+            if (action === 'reveal') {
+                const codeId = text(input.code_id);
+                if (typeof input.code_id !== 'string' || !UUID_PATTERN.test(codeId) || input.batch_id != null) throw invalid('请指定一个有效的兑换码编号');
+                const { data: record, error } = await supabase.from('tg_redemption_codes')
+                    .select('id, batch_id, code_ciphertext, code_digest, code_last4').eq('id', codeId).maybeSingle();
+                if (error) throw error;
+                if (!record) return admin.sendJson(res, 404, { success: false, code: 'tg_code_not_found', message: '兑换码不存在' });
+                const code = decryptCode(record, env);
+                // A plaintext read must have an audit record. The shared best-effort
+                // logger intentionally swallows failures, so check this insert directly.
+                const { error: auditError } = await supabase.from('admin_audit_logs').insert({
+                    admin_id: user.id, target_user_id: null, action_type: 'tg_code_revealed',
+                    details: { module: 'tg_redemption', code_id: record.id, batch_id: record.batch_id, code_last4: record.code_last4 }
+                });
+                if (auditError) throw Object.assign(new Error('audit_unavailable'), { statusCode: 503 });
+                return admin.sendJson(res, 200, { success: true, code_id: record.id, code });
+            }
             if (action === 'generate') {
                 const family = input.product_family === undefined ? 'telegram_premium' : input.product_family;
                 if (!['telegram_premium', 'telegram_stars'].includes(family)) throw invalid('兑换商品类型无效');

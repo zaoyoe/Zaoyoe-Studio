@@ -50,6 +50,8 @@ const tgOrdersHandler = require('../server/api-handlers/admin/tg/orders');
 const tgProviderHandler = require('../server/api-handlers/admin/tg/provider');
 const tgProductsHandler = require('../server/api-handlers/admin/tg/products');
 const tgPurchasesHandler = require('../server/api-handlers/admin/tg/purchases');
+const tgDataCenterHandler = require('../server/api-handlers/admin/tg/data-center');
+const tgOrderQueryHandler = require('../server/api-handlers/admin/tg/order-query');
 const promptsImageBase64Handler = require('../server/api-handlers/admin/prompts/image-base64');
 const promptsImageThumbnailHandler = require('../server/api-handlers/admin/prompts/image-thumbnail');
 const promptsImportsHandler = require('../server/api-handlers/admin/prompts/imports');
@@ -164,6 +166,8 @@ const ROUTE_HANDLERS = {
     'tg/provider': tgProviderHandler,
     'tg/products': tgProductsHandler,
     'tg/purchases': tgPurchasesHandler,
+    'tg/order-query': tgOrderQueryHandler,
+    'tg/data-center': tgDataCenterHandler,
     'prompts/image-base64': promptsImageBase64Handler,
     'prompts/image-thumbnail': promptsImageThumbnailHandler,
     'prompts/imports': promptsImportsHandler,

@@ -221,3 +221,77 @@ test('unexpected successful HTTP status is not accepted as an order creation', a
     await assert.rejects(api.purchasePremium({ recipientName: 'telegram_user', duration: 6, idempotencyKey: 'safe_key_123' }),
         (error) => error.code === 'gramix_invalid_response');
 });
+
+function errorResponse(status, message, patch = {}) {
+    return new Response(JSON.stringify({ statusCode: status, message, ...patch }), {
+        status, headers: { 'content-type': 'application/json; charset=utf-8' }
+    });
+}
+
+for (const [status, message, reason] of [
+    [403, 'Insufficient balance', 'insufficient_balance'], [403, 'Invalid recipient', 'invalid_recipient'],
+    [403, 'Invalid idempotency key', 'invalid_idempotency_key'],
+    [403, 'Idempotency key has already been used', 'idempotency_key_reused'],
+    [401, 'Unauthorized', 'unauthorized'], [403, 'Forbidden', 'forbidden'],
+    [400, 'Bad Request', 'bad_request'], [404, 'Not Found', 'not_found'],
+    [400, 'Idempotency-Key header is required', 'idempotency_key_required'],
+    [400, 'Idempotency-Key must be between 8 and 64 characters', 'idempotency_key_length'],
+    [400, 'Idempotency-Key contains invalid characters', 'idempotency_key_characters'],
+    [400, 'Duration must be one of: 3, 6, 12', 'premium_duration_unsupported'],
+    [405, 'Method Not Allowed', 'method_not_allowed'],
+    [429, 'Too many requests', 'rate_limited'], [500, 'Internal error', 'internal_error'],
+    [500, 'Internal server error', 'internal_error']
+]) {
+    test(`allowlisted ${status} ${reason} (${message}) preserves a safe reason without the raw response`, async () => {
+        const api = client(async () => errorResponse(status, message, {
+            apiKey: 'must-not-leak', data: { url: 'https://private.test/?token=must-not-leak', idempotencyKey: 'must-not-leak' }
+        }));
+        await assert.rejects(api.getBalance(), (error) => {
+            assert.equal(error.code, 'gramix_http_error'); assert.equal(error.statusCode, status);
+            assert.equal(error.providerReason, reason); assert.equal(error.cause, undefined);
+            assert.ok(!JSON.stringify(error).includes('must-not-leak')); return true;
+        });
+    });
+}
+
+for (const payload of [
+    { statusCode: 403, message: 'Insufficient balance apiKey=must-not-leak' },
+    { statusCode: 401, message: 'Insufficient balance' },
+    { message: 'Insufficient balance' }, { statusCode: 403, message: ['Insufficient balance'] },
+    { statusCode: 403, error: 'must-not-leak', message: 'Undocumented denial' }
+]) {
+    test(`unknown or mismatched denial retains only HTTP status: ${JSON.stringify(payload)}`, async () => {
+        const api = client(async () => new Response(JSON.stringify(payload), { status: 403, headers: { 'content-type': 'application/json' } }));
+        await assert.rejects(api.getBalance(), (error) => {
+            assert.equal(error.statusCode, 403); assert.equal(error.providerReason, null);
+            assert.ok(!JSON.stringify(error).includes('must-not-leak')); return true;
+        });
+    });
+}
+
+test('proxy HTML, oversized error streams and malformed JSON cannot escape as provider reasons', async () => {
+    for (const makeResponse of [
+        () => new Response('<html>must-not-leak</html>', { status: 502, headers: { 'content-type': 'text/html' } }),
+        () => new Response('must-not-leak'.repeat(1000), { status: 403, headers: { 'content-type': 'application/json' } }),
+        () => new Response('{must-not-leak', { status: 403, headers: { 'content-type': 'application/json' } }),
+        () => new Response('must-not-leak', { status: 403, headers: { 'content-length': '100000' } })
+    ]) {
+        const api = client(async () => makeResponse());
+        await assert.rejects(api.getBalance(), (error) => {
+            assert.equal(error.code, 'gramix_http_error'); assert.equal(error.providerReason, null);
+            assert.ok(!JSON.stringify(error).includes('must-not-leak')); return true;
+        });
+    }
+});
+
+test('a stalled error body keeps the known HTTP status and is cancelled at the request deadline', async () => {
+    let cancelled = false;
+    const api = client(async () => new Response(new ReadableStream({ cancel() { cancelled = true; } }), {
+        status: 403, headers: { 'content-type': 'application/json' }
+    }), { timeoutMs: 250 });
+    await assert.rejects(api.getBalance(), (error) => {
+        assert.equal(error.code, 'gramix_http_error'); assert.equal(error.statusCode, 403);
+        assert.equal(error.providerReason, null); return true;
+    });
+    assert.equal(cancelled, true);
+});

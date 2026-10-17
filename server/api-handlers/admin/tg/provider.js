@@ -2,6 +2,7 @@
 
 const sharedAdmin = require('../../../../api/_lib/admin');
 const { createGramixClient, isDecimalString } = require('../../../tg/gramix-client');
+const { fulfillmentRuntime } = require('../../../tg/upstream-status');
 const { requireTgAdmin, secureAdminResponse, adminErrorResponse } = require('../../../tg/admin-access');
 
 function enabled(value) { return /^(true|1)$/i.test(String(value || '').trim()); }
@@ -21,7 +22,8 @@ function createProviderHandler({ admin = sharedAdmin, clientFactory = createGram
                 healthy: false, checked_at: new Date().toISOString(), balances: null,
                 payment_currency: ['usdt', 'gram'].includes(paymentCurrency) ? paymentCurrency : null,
                 redemption_enabled: enabled(env.TG_REDEMPTION_ENABLED),
-                fulfillment_enabled: enabled(env.TG_FULFILLMENT_ENABLED)
+                fulfillment_enabled: enabled(env.TG_FULFILLMENT_ENABLED),
+                runtime: fulfillmentRuntime(env)
             };
             if (!state.configured) return admin.sendJson(res, 200, { ...state, code: 'tg_provider_unconfigured', message: '尚未配置上游服务' });
             try {

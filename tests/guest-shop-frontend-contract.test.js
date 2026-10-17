@@ -16,7 +16,9 @@ const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath)
 const markup = read('shop.html');
 const client = read('js/guest-shop-client.js');
 const shopClient = read('js/shop-client.js');
-const styles = read('css/shop-page.css');
+// Inspect the stylesheets actually loaded by the page, including the shared payment dialog.
+const styles = [...markup.matchAll(/<link[^>]+href="(css\/(?:cash-payment-dialog|shop-page)\.css)(?:\?[^"]*)?"/g)]
+    .map((match) => read(match[1])).join('\n');
 const guestShopHandler = read('server/api-handlers/public/guest-shop.js');
 // A2 deliverables: the standalone lookup page and the shared password module.
 const ordersPage = read('guest-orders.html');
