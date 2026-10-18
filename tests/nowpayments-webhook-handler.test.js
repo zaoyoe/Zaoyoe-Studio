@@ -369,6 +369,72 @@ test('nowpayments webhook settles finished payment using actual USDT amount when
     });
 });
 
+for (const actuallyPaid of ['14.82', '14.81']) test(`market recharge callback ${actuallyPaid} uses the saved quote and credits only full payment`, async () => {
+    const metadata = {
+        fx_mode: 'market', fx_snapshot_id: '41444444-4444-4444-8444-444444444444',
+        fx_expires_at: '2020-01-01T00:00:00Z', fx_usdt_per_cny: '0.14970060',
+        payment_id: '5731943810', local_amount: 98.98, price_amount: 14.82,
+        price_currency: 'usdtbsc', pay_currency: 'usdtbsc', pay_amount: 14.82, pay_amount_text: '14.82',
+        paid_points: 98, bonus_points: 0, charge_type: 'custom', payment_fee_amount: 0.98
+    };
+    const state = { existingPaymentOrder: {
+        id: 'market-payment-1', user_id: 'user-1', provider: 'nowpayments', provider_order_no: 'NPMARKET',
+        checkout_session_id: 'market-checkout-1', site: 'cn', expected_amount: 98.98,
+        paid_amount: null, points_amount: 98, status: 'pending', provider_metadata: metadata, raw_payload: {}
+    } };
+    await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+        const handler = createNowpaymentsWebhookHandler({ supabase: createSupabaseMock(state), env: {
+            APP_BASE_URL: 'https://www.fatherkey.com', PAYMENT_USDT_FX_MODE: 'market', NOWPAYMENTS_CNY_TO_USD_RATE: '0.99'
+        } });
+        const res = createMockResponse();
+        await handler({ method: 'POST', headers: { host: 'www.fatherkey.com',
+            'x-forwarded-for': '203.0.113.10', 'x-nowpayments-sig': 'expected-signature' },
+        body: { order_id: 'NPMARKET', payment_id: metadata.payment_id, payment_status: 'finished',
+            price_amount: 14.82, price_currency: 'usdtbsc', pay_amount: 14.82,
+            actually_paid: actuallyPaid, pay_currency: 'usdtbsc' } }, res);
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.paymentOrderPatch.provider_metadata.fx_snapshot_id, metadata.fx_snapshot_id);
+        assert.equal(state.paymentOrderPatch.provider_metadata.pay_amount_text, '14.82');
+        assert.equal(state.paymentOrderPatch.provider_metadata.pay_amount, 14.82);
+        if (actuallyPaid === '14.82') {
+            assert.equal(state.rechargePayload.paidPoints, 98, 'the fee does not become wallet credit');
+            assert.equal(state.reconcilePayload.paidAmount, 98.98);
+            assert.equal(state.paymentOrderPatch.status, 'redeemed');
+            assert.equal(state.finalizedEvent.processing_result, 'processed_paid');
+        } else {
+            assert.equal(state.rechargePayload, undefined);
+            assert.equal(state.paymentOrderPatch.amount_verified, false);
+            assert.equal(state.finalizedEvent.processing_result, 'amount_mismatch');
+        }
+    });
+});
+
+test('native TON recharge keeps its immutable identity after a wrong callback and compares raw atomic amounts', async () => {
+    const metadata = { native_usdt: true, payment_id: '5731943810', price_currency: 'usdtton', pay_currency: 'usdtton',
+        pay_amount: 14.82, pay_amount_text: '14.82', price_amount: 14.82, pay_address: 'EQ' + 'a'.repeat(46), payin_extra_id: '556677', paid_points: 98 };
+    const state = { existingPaymentOrder: { id: 'native-ton-payment', user_id: 'user-1', provider: 'nowpayments', provider_order_no: 'NPTON',
+        site: 'cn', expected_amount: 98.98, points_amount: 98, status: 'pending', provider_metadata: metadata, raw_payload: {} } };
+    await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+        const handler = createNowpaymentsWebhookHandler({ supabase: createSupabaseMock(state), env: {} });
+        const valid = { order_id: 'NPTON', payment_id: metadata.payment_id, payment_status: 'finished', price_currency: 'usdtton',
+            pay_currency: 'usdtton', price_amount: 14.82, pay_amount: 14.82, actually_paid: '14.82', pay_address: metadata.pay_address, extra_id: '556677' };
+        for (const [patch, rawAmount, accepted] of [
+            [{ payment_status: 'confirming', payment_id: '999', pay_currency: 'usdtbsc', price_currency: 'usdtbsc', pay_amount: 1 }, null, false],
+            [{}, '14.819999999999999999', false], [{}, '14.82', true]
+        ]) {
+            const payload = { ...valid, ...patch };
+            const rawBody = JSON.stringify(payload).replace('"actually_paid":"14.82"', `"actually_paid":${rawAmount || '14.82'}`);
+            await handler({ method: 'POST', headers: { 'x-nowpayments-sig': 'expected-signature' }, body: JSON.parse(rawBody), rawBody: Buffer.from(rawBody) }, createMockResponse());
+            for (const key of ['payment_id', 'pay_currency', 'price_currency', 'pay_amount', 'pay_amount_text', 'payin_extra_id']) {
+                assert.equal(state.paymentOrderPatch.provider_metadata[key], metadata[key]);
+            }
+            if (!accepted) assert.equal(state.rechargePayload, undefined);
+            else assert.equal(state.rechargePayload.paidPoints, 98);
+            state.existingPaymentOrder = { ...state.existingPaymentOrder, ...state.paymentOrderPatch };
+        }
+    });
+});
+
 test('nowpayments webhook preserves existing payment id when callback omits it', async () => {
     const payload = {
         order_id: 'NPUSDT950',

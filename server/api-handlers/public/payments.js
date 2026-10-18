@@ -1,3 +1,4 @@
+const { NETWORKS: USDT_NETWORKS } = require('../../../api/_lib/payments/usdt-networks');
 const {
     createZpayWebhookHandler
 } = require('../../../api/_lib/payments/zpay-webhook');
@@ -11,6 +12,7 @@ const {
     applyHotCacheResponseHeaders,
     createHotCache
 } = require('./_hot-cache');
+const marketFx = require('../../../api/_lib/payments/usdt-market-fx');
 
 const PAYMENT_CREATION_ERROR_PATTERNS = Object.freeze([
     {
@@ -55,7 +57,8 @@ function isStablePaymentCreationErrorCode(code = '') {
 function normalizePaymentCreationError(error, fallbackMessage = '创建支付请求失败') {
     const rawMessage = String(error?.message || '').trim();
     const rawCode = String(error?.code || '').trim();
-    const code = classifyPaymentCreationErrorMessage(rawMessage)
+    const code = (rawCode.startsWith('payment_fx_') ? rawCode : '')
+        || classifyPaymentCreationErrorMessage(rawMessage)
         || (isStablePaymentCreationErrorCode(rawCode) ? rawCode : '')
         || 'payment_create_failed';
     const message = rawMessage || fallbackMessage;
@@ -296,6 +299,31 @@ function createPaymentsHandlers({
                         runtime: publicRuntime
                     };
                 });
+                // Fresh FX belongs to this response, never to the cached configuration.
+                const responseValue = structuredClone(cachedResult.value);
+                if (responseValue.config?.providers?.nowpayments) responseValue.config.providers.nowpayments.networks = USDT_NETWORKS;
+                // Configuration may be cached, but an FX preview must use the
+                // same fresh database interval as new TG/guest/recharge orders.
+                if (marketFx.marketMode(env)) {
+                    const provider = responseValue.config?.providers?.nowpayments;
+                    if (provider) {
+                        delete provider.fx_error;
+                        provider.fx_mode = 'market';
+                        provider.fx_snapshot = null;
+                        provider.cny_to_usd_rate = null;
+                        provider.is_fee_paid_by_user = false;
+                        if (provider.enabled === true) {
+                            try {
+                                provider.fx_snapshot = await marketFx.getMarketUsdtFx({ supabase });
+                                provider.cny_to_usd_rate = Number(provider.fx_snapshot.usdt_per_cny);
+                            } catch (error) {
+                                // Keep Alipay and the rest of the wallet usable.
+                                provider.fx_error = error.code || 'payment_fx_unavailable';
+                            }
+                        }
+                    }
+                    res.setHeader('Cache-Control', 'no-store');
+                }
                 loadMs = Math.max(0, Date.now() - loadStartedAt);
                 cacheStatus = cachedResult.status;
                 const totalMs = Math.max(0, Date.now() - startedAt);
@@ -313,7 +341,7 @@ function createPaymentsHandlers({
                     totalMs
                 });
 
-                return sendJson(res, 200, cachedResult.value);
+                return sendJson(res, 200, responseValue);
             } catch (error) {
                 const totalMs = Math.max(0, Date.now() - startedAt);
                 applyHotCacheResponseHeaders(res, {

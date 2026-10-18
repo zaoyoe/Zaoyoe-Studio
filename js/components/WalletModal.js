@@ -17,7 +17,7 @@
     const walletCssHref = 'css/wallet.css?v=20260716_WALLET_EXACT_BALANCE_CUSTOM_TOOLTIP_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';
     const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;
-    const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v2';
+    const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v3';
     let walletCssReady = false;
     let walletCssReadyPromise = Promise.resolve();
 
@@ -2257,6 +2257,12 @@
                         this.decodeActionValue(actionEl.dataset.walletPackageName)
                     );
                     break;
+                case 'select-usdt-network':
+                    if (!this.pendingRechargeAction) {
+                        this.selectedUsdtNetwork = actionEl.dataset.walletUsdtNetwork || 'usdtbsc';
+                        this.refreshCustomRechargePaymentMethods();
+                    }
+                    break;
                 case 'pay-selected-recharge':
                     this.paySelectedRechargePackage(actionEl.dataset.walletPaymentMethod || '');
                     break;
@@ -3583,6 +3589,16 @@
         },
 
         resolveLocalizedPaymentCreationErrorMessage(error) {
+            const fxCode = String(error?.code || error?.paymentError?.code || error?.payload?.code || '');
+            if (fxCode === 'payment_fx_quote_expired') {
+                return this.tr('wallet.usdtFxQuoteUpdated', 'USDT 汇率报价已更新，请确认应付金额后重新发起支付。');
+            }
+            if (fxCode === 'payment_fx_quote_mismatch') {
+                return this.tr('wallet.usdtFxQuoteMismatch', 'USDT 付款金额与锁定报价不一致，请勿付款并联系管理员核对订单。');
+            }
+            if (fxCode.startsWith('payment_fx_')) {
+                return this.tr('wallet.usdtFxUnavailable', 'USDT 市场汇率暂不可用，请稍后重试或选择其他支付方式。');
+            }
             const code = this.resolvePaymentCreationErrorCode(error);
             switch (code) {
             case 'payment_amount_too_small':
@@ -4619,6 +4635,7 @@
             const payCurrencyRaw = String(providerSummary.pay_currency || 'usdtbsc').trim().toUpperCase();
             const displayPayCurrency = payCurrencyRaw.includes('USDT') ? 'USDT' : payCurrencyRaw;
             const networkName = String(providerSummary.network_name || 'BNB Smart Chain').trim() || 'BNB Smart Chain';
+            const payinExtraId = String(providerSummary.payin_extra_id || '').trim();
             const networkCode = String(providerSummary.network_code || 'BSC/BEP20').trim() || 'BSC/BEP20';
             const qrData = String(providerSummary.qr_data || payAddress).trim();
             const qrImageUrl = this.buildQrImageUrl(qrData, 300);
@@ -4687,7 +4704,7 @@
                             <span class="wallet-payment-qr-title-icon wallet-crypto-title-icon">${this.renderWalletInlineIcon('fa-coins', '#22c55e')}</span>
                             <span class="wallet-payment-qr-title-copy">
                                 <strong>${this.escapeHtml(modalTitle)}</strong>
-                                <small>${this.tr('wallet.usdtCheckoutSubtitle', '使用 USDT-BEP20 完成付款')}</small>
+                                <small>${this.escapeHtml(`USDT · ${networkCode}`)}</small>
                             </span>
                         </div>
                     </div>
@@ -4706,7 +4723,7 @@
                                 <button type="button" class="wallet-crypto-inline-copy js-wallet-copy-usdt-amount">${this.tr('common.copy', '复制')}</button>
                             </div>
                             <div class="wallet-payment-qr-card wallet-crypto-qr-card js-wallet-payment-qr-visual">
-                                <img src="${this.escapeAttribute(qrImageUrl)}" alt="${this.escapeAttribute(this.tr('wallet.usdtAddressQrAlt', 'USDT-BEP20 收款地址二维码'))}" class="wallet-payment-qr-image wallet-payment-qr-image--crypto js-wallet-payment-qr-image" loading="eager" decoding="async" referrerpolicy="no-referrer">
+                                <img src="${this.escapeAttribute(qrImageUrl)}" alt="${this.escapeAttribute(this.tr('wallet.usdtAddressQrAlt', 'USDT 收款地址二维码'))}" class="wallet-payment-qr-image wallet-payment-qr-image--crypto js-wallet-payment-qr-image" loading="eager" decoding="async" referrerpolicy="no-referrer">
                                 <div class="wallet-payment-qr-success js-wallet-payment-qr-success" hidden>
                                     <div class="wallet-payment-qr-success-mark" aria-hidden="true">
                                         <svg viewBox="0 0 24 24" fill="none">
@@ -4747,9 +4764,10 @@
                                 </div>
                                 <button type="button" class="wallet-crypto-copy-btn js-wallet-copy-usdt-address">${this.tr('common.copy', '复制')}</button>
                             </div>
+                            ${payinExtraId ? `<div class="wallet-crypto-copy-card"><div><span>Memo / Comment（必填，遗漏无法自动到账）</span><strong>${this.escapeHtml(payinExtraId)}</strong></div><button type="button" class="wallet-crypto-copy-btn js-wallet-copy-usdt-memo">复制 Memo</button></div>` : ''}
                             <div class="wallet-crypto-warning">
                                 <div>${this.tr('wallet.usdtExactAmountWarning', '请复制上方显示金额付款，二维码仅包含收款地址。')}</div>
-                                <div>${this.tr('wallet.usdtNetworkWarning', '钱包网络必须选择 BSC/BEP20，其他网络无法自动到账。')}</div>
+                                <div>${this.escapeHtml(`钱包网络必须选择 ${networkCode}，错网无法自动到账。`)}</div>
                             </div>
                             <div class="meta-section js-wallet-payment-qr-meta">
                                 ${detailRows}
@@ -4783,9 +4801,13 @@
             detailOverlay.querySelectorAll('.js-wallet-copy-usdt-address').forEach((button) => {
                 button.addEventListener('click', (event) => {
                     this.copyToClipboard(payAddress, event, {
-                        successMessage: this.tr('wallet.usdtAddressCopied', '已复制 USDT-BEP20 收款地址')
+                        successMessage: this.tr('wallet.usdtAddressCopied', '已复制 USDT 收款地址')
                     });
                 });
+            });
+
+            detailOverlay.querySelector('.js-wallet-copy-usdt-memo')?.addEventListener('click', (event) => {
+                this.copyToClipboard(payinExtraId, event);
             });
 
             document.body.appendChild(detailOverlay);
@@ -7147,15 +7169,15 @@
                 },
                 nowpayments: {
                     enabled: false,
-                    display_name: 'USDT-BEP20',
+                    display_name: 'USDT',
                     pay_currency: 'usdtbsc',
                     network_name: 'BNB Smart Chain',
                     cny_to_usd_rate: Number(window.NOWPAYMENTS_CNY_TO_USD_RATE || '') || 0.14,
                     pay_amount_precision: Number.isFinite(Number(window.NOWPAYMENTS_PAY_AMOUNT_PRECISION))
                         ? Math.min(8, Math.max(0, Math.round(Number(window.NOWPAYMENTS_PAY_AMOUNT_PRECISION))))
                         : 2,
-                    package_hint: this.tr('wallet.nowpaymentsPackageHint', '请使用 USDT-BEP20 / BNB Smart Chain 完成付款，勿使用 ERC20、TRC20 或其他网络。'),
-                    custom_amount_hint: this.tr('wallet.nowpaymentsCustomAmountHint', '请按页面显示的 USDT-BEP20 金额付款，网络请选择 BNB Smart Chain。'),
+                    package_hint: this.tr('wallet.nowpaymentsPackageHint', '请使用所选网络支付完整 USDT 金额，并填写付款页显示的 Memo（如有）。'),
+                    custom_amount_hint: this.tr('wallet.nowpaymentsCustomAmountHint', '请按付款页显示的网络、USDT 金额和 Memo（如有）转账。'),
                     surcharge_rate: normalizeSurchargeRate(window.PAYMENT_NOWPAYMENTS_SURCHARGE_RATE, 0.01),
                     surcharge_label: this.tr('wallet.paymentSurchargeLabel', '通道手续费'),
                     is_fee_paid_by_user: true,
@@ -7280,8 +7302,13 @@
                     nowpayments: {
                         enabled: sourceProviders.nowpayments?.enabled === true || String(sourceProviders.nowpayments?.enabled) === 'true',
                         display_name: String(sourceProviders.nowpayments?.display_name || defaults.providers.nowpayments.display_name).trim() || defaults.providers.nowpayments.display_name,
+                        networks: Array.isArray(sourceProviders.nowpayments?.networks) ? sourceProviders.nowpayments.networks : [{ currency: 'usdtbsc', name: 'BSC (BEP20)' }],
                         pay_currency: String(sourceProviders.nowpayments?.pay_currency || defaults.providers.nowpayments.pay_currency).trim().toLowerCase() || defaults.providers.nowpayments.pay_currency,
                         network_name: String(sourceProviders.nowpayments?.network_name || defaults.providers.nowpayments.network_name).trim() || defaults.providers.nowpayments.network_name,
+                        fx_mode: sourceProviders.nowpayments?.fx_mode === 'market' ? 'market' : 'fixed',
+                        fx_snapshot: sourceProviders.nowpayments?.fx_mode === 'market'
+                            ? (sourceProviders.nowpayments.fx_snapshot || null) : null,
+                        fx_preview_unavailable: sourceProviders.nowpayments?.fx_preview_unavailable === true,
                         cny_to_usd_rate: Number.isFinite(Number(sourceProviders.nowpayments?.cny_to_usd_rate))
                             && Number(sourceProviders.nowpayments.cny_to_usd_rate) > 0
                             ? Number(sourceProviders.nowpayments.cny_to_usd_rate)
@@ -7412,6 +7439,8 @@
                 if (!cached?.payload || ageMs < 0 || ageMs > WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS) {
                     return null;
                 }
+                const cryptoProvider = cached.payload.config?.providers?.nowpayments;
+                if (cryptoProvider?.fx_mode === 'market' && !this.getRechargeFxSnapshot(cryptoProvider)) return null;
                 return cached.payload;
             } catch (_error) {
                 return null;
@@ -7487,7 +7516,10 @@
         },
 
         async loadPaymentRuntimeConfig(forceRefresh = false) {
-            if (!forceRefresh && this.paymentRuntimeConfig) {
+            const cryptoProvider = this.paymentChannelsConfig?.providers?.nowpayments;
+            if (!forceRefresh && this.paymentRuntimeConfig
+                && !cryptoProvider?.fx_preview_unavailable
+                && (cryptoProvider?.fx_mode !== 'market' || this.getRechargeFxSnapshot(cryptoProvider))) {
                 return this.paymentRuntimeConfig;
             }
 
@@ -7507,10 +7539,18 @@
                 const payload = await this.fetchPaymentConfigPayload(site, { forceRefresh });
                 this.writePaymentConfigBrowserCache(site, payload);
                 this.applyPaymentConfigPayload(payload);
+                if (this.isOpen && !this.pendingRechargeAction) {
+                    this.renderSelectedRechargePaymentPanel();
+                    this.renderCustomRechargeSection();
+                }
             } catch (runtimeError) {
                 console.warn('[WalletModal] Failed to load payment runtime config:', runtimeError);
                 await this.recoverPaymentConfigsFromSystemConfig();
                 this.paymentRuntimeConfig = this.getDefaultPaymentRuntimeConfig();
+                if (this.paymentChannelsConfig?.providers?.nowpayments) {
+                    // The fallback has no authoritative FX mode or live quote.
+                    this.paymentChannelsConfig.providers.nowpayments.fx_preview_unavailable = true;
+                }
             }
 
             return this.paymentRuntimeConfig;
@@ -7540,6 +7580,7 @@
         },
 
         async recoverPaymentConfigsFromSystemConfig() {
+            const wasMarketMode = this.paymentChannelsConfig?.providers?.nowpayments?.fx_mode === 'market';
             const [paymentChannelsResult, rechargeOptionsResult] = await Promise.allSettled([
                 this.loadSystemConfigValue('payment_channels'),
                 this.loadSystemConfigValue('recharge_options')
@@ -7555,6 +7596,11 @@
                 this.rechargeOptionsConfig = this.normalizeRechargeOptionsConfig(rechargeOptionsResult.value);
             } else if (rechargeOptionsResult.status === 'rejected') {
                 console.warn('[WalletModal] Failed to recover recharge options config:', rechargeOptionsResult.reason);
+            }
+            if (wasMarketMode && this.paymentChannelsConfig?.providers?.nowpayments) {
+                // A system-config fallback cannot provide a fresh market quote.
+                this.paymentChannelsConfig.providers.nowpayments.fx_mode = 'market';
+                this.paymentChannelsConfig.providers.nowpayments.fx_snapshot = null;
             }
         },
 
@@ -7665,8 +7711,49 @@
             return 2;
         },
 
+        getRechargeFxSnapshot(provider = {}) {
+            const fx = provider.fx_snapshot;
+            return fx && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(fx.id || '')
+                && fx.source === 'coingecko:tether/cny' && typeof fx.usdt_per_cny === 'string'
+                && /^0\.\d{1,8}$/.test(fx.usdt_per_cny)
+                && Number(fx.usdt_per_cny) >= 0.05 && Number(fx.usdt_per_cny) <= 0.5
+                && Date.parse(fx.expires_at) > Date.now() ? fx : null;
+        },
+
+        async refreshRechargeFxPreview() {
+            await this.loadPaymentRuntimeConfig(true);
+            this.renderSelectedRechargePaymentPanel();
+            this.renderCustomRechargeSection();
+        },
+
+        async getRechargeFxRequest(providerKey) {
+            if (providerKey !== 'nowpayments') return {};
+            const provider = this.paymentChannelsConfig?.providers?.nowpayments || {};
+            const pay_currency = this.selectedUsdtNetwork || 'usdtbsc';
+            if (provider.fx_mode !== 'market' && !provider.fx_preview_unavailable) return { pay_currency };
+            const fx = this.getRechargeFxSnapshot(provider);
+            if (fx && !provider.fx_preview_unavailable) return { fx_snapshot_id: fx.id, pay_currency };
+            await this.refreshRechargeFxPreview();
+            const refreshed = this.paymentChannelsConfig?.providers?.nowpayments || {};
+            throw Object.assign(new Error('USDT quote requires confirmation'), {
+                code: !refreshed.fx_preview_unavailable && (refreshed.fx_mode !== 'market' || this.getRechargeFxSnapshot(refreshed))
+                    ? 'payment_fx_quote_expired' : 'payment_fx_unavailable',
+                previewRefreshed: true
+            });
+        },
+
         estimateUsdtPayableAmountText(totalCnyAmount = 0, provider = {}) {
             const normalizedTotal = Number(totalCnyAmount);
+            if (provider.fx_preview_unavailable) return '';
+            if (provider.fx_mode === 'market') {
+                const fx = this.getRechargeFxSnapshot(provider);
+                const totalMinor = Math.round(normalizedTotal * 100);
+                if (!fx || !Number.isSafeInteger(totalMinor) || totalMinor < 1) return '';
+                // Same integer rounding as the shared server-side converter.
+                const rateUnits = BigInt(fx.usdt_per_cny.slice(2).padEnd(8, '0'));
+                const cents = (BigInt(totalMinor) * rateUnits + 99999999n) / 100000000n;
+                return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
+            }
             const cnyToUsdRate = Number(provider?.cny_to_usd_rate || 0.14);
             if (!Number.isFinite(normalizedTotal) || normalizedTotal <= 0 || !Number.isFinite(cnyToUsdRate) || cnyToUsdRate <= 0) {
                 return '';
@@ -7913,7 +8000,9 @@
                     enabled: usdtProvider.enabled === true,
                     label: this.tr('wallet.usdtPayment', 'USDT'),
                     sublabel: usdtProvider.enabled === true
-                        ? (usdtProvider.network_name || 'BEP20')
+                        ? (usdtProvider.fx_preview_unavailable || (usdtProvider.fx_mode === 'market' && !this.getRechargeFxSnapshot(usdtProvider))
+                            ? this.tr('wallet.usdtFxUnavailableShort', '汇率暂不可用')
+                            : ((usdtProvider.networks || []).find(item => item.currency === (this.selectedUsdtNetwork || 'usdtbsc'))?.name || usdtProvider.network_name || 'BSC (BEP20)'))
                         : this.tr('wallet.usdtUnavailable', '未启用'),
                     icon: 'fa-solid fa-coins',
                     provider: usdtProvider
@@ -7954,7 +8043,16 @@
                         </span>
                     </button>
                 `;
-            }).join('');
+            }).join('') + this.renderUsdtNetworkChoices(disabled, paymentChannels);
+        },
+
+        renderUsdtNetworkChoices(disabled = false, config = this.paymentChannelsConfig) {
+            const provider = this.getRechargePaymentProviderForMethod('usdt', config);
+            if (!provider.enabled) return '';
+            const names = { usdtbsc: 'BSC (BEP20)', usdtton: 'TON', usdtmatic: 'Polygon', usdttrc20: 'TRON (TRC20)' };
+            const choices = (provider.networks || [{ currency: 'usdtbsc' }]).filter(item => Object.hasOwn(names, item.currency));
+            if (!choices.some(item => item.currency === this.selectedUsdtNetwork)) this.selectedUsdtNetwork = choices[0]?.currency || 'usdtbsc';
+            return `<div class="wallet-usdt-network-choices" role="group" aria-label="USDT 转账网络" style="grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:8px"><span>USDT 网络</span>${choices.map(item => `<button type="button" class="wallet-recharge-method-btn wallet-recharge-method-btn--compact" style="width:auto;flex:0 0 auto;min-width:0;padding:8px 12px" data-wallet-action="select-usdt-network" data-wallet-usdt-network="${this.escapeAttribute(item.currency)}" aria-pressed="${item.currency === this.selectedUsdtNetwork}" ${disabled ? 'disabled' : ''}>${this.escapeHtml(names[item.currency])}${item.currency === this.selectedUsdtNetwork ? ' ✓' : ''}</button>`).join('')}</div>`;
         },
 
         resolveRechargeProviderKeyForMethod(methodKey = '', {
@@ -10325,6 +10423,7 @@
                 });
 
                 const paymentResult = await PointsService.createPaymentRequest({
+                    ...await this.getRechargeFxRequest(providerKey),
                     provider_key: providerKey,
                     package_id: packageId,
                     package_name: packageData?.name || packageName || ''
@@ -10475,6 +10574,7 @@
 
             } catch (err) {
                 console.error('[WalletModal] Purchase failed:', err);
+                if (err?.code === 'payment_fx_quote_expired' && !err.previewRefreshed) await this.refreshRechargeFxPreview();
                 this.triggerWalletRechargeFailedEngagement({}, {
                     status: 'failed',
                     message: err?.message || ''
@@ -10584,6 +10684,7 @@
                 });
 
                 const paymentResult = await PointsService.createPaymentRequest({
+                    ...await this.getRechargeFxRequest(providerKey),
                     provider_key: providerKey,
                     points_amount: normalizedAmount
                 });
@@ -10756,6 +10857,7 @@
                 this.resumeShopAfterRechargeIfNeeded();
             } catch (err) {
                 console.error('[WalletModal] Custom recharge failed:', err);
+                if (err?.code === 'payment_fx_quote_expired' && !err.previewRefreshed) await this.refreshRechargeFxPreview();
                 this.triggerWalletRechargeFailedEngagement({}, {
                     status: 'failed',
                     message: err?.message || ''

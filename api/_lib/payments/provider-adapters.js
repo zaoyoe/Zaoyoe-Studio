@@ -1,4 +1,6 @@
+const usdtNetworks = require('./usdt-networks');
 const crypto = require('crypto');
+const marketFx = require('./usdt-market-fx');
 const {
     normalizeSiteValue
 } = require('../site');
@@ -835,6 +837,8 @@ const providerRegistry = {
 
             return {
                 provider: 'nowpayments',
+                supabase,
+                env,
                 channelConfig: loaded.paymentChannels.providers.nowpayments,
                 activeProvider: loaded.paymentChannels.active_provider,
                 implemented: true,
@@ -865,13 +869,33 @@ const providerRegistry = {
             grantedPoints,
             paidAmount,
             isCustomRecharge,
-            customQuote
+            customQuote,
+            expectedFxSnapshotId,
+            payCurrency
         } = {}) {
-            const channelConfig = runtimeContext?.channelConfig || {};
-            const integration = runtimeContext?.integration || normalizeNowpaymentsConfig({
+            const env = runtimeContext?.env || process.env;
+            const selectedNetwork = usdtNetworks.requireNetwork(payCurrency || runtimeContext?.integration?.payCurrency || runtimeContext?.channelConfig?.pay_currency || 'usdtbsc');
+            const fxSnapshot = marketFx.marketMode(env)
+                ? await marketFx.getMarketUsdtFx({ supabase: runtimeContext?.supabase })
+                : null;
+            if (fxSnapshot && expectedFxSnapshotId && expectedFxSnapshotId !== fxSnapshot.id) {
+                throw Object.assign(new Error('USDT 汇率报价已更新，请刷新并确认应付金额后重试'), {
+                    code: 'payment_fx_quote_expired', statusCode: 409
+                });
+            }
+            // Apply the shop surcharge before FX conversion. The gateway must
+            // not convert USD again or add a second user-paid processing fee.
+            const channelConfig = fxSnapshot ? {
+                ...runtimeContext?.channelConfig,
+                cny_to_usd_rate: Number(fxSnapshot.usdt_per_cny),
+                price_currency: selectedNetwork.currency, pay_currency: selectedNetwork.currency,
+                is_fixed_rate: false, is_fee_paid_by_user: false
+            } : { ...runtimeContext?.channelConfig, ...(payCurrency ? { pay_currency: selectedNetwork.currency, price_currency: selectedNetwork.currency, is_fee_paid_by_user: false } : {}) };
+            const integration = (!fxSnapshot && !payCurrency && runtimeContext?.integration) || normalizeNowpaymentsConfig({
                 channelConfig,
                 secretValues: runtimeContext?.secretValues || {},
-                requestOrigin: runtimeContext?.requestOrigin || ''
+                requestOrigin: runtimeContext?.requestOrigin || '',
+                env
             });
             const missingFields = Array.isArray(integration?.missingFields)
                 ? integration.missingFields
@@ -895,7 +919,9 @@ const providerRegistry = {
                 };
             }
 
-            const priceAmount = convertCnyAmountToPriceAmount(normalizedAmount, integration);
+            const priceAmount = fxSnapshot
+                ? Number(marketFx.convertCnyMinorToUsdt(Math.round(normalizedAmount * 100), fxSnapshot.usdt_per_cny))
+                : convertCnyAmountToPriceAmount(normalizedAmount, integration);
             if (!(priceAmount > 0)) {
                 return {
                     supported: false,
@@ -916,11 +942,25 @@ const providerRegistry = {
                 channelConfig,
                 secretValues: runtimeContext?.secretValues || {},
                 requestOrigin: runtimeContext?.requestOrigin || '',
+                env,
                 orderId,
                 priceAmount: priceAmount.toFixed(2),
                 orderDescription: title
             });
             let gatewayPayload = paymentResult.response?.data || {};
+            if (fxSnapshot || payCurrency) {
+                const { parsePaymentJson } = require('../../../server/tg/nowpayments-gateway');
+                const { cryptoAmountsEqual } = require('../../../js/tg-payment-pricing');
+                let exact;
+                try { exact = parsePaymentJson(paymentResult.response.text).exact; } catch (_) {}
+                if (!exact || gatewayPayload.price_currency !== selectedNetwork.currency || gatewayPayload.pay_currency !== selectedNetwork.currency
+                    || !cryptoAmountsEqual(exact.price_amount, priceAmount.toFixed(2))
+                    || !cryptoAmountsEqual(exact.pay_amount, priceAmount.toFixed(2))) {
+                    throw Object.assign(new Error('USDT 付款金额与锁定报价不一致，请勿付款并联系管理员核对订单'), {
+                        code: 'payment_fx_quote_mismatch', statusCode: 502
+                    });
+                }
+            }
             const paymentId = sanitizeDisplayAmount(
                 gatewayPayload.payment_id
                 || gatewayPayload.id
@@ -928,7 +968,7 @@ const providerRegistry = {
                 '',
                 120
             ) || null;
-            if (paymentId) {
+            if (paymentId && !fxSnapshot && !payCurrency) {
                 try {
                     const estimateResult = await updateNowpaymentsPaymentEstimate({
                         channelConfig,
@@ -970,7 +1010,13 @@ const providerRegistry = {
                 integration,
                 channelConfig
             });
-            if (!payAddress || !(rawPayAmountNumber > 0) || !(payAmountNumber > 0)) {
+            const fxMetadata = fxSnapshot ? {
+                fx_mode: 'market', fx_snapshot_id: fxSnapshot.id, fx_source: fxSnapshot.source,
+                fx_source_updated_at: fxSnapshot.source_updated_at, fx_expires_at: fxSnapshot.expires_at,
+                fx_usdt_per_cny: fxSnapshot.usdt_per_cny, fx_cny_per_usdt: fxSnapshot.cny_per_usdt
+            } : {};
+            const payinExtraId = usdtNetworks.paymentMemo(gatewayPayload);
+            if (!usdtNetworks.validAddress(selectedNetwork.currency, payAddress) || resolvedPayCurrency !== selectedNetwork.currency || payinExtraId === null || !(rawPayAmountNumber > 0) || !(payAmountNumber > 0) || (fxSnapshot && !paymentId)) {
                 return {
                     supported: false,
                     action: 'crypto_checkout',
@@ -1003,9 +1049,12 @@ const providerRegistry = {
                     local_currency: 'cny',
                     local_amount: normalizedAmount,
                     cny_to_usd_rate: integration.cnyToUsdRate,
+                    ...fxMetadata,
+                    ...(payCurrency ? { native_usdt: true } : {}),
+                    ...(payinExtraId ? { payin_extra_id: payinExtraId } : {}),
                     is_fixed_rate: integration.isFixedRate,
                     is_fee_paid_by_user: integration.isFeePaidByUser,
-                    network_name: channelConfig.network_name || 'BNB Smart Chain',
+                    network_name: selectedNetwork.currency === 'usdtbsc' ? (channelConfig.network_name || selectedNetwork.name) : selectedNetwork.name,
                     checkout_mode: 'direct_payment',
                     charge_type: isCustomRecharge ? 'custom' : 'package',
                     paid_points: normalizePointValue(paidPoints, 0),
@@ -1014,6 +1063,9 @@ const providerRegistry = {
                     site: normalizedSite
                 },
                 summary: {
+                    ...fxMetadata,
+                    ...(payCurrency ? { native_usdt: true } : {}),
+                    ...(payinExtraId ? { payin_extra_id: payinExtraId } : {}),
                     grantedPoints: normalizePointValue(grantedPoints, 0),
                     expectedAmount: normalizedAmount,
                     price_amount: priceAmount,
@@ -1027,8 +1079,8 @@ const providerRegistry = {
                     pay_amount_rounding: 'ceil',
                     pay_address: payAddress,
                     payment_id: paymentId,
-                    network_name: channelConfig.network_name || 'BNB Smart Chain',
-                    network_code: 'BSC/BEP20',
+                    network_name: selectedNetwork.currency === 'usdtbsc' ? (channelConfig.network_name || selectedNetwork.name) : selectedNetwork.name,
+                    network_code: selectedNetwork.code,
                     qr_data: payAddress,
                     expiration_estimate_date: quoteExpiresAt,
                     quote_expires_at: quoteExpiresAt,

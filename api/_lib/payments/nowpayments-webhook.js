@@ -1,3 +1,4 @@
+const usdtNetworks = require('./usdt-networks');
 const {
     getPaymentProviderAdapter,
     roundCurrencyAmount,
@@ -31,6 +32,7 @@ const {
 
 const PAYMENT_ORDER_SNAPSHOT_SELECT = 'id, user_id, provider, provider_order_no, checkout_session_id, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, raw_payload, created_at, paid_at, claimed_at, verified_at, last_error';
 const nowpaymentsProvider = getPaymentProviderAdapter('nowpayments');
+const EXACT_AMOUNTS = Symbol('nowpayments-exact-amounts');
 
 function sanitizeText(value, fallback = '', maxLength = 240) {
     if (typeof value !== 'string') return fallback;
@@ -287,6 +289,16 @@ async function readRawRequestBody(req) {
 }
 
 async function collectWebhookPayload(req) {
+    // Preserve decimal wire tokens separately from the object used for the
+    // provider's sorted-JSON signature. Never round a short payment up.
+    const wire = req?.rawBody || (typeof req?.body === 'string' || Buffer.isBuffer(req?.body) ? req.body : null);
+    if (wire) {
+        try {
+            const { data, exact } = require('../../../server/tg/nowpayments-gateway').parsePaymentJson(String(wire));
+            Object.defineProperty(data, EXACT_AMOUNTS, { value: exact });
+            return data;
+        } catch (_) { return {}; }
+    }
     if (req?.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
         return normalizeRequestObject(req.body);
     }
@@ -308,7 +320,9 @@ async function collectWebhookPayload(req) {
     const rawBody = await readRawRequestBody(req);
     if (!rawBody.trim()) return {};
     try {
-        return normalizeRequestObject(JSON.parse(rawBody));
+        const { data, exact } = require('../../../server/tg/nowpayments-gateway').parsePaymentJson(rawBody);
+        Object.defineProperty(data, EXACT_AMOUNTS, { value: exact });
+        return data;
     } catch (_) {
         return {};
     }
@@ -394,6 +408,28 @@ function buildNowpaymentsPayAmountCandidates(payload = {}, expectedPayCurrency =
 }
 
 function resolveNowpaymentsAmountVerification(metadata = {}, payload = {}) {
+    if (metadata.fx_mode === 'market' || metadata.native_usdt === true) {
+        const { decimalUnits } = require('../../../server/tg/nowpayments-gateway');
+        const exact = payload[EXACT_AMOUNTS] || payload;
+        const expected = decimalUnits(metadata.pay_amount_text);
+        const actual = decimalUnits(exact.actually_paid);
+        const payCurrencyValid = Boolean(usdtNetworks.network(metadata.pay_currency)) && payload.pay_currency === metadata.pay_currency
+            && (!payload.actually_paid_currency || payload.actually_paid_currency === metadata.pay_currency);
+        const priceCurrencyValid = metadata.price_currency === metadata.pay_currency && payload.price_currency === metadata.price_currency;
+        // An echoed requested price is not proof of receipt. Use the saved
+        // native quote, not today's FX, even after its preview has expired.
+        return {
+            valid: expected !== null && actual !== null && actual >= expected && payCurrencyValid && priceCurrencyValid
+                && String(exact.payment_id || '') === String(metadata.payment_id || '')
+                && (!metadata.pay_address || payload.pay_address === metadata.pay_address)
+                && usdtNetworks.paymentMemo(payload) === (metadata.payin_extra_id || '')
+                && decimalUnits(exact.pay_amount) === expected && decimalUnits(exact.price_amount) === expected,
+            strategy: 'actually_paid', expectedAmount: Number(metadata.pay_amount_text),
+            actualAmount: Number(payload.actually_paid || 0), expectedCurrency: metadata.pay_currency,
+            actualCurrency: payload.pay_currency || null, payCurrencyValid, priceCurrencyValid,
+            expectedPriceAmount: Number(metadata.price_amount), webhookPriceAmount: Number(payload.price_amount || 0)
+        };
+    }
     const expectedPayAmount = normalizeAmount(
         metadata.pay_amount
         ?? metadata.pay_amount_text
@@ -651,6 +687,7 @@ async function handleNowpaymentsWebhook({
             const existingRawPayload = paymentOrder.raw_payload && typeof paymentOrder.raw_payload === 'object'
                 ? paymentOrder.raw_payload
                 : {};
+            const immutableQuote = existingMetadata.fx_mode === 'market' || existingMetadata.native_usdt === true;
             const isAmountMismatch = processingResult === 'amount_mismatch';
             const isPendingReview = processingResult === 'pending_review';
             const nextStatus = processingResult === 'processed_paid'
@@ -687,15 +724,19 @@ async function handleNowpaymentsWebhook({
                 provider_metadata: mergePaymentObjects(existingMetadata, {
                     provider_order_no: orderNo,
                     invoice_id: invoiceId || existingMetadata.invoice_id || null,
-                    payment_id: sanitizeText(payload.payment_id, '', 120) || existingMetadata.payment_id || null,
+                    payment_id: immutableQuote
+                        ? existingMetadata.payment_id : (sanitizeText(payload.payment_id, '', 120) || existingMetadata.payment_id || null),
                     parent_payment_id: sanitizeText(payload.parent_payment_id, '', 120) || null,
                     purchase_id: sanitizeText(payload.purchase_id, '', 120) || null,
                     payment_status: paymentState,
                     payment_status_raw: statusRaw || null,
-                    pay_currency: webhookPayCurrency || existingMetadata.pay_currency || null,
-                    price_currency: webhookPriceCurrency || existingMetadata.price_currency || null,
+                    pay_currency: immutableQuote
+                        ? existingMetadata.pay_currency : (webhookPayCurrency || existingMetadata.pay_currency || null),
+                    price_currency: immutableQuote
+                        ? existingMetadata.price_currency : (webhookPriceCurrency || existingMetadata.price_currency || null),
                     price_amount_webhook: webhookPriceAmount || null,
-                    pay_amount: roundCurrencyAmount(payload.pay_amount ?? 0) || null,
+                    pay_amount: immutableQuote
+                        ? existingMetadata.pay_amount : (roundCurrencyAmount(payload.pay_amount ?? 0) || null),
                     actually_paid: roundCurrencyAmount(payload.actually_paid ?? 0) || null,
                     outcome_amount: roundCurrencyAmount(payload.outcome_amount ?? 0) || null,
                     outcome_currency: sanitizeText(payload.outcome_currency, '', 40).toLowerCase() || null,

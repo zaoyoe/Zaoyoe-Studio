@@ -5,7 +5,9 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const express = require('express');
 const dotenv = require('dotenv');
+const { createGuestShopPreviewRelay, resolveGuestShopPreviewConfig } = require('./local-preview-guest-shop');
 const { isTgNowpaymentsWebhookRequest } = require('../server/tg/raw-body');
+const { createGuestShopPreviewCancellation } = require('./local-preview-guest-cancel');
 
 const { buildSupabaseRuntimeScript } = require('../api/_lib/public-runtime-config');
 const {
@@ -35,6 +37,25 @@ function resolveLocalPreviewSourceCommit(repoRoot) {
         return /^[0-9a-f]{40}$/u.test(commit) ? commit : 'unknown';
     } catch (_) {
         return 'unknown';
+    }
+}
+
+function resolveLocalPreviewSourceState(repoRoot) {
+    const sourceCommit = resolveLocalPreviewSourceCommit(repoRoot);
+    try {
+        const git = (args) => execFileSync('git', ['-C', path.resolve(repoRoot), ...args], {
+            encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']
+        }).trim();
+        const status = git(['status', '--porcelain', '--untracked-files=normal']);
+        return {
+            sourceCommit,
+            sourceMode: 'working-tree',
+            sourceBranch: git(['branch', '--show-current']) || 'detached',
+            workingTreeDirty: Boolean(status),
+            changedFileCount: status ? status.split('\n').length : 0
+        };
+    } catch (_) {
+        return { sourceCommit, sourceMode: 'working-tree', workingTreeDirty: null, changedFileCount: null };
     }
 }
 
@@ -505,11 +526,17 @@ function createLocalPreviewApp(options = {}) {
     const baseEnv = options.baseEnv || process.env;
     const previewEnv = withLocalPreviewEnvDefaults(loadPreviewEnv(envFiles, baseEnv));
     const smokeResultStore = options.smokeResultStore || createSmokeResultStore();
-    const sourceCommit = resolveLocalPreviewSourceCommit(repoRoot);
+    const sourceState = resolveLocalPreviewSourceState(repoRoot);
+    const sourceCommit = sourceState.sourceCommit;
+    const guestShopApi = resolveGuestShopPreviewConfig(previewEnv);
 
     applyPreviewEnvToProcess(previewEnv);
 
     app.set('etag', false);
+    app.use((_req, res, next) => {
+        res.setHeader('X-Local-Preview-Source-Commit', sourceCommit);
+        next();
+    });
 
     const defaultJsonBodyParser = express.json({
         limit: DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
@@ -517,7 +544,7 @@ function createLocalPreviewApp(options = {}) {
             // The deployed endpoint disables Vercel's body parser so it can
             // authenticate the exact signed bytes. Keep the local preview
             // behavior equivalent before Express materializes req.body.
-            if (shouldCaptureNewApiSupportRawBody(req)) {
+            if (shouldCaptureNewApiSupportRawBody(req) || String(req.path || '').replace(/\/+$/, '') === '/api/payments/nowpayments/webhook') {
                 req.rawBody = Buffer.from(buffer);
             }
         }
@@ -543,13 +570,32 @@ function createLocalPreviewApp(options = {}) {
     });
 
     app.get('/healthz', (req, res) => {
+        setLocalPreviewNoStoreHeaders(res);
+        const currentSource = resolveLocalPreviewSourceState(repoRoot);
         res.json({
             status: 'ok',
             service: 'local-preview-server',
             port,
-            sourceCommit
+            sourceRoot: repoRoot,
+            ...currentSource,
+            serverSourceCommit: sourceCommit,
+            serverSourceState: sourceState,
+            sourceMatchesStartup: sourceCommit !== 'unknown'
+                && currentSource.sourceCommit === sourceCommit
+                && sourceState.workingTreeDirty === false
+                && currentSource.workingTreeDirty === false,
+            restartRequired: currentSource.sourceCommit !== sourceCommit
+                || currentSource.workingTreeDirty !== false
+                || sourceState.workingTreeDirty !== false,
+            productionEvidence: false,
+            guestShopApi
         });
     });
+
+    const cancelOrder = guestShopApi.cancellationMode === 'local-rpc'
+        ? createGuestShopPreviewCancellation({ getSupabase: () => require('../api/_lib/admin').getOptionalSupabaseAdmin() })
+        : null;
+    app.use(createGuestShopPreviewRelay({ ...guestShopApi, origin: guestShopApi.origin || '', cancelOrder }));
 
     app.get('/api/runtime/supabase-config', (req, res) => {
         const script = resolveLocalPreviewRuntimeScript(envFiles, baseEnv, { req });
@@ -822,16 +868,19 @@ function createLocalPreviewApp(options = {}) {
     return {
         app,
         port,
-        sourceCommit
+        sourceCommit,
+        sourceState,
+        guestShopApi
     };
 }
 
 if (require.main === module) {
-    const { app, port } = createLocalPreviewApp();
-    const sourceCommit = resolveLocalPreviewSourceCommit(path.resolve(__dirname, '..'));
+    const { app, port, sourceCommit, sourceState, guestShopApi } = createLocalPreviewApp();
     const listenHost = resolveLocalPreviewListenHost();
     const onListening = () => {
         console.log(`[local-preview] source-commit=${sourceCommit}`);
+        console.log(`[local-preview] source-mode=${sourceState.sourceMode} branch=${sourceState.sourceBranch || 'unknown'} dirty=${sourceState.workingTreeDirty} changed-files=${sourceState.changedFileCount}`);
+        console.log(`[local-preview] guest-shop-api=${guestShopApi.mode}${guestShopApi.origin ? ` origin=${guestShopApi.origin} order-writes=${guestShopApi.orderWritesEnabled} cancellation=${guestShopApi.cancellationMode}` : ''}`);
         if (listenHost) {
             console.log(`[local-preview] http://${listenHost}:${port}`);
             return;
@@ -870,6 +919,7 @@ module.exports = {
     resolveLocalPreviewListenHost,
     resolveLocalPreviewStandaloneApiRoute,
     resolveLocalPreviewSourceCommit,
+    resolveLocalPreviewSourceState,
     resolveLocalPreviewTgPage,
     resolveLocalPreviewRuntimeScript,
     setLocalPreviewNoStoreHeaders,
