@@ -363,7 +363,9 @@ app.use(cors((req, callback) => callback(null, {
     origin: [...allOrigins, ...resolveTgCorsOrigins(req)],
     credentials: true
 })));
-const defaultJsonBodyParser = express.json();
+const defaultJsonBodyParser = express.json({ verify(req, _res, buffer) {
+    if (String(req.path || '').replace(/\/+$/, '') === '/api/payments/nowpayments/webhook') req.rawBody = Buffer.from(buffer);
+} });
 const tgNowpaymentsJsonBodyParser = express.json({ limit: '8kb', verify(req, _res, buffer) { req.rawBody = Buffer.from(buffer); } });
 const aiImageUploadJsonBodyParser = express.json({ limit: '18mb' });
 

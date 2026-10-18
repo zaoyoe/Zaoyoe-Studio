@@ -29,6 +29,8 @@
     function buildPaymentCreateDedupeKey(payload = {}) {
         const normalizedPayload = {
             provider_key: String(payload.provider_key || '').trim().toLowerCase(),
+            pay_currency: String(payload.pay_currency || 'usdtbsc').trim().toLowerCase(),
+            fx_snapshot_id: String(payload.fx_snapshot_id || '').trim(),
             package_id: String(payload.package_id || '').trim(),
             package_name: String(payload.package_name || '').trim(),
             points_amount: normalizePointValue(payload.points_amount, 0),

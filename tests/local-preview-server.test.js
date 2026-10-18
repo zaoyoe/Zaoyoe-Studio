@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const {
     applyPreviewEnvToProcess,
@@ -10,6 +11,7 @@ const {
     buildLocalPreviewPublicHandlerUrl,
     clearRequireCacheByPrefixes,
     createSmokeResultStore,
+    createLocalPreviewApp,
     DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
     DEFAULT_LOCAL_SUB2API_BASE_URL,
     getDefaultEnvFiles,
@@ -21,12 +23,86 @@ const {
     loadFreshSupportApiHandler,
     loadFreshWalletApiHandler,
     resolveLocalPreviewListenHost,
+    resolveLocalPreviewSourceState,
     resolveLocalPreviewStandaloneApiRoute,
     resolveLocalPreviewRuntimeScript,
     setLocalPreviewNoStoreHeaders,
     shouldDisableLocalPreviewCache,
     withLocalPreviewEnvDefaults
 } = require('../scripts/local-preview-server');
+
+test('preview diagnostics distinguish the current working tree from a clean commit without exposing filenames', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-source-'));
+    const git = (args) => execFileSync('git', args, { cwd: tempRoot, stdio: 'pipe' });
+    try {
+        git(['init']);
+        fs.writeFileSync(path.join(tempRoot, 'page.html'), 'committed page');
+        git(['add', '.']);
+        git(['-c', 'user.name=Preview Test', '-c', 'user.email=preview@example.test', 'commit', '-m', 'fixture']);
+        const clean = resolveLocalPreviewSourceState(tempRoot);
+        assert.match(clean.sourceCommit, /^[a-f0-9]{40}$/u);
+        assert.equal(clean.workingTreeDirty, false);
+        assert.equal(clean.changedFileCount, 0);
+        fs.writeFileSync(path.join(tempRoot, 'page.html'), 'new local content');
+        fs.writeFileSync(path.join(tempRoot, 'new.css'), 'body {}');
+        const dirty = resolveLocalPreviewSourceState(tempRoot);
+        assert.equal(dirty.sourceCommit, clean.sourceCommit);
+        assert.equal(dirty.sourceMode, 'working-tree');
+        assert.equal(dirty.workingTreeDirty, true);
+        assert.equal(dirty.changedFileCount, 2);
+        assert.doesNotMatch(JSON.stringify(dirty), /page.html|new.css/u);
+    } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('running preview retains its startup identity and reports source changes until restarted', async (t) => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-running-source-'));
+    const git = (args) => execFileSync('git', args, { cwd: tempRoot, stdio: 'pipe' });
+    const commit = (message) => {
+        git(['add', '.']);
+        git(['-c', 'user.name=Preview Test', '-c', 'user.email=preview@example.test', 'commit', '-m', message]);
+    };
+    t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+    git(['init']);
+    fs.writeFileSync(path.join(tempRoot, 'index.html'), 'initial page');
+    commit('initial source');
+    const { app, sourceCommit } = createLocalPreviewApp({ repoRoot: tempRoot, envFiles: [], baseEnv: {} });
+    const server = await new Promise(resolve => {
+        const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
+    });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const url = `http://127.0.0.1:${server.address().port}`;
+    const health = async () => {
+        const response = await fetch(`${url}/healthz`);
+        assert.equal(response.headers.get('cache-control'), 'no-store');
+        assert.equal(response.headers.get('x-local-preview-source-commit'), sourceCommit);
+        return response.json();
+    };
+    const initial = await health();
+    assert.equal(initial.sourceRoot, tempRoot);
+    assert.equal(initial.serverSourceCommit, sourceCommit);
+    assert.equal(initial.sourceMatchesStartup, true);
+    assert.equal(initial.restartRequired, false);
+    assert.equal(initial.productionEvidence, false);
+    fs.writeFileSync(path.join(tempRoot, 'index.html'), 'updated page');
+    const dirty = await health();
+    assert.equal(dirty.sourceCommit, sourceCommit);
+    assert.equal(dirty.workingTreeDirty, true);
+    assert.equal(dirty.sourceMatchesStartup, false);
+    assert.equal(dirty.restartRequired, true);
+    commit('new source');
+    const changed = await health();
+    assert.notEqual(changed.sourceCommit, sourceCommit);
+    assert.equal(changed.serverSourceCommit, sourceCommit);
+    assert.equal(changed.serverSourceState.sourceCommit, sourceCommit);
+    assert.equal(changed.workingTreeDirty, false);
+    assert.equal(changed.sourceMatchesStartup, false);
+    assert.equal(changed.restartRequired, true);
+    const page = await fetch(`${url}/index.html`);
+    assert.equal(await page.text(), 'updated page');
+    assert.equal(page.headers.get('cache-control'), 'no-store');
+});
 
 test('local preview server serves Supabase runtime config from local env files', async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-server-'));
@@ -256,6 +332,21 @@ test('local preview server reloads shared public helper modules without requirin
 
     const secondLoad = loadFreshPublicApiHandler(tempRoot);
     assert.equal(secondLoad.version, 'v2');
+});
+
+test('TG API previews reload shared browser/server pricing helpers after edits', (t) => {
+    for (const [entry, load] of [['public', loadFreshPublicApiHandler], ['admin', loadFreshAdminApiHandler]]) {
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-tg-pricing-'));
+        t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+        fs.mkdirSync(path.join(tempRoot, 'api'), { recursive: true });
+        fs.mkdirSync(path.join(tempRoot, 'js'), { recursive: true });
+        const helper = path.join(tempRoot, 'js', 'tg-payment-pricing.js');
+        fs.writeFileSync(path.join(tempRoot, 'api', `${entry}.js`), "module.exports = require('../js/tg-payment-pricing');\n");
+        fs.writeFileSync(helper, 'module.exports = {};\n');
+        assert.equal(load(tempRoot).displayCryptoAmount, undefined);
+        fs.writeFileSync(helper, 'module.exports = { displayCryptoAmount: () => "34.2663" };\n');
+        assert.equal(load(tempRoot).displayCryptoAmount(), '34.2663');
+    }
 });
 
 test('local preview server reloads standalone shop handlers without requiring a restart', () => {

@@ -3343,6 +3343,8 @@ async function createPaymentRequest({
             paidAmount,
             paymentPricing,
             customQuote,
+            expectedFxSnapshotId: body.fx_snapshot_id,
+            payCurrency: body.pay_currency,
             clientIp,
             userAgent
         });
