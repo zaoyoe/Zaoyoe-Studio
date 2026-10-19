@@ -649,7 +649,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /openCartCheckoutModal: function \(\)[\s\S]*openPurchaseModalFromCartEntry: function \(entry\)[\s\S]*confirmCartCheckout: async function \(\)/,
+        /openCartCheckoutModal: async function \(\)[\s\S]*openPurchaseModalFromCartEntry: function \(entry\)[\s\S]*confirmCartCheckout: async function \(\)/,
         'shop-client.js should support single-item cart checkout, multi-item cart checkout review, and sequential cart redemption'
     );
     assert.match(
@@ -734,7 +734,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /confirmCartCheckout: async function \(\) \{[\s\S]*this\.cartCheckoutProcessing = true;[\s\S]*this\.renderCartCheckoutModal\(\);[\s\S]*this\.renderCart\(\);[\s\S]*const token = await this\.getAccessToken\(\);[\s\S]*if \(!token\) \{[\s\S]*this\.cartCheckoutProcessing = false;[\s\S]*this\.renderCartCheckoutModal\(\);[\s\S]*this\.renderCart\(\);[\s\S]*this\.promptLoginForPurchase/s,
+        /confirmCartCheckout: async function \(\) \{[\s\S]*this\.cartCheckoutProcessing = true;[\s\S]*this\.renderCartCheckoutModal\(\);[\s\S]*this\.renderCart\(\);[\s\S]*let token;[\s\S]*try \{\s*token = await this\.getAccessToken\(\);[\s\S]*catch \(_error\) \{[\s\S]*this\.cartCheckoutProcessing = false;[\s\S]*this\.renderCartCheckoutModal\(\);[\s\S]*this\.renderCart\(\);[\s\S]*this\.showShopToast\(this\.getCartCopy\(\)\.authUnavailableToast, \'error\'\);[\s\S]*if \(!token\) \{[\s\S]*this\.cartCheckoutProcessing = false;[\s\S]*this\.renderCartCheckoutModal\(\);[\s\S]*this\.renderCart\(\);[\s\S]*this\.promptLoginForPurchase/s,
         'cart checkout should enter a guarded processing state before waiting for the auth token so backdrop closes cannot win the race'
     );
     assert.match(
@@ -882,10 +882,19 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         /#nextPurchaseStepBtn:hover:not\(:disabled\):not\(\[aria-disabled="true"\]\):not\(\.shop-purchase-sold-out-btn\),\s+#confirmPurchaseBtn:hover:not\(:disabled\):not\(\[aria-disabled="true"\]\)/,
         'purchase modal primary hover styling should only apply to enabled action buttons'
     );
+    const wideDockHoverRule = shopCssSource.match(
+        /#shopPurchaseModal \.shop-purchase-dock #nextPurchaseStepBtn:hover:not\(\.shop-purchase-sold-out-btn\)\s*\{([^}]+)\}/
+    );
+    assert.ok(wideDockHoverRule, 'wide dock purchase button hover should exclude the sold-out button');
     assert.match(
-        shopCssSource,
-        /#shopPurchaseModal \.shop-purchase-dock #nextPurchaseStepBtn:hover:not\(\.shop-purchase-sold-out-btn\)\s*\{[\s\S]*?background:\s*linear-gradient\(135deg,\s*#43d675 0%,\s*#20b957 100%\);/,
-        'wide dock purchase button hover should exclude the sold-out button before applying the green hover background'
+        wideDockHoverRule[1],
+        /border-color:\s*rgba\(49,\s*80,\s*111,\s*0\.22\)/,
+        'wide dock hover should retain its scoped border treatment'
+    );
+    assert.doesNotMatch(
+        wideDockHoverRule[1],
+        /(?:background(?:-image|-color)?|-webkit-text-fill-color)\s*:/,
+        'wide dock hover should keep gradient and text paint stable to avoid a color flash when leaving hover'
     );
     assert.match(
         shopCssSource,

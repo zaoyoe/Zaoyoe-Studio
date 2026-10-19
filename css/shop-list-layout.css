@@ -2666,6 +2666,26 @@ html body.shop-page .shop-main.shop-layout--grid .shop-card-cart-trigger__shell 
     background: transparent;
     color: inherit;
     filter: none;
+    pointer-events: none;
+    transform: translateY(0);
+    transition: color 0.18s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    html body.shop-page .shop-main.shop-layout--grid .shop-card-cart-trigger:hover:not(:disabled):not(.is-disabled):not([aria-disabled="true"]) .shop-card-cart-trigger__shell {
+        color: var(--shop-media-accent);
+        transform: translateY(1px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html body.shop-page .shop-main.shop-layout--grid .shop-card-cart-trigger__shell {
+        transition: none;
+    }
+
+    html body.shop-page .shop-main.shop-layout--grid .shop-card-cart-trigger:hover:not(:disabled):not(.is-disabled):not([aria-disabled="true"]) .shop-card-cart-trigger__shell {
+        transform: none;
+    }
 }
 
 html body.shop-page .shop-main.shop-layout--grid .shop-card-cart-trigger__icon {
@@ -4235,3 +4255,180 @@ body[data-layout-mode="mobile"] .shop-main.shop-layout--grid .shop-card.flash-sa
     display: none !important;
 }
 
+
+/* Loading rows keep the category card at the same rhythm as its filters. */
+.list-category-skeleton {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 42px;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.list-category-skeleton .list-category-skeleton__label {
+    width: 52%;
+    height: 12px;
+    border-radius: 999px;
+}
+
+.list-category-skeleton:nth-child(2n) .list-category-skeleton__label {
+    width: 40%;
+}
+
+.list-category-skeleton:nth-child(3n) .list-category-skeleton__label {
+    width: 32%;
+}
+
+.list-category-skeleton .list-category-skeleton__count {
+    flex: 0 0 28px;
+    height: 22px;
+    border-radius: 999px;
+}
+
+@media (min-width: 821px) {
+    html body.shop-page .shop-main.shop-layout--grid #listCategoryFilters .list-aside__indicator:not([data-placed="1"]) {
+        visibility: hidden;
+    }
+
+    html body.shop-page .shop-main.shop-layout--grid .skeleton-card {
+        min-height: 357px;
+        border-radius: 16px;
+        border-color: #e0e1e6;
+        background: #fff;
+        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.05);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+
+    html[data-theme="dark"] body.shop-page .shop-main.shop-layout--grid .skeleton-card {
+        border-color: rgba(255, 255, 255, 0.14);
+        background: #171d28;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
+    }
+
+    html body.shop-page .shop-main.shop-layout--grid .skeleton-content {
+        margin: 0;
+        padding: 24px;
+        gap: 0;
+    }
+
+    html body.shop-page .shop-main.shop-layout--grid .skeleton-title {
+        height: 19.32px;
+        margin-bottom: 8px;
+    }
+
+    html body.shop-page .shop-main.shop-layout--grid .skeleton-description {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        height: 44px;
+        padding-top: 3px;
+        box-sizing: border-box;
+    }
+
+    html body.shop-page .shop-main.shop-layout--grid .skeleton-desc {
+        height: 10px;
+        margin: 0;
+    }
+
+    html body.shop-page .shop-main.shop-layout--grid .skeleton-chips {
+        display: flex;
+        gap: 6px;
+        height: 21px;
+        margin-top: 10px;
+    }
+
+    html body.shop-page .shop-main.shop-layout--grid .skeleton-chip {
+        width: 68px;
+        height: 21px;
+        border-radius: 999px;
+    }
+
+    html body.shop-page .shop-main.shop-layout--grid .skeleton-chip + .skeleton-chip {
+        width: 56px;
+    }
+
+    html body.shop-page .shop-main.shop-layout--grid .skeleton-footer {
+        align-items: center;
+        padding-top: 20px;
+    }
+
+    html body.shop-page .shop-main.shop-layout--grid .skeleton-price-value {
+        width: 48px;
+        height: 17px;
+        border-radius: 6px;
+    }
+
+    html body.shop-page .shop-main.shop-layout--grid .skeleton-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+    }
+}
+
+/* Requested search control: match the short downward press used by TG. */
+html body.shop-page .shop-main:is(.shop-layout--grid, .shop-layout--list) .list-search-submit {
+    --control-press-hover: 0.85px;
+    --control-press-active: 1.8px;
+    transform: translateY(0);
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+        background-color 150ms ease, border-color 150ms ease,
+        box-shadow 150ms ease, color 150ms ease, filter 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    html body.shop-page .shop-main:is(.shop-layout--grid, .shop-layout--list) .list-search-submit:not(:disabled):not([aria-disabled="true"]):not(.is-disabled):not(.is-loading):not(.is-processing):not(.is-dimmed):not(.shop-purchase-sold-out-btn):hover {
+        transform: translateY(var(--control-press-hover));
+        filter: brightness(1.06);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+    }
+}
+
+html body.shop-page .shop-main:is(.shop-layout--grid, .shop-layout--list) .list-search-submit:not(:disabled):not([aria-disabled="true"]):not(.is-disabled):not(.is-loading):not(.is-processing):not(.is-dimmed):not(.shop-purchase-sold-out-btn):active {
+    transform: translateY(var(--control-press-active));
+    filter: brightness(1.02);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html body.shop-page .shop-main:is(.shop-layout--grid, .shop-layout--list) .list-search-submit,
+    html body.shop-page .shop-main:is(.shop-layout--grid, .shop-layout--list) .list-search-submit:hover,
+    html body.shop-page .shop-main:is(.shop-layout--grid, .shop-layout--list) .list-search-submit:active {
+        transform: none !important;
+        transition: none !important;
+    }
+}
+
+@media (hover: hover) and (pointer: fine) {
+    html body.shop-page .shop-main:is(.shop-layout--grid, .shop-layout--list) .list-search-submit:hover:not(:disabled):not([aria-disabled="true"]) {
+        color: var(--shop-list-on-accent);
+    }
+}
+
+/* Highlight the existing search border, keeping one focus edge in both layouts. */
+html body.shop-page #listSearchForm {
+    transition: border-color 180ms ease;
+}
+
+html body.shop-page #listSearchForm:has(#listSearchInput:focus) {
+    border-color: #a6b5c9 !important;
+}
+
+html[data-theme="dark"] body.shop-page #listSearchForm:has(#listSearchInput:focus) {
+    border-color: rgba(220, 231, 245, 0.34) !important;
+}
+
+html body.shop-page #listSearchInput:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html body.shop-page #listSearchForm {
+        transition: none;
+    }
+}

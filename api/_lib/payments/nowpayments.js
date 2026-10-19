@@ -302,7 +302,8 @@ function verifyNowpaymentsIpnSignature(payload = {}, ipnSecret = '', receivedSig
 async function requestNowpaymentsJson(url, payload, {
     apiKey = '',
     fetchImpl = globalThis.fetch,
-    method = 'POST'
+    method = 'POST',
+    signal
 } = {}) {
     if (typeof fetchImpl !== 'function') {
         throw new Error('fetch is unavailable in this runtime');
@@ -319,6 +320,7 @@ async function requestNowpaymentsJson(url, payload, {
         response = await fetchImpl(String(url || '').trim(), {
             method: normalizedMethod,
             headers,
+            ...(signal ? { signal } : {}),
             body: normalizedMethod === 'GET' ? undefined : JSON.stringify(payload || {})
         });
     } catch (error) {
@@ -358,6 +360,48 @@ function throwNowpaymentsResponseError(response, actionLabel) {
         error.code = status >= 400 && status < 500 ? 'nowpayments_rejected' : 'nowpayments_http_error';
     }
     throw error;
+}
+
+function isNowpaymentsAmountTooSmall(error) {
+    return /amount\s*(?:to|from)?\s+is\s+too\s+small|amount\s+too\s+small|less\s+than\s+(?:the\s+)?minim(?:um|al)|below\s+(?:the\s+)?minimum|金额.*低于.*最低限额/i.test(String(error?.message || ''));
+}
+
+async function queryNowpaymentsMinimum(options = {}, dependencies = {}) {
+    const config = normalizeNowpaymentsConfig(options);
+    const network = require('./usdt-networks').requireNetwork(config.payCurrency);
+    const unavailable = () => Object.assign(new Error('暂时无法获取该网络的 USDT 最低支付金额，请稍后重试'), {
+        code: 'payment_minimum_unavailable', statusCode: 503
+    });
+    if (!config.apiKey) throw unavailable();
+    const url = new URL('/v1/min-amount', config.apiBaseUrl);
+    url.searchParams.set('currency_from', network.currency);
+    // Use the merchant's outcome-wallet routing, as payment creation does.
+    // Explicitly choosing the same payout currency could understate the limit.
+    url.searchParams.set('is_fixed_rate', String(config.isFixedRate));
+    url.searchParams.set('is_fee_paid_by_user', String(config.isFeePaidByUser));
+    let response;
+    try {
+        response = await requestNowpaymentsJson(url.toString(), null, {
+            ...dependencies, apiKey: config.apiKey, method: 'GET',
+            signal: AbortSignal.timeout(5000)
+        });
+    } catch (_) {
+        throw unavailable();
+    }
+    const data = response.data;
+    const amount = Number(data?.min_amount);
+    if (!response.ok || data?.currency_from !== network.currency
+        || !['number', 'string'].includes(typeof data?.min_amount)
+        || !Number.isFinite(amount) || amount <= 0) throw unavailable();
+    return {
+        network: network.currency,
+        network_name: network.name,
+        currency: 'USDT',
+        // Storefront crypto requests and displayed amounts use two decimals.
+        // Round up so a buyer paying the displayed minimum clears the limit.
+        amount: formatNowpaymentsPayAmount(amount, config.payAmountPrecision),
+        provider_min_amount: String(data.min_amount)
+    };
 }
 
 async function createNowpaymentsInvoice(options = {}, dependencies = {}) {
@@ -510,9 +554,11 @@ module.exports = {
     createNowpaymentsInvoice,
     createNowpaymentsPayment,
     formatNowpaymentsPayAmount,
+    isNowpaymentsAmountTooSmall,
     normalizeNowpaymentsConfig,
     normalizeNowpaymentsPaymentStatus,
     queryNowpaymentsPayment,
+    queryNowpaymentsMinimum,
     requestNowpaymentsJson,
     resolveNowpaymentsPaymentEstimateUrl,
     resolveNowpaymentsPaymentStatusUrl,

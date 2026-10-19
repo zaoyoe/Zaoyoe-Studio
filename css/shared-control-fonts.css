@@ -1,0 +1,11 @@
+/* Native form controls keep their own browser font unless it is explicitly
+   inherited. Match each page's typography without changing size or metrics.
+   Zero specificity lets existing code, icon and display fonts keep priority. */
+:where(button, input, select, textarea) {
+    font-family: inherit;
+}
+
+:where(input, textarea)::placeholder,
+:where(input)::file-selector-button {
+    font-family: inherit;
+}

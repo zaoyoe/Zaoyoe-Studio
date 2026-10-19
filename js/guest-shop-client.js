@@ -45,6 +45,8 @@
     });
     const POLL_MAX_MS = 15 * 60 * 1000;
     const PREVIEW_ENDPOINT = '/api/shop/guest/preview';
+    const PREVIEW_TIMEOUT_MS = 12000;
+    const PREVIEW_RETRY_DELAY_MS = 400;
     const ORDER_ENDPOINT = '/api/shop/guest/orders';
     const STATUS_ENDPOINT = '/api/shop/guest/status';
     const CLAIM_ENDPOINT = '/api/shop/guest/claim';
@@ -53,6 +55,7 @@
     const BATCH_CLAIM_ENDPOINT = '/api/shop/guest/checkout-batches/claim';
     const BATCH_CANCEL_ENDPOINT = '/api/shop/guest/checkout-batches/cancel';
     const CANCEL_ENDPOINT = '/api/shop/guest/cancel';
+    const USDT_MINIMUM_ENDPOINT = '/api/payments/minimum';
 
     // ---------------------------------------------------------------------
     // Promo L1/L2 client-side mirrors of api/_lib/guest-shop/{security,promo}.js.
@@ -288,6 +291,11 @@
         if (!modal || modal.hidden) return;
         if (event.key === 'Escape') {
             event.preventDefault();
+            if (element('guestCashOrderPasswordHelp')?.hidden === false) {
+                event.stopPropagation?.();
+                closeOrderPasswordHelp();
+                return;
+            }
             closeGuestModal();
             return;
         }
@@ -752,25 +760,21 @@
                 if (node) node.disabled = Boolean(locked);
             });
         const paymentOptions = element('guestCashPaymentOptions');
-        if (paymentOptions) {
-            const selectedKey = normalizeText(element('guestCashPaymentChannel')?.value, 160);
-            Array.from(paymentOptions.querySelectorAll('[role="radio"]'))
-                .forEach((radio) => {
-                    const sameRetryChannel = retryKey
-                        && paymentKey(radio.dataset.provider, radio.dataset.channel) === retryKey;
-                    radio.disabled = Boolean(
-                        state.requestInFlight
-                        || state.checkoutIntentInspectInFlight
-                        || (state.batchMode && (state.previewPending || !(state.batchTotal > 0)))
-                        || (retryKey ? !sameRetryChannel : locked)
-                    );
-                    const disabled = radio.disabled;
-                    radio.setAttribute('aria-disabled', disabled ? 'true' : 'false');
-                    const loading = state.requestInFlight
-                        && paymentKey(radio.dataset.provider, radio.dataset.channel) === selectedKey;
-                    radio.classList.toggle('is-loading', loading);
-                    radio.setAttribute('aria-busy', loading ? 'true' : 'false');
-                });
+        const networkOptions = element('guestCashUsdtNetworks');
+        [paymentOptions, networkOptions].forEach(group => {
+            Array.from(group?.querySelectorAll('[role="radio"]') || []).forEach(radio => {
+                radio.disabled = Boolean(locked);
+                radio.setAttribute('aria-disabled', String(radio.disabled));
+            });
+        });
+        const submit = element('guestCashCreateOrderBtn');
+        if (submit) {
+            submit.hidden = Boolean(retryKey);
+            submit.disabled = Boolean(locked || !element('guestCashPaymentChannel')?.value);
+            submit.classList.toggle('is-loading', state.requestInFlight);
+            submit.setAttribute('aria-busy', String(state.requestInFlight));
+            const label = submit.querySelector('.guest-shop-modal__submit-label');
+            if (label) label.textContent = isRestartableTerminalOrder() ? '重新下单' : '确认并付款';
         }
         const contact = element('guestCashContact');
         if (contact) contact.disabled = Boolean(locked && !resumeNeedsCredentials);
@@ -795,6 +799,11 @@
         applyActionPolicy('guestCashAbandonOrderBtn', policy.abandon, '取消中...');
         applyActionPolicy('guestCashResumeIntentBtn', policy.resumeIntent, '确认中...');
         applyActionPolicy('guestCashDiscardIntentBtn', policy.discardIntent, '取消中...');
+        const retryPreview = element('guestCashRetryPreviewBtn');
+        if (retryPreview) {
+            retryPreview.hidden = !state.previewError || state.previewPending || Boolean(state.orderNo || state.checkout);
+            retryPreview.disabled = state.previewPending || state.requestInFlight;
+        }
         syncConfigureControls();
     }
 
@@ -1135,7 +1144,90 @@
         return payload;
     }
 
+    // Only quotes are replayed automatically. A dropped response to a payment
+    // write must keep using the checkout-intent recovery flow below.
+    async function requestPreview(url, isCurrent) {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            if (!isCurrent()) return null;
+            try {
+                return await requestJson(url, {
+                    method: 'GET',
+                    signal: globalThis.AbortSignal?.timeout?.(PREVIEW_TIMEOUT_MS)
+                });
+            } catch (error) {
+                const transient = [408, 502, 503, 504].includes(error?.status)
+                    || ['TypeError', 'TimeoutError', 'AbortError'].includes(error?.name);
+                // In particular, never spend another request on 429: preview's
+                // per-IP rate budget is shared by other buyers and cart items.
+                if (!transient || attempt > 0 || !isCurrent()) throw error;
+                await new Promise((resolve) => window.setTimeout(resolve, PREVIEW_RETRY_DELAY_MS));
+            }
+        }
+        return null;
+    }
+
+    function previewFailureMessage(error) {
+        return ['TypeError', 'TimeoutError', 'AbortError'].includes(error?.name)
+            ? '商品金额暂时无法加载，请检查网络后重试。'
+            : (error?.message || '商品金额暂时无法加载，请重试。');
+    }
+
+    function retryGuestPreview() {
+        if (!state.previewError || state.previewPending || state.requestInFlight
+            || state.orderNo || state.checkout || getModal()?.hidden) return;
+        const context = state.batchMode ? null : getPurchaseContext();
+        if (!state.batchMode && !context) return;
+        invalidatePreviewQuote();
+        state.previewError = false;
+        state.previewPending = true;
+        setStateMessage('', 'configure');
+        renderPayableSummary();
+        if (state.batchMode) void loadBatchPreview();
+        else void refreshPreview(context);
+    }
+
+    const usdtNetworkIcons = { usdtbsc: 'bsc', usdtton: 'ton', usdtmatic: 'polygon', usdttrc20: 'tron' };
     const usdtNetworkNames = { usdtbsc: 'BSC (BEP20)', usdtton: 'TON', usdtmatic: 'Polygon', usdttrc20: 'TRON (TRC20)' };
+    let lastUsdtPaymentKey = '';
+    function showUsdtMinimumToast(message) {
+        window.ShopClient?.showShopToast?.(message, 'payment-minimum');
+    }
+
+    async function validateUsdtMinimum(payment, isCurrent) {
+        if (payment.provider !== 'nowpayments') return true;
+        const site = normalizeSite(state.site || window.SiteConfig?.site);
+        const amount = computePreviewPricing().payableAmount;
+        const view = state.viewGeneration;
+        const quote = state.quoteGeneration;
+        const current = () => isCurrent() && view === state.viewGeneration && quote === state.quoteGeneration
+            && selectedPayment().provider === payment.provider && selectedPayment().channel === payment.channel
+            && computePreviewPricing().payableAmount === amount;
+        try {
+            if (!(amount > 0)) throw new Error('订单金额尚未就绪，请重新核对');
+            const payload = await requestJson(`${USDT_MINIMUM_ENDPOINT}?site=${encodeURIComponent(site)}&channel=${encodeURIComponent(payment.channel)}&amount_cny=${amount.toFixed(2)}`, {
+                signal: globalThis.AbortSignal?.timeout?.(7000)
+            });
+            if (!current()) return false;
+            const minimum = payload?.minimum;
+            const check = payload?.check;
+            if (payload.site !== site || minimum?.network !== payment.channel || minimum.currency !== 'USDT'
+                || !/^\d+(?:\.\d{1,2})?$/.test(String(minimum.amount)) || !(Number(minimum.amount) > 0)
+                || !(Date.parse(minimum.expires_at) > Date.now()) || check?.amount_cny !== amount.toFixed(2)
+                || !/^\d+\.\d{2}$/.test(check?.pay_amount || '') || !(Number(check.pay_amount) > 0)
+                || check.below_minimum !== (Number(check.pay_amount) < Number(minimum.amount))) {
+                throw new Error('暂时无法核对该网络的最低支付金额，请稍后重试');
+            }
+            if (check.below_minimum) {
+                showUsdtMinimumToast(`${usdtNetworkNames[payment.channel]} 最低支付 ${minimum.amount} USDT，请增加订单金额或选择支付宝`);
+                return false;
+            }
+            return true;
+        } catch (error) {
+            if (current()) showUsdtMinimumToast(error?.message || '最低支付金额查询失败，请稍后重试');
+            return false;
+        }
+    }
+
     function normalizePaymentOptions(channels) {
         const result = [];
         const seen = new Set();
@@ -1198,11 +1290,31 @@
 
     function syncPaymentOptionState(container, selectedKey) {
         if (!container) return;
+        const isUsdt = selectedKey.startsWith('nowpayments:');
+        if (isUsdt) lastUsdtPaymentKey = selectedKey;
         Array.from(container.querySelectorAll('[role="radio"]')).forEach((radio) => {
-            const selected = radio.dataset.paymentKey === selectedKey;
+            const isUsdtMethod = radio.dataset.paymentMethod === 'usdt';
+            const selected = isUsdtMethod ? isUsdt : radio.dataset.paymentKey === selectedKey;
+            if (isUsdtMethod) {
+                radio.dataset.paymentKey = lastUsdtPaymentKey || radio.dataset.paymentKey;
+                radio.dataset.channel = radio.dataset.paymentKey.split(':')[1];
+                radio.setAttribute('aria-expanded', String(isUsdt));
+            }
             radio.setAttribute('aria-checked', selected ? 'true' : 'false');
             radio.tabIndex = selected ? 0 : -1;
         });
+        const networks = element('guestCashUsdtNetworks');
+        Array.from(networks?.querySelectorAll('[role="radio"]') || []).forEach(radio => {
+            const selected = radio.dataset.paymentKey === lastUsdtPaymentKey;
+            radio.setAttribute('aria-checked', String(selected));
+            radio.tabIndex = selected ? 0 : -1;
+        });
+        const panel = element('guestCashUsdtNetworkPanel');
+        if (panel) {
+            panel.classList.toggle('is-expanded', isUsdt);
+            panel.setAttribute('aria-hidden', String(!isUsdt));
+            panel.inert = !isUsdt;
+        }
     }
 
     function paymentKey(provider, channel) {
@@ -1221,10 +1333,11 @@
         if (!select || !container) return;
         const option = Array.from(select.options || []).find((item) => item.value === key);
         if (!option) return;
+        const changed = select.value !== key;
         select.value = key;
         syncPaymentOptionState(container, key);
-        if (focus) container.querySelector(`[data-payment-key="${key}"]`)?.focus();
-        handlePaymentChannelChange();
+        if (focus) (container.querySelector(`[data-payment-key="${key}"]`) || element('guestCashUsdtNetworks')?.querySelector(`[data-payment-key="${key}"]`))?.focus();
+        if (changed) handlePaymentChannelChange();
     }
 
     function handlePaymentOptionClick(option) {
@@ -1243,10 +1356,14 @@
     function renderPaymentOptions(options) {
         const select = element('guestCashPaymentChannel');
         const container = element('guestCashPaymentOptions');
-        if (!select || !container) return;
+        const networks = element('guestCashUsdtNetworks');
+        if (!select || !container || !networks) return;
         const previousKey = select.value;
         select.textContent = '';
         container.textContent = '';
+        networks.textContent = '';
+        const usdtOptions = options.filter(option => option.provider === 'nowpayments' && Object.hasOwn(usdtNetworkNames, option.channel));
+        if (!usdtOptions.some(option => option.key === lastUsdtPaymentKey)) lastUsdtPaymentKey = usdtOptions[0]?.key || '';
         options.forEach((option) => {
             const item = document.createElement('option');
             item.value = option.key;
@@ -1254,22 +1371,30 @@
             item.dataset.channel = option.channel;
             item.textContent = paymentLabel(option);
             select.appendChild(item);
-
+        });
+        function addChoice(option, group, { usdtMethod = false, network = false } = {}) {
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'guest-shop-modal__payment-option';
+            button.className = network ? 'guest-shop-modal__network-option' : 'guest-shop-modal__payment-option';
             button.dataset.paymentKey = option.key;
             button.dataset.provider = option.provider;
             button.dataset.channel = option.channel;
+            if (usdtMethod) {
+                button.dataset.paymentMethod = 'usdt';
+                button.setAttribute('aria-controls', 'guestCashUsdtNetworkPanel');
+                button.setAttribute('aria-expanded', 'false');
+            }
             button.setAttribute('role', 'radio');
-            button.setAttribute('aria-label', paymentLabel(option));
+            const name = usdtMethod ? 'USDT' : network ? usdtNetworkNames[option.channel] : paymentLabel(option);
+            button.setAttribute('aria-label', name);
             const icon = document.createElement('span');
             icon.className = 'guest-shop-modal__payment-icon';
             icon.setAttribute('aria-hidden', 'true');
-            const isTether = option.provider === 'nowpayments' && Object.hasOwn(usdtNetworkNames, option.channel);
+            const isTether = option.provider === 'nowpayments';
             const iconGlyph = document.createElement(isTether ? 'img' : 'i');
             if (isTether) {
                 iconGlyph.src = 'assets/tether-mark.svg';
+                if (network) iconGlyph.src = `assets/tg-network-icons/${usdtNetworkIcons[option.channel]}.svg`;
                 iconGlyph.alt = '';
             } else {
                 iconGlyph.className = paymentIcon(option);
@@ -1277,19 +1402,16 @@
             icon.appendChild(iconGlyph);
             const label = document.createElement('span');
             label.className = 'guest-shop-modal__payment-name';
-            label.textContent = paymentLabel(option);
-            const loading = document.createElement('span');
-            loading.className = 'guest-shop-modal__payment-loading';
-            loading.setAttribute('aria-hidden', 'true');
-            loading.innerHTML = '<i></i><i></i><i></i>';
-            button.append(icon, label, loading);
+            label.textContent = name;
+            button.append(icon, label);
             button.addEventListener('click', () => {
                 if (button.disabled) return;
-                handlePaymentOptionClick(option);
+                selectPaymentOption(usdtMethod ? lastUsdtPaymentKey : option.key);
             });
             button.addEventListener('keydown', (event) => {
-                const radios = Array.from(container.querySelectorAll('[role="radio"]'));
+                const radios = Array.from(group.querySelectorAll('[role="radio"]')).filter(radio => !radio.disabled);
                 const currentIndex = radios.indexOf(button);
+                if (currentIndex < 0 || !radios.length) return;
                 let nextIndex = currentIndex;
                 if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % radios.length;
                 else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + radios.length) % radios.length;
@@ -1297,13 +1419,20 @@
                 else if (event.key === 'End') nextIndex = radios.length - 1;
                 else return;
                 event.preventDefault();
-                selectPaymentOption(radios[nextIndex].dataset.paymentKey, { focus: true });
+                const next = radios[nextIndex];
+                selectPaymentOption(next.dataset.paymentMethod === 'usdt' ? lastUsdtPaymentKey : next.dataset.paymentKey);
+                next.focus();
             });
-            container.appendChild(button);
-        });
+            group.appendChild(button);
+        }
+        options.filter(option => !usdtOptions.includes(option)).forEach(option => addChoice(option, container));
+        if (usdtOptions.length) {
+            addChoice(usdtOptions.find(option => option.key === lastUsdtPaymentKey), container, { usdtMethod: true });
+            usdtOptions.forEach(option => addChoice(option, networks, { network: true }));
+        }
         const selectedKey = options.some((option) => option.key === previousKey)
             ? previousKey
-            : (options[0]?.key || '');
+            : (options.find(option => option.channel === 'alipay')?.key || options[0]?.key || '');
         if (selectedKey) select.value = selectedKey;
         select.disabled = options.length === 0;
         syncPaymentOptionState(container, selectedKey);
@@ -1624,7 +1753,24 @@
         }
     }
 
+    let orderPasswordHelpPinned = false;
+
+    function setOrderPasswordHelpOpen(open) {
+        const help = element('guestCashOrderPasswordHelp');
+        const button = element('guestCashOrderPasswordInfoBtn');
+        if (!help || !button) return;
+        if (open) syncOrderPasswordChecks();
+        help.hidden = !open;
+        button.setAttribute('aria-expanded', String(open));
+    }
+
+    function closeOrderPasswordHelp() {
+        orderPasswordHelpPinned = false;
+        setOrderPasswordHelpOpen(false);
+    }
+
     function clearOrderPassword() {
+        closeOrderPasswordHelp();
         const input = orderPasswordInput();
         if (input) input.value = '';
         state.generatedOrderPassword = '';
@@ -1725,7 +1871,7 @@
         const input = orderPasswordInput();
         const current = foldQueryPassword(input?.value || '');
         if (!current || current !== state.generatedOrderPassword) {
-            setOrderPasswordNote('该查询密码强度不足，请点击「帮我生成」换一个。请妥善保存后再次点击付款方式。');
+            setOrderPasswordNote('该查询密码强度不足，请点击「帮我生成」换一个。请妥善保存后再次点击“确认并付款”。');
             syncOrderPasswordChecks();
             return;
         }
@@ -2135,7 +2281,7 @@
                 void loadPreview(context).then((result) => {
                     if (result.available && !state.requestInFlight && !state.orderNo) {
                         state.acknowledgedQuote = currentQuoteFingerprint(context);
-                        setStateMessage('商品报价已变化，请核对新的应付金额后再次点击付款方式。', 'configure');
+                        setStateMessage('商品报价已变化，请核对新的应付金额后再次点击“确认并付款”。', 'configure');
                     }
                 });
             }
@@ -2277,7 +2423,7 @@
             quantity: String(request.quantity)
         });
         try {
-            const payload = await requestJson(`${PREVIEW_ENDPOINT}?${query.toString()}`, { method: 'GET' });
+            const payload = await requestPreview(`${PREVIEW_ENDPOINT}?${query.toString()}`, () => isCurrentPreviewRequest(request));
             if (!isCurrentPreviewRequest(request)) return { available: false, reason: 'stale' };
             const available = renderPreview(context, payload, {
                 // A forced quote is compared with the quote the buyer already
@@ -2306,7 +2452,7 @@
             // worse outcome than showing '-' for a moment.
             state.listSubtotal = null;
             renderPayableSummary();
-            if (!getModal()?.hidden) setStateMessage(error.message || '游客支付暂不可用', 'error');
+            if (!getModal()?.hidden) setStateMessage(previewFailureMessage(error), 'error');
             const reason = error.status === 429
                 ? 'rate_limited'
                 : (error.code === 'guest_product_unavailable' ? 'unavailable' : 'preview_error');
@@ -2317,9 +2463,11 @@
                 quantityCap: quantityCapValue()
             };
         } finally {
-            state.previewPending = false;
-            renderPayableSummary();
-            renderGuestActions();
+            if (isCurrentPreviewRequest(request)) {
+                state.previewPending = false;
+                renderPayableSummary();
+                renderGuestActions();
+            }
         }
     }
 
@@ -2593,6 +2741,7 @@
         state.provider = '';
         state.channel = '';
         state.previewPending = true;
+        state.previewError = false;
         state.status = 'configure';
         state.productId = '';
         state.skuId = '';
@@ -2616,18 +2765,34 @@
         setStateMessage('', 'configure');
         setModalReturnFocusTarget(returnFocusTarget);
         openGuestModal(null);
-        const quoteGeneration = state.viewGeneration;
+        return loadBatchPreview();
+    }
+
+    async function loadBatchPreview() {
+        const normalized = normalizeBatchEntries(state.batchEntries);
+        const site = state.site;
+        const viewGeneration = state.viewGeneration;
+        const quoteGeneration = state.quoteGeneration;
+        const isCurrent = () => viewGeneration === state.viewGeneration
+            && quoteGeneration === state.quoteGeneration && state.batchMode && !state.orderNo;
+        state.previewPending = true;
+        state.previewError = false;
+        state.batchTotal = null;
+        state.listSubtotal = null;
+        state.batchPreviewPricing = null;
+        setStateMessage('', 'configure');
+        renderPayableSummary();
         try {
             const quotes = await Promise.all(normalized.map((entry) => {
                 const query = new URLSearchParams({
-                    site: state.site,
+                    site,
                     productId: entry.productId,
                     skuId: entry.skuId,
                     quantity: String(entry.quantity)
                 });
-                return requestJson(`${PREVIEW_ENDPOINT}?${query.toString()}`, { method: 'GET' });
+                return requestPreview(`${PREVIEW_ENDPOINT}?${query.toString()}`, () => isCurrent() && state.previewPending);
             }));
-            if (quoteGeneration !== state.viewGeneration || !state.batchMode || state.orderNo) {
+            if (!isCurrent()) {
                 return { started: true, reason: 'stale' };
             }
             const cents = quotes.reduce((total, quote, index) => {
@@ -2655,15 +2820,20 @@
             renderPayableSummary();
             setStateMessage('', 'configure');
         } catch (error) {
-            if (quoteGeneration !== state.viewGeneration || !state.batchMode || state.orderNo) {
+            if (!isCurrent()) {
                 return { started: true, reason: 'stale' };
             }
             state.previewPending = false;
+            state.previewError = true;
+            state.batchTotal = null;
+            state.listSubtotal = null;
+            state.batchPreviewPricing = null;
             // A failed quote is no longer a loading state. Set the terminal
             // message first so the summary changes from ￥0.00 to '-' instead
             // of leaving a disabled payment option looking in progress.
-            setStateMessage(error?.message || '购物车商品报价暂不可用，请稍后重试。', 'error');
+            setStateMessage(previewFailureMessage(error), 'error');
             renderPayableSummary();
+            return { started: true, reason: 'preview_error' };
         }
         return { started: true, reason: 'available' };
     }
@@ -2703,7 +2873,12 @@
         state.status = 'creating';
         setStateMessage('', 'creating');
         renderGuestActions();
+        const viewGeneration = state.viewGeneration;
         try {
+            if (!await validateUsdtMinimum(payment, () => viewGeneration === state.viewGeneration && state.batchMode)) {
+                if (viewGeneration === state.viewGeneration) setStateMessage('', 'configure');
+                return;
+            }
             const requestBody = {
                 site: normalizeSite(window.SiteConfig?.site),
                 provider: payment.provider,
@@ -2755,6 +2930,7 @@
             startPolling();
         } catch (error) {
             if (error?.code === 'guest_password_weak') void refreshRejectedOrderPassword();
+            if (payment.provider === 'nowpayments' && /最低.*USDT/u.test(error?.message || '')) showUsdtMinimumToast(error.message);
             setStateMessage(error?.message || '购物车批量结算失败，请清理库存不足商品后重试。', 'error');
         } finally {
             state.requestInFlight = false;
@@ -3406,7 +3582,7 @@
             if (hadUnresolvedIntent && isModalVisible()) {
                 state.status = 'configure';
                 setHidden('guestCashConfigurePanel', false);
-                setStateMessage('未找到可恢复的原订单，请重新确认报价后点击付款方式。', 'configure');
+                setStateMessage('未找到可恢复的原订单，请重新核对报价后点击“确认并付款”。', 'configure');
             }
             return null;
         } catch (error) {
@@ -3419,7 +3595,7 @@
             if (fallback) {
                 fallback.unresolved = true;
                 applyPendingCheckoutIntent(fallback, {
-                    message: '暂时无法确认未完成订单。请稍后再次点击原付款方式确认；不要重新付款。'
+                    message: '暂时无法确认未完成订单。请稍后点击“确认原订单结果”；不要重复付款。'
                 });
             } else if (isModalVisible()) {
                 state.status = 'error';
@@ -4217,7 +4393,7 @@
                 const email = normalizeText(element('guestCashContact')?.value, 160);
                 if (attempt.requiresEmail && (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email))) {
                     setHidden('guestCashConfigurePanel', false);
-                    setStateMessage('请填写创建原订单时使用的邮箱，再次点击原付款方式确认。', 'payment_creation_unknown');
+                    setStateMessage('请填写创建原订单时使用的邮箱，再点击“确认原订单结果”。', 'payment_creation_unknown');
                     return;
                 }
                 if (email) body.email = email;
@@ -4258,9 +4434,14 @@
                     state.acknowledgedQuote = refreshedQuoteFingerprint;
                     state.requestInFlight = false;
                     renderGuestActions();
-                    setStateMessage('商品报价已变化，请核对新的应付金额后再次点击付款方式。', 'configure');
+                    setStateMessage('商品报价已变化，请核对新的应付金额后再次点击“确认并付款”。', 'configure');
                     return;
                 }
+                if (!await validateUsdtMinimum(payment, () => isCurrentAction(operation))) {
+                    if (isCurrentAction(operation)) setStateMessage('', 'configure');
+                    return;
+                }
+                if (!isCurrentAction(operation)) return;
                 const email = normalizeText(element('guestCashContact')?.value, 160);
                 if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
                     setStateMessage('邮箱格式不正确', 'error');
@@ -4284,7 +4465,7 @@
                 if (discountCode && !isDiscountCodeFormat(discountCode)) {
                     setDiscountInvalid(true);
                     syncDiscountHint();
-                    setStateMessage('优惠码格式不正确，请修改后再次点击付款方式', 'error');
+                    setStateMessage('优惠码格式不正确，请修改后再次点击“确认并付款”', 'error');
                     discountCodeInput()?.focus();
                     return;
                 }
@@ -4444,6 +4625,7 @@
                 }
                 return;
             }
+            if (!unknownResult && /最低.*USDT/u.test(error?.message || '')) showUsdtMinimumToast(error.message);
             state.paymentCreationUnknown = unknownResult;
             state.status = unknownResult ? 'payment_creation_unknown' : 'error';
             if (!unknownResult) {
@@ -4464,9 +4646,9 @@
                 unknownResult
                     ? (state.orderNo
                         ? '支付创建结果暂时无法确认。请先查询状态；离开后可从商城页“订单查询”继续。不要重复付款。'
-                        : '支付创建结果暂时无法确认。请再次点击原付款方式，系统只会重放同一笔请求；不要重新付款。')
+                        : '支付创建结果暂时无法确认。请点击“确认原订单结果”，系统只会重放同一笔请求；不要重复付款。')
                     : (error?.code === 'guest_checkout_quote_changed'
-                        ? '商品报价已变化，请核对新的应付金额后再次点击付款方式。'
+                        ? '商品报价已变化，请核对新的应付金额后再次点击“确认并付款”。'
                         : (error?.code === 'guest_contact_storage_unavailable'
                             ? '邮箱联系信息暂不可用，本次没有创建新订单，请稍后重试。'
                             : (discountRejected
@@ -5248,9 +5430,31 @@
     function handleGuestModalClick(event) {
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
+        if (!target.closest('#guestCashOrderPasswordInfo')) closeOrderPasswordHelp();
+        const passwordInfoButton = target.closest('#guestCashOrderPasswordInfoBtn');
+        if (passwordInfoButton) {
+            event.preventDefault();
+            orderPasswordHelpPinned = !orderPasswordHelpPinned;
+            setOrderPasswordHelpOpen(orderPasswordHelpPinned);
+            return;
+        }
         if (target === getModal()) {
             event.preventDefault();
             closeGuestModal();
+            return;
+        }
+        if (target.closest('#guestCashRetryPreviewBtn')) {
+            event.preventDefault();
+            retryGuestPreview();
+            return;
+        }
+        const createButton = target.closest('#guestCashCreateOrderBtn');
+        if (createButton) {
+            event.preventDefault();
+            if (!createButton.disabled) {
+                const payment = selectedPayment();
+                handlePaymentOptionClick({ ...payment, key: paymentKey(payment.provider, payment.channel) });
+            }
             return;
         }
         const resumeIntentButton = target.closest('#guestCashResumeIntentBtn');
@@ -5454,6 +5658,18 @@
         document.addEventListener('keydown', handleGuestModalKeydown);
         element('guestCashPaymentChannel')?.addEventListener('change', handlePaymentChannelChange);
         element('guestCashOrderPassword')?.addEventListener('input', handleOrderPasswordInput);
+        const passwordInfo = element('guestCashOrderPasswordInfo');
+        passwordInfo?.addEventListener('pointerenter', (event) => {
+            if (event.pointerType !== 'touch') setOrderPasswordHelpOpen(true);
+        });
+        passwordInfo?.addEventListener('pointerleave', () => {
+            if (!orderPasswordHelpPinned) setOrderPasswordHelpOpen(false);
+        });
+        passwordInfo?.addEventListener('focusin', () => setOrderPasswordHelpOpen(true));
+        passwordInfo?.addEventListener('focusout', (event) => {
+            if (!event.relatedTarget?.closest?.('#guestCashOrderPasswordInfo')) closeOrderPasswordHelp();
+        });
+        closeOrderPasswordHelp();
         // L1/L2. `input` drives the live format hint and the uppercase fold;
         // `change` is bound too so a stepper value committed by autofill or a
         // browser "undo" still re-quotes. The discount code is never wired to a

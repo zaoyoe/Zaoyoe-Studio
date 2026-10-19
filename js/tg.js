@@ -1539,6 +1539,36 @@
             }
         } finally { $('tgPurchaseClose').disabled = false; }
     }
+    let minimumToastTimer = null;
+    let minimumToastClearTimer = null;
+    function showPaymentMinimumToast(message) {
+        const toast = $('tgPaymentMinimumToast');
+        if (!toast) return;
+        globalScope.clearTimeout(minimumToastTimer);
+        globalScope.clearTimeout(minimumToastClearTimer);
+        toast.textContent = message;
+        toast.classList.add('is-visible');
+        minimumToastTimer = globalScope.setTimeout(() => {
+            toast.classList.remove('is-visible');
+            minimumToastClearTimer = globalScope.setTimeout(() => { toast.textContent = ''; }, 300);
+        }, 3600);
+    }
+    function purchaseMeetsUsdtMinimum(quote) {
+        if (quote.payment_channel !== 'usdt_bep20') return true;
+        const minimum = quote.usdt_minimum;
+        const network = quote.pay_currency || 'usdtbsc';
+        if (minimum?.network !== network || minimum.currency !== 'USDT'
+            || !/^\d+(?:\.\d{1,2})?$/.test(String(minimum.amount)) || !(Number(minimum.amount) > 0)
+            || !(Date.parse(minimum.expires_at) > Date.now())) {
+            throw new Error('暂时无法核对该网络的最低支付金额，请稍后重试。尚未创建支付订单。');
+        }
+        if (Number(quote.usdt_pay_amount) < Number(minimum.amount)) {
+            const names = { usdtbsc: 'BSC (BEP20)', usdtton: 'TON', usdtmatic: 'Polygon', usdttrc20: 'TRON (TRC20)' };
+            showPaymentMinimumToast(`${names[network]} 最低支付 ${minimum.amount} USDT，请增加购买金额或选择支付宝`);
+            return false;
+        }
+        return true;
+    }
     async function quotePurchase(event) {
         event.preventDefault(); if (purchaseBusy || catalogState === 'loading') return;
         if (catalogState === 'error') { await loadCatalog(); return; }
@@ -1572,6 +1602,7 @@
                 await loadCatalog();
                 throw new Error('USDT 售价已更新，请核对商品页最新金额后重新确认。');
             }
+            if (!purchaseMeetsUsdtMinimum(quote)) { setMessage($('tgPurchaseMessage'), ''); return; }
             purchaseQuote = { ...quote, username, channel, ...(channel === 'usdt_bep20' ? { pay_currency: quote.pay_currency || 'usdtbsc' } : {}) };
             purchaseFreshQuote = purchaseQuote;
             renderPurchaseQuoteSummary(purchaseQuote);

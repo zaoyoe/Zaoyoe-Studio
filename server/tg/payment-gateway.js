@@ -118,6 +118,10 @@ function createTgPaymentGateway({ env = process.env, fetchImpl = globalThis.fetc
             if (channel !== CRYPTO_CHANNEL || !configuredChannels().includes(channel)) throw failure();
             return nowpayments.quotePayment({ totalMinor, fxSnapshot });
         },
+        minimumPayment({ channel, payCurrency } = {}) {
+            if (channel !== CRYPTO_CHANNEL || !configuredChannels().includes(channel)) throw failure();
+            return nowpayments.minimumPayment({ payCurrency });
+        },
         async canCancel({ order } = {}) {
             if (order?.payment_provider === 'nowpayments') return nowpayments.canCancel({ order });
             return await queryPayment({ order }) === null;

@@ -33,6 +33,8 @@ const {
     convertCnyAmountToPriceAmount,
     createNowpaymentsPayment,
     formatNowpaymentsPayAmount,
+    isNowpaymentsAmountTooSmall,
+    queryNowpaymentsMinimum,
     normalizeNowpaymentsConfig,
     normalizeNowpaymentsPaymentStatus,
     queryNowpaymentsPayment,
@@ -87,14 +89,14 @@ function isDefinitiveNowpaymentsCreateRejection(error) {
     const code = String(error?.code || '').trim().toLowerCase();
     if (code === 'nowpayments_rejected') return true;
     const message = String(error?.message || '');
-    return /amountto is too small|too small|not allowed|bad_request/i.test(message);
+    return isNowpaymentsAmountTooSmall(error) || /too small|not allowed|bad_request/i.test(message);
 }
 
 function mapNowpaymentsCreateError(error) {
     if (error instanceof GuestShopPaymentError) return error;
     if (!isDefinitiveNowpaymentsCreateRejection(error)) return error;
     const rawMessage = String(error?.message || '').trim();
-    const message = /amount(to|from) is too small/i.test(rawMessage)
+    const message = isNowpaymentsAmountTooSmall(error)
         ? '金额低于 NOWPayments 最低限额，无法创建支付'
         : (rawMessage || 'NOWPayments 拒绝创建支付');
     const status = Number(error?.statusCode || 0);
@@ -1171,7 +1173,22 @@ function createGuestShopPaymentAdapter({
                 orderDescription: title
             }, fetchDependencies);
         } catch (error) {
-            throw mapNowpaymentsCreateError(error);
+            const mapped = mapNowpaymentsCreateError(error);
+            if (mapped instanceof GuestShopPaymentError && isNowpaymentsAmountTooSmall(error)) {
+                // The provider has definitively rejected creation. This GET
+                // cannot create a payment or turn an unknown result into a retry.
+                try {
+                    const minimum = await queryNowpaymentsMinimum({
+                        channelConfig: context.channelConfig,
+                        secretValues: context.secretValues,
+                        env
+                    }, fetchDependencies);
+                    mapped.message = `${minimum.network_name} 最低支付 ${minimum.amount} USDT，本订单金额低于最低限额，请增加订单金额或选择支付宝。`;
+                } catch (_) {
+                    mapped.message = '该网络的 USDT 支付金额低于渠道最低限额，暂时无法获取具体门槛，请稍后重试或选择支付宝。';
+                }
+            }
+            throw mapped;
         }
         const payload = result.response?.data && typeof result.response.data === 'object' ? result.response.data : {};
         if (fxSnapshot || context.integration.payCurrency !== 'usdtbsc') {

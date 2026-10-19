@@ -201,7 +201,7 @@ test('wallet recharge styles include visible processing states', () => {
     assert.match(styles, /\.wallet-recharge-brand-icon--usdt/);
     assert.match(styles, /\.custom-recharge-section\.is-package-mode/);
     assert.match(styles, /\.wallet-recharge-method-btn\.is-processing \.wallet-pending-badge/);
-    assert.match(styles, /rgba\(22,\s*119,\s*255,\s*0\.14\)/);
+    assert.match(styles, /\.wallet-recharge-method-btn--alipay:hover:not\(:disabled\)[^{]*\{[^}]*background-color:\s*rgba\(22,\s*119,\s*255,\s*0\.06\)/);
     assert.match(styles, /\.wallet-recharge-payment-panel/);
     assert.match(styles, /\.wallet-pending-dots/);
     assert.match(styles, /\.wallet-recharge-package-loading/);

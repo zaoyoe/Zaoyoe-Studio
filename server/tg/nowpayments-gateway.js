@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const { buildNowpaymentsIpnSignature } = require('../../api/_lib/payments/nowpayments');
+const { buildNowpaymentsIpnSignature, queryNowpaymentsMinimum } = require('../../api/_lib/payments/nowpayments');
 const pricing = require('../../js/tg-payment-pricing');
 const fx = require('../../api/_lib/payments/usdt-market-fx');
 const networks = require('../../api/_lib/payments/usdt-networks');
@@ -119,6 +119,16 @@ function createTgNowpaymentsGateway({ env = process.env, fetchImpl = globalThis.
             const amount = pricing.usdtPayAmount(totalMinor, this.quoteRate({ fxSnapshot }));
             if (!amount) throw unavailable();
             return amount;
+        },
+        async minimumPayment({ payCurrency = 'usdtbsc' } = {}) {
+            const selected = networks.requireNetwork(payCurrency);
+            const value = config();
+            const minimum = await queryNowpaymentsMinimum({
+                channelConfig: { pay_currency: selected.currency, is_fixed_rate: false, is_fee_paid_by_user: false },
+                secretValues: { nowpayments_api_key: value.apiKey }, env: {}
+            }, { fetchImpl });
+            return { network: minimum.network, currency: minimum.currency, amount: minimum.amount,
+                checked_at: new Date(now()).toISOString(), expires_at: new Date(now() + 60_000).toISOString() };
         },
         verifySignature(payload, signature) {
             try {

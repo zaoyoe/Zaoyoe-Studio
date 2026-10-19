@@ -211,6 +211,7 @@ function createTgPurchaseHandlers({ admin, env = process.env, requestSecurity = 
                         if (!pricing.displayCryptoAmount(amount)) throw new Error('Invalid TG USDT price');
                         publicQuote.usdt_pay_amount = amount;
                         publicQuote.pay_currency = selectedNetwork.currency;
+                        publicQuote.usdt_minimum = await gateway.minimumPayment({ channel: input.channel, payCurrency: selectedNetwork.currency });
                         if (input.pay_currency !== undefined || selectedNetwork.currency !== 'usdtbsc') {
                             const bound = await rpc(supabase, 'fn_tg_bind_purchase_network_quote', { p_quote_id: quote.quote_id, p_pay_currency: selectedNetwork.currency });
                             if (bound?.pay_currency !== selectedNetwork.currency) throw new Error('USDT network not bound');

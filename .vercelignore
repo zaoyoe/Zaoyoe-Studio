@@ -105,6 +105,7 @@ api/auth/login-security.js
 api/payments/auth-check.js
 api/payments/config.js
 api/payments/create.js
+api/payments/minimum.js
 api/payments/mock/complete.js
 api/payments/status.js
 

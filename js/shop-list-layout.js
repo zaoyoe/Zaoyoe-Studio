@@ -645,6 +645,7 @@
 
     function renderCategoryContainer(container, entries, current, { withIndicator = false } = {}) {
         if (!container) return;
+        container.setAttribute('aria-busy', 'false');
         const existingTabs = $all('.filter-tab[data-shop-category]', container);
         const canPatchInPlace = entries.length > 0
             && existingTabs.length === entries.length
@@ -672,9 +673,15 @@
         if ((!listFilters && !gridFilters) || !shop) return;
         const entries = getCategoryEntries();
         if (!entries.length) {
-            if (listFilters && !listFilters.querySelector('.list-aside__indicator')) {
-                listFilters.innerHTML = '<span class="list-aside__indicator" aria-hidden="true"></span>';
-            }
+            const terminalState = $('#userShopGrid .shop-empty-state, #userShopGrid .shop-status-message--error');
+            const loading = !terminalState && isCatalogLoading();
+            [listFilters, gridFilters].forEach((container) => {
+                if (!container) return;
+                container.setAttribute('aria-busy', loading ? 'true' : 'false');
+                // Keep the initial rows until categories resolve; an unplaced
+                // selection indicator otherwise collapses into a stray line.
+                if (!loading) container.replaceChildren();
+            });
             return;
         }
         const current = typeof shop.normalizeCurrentShopCategoryFromEntries === 'function'

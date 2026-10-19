@@ -1,4 +1,5 @@
-const { NETWORKS: USDT_NETWORKS } = require('../../../api/_lib/payments/usdt-networks');
+const { queryNowpaymentsMinimum, normalizeNowpaymentsConfig, convertCnyAmountToPriceAmount } = require('../../../api/_lib/payments/nowpayments');
+const { NETWORKS: USDT_NETWORKS, requireNetwork } = require('../../../api/_lib/payments/usdt-networks');
 const {
     createZpayWebhookHandler
 } = require('../../../api/_lib/payments/zpay-webhook');
@@ -17,7 +18,7 @@ const marketFx = require('../../../api/_lib/payments/usdt-market-fx');
 const PAYMENT_CREATION_ERROR_PATTERNS = Object.freeze([
     {
         code: 'payment_amount_too_small',
-        pattern: /amount\s*to\s+is\s+too\s+small|amountto\s+is\s+too\s+small|amount(?:\s+\w+)?\s+is\s+too\s+small|amount\s+too\s+small|min(?:imum)?[_\s-]*amount|below\s+minimum|less\s+than\s+(?:the\s+)?minimum|金额(?:过低|太低|低于)|低于.*最低/i
+        pattern: /amount\s*to\s+is\s+too\s+small|amountto\s+is\s+too\s+small|amount(?:\s+\w+)?\s+is\s+too\s+small|amount\s+too\s+small|min(?:imum)?[_\s-]*amount|below\s+minimum|less\s+than\s+(?:the\s+)?minim(?:um|al)|金额(?:过低|太低|低于)|低于.*最低/i
     },
     {
         code: 'payment_amount_too_large',
@@ -121,6 +122,7 @@ function createPaymentsHandlers({
     paymentOrders,
     zpayWebhook,
     nowpaymentsWebhook,
+    nowpaymentsMinimum = queryNowpaymentsMinimum,
     env = process.env
 } = {}) {
     const {
@@ -140,7 +142,8 @@ function createPaymentsHandlers({
         buildPublicPaymentConfig,
         buildPublicPaymentRuntime,
         buildPaymentSecretStatus,
-        loadStoredPaymentConfigs
+        loadStoredPaymentConfigs,
+        resolvePaymentProviderSecrets
     } = paymentProviders || {};
     const {
         completeMockPayment,
@@ -189,8 +192,91 @@ function createPaymentsHandlers({
         ttlMs: normalizePositiveInteger(env.PAYMENTS_CONFIG_HOT_CACHE_TTL_MS, 10_000, 0),
         maxEntries: normalizePositiveInteger(env.PAYMENTS_CONFIG_HOT_CACHE_MAX_ENTRIES, 64, 1)
     });
+    const minimumCache = createHotCache({ ttlMs: 60_000, maxEntries: 32 });
 
     return {
+        minimum: async function paymentsMinimumHandler(req, res) {
+            res.setHeader('Cache-Control', 'no-store');
+            if (req.method !== 'GET') {
+                res.setHeader('Allow', 'GET');
+                return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+            }
+            const rateLimit = await takeRateLimitToken({
+                key: `payments-minimum:${resolveClientIp(req, { env }) || 'unknown'}`,
+                limit: 60, windowMs: 60_000
+            });
+            applyRateLimitHeaders(res, rateLimit);
+            if (!rateLimit.allowed) return sendJson(res, 429, {
+                success: false, code: 'rate_limited', message: '查询过于频繁，请稍后重试'
+            });
+            try {
+                const url = new URL(req.url || '', 'http://localhost');
+                const site = resolveSiteScopedSystemConfigRequestSite(req, url, { fallback: 'cn' });
+                const network = requireNetwork(url.searchParams.get('channel') || 'usdtbsc');
+                const amountText = url.searchParams.get('amount_cny');
+                const totalMinor = amountText === null ? null : Math.round(Number(amountText) * 100);
+                if (amountText !== null && (!/^(?:0|[1-9]\d{0,8})(?:\.\d{1,2})?$/.test(amountText)
+                    || !Number.isSafeInteger(totalMinor) || totalMinor < 1)) {
+                    return sendJson(res, 400, { success: false, code: 'payment_amount_invalid', message: '应付金额无效，请重新核对金额' });
+                }
+                const cached = await minimumCache.getOrLoad(`${site}:${network.currency}`, async () => {
+                    // Credentials stay on the server. Reading this limit never
+                    // creates a payment or reserves product inventory.
+                    const supabase = getSupabaseAdmin();
+                    const { paymentChannels } = await loadStoredPaymentConfigs(supabase, { site });
+                    const provider = paymentChannels.providers?.nowpayments;
+                    if (provider?.enabled !== true) throw new Error('provider disabled');
+                    const secrets = await resolvePaymentProviderSecrets(supabase, 'nowpayments', env, { site });
+                    const minimum = await nowpaymentsMinimum({
+                        channelConfig: {
+                            ...provider, pay_currency: network.currency,
+                            ...(marketFx.marketMode(env) ? { is_fixed_rate: false, is_fee_paid_by_user: false } : {})
+                        },
+                        secretValues: Object.fromEntries(Object.entries(secrets).map(([key, entry]) => [key, entry.value])),
+                        env
+                    });
+                    return {
+                        minimum: { ...minimum, checked_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString() },
+                        // Used only for an optional preview check; never exposed as merchant configuration.
+                        channelConfig: { cny_to_usd_rate: normalizeNowpaymentsConfig({ channelConfig: provider, env }).cnyToUsdRate }
+                    };
+                });
+                const minimum = cached.value.minimum;
+                let check;
+                if (totalMinor !== null) {
+                    let payAmount;
+                    let fxSnapshot;
+                    if (marketFx.marketMode(env)) {
+                        fxSnapshot = await marketFx.getMarketUsdtFx({ supabase: getSupabaseAdmin() });
+                        const expectedFx = url.searchParams.get('fx_snapshot_id');
+                        if (expectedFx && expectedFx !== fxSnapshot.id) {
+                            return sendJson(res, 409, { success: false, code: 'payment_fx_quote_expired', message: 'USDT 报价已更新，请核对新金额后重试' });
+                        }
+                        payAmount = marketFx.convertCnyMinorToUsdt(totalMinor, fxSnapshot.usdt_per_cny);
+                    } else {
+                        const config = normalizeNowpaymentsConfig({ channelConfig: {
+                            ...cached.value.channelConfig, pay_currency: network.currency, price_currency: network.currency
+                        }, env });
+                        payAmount = convertCnyAmountToPriceAmount(totalMinor / 100, config)?.toFixed(2);
+                    }
+                    if (!(Number(payAmount) > 0)) throw marketFx.unavailable();
+                    check = {
+                        amount_cny: (totalMinor / 100).toFixed(2), pay_amount: payAmount,
+                        below_minimum: Number(payAmount) < Number(minimum.amount),
+                        ...(fxSnapshot ? { fx_snapshot_id: fxSnapshot.id } : {})
+                    };
+                }
+                return sendJson(res, 200, { success: true, site, minimum, ...(check ? { check } : {}) });
+            } catch (error) {
+                const unsupported = error.code === 'payment_network_unsupported';
+                const fxFailure = error.code?.startsWith('payment_fx_');
+                return sendJson(res, unsupported ? 400 : 503, {
+                    success: false,
+                    code: unsupported || fxFailure ? error.code : 'payment_minimum_unavailable',
+                    message: unsupported || fxFailure ? error.message : '暂时无法获取该网络的 USDT 最低支付金额，请稍后重试'
+                });
+            }
+        },
         'auth-check': async function paymentsAuthCheckHandler(req, res) {
             if (req.method !== 'GET') {
                 res.setHeader('Allow', 'GET');

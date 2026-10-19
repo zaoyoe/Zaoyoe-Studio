@@ -978,3 +978,24 @@ test('ZPay guest refund keeps an empty unclassified failure retryable', async ()
     assert.equal(result.status, 'unknown');
     assert.equal(result.code, 'guest_refund_result_unknown');
 });
+
+test('small USDT payment rejection includes the live network minimum without retrying creation', async () => {
+    const calls = [];
+    const adapter = makeAdapter(nowpaymentsConfig(), {
+        nowpayments_api_key: NOWPAYMENTS_API_KEY,
+        nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET
+    }, async (url, options) => {
+        calls.push({ url: String(url), method: options.method });
+        if (new URL(url).pathname === '/v1/min-amount') {
+            return responseJson({ currency_from: 'usdtbsc', min_amount: 0.0873176 });
+        }
+        return responseJson({ message: 'Crypto amount 0.01 is less than minimal' }, 400);
+    });
+    await assert.rejects(adapter.createGuestPayment({
+        order: makeOrder({ provider: 'nowpayments', channel: 'usdtbsc', total_amount: '0.02' }),
+        provider: 'nowpayments', channel: 'usdtbsc', site: 'cn', amount: '0.02', allowedChannels: ['nowpayments']
+    }), error => error.code === 'guest_provider_create_failed' && error.statusCode === 400
+        && error.message.includes('BSC (BEP20) 最低支付 0.09 USDT'));
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls.map(call => call.method), ['POST', 'GET']);
+});

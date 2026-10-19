@@ -43,7 +43,7 @@ async function fixture(t, fetchImpl, options = {}) {
     const origin = await listen(t, upstream);
     const preview = express();
     preview.use(express.json());
-    preview.use(createGuestShopPreviewRelay({ origin, fetchImpl, orderWritesEnabled: options.orderWritesEnabled, cancellationMode: options.cancellationMode, cancelOrder: options.cancelOrder }));
+    preview.use(createGuestShopPreviewRelay({ origin, fetchImpl, orderWritesEnabled: options.orderWritesEnabled, cancellationMode: options.cancellationMode, cancelOrder: options.cancelOrder, logger: options.logger }));
     preview.all('*', (_req, res) => res.status(418).json({ fallback: true }));
     return { url: await listen(t, preview), calls, origin };
 }
@@ -175,6 +175,21 @@ test('guest relay never falls back to stale local configuration on upstream fail
     const body = await response.text();
     assert.match(body, /local_preview_guest_upstream_unavailable/u);
     assert.doesNotMatch(body, /private diagnostic|fallback/u);
+});
+
+test('a failed quote names the quote service and logs only a safe transport classification', async (t) => {
+    const warnings = [];
+    const { url } = await fixture(t, async () => {
+        throw new TypeError('private URL, cookie or input', { cause: Object.assign(new Error('secret credential'), { code: 'ECONNRESET' }) });
+    }, { logger: { warn: message => warnings.push(message) } });
+    const response = await fetch(`${url}/api/shop/guest/preview?productId=private-product&skuId=private-sku`);
+    assert.equal(response.status, 502);
+    const payload = await response.json();
+    assert.equal(payload.code, 'local_preview_guest_upstream_unavailable');
+    assert.match(payload.message, /商品报价.*重新加载金额/u);
+    assert.doesNotMatch(payload.message, /订单查询/u);
+    assert.deepEqual(warnings, ['[local-preview] guest upstream unavailable method=GET route=guest/preview kind=ECONNRESET']);
+    assert.doesNotMatch(JSON.stringify({ payload, warnings }), /private|secret|credential|cookie/iu);
 });
 
 test('real preview checkout requires an explicit opt-in and a declared upstream', () => {

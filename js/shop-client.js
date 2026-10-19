@@ -474,7 +474,7 @@ function buildShopTrackingMetadata(baseMetadata = {}, sourceContext = {}) {
 }
 
 const SHOP_GRID_EAGER_IMAGE_COUNT = 4;
-const SHOP_PRODUCT_SKELETON_COUNT = 5;
+const SHOP_PRODUCT_SKELETON_COUNT = 4;
 const SHOP_CARD_BREATHE_PHASE_MAX_S = 4;
 const SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS = 0;
 const SHOP_CARD_PROMPT_ENTER_DELAY_STEP_MS = 50;
@@ -4277,6 +4277,7 @@ const ShopClient = {
                 checkoutReviewBack: 'Back to cart',
                 checkoutReviewConfirm: 'Confirm and redeem',
                 cartEmptyToast: 'Add a few items first to preview the cart.',
+                authUnavailableToast: 'Unable to confirm your sign-in status. Please try again.',
                 addedToast: 'Added to cart',
                 removedToast: 'Removed from cart',
                 cartCheckoutLabel: 'Cart checkout',
@@ -4323,6 +4324,7 @@ const ShopClient = {
             checkoutReviewBack: '返回购物车',
             checkoutReviewConfirm: '确认并兑换',
             cartEmptyToast: '先从商品卡片里加购几件，再回来统一看。',
+            authUnavailableToast: '暂时无法确认登录状态，请稍后重试。',
             addedToast: '已加入购物车',
             removedToast: '已从购物车移除',
             cartCheckoutLabel: '购物车结算',
@@ -4368,7 +4370,7 @@ const ShopClient = {
         }
         toast.__hideTimer = setTimeout(() => {
             toast.classList.remove('is-visible');
-        }, 1800);
+        }, variant === 'payment-minimum' ? 3600 : 1800);
     },
 
     showGuestDiscountUnavailableToast: function () {
@@ -4727,6 +4729,7 @@ const ShopClient = {
     getCartCheckoutPaymentMode: function (entries = this.getCartEntries()) {
         const normalizedEntries = Array.isArray(entries) ? entries : [];
         if (!normalizedEntries.length) return 'empty';
+        if (this.shopAuthStateKnown === true) return 'wallet';
         const hasGuestCash = normalizedEntries.some((entry) => entry?.guestPurchasable === true);
         const hasWallet = normalizedEntries.some((entry) => entry?.guestPurchasable !== true);
         if (hasGuestCash && hasWallet) return 'mixed';
@@ -6128,7 +6131,17 @@ const ShopClient = {
         });
     },
 
-    openCartCheckoutModal: function () {
+    openCartCheckoutModal: async function () {
+        if (this.cartCheckoutProcessing) return;
+        // Resolve the current session before interpreting guest eligibility as a
+        // payment choice. Authenticated members keep the points checkout path.
+        const authState = await this.resolveShopAuthState();
+        if (this.cartCheckoutProcessing || !this.cartOpen) return;
+        if (authState === null) {
+            this.showShopToast(this.getCartCopy().authUnavailableToast, 'error');
+            return;
+        }
+
         const entries = this.getCartEntries();
         if (!entries.length) {
             this.showShopToast(this.getCartCopy().cartEmptyToast, 'error');
@@ -6248,7 +6261,7 @@ const ShopClient = {
                 initialQuantity: entry.quantity,
                 appliedDiscount: entry.appliedDiscount || null,
                 productSkuId: entry.productSkuId || '',
-                forceGuestCash: entry.guestPurchasable === true,
+                forceGuestCash: this.shopAuthStateKnown === false && entry.guestPurchasable === true,
                 cartOrigin: {
                     productId: entry.productId,
                     skuId: entry.productSkuId || ''
@@ -6346,8 +6359,8 @@ const ShopClient = {
         let resolved = null;
         try {
             const client = this.getShopSupabaseClient();
-            const { data: { session } = {} } = await client.auth.getSession();
-            resolved = Boolean(session && session.access_token);
+            const { data: { session } = {}, error } = await client.auth.getSession();
+            resolved = error ? null : Boolean(session && session.access_token);
         } catch (_error) {
             resolved = null;
         }
@@ -12692,8 +12705,11 @@ const ShopClient = {
                 </div>
                 <div class="skeleton-content">
                     <div class="skeleton skeleton-title"></div>
-                    <div class="skeleton skeleton-desc"></div>
-                    <div class="skeleton skeleton-desc skeleton-desc--short"></div>
+                    <div class="skeleton-description">
+                        <div class="skeleton skeleton-desc"></div>
+                        <div class="skeleton skeleton-desc skeleton-desc--short"></div>
+                    </div>
+                    <div class="skeleton-chips"><span class="skeleton skeleton-chip"></span><span class="skeleton skeleton-chip"></span></div>
                     <div class="skeleton-footer">
                         <div class="skeleton skeleton-price-value"></div>
                         <div class="skeleton skeleton-btn"></div>
@@ -14793,6 +14809,15 @@ const ShopClient = {
 
     confirmCartCheckout: async function () {
         if (this.cartCheckoutProcessing) return;
+        const checkoutModal = document.getElementById('shopCartCheckoutModal');
+        const checkoutWasOpen = checkoutModal?.classList.contains('active') === true;
+        const authState = await this.resolveShopAuthState();
+        if (this.cartCheckoutProcessing
+            || (checkoutWasOpen && !checkoutModal.classList.contains('active'))) return;
+        if (authState === null) {
+            this.showShopToast(this.getCartCopy().authUnavailableToast, 'error');
+            return;
+        }
 
         this.sanitizeCartState();
         const entries = this.getCartEntries();
@@ -14855,7 +14880,16 @@ const ShopClient = {
         this.renderCartCheckoutModal();
         this.renderCart();
 
-        const token = await this.getAccessToken();
+        let token;
+        try {
+            token = await this.getAccessToken();
+        } catch (_error) {
+            this.cartCheckoutProcessing = false;
+            this.renderCartCheckoutModal();
+            this.renderCart();
+            this.showShopToast(this.getCartCopy().authUnavailableToast, 'error');
+            return;
+        }
         if (!token) {
             this.cartCheckoutProcessing = false;
             this.renderCartCheckoutModal();

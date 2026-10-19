@@ -374,11 +374,11 @@ test('guest orders copy-all button is right aligned with delivery title and conf
     );
 });
 
-test('light mode payment option loading dots color and back to list button text decoration', () => {
+test('payment confirmation loading dots retain contrast and back to list stays undecorated', () => {
     const shopCss = fs.readFileSync(path.resolve(__dirname, '../css/shop-page.css'), 'utf8');
     assert.match(
         shopCss,
-        /html:not\(\[data-theme="dark"\]\)[^}]*?\.guest-shop-modal__payment-option\.is-loading\s+\.guest-shop-modal__payment-loading\s*\{[\s\S]*?color:\s*#1e293b;/
+        /#guestCashPurchaseModal \.guest-shop-modal__submit\s*\{[^}]*background: #3c7ddb;[^}]*color: #fff;/
     );
 
     const ordersCss = fs.readFileSync(path.resolve(__dirname, '../css/guest-orders.css'), 'utf8');

@@ -79,9 +79,11 @@ class FakeElement {
         return this._textContent;
     }
 
+    get options() { return this.tagName === 'SELECT' ? this.children : []; }
+
     get selectedOptions() {
         if (this.tagName !== 'SELECT') return [];
-        const selected = this.children.find((child) => child.selected === true);
+        const selected = this.children.find((child) => child.value === this.value) || this.children.find((child) => child.selected === true);
         return selected ? [selected] : this.children.slice(0, 1);
     }
 
@@ -134,10 +136,11 @@ class FakeElement {
         this.listeners.set(type, listeners);
     }
 
-    dispatch(type, target = this) {
+    dispatch(type, target = this, properties = {}) {
         const event = {
             type,
             target,
+            ...properties,
             defaultPrevented: false,
             preventDefault() {
                 this.defaultPrevented = true;
@@ -244,6 +247,13 @@ function createScheduler() {
                 await task.handler();
             }
         },
+        async runTimerWithDelay(delay) {
+            const next = [...scheduled.entries()].find(([, task]) => !task.interval && task.delay === delay);
+            assert.ok(next, `no timer scheduled for ${delay}ms`);
+            const [id, task] = next;
+            scheduled.delete(id);
+            await task.handler();
+        },
         async runNextTimer() {
             const next = [...scheduled.entries()].find(([, task]) => !task.interval);
             if (!next) return false;
@@ -281,6 +291,7 @@ function createRuntime({
     const sessionStorage = createStorage(storageInitial);
     const replacedUrls = [];
     const confirmMessages = [];
+    const toasts = [];
     const checkoutActions = [];
     let uuidSequence = 0;
     let checkoutIntent = null;
@@ -336,6 +347,7 @@ function createRuntime({
         title: 'Shop',
         readyState: 'complete',
         activeElement: null,
+        listeners: new Map(),
         getElementById(id) {
             const key = String(id);
             if (!elements.has(key)) {
@@ -353,7 +365,8 @@ function createRuntime({
         createElement(tagName) {
             return new FakeElement(document, tagName);
         },
-        addEventListener() {},
+        addEventListener: FakeElement.prototype.addEventListener,
+        dispatch: FakeElement.prototype.dispatch,
         execCommand() {
             return true;
         }
@@ -377,6 +390,7 @@ function createRuntime({
         Element: FakeElement,
         SiteConfig: { site: 'cn' },
         ShopClient: {
+            showShopToast(message, variant) { toasts.push({ message, variant }); },
             currentPurchase: { ...purchase },
             isEnglishShopLocale() {
                 return false;
@@ -440,14 +454,12 @@ function createRuntime({
         sessionStorage,
         replacedUrls,
         confirmMessages,
+        toasts,
         element(id) {
             return document.getElementById(id);
         },
         click(id) {
             const modal = document.getElementById('guestCashPurchaseModal');
-            if (id === 'guestCashCreateOrderBtn') {
-                return clickPaymentOption(this, 'zpay:alipay');
-            }
             return modal.dispatch('click', document.getElementById(id));
         },
         runImmediateTimers() {
@@ -455,6 +467,9 @@ function createRuntime({
         },
         runNextTimer() {
             return scheduler.runNextTimer();
+        },
+        runTimerWithDelay(delay) {
+            return scheduler.runTimerWithDelay(delay);
         },
         scheduledTasks() {
             return scheduler.snapshot();
@@ -504,7 +519,12 @@ function paymentOption(runtime, key = 'zpay:alipay') {
 
 function clickPaymentOption(runtime, key = 'zpay:alipay') {
     const option = paymentOption(runtime, key);
-    return option.dispatch('click', option);
+    // Existing business scenarios select a method and explicitly confirm.
+    if (runtime.element('guestCashCreateOrderBtn').hidden) {
+        return runtime.click('guestCashResumeIntentBtn');
+    }
+    option.dispatch('click', option);
+    return runtime.click('guestCashCreateOrderBtn');
 }
 
 function previewPayload(currentPurchase) {
@@ -830,6 +850,161 @@ test('cart batch quote failure keeps payment disabled and explains the missing a
     assert.equal(paymentOption(runtime).disabled, true);
     clickPaymentOption(runtime);
     assert.equal(createCalls, 0);
+});
+
+test('transient cart quote failures retry only the failed read once and recover the amount', async (t) => {
+    for (const failure of ['network', 'timeout', 502, 503, 504]) {
+        await t.test(String(failure), async () => {
+            const requests = [];
+            let failedReads = 0;
+            const runtime = createRuntime({
+                purchase: purchase(),
+                fetchImpl: async (url, options = {}) => {
+                    const parsed = new URL(url, 'https://www.fatherkey.com');
+                    assert.ok(parsed.pathname.endsWith('/preview'), 'quote recovery must never create an order');
+                    assert.equal(options.method, 'GET');
+                    const productId = parsed.searchParams.get('productId');
+                    requests.push(productId);
+                    if (productId === 'product-b' && failedReads++ === 0) {
+                        if (failure === 'network') throw new TypeError('connection lost');
+                        if (failure === 'timeout') throw Object.assign(new Error('timed out'), { name: 'TimeoutError' });
+                        return jsonResponse({ success: false, message: 'temporary quote failure' }, { status: failure });
+                    }
+                    return jsonResponse(cartBatchPreview(parsed));
+                }
+            });
+            const opening = runtime.window.GuestShopCheckout.startGuestBatchCheckout(cartBatchEntries());
+            await waitFor(() => runtime.scheduledTasks().some(task => task.delay === 400));
+            assert.equal(paymentOption(runtime).disabled, true);
+            assert.equal(runtime.element('guestCashPrice').classList.contains('is-amount-placeholder'), true);
+            await runtime.runTimerWithDelay(400);
+            assert.equal((await opening).reason, 'available');
+            assert.deepEqual(requests, ['product-a', 'product-b', 'product-b']);
+            assert.equal(runtime.element('guestCashPrice').textContent, '￥0.03');
+            assert.equal(runtime.element('guestCashRetryPreviewBtn').hidden, true);
+            assert.equal(paymentOption(runtime).disabled, false);
+        });
+    }
+});
+
+test('persistent cart quote failure offers one manual read-only recovery and preserves buyer inputs', async () => {
+    const retriedQuote = deferred();
+    const requests = [];
+    let recover = false;
+    const runtime = createRuntime({
+        purchase: purchase(),
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            assert.ok(parsed.pathname.endsWith('/preview'), 'reloading amounts must not write an order');
+            assert.equal(options.method, 'GET');
+            requests.push(parsed.searchParams.get('productId'));
+            if (parsed.searchParams.get('productId') === 'product-b') {
+                if (recover) return retriedQuote.promise;
+                return jsonResponse({ success: false, code: 'local_preview_guest_upstream_unavailable', message: '线上商品报价服务暂时无法连接，请重新加载金额。' }, { status: 502 });
+            }
+            return jsonResponse({ ...cartBatchPreview(parsed), buyer_credential_required: true });
+        }
+    });
+    const opening = runtime.window.GuestShopCheckout.startGuestBatchCheckout(cartBatchEntries());
+    runtime.element('guestCashContact').value = 'buyer@example.test';
+    runtime.element('guestCashOrderPassword').value = 'Buyer-password-123!';
+    const selectedPayment = runtime.element('guestCashPaymentChannel').value;
+    await waitFor(() => runtime.scheduledTasks().some(task => task.delay === 400));
+    await runtime.runTimerWithDelay(400);
+    assert.equal((await opening).reason, 'preview_error');
+    assert.equal(requests.length, 3, 'automatic recovery is bounded to one extra read');
+    assert.equal(runtime.scheduledTasks().filter(task => task.delay === 400).length, 0);
+    assert.equal(runtime.element('guestCashPrice').textContent, '-');
+    assert.equal(runtime.element('guestCashRetryPreviewBtn').hidden, false);
+    assert.equal(paymentOption(runtime).disabled, true);
+    recover = true;
+    runtime.click('guestCashRetryPreviewBtn');
+    runtime.click('guestCashRetryPreviewBtn');
+    await waitFor(() => requests.length === 5);
+    assert.equal(runtime.element('guestCashPrice').classList.contains('is-amount-placeholder'), true);
+    assert.equal(runtime.element('guestCashRetryPreviewBtn').hidden, true);
+    retriedQuote.resolve(jsonResponse({ ...cartBatchPreview(new URL('https://www.fatherkey.com/preview?productId=product-b&skuId=sku-b&quantity=1')), buyer_credential_required: true }));
+    await waitFor(() => !paymentOption(runtime).disabled);
+    assert.equal(requests.length, 5, 'double retry clicks must not duplicate quote loads');
+    assert.equal(runtime.element('guestCashPrice').textContent, '￥0.03');
+    assert.equal(runtime.element('guestCashContact').value, 'buyer@example.test');
+    assert.equal(runtime.element('guestCashOrderPassword').value, 'Buyer-password-123!');
+    assert.equal(runtime.element('guestCashPaymentChannel').value, selectedPayment);
+    assert.equal(runtime.element('guestCashState').hidden, true);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY), null);
+});
+
+test('rate limits and unavailable products are never retried automatically', async (t) => {
+    for (const status of [403, 409, 429]) {
+        await t.test(String(status), async () => {
+            let requests = 0;
+            const runtime = createRuntime({
+                purchase: purchase(),
+                fetchImpl: async (url) => {
+                    const parsed = new URL(url, 'https://www.fatherkey.com');
+                    assert.ok(parsed.pathname.endsWith('/preview'));
+                    requests += 1;
+                    return jsonResponse({ success: false, message: 'quote unavailable' }, { status });
+                }
+            });
+            const result = await runtime.window.GuestShopCheckout.startGuestBatchCheckout(cartBatchEntries());
+            assert.equal(result.reason, 'preview_error');
+            assert.equal(requests, 2, 'each cart item gets at most its original request');
+            assert.equal(runtime.scheduledTasks().some(task => task.delay === 400), false);
+            assert.equal(runtime.element('guestCashPrice').textContent, '-');
+            assert.equal(runtime.element('guestCashCreateOrderBtn').disabled, true);
+        });
+    }
+});
+
+test('closing a failed cart quote cancels its queued retry before a new cart view opens', async () => {
+    let requests = 0;
+    let fail = true;
+    const runtime = createRuntime({
+        purchase: purchase(),
+        fetchImpl: async (url) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            assert.ok(parsed.pathname.endsWith('/preview'));
+            requests += 1;
+            return fail
+                ? jsonResponse({ success: false, message: 'temporary failure' }, { status: 502 })
+                : jsonResponse(cartBatchPreview(parsed));
+        }
+    });
+    const firstOpening = runtime.window.GuestShopCheckout.startGuestBatchCheckout(cartBatchEntries());
+    await waitFor(() => runtime.scheduledTasks().filter(task => task.delay === 400).length === 2);
+    runtime.click('guestCashPurchaseModal');
+    fail = false;
+    const nextEntries = cartBatchEntries().slice(0, 1);
+    await runtime.window.GuestShopCheckout.startGuestBatchCheckout(nextEntries);
+    const latestAmount = runtime.element('guestCashPrice').textContent;
+    const latestSummary = runtime.element('guestCashSkuName').textContent;
+    await runtime.runTimerWithDelay(400);
+    await runtime.runTimerWithDelay(400);
+    assert.equal((await firstOpening).reason, 'stale');
+    assert.equal(requests, 3, 'an old view must not send its queued retries');
+    assert.equal(runtime.element('guestCashPrice').textContent, latestAmount);
+    assert.equal(runtime.element('guestCashSkuName').textContent, latestSummary);
+    assert.equal(runtime.element('guestCashState').hidden, true);
+});
+
+test('single-product availability also recovers from one dropped read without payment writes', async () => {
+    const currentPurchase = purchase();
+    let requests = 0;
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url, options = {}) => {
+            assert.ok(new URL(url, 'https://www.fatherkey.com').pathname.endsWith('/preview'));
+            assert.equal(options.method, 'GET');
+            if (++requests === 1) throw new TypeError('fetch failed');
+            return jsonResponse(previewPayload(currentPurchase));
+        }
+    });
+    const probing = runtime.window.GuestShopCheckout.probeAvailability(contextFor(currentPurchase));
+    await waitFor(() => runtime.scheduledTasks().some(task => task.delay === 400));
+    await runtime.runTimerWithDelay(400);
+    assert.equal((await probing).available, true);
+    assert.equal(requests, 2);
 });
 
 test('cart batch quoted amounts remain visible when payment stage starts', async () => {
@@ -1784,7 +1959,9 @@ for (const failureMode of ['network failure', 'HTTP 503']) {
 
         assert.equal(createBodies.length, 1);
         assert.equal(runtime.element('guestCashState').dataset.state, 'payment_creation_unknown');
-        assert.equal(paymentOption(runtime).disabled, false);
+        assert.equal(paymentOption(runtime).disabled, true);
+        assert.equal(runtime.element('guestCashCreateOrderBtn').hidden, true);
+        assert.equal(runtime.element('guestCashResumeIntentBtn').disabled, false);
         assert.equal(runtime.element('guestCashPaymentChannel').disabled, true);
         assert.equal(runtime.uuidCount(), 0);
         assert.deepEqual(Object.keys(createBodies[0]).sort(), [
@@ -1852,6 +2029,7 @@ test('a low-value USDT provider rejection clears the failed checkout before the 
         purchase: currentPurchase,
         fetchImpl: async (url, options = {}) => {
             const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname === '/api/payments/minimum') return jsonResponse(minimumPayload(parsed));
             if (parsed.pathname.endsWith('/preview')) {
                 previewCount += 1;
                 return jsonResponse({
@@ -1918,6 +2096,7 @@ test('a missing USDT checkout credential is a definite failure and cannot restor
         purchase: currentPurchase,
         fetchImpl: async (url, options = {}) => {
             const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname === '/api/payments/minimum') return jsonResponse(minimumPayload(parsed));
             if (parsed.pathname.endsWith('/preview')) {
                 return jsonResponse({
                     ...previewPayload(currentPurchase),
@@ -1972,6 +2151,7 @@ test('a pending USDT order without a wallet address never becomes a waiting-paym
         purchase: currentPurchase,
         fetchImpl: async (url, options = {}) => {
             const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname === '/api/payments/minimum') return jsonResponse(minimumPayload(parsed));
             if (parsed.pathname.endsWith('/preview')) {
                 return jsonResponse({
                     ...previewPayload(currentPurchase),
@@ -2555,3 +2735,220 @@ test('opening guest checkout with quantity 2 preserves quantity 2 across fresh c
 });
 
 
+
+for (const [currency, icon] of Object.entries({ usdtbsc: 'bsc', usdtton: 'ton', usdtmatic: 'polygon', usdttrc20: 'tron' })) {
+    test(`payment selection is separate from submission and confirms the selected ${currency} network`, async () => {
+        const currentPurchase = purchase();
+        const orders = [];
+        const runtime = createRuntime({
+            purchase: currentPurchase,
+            fetchImpl: async (url, options = {}) => {
+                const parsed = new URL(url, 'https://www.fatherkey.com');
+                const pathname = parsed.pathname;
+                if (pathname === '/api/payments/minimum') return jsonResponse(minimumPayload(parsed));
+                if (pathname.endsWith('/preview')) {
+                    const payload = previewPayload(currentPurchase);
+                    payload.payment_channels = ['zpay:alipay', 'nowpayments'];
+                    return jsonResponse(payload);
+                }
+                if (pathname.endsWith('/orders')) {
+                    orders.push(JSON.parse(options.body));
+                    return jsonResponse(createOrderPayload(`GUEST-${currency}`, currentPurchase));
+                }
+                if (pathname.endsWith('/status')) return jsonResponse(statusPayload(`GUEST-${currency}`, currentPurchase));
+                throw new Error(`Unexpected request: ${pathname}`);
+            }
+        });
+        await openCheckout(runtime, currentPurchase);
+        const primary = runtime.element('guestCashPaymentOptions');
+        const networks = runtime.element('guestCashUsdtNetworks');
+        const panel = runtime.element('guestCashUsdtNetworkPanel');
+        assert.equal(primary.children.length, 2, 'only Alipay and USDT appear in the primary row');
+        assert.equal(networks.children.length, 4);
+        assert.equal(panel.inert, true);
+        assert.equal(panel.getAttribute('aria-hidden'), 'true');
+        const usdt = primary.children.find(button => button.dataset.paymentMethod === 'usdt');
+        usdt.dispatch('click');
+        assert.equal(panel.inert, false);
+        assert.equal(usdt.getAttribute('aria-expanded'), 'true');
+        const network = networks.children.find(button => button.dataset.channel === currency);
+        assert.equal(network.children[0].children[0].src, `assets/tg-network-icons/${icon}.svg`);
+        network.dispatch('click');
+        assert.equal(runtime.element('guestCashPaymentChannel').value, `nowpayments:${currency}`);
+        assert.equal(network.getAttribute('aria-checked'), 'true');
+        primary.children[0].dispatch('click');
+        assert.equal(panel.inert, true);
+        usdt.dispatch('click');
+        assert.equal(runtime.element('guestCashPaymentChannel').value, `nowpayments:${currency}`, 'toggling methods retains the network');
+        assert.equal(networks.children.find(button => button.dataset.channel === currency), network, 'network nodes stay mounted throughout the transition');
+        await flushEventLoop();
+        assert.equal(orders.length, 0, 'choosing a method or network cannot create a payment order');
+        assert.equal(runtime.checkoutActions().filter(action => action.action === 'prepare').length, 0);
+        runtime.click('guestCashCreateOrderBtn');
+        await waitFor(() => orders.length === 1);
+        const prepare = runtime.checkoutActions().find(action => action.action === 'prepare');
+        assert.equal(prepare.body.provider, 'nowpayments');
+        assert.equal(prepare.body.channel, currency);
+        assert.equal(network.disabled, true, 'all network choices lock during payment');
+        assert.equal(usdt.disabled, true);
+    });
+}
+
+
+test('password-format help supports hover, pinned clicks, outside dismissal and live requirements', () => {
+    const runtime = createRuntime({
+        purchase: purchase(),
+        fetchImpl: async () => assert.fail('Password-format help must not send requests')
+    });
+    const info = runtime.element('guestCashOrderPasswordInfo');
+    const button = info.appendChild(runtime.element('guestCashOrderPasswordInfoBtn'));
+    const help = info.appendChild(runtime.element('guestCashOrderPasswordHelp'));
+    const checks = help.appendChild(runtime.element('guestCashOrderPasswordChecks'));
+    for (const key of ['length', 'upper', 'lower', 'digit', 'punct']) {
+        const item = runtime.document.createElement('li');
+        item.dataset.pwCheck = key;
+        checks.appendChild(item);
+    }
+    assert.equal(help.hidden, true);
+    info.dispatch('pointerenter', info, { pointerType: 'mouse' });
+    assert.equal(help.hidden, false);
+    assert.equal(button.getAttribute('aria-expanded'), 'true');
+    info.dispatch('pointerleave');
+    assert.equal(help.hidden, true);
+
+    info.dispatch('pointerenter', info, { pointerType: 'mouse' });
+    runtime.click(button.id);
+    info.dispatch('pointerleave');
+    assert.equal(help.hidden, false, 'click pins an already-hovered panel');
+    const input = runtime.element('guestCashOrderPassword');
+    input.value = 'Ab3!xY9#';
+    input.dispatch('input');
+    assert.equal(checks.children.every((item) => item.classList.contains('is-pass')), true);
+    runtime.click('guestCashContact');
+    assert.equal(help.hidden, true);
+    assert.equal(input.value, 'Ab3!xY9#', 'outside dismissal preserves the entered password');
+    assert.equal(button.getAttribute('aria-expanded'), 'false');
+    runtime.click(button.id);
+    runtime.click(button.id);
+    assert.equal(help.hidden, true, 'a second click closes the panel');
+});
+
+test('password-format help opens on tap or keyboard and Escape dismisses help before checkout', () => {
+    const runtime = createRuntime({
+        purchase: purchase(),
+        fetchImpl: async () => assert.fail('Password-format help must not send requests')
+    });
+    const modal = runtime.element('guestCashPurchaseModal');
+    modal.hidden = false;
+    const info = runtime.element('guestCashOrderPasswordInfo');
+    const button = info.appendChild(runtime.element('guestCashOrderPasswordInfoBtn'));
+    const help = info.appendChild(runtime.element('guestCashOrderPasswordHelp'));
+    const input = runtime.element('guestCashOrderPassword');
+    input.value = 'Ab3!xY9#';
+    info.dispatch('pointerenter', info, { pointerType: 'touch' });
+    assert.equal(help.hidden, true, 'touch hover must not accidentally toggle the panel');
+    info.dispatch('focusin');
+    runtime.click(button.id);
+    info.dispatch('pointerleave');
+    assert.equal(help.hidden, false, 'tap remains open after touch pointerleave');
+    runtime.document.dispatch('keydown', button, { key: 'Escape' });
+    assert.equal(help.hidden, true);
+    assert.equal(modal.hidden, false, 'first Escape only dismisses the help');
+    assert.equal(input.value, 'Ab3!xY9#');
+
+    info.dispatch('focusin');
+    assert.equal(help.hidden, false, 'keyboard focus reveals the requirements');
+    info.dispatch('focusout', info, { relatedTarget: input });
+    assert.equal(help.hidden, true);
+    runtime.click(button.id);
+    runtime.click('guestCashPurchaseModal');
+    assert.equal(modal.hidden, true);
+    assert.equal(help.hidden, true, 'checkout close also resets help and its pinned state');
+    assert.equal(input.value, '');
+});
+
+function minimumPayload(parsed, { amount = '0.09', payAmount = '1.00', network = parsed.searchParams.get('channel') } = {}) {
+    return { success: true, site: 'cn', minimum: { network, currency: 'USDT', amount,
+        expires_at: new Date(Date.now() + 60_000).toISOString() },
+        check: { amount_cny: parsed.searchParams.get('amount_cny'), pay_amount: payAmount,
+            below_minimum: Number(payAmount) < Number(amount) } };
+}
+
+for (const [network, minimum] of [['usdtbsc', '0.09'], ['usdtton', '0.26'], ['usdtmatic', '0.24'], ['usdttrc20', '11.94']]) {
+    test(`guest ${network} shows a numerical capsule only on submission and never prepares a below-minimum order`, async () => {
+        const currentPurchase = purchase();
+        const requests = [];
+        const runtime = createRuntime({ purchase: currentPurchase, fetchImpl: async url => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) return jsonResponse({ ...previewPayload(currentPurchase), payment_channels: ['zpay:alipay', 'nowpayments'] });
+            if (parsed.pathname === '/api/payments/minimum') {
+                requests.push(parsed);
+                return jsonResponse(minimumPayload(parsed, { amount: minimum, payAmount: '0.01' }));
+            }
+            assert.fail(`Unexpected create or request: ${parsed.pathname}`);
+        } });
+        await openCheckout(runtime, currentPurchase);
+        const usdt = runtime.element('guestCashPaymentOptions').children.find(button => button.dataset.paymentMethod === 'usdt');
+        usdt.dispatch('click');
+        runtime.element('guestCashUsdtNetworks').children.find(button => button.dataset.channel === network).dispatch('click');
+        await flushEventLoop();
+        assert.equal(requests.length, 0, 'selection has no inline minimum request');
+        assert.equal(runtime.toasts.length, 0);
+        runtime.click('guestCashCreateOrderBtn');
+        await waitFor(() => runtime.toasts.length === 1);
+        assert.equal(requests[0].searchParams.get('channel'), network);
+        assert.equal(Number(requests[0].searchParams.get('amount_cny')) > 0, true);
+        assert.equal(runtime.toasts[0].variant, 'payment-minimum');
+        assert.ok(runtime.toasts[0].message.includes(`最低支付 ${minimum} USDT`));
+        assert.equal(runtime.checkoutActions().filter(item => ['prepare', 'commit'].includes(item.action)).length, 0);
+        assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
+        await flushEventLoop();
+        assert.equal(runtime.element('guestCashCreateOrderBtn').disabled, false, 'a blocked request releases submission');
+    });
+}
+
+test('network selection stays frozen during minimum validation and closing suppresses stale feedback', async () => {
+    const currentPurchase = purchase();
+    const pending = deferred();
+    let minimumQuery;
+    const runtime = createRuntime({ purchase: currentPurchase, fetchImpl: async url => {
+        const parsed = new URL(url, 'https://www.fatherkey.com');
+        if (parsed.pathname.endsWith('/preview')) return jsonResponse({ ...previewPayload(currentPurchase), payment_channels: ['zpay:alipay', 'nowpayments'] });
+        if (parsed.pathname === '/api/payments/minimum') { minimumQuery = parsed; return pending.promise; }
+        assert.fail(`Unexpected request: ${parsed.pathname}`);
+    } });
+    await openCheckout(runtime, currentPurchase);
+    clickPaymentOption(runtime, 'nowpayments:usdtbsc');
+    await waitFor(() => minimumQuery);
+    runtime.element('guestCashUsdtNetworks').children.find(button => button.dataset.channel === 'usdttrc20').dispatch('click');
+    assert.equal(runtime.element('guestCashPaymentChannel').value, 'nowpayments:usdtbsc');
+    runtime.click('guestCashPurchaseModal');
+    pending.resolve(jsonResponse(minimumPayload(minimumQuery, { amount: '0.09', payAmount: '0.01' })));
+    await flushEventLoop();
+    assert.equal(runtime.toasts.length, 0);
+    assert.equal(runtime.checkoutActions().filter(item => ['prepare', 'commit'].includes(item.action)).length, 0);
+});
+
+for (const scenario of ['unavailable', 'mismatched', 'expired']) {
+    test(`guest ${scenario} minimum stops creation safely and leaves payment retry available`, async () => {
+        const currentPurchase = purchase();
+        const runtime = createRuntime({ purchase: currentPurchase, fetchImpl: async url => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) return jsonResponse({ ...previewPayload(currentPurchase), payment_channels: ['nowpayments'] });
+            if (parsed.pathname === '/api/payments/minimum') {
+                if (scenario === 'unavailable') return jsonResponse({ success: false, message: '暂时无法核对最低支付金额' }, { status: 503 });
+                const payload = minimumPayload(parsed);
+                if (scenario === 'mismatched') payload.minimum.network = 'usdtton';
+                else payload.minimum.expires_at = new Date(Date.now() - 1).toISOString();
+                return jsonResponse(payload);
+            }
+            assert.fail(`Unexpected request: ${parsed.pathname}`);
+        } });
+        await openCheckout(runtime, currentPurchase);
+        clickPaymentOption(runtime, 'nowpayments:usdtbsc');
+        await waitFor(() => runtime.toasts.length === 1);
+        await flushEventLoop();
+        assert.equal(runtime.checkoutActions().filter(item => ['prepare', 'commit'].includes(item.action)).length, 0);
+        assert.equal(runtime.element('guestCashCreateOrderBtn').disabled, false);
+    });
+}

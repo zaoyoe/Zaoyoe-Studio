@@ -1,3 +1,5 @@
+@import url("css/shared-control-fonts.css?v=20261018_1");
+
 @import url("css/shared-login-stagger.css");
 
 :root {
@@ -3184,23 +3186,6 @@ html[data-theme="dark"] body.guestbook-page.auth-sheet-open::after {
     box-shadow: none !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-}
-
-#loginModal.auth-sheet-overlay .auth-sheet-google-btn.google-login-btn:hover {
-    transform: translate3d(0, -1px, 0) !important;
-    background: var(--auth-sheet-google-bg-hover) !important;
-    border-color: var(--auth-sheet-google-border-hover) !important;
-    color: var(--auth-sheet-text) !important;
-    box-shadow: var(--auth-sheet-control-shadow-hover) !important;
-}
-
-html[data-theme="light"] #loginModal.auth-sheet-overlay .auth-sheet-google-btn.google-login-btn:hover,
-html:not([data-theme="dark"]) #loginModal.auth-sheet-overlay .auth-sheet-google-btn.google-login-btn:hover {
-    transform: none !important;
-    background: rgba(255, 255, 255, 0.96) !important;
-    border-color: rgba(107, 158, 206, 0.34) !important;
-    color: var(--auth-sheet-text) !important;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05) !important;
 }
 
 #loginModal.auth-sheet-overlay .auth-sheet-google-btn.google-login-btn span {

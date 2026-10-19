@@ -14,10 +14,13 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260716_WALLET_EXACT_BALANCE_CUSTOM_TOOLTIP_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';
+    const walletCssHref = 'css/wallet.css?v=20261018_WALLET_PAYMENT_SELECTOR_1&controlPress=20261018_2&rechargeSpacing=20261018_1&calmHover=20261018_4&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';
     const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v3';
+    const WALLET_PAYMENT_CONFIG_REQUEST_TIMEOUT_MS = 6500;
+    const WALLET_RECHARGE_FX_RETRY_BASE_MS = 2000;
+    const WALLET_RECHARGE_FX_RETRY_MAX_MS = 30000;
     let walletCssReady = false;
     let walletCssReadyPromise = Promise.resolve();
 
@@ -1543,6 +1546,39 @@
         });
     }
 
+    function bindWalletModalWheelLock(overlay) {
+        if (!overlay || overlay.dataset.walletWheelLock === '1') return;
+
+        // Non-scrollable navigation and exhausted scroll areas must not chain
+        // wheel gestures into the page behind the wallet. Keep native scrolling
+        // for any inner scroller that can still consume the gesture.
+        overlay.addEventListener('wheel', (event) => {
+            if (!overlay.classList.contains('active') || event.ctrlKey || event.defaultPrevented) return;
+
+            const horizontal = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY);
+            const delta = horizontal ? (event.deltaX || event.deltaY) : event.deltaY;
+            if (!delta) return;
+
+            let target = event.target?.nodeType === 1 ? event.target : event.target?.parentElement;
+            while (target && target !== overlay && overlay.contains(target)) {
+                const style = window.getComputedStyle(target);
+                const overflow = horizontal ? style.overflowX : style.overflowY;
+                const extent = horizontal
+                    ? target.scrollWidth - target.clientWidth
+                    : target.scrollHeight - target.clientHeight;
+                const offset = horizontal ? target.scrollLeft : target.scrollTop;
+                if (/(auto|scroll)/.test(overflow) && extent > 1) {
+                    if (delta < 0 ? offset > 1 : offset < extent - 1) return;
+                }
+                target = target.parentElement;
+            }
+
+            if (event.cancelable) event.preventDefault();
+            event.stopPropagation();
+        }, { passive: false, capture: true });
+        overlay.dataset.walletWheelLock = '1';
+    }
+
     function bindWalletRecordsTouchLock(overlay) {
         const ordersView = overlay?.querySelector('#view-orders');
         const isRecordsListTouch = (event) => {
@@ -1704,6 +1740,12 @@
         modalEl: null,
         pendingRechargeAction: null,
         selectedRechargePackage: null,
+        selectedRechargeMethod: '',
+        selectedUsdtNetwork: 'usdtbsc',
+        paymentConfigRequest: null,
+        rechargeFxRefreshTimer: null,
+        rechargeFxResumeHandler: null,
+        rechargeFxRetryCount: 0,
         lastOpenContext: null,
         promptCache: {}, // Local simple cache for titles
         verifyLogCache: {},
@@ -2063,6 +2105,7 @@
             overlay.dataset.walletDelegatesBound = '1';
             bindWalletContentTouchLock(overlay);
             bindWalletRecordsTouchLock(overlay);
+            bindWalletModalWheelLock(overlay);
 
             overlay.addEventListener('click', (event) => {
                 const actionEl = event.target.closest('[data-wallet-action]');
@@ -2257,10 +2300,17 @@
                         this.decodeActionValue(actionEl.dataset.walletPackageName)
                     );
                     break;
+                case 'select-recharge-method':
+                    if (!this.pendingRechargeAction) {
+                        this.selectedRechargeMethod = actionEl.dataset.walletPaymentMethod || '';
+                        this.syncRechargePaymentSelection();
+                        if (this.selectedRechargeMethod === 'usdt') void this.loadPaymentRuntimeConfig();
+                    }
+                    break;
                 case 'select-usdt-network':
                     if (!this.pendingRechargeAction) {
                         this.selectedUsdtNetwork = actionEl.dataset.walletUsdtNetwork || 'usdtbsc';
-                        this.refreshCustomRechargePaymentMethods();
+                        this.syncRechargePaymentSelection();
                     }
                     break;
                 case 'pay-selected-recharge':
@@ -5642,6 +5692,7 @@
                 ordersContainer.innerHTML = `<div class="loading-text">${window.i18n?.t('common.loading') || '加载中...'}</div>`;
             }
             activateWalletModalOverlay();
+            this.startRechargeFxRefresh();
 
             const { card, overlay } = getWalletModalElements();
             if (window.iOSScrollLock) {
@@ -5687,6 +5738,7 @@
          * Close the modal
          */
         close() {
+            this.stopRechargeFxRefresh();
             const { overlay, scroller } = getWalletModalElements();
             getActiveWalletModalInput()?.blur();
             detachWalletModalViewportHandlers();
@@ -6035,8 +6087,9 @@
 
                                             <div class="wallet-affiliate-link-row">
                                                 <input type="text" id="affiliate-link" readonly class="wallet-affiliate-link-input"${this.buildDataAttributes({ 'wallet-action': 'select-affiliate-link' })} />
-                                                <button class="wallet-affiliate-copy-btn"${this.buildDataAttributes({ 'wallet-action': 'copy-affiliate-link' })}>
-                                                    ${window.i18n?.t('wallet.copyLink') || '复制链接'}
+                                                <button type="button" class="wallet-affiliate-copy-btn"${this.buildDataAttributes({ 'wallet-action': 'copy-affiliate-link' })}>
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"></path></svg>
+                                                    <span>${window.i18n?.t('wallet.copyLink') || '复制链接'}</span>
                                                 </button>
                                             </div>
 
@@ -6131,6 +6184,10 @@
             document.querySelectorAll('.wallet-view').forEach(view => {
                 view.classList.toggle('active', view.id === `view-${viewId}`);
             });
+
+            if (viewId === 'recharge' && this.isOpen) {
+                void this.loadPaymentRuntimeConfig();
+            }
 
             // Load orders when switching to orders view
             if (viewId === 'orders' && !this.ordersLoaded) {
@@ -6766,7 +6823,8 @@
                 <div class="wallet-discount-assets-summary">
                     <button
                         type="button"
-                        class="wallet-discount-assets-summary-card wallet-discount-assets-summary-card--primary wallet-discount-assets-summary-card--interactive${summaryFilter === 'available' ? ' active' : ''}"
+                        class="wallet-discount-assets-summary-card wallet-discount-assets-summary-card--interactive${summaryFilter === 'available' ? ' active' : ''}"
+                        aria-pressed="${summaryFilter === 'available'}"
                         ${this.buildDataAttributes({ 'wallet-action': 'select-discount-assets-summary-filter', 'wallet-summary-filter': 'available' })}
                     >
                         <span>${this.tr('wallet.availableNow', '当前可用')}</span>
@@ -6775,6 +6833,7 @@
                     <button
                         type="button"
                         class="wallet-discount-assets-summary-card wallet-discount-assets-summary-card--interactive${summaryFilter === 'expiring' ? ' active' : ''}"
+                        aria-pressed="${summaryFilter === 'expiring'}"
                         ${this.buildDataAttributes({ 'wallet-action': 'select-discount-assets-summary-filter', 'wallet-summary-filter': 'expiring' })}
                     >
                         <span>${this.tr('wallet.expiringSoon', '即将过期')}</span>
@@ -7449,6 +7508,9 @@
 
         writePaymentConfigBrowserCache(site = 'cn', payload = null) {
             if (!payload?.success) return;
+            const provider = payload.config?.providers?.nowpayments;
+            if (provider?.enabled && (provider.fx_preview_unavailable
+                || (provider.fx_mode === 'market' && !this.getRechargeFxSnapshot(provider)))) return;
 
             try {
                 window.sessionStorage?.setItem(this.getPaymentConfigBrowserCacheKey(site), JSON.stringify({
@@ -7462,7 +7524,20 @@
 
         applyPaymentConfigPayload(payload = {}) {
             if (payload?.config) {
-                this.paymentChannelsConfig = this.normalizePaymentChannelsConfig(payload.config);
+                const previous = this.paymentChannelsConfig?.providers?.nowpayments;
+                const liveFx = previous?.fx_mode === 'market' && !previous.fx_preview_unavailable
+                    ? this.getRechargeFxSnapshot(previous) : null;
+                const nextConfig = this.normalizePaymentChannelsConfig(payload.config);
+                const next = nextConfig.providers.nowpayments;
+                const fxError = payload.config.providers?.nowpayments?.fx_error;
+                // Issued snapshots are immutable until expiry. A transient source
+                // failure must not erase one, extend its lifetime or hide a disable.
+                if (previous?.enabled && liveFx && next.enabled && next.fx_mode === 'market'
+                    && !next.fx_preview_unavailable && !this.getRechargeFxSnapshot(next)
+                    && (!fxError || fxError === 'payment_fx_unavailable')) {
+                    next.fx_snapshot = liveFx;
+                }
+                this.paymentChannelsConfig = nextConfig;
             }
 
             if (payload?.recharge_options) {
@@ -7483,10 +7558,13 @@
             let lastError = null;
 
             for (const url of candidates) {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), WALLET_PAYMENT_CONFIG_REQUEST_TIMEOUT_MS);
                 try {
                     const response = await fetch(url, {
                         method: 'GET',
-                        cache: options.forceRefresh === true ? 'no-store' : 'default',
+                        cache: 'no-store',
+                        signal: controller.signal,
                         credentials: url.startsWith('http') ? 'omit' : 'same-origin',
                         headers: {
                             Accept: 'application/json',
@@ -7498,7 +7576,7 @@
                     });
                     const payload = await response.json().catch(() => ({}));
 
-                    if (!response.ok || payload?.success === false) {
+                    if (!response.ok || payload?.success !== true) {
                         throw new Error(payload?.message || '加载支付环境配置失败');
                     }
 
@@ -7509,51 +7587,126 @@
                         break;
                     }
                     console.warn('[WalletModal] Direct payment config fetch failed, retrying same-origin route:', error?.message || error);
+                } finally {
+                    clearTimeout(timeout);
                 }
             }
 
             throw lastError || new Error('加载支付环境配置失败');
         },
 
+        clearRechargeFxRefreshTimer() {
+            if (this.rechargeFxRefreshTimer !== null) clearTimeout(this.rechargeFxRefreshTimer);
+            this.rechargeFxRefreshTimer = null;
+        },
+
+        repaintRechargeFxPreview() {
+            if (!this.isOpen || this.pendingRechargeAction) return;
+            this.renderSelectedRechargePaymentPanel();
+            this.renderCustomRechargeSection();
+        },
+
+        scheduleRechargeFxRefresh() {
+            this.clearRechargeFxRefreshTimer();
+            const provider = this.paymentChannelsConfig?.providers?.nowpayments;
+            if (!this.isOpen || document.visibilityState === 'hidden' || this.paymentConfigRequest
+                || !provider?.enabled || (provider.fx_mode !== 'market' && !provider.fx_preview_unavailable)) return;
+            const fx = !provider.fx_preview_unavailable ? this.getRechargeFxSnapshot(provider) : null;
+            const delay = fx
+                ? Math.max(100, Date.parse(fx.expires_at) - Date.now() + 100)
+                : Math.min(WALLET_RECHARGE_FX_RETRY_MAX_MS,
+                    WALLET_RECHARGE_FX_RETRY_BASE_MS * 2 ** Math.min(4, Math.max(0, this.rechargeFxRetryCount - 1)));
+            this.rechargeFxRefreshTimer = setTimeout(() => {
+                this.rechargeFxRefreshTimer = null;
+                if (!this.isOpen || document.visibilityState === 'hidden') return;
+                void this.loadPaymentRuntimeConfig(true);
+                this.repaintRechargeFxPreview();
+            }, delay);
+        },
+
+        startRechargeFxRefresh() {
+            if (!this.rechargeFxResumeHandler) {
+                this.rechargeFxResumeHandler = () => {
+                    if (!this.isOpen) return;
+                    if (document.visibilityState === 'hidden') {
+                        this.clearRechargeFxRefreshTimer();
+                        return;
+                    }
+                    void this.loadPaymentRuntimeConfig();
+                    this.repaintRechargeFxPreview();
+                };
+                document.addEventListener('visibilitychange', this.rechargeFxResumeHandler);
+                window.addEventListener('focus', this.rechargeFxResumeHandler);
+                window.addEventListener('pageshow', this.rechargeFxResumeHandler);
+            }
+            this.scheduleRechargeFxRefresh();
+        },
+
+        stopRechargeFxRefresh() {
+            this.clearRechargeFxRefreshTimer();
+            if (!this.rechargeFxResumeHandler) return;
+            document.removeEventListener('visibilitychange', this.rechargeFxResumeHandler);
+            window.removeEventListener('focus', this.rechargeFxResumeHandler);
+            window.removeEventListener('pageshow', this.rechargeFxResumeHandler);
+            this.rechargeFxResumeHandler = null;
+        },
+
         async loadPaymentRuntimeConfig(forceRefresh = false) {
+            const site = this.getWalletSiteScope();
+            if (this.paymentConfigRequest?.site === site) return this.paymentConfigRequest.promise;
             const cryptoProvider = this.paymentChannelsConfig?.providers?.nowpayments;
             if (!forceRefresh && this.paymentRuntimeConfig
                 && !cryptoProvider?.fx_preview_unavailable
                 && (cryptoProvider?.fx_mode !== 'market' || this.getRechargeFxSnapshot(cryptoProvider))) {
+                this.scheduleRechargeFxRefresh();
                 return this.paymentRuntimeConfig;
             }
 
-            const site = this.getWalletSiteScope();
             if (!forceRefresh) {
                 const cachedPayload = this.readPaymentConfigBrowserCache(site);
                 if (cachedPayload) {
                     const runtimeConfig = this.applyPaymentConfigPayload(cachedPayload);
-                    void this.loadPaymentRuntimeConfig(true).catch((error) => {
-                        console.debug('[WalletModal] Background payment config refresh skipped:', error?.message || error);
-                    });
+                    void this.loadPaymentRuntimeConfig(true);
                     return runtimeConfig;
                 }
             }
 
-            try {
-                const payload = await this.fetchPaymentConfigPayload(site, { forceRefresh });
-                this.writePaymentConfigBrowserCache(site, payload);
-                this.applyPaymentConfigPayload(payload);
-                if (this.isOpen && !this.pendingRechargeAction) {
-                    this.renderSelectedRechargePaymentPanel();
-                    this.renderCustomRechargeSection();
+            this.clearRechargeFxRefreshTimer();
+            const request = { site, promise: null };
+            this.paymentConfigRequest = request;
+            request.promise = (async () => {
+                try {
+                    const payload = await this.fetchPaymentConfigPayload(site, { forceRefresh });
+                    if (this.paymentConfigRequest !== request) return this.paymentRuntimeConfig;
+                    this.writePaymentConfigBrowserCache(site, payload);
+                    this.applyPaymentConfigPayload(payload);
+                    const provider = this.paymentChannelsConfig?.providers?.nowpayments;
+                    this.rechargeFxRetryCount = provider?.fx_mode === 'market' && !this.getRechargeFxSnapshot(provider)
+                        ? this.rechargeFxRetryCount + 1 : 0;
+                } catch (runtimeError) {
+                    if (this.paymentConfigRequest !== request) return this.paymentRuntimeConfig;
+                    console.warn('[WalletModal] Failed to load payment runtime config:', runtimeError);
+                    // Keep an already loaded authoritative configuration and any
+                    // unexpired quote when only the refresh transport failed.
+                    if (!this.paymentRuntimeConfig) {
+                        await this.recoverPaymentConfigsFromSystemConfig();
+                        this.paymentRuntimeConfig = this.getDefaultPaymentRuntimeConfig();
+                        if (this.paymentChannelsConfig?.providers?.nowpayments) {
+                            // System config alone cannot establish a live FX mode.
+                            this.paymentChannelsConfig.providers.nowpayments.fx_preview_unavailable = true;
+                        }
+                    }
+                    this.rechargeFxRetryCount += 1;
+                } finally {
+                    if (this.paymentConfigRequest === request) {
+                        this.paymentConfigRequest = null;
+                        this.repaintRechargeFxPreview();
+                        this.scheduleRechargeFxRefresh();
+                    }
                 }
-            } catch (runtimeError) {
-                console.warn('[WalletModal] Failed to load payment runtime config:', runtimeError);
-                await this.recoverPaymentConfigsFromSystemConfig();
-                this.paymentRuntimeConfig = this.getDefaultPaymentRuntimeConfig();
-                if (this.paymentChannelsConfig?.providers?.nowpayments) {
-                    // The fallback has no authoritative FX mode or live quote.
-                    this.paymentChannelsConfig.providers.nowpayments.fx_preview_unavailable = true;
-                }
-            }
-
-            return this.paymentRuntimeConfig;
+                return this.paymentRuntimeConfig;
+            })();
+            return request.promise;
         },
 
         async loadSystemConfigValue(configKey) {
@@ -7740,6 +7893,74 @@
                     ? 'payment_fx_quote_expired' : 'payment_fx_unavailable',
                 previewRefreshed: true
             });
+        },
+
+        showUsdtMinimumToast(message) {
+            // One capsule per wallet, above the modal and outside its scroll container.
+            document.getElementById('wallet-usdt-minimum-toast')?.remove();
+            if (this.usdtMinimumToastTimer) clearTimeout(this.usdtMinimumToastTimer);
+            const toast = document.createElement('div');
+            toast.id = 'wallet-usdt-minimum-toast';
+            toast.className = 'wallet-toast wallet-toast-info wallet-usdt-minimum-toast';
+            toast.setAttribute('role', 'status');
+            toast.setAttribute('aria-live', 'polite');
+            toast.setAttribute('aria-atomic', 'true');
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            this.usdtMinimumToastTimer = setTimeout(() => {
+                toast.classList.add('wallet-toast--leaving');
+                setTimeout(() => toast.remove(), 300);
+            }, 3600);
+        },
+
+        async validateRechargeUsdtMinimum(providerKey, totalCnyAmount, fxRequest, isCurrent = () => true) {
+            if (providerKey !== 'nowpayments') return true;
+            const site = this.getWalletSiteScope();
+            const network = fxRequest.pay_currency;
+            const wasOpen = this.isOpen;
+            const openContext = this.lastOpenContext;
+            const method = this.selectedRechargeMethod;
+            const current = () => isCurrent() && this.isOpen === wasOpen && this.lastOpenContext === openContext && this.getWalletSiteScope() === site
+                && (this.selectedUsdtNetwork || 'usdtbsc') === network && this.selectedRechargeMethod === method;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 7000);
+            try {
+                const params = new URLSearchParams({ site, channel: network, amount_cny: Number(totalCnyAmount).toFixed(2) });
+                if (fxRequest.fx_snapshot_id) params.set('fx_snapshot_id', fxRequest.fx_snapshot_id);
+                const response = await fetch(`/api/payments/minimum?${params}`, {
+                    cache: 'no-store', credentials: 'same-origin', signal: controller.signal,
+                    headers: { Accept: 'application/json' }
+                });
+                const payload = await response.json();
+                if (!current()) return false;
+                if (!response.ok || payload?.success !== true) {
+                    if (payload?.code === 'payment_fx_quote_expired') throw Object.assign(new Error(payload.message), { code: payload.code });
+                    throw new Error('暂时无法核对该网络的最低充值金额，请稍后重试');
+                }
+                const minimum = payload.minimum;
+                const check = payload.check;
+                if (payload.site !== site || minimum?.network !== network || minimum.currency !== 'USDT'
+                    || !/^\d+(?:\.\d{1,2})?$/.test(String(minimum.amount)) || !(Number(minimum.amount) > 0)
+                    || !(Date.parse(minimum.expires_at) > Date.now()) || check?.amount_cny !== Number(totalCnyAmount).toFixed(2)
+                    || !/^\d+\.\d{2}$/.test(check?.pay_amount || '') || !(Number(check.pay_amount) > 0)
+                    || check.below_minimum !== (Number(check.pay_amount) < Number(minimum.amount))
+                    || (fxRequest.fx_snapshot_id && check.fx_snapshot_id !== fxRequest.fx_snapshot_id)) {
+                    throw new Error('暂时无法核对该网络的最低充值金额，请稍后重试');
+                }
+                if (check.below_minimum) {
+                    const names = { usdtbsc: 'BSC (BEP20)', usdtton: 'TON', usdtmatic: 'Polygon', usdttrc20: 'TRON (TRC20)' };
+                    this.showUsdtMinimumToast(`${names[network]} 最低支付 ${minimum.amount} USDT，请增加充值金额或选择支付宝`);
+                    return false;
+                }
+                return true;
+            } catch (error) {
+                if (error?.code === 'payment_fx_quote_expired') throw error;
+                if (current()) this.showUsdtMinimumToast(error?.name === 'AbortError'
+                    ? '最低充值金额查询超时，请稍后重试' : (error?.message || '最低充值金额查询失败，请稍后重试'));
+                return false;
+            } finally {
+                clearTimeout(timeout);
+            }
         },
 
         estimateUsdtPayableAmountText(totalCnyAmount = 0, provider = {}) {
@@ -8001,7 +8222,9 @@
                     label: this.tr('wallet.usdtPayment', 'USDT'),
                     sublabel: usdtProvider.enabled === true
                         ? (usdtProvider.fx_preview_unavailable || (usdtProvider.fx_mode === 'market' && !this.getRechargeFxSnapshot(usdtProvider))
-                            ? this.tr('wallet.usdtFxUnavailableShort', '汇率暂不可用')
+                            ? (this.paymentConfigRequest
+                                ? this.tr('wallet.usdtFxRefreshingShort', '汇率更新中…')
+                                : this.tr('wallet.usdtFxUnavailableShort', '汇率暂不可用'))
                             : ((usdtProvider.networks || []).find(item => item.currency === (this.selectedUsdtNetwork || 'usdtbsc'))?.name || usdtProvider.network_name || 'BSC (BEP20)'))
                         : this.tr('wallet.usdtUnavailable', '未启用'),
                     icon: 'fa-solid fa-coins',
@@ -8017,8 +8240,14 @@
             paymentChannels = this.paymentChannelsConfig,
             baseAmount = null
         } = {}) {
-            return this.getRechargePaymentMethods(paymentChannels).map((method) => {
+            const methods = this.getRechargePaymentMethods(paymentChannels);
+            if (!methods.some(method => method.key === this.selectedRechargeMethod && method.enabled)) {
+                this.selectedRechargeMethod = methods.find(method => method.enabled)?.key || '';
+            }
+            const networkMarkup = this.renderUsdtNetworkChoices(disabled, paymentChannels);
+            const buttons = this.getRechargePaymentMethods(paymentChannels).map((method) => {
                 const isDisabled = disabled || method.enabled !== true;
+                const selected = this.selectedRechargeMethod === method.key;
                 const surcharge = this.estimatePaymentSurcharge(method.provider, baseAmount);
                 const surchargeHint = this.formatRechargeMethodPayableHint(method, surcharge);
                 const surchargeMarkup = this.renderRechargeMethodFeeMarkup(method, surcharge);
@@ -8030,9 +8259,11 @@
                     <button type="button"
                             class="wallet-recharge-method-btn wallet-recharge-method-btn--${this.escapeAttribute(method.key)}${compact ? ' wallet-recharge-method-btn--compact' : ''}"
                             ${isDisabled ? 'disabled' : ''}
+                            aria-pressed="${selected}"
+                            ${method.key === 'usdt' ? `aria-controls="wallet-usdt-network-panel" aria-expanded="${selected}"` : ''}
                             title="${this.escapeAttribute(title)}"
                             ${this.buildDataAttributes({
-                                'wallet-action': action,
+                                'wallet-action': 'select-recharge-method',
                                 'wallet-payment-method': method.key
                             })}>
                         <span class="wallet-recharge-method-icon wallet-recharge-method-icon--${this.escapeAttribute(method.key)}" aria-hidden="true">${this.renderRechargePaymentMethodIcon(method)}</span>
@@ -8043,16 +8274,79 @@
                         </span>
                     </button>
                 `;
-            }).join('') + this.renderUsdtNetworkChoices(disabled, paymentChannels);
+            }).join('');
+            return buttons + networkMarkup + `
+                <button type="button" class="wallet-recharge-method-btn wallet-recharge-submit"
+                        ${disabled || !this.selectedRechargeMethod ? 'disabled' : ''}
+                        data-wallet-action="${this.escapeAttribute(action)}"
+                        data-wallet-payment-method="${this.escapeAttribute(this.selectedRechargeMethod)}">
+                    ${this.escapeHtml(this.tr('wallet.confirmRechargePayment', '确认充值'))}
+                    <span aria-hidden="true">↗</span>
+                </button>`;
         },
 
         renderUsdtNetworkChoices(disabled = false, config = this.paymentChannelsConfig) {
             const provider = this.getRechargePaymentProviderForMethod('usdt', config);
             if (!provider.enabled) return '';
-            const names = { usdtbsc: 'BSC (BEP20)', usdtton: 'TON', usdtmatic: 'Polygon', usdttrc20: 'TRON (TRC20)' };
-            const choices = (provider.networks || [{ currency: 'usdtbsc' }]).filter(item => Object.hasOwn(names, item.currency));
+            const networks = {
+                usdtbsc: { name: 'BSC', protocol: 'BEP20', icon: 'bsc' },
+                usdtton: { name: 'TON', protocol: 'TON', icon: 'ton' },
+                usdtmatic: { name: 'Polygon', protocol: 'Polygon', icon: 'polygon' },
+                usdttrc20: { name: 'TRON', protocol: 'TRC20', icon: 'tron' }
+            };
+            const choices = (provider.networks || [{ currency: 'usdtbsc' }]).filter(item => Object.hasOwn(networks, item.currency));
             if (!choices.some(item => item.currency === this.selectedUsdtNetwork)) this.selectedUsdtNetwork = choices[0]?.currency || 'usdtbsc';
-            return `<div class="wallet-usdt-network-choices" role="group" aria-label="USDT 转账网络" style="grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:8px"><span>USDT 网络</span>${choices.map(item => `<button type="button" class="wallet-recharge-method-btn wallet-recharge-method-btn--compact" style="width:auto;flex:0 0 auto;min-width:0;padding:8px 12px" data-wallet-action="select-usdt-network" data-wallet-usdt-network="${this.escapeAttribute(item.currency)}" aria-pressed="${item.currency === this.selectedUsdtNetwork}" ${disabled ? 'disabled' : ''}>${this.escapeHtml(names[item.currency])}${item.currency === this.selectedUsdtNetwork ? ' ✓' : ''}</button>`).join('')}</div>`;
+            const expanded = this.selectedRechargeMethod === 'usdt';
+            return `<div id="wallet-usdt-network-panel" class="wallet-usdt-network-panel${expanded ? ' is-expanded' : ''}" aria-hidden="${!expanded}" ${expanded ? '' : 'inert'}>
+                <div class="wallet-usdt-network-panel__clip">
+                    <div class="wallet-usdt-network-content">
+                        <span class="wallet-usdt-network-label">${this.escapeHtml(this.tr('wallet.usdtNetwork', '支付网络'))}</span>
+                        <div class="wallet-usdt-network-choices" role="group" aria-label="USDT 转账网络">${choices.map(item => {
+                            const network = networks[item.currency];
+                            return `<button type="button" class="wallet-usdt-network-btn" data-wallet-action="select-usdt-network" data-wallet-usdt-network="${this.escapeAttribute(item.currency)}" aria-pressed="${item.currency === this.selectedUsdtNetwork}" ${disabled ? 'disabled' : ''}>
+                                <img src="/assets/tg-network-icons/${network.icon}.svg" alt="" width="24" height="24" aria-hidden="true">
+                                <span><strong>${network.name}</strong>${network.protocol !== network.name ? `<small>${network.protocol}</small>` : ''}</span>
+                            </button>`;
+                        }).join('')}</div>
+                    </div>
+                </div>
+            </div>`;
+        },
+
+        syncRechargePaymentSelection() {
+            const methods = document.getElementById('wallet-custom-recharge-methods');
+            if (!methods || this.pendingRechargeAction) return;
+            const available = this.getRechargePaymentMethods(this.paymentChannelsConfig);
+            if (!available.some(method => method.key === this.selectedRechargeMethod && method.enabled)) return;
+            const expanded = this.selectedRechargeMethod === 'usdt';
+            const panel = methods.querySelector('.wallet-usdt-network-panel');
+            panel?.classList.toggle('is-expanded', expanded);
+            panel?.setAttribute('aria-hidden', String(!expanded));
+            if (panel) panel.inert = !expanded;
+            methods.querySelectorAll('[data-wallet-action="select-recharge-method"]').forEach(button => {
+                const selected = button.dataset.walletPaymentMethod === this.selectedRechargeMethod;
+                button.setAttribute('aria-pressed', String(selected));
+                if (button.dataset.walletPaymentMethod === 'usdt') button.setAttribute('aria-expanded', String(expanded));
+            });
+            methods.querySelectorAll('[data-wallet-usdt-network]').forEach(button => {
+                button.setAttribute('aria-pressed', String(button.dataset.walletUsdtNetwork === this.selectedUsdtNetwork));
+            });
+            const submit = methods.querySelector('.wallet-recharge-submit');
+            if (submit) submit.dataset.walletPaymentMethod = this.selectedRechargeMethod;
+            // Keep the expanding panel mounted; update only quote text so a network
+            // change cannot interrupt the height transition or move keyboard focus.
+            const selectedPackage = this.getSelectedRechargePackage();
+            const request = selectedPackage
+                ? { ok: true, estimatedPaidAmount: Number(selectedPackage.price_cny) }
+                : this.resolveCustomRechargeRequest(document.getElementById('wallet-custom-recharge-input')?.value || '', this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig));
+            available.forEach(method => {
+                const button = methods.querySelector(`[data-wallet-action="select-recharge-method"][data-wallet-payment-method="${method.key}"]`);
+                const copy = button?.querySelector('.wallet-recharge-method-copy');
+                if (!copy) return;
+                const surcharge = this.estimatePaymentSurcharge(method.provider, request.ok ? request.estimatedPaidAmount : null);
+                copy.innerHTML = `<strong>${this.escapeHtml(method.label)}</strong><small>${this.escapeHtml(method.sublabel)}</small>${this.renderRechargeMethodFeeMarkup(method, surcharge)}`;
+                button.title = `${method.label} · ${method.sublabel}${this.formatRechargeMethodPayableHint(method, surcharge) ? ` · ${this.formatRechargeMethodPayableHint(method, surcharge)}` : ''}`;
+            });
         },
 
         resolveRechargeProviderKeyForMethod(methodKey = '', {
@@ -10284,8 +10578,8 @@
                                 'wallet-package-name': this.encodeActionValue(pkg.name)
                             })} aria-pressed="false">
                                 <div class="pkg-name">${displayName}</div>
-                                <div class="pkg-points">${this.formatWalletAmount(pkg.points_amount)}${pkg.bonus_points > 0 ? ` <span class="pkg-bonus">+${this.formatWalletAmount(pkg.bonus_points)}</span>` : ''}</div>
                                 <div class="pkg-price" data-wallet-package-price>¥${pkg.price_cny}</div>
+                                <div class="pkg-points"><span class="pkg-credit-label">${isEnglish ? 'Credit' : '到账'}</span><span>${this.formatWalletAmount(pkg.points_amount)}</span>${pkg.bonus_points > 0 ? ` <span class="pkg-bonus">+${this.formatWalletAmount(pkg.bonus_points)}</span>` : ''}</div>
                             </button>
                         `}).join('');
                         this.ensureSelectedRechargePackage(packages);
@@ -10422,8 +10716,12 @@
                         : this.tr('wallet.creatingPaymentRequest', '正在为 {name} 创建支付请求...', { name: `「${displayName}」` })
                 });
 
+                const fxRequest = await this.getRechargeFxRequest(providerKey);
+                const totalCny = this.estimatePaymentSurcharge(selectedProvider, packageData?.price_cny).totalAmount;
+                if (!await this.validateRechargeUsdtMinimum(providerKey, totalCny, fxRequest,
+                    () => !this.selectedRechargePackage || String(this.selectedRechargePackage.id) === String(packageId))) return;
                 const paymentResult = await PointsService.createPaymentRequest({
-                    ...await this.getRechargeFxRequest(providerKey),
+                    ...fxRequest,
                     provider_key: providerKey,
                     package_id: packageId,
                     package_name: packageData?.name || packageName || ''
@@ -10683,8 +10981,12 @@
                     message: pendingMessage
                 });
 
+                const fxRequest = await this.getRechargeFxRequest(providerKey);
+                const totalCny = this.estimatePaymentSurcharge(selectedProvider, quotedAmountCny).totalAmount;
+                if (!await this.validateRechargeUsdtMinimum(providerKey, totalCny, fxRequest,
+                    () => (input?.value ?? '') === rawValue)) return;
                 const paymentResult = await PointsService.createPaymentRequest({
-                    ...await this.getRechargeFxRequest(providerKey),
+                    ...fxRequest,
                     provider_key: providerKey,
                     points_amount: normalizedAmount
                 });
@@ -11700,7 +12002,7 @@
             const overlay = document.getElementById('wallet-modal-overlay');
             const packageItems = Array.from(document.querySelectorAll('#wallet-packages .package-item[data-wallet-action="buy-package"]'));
             const customInput = document.getElementById('wallet-custom-recharge-input');
-            const rechargeMethodButtons = Array.from(document.querySelectorAll('.wallet-recharge-method-btn'));
+            const rechargeMethodButtons = Array.from(document.querySelectorAll('.wallet-recharge-method-btn, .wallet-usdt-network-btn'));
             const isPending = !!state;
 
             this.pendingRechargeAction = isPending ? { ...state } : null;

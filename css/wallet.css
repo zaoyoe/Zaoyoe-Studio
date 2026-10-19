@@ -666,26 +666,75 @@ body.wallet-modal-lock {
     text-overflow: ellipsis;
 }
 
-.wallet-affiliate-copy-btn,
 .wallet-affiliate-poster-btn {
     border: 0;
     border-radius: 12px;
     cursor: pointer;
-    transition: transform 0.22s ease, box-shadow 0.22s ease, filter 0.22s ease;
+    transform: translateY(0);
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+        background-color 180ms ease, border-color 180ms ease;
     font-weight: 700;
 }
 
 .wallet-affiliate-copy-btn {
-    padding: 11px 18px;
-    background: linear-gradient(135deg, #f8fafc, #dbeafe);
-    color: #050816;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    gap: 7px;
+    min-height: 38px;
+    padding: 9px 14px;
+    border: 1px solid rgba(52, 211, 153, 0.26);
+    border-radius: 10px;
+    background: rgba(16, 185, 129, 0.1);
+    color: #6ee7b7;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.25;
     white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
-.wallet-affiliate-copy-btn:hover,
-.wallet-affiliate-poster-btn:hover {
-    transform: translateY(-1px);
-    filter: brightness(1.04);
+.wallet-affiliate-copy-btn svg {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 15px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .wallet-affiliate-copy-btn:hover:not(:disabled) {
+        background-color: rgba(16, 185, 129, 0.17);
+        border-color: rgba(52, 211, 153, 0.42);
+        color: #a7f3d0;
+    }
+}
+
+.wallet-affiliate-copy-btn:active:not(:disabled) {
+    background-color: rgba(16, 185, 129, 0.22);
+}
+
+.wallet-affiliate-copy-btn:focus-visible {
+    outline: 2px solid #34d399;
+    outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .wallet-affiliate-poster-btn:hover:not(:disabled) {
+        transform: translateY(var(--control-press-hover, 0.75px));
+        background-color: #099b72;
+    }
+}
+
+.wallet-affiliate-poster-btn:active:not(:disabled) {
+    transform: translateY(var(--control-press-active, 1.5px));
+    background-color: #078d68;
+}
+
+.wallet-affiliate-poster-btn:focus-visible {
+    outline: 2px solid #34d399;
+    outline-offset: 2px;
 }
 
 .wallet-affiliate-poster-btn {
@@ -696,9 +745,9 @@ body.wallet-modal-lock {
     align-items: center;
     justify-content: center;
     gap: 8px;
-    background: linear-gradient(135deg, #34d399, #059669);
+    background: #0da47a;
     color: #f8fafc;
-    box-shadow: 0 12px 24px rgba(5, 150, 105, 0.22);
+    box-shadow: 0 2px 5px rgba(5, 150, 105, 0.1);
     position: relative;
     z-index: 1;
 }
@@ -1478,6 +1527,13 @@ body.wallet-modal-lock {
     box-sizing: border-box;
 }
 
+/* Let recharge content grow so the scroll container keeps its bottom inset. */
+#view-recharge {
+    height: auto;
+    min-height: 100%;
+    padding-bottom: 8px;
+}
+
 #view-balance {
     display: none;
     /* Toggle via JS */
@@ -1587,53 +1643,54 @@ body.wallet-modal-lock {
     align-items: stretch;
 }
 
+/* Summary selection is exclusive; hover never looks like the selected filter. */
 .wallet-discount-assets-summary-card {
+    --wallet-summary-accent: 244, 114, 182;
+    --wallet-summary-text: #f9a8d4;
     position: relative;
+    min-width: 0;
     min-height: 104px;
     padding: 16px;
-    border-radius: 18px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0.018) 100%);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.04),
-        0 12px 24px rgba(0, 0, 0, 0.14);
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(255, 255, 255, 0.025);
+    box-shadow: none;
     overflow: hidden;
     display: grid;
     align-content: center;
     gap: 10px;
+    transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.wallet-discount-assets-summary-card[data-wallet-summary-filter="expiring"] {
+    --wallet-summary-accent: 251, 191, 36;
+    --wallet-summary-text: #fcd34d;
 }
 
 .wallet-discount-assets-summary-card--interactive {
     cursor: pointer;
     text-align: left;
-    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 }
 
-.wallet-discount-assets-summary-card--interactive:hover {
-    transform: translateY(-1px);
-    border-color: rgba(249, 168, 212, 0.18);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.06),
-        0 14px 30px rgba(0, 0, 0, 0.16);
+@media (hover: hover) and (pointer: fine) {
+    .wallet-discount-assets-summary-card--interactive:not(.active):hover:not(:disabled) {
+        background-color: rgba(var(--wallet-summary-accent), 0.035);
+        border-color: rgba(var(--wallet-summary-accent), 0.24);
+    }
 }
 
 .wallet-discount-assets-summary-card--interactive.active {
-    border-color: rgba(249, 168, 212, 0.2);
-    background:
-        linear-gradient(180deg, rgba(72, 48, 62, 0.32) 0%, rgba(19, 17, 24, 0.82) 100%);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.08),
-        0 14px 28px rgba(0, 0, 0, 0.18);
+    border-color: rgba(var(--wallet-summary-accent), 0.38);
+    background-color: rgba(var(--wallet-summary-accent), 0.075);
 }
 
-.wallet-discount-assets-summary-card--primary {
-    background:
-        linear-gradient(180deg, rgba(72, 48, 62, 0.32) 0%, rgba(19, 17, 24, 0.82) 100%);
-    border-color: rgba(249, 168, 212, 0.18);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.06),
-        0 12px 24px rgba(0, 0, 0, 0.16);
+.wallet-discount-assets-summary-card--interactive.active strong {
+    color: var(--wallet-summary-text);
+}
+
+.wallet-discount-assets-summary-card--interactive:focus-visible {
+    outline: none;
+    border-color: rgba(var(--wallet-summary-accent), 0.72);
 }
 
 .wallet-discount-assets-summary-card span,
@@ -2451,46 +2508,51 @@ body.wallet-modal-lock {
 
 .package-item {
     appearance: none;
-    background: linear-gradient(145deg, #222222, #2a2a2a);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
-    padding: 16px 12px;
+    min-width: 0;
+    min-height: 140px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 16px 14px 14px;
     cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    transition: border-color 180ms ease, background-color 180ms ease;
     position: relative;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
     height: 100%;
     width: 100%;
-    text-align: center;
+    text-align: left;
     color: inherit;
     font: inherit;
+    box-shadow: none;
 }
 
 .package-item::before {
     content: '';
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    top: 18px;
+    right: 14px;
+    width: 7px;
+    height: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    background: transparent;
+    transition: background-color 180ms ease, border-color 180ms ease;
 }
 
-.package-item:hover {
-    background: linear-gradient(145deg, #2a2a2a, #333333);
-    border-color: rgba(255, 215, 0, 0.3);
-    transform: translateY(-4px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+@media (hover: hover) and (pointer: fine) {
+    .package-item:not(:disabled):not([aria-disabled="true"]):not(.is-dimmed):not(.is-processing):not(.is-selected):hover {
+        border-color: rgba(251, 191, 36, 0.28);
+        background-color: rgba(251, 191, 36, 0.035);
+    }
 }
 
 .package-item:focus-visible {
     outline: none;
-    border-color: rgba(251, 191, 36, 0.62);
-    box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.14);
+    border-color: rgba(251, 191, 36, 0.72);
 }
 
 .package-item:disabled,
@@ -2507,84 +2569,86 @@ body.wallet-modal-lock {
 .package-item.is-dimmed,
 .package-item.is-dimmed:hover {
     opacity: 0.52;
-    background: linear-gradient(145deg, #222222, #2a2a2a);
+    background-color: rgba(255, 255, 255, 0.025);
     transform: none;
     box-shadow: none;
-    border-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.1);
 }
 
 .package-item.is-processing,
-.package-item.is-processing:hover {
-    transform: translateY(-2px);
-    border-color: rgba(251, 191, 36, 0.48);
-    box-shadow: 0 12px 28px rgba(249, 115, 22, 0.16);
-    background: linear-gradient(145deg, #2b2413, #332616);
-}
-
+.package-item.is-processing:hover,
 .package-item.is-selected,
 .package-item.is-selected:hover {
-    transform: translateY(-2px);
-    border-color: rgba(251, 191, 36, 0.62);
-    box-shadow: 0 12px 28px rgba(251, 191, 36, 0.16);
-    background: linear-gradient(145deg, #2c2514, #332717);
+    transform: none;
+    border-color: rgba(251, 191, 36, 0.48);
+    box-shadow: none;
+    background-color: rgba(251, 191, 36, 0.07);
 }
 
-.package-item.is-selected .pkg-price {
-    border-color: rgba(251, 191, 36, 0.52);
-    color: #fbbf24;
-    background: rgba(251, 191, 36, 0.1);
+.package-item.is-selected::before,
+.package-item.is-processing::before {
+    background-color: #fbbf24;
+    border-color: #fbbf24;
+}
+
+.package-item.is-selected .pkg-price,
+.package-item.is-processing .pkg-price {
+    color: #fcd34d;
 }
 
 .pkg-name {
-    font-size: 11px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: rgba(255, 255, 255, 0.4);
-    margin-bottom: 8px;
+    padding-right: 16px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.58);
+    overflow-wrap: anywhere;
 }
 
 .pkg-points {
-    font-size: 22px;
-    font-weight: 800;
-    background: linear-gradient(180deg, #FFD700 0%, #FFA500 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 4px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 5px;
+    width: 100%;
+    min-width: 0;
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.72);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
+.pkg-credit-label {
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 11px;
+    font-weight: 400;
 }
 
 .pkg-bonus {
     font-size: 10px;
-    color: #4cd964;
-    background: rgba(76, 217, 100, 0.1);
-    padding: 2px 8px;
-    border-radius: 10px;
-    margin-bottom: 12px;
+    line-height: 1.5;
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, 0.1);
+    padding: 1px 5px;
+    border-radius: 5px;
     font-weight: 600;
-    border: 1px solid rgba(76, 217, 100, 0.2);
 }
 
 .pkg-price {
-    font-size: 15px;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.9);
-    background: transparent;
-    padding: 6px 20px;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    transition: all 0.3s ease;
-    margin-top: auto;
-    /* Push to bottom */
-}
-
-.package-item.is-processing .pkg-price {
-    border-color: rgba(251, 191, 36, 0.32);
-    color: #fbbf24;
-    background: rgba(251, 191, 36, 0.1);
-    box-shadow: none;
-    transform: none;
+    min-width: 0;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.035em;
+    color: #f1f5f9;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+    transition: color 180ms ease;
 }
 
 .wallet-pending-badge {
@@ -2597,15 +2661,6 @@ body.wallet-modal-lock {
 
 .wallet-pending-badge--dots-only {
     gap: 0;
-}
-
-.package-item:not(:disabled):not(.is-dimmed):not(.is-processing):hover .pkg-price {
-    background: #FFD700;
-    color: #1a1a1a;
-    border-color: #FFD700;
-    font-weight: 700;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 10px rgba(255, 215, 0, 0.3);
 }
 
 .wallet-recharge-payment-panel {
@@ -2702,20 +2757,27 @@ body.wallet-modal-lock {
     transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
 }
 
-.wallet-recharge-method-btn:hover:not(:disabled) {
+.wallet-recharge-method-btn:not(:where(.wallet-recharge-method-btn--alipay, .wallet-recharge-method-btn--usdt)):hover:not(:disabled) {
     transform: translateY(-1px);
     border-color: rgba(251, 191, 36, 0.36);
     box-shadow: 0 10px 18px rgba(249, 115, 22, 0.16);
 }
 
-.wallet-recharge-method-btn--alipay:hover:not(:disabled) {
-    border-color: rgba(22, 119, 255, 0.38);
-    box-shadow: 0 12px 24px rgba(22, 119, 255, 0.16);
+.wallet-recharge-method-btn--alipay,
+.wallet-recharge-method-btn--usdt {
+    transition: background-color 180ms ease, border-color 180ms ease, opacity 180ms ease;
 }
 
-.wallet-recharge-method-btn--usdt:hover:not(:disabled) {
-    border-color: rgba(38, 161, 123, 0.38);
-    box-shadow: 0 12px 24px rgba(38, 161, 123, 0.16);
+@media (hover: hover) and (pointer: fine) {
+    .wallet-recharge-method-btn--alipay:hover:not(:disabled) {
+        background-color: rgba(22, 119, 255, 0.06);
+        border-color: rgba(83, 147, 226, 0.55);
+    }
+
+    .wallet-recharge-method-btn--usdt:hover:not(:disabled) {
+        background-color: rgba(38, 161, 123, 0.06);
+        border-color: rgba(53, 174, 141, 0.55);
+    }
 }
 
 .wallet-recharge-method-btn:disabled {
@@ -3069,7 +3131,7 @@ body.wallet-modal-lock {
     font-weight: 600;
     position: relative;
     user-select: none;
-    transition: all 0.2s ease;
+    transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
     color: rgba(255, 255, 255, 0.8);
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.03);
@@ -3127,19 +3189,27 @@ body.wallet-modal-lock {
 }
 
 .calendar-day.today {
-    border: 1px solid #6b9ece;
-    /* exact admin studio starry blue */
-    background: rgba(107, 158, 206, 0.15);
-    /* deep starry blue base */
-    color: #6b9ece;
+    border-color: rgba(107, 158, 206, 0.44);
+    background-color: rgba(107, 158, 206, 0.12);
+    color: #9fcaff;
     cursor: pointer;
-    box-shadow: inset 0 0 12px rgba(107, 158, 206, 0.2), 0 0 8px rgba(107, 158, 206, 0.4);
+    box-shadow: none;
 }
 
-.calendar-day.today:hover {
-    background: rgba(107, 158, 206, 0.25);
-    transform: translateY(-2px);
-    box-shadow: inset 0 0 15px rgba(107, 158, 206, 0.3), 0 4px 12px rgba(107, 158, 206, 0.5);
+@media (hover: hover) and (pointer: fine) {
+    .calendar-day.today:hover {
+        background-color: rgba(107, 158, 206, 0.18);
+        border-color: rgba(107, 158, 206, 0.6);
+    }
+}
+
+.calendar-day[data-wallet-action]:active {
+    background-color: rgba(107, 158, 206, 0.22);
+}
+
+.calendar-day[data-wallet-action]:focus-visible {
+    outline: none;
+    border-color: #9fcaff;
 }
 
 .calendar-day.today .today-text {
@@ -3191,8 +3261,12 @@ body.wallet-modal-lock {
     cursor: pointer;
 }
 
-.calendar-day.missed:hover {
-    background: rgba(255, 255, 255, 0.08);
+@media (hover: hover) and (pointer: fine) {
+    .calendar-day.missed:hover {
+        background-color: rgba(107, 158, 206, 0.08);
+        border-color: rgba(107, 158, 206, 0.22);
+        color: rgba(255, 255, 255, 0.72);
+    }
 }
 
 .makeup-badge {
@@ -3342,23 +3416,35 @@ body.wallet-modal-lock {
 }
 
 [data-theme="light"] .calendar-day.today {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(107, 158, 206, 0.12) 100%);
-    color: #6b9ece;
+    background: #eef5fb;
+    color: #527fa8;
     border-color: rgba(82, 127, 168, 0.36);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.95),
-        0 1px 2px rgba(15, 23, 42, 0.04);
-}
-
-[data-theme="light"] .calendar-day.today:hover {
-    background: linear-gradient(180deg, #ffffff 0%, rgba(112, 166, 216, 0.18) 100%);
-    border-color: rgba(82, 127, 168, 0.5);
-    transform: translateY(-1px);
-    box-shadow: 0 10px 18px rgba(107, 158, 206, 0.12);
+    box-shadow: none;
 }
 
 [data-theme="light"] .calendar-day.missed {
     color: #64748b;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    [data-theme="light"] .calendar-day.today:hover {
+        background-color: #e7f0f9;
+        border-color: rgba(82, 127, 168, 0.52);
+    }
+
+    [data-theme="light"] .calendar-day.missed:hover {
+        background-color: #eef3f8;
+        border-color: rgba(107, 158, 206, 0.26);
+        color: #475569;
+    }
+}
+
+[data-theme="light"] .calendar-day[data-wallet-action]:active {
+    background-color: #e1ecf7;
+}
+
+[data-theme="light"] .calendar-day[data-wallet-action]:focus-visible {
+    border-color: #527fa8;
 }
 
 [data-theme="light"] .calendar-day.future {
@@ -3411,26 +3497,24 @@ body.wallet-modal-lock {
 
 .redeem-btn {
     padding: 12px 24px;
-    background: rgba(255, 255, 255, 0.05);
-    /* Subtle glass background */
-    border: 1px solid rgba(255, 215, 0, 0.3);
-    /* Gold border */
+    background: rgba(251, 191, 36, 0.06);
+    border: 1px solid rgba(251, 191, 36, 0.28);
     border-radius: 10px;
     color: #FFD700;
     /* Gold text */
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
     white-space: nowrap;
     backdrop-filter: blur(4px);
 }
 
-.redeem-btn:hover:not(:disabled) {
-    background: rgba(255, 215, 0, 0.1);
-    border-color: rgba(255, 215, 0, 0.6);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+@media (hover: hover) and (pointer: fine) {
+    .redeem-btn:hover:not(:disabled):not([aria-disabled="true"]) {
+        background-color: rgba(251, 191, 36, 0.12);
+        border-color: rgba(251, 191, 36, 0.46);
+    }
 }
 
 .redeem-btn:disabled {
@@ -4613,13 +4697,24 @@ body.wallet-modal-lock {
         white-space: normal;
     }
 
+    .package-item {
+        min-height: 128px;
+        padding: 14px 11px 12px;
+        gap: 10px;
+    }
+
+    .package-item::before {
+        top: 17px;
+        right: 11px;
+    }
+
     .pkg-points {
-        font-size: 18px;
+        font-size: 11px;
+        padding-top: 8px;
     }
 
     .pkg-price {
-        font-size: 13px;
-        padding: 5px 14px;
+        font-size: 23px;
     }
 
     /* History */
@@ -6476,22 +6571,26 @@ body.wallet-modal-lock {
 .wallet-copy-card--compact {
     width: 100%;
     padding: 10px 6px !important;
+    background: rgba(255, 255, 255, 0.035);
+    box-shadow: none;
+    transform: none;
+    transition: background-color 180ms ease, border-color 180ms ease;
 }
 
-.wallet-copy-card--compact:hover {
-    transform: translateY(-1px);
-    background: rgba(255, 255, 255, 0.075);
-    border-color: rgba(148, 163, 184, 0.26);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.06),
-        0 12px 24px rgba(15, 23, 42, 0.12);
+@media (hover: hover) and (pointer: fine) {
+    .wallet-copy-card--compact:hover {
+        transform: none;
+        background-color: rgba(107, 158, 206, 0.065);
+        border-color: rgba(107, 158, 206, 0.24);
+        box-shadow: none;
+    }
 }
 
 .wallet-copy-card--compact:active {
-    transform: translateY(0);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.04),
-        0 8px 18px rgba(15, 23, 42, 0.1);
+    transform: none;
+    background-color: rgba(107, 158, 206, 0.1);
+    border-color: rgba(107, 158, 206, 0.34);
+    box-shadow: none;
 }
 
 .wallet-copy-card--link {
@@ -7143,7 +7242,6 @@ html:not([data-theme="dark"]) .wallet-recharge-scroll-cue-icon #walletScrollCueG
 html[data-theme="light"] .balance-card.compact-premium-card,
 [data-theme="light"] .wallet-affiliate-panel,
 [data-theme="light"] .affiliate-member-card,
-[data-theme="light"] .wallet-discount-assets-summary-card,
 [data-theme="light"] .wallet-discount-assets-card,
 [data-theme="light"] .wallet-payment-qr-card,
 [data-theme="light"] .history-details,
@@ -7301,7 +7399,6 @@ html[data-theme="light"] .balance-card.compact-premium-card,
     box-shadow: 0 0 0 3px rgba(93, 143, 206, 0.12);
 }
 
-[data-theme="light"] .redeem-btn,
 [data-theme="light"] .date-cancel {
     background: linear-gradient(180deg, #fffdf6 0%, #f8efd7 100%);
     border: 1px solid rgba(217, 119, 6, 0.28);
@@ -7309,63 +7406,94 @@ html[data-theme="light"] .balance-card.compact-premium-card,
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
-[data-theme="light"] .redeem-btn:hover,
+[data-theme="light"] .redeem-btn {
+    background: #fff9ed;
+    border-color: rgba(217, 119, 6, 0.28);
+    color: #b45309;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    [data-theme="light"] .redeem-btn:hover:not(:disabled):not([aria-disabled="true"]) {
+        background-color: #fff3dc;
+        border-color: rgba(217, 119, 6, 0.42);
+        color: #92400e;
+    }
+}
+
 [data-theme="light"] .date-cancel:hover {
-    background: linear-gradient(180deg, #fff9ec 0%, #f7e7bf 100%);
     border-color: rgba(217, 119, 6, 0.36);
     color: #92400e;
 }
 
+[data-theme="light"] .date-cancel:hover {
+    background: linear-gradient(180deg, #fff9ec 0%, #f7e7bf 100%);
+}
+
 [data-theme="light"] .package-item {
-    background: linear-gradient(145deg, #ffffff, #f5f8fc);
-    border-color: rgba(148, 163, 184, 0.16);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.94),
-        0 10px 24px rgba(148, 163, 184, 0.08);
+    background: #fbfcfe;
+    border-color: rgba(148, 163, 184, 0.2);
 }
 
 [data-theme="light"] .package-item::before {
-    background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.22), transparent);
+    border-color: rgba(148, 163, 184, 0.38);
 }
 
-[data-theme="light"] .package-item:hover {
-    background: linear-gradient(145deg, #ffffff, #f7fbff);
-    border-color: rgba(251, 191, 36, 0.28);
-    box-shadow: 0 14px 30px rgba(217, 119, 6, 0.1);
+@media (hover: hover) and (pointer: fine) {
+    [data-theme="light"] .package-item:not(:disabled):not([aria-disabled="true"]):not(.is-dimmed):not(.is-processing):not(.is-selected):hover {
+        border-color: rgba(217, 119, 6, 0.28);
+        background-color: #fffdf7;
+    }
 }
 
 [data-theme="light"] .package-item.is-dimmed,
 [data-theme="light"] .package-item.is-dimmed:hover {
-    background: linear-gradient(145deg, #ffffff, #f5f8fc);
-    border-color: rgba(148, 163, 184, 0.14);
+    background-color: #fbfcfe;
+    border-color: rgba(148, 163, 184, 0.2);
 }
 
 [data-theme="light"] .package-item.is-processing,
-[data-theme="light"] .package-item.is-processing:hover {
-    background: linear-gradient(145deg, #fff8ea, #fdf0d5);
-    border-color: rgba(251, 191, 36, 0.34);
-    box-shadow: 0 14px 28px rgba(217, 119, 6, 0.12);
-}
-
+[data-theme="light"] .package-item.is-processing:hover,
 [data-theme="light"] .package-item.is-selected,
 [data-theme="light"] .package-item.is-selected:hover {
-    background: linear-gradient(145deg, #fffaf0, #fff4dc);
-    border-color: rgba(251, 191, 36, 0.42);
-    box-shadow: 0 14px 28px rgba(217, 119, 6, 0.12);
+    background-color: #fffbf1;
+    border-color: rgba(217, 119, 6, 0.4);
 }
 
-[data-theme="light"] .pkg-name {
-    color: #94a3b8;
+[data-theme="light"] .package-item.is-selected::before,
+[data-theme="light"] .package-item.is-processing::before {
+    background-color: #d99a21;
+    border-color: #d99a21;
+}
+
+[data-theme="light"] .package-item:focus-visible {
+    border-color: #b7791f;
+}
+
+[data-theme="light"] .pkg-name,
+[data-theme="light"] .pkg-points {
+    color: #64748b;
+}
+
+[data-theme="light"] .pkg-points {
+    border-top-color: rgba(148, 163, 184, 0.16);
+}
+
+[data-theme="light"] .pkg-credit-label {
+    color: #7c8b9f;
 }
 
 [data-theme="light"] .pkg-price {
-    border-color: rgba(148, 163, 184, 0.22);
-    color: #334155;
+    color: #1e293b;
 }
 
-[data-theme="light"] .package-item:not(:disabled):not(.is-dimmed):not(.is-processing):hover .pkg-price {
-    color: #78350f;
-    box-shadow: 0 8px 18px rgba(217, 119, 6, 0.14);
+[data-theme="light"] .package-item.is-selected .pkg-price,
+[data-theme="light"] .package-item.is-processing .pkg-price {
+    color: #a16207;
+}
+
+[data-theme="light"] .pkg-bonus {
+    color: #047857;
+    background-color: rgba(16, 185, 129, 0.08);
 }
 
 [data-theme="light"] .wallet-recharge-payment-panel {
@@ -7411,21 +7539,23 @@ html:not([data-theme="dark"]) .wallet-recharge-method-btn--usdt .wallet-recharge
     box-shadow: 0 8px 18px rgba(148, 163, 184, 0.08);
 }
 
-[data-theme="light"] .wallet-recharge-method-btn:hover:not(:disabled) {
+[data-theme="light"] .wallet-recharge-method-btn:not(:where(.wallet-recharge-method-btn--alipay, .wallet-recharge-method-btn--usdt)):hover:not(:disabled) {
     border-color: rgba(251, 191, 36, 0.34);
     box-shadow: 0 12px 24px rgba(217, 119, 6, 0.12);
 }
 
-[data-theme="light"] .wallet-recharge-method-btn--alipay:hover:not(:disabled),
-html:not([data-theme="dark"]) .wallet-recharge-method-btn--alipay:hover:not(:disabled) {
-    border-color: rgba(22, 119, 255, 0.34);
-    box-shadow: 0 12px 24px rgba(22, 119, 255, 0.14);
-}
+@media (hover: hover) and (pointer: fine) {
+    [data-theme="light"] .wallet-recharge-method-btn--alipay:hover:not(:disabled),
+    html:not([data-theme="dark"]) .wallet-recharge-method-btn--alipay:hover:not(:disabled) {
+        background-color: #f6f9fe;
+        border-color: rgba(83, 147, 226, 0.55);
+    }
 
-[data-theme="light"] .wallet-recharge-method-btn--usdt:hover:not(:disabled),
-html:not([data-theme="dark"]) .wallet-recharge-method-btn--usdt:hover:not(:disabled) {
-    border-color: rgba(38, 161, 123, 0.34);
-    box-shadow: 0 12px 24px rgba(38, 161, 123, 0.14);
+    [data-theme="light"] .wallet-recharge-method-btn--usdt:hover:not(:disabled),
+    html:not([data-theme="dark"]) .wallet-recharge-method-btn--usdt:hover:not(:disabled) {
+        background-color: #f5fbf8;
+        border-color: rgba(38, 161, 123, 0.5);
+    }
 }
 
 [data-theme="light"] .wallet-recharge-method-btn.is-processing {
@@ -7453,7 +7583,6 @@ html:not([data-theme="dark"]) .wallet-recharge-method-btn--usdt:hover:not(:disab
     border-color: rgba(244, 114, 182, 0.3);
 }
 
-[data-theme="light"] .wallet-discount-assets-summary-card,
 [data-theme="light"] .wallet-discount-assets-card,
 [data-theme="light"] .wallet-discount-assets-card-line,
 [data-theme="light"] .wallet-discount-assets-tag {
@@ -7461,10 +7590,36 @@ html:not([data-theme="dark"]) .wallet-recharge-method-btn--usdt:hover:not(:disab
     border-color: rgba(148, 163, 184, 0.16);
 }
 
-[data-theme="light"] .wallet-discount-assets-summary-card--primary,
+[data-theme="light"] .wallet-discount-assets-summary-card {
+    --wallet-summary-accent: 236, 72, 153;
+    --wallet-summary-text: #be185d;
+    background: #fbfcfe;
+    border-color: rgba(148, 163, 184, 0.2);
+}
+
+[data-theme="light"] .wallet-discount-assets-summary-card[data-wallet-summary-filter="expiring"] {
+    --wallet-summary-accent: 217, 119, 6;
+    --wallet-summary-text: #a16207;
+}
+
 [data-theme="light"] .wallet-discount-assets-summary-card--interactive.active {
-    background: linear-gradient(180deg, rgba(252, 241, 247, 0.94) 0%, rgba(255, 255, 255, 0.98) 100%);
-    border-color: rgba(244, 114, 182, 0.2);
+    background-color: rgba(var(--wallet-summary-accent), 0.055);
+    border-color: rgba(var(--wallet-summary-accent), 0.36);
+}
+
+[data-theme="light"] .wallet-discount-assets-summary-card--interactive.active strong {
+    color: var(--wallet-summary-text);
+}
+
+[data-theme="light"] .wallet-discount-assets-summary-card--interactive:focus-visible {
+    border-color: rgba(var(--wallet-summary-accent), 0.72);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    [data-theme="light"] .wallet-discount-assets-summary-card--interactive:not(.active):hover:not(:disabled) {
+        background-color: rgba(var(--wallet-summary-accent), 0.025);
+        border-color: rgba(var(--wallet-summary-accent), 0.24);
+    }
 }
 
 [data-theme="light"] .wallet-discount-assets-summary-card strong,
@@ -7552,17 +7707,17 @@ html:not([data-theme="dark"]) .wallet-recharge-method-btn--usdt:hover:not(:disab
 }
 
 [data-theme="light"] .affiliate-member-chevron {
-    color: #8aa1ba;
+    color: #57708e;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 
 [data-theme="light"] .affiliate-member-toggle:hover,
-[data-theme="light"] .affiliate-member-toggle:focus-visible {
-    background: linear-gradient(180deg, rgba(238, 246, 255, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
-    border-color: rgba(93, 143, 206, 0.28);
-    color: #4f759b;
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.94),
-        0 12px 24px rgba(93, 143, 206, 0.12);
+[data-theme="light"] .affiliate-member-toggle:focus-visible,
+[data-theme="light"] .affiliate-member-card.expanded .affiliate-member-chevron {
+    background: #e8f0fb;
+    border-color: rgba(93, 143, 206, 0.32);
+    color: #375d88;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 [data-theme="light"] .affiliate-member-sub,
@@ -7634,9 +7789,21 @@ html:not([data-theme="dark"]) .wallet-recharge-method-btn--usdt:hover:not(:disab
 }
 
 [data-theme="light"] .wallet-affiliate-copy-btn {
-    background: linear-gradient(135deg, #ffffff, #edf4fb);
-    color: #0f172a;
-    box-shadow: 0 10px 22px rgba(148, 163, 184, 0.12);
+    background: #ecf8f2;
+    border-color: #bce5d1;
+    color: #047857;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    [data-theme="light"] .wallet-affiliate-copy-btn:hover:not(:disabled) {
+        background-color: #e1f3e9;
+        border-color: #93d5b6;
+        color: #065f46;
+    }
+}
+
+[data-theme="light"] .wallet-affiliate-copy-btn:active:not(:disabled) {
+    background-color: #d5eddf;
 }
 
 [data-theme="light"] .affiliate-empty-icon {
@@ -7955,13 +8122,26 @@ html:not([data-theme="dark"]) .wallet-order-guidance-toggle--usage[aria-expanded
         0 8px 18px rgba(16, 185, 129, 0.09);
 }
 
-[data-theme="light"] .wallet-copy-card--compact:hover,
-html:not([data-theme="dark"]) .wallet-copy-card--compact:hover {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.98) 100%);
-    border-color: rgba(100, 116, 139, 0.2);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.88),
-        0 12px 24px rgba(15, 23, 42, 0.08);
+[data-theme="light"] .wallet-copy-card--compact,
+html:not([data-theme="dark"]) .wallet-copy-card--compact {
+    background: #f8fafc;
+    border-color: rgba(148, 163, 184, 0.2);
+    box-shadow: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    [data-theme="light"] .wallet-copy-card--compact:hover,
+    html:not([data-theme="dark"]) .wallet-copy-card--compact:hover {
+        background-color: #f1f6fb;
+        border-color: rgba(107, 158, 206, 0.3);
+        box-shadow: none;
+    }
+}
+
+[data-theme="light"] .wallet-copy-card--compact:active,
+html:not([data-theme="dark"]) .wallet-copy-card--compact:active {
+    background-color: #eaf2f9;
+    border-color: rgba(107, 158, 206, 0.4);
 }
 
 [data-theme="light"] .wallet-order-action-btn-neutral {
@@ -8368,5 +8548,201 @@ html:not([data-theme="dark"]) .wallet-crypto-warning {
     to {
         opacity: 1;
         transform: translateY(0) scale(1);
+    }
+}
+
+/* Payment method first, then the selected USDT network. Keep the panel mounted
+   so its natural height can animate, including the two-row narrow layout. */
+.wallet-recharge-method-buttons--dock > .wallet-recharge-method-btn[aria-pressed="true"] {
+    border-color: #619ee9;
+    background: rgba(83, 147, 226, .12);
+    box-shadow: none;
+}
+.wallet-recharge-method-buttons--dock > .wallet-recharge-method-btn--usdt[aria-pressed="true"] {
+    border-color: #35ae8d;
+    background: rgba(38, 161, 123, .1);
+}
+.wallet-usdt-network-panel {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    margin-top: -12px;
+    transition: grid-template-rows .32s cubic-bezier(.22, 1, .36, 1), opacity .22s ease, margin-top .32s ease, visibility .32s;
+}
+.wallet-usdt-network-panel.is-expanded {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    margin-top: 0;
+}
+.wallet-usdt-network-panel__clip { min-height: 0; overflow: hidden; }
+.wallet-usdt-network-content { padding: 2px 1px 1px; }
+.wallet-usdt-network-label { display: block; margin-bottom: 9px; font-size: 11px; color: #94a3b8; }
+.wallet-usdt-network-choices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.wallet-usdt-network-btn {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    min-height: 58px;
+    padding: 9px 10px;
+    border: 1px solid rgba(148, 163, 184, .22);
+    border-radius: 12px;
+    background: rgba(148, 163, 184, .04);
+    color: #e2e8f0;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .18s ease, background-color .18s ease, transform .18s ease;
+}
+.wallet-usdt-network-btn img { width: 24px; height: 24px; flex: 0 0 24px; object-fit: contain; }
+.wallet-usdt-network-btn > span { display: grid; gap: 3px; min-width: 0; }
+.wallet-usdt-network-btn strong { font-size: 12px; line-height: 1.2; font-weight: 600; }
+.wallet-usdt-network-btn small { font-size: 10px; line-height: 1.2; color: #94a3b8; }
+.wallet-usdt-network-btn[aria-pressed="true"] { border-color: #35ae8d; background: rgba(38, 161, 123, .1); }
+.wallet-usdt-network-btn:hover:not(:disabled) { border-color: #35ae8d; transform: translateY(-1px); }
+.wallet-usdt-network-btn:active:not(:disabled) { transform: translateY(1px); }
+.wallet-usdt-network-btn:disabled { opacity: .48; cursor: not-allowed; }
+.wallet-recharge-method-buttons--dock > .wallet-recharge-submit {
+    grid-column: 1 / -1;
+    min-height: 44px;
+    justify-content: center;
+    gap: 10px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: #3c7ddb;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: none;
+}
+.wallet-recharge-method-buttons--dock > .wallet-recharge-submit:hover:not(:disabled) { background: #326fc8; border-color: transparent; box-shadow: none; }
+.wallet-recharge-method-buttons--dock > .wallet-recharge-submit.is-processing { background: #3c7ddb; color: #fff; }
+.wallet-recharge-method-buttons--dock button:focus-visible { outline: none; border-color: #4d93ef; box-shadow: 0 0 0 1px #4d93ef; }
+[data-theme="light"] .wallet-usdt-network-btn { color: #334155; background: #fff; border-color: #e2e8f0; }
+[data-theme="light"] .wallet-usdt-network-btn[aria-pressed="true"] { border-color: #26a17b; background: #f0faf6; }
+[data-theme="light"] .wallet-recharge-method-buttons--dock > .wallet-recharge-method-btn[aria-pressed="true"] { background: #f1f7ff; border-color: #619ee9; }
+[data-theme="light"] .wallet-recharge-method-buttons--dock > .wallet-recharge-method-btn--usdt[aria-pressed="true"] { background: #f0faf6; border-color: #26a17b; }
+[data-theme="light"] .wallet-recharge-method-buttons--dock > .wallet-recharge-submit { background: #3c7ddb; border-color: transparent; color: #fff; }
+@media (max-width: 600px) {
+    .wallet-usdt-network-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .wallet-usdt-network-panel { margin-top: -8px; }
+    .wallet-recharge-method-buttons--dock > .wallet-recharge-method-btn { min-height: 68px; }
+    .wallet-recharge-method-buttons--dock > .wallet-recharge-submit { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .wallet-usdt-network-panel, .wallet-usdt-network-btn { transition: none; }
+}
+
+/* Requested wallet controls only; selection colours and network expansion remain intact. */
+#wallet-modal-overlay :is(
+    #view-cards .wallet-discount-assets-refresh,
+    #view-cards .wallet-discount-assets-empty-action,
+    #view-recharge .wallet-recharge-method-btn:not(:where(.wallet-recharge-method-btn--alipay, .wallet-recharge-method-btn--usdt)),
+    #view-recharge .wallet-usdt-network-btn
+) {
+    transform: translateY(0);
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+        background-color 150ms ease, border-color 150ms ease,
+        box-shadow 150ms ease, color 150ms ease, filter 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    #wallet-modal-overlay :is(
+    #view-cards .wallet-discount-assets-refresh,
+    #view-cards .wallet-discount-assets-empty-action,
+    #view-recharge .wallet-recharge-method-btn:not(:where(.wallet-recharge-method-btn--alipay, .wallet-recharge-method-btn--usdt)),
+    #view-recharge .wallet-usdt-network-btn
+):not(:disabled):not([aria-disabled="true"]):not(.is-disabled):not(.is-loading):not(.is-processing):not(.is-dimmed):not(.shop-purchase-sold-out-btn):hover {
+        transform: translateY(var(--control-press-hover, 0.75px));
+        filter: brightness(1.06);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+}
+
+#wallet-modal-overlay :is(
+    #view-cards .wallet-discount-assets-refresh,
+    #view-cards .wallet-discount-assets-empty-action,
+    #view-recharge .wallet-recharge-method-btn:not(:where(.wallet-recharge-method-btn--alipay, .wallet-recharge-method-btn--usdt)),
+    #view-recharge .wallet-usdt-network-btn
+):not(:disabled):not([aria-disabled="true"]):not(.is-disabled):not(.is-loading):not(.is-processing):not(.is-dimmed):not(.shop-purchase-sold-out-btn):active {
+    transform: translateY(var(--control-press-active, 1.5px));
+    filter: brightness(1.02);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #wallet-modal-overlay :is(
+    #view-cards .wallet-discount-assets-refresh,
+    #view-cards .wallet-discount-assets-empty-action,
+    #view-recharge .wallet-recharge-method-btn:not(:where(.wallet-recharge-method-btn--alipay, .wallet-recharge-method-btn--usdt)),
+    #view-recharge .wallet-usdt-network-btn
+),
+    #wallet-modal-overlay :is(
+    #view-cards .wallet-discount-assets-refresh,
+    #view-cards .wallet-discount-assets-empty-action,
+    #view-recharge .wallet-recharge-method-btn:not(:where(.wallet-recharge-method-btn--alipay, .wallet-recharge-method-btn--usdt)),
+    #view-recharge .wallet-usdt-network-btn
+):hover,
+    #wallet-modal-overlay :is(
+    #view-cards .wallet-discount-assets-refresh,
+    #view-cards .wallet-discount-assets-empty-action,
+    #view-recharge .wallet-recharge-method-btn:not(:where(.wallet-recharge-method-btn--alipay, .wallet-recharge-method-btn--usdt)),
+    #view-recharge .wallet-usdt-network-btn
+):active {
+        transform: none !important;
+        transition: none !important;
+    }
+}
+
+#wallet-modal-overlay #view-recharge .wallet-recharge-submit {
+    --control-press-hover: 0.85px;
+    --control-press-active: 1.8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #wallet-modal-overlay #view-balance .redeem-btn,
+    #wallet-modal-overlay #view-recharge .package-item,
+    #wallet-modal-overlay #view-recharge .pkg-price,
+    #wallet-modal-overlay #view-cards .wallet-discount-assets-summary-card,
+    #wallet-modal-overlay #view-recharge .wallet-recharge-method-btn--alipay,
+    #wallet-modal-overlay #view-recharge .wallet-recharge-method-btn--usdt,
+    #wallet-modal-overlay #view-affiliate .wallet-affiliate-copy-btn,
+    #wallet-modal-overlay #view-affiliate .wallet-affiliate-poster-btn,
+    #wallet-modal-overlay #view-checkin .calendar-day[data-wallet-action],
+    .wallet-copy-card--compact {
+        transition: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wallet-affiliate-poster-btn,
+    .wallet-affiliate-poster-btn:hover:not(:disabled),
+    .wallet-affiliate-poster-btn:active:not(:disabled) {
+        transform: none;
+    }
+}
+
+/* Keep minimum-payment feedback readable on narrow screens and out of modal clipping. */
+.wallet-toast.wallet-usdt-minimum-toast {
+    border-color: #ef4444;
+    bottom: max(80px, calc(env(safe-area-inset-bottom) + 80px));
+    width: max-content;
+    max-width: min(560px, calc(100vw - 28px));
+    box-sizing: border-box;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+    text-align: center;
+    pointer-events: none;
+    z-index: 999999;
+}
+@media (prefers-reduced-motion: reduce) {
+    .wallet-toast.wallet-usdt-minimum-toast {
+        animation-duration: 0.01ms;
     }
 }

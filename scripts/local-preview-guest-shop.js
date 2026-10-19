@@ -89,7 +89,7 @@ function isLoopbackAddress(value) {
     return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(String(value || '').toLowerCase());
 }
 
-function createGuestShopPreviewRelay({ origin = '', orderWritesEnabled = false, cancellationMode = 'upstream', cancelOrder = null, fetchImpl = globalThis.fetch } = {}) {
+function createGuestShopPreviewRelay({ origin = '', orderWritesEnabled = false, cancellationMode = 'upstream', cancelOrder = null, fetchImpl = globalThis.fetch, logger = console } = {}) {
     const upstreamOrigin = resolveGuestShopPreviewOrigin(origin);
     const checkoutEnabled = orderWritesEnabled === true;
     return async (req, res, next) => {
@@ -181,12 +181,19 @@ function createGuestShopPreviewRelay({ origin = '', orderWritesEnabled = false, 
                 res.append('Set-Cookie', `${previewName}=${value}; Max-Age=${maxAge}; Path=/; HttpOnly; SameSite=Strict${req.secure ? '; Secure' : ''}`);
             }
             return res.status(upstream.status).send(buffer);
-        } catch (_) {
-            // No fallback to mismatched local configuration, and no logging of
-            // credential headers, cookies, request bodies or upstream errors.
+        } catch (error) {
+            // Log only an allowlisted transport kind and route, never the raw
+            // error, query, credentials, cookies or buyer input. Do not replay
+            // writes or fall back to mismatched local configuration.
+            const kinds = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN',
+                'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'TimeoutError', 'AbortError'];
+            const kind = [error?.cause?.code, error?.code, error?.name].find((value) => kinds.includes(value)) || 'unknown';
+            logger.warn(`[local-preview] guest upstream unavailable method=${req.method} route=${target.route} kind=${kind}`);
             return fail(502, 'local_preview_guest_upstream_unavailable', isCheckoutRequest
                 ? '线上订单服务暂时无法连接，请重试确认原订单结果；请勿重复付款。'
-                : '线上订单查询服务暂时无法连接，请稍后重试。');
+                : (target.route === 'guest/preview'
+                    ? '线上商品报价服务暂时无法连接，请重新加载金额。'
+                    : '线上订单查询服务暂时无法连接，请稍后重试。'));
         }
     };
 }

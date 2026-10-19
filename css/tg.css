@@ -1,3 +1,5 @@
+@import url("shared-control-fonts.css?v=20261018_1");
+
 /* ==========================================================================
    Telegram Premium & Stars - Modern Glassmorphism & High-Performance UI
    ========================================================================== */
@@ -2177,3 +2179,53 @@ tr:last-child td {
 .tg-completion-note { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; padding: 16px; border: 1px solid var(--tg-line); border-radius: 12px; background: rgba(var(--tg-accent-rgb), .04); }
 .tg-completion-note strong { color: var(--tg-accent); font-size: 12px; }
 .tg-completion-note p { margin: 8px 0 0; }
+
+/* Minimum-payment feedback shares the storefront's red capsule treatment. */
+.tg-payment-minimum-toast {
+    position: fixed;
+    left: 50%;
+    bottom: max(80px, calc(env(safe-area-inset-bottom) + 80px));
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: max-content;
+    max-width: min(560px, calc(100vw - 28px));
+    box-sizing: border-box;
+    padding: 12px 24px;
+    border: 1px solid #ef4444;
+    border-radius: 50px;
+    background: rgba(20, 20, 20, 0.9);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.5;
+    text-align: center;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+    transition: opacity 0.3s ease, transform 0.35s var(--tg-ease);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+.tg-payment-minimum-toast::before {
+    content: 'i';
+    display: grid;
+    place-items: center;
+    flex: 0 0 18px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(148, 163, 184, 0.18);
+    font-size: 12px;
+}
+.tg-payment-minimum-toast.is-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+    .tg-payment-minimum-toast { transition: opacity 0.15s ease; transform: translateX(-50%); }
+}
