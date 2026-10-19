@@ -329,3 +329,45 @@ test('background FX refresh updates a visible recharge preview before the next c
     assert.equal(wallet.estimateUsdtPayableAmountText(98.98, wallet.paymentChannelsConfig.providers.nowpayments), '14.82');
     assert.equal((await wallet.getRechargeFxRequest('nowpayments')).fx_snapshot_id, fx.id);
 });
+
+test('wallet separates payment selection from confirmation and restores its network', () => {
+    const wallet = loadWallet();
+    wallet.paymentChannelsConfig = wallet.normalizePaymentChannelsConfig({ providers: {
+        zpay: { enabled: true, channel: 'alipay' },
+        nowpayments: { ...CHANNEL, fx_mode: 'market', fx_snapshot: snapshot(), networks: require('../api/_lib/payments/usdt-networks').NETWORKS }
+    } });
+    let markup = wallet.renderRechargePaymentMethodButtons({ baseAmount: 10 });
+    assert.equal(wallet.selectedRechargeMethod, 'alipay');
+    assert.match(markup, /data-wallet-action="select-recharge-method"/);
+    assert.match(markup, /id="wallet-usdt-network-panel"[^>]*aria-hidden="true" inert/);
+    assert.match(markup, /wallet-recharge-submit[\s\S]*data-wallet-action="pay-selected-recharge"[\s\S]*data-wallet-payment-method="alipay"/);
+    wallet.selectedRechargeMethod = 'usdt';
+    wallet.selectedUsdtNetwork = 'usdttrc20';
+    markup = wallet.renderRechargePaymentMethodButtons({ action: 'custom-recharge', baseAmount: 10 });
+    assert.match(markup, /id="wallet-usdt-network-panel"[^>]*is-expanded[^>]*aria-hidden="false"/);
+    assert.match(markup, /wallet-recharge-submit[\s\S]*data-wallet-action="custom-recharge"[\s\S]*data-wallet-payment-method="usdt"/);
+    for (const icon of ['bsc', 'ton', 'polygon', 'tron']) assert.ok(markup.includes(`/assets/tg-network-icons/${icon}.svg`));
+    wallet.selectedRechargeMethod = 'alipay';
+    wallet.renderRechargePaymentMethodButtons();
+    wallet.selectedRechargeMethod = 'usdt';
+    assert.match(wallet.renderRechargePaymentMethodButtons(), /data-wallet-usdt-network="usdttrc20" aria-pressed="true"/);
+    assert.equal(wallet.selectedUsdtNetwork, 'usdttrc20');
+    assert.match(wallet.renderRechargePaymentMethodButtons({ disabled: true }), /wallet-recharge-submit"\s+disabled/);
+});
+
+test('wallet keeps the default selection, method label and panel aligned with available networks', () => {
+    const wallet = loadWallet();
+    wallet.paymentChannelsConfig = wallet.normalizePaymentChannelsConfig({ providers: {
+        zpay: { enabled: false },
+        nowpayments: { ...CHANNEL, fx_mode: 'market', fx_snapshot: snapshot(), networks: [
+            { currency: 'usdtton', name: 'TON', code: 'TON' }
+        ] }
+    } });
+    const markup = wallet.renderRechargePaymentMethodButtons({ baseAmount: 10 });
+    assert.equal(wallet.selectedRechargeMethod, 'usdt');
+    assert.equal(wallet.selectedUsdtNetwork, 'usdtton');
+    assert.match(markup, /title="USDT · TON/);
+    assert.match(markup, /id="wallet-usdt-network-panel"[^>]*is-expanded[^>]*aria-hidden="false"/);
+    assert.match(markup, /data-wallet-usdt-network="usdtton" aria-pressed="true"/);
+    assert.doesNotMatch(markup, /data-wallet-usdt-network="usdtbsc"/);
+});

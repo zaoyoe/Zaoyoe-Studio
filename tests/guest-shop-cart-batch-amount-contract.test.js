@@ -40,7 +40,10 @@ test('guest batch preview quotes every item from the server and then uses commit
     assert.ok(start >= 0 && create > start, 'batch checkout functions must remain ordered');
     const startBlock = guestClient.slice(start, create);
     assert.match(startBlock, /Promise\.all\(normalized\.map/);
-    assert.match(startBlock, /requestJson\(`\$\{PREVIEW_ENDPOINT\}\?\$\{query\.toString\(\)\}`/);
+    assert.match(startBlock, /requestPreview\(`\$\{PREVIEW_ENDPOINT\}\?\$\{query\.toString\(\)\}`, \(\) => isCurrent\(\) && state\.previewPending/);
+    assert.match(startBlock, /if \(!isCurrent\(\)\)/);
+    assert.match(startBlock, /quote\?\.product\?\.id !== normalized\[index\]\.productId/);
+    assert.match(startBlock, /Number\(quote\?\.price\?\.quantity\) !== normalized\[index\]\.quantity/);
     assert.match(startBlock, /quote\?\.price\?\.subtotal/);
     assert.doesNotMatch(startBlock, /entry\?\.subtotal/);
     assert.doesNotMatch(startBlock, /entry\?\.finalTotal/);

@@ -802,6 +802,7 @@
         "paymentErrorGatewayUnavailable": "支付通道暂时不可用，请稍后重试或切换其他支付方式。",
         "usdtFxUnavailable": "USDT 市场汇率暂不可用，请稍后重试或选择其他支付方式。",
         "usdtFxUnavailableShort": "汇率暂不可用",
+        "usdtFxRefreshingShort": "汇率更新中…",
         "usdtFxQuoteUpdated": "USDT 汇率报价已更新，请确认应付金额后重新发起支付。",
         "usdtFxQuoteMismatch": "USDT 付款金额与锁定报价不一致，请勿付款并联系管理员核对订单。",
         "missingPaymentLink": "缺少支付链接",

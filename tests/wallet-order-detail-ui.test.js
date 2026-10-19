@@ -102,9 +102,9 @@ test('wallet shop order content cards wrap long card secrets inside adaptive box
     assert.match(styles, /\.wallet-copy-card--compact,[\s\S]*\.wallet-copy-card--link\s*\{[\s\S]*height:\s*auto;/);
     assert.match(styles, /\.wallet-copy-card--compact,[\s\S]*\.wallet-copy-card--link\s*\{[\s\S]*min-width:\s*0;[\s\S]*max-width:\s*100%;/);
     assert.match(styles, /\.wallet-copy-card--compact\s*\{[\s\S]*width:\s*100%;/);
-    assert.match(styles, /\.wallet-copy-card--compact:hover\s*\{[\s\S]*transform:\s*translateY\(-1px\);/);
-    assert.match(styles, /\.wallet-copy-card--compact:hover\s*\{[\s\S]*border-color:\s*rgba\(148,\s*163,\s*184,\s*0\.26\);/);
-    assert.match(styles, /\.wallet-copy-card--compact:active\s*\{[\s\S]*transform:\s*translateY\(0\);/);
+    assert.match(styles, /\.wallet-copy-card--compact:hover\s*\{[^}]*transform:\s*none;/);
+    assert.match(styles, /\.wallet-copy-card--compact:hover\s*\{[^}]*border-color:\s*rgba\(107,\s*158,\s*206,\s*0\.24\);/);
+    assert.match(styles, /\.wallet-copy-card--compact:active\s*\{[^}]*transform:\s*none;/);
     assert.match(styles, /\.item-content-box--plain\s*\{[\s\S]*min-width:\s*0;[\s\S]*max-width:\s*100%;/);
     assert.match(styles, /\.wallet-order-modal-body \.content-section\s*\{[\s\S]*margin-right:\s*0;[\s\S]*margin-left:\s*0;[\s\S]*padding:\s*16px 0 0;[\s\S]*width:\s*100%;/);
     assert.match(styles, /\.wallet-content-grid--stacked \.wallet-copy-card--compact\s*\{[\s\S]*width:\s*min\(100%,\s*420px\);[\s\S]*min-width:\s*min\(100%,\s*340px\);/);

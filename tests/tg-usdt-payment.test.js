@@ -136,6 +136,7 @@ test('market TG quote binds the canonical FX snapshot before returning an exact 
     const calls = [];
     const handler = createTgPurchaseHandlers({ env: { ...ENV, TG_PURCHASE_ENABLED: 'true', PAYMENT_USDT_FX_MODE: 'market' }, requestSecurity: security,
         gateway: { channels: () => [{ id: 'usdt_bep20' }], resolveUsdtFx: async () => MARKET_FX,
+            minimumPayment: async ({payCurrency}) => ({network: payCurrency, currency: 'USDT', amount: '0.09', expires_at: new Date(NOW + 60000).toISOString()}),
             quotePayment() { throw Error('must use the database-bound quote'); } },
         admin: stubAdmin({ rpc: async (name, args) => { calls.push({ name, args }); return { data: name === 'fn_tg_purchase_quote'
             ? { success: true, quote } : { quote_id: quote.quote_id, total_minor: 9898, usdt_pay_amount: '14.82', fx: MARKET_FX } }; } }) });
@@ -201,17 +202,32 @@ test('market mode still verifies and cancels historical payments using saved amo
     assert.deepEqual(requests, [`https://api.nowpayments.io/v1/payment/${CHECKOUT.payment_id}`]);
 });
 
-test('USDT quote returns the merchant selling amount including the fee once without any external estimate or payment', async () => {
+test('USDT quote returns the merchant amount and read-only minimum without any external estimate or payment', async () => {
     const calls = [];
     const quote = { quote_id: ORDER.quote_id, product_family: ORDER.product_family, term_months: null, stars_quantity: 100,
         username: 'telegram_user', currency: 'CNY', subtotal_minor: 21800, payment_fee_minor: 218, payment_fee_rate_bps: 100,
         total_minor: 22018, price_version: 3, payment_channel: 'usdt_bep20', expires_at: ORDER.payment_expires_at, usdt_pay_amount: '999.99' };
-    const channel = createTgPaymentGateway({ env: ENV, fetchImpl: async () => { throw new Error('quote must not call provider'); } });
+    const providerRequests = [];
+    const channel = createTgPaymentGateway({ env: ENV, fetchImpl: async (url, options) => {
+        providerRequests.push({ url, options });
+        const query = new URL(url);
+        assert.equal(query.pathname, '/v1/min-amount');
+        assert.equal(options.method, 'GET');
+        assert.equal(options.headers['x-api-key'], ENV.TG_PURCHASE_NOWPAYMENTS_API_KEY);
+        assert.equal(query.searchParams.get('currency_from'), 'usdtbsc');
+        assert.equal(query.searchParams.has('currency_to'), false);
+        assert.equal(query.searchParams.get('is_fixed_rate'), 'false');
+        assert.equal(query.searchParams.get('is_fee_paid_by_user'), 'false');
+        return json({ currency_from: 'usdtbsc', min_amount: 0.0869 });
+    } });
     const handler = createTgPurchaseHandlers({ env: { ...ENV, TG_PURCHASE_ENABLED: 'true' }, requestSecurity: security,
         admin: stubAdmin({ rpc: async (name) => { calls.push(name); return { data: { success: true, quote } }; } }), gateway: channel });
     const result = await call(handler.quote, { body: { product_id: 'stars', username: 'telegram_user', channel: 'usdt_bep20', stars_quantity: 100 } });
     assert.equal(result.statusCode, 200); assert.equal(result.body.quote.usdt_pay_amount, '33.82');
     assert.equal(result.body.quote.usdt_estimate, undefined);
+    assert.equal(result.body.quote.usdt_minimum.amount, '0.09');
+    assert.equal(providerRequests.length, 1);
+    assert.ok(!result.text.includes(ENV.TG_PURCHASE_NOWPAYMENTS_API_KEY));
     assert.equal(result.body.quote.total_minor, 22018); assert.equal(result.body.quote.payment_fee_minor, 218);
     assert.deepEqual(calls, ['fn_tg_purchase_quote']);
 });
@@ -510,4 +526,34 @@ test('missing, stale or unavailable native-pricing migration blocks quote and cr
         assert.equal(result.statusCode, 503); assert.equal(result.body.code, 'usdt_pricing_migration_required');
         assert.deepEqual(calls, ['fn_tg_usdt_pricing_contract']);
     }
+});
+
+for (const [network, raw, amount] of [['usdtbsc', 0.0869, '0.09'], ['usdtton', 0.2551, '0.26'], ['usdtmatic', 0.2324, '0.24'], ['usdttrc20', 11.9203, '11.93']]) {
+    test(`TG minimum uses its own merchant and selected ${network} network`, async () => {
+        const gateway = nowGateway(async (url, options) => {
+            const query = new URL(url);
+            assert.equal(options.method, 'GET');
+            assert.equal(query.pathname, '/v1/min-amount');
+            assert.equal(query.searchParams.get('currency_from'), network);
+            assert.equal(options.headers['x-api-key'], ENV.TG_PURCHASE_NOWPAYMENTS_API_KEY);
+            return json({ currency_from: network, min_amount: raw });
+        });
+        const minimum = await gateway.minimumPayment({ payCurrency: network });
+        assert.deepEqual(minimum, { network, currency: 'USDT', amount,
+            checked_at: new Date(NOW).toISOString(), expires_at: new Date(NOW + 60000).toISOString() });
+    });
+}
+
+test('TG unavailable minimum fails before exposing confirmation and never leaks merchant diagnostics', async () => {
+    const quote = { quote_id: ORDER.quote_id, product_family: ORDER.product_family, term_months: null, stars_quantity: 100,
+        username: 'telegram_user', currency: 'CNY', subtotal_minor: 7000, payment_fee_minor: 70, payment_fee_rate_bps: 100,
+        total_minor: 7070, price_version: 3, payment_channel: 'usdt_bep20', expires_at: ORDER.payment_expires_at };
+    const handler = createTgPurchaseHandlers({ env: { ...ENV, TG_PURCHASE_ENABLED: 'true' }, requestSecurity: security,
+        admin: stubAdmin({ rpc: async () => ({ data: { success: true, quote } }) }),
+        gateway: { channels: () => [{ id: 'usdt_bep20' }], quotePayment: () => '10.86',
+            minimumPayment: async () => { throw Error(ENV.TG_PURCHASE_NOWPAYMENTS_API_KEY); } } });
+    const result = await call(handler.quote, { body: { product_id: 'stars', username: 'telegram_user', channel: 'usdt_bep20', stars_quantity: 100 } });
+    assert.equal(result.statusCode, 503); assert.equal(result.body.quote, undefined);
+    assert.equal(result.body.code, 'quote_unavailable');
+    assert.ok(!result.text.includes(ENV.TG_PURCHASE_NOWPAYMENTS_API_KEY));
 });

@@ -2520,7 +2520,7 @@ test('login auth sheet preserves smooth resize transitions between auth views', 
         'inject-auth.js should lock sheet body scrolling while the auth sheet height is animating'
     );
     assert.equal(
-        injectSource.includes("const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&authStagger=20260619_AUTH_SHEET_TOP_DOWN_STAGGER_1';"),
+        injectSource.includes("const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&authStagger=20260619_AUTH_SHEET_TOP_DOWN_STAGGER_1&controlPress=20261018_1&inputFont=20261018_1';"),
         true,
         'inject-auth.js should cache-bust the auth sheet stylesheet for shop staggered auth entry'
     );
@@ -18066,7 +18066,7 @@ test('public modal backdrops route through the shared app modal material tokens'
         'profile modal loader should cache-bust the light backdrop material'
     );
     assert.equal(
-        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260716_WALLET_EXACT_BALANCE_CUSTOM_TOOLTIP_1'),
+        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20261018_WALLET_PAYMENT_SELECTOR_1&controlPress=20261018_2&rechargeSpacing=20261018_1&calmHover=20261018_4&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1'),
         true,
         'wallet modal loader should cache-bust the latest wallet surface stylesheet'
     );

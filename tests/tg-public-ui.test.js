@@ -23,11 +23,12 @@ function page({ fetch, savedStorage = storage(), crypto = webcrypto, preview = (
     const timers = new Map();
     let timerId = 0;
     function element(tag = 'div') {
+        const classes = new Set();
         return { value: '', _text: '', get textContent() { return this._text + this.children.map(node => node.textContent || '').join(''); }, set textContent(value) { this._text = String(value); this.children = []; }, hidden: false, disabled: false, className: '', children: [], listeners: new Map(),
             tagName: tag.toUpperCase(), dataset: {}, open: false, append(...nodes) { this.children.push(...nodes); },
             showModal() { this.open = true; }, close() { this.open = false; }, focus() { document.activeElement = this; },
             getBoundingClientRect() { return { left: 100, top: 100, right: 800, bottom: 800 }; }, removeAttribute(name) { this.attributes.delete(name); },
-            classList: { add() {}, remove() {}, toggle() {} }, querySelectorAll() { return []; },
+            classList: { add(value) { classes.add(value); }, remove(value) { classes.delete(value); }, contains(value) { return classes.has(value); }, toggle(value, force) { const on = force === undefined ? !classes.has(value) : force; if (on) classes.add(value); else classes.delete(value); return on; } }, querySelectorAll() { return []; },
             attributes: new Map(), setAttribute(name, value) { this.attributes.set(name, value); },
             addEventListener(name, fn) { const previous = this.listeners.get(name); this.listeners.set(name, async event => { if (previous) await previous(event); return fn(event); }); },
             replaceChildren(...nodes) { this._text = ''; this.children = nodes; },
@@ -1135,3 +1136,78 @@ test('background FX catalog refresh keeps the current prices through a failed re
     assert.equal(ui.get('tgPurchaseMessage').textContent, '');
     assert.equal(ui.get('tgPurchasePrice').textContent, previousAmount);
 });
+
+async function tgMinimumFixture({ network = 'usdtbsc', minimum = '0.09', quantity = 100, alterQuote = quote => quote } = {}) {
+    const rate = '0.14970060';
+    const ui = page({ fetch: async url => {
+        if (url.endsWith('/catalog')) return purchaseCatalog({ usdt_per_cny: rate,
+            payment_channels: [{id: 'alipay'}, {id: 'usdt_bep20', networks: ['usdtbsc', 'usdtton', 'usdtmatic', 'usdttrc20'].map(currency => ({currency}))}] });
+        if (url.endsWith('/quote')) {
+            const quote = purchaseQuote({ payment_channel: 'usdt_bep20', stars_quantity: quantity,
+                subtotal_minor: Math.ceil(STARS_SALE.unit_price_micros * quantity / 10000),
+                pay_currency: network, usdt_minimum: { network, currency: 'USDT', amount: minimum,
+                    expires_at: new Date(Date.now() + 60000).toISOString() } });
+            quote.usdt_pay_amount = pricing.usdtPayAmount(quote.total_minor, rate);
+            return response({success: true, quote: alterQuote(quote)});
+        }
+        assert.fail(`Minimum check must not create payments: ${url}`);
+    } });
+    await ui.flush();
+    await ui.get('tgStarsPreview').trigger('click');
+    ui.get('tgPurchaseStars').value = String(quantity);
+    ui.get('tgPurchaseUsername').value = '@recipient_test';
+    ui.get('tgPurchaseChannel').value = 'usdt_bep20';
+    await ui.get('tgPurchaseChannel').trigger('change');
+    const button = ui.get('tgPurchaseNetworkChoices').children.find(button => button.attributes.get('data-pay-currency') === network);
+    await button.trigger('click');
+    return ui;
+}
+
+for (const [network, minimum, quantity] of [['usdtbsc', '0.11', 50], ['usdtton', '0.26', 100], ['usdtmatic', '0.24', 100], ['usdttrc20', '11.93', 100]]) {
+    test(`TG ${network} rejects a low quote with the numerical capsule and no payment order`, async () => {
+        const ui = await tgMinimumFixture({network, minimum, quantity});
+        await ui.get('tgPurchaseForm').trigger('submit');
+        const toast = ui.get('tgPaymentMinimumToast');
+        assert.ok(toast.textContent.includes(`最低支付 ${minimum} USDT`));
+        assert.equal(toast.classList.contains('is-visible'), true);
+        assert.equal(ui.get('tgPurchaseConfirmation').hidden, true);
+        assert.equal(ui.get('tgPurchaseForm').hidden, false);
+        assert.equal(ui.get('tgPurchaseButton').disabled, false);
+        assert.equal(ui.get('tgPurchaseMessage').textContent, '');
+        assert.equal(ui.calls.filter(call => call.url.endsWith('/orders')).length, 0);
+        await ui.get('tgPurchaseForm').trigger('submit');
+        const dismiss = [...ui.timers.values()].filter(timer => timer.ms === 3600);
+        assert.equal(dismiss.length, 1, 'repeated feedback replaces its dismissal timer');
+        dismiss[0].fn();
+        assert.equal(toast.classList.contains('is-visible'), false);
+        [...ui.timers.values()].find(timer => timer.ms === 300).fn();
+        assert.equal(toast.textContent, '');
+    });
+}
+
+for (const minimum of ['0.19', '0.18']) {
+    test(`TG equal or above minimum ${minimum} USDT still opens explicit confirmation`, async () => {
+        const ui = await tgMinimumFixture({ minimum });
+        await ui.get('tgPurchaseForm').trigger('submit');
+        assert.equal(ui.get('tgPurchaseConfirmation').hidden, false);
+        assert.equal(ui.get('tgPurchaseForm').hidden, true);
+        assert.equal(ui.get('tgPaymentMinimumToast').textContent, '');
+        assert.equal(ui.calls.filter(call => call.url.endsWith('/orders')).length, 0);
+    });
+}
+
+for (const fault of ['missing', 'network', 'expired', 'invalid']) {
+    test(`TG ${fault} minimum never opens an unchecked payment confirmation`, async () => {
+        const ui = await tgMinimumFixture({alterQuote(quote) {
+            if (fault === 'missing') delete quote.usdt_minimum;
+            if (fault === 'network') quote.usdt_minimum.network = 'usdtton';
+            if (fault === 'expired') quote.usdt_minimum.expires_at = new Date(Date.now() - 1).toISOString();
+            if (fault === 'invalid') quote.usdt_minimum.amount = 'NaN';
+            return quote;
+        }});
+        await ui.get('tgPurchaseForm').trigger('submit');
+        assert.equal(ui.get('tgPurchaseConfirmation').hidden, true);
+        assert.match(ui.get('tgPurchaseMessage').textContent, /最低支付金额/);
+        assert.equal(ui.calls.filter(call => call.url.endsWith('/orders')).length, 0);
+    });
+}

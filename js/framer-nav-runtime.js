@@ -312,16 +312,7 @@
     }
 
     function initNavDropdowns() {
-        const forceInteractiveCursor = () => {
-            document.documentElement.style.setProperty('cursor', 'pointer', 'important');
-            document.body.style.setProperty('cursor', 'pointer', 'important');
-        };
-
-        const clearInteractiveCursor = () => {
-            document.documentElement.style.removeProperty('cursor');
-            document.body.style.removeProperty('cursor');
-        };
-
+        // Delayed dropdown closures must not override the cursor of unrelated controls.
         const forceDropdownCursor = (dropdown) => {
             dropdown.style.setProperty('cursor', 'pointer', 'important');
             dropdown.querySelectorAll('*').forEach((node) => {
@@ -451,7 +442,6 @@
                 dropdown.style.top = `${navRect.bottom - navOverlap}px`;
                 dropdown.classList.add('visible');
                 trigger.classList.add('active');
-                forceInteractiveCursor();
             };
 
             let isHoveringTrigger = false;
@@ -464,7 +454,6 @@
 
                     dropdown.classList.remove('visible');
                     trigger.classList.remove('active');
-                    clearInteractiveCursor();
                 }, 200);
             };
 
@@ -488,7 +477,6 @@
                         if (!isHoveringTrigger && !isHoveringDropdown) {
                             dropdown.classList.remove('visible');
                             trigger.classList.remove('active');
-                            clearInteractiveCursor();
                         }
                     }, 400);
                     return;
@@ -507,7 +495,6 @@
             dropdown.addEventListener('mouseenter', () => {
                 isHoveringDropdown = true;
                 keepDropdownOpen();
-                forceInteractiveCursor();
             });
 
             dropdown.addEventListener('mouseleave', () => {

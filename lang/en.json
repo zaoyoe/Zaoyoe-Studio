@@ -802,6 +802,7 @@
         "paymentErrorGatewayUnavailable": "The payment channel is temporarily unavailable. Please try again later or switch payment methods.",
         "usdtFxUnavailable": "The USDT market rate is temporarily unavailable. Please try again later or choose another payment method.",
         "usdtFxUnavailableShort": "Rate unavailable",
+        "usdtFxRefreshingShort": "Updating rate…",
         "usdtFxQuoteUpdated": "The USDT rate has updated. Check the payable amount and start payment again.",
         "usdtFxQuoteMismatch": "The USDT payment amount does not match the locked quote. Do not pay; contact an administrator to check the order.",
         "missingPaymentLink": "Missing payment link",
