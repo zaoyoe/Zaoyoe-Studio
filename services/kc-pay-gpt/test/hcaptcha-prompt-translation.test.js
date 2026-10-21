@@ -27,6 +27,25 @@ describe('hCaptcha challenge prompt translation and guidance', () => {
             .toBe('请选择所有能在水上漂浮的物体');
     });
 
+    it.each([
+        'Tap on the item that travels in the same area as the example',
+        'Click on the item that travels in the same area as the example',
+        'Tap on the object that travels in the same area as the example',
+        'Tap on the item that travels in the same environment as the example',
+    ])('translates same-area travel prompts as transport-environment matching: %s', prompt => {
+        expect(translateHcaptchaPrompt(prompt))
+            .toBe('【交通环境匹配】请点击与示例在同一环境中行驶的物体');
+    });
+
+    it('explains that same area means the example travel environment', () => {
+        const msg = formatCaptchaGuideMessage(
+            '【交通环境匹配】请点击与示例在同一环境中行驶的物体',
+            'Tap on the item that travels in the same area as the example'
+        );
+        expect(msg).toContain('水上、陆地还是空中');
+        expect(msg).toContain('同一行驶环境');
+    });
+
     it('translates spin, liquid absorption, and outdoor/indoor items prompts', () => {
         expect(translateHcaptchaPrompt('Click on things that spin when you use them'))
             .toBe('请点击【使用时会旋转的物品】');
@@ -48,6 +67,13 @@ describe('hCaptcha challenge prompt translation and guidance', () => {
             .toBe('通常放置在室外的物品');
         expect(translateHcaptchaPrompt('Find all items that are typically kept indoors'))
             .toBe('请选出所有【通常放置在室内的物品】');
+
+        expect(translateHcaptchaPrompt('Find all things with on and off states'))
+            .toBe('请选出所有【有开关状态的物品】');
+        expect(translateHcaptchaPrompt('Click on all objects that have on and off states'))
+            .toBe('请选出所有【有开关状态的物品】');
+        expect(translateHcaptchaPrompt('things with on and off states'))
+            .toBe('有开关状态的物品');
     });
 
     it('translates difference and drag/matching challenge prompts', () => {

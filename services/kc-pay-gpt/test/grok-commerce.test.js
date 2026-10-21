@@ -112,18 +112,51 @@ describe('Money, period, tax and migration gates', () => {
             expect(() => validate(q)).toThrow('无法唯一关联');
         }
     });
-    it('allows missing initial cart tax only for a matching untaxed preview and requires final tax', () => {
-        const q = quote(); delete q.cart.data.tax;
-        expect(validateCommerceContract(q.plan, q.skuId, q.session, q.cart, null, null).amount).toBe(30);
-        expect(() => validateCommerceContract(q.plan, q.skuId, q.session, q.cart, null, q.address)).toThrow('税费尚未确认');
-        q.cart.data.total = money(31);
-        expect(() => validateCommerceContract(q.plan, q.skuId, q.session, q.cart, null, null)).toThrow();
+    it('allows missing or empty-zero initial cart tax only for a matching untaxed preview and requires final tax', () => {
+        for (const subtotalAmount of [50, 100]) {
+            for (const initialTax of [undefined, {}, { currencyCode: '', unitMicros: '0' }]) {
+                const q = quote('grok_bundle_super_monthly', { promo: true });
+                q.cart.data.subtotal = money(subtotalAmount);
+                q.tax.data.subtotal = money(subtotalAmount);
+                if (initialTax === undefined) delete q.cart.data.tax;
+                else q.cart.data.tax = decodeRpc(methods.GetCartForSession, 'output',
+                    rpc('GetCartForSession', 'output', { ...q.cart.data, tax: initialTax }),
+                    { 'content-type': 'application/grpc-web+proto' }).tax;
+                expect(validateCommerceContract(q.plan, q.skuId, q.session, q.cart, null, null))
+                    .toMatchObject({ amount: 50, firstAmount: 50, recurringAmount: 100 });
+                expect(validateCommerceContract(q.plan, q.skuId, q.session, q.cart, q.tax, q.address))
+                    .toMatchObject({ amount: 50, firstAmount: 50, recurringAmount: 100, tax: 0 });
+                expect(() => validateCommerceContract(q.plan, q.skuId, q.session, q.cart, null, q.address)).toThrow('税费尚未确认');
+                q.cart.data.total = money(51);
+                expect(() => validateCommerceContract(q.plan, q.skuId, q.session, q.cart, null, null)).toThrow();
+            }
+        }
+        for (const badTax of [{ currencyCode: '', unitMicros: '1000000' }, { currencyCode: 'CAD', unitMicros: '0' }]) {
+            const q = quote('grok_bundle_super_monthly', { promo: true });
+            q.cart.data.tax = badTax;
+            expect(() => validateCommerceContract(q.plan, q.skuId, q.session, q.cart, null, null)).toThrow('官方购物车税费币种无法确认');
+        }
     });
     it('verifies first-period promotion independently of standard renewal', () => {
         expect(validate(quote(undefined, { promo: true }))).toMatchObject({ amount:15, firstAmount:15, recurringAmount:30 });
         const q = quote(undefined,{promo:true});
         q.session.data.skuPricings[0].benefits[0].value.discount = { fixedAmount:money(15), times:1 };
         expect(validate(q).amount).toBe(15);
+    });
+    it('identifies the invalid official money field without exposing upstream values', () => {
+        const skuCurrency = quote();
+        skuCurrency.session.data.skuPricings[0].pricing.details.amount.currencyCode = 'CLP';
+        expect(() => validate(skuCurrency)).toThrow('官方 SKU 标价币种无法确认');
+
+        const cartTotal = quote();
+        cartTotal.cart.data.total.currencyCode = 'PHP';
+        expect(() => validate(cartTotal)).toThrow('官方购物车总额币种无法确认');
+
+        const offerCurrency = quote(undefined, { promo: true });
+        offerCurrency.session.data.skuPricings[0].benefits[0].value.discount = {
+            fixedAmount: { currencyCode: 'EUR', unitMicros: '15000000' }, times: 1
+        };
+        expect(() => validate(offerCurrency)).toThrow('官方优惠金额币种无法确认');
     });
     it.each([
         ['wrong SKU',q=>q.cart.request.selections[0].skuId='other'],

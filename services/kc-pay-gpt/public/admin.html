@@ -10,6 +10,7 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script>if (typeof lucide === 'undefined') { window.lucide = { createIcons: () => {} }; }</script>
     <script src="/grok-plan-catalog.js"></script>
+    <script src="/card-parser.js"></script>
     <script src="/admin-table-scroll.js" defer></script>
     <script src="/admin-sidebar.js" defer></script>
     <style>
@@ -1684,6 +1685,41 @@
             height: 15px;
         }
 
+        .btn-freeze:not(.btn), button.btn-freeze:not(.btn) {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border-radius: 7px;
+            background: transparent;
+            border: 1px solid transparent;
+            color: #60a5fa;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: none;
+            transition: all 0.15s ease;
+        }
+        .btn-freeze:not(.btn):hover:not(:disabled), button.btn-freeze:not(.btn):hover:not(:disabled) {
+            background: rgba(59, 130, 246, 0.15);
+            border-color: rgba(59, 130, 246, 0.3);
+            color: #93c5fd;
+        }
+        .btn-freeze.btn-frozen-active {
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.1);
+            border-color: rgba(56, 189, 248, 0.25);
+        }
+        .btn-freeze.btn-frozen-active:hover:not(:disabled) {
+            background: rgba(245, 158, 11, 0.15);
+            border-color: rgba(245, 158, 11, 0.3);
+            color: #fbbf24;
+        }
+        .btn-freeze i, button.btn-freeze i {
+            width: 15px;
+            height: 15px;
+        }
+
         /* ============ 表单与输入框 ============ */
         .form-group {
             margin-bottom: 16px;
@@ -3144,7 +3180,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             <div class="panel">
                 <div class="panel-header">
                     <h2 class="panel-title">已保存代理</h2>
-                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                         <button type="button" class="btn btn-secondary" onclick="loadProxyPool().then(() => showMessage('代理列表已刷新', 'success')).catch((e) => showMessage(e.message, 'error'))">
                             <i data-lucide="refresh-cw"></i>
                             刷新
@@ -3153,11 +3189,19 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                             <i data-lucide="zap"></i>
                             批量检测活跃
                         </button>
+                        <button type="button" class="btn btn-secondary" style="color:var(--text-warning, #f59e0b); border-color: rgba(245,158,11,0.35);" onclick="clearInactiveProxies()" title="仅删除检测不可用的代理">
+                            <i data-lucide="filter-x"></i>
+                            清理不可用
+                        </button>
+                        <button type="button" class="btn btn-danger" onclick="clearAllProxies()" title="清空代理池中的全部代理">
+                            <i data-lucide="trash-2"></i>
+                            清空代理池
+                        </button>
                     </div>
                 </div>
 
-                <div class="table-container">
-                    <table>
+                <div class="table-container" style="overflow-x:auto;">
+                    <table style="width:100%; min-width:860px;">
                         <thead>
                             <tr>
                                 <th width="72px" style="text-align:center">启用</th>
@@ -3165,8 +3209,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                                 <th width="140px">出口 IP</th>
                                 <th width="88px" style="text-align:center">延迟</th>
                                 <th width="88px" style="text-align:center">协议</th>
-                                <th>代理地址</th>
-                                <th width="180px" style="text-align:center">操作</th>
+                                <th style="min-width:220px;">代理地址</th>
+                                <th width="140px" style="text-align:center">操作</th>
                             </tr>
                         </thead>
                         <tbody id="proxy_pool_body">
@@ -3398,6 +3442,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 </div>
                 <div class="stat-card">
                     <div class="stat-header">
+                        <span class="stat-label">已冻结</span>
+                    </div>
+                    <div id="card_stat_frozen" class="stat-value" style="color: #60a5fa;">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-header">
                         <span class="stat-label">已报废</span>
                     </div>
                     <div id="card_stat_exhausted" class="stat-value" style="color: #f87171;">0</div>
@@ -3418,10 +3468,18 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                         <div class="import-box-title">批量导入银行卡</div>
                     </div>
                     <div class="import-box-tip">
-                        每行一条，格式：<code>卡号|有效期|CVC|持卡人</code>（持卡人可选）。有效期支持 <code>MM/YY</code> 或 <code>MMYY</code>。
+                        支持两种输入格式（智能提取<b>卡号</b>、<b>有效期</b>、<b>CVC/CVV</b>、<b>持卡人</b>及绑定地址）：<br>
+                        1. <b>多行整段信息</b>：可直接粘贴包含“卡号：... 有效期：... CVV：... 持卡人：...”的整段卡片文本，系统将智能提取；<br>
+                        2. <b>单行分隔格式</b>：<code>卡号|有效期|CVC|持卡人</code>（支持 <code>|</code>、逗号、制表符、空格分隔）。
                     </div>
-                    <textarea id="card_pool_import_text" class="import-textarea"
-                        placeholder="5349336392059744|04/31|738|John Doe&#10;5349336383247282|04/31|937"></textarea>
+                    <textarea id="card_pool_import_text" class="import-textarea" rows="8"
+                        placeholder="可直接粘贴整段卡片详情，例如：&#10;卡号：5378727146050159&#10;有效期：11/29&#10;CVV：973&#10;持卡人：Jessica Martinez&#10;地址：2459 Glacier Creek Road&#10;城市：Juneau&#10;国家/州：US / Alaska&#10;邮编：99801&#10;&#10;也可输入单行格式：&#10;5349336392059744|04/31|738|John Doe"></textarea>
+                    <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary);">
+                        <input type="checkbox" id="card_pool_allow_invalid_luhn" style="cursor: pointer;">
+                        <label for="card_pool_allow_invalid_luhn" style="cursor: pointer; user-select: none;">
+                            允许跳过卡号 Luhn 算法校验（若导入部分测试卡或特殊虚拟卡）
+                        </label>
+                    </div>
                     <p id="card_pool_import_result" style="font-size: 13px; color: var(--text-dim); margin-top: 10px;"></p>
                     <div class="import-actions">
                         <button id="card_pool_import_btn" class="btn btn-success" onclick="importCardPool()">
@@ -3444,7 +3502,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                                 <th width="90px" style="text-align:center">状态</th>
                                 <th width="80px" style="text-align:center">次数</th>
                                 <th width="140px" style="text-align:center">最近使用</th>
-                                <th width="110px" style="text-align:center">操作</th>
+                                <th width="120px" style="text-align:center">操作</th>
                             </tr>
                         </thead>
                         <tbody id="card_pool_list_body"></tbody>
@@ -4596,8 +4654,22 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` };
             const response = await fetch(url, { ...options, headers });
             if (response.status === 401) {
-                redirectToLogin();
-                throw new Error('登录已失效');
+                // 仅当后端明确标识为后台管理系统凭证失效 (X-Admin-Auth-Error 或 authError: true) 时才踢回登录页，
+                // 绝不可将业务内测试/管理的第三方 Token 401（如 ChatGPT Session 过期）误判为管理员登出！
+                let isAdminAuthInvalid = Boolean(response.headers.get('X-Admin-Auth-Error'));
+                if (!isAdminAuthInvalid) {
+                    try {
+                        const cloned = response.clone();
+                        const data = await cloned.json();
+                        if (data && (data.authError || data.message === '未授权，请重新登录' || data.message === '登录状态已失效，请重新登录')) {
+                            isAdminAuthInvalid = true;
+                        }
+                    } catch (_) {}
+                }
+                if (isAdminAuthInvalid) {
+                    redirectToLogin();
+                    throw new Error('管理员登录已失效，请重新登录');
+                }
             }
             return response;
         }
@@ -6695,12 +6767,13 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                         <td id="proxy_ip_${item.id}">${ipCell}</td>
                         <td style="text-align:center;" id="proxy_lat_${item.id}">${latency}</td>
                         <td style="text-align:center;"><code>${escapeHtml(item.protocol || '-')}</code></td>
-                        <td><code style="font-size:12px; word-break:break-all;">${escapeHtml(item.proxy_url_masked || item.proxy_url || '')}</code></td>
+                        <td style="max-width:320px;"><code style="font-size:12px; word-break:break-all; display:block; max-height:48px; overflow-y:auto;">${escapeHtml(item.proxy_url_masked || item.proxy_url || '')}</code></td>
                         <td style="text-align:center;">
-                            <div class="table-action-group">
-                                <button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:12px; height:28px; display:inline-flex; align-items:center;" onclick="testSavedProxy(${item.id})">检测</button>
-                                <button type="button" class="btn-delete" onclick="deleteSavedProxy(${item.id})" title="删除">
-                                    <i data-lucide="trash-2"></i>
+                            <div class="table-action-group" style="justify-content:center; gap:6px;">
+                                <button type="button" class="btn btn-secondary" style="padding:4px 8px; font-size:12px; height:28px; display:inline-flex; align-items:center;" onclick="testSavedProxy(${item.id})">检测</button>
+                                <button type="button" class="btn btn-danger" style="padding:4px 8px; font-size:12px; height:28px; display:inline-flex; align-items:center; gap:3px;" onclick="deleteSavedProxy(${item.id})" title="删除此代理">
+                                    <i data-lucide="trash-2" style="width:13px;height:13px;"></i>
+                                    删除
                                 </button>
                             </div>
                         </td>
@@ -7035,6 +7108,45 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 await loadProxyPool();
             } catch (error) {
                 showMessage(error.message || '删除失败', 'error');
+            }
+        }
+
+        async function clearAllProxies() {
+            if (!proxyPoolList.length) {
+                showMessage('代理池已为空', 'warning');
+                return;
+            }
+            if (!confirm(`确定要清空代理池中的全部 ${proxyPoolList.length} 条代理吗？\n此操作不可恢复！`)) return;
+            try {
+                const res = await authFetch('/api/admin/proxies', { method: 'DELETE' });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.message || data.error || '清空失败');
+                }
+                showMessage(data.message || '代理池已清空', 'success');
+                await loadProxyPool();
+            } catch (error) {
+                showMessage(error.message || '清空代理池失败', 'error');
+            }
+        }
+
+        async function clearInactiveProxies() {
+            const inactive = proxyPoolList.filter(item => item.last_check_ok === false);
+            if (!inactive.length) {
+                showMessage('当前无标记为不可用的代理（请先执行批量检测或单条检测）', 'warning');
+                return;
+            }
+            if (!confirm(`确定要清理检测为不可用的 ${inactive.length} 条代理吗？`)) return;
+            try {
+                const res = await authFetch('/api/admin/proxies?type=inactive', { method: 'DELETE' });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.message || data.error || '清理失败');
+                }
+                showMessage(data.message || '不可用代理已清理', 'success');
+                await loadProxyPool();
+            } catch (error) {
+                showMessage(error.message || '清理不可用代理失败', 'error');
             }
         }
 
@@ -7463,10 +7575,13 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
 
         function renderCardPoolStats() {
             const total = cardPoolList.length;
-            let active = 0, cooldown = 0, exhausted = 0;
+            let active = 0, cooldown = 0, frozen = 0, exhausted = 0;
             for (const card of cardPoolList) {
                 const status = (card.status || '').toLowerCase();
-                if (!card.is_active || card.is_active === 0 || status === '已报废') {
+                const isFrozen = card.status === '已冻结' || status === 'frozen';
+                if (isFrozen) {
+                    frozen++;
+                } else if (!card.is_active || card.is_active === 0 || status === '已报废') {
                     exhausted++;
                 } else if (status === '冷却中' || (card.cooldown_until && new Date(card.cooldown_until) > new Date())) {
                     cooldown++;
@@ -7477,6 +7592,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             document.getElementById('card_stat_total').textContent = total;
             document.getElementById('card_stat_active').textContent = active;
             document.getElementById('card_stat_cooldown').textContent = cooldown;
+            const frozenEl = document.getElementById('card_stat_frozen');
+            if (frozenEl) frozenEl.textContent = frozen;
             document.getElementById('card_stat_exhausted').textContent = exhausted;
         }
 
@@ -7507,11 +7624,25 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const usageCount = Number(card.usage_count || 0);
                 const lastUsed = card.last_used_at ? formatTimeShort(card.last_used_at) : '-';
                 const statusBadge = getCardStatusBadge(card);
-                const isCoolingOrAbnormal = !card.is_active || card.is_active === 0 || (card.status && card.status !== '正常') || (card.cooldown_until && new Date(card.cooldown_until) > new Date());
-                const cooldownBtn = isCoolingOrAbnormal ? `
+
+                const isFrozen = card.status === '已冻结' || (card.status || '').toLowerCase() === 'frozen';
+                const isCooling = (card.status === '冷却中' || (card.cooldown_until && new Date(card.cooldown_until) > new Date())) && !isFrozen;
+
+                // 解除冷却按钮（仅冷却中显示）
+                const cooldownBtn = isCooling ? `
                     <button type="button" class="btn-unfreeze" onclick="resetCardCooldownItem(${card.id})" title="解除冷却 / 恢复正常">
                         <i data-lucide="refresh-cw"></i>
                     </button>` : '';
+
+                // 冻结 / 解冻按钮
+                const freezeBtn = isFrozen ? `
+                    <button type="button" class="btn-freeze btn-frozen-active" onclick="toggleCardFreezeItem(${card.id}, false)" title="解冻卡片（恢复调用）">
+                        <i data-lucide="sun"></i>
+                    </button>` : `
+                    <button type="button" class="btn-freeze" onclick="toggleCardFreezeItem(${card.id}, true)" title="冻结卡片（不可被调用）">
+                        <i data-lucide="snowflake"></i>
+                    </button>`;
+
                 return `
                 <tr>
                     <td><code>${cardNumber}</code></td>
@@ -7526,6 +7657,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <td style="text-align:center">
                         <div style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">
                             ${cooldownBtn}
+                            ${freezeBtn}
                             <button class="btn-delete" onclick="deleteCardPoolItem(${card.id})" title="删除">
                                 <i data-lucide="trash-2"></i>
                             </button>
@@ -7538,6 +7670,9 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
 
         function getCardStatusBadge(card) {
             const status = (card.status || '').toLowerCase();
+            if (card.status === '已冻结' || status === 'frozen') {
+                return '<span class="status-badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);">已冻结</span>';
+            }
             if (!card.is_active || card.is_active === 0 || status === '已报废') {
                 return '<span class="status-badge status-failed">已报废</span>';
             }
@@ -7553,6 +7688,31 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             if (isNaN(d.getTime())) return '-';
             const pad = (n) => String(n).padStart(2, '0');
             return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        async function toggleCardFreezeItem(cardId, shouldFreeze) {
+            const actionText = shouldFreeze ? '冻结' : '解冻';
+            const tipText = shouldFreeze
+                ? '确定冻结该卡片？冻结后该卡片将不可被自动充值任务调用。'
+                : '确定解冻该卡片？解冻后将恢复正常可用，可被自动充值任务调用。';
+            const ok = await showAdminConfirm(tipText, `${actionText}卡片`);
+            if (!ok) return;
+            try {
+                const res = await authFetch(`/api/admin/cards/${cardId}/freeze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ freeze: shouldFreeze })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data.success) {
+                    showMessage(data.message || `卡片已${actionText}`, 'success');
+                    await loadCardPoolList();
+                } else {
+                    showMessage(data.error || `${actionText}失败`, 'error');
+                }
+            } catch (e) {
+                showMessage(`网络异常，${actionText}失败`, 'error');
+            }
         }
 
         async function resetCardCooldownItem(cardId) {
@@ -7591,6 +7751,58 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             }
         }
 
+        function parseCardImportTextFallback(text) {
+            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+            const hasLabels = lines.some(l => /^(卡号|信用卡号|有效期|到期|cvv|cvc|安全码|持卡人)[:：]/i.test(l));
+            if (hasLabels) {
+                let card = null;
+                const cards = [];
+                for (const line of lines) {
+                    const numM = line.match(/^(?:卡号|信用卡号|card\s*number)[:：\s]\s*(.+)$/i);
+                    if (numM) {
+                        if (card && card.card_number) cards.push(card);
+                        card = { card_number: numM[1].replace(/[\s-]/g, '') };
+                        continue;
+                    }
+                    if (!card) continue;
+                    const expM = line.match(/^(?:有效期|到期日|到期时间|过期时间|有效时间|exp(?:iration)?\s*date|exp(?:iry)?|expiration|expiry|date)[:：\s]\s*(.+)$/i);
+                    if (expM) { card.card_expiry = (typeof CardParser !== 'undefined' && CardParser.normalizeExpiry) ? CardParser.normalizeExpiry(expM[1]) : expM[1].trim(); continue; }
+                    const cvcM = line.match(/^(?:cvv2?|cvc2?|安全码|cvv|cvc)[:：\s]\s*(.+)$/i);
+                    if (cvcM) { card.card_cvc = cvcM[1].replace(/\D/g, '').trim(); continue; }
+                    const hldM = line.match(/^(?:持卡人|姓名|holder|name)[:：\s]\s*(.+)$/i);
+                    if (hldM) { card.card_holder = hldM[1].trim(); card.payment_holder_name = card.card_holder; continue; }
+                    const addrM = line.match(/^(?:地址|街道地址|address)[:：\s]\s*(.+)$/i);
+                    if (addrM) { card.payment_address_line1 = addrM[1].trim(); continue; }
+                    const cityM = line.match(/^(?:城市|city)[:：\s]\s*(.+)$/i);
+                    if (cityM) { card.payment_address_city = cityM[1].trim(); continue; }
+                    const stateM = line.match(/^(?:国家\s*[\/\-]?\s*州|州|state)[:：\s]\s*(.+)$/i);
+                    if (stateM) {
+                        const val = stateM[1].trim();
+                        card.payment_address_state = val.includes('/') ? val.split('/').pop().trim() : val;
+                        continue;
+                    }
+                    const zipM = line.match(/^(?:邮编|zip)[:：\s]\s*(.+)$/i);
+                    if (zipM) { card.payment_address_postal = zipM[1].trim(); continue; }
+                }
+                if (card && card.card_number) cards.push(card);
+                return { cards, parseErrors: [] };
+            }
+            const cards = [];
+            for (const line of lines) {
+                const parts = line.split(/[|,\t]/).map(p => p.trim());
+                if (parts.length >= 3) {
+                    cards.push({
+                        card_number: parts[0].replace(/[\s-]/g, ''),
+                        card_expiry: parts[1],
+                        card_cvc: parts[2].replace(/\D/g, ''),
+                        card_holder: parts[3] || '',
+                        payment_holder_name: parts[3] || ''
+                    });
+                }
+            }
+            return { cards, parseErrors: [] };
+        }
+
         async function importCardPool() {
             const textarea = document.getElementById('card_pool_import_text');
             const resultEl = document.getElementById('card_pool_import_result');
@@ -7601,30 +7813,24 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 return;
             }
 
-            // Parse pipe-delimited format: number|expiry|CVC|holder
-            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-            const cards = [];
-            const parseErrors = [];
-            for (let i = 0; i < lines.length; i++) {
-                const parts = lines[i].split('|');
-                if (parts.length < 3) {
-                    parseErrors.push(`第 ${i + 1} 行格式错误（需至少 3 个字段，用 | 分隔）`);
-                    continue;
-                }
-                const card_number = (parts[0] || '').trim();
-                const card_expiry = (parts[1] || '').trim();
-                const card_cvc = (parts[2] || '').trim();
-                const card_holder = (parts[3] || '').trim();
-                cards.push({ card_number, card_expiry, card_cvc, card_holder });
-            }
+            // 使用 CardParser 解析多行键值格式（卡号、有效期、CVC/CVV、持卡人、地址等）或单行分隔符格式
+            const parsed = (typeof CardParser !== 'undefined' && typeof CardParser.parseCardImportText === 'function')
+                ? CardParser.parseCardImportText(text)
+                : parseCardImportTextFallback(text);
+
+            const cards = parsed.cards || [];
+            const parseErrors = parsed.parseErrors || [];
 
             if (cards.length === 0) {
                 showMessage('未解析到有效卡片数据，请检查格式', 'error');
                 if (parseErrors.length > 0) {
                     resultEl.textContent = parseErrors.slice(0, 5).join('；');
+                    resultEl.style.color = 'var(--error)';
                 }
                 return;
             }
+
+            const allowInvalidLuhn = Boolean(document.getElementById('card_pool_allow_invalid_luhn')?.checked);
 
             btn.disabled = true;
             btn.innerHTML = '<i data-lucide="loader" class="animate-spin"></i> 导入中...';
@@ -7634,18 +7840,33 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const res = await authFetch('/api/admin/cards/import', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cards })
+                    body: JSON.stringify({ cards, allow_invalid_luhn: allowInvalidLuhn })
                 });
                 const data = await res.json();
                 if (res.ok) {
                     const imported = data.imported || 0;
                     const skipped = data.skipped || 0;
                     const failed = data.failed || 0;
-                    resultEl.textContent = `导入完成：成功 ${imported}，跳过 ${skipped}，失败 ${failed}`;
-                    resultEl.style.color = imported > 0 ? 'var(--success)' : 'var(--text-dim)';
-                    showMessage(`成功导入 ${imported} 张卡片`, 'success');
-                    textarea.value = '';
-                    await loadCardPoolList();
+                    if (failed > 0 && Array.isArray(data.failures) && data.failures.length > 0) {
+                        const errDetails = data.failures.map(f => {
+                            const cardInfo = cards[f.index] ? `[第 ${f.index + 1} 条 尾号 ${String(cards[f.index].card_number || '').slice(-4)}] ` : '';
+                            return `${cardInfo}${f.errors.join(', ')}`;
+                        }).join('； ');
+                        resultEl.innerHTML = `导入完成：成功 ${imported}，跳过 ${skipped}，失败 <span style="color:var(--error);font-weight:600;">${failed}</span><br><span style="color:var(--error);font-size:12px;margin-top:4px;display:inline-block;">失败原因：${escapeHtml(errDetails)}</span>`;
+                    } else {
+                        resultEl.textContent = `导入完成：成功 ${imported}，跳过 ${skipped}，失败 ${failed}`;
+                        resultEl.style.color = imported > 0 ? 'var(--success)' : 'var(--text-dim)';
+                    }
+
+                    if (imported > 0) {
+                        showMessage(`成功导入 ${imported} 张卡片`, 'success');
+                        textarea.value = '';
+                        await loadCardPoolList();
+                    } else if (failed > 0) {
+                        showMessage(`导入失败：${data.failures?.[0]?.errors?.[0] || '卡片数据校验未通过'}`, 'error');
+                    } else if (skipped > 0) {
+                        showMessage(`导入完成：全部 ${skipped} 张卡片在库中已存在（已跳过）`, 'info');
+                    }
                 } else {
                     showMessage(data.error || '导入失败', 'error');
                     resultEl.textContent = data.error || '导入失败';

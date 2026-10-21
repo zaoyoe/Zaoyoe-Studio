@@ -199,8 +199,8 @@ async function workerHarness(fixture, { mismatch = false, apiError = null, boots
     const closeTaskBrowser = vi.fn(async () => {});
     const proxyCleanup = vi.fn(async () => {});
     const login = { ok: true, email: 'fixture@example.test', session: { accessToken: jwt } };
-    const methods = Object.fromEntries(['installChatGptSession', 'bootstrapChatGptSession', 'injectClaudeSession', 'bootstrapClaudeSession',
-        'openClaudeCheckout', 'injectGrokSession', 'bootstrapGrokSession', 'openGrokCheckout', 'openApiCheckout',
+    const methods = Object.fromEntries(['installChatGptSession', 'bootstrapChatGptSession', 'cancelChatGptAutoRenew', 'injectClaudeSession', 'bootstrapClaudeSession',
+        'openClaudeCheckout', 'cancelClaudeAutoRenew', 'injectGrokSession', 'bootstrapGrokSession', 'openGrokCheckout', 'cancelGrokAutoRenew', 'openApiCheckout',
         'openPricingCheckout', 'executePaymentWithRetry', 'observeGrokCommerce'].map(name => [name, vi.fn(async () => login)]));
     methods.installChatGptSession.mockResolvedValue({ sessionData: login, hasSessionToken: true, cookieVerified: true });
     methods.openGrokCheckout.mockResolvedValue({ native: true, observedCart: 'offline-cart' });
@@ -210,13 +210,16 @@ async function workerHarness(fixture, { mismatch = false, apiError = null, boots
     if (bootstrapError) methods[`bootstrap${fixture.platform === 'grok' ? 'Grok' : fixture.platform === 'claude' ? 'Claude' : 'ChatGpt'}Session`].mockRejectedValue(bootstrapError);
     const dependencies = {
         './payment-retry': methods, './pricing-checkout': methods, './chatgpt': { ...methods, ...require('../chatgpt') },
-        './region-config': { getRegionConfig, getRegionBrowserProfile }, './session-auth': methods, './claude-auth': methods,
-        './pricing-checkout-claude': methods, './grok-auth': methods, './pricing-checkout-grok': methods,
+        './region-config': { getRegionConfig, getRegionBrowserProfile }, './session-auth': methods, './chatgpt-cancel-auto-renew': methods, './claude-auth': methods,
+        './pricing-checkout-claude': methods, './claude-cancel-auto-renew': methods,
+        './grok-auth': methods, './pricing-checkout-grok': methods, './grok-cancel-auto-renew': methods,
         './public/grok-plan-catalog': require('../public/grok-plan-catalog'), './grok-commerce': methods, './cdk-plan-catalog': { validateCdkPlan },
-        './mysql-store': { getPaymentRegion: async () => 'US', verifyCdkDetails: async () => ({ plan_type: mismatch ? 'plus' : fixture.planType, platform: mismatch ? 'chatgpt' : fixture.platform }) },
+        './mysql-store': { getPaymentRegion: async () => 'PH', verifyCdkDetails: async () => ({ payment_region: 'US', plan_type: mismatch ? 'plus' : fixture.planType, platform: mismatch ? 'chatgpt' : fixture.platform }) },
         './browser-runtime': { connectTaskBrowser: async () => ({ browser: { newContext: async () => context }, realUserAgent: 'Chrome/147.0' }), applyCdpEnv() {}, closeTaskBrowser },
         './playwright-proxy': { preparePlaywrightProxy: async () => ({ cleanup: proxyCleanup, proxyConfig: null }) },
-        './proxy-preflight': { checkProxyConnectivity: vi.fn() }, './task-diagnostics': { captureDiagnosticScreenshot: async () => null },
+        './proxy-preflight': { checkProxyConnectivity: vi.fn(), checkProxyAndRegionFast: vi.fn(async () => null), checkEgressRegion: vi.fn(async (_context, expectedRegion) => ({
+            expectedRegion, actualRegion: expectedRegion
+        })) }, './task-diagnostics': { captureDiagnosticScreenshot: async () => null },
         fs: { mkdirSync() {} }, path
     };
     // Methods must replace real checkout functions: every external action remains a mock.
@@ -234,6 +237,7 @@ describe('real worker entry uses restored platform modules without network or pa
     it.each(fixtures)('$platform reaches the matching payment adapter with its exact CDK plan', async fixture => {
         const h = await workerHarness(fixture);
         expect(h.methods.executePaymentWithRetry).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ platform: fixture.platform, planType: fixture.planType }));
+        expect(h.methods.executePaymentWithRetry.mock.calls[0][1]).toMatchObject({ paymentRegion: 'US', paymentCurrency: 'USD' });
         if (fixture.platform === 'grok') {
             expect(h.methods.openGrokCheckout).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ planType: fixture.planType, commerceObserver: expect.anything() }));
             expect(h.methods.executePaymentWithRetry.mock.calls[0][1]).toMatchObject({ grokAccount: { ok: true }, grokCheckout: { native: true } });
@@ -243,14 +247,18 @@ describe('real worker entry uses restored platform modules without network or pa
             expect(h.methods.bootstrapClaudeSession).toHaveBeenCalledWith(expect.anything(), fixture.credential, { planType: fixture.planType });
             expect(h.methods.installChatGptSession).not.toHaveBeenCalled(); expect(h.methods.openGrokCheckout).not.toHaveBeenCalled();
         } else {
-            expect(h.methods.openApiCheckout).toHaveBeenCalledOnce(); expect(h.methods.bootstrapGrokSession).not.toHaveBeenCalled();
+            expect(h.methods.openApiCheckout).not.toHaveBeenCalled();
+            expect(h.methods.openPricingCheckout).toHaveBeenCalledOnce();
+            expect(h.methods.bootstrapGrokSession).not.toHaveBeenCalled();
             expect(h.methods.installChatGptSession.mock.calls[0][1]).toBe(fixture.credential);
         }
     });
-    it.each(['api', 'auto', 'hybrid'])('401 in %s never falls back to pricing or reaches payment', async checkoutMode => {
-        const h = await workerHarness(fixtures[2], { checkoutMode, apiError: Object.assign(new Error('token_expired [CHECKOUT_AUTH_ERROR]'), { code: 'CHECKOUT_AUTH_ERROR' }) });
-        expect(h.methods.openPricingCheckout).not.toHaveBeenCalled(); expect(h.methods.executePaymentWithRetry).not.toHaveBeenCalled();
-        expect(h.process.exitCode).toBe(1);
+    it.each(['api', 'auto', 'hybrid'])('keeps real recharge on UI Checkout when CHECKOUT_MODE=%s', async checkoutMode => {
+        const h = await workerHarness(fixtures[2], { checkoutMode,
+            apiError: Object.assign(new Error('fixture API should not be called'), { code: 'CHECKOUT_HTTP_ERROR' }) });
+        expect(h.methods.openApiCheckout).not.toHaveBeenCalled();
+        expect(h.methods.openPricingCheckout).toHaveBeenCalledOnce();
+        expect(h.methods.executePaymentWithRetry).toHaveBeenCalledOnce();
     });
     it('stops a tampered task plan before installing credentials or opening checkout', async () => {
         const h = await workerHarness(fixtures[0], { mismatch: true });

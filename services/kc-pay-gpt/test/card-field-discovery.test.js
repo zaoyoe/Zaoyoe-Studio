@@ -174,7 +174,8 @@ describe('card field discovery uses actual controls and one wait budget', () => 
         const states = [];
         const result = await completeStripeCardPayment(page, card, {
             line1: '123 Fixture Street', city: 'Fixture', state: 'OR', postal_code: '97000', country: 'US'
-        }, { holderName: 'Offline Customer', email: 'offline@example.test', onPaymentAttemptStarted: async () => states.push('started') });
+        }, { holderName: 'Offline Customer', email: 'offline@example.test', platform: 'chatgpt', paymentCurrency: 'USD',
+            onPaymentAttemptStarted: async () => states.push('started') });
         if (result.screenshot) {
             const fs = await import('node:fs');
             fs.rmSync(result.screenshot, { force: true });

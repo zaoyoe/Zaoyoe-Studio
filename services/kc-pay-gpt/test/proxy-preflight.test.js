@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { chromium } from 'playwright';
-import { parseProbeIp, checkProxyConnectivity } from '../proxy-preflight.js';
+import { parseProbeIp, parseNetworkRegion, checkProxyConnectivity, checkEgressRegion } from '../proxy-preflight.js';
 import { classifyProxyPreflightFailure } from '../task-safety.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -15,6 +15,65 @@ function mockContext(get, goto) {
     const page = { goto, close: vi.fn(async () => {}), video: () => null };
     return { request: { get }, newPage: vi.fn(async () => page), page };
 }
+
+describe('payment egress-region preflight', () => {
+    it.each([
+        ['fl=31\nloc=PH\nts=1', 'PH'],
+        ['loc=US\nloc=PH', null],
+        ['loc=XX', null],
+        ['loc=ph', null],
+        ['<html>loc=PH</html>', null]
+    ])('parses only one recognized country code from Cloudflare trace', (body, expected) => {
+        expect(parseNetworkRegion(body)).toBe(expected);
+    });
+    it('accepts an egress matching the target and closes the temporary page', async () => {
+        const page = { goto: vi.fn(async () => response('fl=31\nloc=PH\nts=1')), close: vi.fn(async () => {}), video: () => null };
+        const context = { newPage: vi.fn(async () => page) };
+        await expect(checkEgressRegion(context, 'PH', { log: vi.fn() })).resolves.toMatchObject({
+            expectedRegion: 'PH', actualRegion: 'PH', transport: 'browser'
+        });
+        expect(page.close).toHaveBeenCalledOnce();
+    });
+    it('stops before payment when the current egress region differs from the target', async () => {
+        const page = { goto: vi.fn(async () => response('loc=US')), close: vi.fn(async () => {}), video: () => null };
+        const context = { newPage: vi.fn(async () => page) };
+        await expect(checkEgressRegion(context, 'PH', { log: vi.fn() })).rejects.toMatchObject({
+            code: 'PAYMENT_REGION_NETWORK_MISMATCH', message: expect.stringContaining('尚未提交支付')
+        });
+        expect(page.close).toHaveBeenCalledOnce();
+    });
+    it('fails closed when the egress country cannot be confirmed', async () => {
+        const page = { goto: vi.fn(async () => response('trace unavailable')), close: vi.fn(async () => {}), video: () => null };
+        const context = { newPage: vi.fn(async () => page) };
+        const log = vi.fn();
+        await expect(checkEgressRegion(context, 'PH', { log })).rejects.toMatchObject({
+            code: 'NETWORK_REGION_UNCONFIRMED', message: expect.stringContaining('响应格式无效')
+        });
+        expect(log).toHaveBeenCalledWith(expect.stringContaining('没有唯一有效的国家代码'));
+    });
+    it('reports a safe HTTP status when the region probe is rejected', async () => {
+        const page = { goto: vi.fn(async () => response('denied', 503)), close: vi.fn(async () => {}), video: () => null };
+        const context = { newPage: vi.fn(async () => page) };
+        const log = vi.fn();
+        await expect(checkEgressRegion(context, 'PH', { log })).rejects.toMatchObject({
+            code: 'NETWORK_REGION_UNCONFIRMED', message: expect.stringContaining('HTTP 503')
+        });
+        expect(log).toHaveBeenCalledWith(expect.stringContaining('HTTP 503'));
+    });
+    it('classifies probe timeouts without logging proxy credentials or raw errors', async () => {
+        const page = {
+            goto: vi.fn(async () => { throw new Error('Timeout 10000ms exceeded https://proxy-user:private-password@proxy.example'); }),
+            close: vi.fn(async () => {}), video: () => null
+        };
+        const context = { newPage: vi.fn(async () => page) };
+        const log = vi.fn();
+        await expect(checkEgressRegion(context, 'PH', { log })).rejects.toMatchObject({
+            code: 'NETWORK_REGION_UNCONFIRMED', message: expect.stringContaining('请求超时')
+        });
+        expect(log).toHaveBeenCalledWith('[Network/region] 地区探针请求失败: timeout');
+        expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-password|proxy-user|proxy\.example/);
+    });
+});
 
 describe('proxy IP preflight recovery', () => {
     it.each(['203.0.113.2', ' 203.0.113.2\n', '2001:db8::1'])('accepts a complete IP: %s', value => {
@@ -106,6 +165,12 @@ describe('server preflight retry safety', () => {
     it('does not turn arbitrary payment TLS errors into a new task retry', () => {
         expect(classifyProxyPreflightFailure(tlsError().message, null)).toBeNull();
         expect(analyze('PAYMENT_STATE:unknown\n❌ [运行时错误]: error [PROXY_PREFLIGHT_NETWORK]')).toMatchObject({ status: 'manual', shouldRetry: false });
+    });
+    it.each([
+        '❌ [运行时错误]: 当前网络出口地区 US 与卡密支付地区 PH 不一致，已停止支付 [PAYMENT_REGION_NETWORK_MISMATCH]',
+        'Checkout 页面已打开\nPAYMENT_STATE:not_started\n❌ [支付失败] Checkout 币种 USD 与卡密支付币种 PHP 不一致 [PAYMENT_CURRENCY_MISMATCH]'
+    ])('does not automatically retry a payment region/currency guard failure', output => {
+        expect(analyze(output)).toMatchObject({ shouldRetry: false });
     });
 });
 

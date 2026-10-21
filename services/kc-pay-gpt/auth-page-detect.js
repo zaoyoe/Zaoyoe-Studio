@@ -120,7 +120,9 @@ async function hasLoggedInChatUi(page) {
         () => page.getByRole('navigation').first().isVisible({ timeout: 1500 }),
         () => page.getByText(/Configure your plan/i).first().isVisible({ timeout: 1500 }),
         () => page.getByText(/^Card number$/i).first().isVisible({ timeout: 1500 }),
-        () => page.getByText(/Due today/i).first().isVisible({ timeout: 1500 })
+        () => page.getByText(/Due today/i).first().isVisible({ timeout: 1500 }),
+        () => page.locator('[role="dialog"]').getByText(/Upgrade your plan|Choose your plan|Plus|Pro/i).first().isVisible({ timeout: 1500 }),
+        () => page.locator('button').filter({ hasText: /(?:Upgrade to|Get)\s*(?:Plus|Pro)/i }).first().isVisible({ timeout: 1500 })
     ];
     for (const probe of probes) {
         if (await probe().catch(() => false)) {

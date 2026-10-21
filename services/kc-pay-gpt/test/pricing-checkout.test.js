@@ -96,6 +96,16 @@ describe('pricing plan selector compatibility', () => {
 
 
 describe('pricing region selector compatibility', () => {
+    it('stops when region selection is unavailable and the displayed price is not the target region', async () => {
+        const page = await newPage(`
+            <h2>ChatGPT Plus</h2>
+            <section id="plans">$20 / month</section>
+            <button>Upgrade to Plus</button>
+        `);
+        await expect(selectPricingRegion(page, 'PH')).rejects.toMatchObject({ code: 'PRICING_REGION_UNCONFIRMED' });
+        await page.close();
+    });
+
     it('opens a currency-only billing-country trigger and selects Philippines from a dialog portal', async () => {
         const page = await newPage(`
             <button id="billing" aria-label="Billing country: China">Your current plan ¥</button>
@@ -307,6 +317,87 @@ describe('latest upgrade modal compatibility', () => {
         expect(await page.evaluate(() => window.clicked)).toBe(true);
         await page.close();
     });
+
+    it('handles returning subscriber modal with "Rejoin Plus" button', async () => {
+        const page = await browser.newPage();
+        await page.setContent(`
+            <div id="pricing" role="dialog">
+                <button>Personal</button>
+                <div id="catalog" class="grid-4">
+                    <div class="card" id="free-card">
+                        <h3>Free</h3>
+                        <div>Your current plan</div>
+                    </div>
+                    <div class="card" id="go-card">
+                        <h3>Go</h3>
+                        <div>₱300 / month</div>
+                        <button id="buy-go-btn">Buy now</button>
+                    </div>
+                    <div class="card" id="plus-card">
+                        <h3>Plus</h3>
+                        <div>₱1,100 / month</div>
+                        <button id="rejoin-plus-btn">✦ Rejoin Plus</button>
+                    </div>
+                    <div class="card" id="pro-card">
+                        <h3>Pro</h3>
+                        <div>₱6,490 / month</div>
+                        <button id="buy-pro-btn">Buy now</button>
+                    </div>
+                </div>
+            </div>
+            <script>
+                document.getElementById('rejoin-plus-btn').onclick = () => {
+                    document.getElementById('rejoin-plus-btn').textContent = 'Opening checkout...';
+                };
+            </script>
+        `);
+
+        expect(await pageShowsTargetRegionPricing(page, 'PH')).toBe(true);
+        await selectPricingRegion(page, 'PH');
+        await clickPlanUpgrade(page, 'plus');
+        expect(await page.locator('#rejoin-plus-btn').textContent()).toBe('Opening checkout...');
+        await page.close();
+    });
+
+    it('expands from 2-card modal via See all plans when upgrading to Pro', async () => {
+        const page = await browser.newPage();
+        await page.setContent(`
+            <div id="pricing" role="dialog">
+                <button>Personal</button>
+                <div id="catalog" class="grid-2">
+                    <div class="card" id="free-card">
+                        <h3>Free</h3>
+                        <div>Your current plan</div>
+                    </div>
+                    <div class="card" id="plus-card">
+                        <h3>Plus</h3>
+                        <span>RECOMMENDED</span>
+                        <div>$20 / month</div>
+                        <button id="upgrade-plus-btn">Start now</button>
+                    </div>
+                </div>
+                <a href="#" id="see-all-plans-link">See all plans</a>
+            </div>
+            <script>
+                document.getElementById('see-all-plans-link').onclick = (e) => {
+                    e.preventDefault();
+                    document.getElementById('see-all-plans-link').remove();
+                    const proCard = document.createElement('div');
+                    proCard.className = 'card';
+                    proCard.id = 'pro-card';
+                    proCard.innerHTML = '<h3>Pro</h3><div>$200 / month</div><button id="upgrade-pro-btn">Upgrade to Pro</button>';
+                    document.getElementById('catalog').appendChild(proCard);
+                    document.getElementById('upgrade-pro-btn').onclick = () => {
+                        document.getElementById('upgrade-pro-btn').textContent = 'Opening pro checkout...';
+                    };
+                };
+            </script>
+        `);
+
+        await clickPlanUpgrade(page, 'pro_200');
+        expect(await page.locator('#upgrade-pro-btn').textContent()).toBe('Opening pro checkout...');
+        await page.close();
+    });
 });
 
 describe('ChatGPT Pro usage tier mapping and checkout card selection', () => {
@@ -447,6 +538,35 @@ describe('ChatGPT Pro usage tier mapping and checkout card selection', () => {
         expect(result.handled).toBe(true);
         expect(result.tier).toBe('standard');
         expect(result.selected).toBe(true);
+        await page.close();
+    });
+
+    it('immediately confirms Pro More usage when Due today $200.00 is split across newlines', async () => {
+        const page = await newPage(`
+            <div id="checkout-view">
+                <h1>Configure your plan</h1>
+                <div class="cards">
+                    <button id="btn-standard"><span>$100</span><span>Standard</span></button>
+                    <button id="btn-more"><span>$200</span><span>More usage</span></button>
+                    <button id="btn-max"><span>$500</span><span>Max usage</span></button>
+                </div>
+                <div class="sidebar">
+                    <div>Due today</div>
+                    <div id="due-price">$100.00</div>
+                </div>
+            </div>
+            <script>
+                document.getElementById('btn-more').onclick = () => {
+                    document.getElementById('due-price').textContent = '$200.00';
+                };
+            </script>
+        `);
+
+        const result = await ensureChatGptProUsageTier(page, 'pro_200');
+        expect(result.handled).toBe(true);
+        expect(result.tier).toBe('more');
+        expect(result.clicked).toBe(true);
+        expect(await page.locator('#due-price').textContent()).toBe('$200.00');
         await page.close();
     });
 });

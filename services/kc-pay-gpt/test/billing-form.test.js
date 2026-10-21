@@ -4,7 +4,8 @@ import {
     readBillingInputValues, getBillingFieldStatus, listBillingMissing, syncFilledFlags,
     isOpenAiBillingFormComplete, assertOpenAiBillingReady, verifyBillingAfterTax, clickCheckoutSubmitButton, waitForBillingFields,
     getCurrentBillingCountryValue, selectBillingCountry, selectBillingState, fillOpenAiCheckoutBilling, ensureCheckoutTaxFreeAmount,
-    estimateTaxFreeAmount, isCheckoutTaxZero, isPhTaxFreeNet
+    estimateTaxFreeAmount, isCheckoutTaxZero, isPhTaxFreeNet, readCheckoutDueAmount, assertCheckoutDueCurrency,
+    isTaxFreeDueAmount
 } from '../stripe-payment.js';
 
 let browser;
@@ -337,8 +338,8 @@ describe('billing country is scoped and confirmed before entering an Oregon addr
     });
     it.each(['main page', 'iframe'])('fills the rebuilt %s after PH to US switching clears the fields', async location => {
         const page = await fixture(location === 'main page'
-            ? `${phoneAndShipping}${countryForm()}`
-            : `${phoneAndShipping}<h2>Billing address</h2><iframe></iframe>`);
+            ? `${phoneAndShipping}${countryForm()}<p>Due today $20.00</p>`
+            : `${phoneAndShipping}<p>Due today $20.00</p><h2>Billing address</h2><iframe></iframe>`);
         const frame = location === 'main page' ? page.mainFrame() : page.frames()[1];
         if (location === 'iframe') await frame.setContent(countryForm());
         await frame.evaluate(({ html, fullName }) => {
@@ -360,7 +361,7 @@ describe('billing country is scoped and confirmed before entering an Oregon addr
         expect(await page.locator('input[name="city"]').inputValue()).toBe('Shipping City');
     });
     it.each([true, false])('uses the street fallback inside the billing iframe (heading=%s) without borrowing shipping fields', async hasHeading => {
-        const page = await fixture(`${phoneAndShipping}<iframe></iframe>`);
+        const page = await fixture(`${phoneAndShipping}<p>Due today $20.00</p><iframe></iframe>`);
         const frame = page.frames()[1];
         const html = countryForm('US');
         await frame.setContent(hasHeading ? html : html.replace('<h2>Billing address</h2>', ''));
@@ -434,6 +435,70 @@ describe('billing country is scoped and confirmed before entering an Oregon addr
 });
 
 describe('tax recalculation and zero-tax detection', () => {
+    it.each([
+        ['Due today ₱982.14', { amount: 982.14, currency: 'PHP' }],
+        ['Due today USD 20.00', { amount: 20, currency: 'USD' }],
+        ['Due today CAD 20.00', { amount: 20, currency: 'CAD' }],
+        ['Due today CL$ 2,000.00', { amount: 2000, currency: 'CLP' }],
+        ['Due today E£ 500.00', { amount: 500, currency: 'EGP' }]
+    ])('reads the explicit Checkout currency without assuming USD (%s)', async (text, expected) => {
+        const page = await fixture(`<p>${text}</p>`);
+        await expect(readCheckoutDueAmount(page)).resolves.toEqual(expected);
+    });
+
+    it('does not infer a currency from an unrecognized symbol', async () => {
+        const page = await fixture('<p>Due today ¤20.00</p>');
+        await expect(readCheckoutDueAmount(page)).resolves.toBeNull();
+    });
+
+    it('rejects a Checkout amount when its currency differs from the card target', async () => {
+        const page = await fixture('<p>Due today $20.00</p>');
+        await expect(assertCheckoutDueCurrency(page, 'PHP')).rejects.toMatchObject({ code: 'PAYMENT_CURRENCY_MISMATCH' });
+    });
+
+    it('stops before filling billing details when the payment amount cannot be confirmed', async () => {
+        const page = await fixture(countryForm());
+        const result = await fillOpenAiCheckoutBilling(page, address, name, 'PHP');
+        expect(result).toMatchObject({ ok: false, code: 'CHECKOUT_CURRENCY_UNCONFIRMED' });
+        expect(await page.locator('#street').inputValue()).toBe('');
+    });
+
+    it('rejects a currency change caused by tax recalculation', async () => {
+        const page = await fixture(`${billing().replace('value="97000"', 'value="00000"')}<p id="due">Due today $22.00</p>`);
+        await page.locator('#zip').evaluate(input => input.addEventListener('input', () => {
+            document.querySelector('#due').textContent = 'Due today CAD 20.00';
+        }));
+        const result = await ensureCheckoutTaxFreeAmount(page, address, 20, 'USD', 'USD');
+        expect(result).toMatchObject({ ok: false, code: 'PAYMENT_CURRENCY_MISMATCH' });
+    });
+
+    it('requires the Philippine net amount, not just a lower amount or a zero-tax label', async () => {
+        expect(isTaxFreeDueAmount({ amount: 900, currency: 'PHP' }, 1100, 'PHP')).toBe(false);
+        expect(isTaxFreeDueAmount({ amount: 1000, currency: 'PHP' }, 1100, 'PHP')).toBe(false);
+        expect(isTaxFreeDueAmount({ amount: 982.14, currency: 'PHP' }, 1100, 'PHP')).toBe(true);
+        expect(isTaxFreeDueAmount({ amount: 5794.64, currency: 'PHP' }, 1100, 'PHP')).toBe(false);
+        expect(isTaxFreeDueAmount({ amount: 20, currency: 'USD' }, 20, 'USD')).toBe(true);
+        expect(isTaxFreeDueAmount({ amount: 19, currency: 'USD' }, 20, 'USD')).toBe(false);
+
+        let now = Date.now();
+        const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => {
+            now += 20_000;
+            return now;
+        });
+        try {
+            const page = await fixture(`<div>VAT (0%) ₱0.00</div><p>Due today ₱1,100.00</p>${billing()}`);
+            const result = await fillOpenAiCheckoutBilling(page, address, name, 'PHP');
+            expect(result).toMatchObject({
+                ok: false,
+                code: 'BILLING_TAX_NOT_REMOVED',
+                skipped: true,
+                error: expect.stringContaining('免税应约 982.14')
+            });
+        } finally {
+            dateNow.mockRestore();
+        }
+    });
+
     it('estimates tax free amount for PHP plans and avoids secondary discount', () => {
         // PHP Plus: 1100 -> 982.14, and 982.14 stays 982.14
         expect(estimateTaxFreeAmount(1100, 'PHP')).toBe(982.14);
