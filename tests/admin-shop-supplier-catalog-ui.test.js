@@ -35,6 +35,9 @@ test('admin shop exposes a safe 16688 supplier catalog import workspace', () => 
     assert.match(adminHtml, /data-shop-action="supplier-catalog-import"/);
     assert.match(adminHtml, /id="supplierCatalogDetailModal"/);
     assert.match(adminHtml, /data-shop-action="supplier-catalog-import-detail"/);
+    assert.match(adminHtml, /id="supplierOrderLookupNumber"[^>]+placeholder="粘贴虾仁后台显示的订单号"/);
+    assert.match(adminHtml, /id="supplierOrderLookupButton"[^>]+data-shop-action="supplier-order-lookup"/);
+    assert.match(adminHtml, /id="supplierOrderLookupResult"[^>]+aria-live="polite"/);
 
     assert.match(shopSource, /SHOP_TAB_IDS: \['products', 'supplier-catalog'/);
     assert.match(shopSource, /case 'supplier-catalog':\s*return this\.runShopTabLoader/);
@@ -55,6 +58,15 @@ test('admin shop exposes a safe 16688 supplier catalog import workspace', () => 
     assert.match(shopSource, /openSupplierCatalogDetail/);
     assert.match(shopSource, /importSupplierCatalogDetail/);
     assert.match(shopSource, /closeSupplierCatalogDetail/);
+    assert.match(shopSource, /action: 'reconcile'/);
+    assert.match(shopSource, /orderNo/);
+    assert.match(shopSource, /cache: 'no-store'/);
+    assert.match(shopSource, /不会读取或展示卡密/);
+    assert.match(shopSource, /supplierOrderLookupRequestToken/);
+    assert.match(shopSource, /current\.providerId !== context\.providerId/);
+    assert.match(shopSource, /current\.accountKey !== context\.accountKey/);
+    assert.match(shopSource, /current\.site !== context\.site/);
+    assert.match(shopSource, /供应商、账号或站点后，请重新核对上游订单号/);
 
     const importBlock = extractFunctionBlock(shopSource, 'importSupplierCatalogGoods: async function');
     assert.match(importBlock, /action: 'import'/);

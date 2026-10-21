@@ -294,6 +294,15 @@ describe('interactive CAPTCHA recovery', () => {
         expect(harness.elements.get('captchaInteractiveImg').src).toBe('second');
     });
 
+    it('translates same-area travel prompts in the browser modal', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(10000);
+        const harness = frontendHarness();
+        harness.run('openCaptchaInteractiveModal({ image: "same-area", frameSeq: 1, promptEn: "Tap on the item that travels in the same area as the example" })');
+        expect(harness.elements.get('captchaPromptHeading').textContent)
+            .toBe('【交通环境匹配】请点击与示例在同一环境中行驶的物体');
+    });
+
     it('allows five refreshes and prevents selecting a loading screenshot', () => {
         vi.useFakeTimers();
         vi.setSystemTime(10000);

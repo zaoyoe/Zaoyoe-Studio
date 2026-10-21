@@ -104,8 +104,15 @@ describe('explicit Oregon checkout address policy', () => {
         expect(selected.line1).toBeTruthy();
         expect(fixture.store.setAppConfigValue).not.toHaveBeenCalled();
     });
+    it('picks an Oregon US tax-free address by default when region is US', async () => {
+        const fixture = harness({ rows: [oregon, delaware] });
+        const addr = await fixture.pickBillingAddressForCheckout('US');
+        expect(addr.country).toBe('US');
+        expect(addr.state).toBe('Oregon');
+        expect(addr.id).toBe(1);
+    });
     it('keeps ordinary US selection and the legacy numeric signature on the regional policy', async () => {
-        const fixture = harness({ rows: [delaware] });
+        const fixture = harness({ rows: [delaware], env: { US_BILLING_ADDRESS_STRATEGY: 'regional' } });
         expect(await fixture.pickBillingAddressForCheckout('US')).toEqual(delaware);
         expect(await fixture.pickBillingAddressForCheckout(1)).toEqual(delaware);
     });

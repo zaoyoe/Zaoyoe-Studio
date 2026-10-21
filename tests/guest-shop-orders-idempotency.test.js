@@ -208,7 +208,19 @@ function createSupabaseStub(state) {
             state.rpcCalls.push(name);
             state.rpcArgs.push({ name, args: clone(args) });
             await new Promise((resolve) => setImmediate(resolve));
-            if (name === 'fn_guest_shop_create_order') {
+            if (state.supplierV2 && name === 'fn_shop_supplier_source_v2') {
+                return { data: { is_supplier: true, sku_id: SKU_ID }, error: null };
+            }
+            if (state.supplierV2 && name === 'fn_issue_shop_supplier_quote_v2') {
+                return state.supplierQuoteError ? { error: state.supplierQuoteError }
+                    : { data: { quote_id: '77777777-7777-4777-8777-777777777777' }, error: null };
+            }
+            if (name === 'fn_guest_shop_create_order'
+                || (state.supplierV2 && name === 'fn_create_shop_supplier_guest_order_v2')) {
+                if (name === 'fn_create_shop_supplier_guest_order_v2') {
+                    if (state.supplierCreateError) return { error: state.supplierCreateError };
+                    Object.assign(state.order, { fulfillment_source: 'supplier_v2', fulfillment_status: 'pending' });
+                }
                 // Mirror the durable row that the real RPC returns. This lets
                 // the intent tests issue a second HTTP request after the first
                 // response is intentionally discarded.
@@ -1221,3 +1233,72 @@ test('guest order create persists and sends the credit price plus 1% channel fee
     assert.equal(Number(res.payload.order.payment_pricing.payable_amount), 12.47);
     assert.equal(Number(res.payload.checkout.amount), 12.47);
 });
+
+test('supplier guest HTTP checkout keeps credentials, all native params and durable payment recovery', async () => {
+    const { state, calls, handlers } = createHandlers({ supplierV2: true, buyers: [makeBuyerRow()],
+        order: makeOrder({ quantity: 1, list_unit_amount: '12.34', unit_amount: '12.34' }) }, {},
+    { ...CREDENTIAL_ENV, SHOP_SUPPLIER_CHECKOUT_V2_ENABLED: 'true' });
+    const prepare = createResponse();
+    await handlers.orders(checkoutRequest('prepare', {
+        site: 'cn', productId: PRODUCT_ID, skuId: SKU_ID, quantity: 1,
+        email: BUYER_EMAIL, provider: 'zpay', channel: 'alipay'
+    }), prepare);
+    const cookie = checkoutIntentCookie(prepare);
+    const intentId = prepare.payload.intent.intent_id;
+    const commit = () => checkoutRequest('commit', { intentId, email: BUYER_EMAIL, orderPassword: BUYER_PASSWORD }, cookie);
+    const first = createResponse();
+    await handlers.orders(commit(), first);
+    assert.equal(first.statusCode, 201, JSON.stringify(first.payload));
+    assert.equal(first.payload.order.fulfillment_source, 'supplier_v2');
+    assert.equal(first.payload.order.supplier_status, 'awaiting_payment');
+    assert.equal(calls.create, 1);
+    const quote = state.rpcArgs.find(e => e.name === 'fn_issue_shop_supplier_quote_v2');
+    const create = state.rpcArgs.find(e => e.name === 'fn_create_shop_supplier_guest_order_v2');
+    assert.ok(quote);
+    assert.ok(create);
+    assert.deepEqual(Object.keys(create.args).sort(), [
+        'p_quote_id', 'p_site', 'p_product_id', 'p_sku_id', 'p_idempotency_key', 'p_request_fingerprint',
+        'p_claim_secret_hash', 'p_provider', 'p_channel', 'p_buyer_contact_hash', 'p_buyer_id',
+        'p_request_ip_hash', 'p_request_device_hash', 'p_ttl_seconds', 'p_quantity', 'p_discount_code'
+    ].sort());
+    assert.equal(create.args.p_buyer_id, BUYER_ID);
+    assert.equal(create.args.p_quantity, 1);
+    assert.equal(create.args.p_provider, 'zpay');
+    assert.equal(create.args.p_channel, 'alipay');
+    assert.equal(quote.args.p_funding_kind, 'guest_cash');
+    assert.equal(quote.args.p_native_request_fingerprint, create.args.p_request_fingerprint);
+    assert.match(create.args.p_claim_secret_hash, /^hmac-sha256:v1:[a-f0-9]{64}$/);
+    const { guestOwner } = require('../server/integrations/suppliers/checkout');
+    assert.equal(quote.args.p_guest_owner_hash, guestOwner(create.args.p_claim_secret_hash));
+    assert.doesNotMatch(JSON.stringify(first.payload), /p_claim_secret_hash|guest_owner_hash|p_quote_id|p_operation_id/);
+    assert.equal(state.rpcCalls.includes('fn_guest_shop_create_order'), false);
+    // Discarding a response must still recover through the existing authenticated
+    // native order/payment intent rather than creating another provider order.
+    const resumed = createResponse();
+    await handlers.orders(commit(), resumed);
+    assert.equal(resumed.statusCode, 200, JSON.stringify(resumed.payload));
+    assert.equal(resumed.payload.order.order_no, first.payload.order.order_no);
+    assert.equal(calls.create, 1);
+    assert.equal(state.rpcCalls.filter(n => n === 'fn_create_shop_supplier_guest_order_v2').length, 1);
+    const denied = createResponse();
+    await handlers.orders(checkoutRequest('commit', { intentId, email: BUYER_EMAIL,
+        orderPassword: 'Zm8!WrongRiver4' }, cookie), denied);
+    assert.equal(denied.statusCode, 403);
+    assert.equal(denied.payload.code, 'guest_order_credentials_invalid');
+    assert.equal(calls.create, 1);
+});
+for (const phase of ['Quote', 'Create']) {
+    test(`supplier guest ${phase.toLowerCase()} failure creates no provider payment and has no local fallback`, async () => {
+        const { state, calls, handlers } = createHandlers({ supplierV2: true,
+            [`supplier${phase}Error`]: { message: 'private SQL or merchant credential detail' } }, {},
+        { SHOP_SUPPLIER_CHECKOUT_V2_ENABLED: 'true' });
+        const res = createResponse();
+        await handlers.orders(request(`supplier-guest-failure-${phase}`), res);
+        assert.equal(res.statusCode, 503);
+        assert.equal(res.payload.code, 'supplier_checkout_unavailable');
+        assert.doesNotMatch(JSON.stringify(res.payload), /private SQL|merchant credential/);
+        assert.equal(calls.create, 0);
+        assert.equal(state.rpcCalls.includes('fn_guest_shop_create_order'), false);
+        assert.equal(state.rpcCalls.includes('guest_shop_release_held_reservations'), false);
+    });
+}

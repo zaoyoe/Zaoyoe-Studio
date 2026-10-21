@@ -1,3 +1,4 @@
+const { supplierResolutionError } = require('../../../server/integrations/suppliers/order-status');
 const VALID_TARGET_STATUSES = new Set(['frozen', 'available', 'fault', 'reserve']);
 const {
     safeSyncOrderProfitLedgerByOrderId
@@ -81,11 +82,11 @@ async function applyShopOrderRefund({
     });
 
     if (error) {
-        throw createRefundError(error.message || '退款失败');
+        throw supplierResolutionError(error) || createRefundError(error.message || '退款失败');
     }
 
     if (!data?.success) {
-        throw createRefundError(data?.message || '退款失败');
+        throw supplierResolutionError(data) || createRefundError(data?.message || '退款失败');
     }
 
     const profitLedgerSync = data?.duplicate === true

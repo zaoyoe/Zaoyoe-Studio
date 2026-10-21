@@ -288,3 +288,29 @@ test('shop refund handler short-circuits duplicate refunds before rpc and audit 
         assert.equal(state.profitLedgerSyncCalls.length, 0);
     });
 });
+
+for (const rpcResult of [
+    { data: null, error: { message: 'supplier_dispatch_resolution_required private-database-detail' } },
+    { data: { success: false, message: 'supplier_dispatch_resolution_required private-database-detail' }, error: null }
+]) {
+    test(`supplier procurement guard blocks a native refund without notifications or accounting (${rpcResult.error ? 'RPC error' : 'RPC rejection'})`, async () => {
+        await withShopRefundHandler({
+            order: { id: 'supplier-order-1', user_id: 'buyer-1', site: 'cn', refund_status: 'none', price_paid: 100 },
+            rpcResult
+        }, async ({ handler, state }) => {
+            const res = createMockResponse();
+            await handler({ method: 'POST', headers: {}, body: {
+                orderId: 'supplier-order-1', targetStatus: 'frozen', remark: '核对原采购后再处理', site: 'cn'
+            } }, res);
+            assert.equal(res.statusCode, 409);
+            assert.equal(res.json().success, false);
+            assert.match(res.json().message, /不能直接退款或关闭/);
+            assert.match(res.json().message, /供应商结案/);
+            assert.doesNotMatch(JSON.stringify(res.json()), /private-database-detail/);
+            assert.equal(state.rpcCalls.length, 1);
+            assert.equal(state.auditCalls.length, 0);
+            assert.equal(state.notifications.length, 0);
+            assert.equal(state.profitLedgerSyncCalls.length, 0);
+        });
+    });
+}

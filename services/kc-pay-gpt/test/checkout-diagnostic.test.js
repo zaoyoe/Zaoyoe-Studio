@@ -121,14 +121,17 @@ async function runDiagnostic(fixture, { mode = 'checkout', apiError, inspectionC
     const storeMutation = vi.fn(() => { throw new Error('diagnostic must never access assets'); });
     const dependencies = {
         './payment-retry': methods, './pricing-checkout': methods, './chatgpt': { ...require('../chatgpt'), openApiCheckout: methods.openApiCheckout },
+        './chatgpt-cancel-auto-renew': { cancelChatGptAutoRenew: vi.fn() },
         './region-config': require('../region-config'), './session-auth': methods, './claude-auth': methods,
-        './pricing-checkout-claude': methods, './grok-auth': methods, './pricing-checkout-grok': methods,
+        './pricing-checkout-claude': methods, './claude-cancel-auto-renew': methods, './grok-auth': methods, './pricing-checkout-grok': methods, './grok-cancel-auto-renew': methods,
         './public/grok-plan-catalog': require('../public/grok-plan-catalog'), './grok-commerce': { observeGrokCommerce: () => ({ dispose() {} }) },
         './cdk-plan-catalog': require('../cdk-plan-catalog'), './mysql-store': { verifyCdkDetails: storeMutation, markCdkUsed: storeMutation, reserveCard: storeMutation },
         './browser-runtime': { connectTaskBrowser: async () => { if (setupError) throw setupError;
             return { browser: { newContext: async () => context }, realUserAgent: 'Chrome/147.0' }; }, applyCdpEnv() {}, closeTaskBrowser: vi.fn(async () => {}) },
         './playwright-proxy': { preparePlaywrightProxy: async () => ({ cleanup: async () => {}, proxyConfig: null }) },
-        './proxy-preflight': { checkProxyConnectivity: vi.fn() }, './task-diagnostics': { captureDiagnosticScreenshot: async () => {
+        './proxy-preflight': { checkProxyConnectivity: vi.fn(), checkEgressRegion: vi.fn(async (_context, expectedRegion) => ({
+            expectedRegion, actualRegion: expectedRegion, transport: 'fixture'
+        })) }, './task-diagnostics': { captureDiagnosticScreenshot: async () => {
             if (cancelDuringScreenshot) signalHandlers.get('SIGTERM')?.();
             return null;
         } },

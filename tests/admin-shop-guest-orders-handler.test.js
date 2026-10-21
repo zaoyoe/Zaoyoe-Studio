@@ -617,3 +617,21 @@ test('guest order write close_unpaid_review marks unpaid review order as expired
     });
 });
 
+
+test('guest supplier refund guard returns a specific safe conflict without recording success', async () => {
+    await withGuestOrdersHandler({ rpcResult: { data: null, error: {
+        code: 'P0001', message: 'supplier_dispatch_resolution_required private-database-detail'
+    } } }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', headers: {}, url: '/api/admin?route=shop/guest-orders', body: {
+            action: 'request_refund', orderId: ORDER_UUID, confirm: true, reason: '核对原采购请求后再退款', site: 'cn'
+        } }, res);
+        assert.equal(res.statusCode, 409);
+        assert.equal(res.json().code, 'supplier_dispatch_resolution_required');
+        assert.match(res.json().message, /不能直接退款或关闭/);
+        assert.match(res.json().message, /供应商结案/);
+        assert.doesNotMatch(JSON.stringify(res.json()), /private-database-detail/);
+        assert.equal(state.rpcCalls.length, 1);
+        assert.equal(state.auditLogs.length, 0);
+    });
+});

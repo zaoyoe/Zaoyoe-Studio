@@ -1,3 +1,5 @@
+const { loadOrderOperations } = require('../../../integrations/suppliers/operations');
+const { supplierOrderStatus } = require('../../../integrations/suppliers/order-status');
 const {
     requireAdmin,
     sendJson
@@ -367,6 +369,7 @@ async function loadRiskContext(supabase, order = {}) {
 }
 
 module.exports = async function adminShopOrderDetailHandler(req, res) {
+    res.setHeader('Cache-Control', 'no-store');
     if (String(req.method || '').toUpperCase() !== 'GET') {
         res.setHeader('Allow', 'GET');
         return sendJson(res, 405, {
@@ -398,14 +401,15 @@ module.exports = async function adminShopOrderDetailHandler(req, res) {
         const orderItemsByOrderId = await loadOrderItemsByOrderIds(supabase, [orderId]);
         const orderItems = orderItemsByOrderId.get(orderId) || [];
         const linkedInventoryIds = collectLinkedInventoryIds(order, orderItems);
-        const [profile, inventoryRecordsById, pointLotConsumptionsByOrderId, deliveryTask, ticketContext, fulfillmentCase, riskContext] = await Promise.all([
+        const [profile, inventoryRecordsById, pointLotConsumptionsByOrderId, deliveryTask, ticketContext, fulfillmentCase, riskContext, supplierOperations] = await Promise.all([
             loadOrderProfile(supabase, normalizeText(order?.user_id, 160)),
             loadInventoryRecordsByIds(supabase, linkedInventoryIds),
             loadPointLotConsumptionsByOrderIds(supabase, [orderId]),
             loadDeliveryTask(supabase, order),
             loadTicketContext(supabase, orderId),
             loadOpsCaseByTarget(supabase, 'fulfillment', orderId, order?.site),
-            loadRiskContext(supabase, order)
+            loadRiskContext(supabase, order),
+            loadOrderOperations(supabase, order)
         ]);
         const deliveryAttempts = await loadDeliveryAttempts(supabase, normalizeText(deliveryTask?.id, 160));
         const linkedInventoryItems = buildLinkedInventoryItems(order, orderItems, inventoryRecordsById);
@@ -415,7 +419,7 @@ module.exports = async function adminShopOrderDetailHandler(req, res) {
             Number(order?.price_paid || order?.total_price || 0) || 0
         );
         const profitAttribution = buildOrderProfitAttribution(order, linkedInventoryItems, {
-            pointLotSummary
+            pointLotSummary, supplierSettlement: supplierOperations
         });
         const profitLedgerSync = await syncOrderProfitLedger(supabase, order, profitAttribution, {
             userId: user?.id
@@ -446,6 +450,8 @@ module.exports = async function adminShopOrderDetailHandler(req, res) {
                 refund_status: normalizeText(order?.refund_status, 40).toLowerCase() || 'none'
             },
             fulfillment: {
+                ...supplierOrderStatus(order),
+                supplier: supplierOperations,
                 task: deliveryTask || null,
                 attempts: deliveryAttempts,
                 case: fulfillmentCase,

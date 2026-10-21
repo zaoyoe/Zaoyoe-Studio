@@ -9,7 +9,8 @@ import { assertNativeBillingRegion, normalizeNativeBillingAddress } from '../gro
 const oregonAddress = { country: 'US', state: 'OR', line1: '123 Fixture Street', city: 'Fixture', postal_code: '97000' };
 function harness({ started = true, failRecord = false, failQuarantine = false, throwAfterSubmit = false, native = false,
     paymentResponse = null, address = oregonAddress, region = 'US', currency = 'USD', pickerError = false,
-    lastUsedId = null, runOptions = {}, addressRows = null, addressPoolFailure = false, failCooldown = false } = {}) {
+    lastUsedId = null, runOptions = {}, addressRows = null, addressPoolFailure = false, failCooldown = false,
+    checkoutDue = { amount: 20, currency }, checkoutDueError = false } = {}) {
     const store = {
         getPaymentRegion: vi.fn(async () => region), getAppConfigValue: vi.fn(async () => lastUsedId),
         reserveCard: vi.fn(async () => ({ id: 1, card_number: 'offline-fixture-card', card_expiry: '01/30', card_cvc: '000' })),
@@ -49,8 +50,13 @@ function harness({ started = true, failRecord = false, failQuarantine = false, t
         if (throwAfterSubmit) throw new Error('fixture browser closed');
         return paymentResponse || { success: false, submitted: false, captchaRequired: true, error: '人机验证未完成', dueAmount: 20, dueCurrency: 'USD' };
     });
+    const readDue = async () => {
+        if (checkoutDueError) throw new Error('fixture checkout read failure');
+        return checkoutDue;
+    };
+    const waitForCheckoutDueAmount = vi.fn(readDue);
     const dependencies = {
-        './mysql-store': store, './stripe-payment': { completeStripeCardPayment, readCheckoutDueAmount: async () => null },
+        './mysql-store': store, './stripe-payment': { completeStripeCardPayment, readCheckoutDueAmount: readDue, waitForCheckoutDueAmount },
         './pricing-checkout': { ensureChatGptProUsageTier: async () => {} }, './tax-free-address': { pickBillingAddressForCheckout, markAddressBound },
         './region-config': { getRegionConfig: () => ({ currency }) }, './task-safety': { classifyPaymentResult, classifyOpenAiCardMethodFailure },
         './card-validator': { validateCardNumber: () => ({ valid: true }) }, './public/grok-plan-catalog': catalog,
@@ -61,11 +67,78 @@ function harness({ started = true, failRecord = false, failQuarantine = false, t
         module, exports: module.exports, require: key => { if (!(key in dependencies)) throw new Error('Unexpected dependency'); return dependencies[key]; },
         process: { env: {} }, console: { log() {}, warn() {} }, Date
     });
-    return { store, completeStripeCardPayment, pickBillingAddressForCheckout, markAddressBound, onPaymentState,
+    return { store, completeStripeCardPayment, waitForCheckoutDueAmount, pickBillingAddressForCheckout, markAddressBound, onPaymentState,
         run: () => module.exports.executePaymentWithRetry({}, { ...(native
         ? { platform: 'grok', planType: 'grok_bundle_premium_monthly', grokCheckout: { native: true } }
         : { platform: 'claude', planType: 'claude_pro' }), onPaymentState, ...runOptions }) };
 }
+
+describe('ChatGPT checkout currency preflight', () => {
+    it.each([
+        { checkoutDue: null, expectedCode: 'CHECKOUT_CURRENCY_UNCONFIRMED' },
+        { checkoutDue: { amount: 20, currency: 'USD' }, expectedCode: 'PAYMENT_CURRENCY_MISMATCH' },
+        { checkoutDue: { amount: 20, currency: null }, expectedCode: 'CHECKOUT_CURRENCY_UNCONFIRMED' }
+    ])('does not reserve a card when currency is missing or mismatched (%j)', async ({ checkoutDue, expectedCode }) => {
+        const fixture = harness({ region: 'PH', currency: 'PHP', checkoutDue,
+            runOptions: { platform: 'chatgpt', planType: 'plus', paymentRegion: 'PH', paymentCurrency: 'PHP' } });
+        expect(await fixture.run()).toMatchObject({ code: expectedCode, paymentState: 'not_started' });
+        expect(fixture.onPaymentState).toHaveBeenCalledWith('not_started', '');
+        expect(fixture.store.reserveCard).not.toHaveBeenCalled();
+        expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
+    });
+    it('does not reserve a card when checkout currency cannot be read', async () => {
+        const fixture = harness({ region: 'PH', currency: 'PHP', checkoutDueError: true,
+            runOptions: { platform: 'chatgpt', planType: 'plus', paymentRegion: 'PH', paymentCurrency: 'PHP' } });
+        expect(await fixture.run()).toMatchObject({ code: 'CHECKOUT_CURRENCY_UNCONFIRMED', paymentState: 'not_started' });
+        expect(fixture.store.reserveCard).not.toHaveBeenCalled();
+    });
+    it('does not reserve a card when checkout amount does not match expected plan amount (pro_200 vs $100)', async () => {
+        const fixture = harness({ region: 'US', currency: 'USD', checkoutDue: { amount: 100, currency: 'USD' },
+            runOptions: { platform: 'chatgpt', planType: 'pro_200', paymentRegion: 'US', paymentCurrency: 'USD' } });
+        expect(await fixture.run()).toMatchObject({ code: 'CHECKOUT_AMOUNT_MISMATCH', paymentState: 'not_started' });
+        expect(fixture.store.reserveCard).not.toHaveBeenCalled();
+        expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
+    });
+    it('passes the verified card region and currency to the payment driver', async () => {
+        const fixture = harness({ region: 'PH', currency: 'PHP', started: false,
+            runOptions: { platform: 'chatgpt', planType: 'plus', paymentRegion: 'PH', paymentCurrency: 'PHP' } });
+        await fixture.run();
+        expect(fixture.waitForCheckoutDueAmount).toHaveBeenCalledOnce();
+        expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
+        expect(fixture.completeStripeCardPayment.mock.calls[0][3]).toMatchObject({ paymentRegion: 'PH', paymentCurrency: 'PHP' });
+    });
+    it('does not classify a pre-submit currency guard as a decline or rotate the reserved card', async () => {
+        const fixture = harness({ started: false, paymentResponse: {
+            success: false, submitted: false, submissionAttempted: false,
+            code: 'PAYMENT_CURRENCY_MISMATCH', declined: true, canRetryCard: true,
+            error: 'invalid currency; card declined before payment'
+        } });
+        expect(await fixture.run()).toMatchObject({ success: false, paymentState: 'not_started', manualIntervention: true });
+        expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
+        expect(fixture.completeStripeCardPayment).toHaveBeenCalledOnce();
+        expect(fixture.store.cooldownCard).not.toHaveBeenCalled();
+        expect(fixture.store.quarantineCardForReview).not.toHaveBeenCalled();
+        expect(fixture.store.releaseCard).toHaveBeenCalledOnce();
+        expect(fixture.store.createBillingRecord).toHaveBeenCalledWith(expect.objectContaining({
+            status: 'failed', error_code: 'PAYMENT_CURRENCY_MISMATCH'
+        }));
+    });
+    it('does not rotate cards when the required tax-free amount is not reached', async () => {
+        const fixture = harness({ started: false, paymentResponse: {
+            success: false, submitted: false, submissionAttempted: false,
+            code: 'BILLING_TAX_NOT_REMOVED', declined: true, canRetryCard: true,
+            error: '账单税区未生效，应付仍为 PHP 1,100（免税应约 982.14）'
+        } });
+        expect(await fixture.run()).toMatchObject({ success: false, paymentState: 'not_started', manualIntervention: true });
+        expect(fixture.completeStripeCardPayment).toHaveBeenCalledOnce();
+        expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
+        expect(fixture.store.cooldownCard).not.toHaveBeenCalled();
+        expect(fixture.store.releaseCard).toHaveBeenCalledOnce();
+        expect(fixture.store.createBillingRecord).toHaveBeenCalledWith(expect.objectContaining({
+            status: 'failed', error_code: 'BILLING_TAX_NOT_REMOVED'
+        }));
+    });
+});
 
 describe('Grok bundle billing preflight before card reservation', () => {
     it.each(Object.keys(catalog.plans))('composes the real mixed-state address pool with %s before reserving a card', async planType => {

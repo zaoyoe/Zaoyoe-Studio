@@ -344,9 +344,10 @@ async function fillCardFieldsOpenAiCheckout(page, cardInfo, timeout = 45000) {
             return { ok: true };
         }
 
-        const formLoadError = page.getByText(/支付表单加载失败|Failed to load payment form|Error loading payment form/i).first();
+        // 官方收银台表单/整页错误边界（如 ChatGPT 的 “Content failed to load”）：尚未填卡，可安全点击官方重试入口
+        const formLoadError = page.getByText(/支付表单加载失败|Failed to load payment form|Error loading payment form|Content failed to load|内容加载失败/i).first();
         if (await formLoadError.isVisible().catch(() => false)) {
-            const retryBtn = page.getByRole('button', { name: /重试|Retry/i }).first();
+            const retryBtn = page.getByRole('button', { name: /^\s*(?:重试|Retry|Try again|再试一次)\s*$/i }).first();
             if (formRetryCount < 2 && Date.now() >= nextFormRetryAt && Date.now() < deadline && await retryBtn.isVisible().catch(() => false)) {
                 formRetryCount += 1;
                 console.log(`[Stripe] ⚠️ 检测到官方表单加载失败，第 ${formRetryCount} 次点击「重试」按钮恢复...`);
@@ -363,8 +364,8 @@ async function fillCardFieldsOpenAiCheckout(page, cardInfo, timeout = 45000) {
         await page.waitForTimeout(Math.min(200, remaining));
     } while (Date.now() < deadline);
 
-    const hasFormError = await page.getByText(/支付表单加载失败|Failed to load payment form|Error loading payment form/i).first().isVisible().catch(() => false);
-    if (hasFormError) return { ok: false, error: '官方收银台支付表单加载失败 (Failed to load payment form)' };
+    const hasFormError = await page.getByText(/支付表单加载失败|Failed to load payment form|Error loading payment form|Content failed to load|内容加载失败/i).first().isVisible().catch(() => false);
+    if (hasFormError) return { ok: false, error: '官方收银台支付表单加载失败 (Failed to load payment form / Content failed to load)，尚未提交付款' };
     if (methodGuard) {
         try { await methodGuard.assertReady(); } catch (error) { return { ok: false, error: error.message }; }
     }
@@ -635,11 +636,16 @@ async function checkStripeCardInlineError(page) {
 async function readCheckoutDueAmount(page) {
     try {
         const bodyText = String(await page.textContent('body', { timeout: 8000 }).catch(() => '') || '');
+        const currencyToken = '(?:US\\$|CL\\$|S\\$|E£|LE|₱|[$€£]|[A-Z]{3})';
         const patterns = [
-            /(?:Due today|Total due|Pay today|今日应付总额|今日应付|应付总额)[^\d₱$€£]{0,48}?([₱$€£]|USD|US\$)\s*([\d,]+(?:\.\d{1,2})?)/i,
-            /(?:Due today|Total due|Pay today|今日应付总额|今日应付|应付总额)[^\d₱$€£]{0,48}?([\d,]+(?:\.\d{1,2})?)\s*([₱$€£]|USD|US\$)/i,
+            new RegExp(`(?:Due today|Total due|Pay today|今日应付总额|今日应付|应付总额)[^\\d₱$€£]{0,48}?(${currencyToken})\\s*([\\d,]+(?:\\.\\d{1,2})?)`, 'i'),
+            new RegExp(`(?:Due today|Total due|Pay today|今日应付总额|今日应付|应付总额)[^\\d₱$€£]{0,48}?([\\d,]+(?:\\.\\d{1,2})?)\\s*(${currencyToken})`, 'i'),
         ];
-        const currencyMap = { '₱': 'PHP', '$': 'USD', '€': 'EUR', '£': 'GBP', 'USD': 'USD', 'US$': 'USD' };
+        const currencyMap = {
+            '₱': 'PHP', '$': 'USD', '€': 'EUR', '£': 'GBP', 'USD': 'USD', 'US$': 'USD',
+            'CL$': 'CLP', 'S$': 'SGD', 'E£': 'EGP', 'LE': 'EGP',
+            PHP: 'PHP', EGP: 'EGP', CLP: 'CLP', SGD: 'SGD', MYR: 'MYR'
+        };
         for (const re of patterns) {
             const match = bodyText.match(re);
             if (!match) continue;
@@ -651,11 +657,64 @@ async function readCheckoutDueAmount(page) {
             }
             const amount = parseFloat(String(amountStr || '').replace(/,/g, ''));
             if (Number.isFinite(amount) && amount > 0) {
-                return { amount, currency: currencyMap[sym] || 'USD' };
+                const normalized = currencyMap[sym] || currencyMap[sym.toUpperCase()]
+                    || (/^[A-Z]{3}$/i.test(sym) ? sym.toUpperCase() : null);
+                if (normalized) return { amount, currency: normalized };
             }
         }
     } catch (_) { /* ignore */ }
     return null;
+}
+
+async function waitForCheckoutDueAmount(page, {
+    timeoutMs = Number(process.env.CHECKOUT_AMOUNT_READY_WAIT_MS || process.env.CHECKOUT_READY_WAIT_MS || 75000),
+    pollIntervalMs = 500
+} = {}) {
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    let lastLogAt = Date.now();
+    const startWait = Date.now();
+    do {
+        const due = await readCheckoutDueAmount(page);
+        if (due?.amount && due.currency) return due;
+        if (page?.isClosed?.() || Date.now() >= deadline) return null;
+
+        // 周期性输出加载日志，感知骨架屏加载进度（避免盲目刷新打断慢速代理下的正常资源下载）
+        if (Date.now() - lastLogAt >= 10000) {
+            lastLogAt = Date.now();
+            const elapsed = Math.round((Date.now() - startWait) / 1000);
+            const totalSec = Math.round(timeoutMs / 1000);
+            const isPlanReady = await page?.evaluate?.(() => {
+                const text = (document.body?.innerText || '');
+                return /Getting your plan ready|正在准备你的套餐|Making room for even more files|Unlocking access|Warming up/i.test(text);
+            }).catch(() => false);
+            if (isPlanReady) {
+                console.log(`[Checkout] 官方收银台骨架屏仍在加载中 (${elapsed}s/${totalSec}s，正在通过代理拉取 Stripe 资源)...`);
+            }
+        }
+
+        const interval = Math.max(0, Number(pollIntervalMs) || 0);
+        await page.waitForTimeout(Math.min(interval, Math.max(0, deadline - Date.now())));
+    } while (Date.now() <= deadline);
+    return null;
+}
+
+function checkoutCurrencyError(code, message) {
+    return Object.assign(new Error(`${message}，尚未提交支付 [${code}]`), { code });
+}
+
+async function assertCheckoutDueCurrency(page, expectedCurrency, stage = 'Checkout') {
+    const expected = String(expectedCurrency || '').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(expected)) {
+        throw checkoutCurrencyError('CHECKOUT_CURRENCY_UNCONFIRMED', '卡密支付币种无效，无法确认 Checkout 应付币种');
+    }
+    const due = await readCheckoutDueAmount(page);
+    if (!due?.amount || !due.currency) {
+        throw checkoutCurrencyError('CHECKOUT_CURRENCY_UNCONFIRMED', `${stage}应付金额或币种无法确认，已停止支付`);
+    }
+    if (due.currency !== expected) {
+        throw checkoutCurrencyError('PAYMENT_CURRENCY_MISMATCH', `${stage}币种 ${due.currency} 与卡密支付币种 ${expected} 不一致，已停止支付`);
+    }
+    return due;
 }
 
 /** 菲律宾 VAT 12%：含税标价 → 净价免税 (俄勒冈免税州 0% 税率) */
@@ -719,6 +778,39 @@ function estimateTaxFreeAmount(taxedAmount, currency = null) {
     return n;
 }
 
+function isTaxFreeDueAmount(due, baselineAmount, currency = null) {
+    const amount = Number(due?.amount);
+    const baseline = Number(baselineAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(baseline) || baseline <= 0) return false;
+
+    const curr = String(currency || due?.currency || '').toUpperCase();
+    if (curr === 'USD' || curr === '$') return Math.abs(amount - baseline) <= 0.05;
+    if (curr === 'PHP' || curr === '₱') {
+        const target = estimateTaxFreeAmount(baseline, curr);
+        // Compare against this Checkout's own baseline only. A known net price
+        // from another plan must not make an unexpectedly high amount pass.
+        return Boolean(target && Math.abs(amount - target) <= 0.05);
+    }
+    return false;
+}
+
+function getCheckoutTaxFreeGuard(baselineAmount, currency, address) {
+    const curr = String(currency || '').toUpperCase();
+    const country = String(address?.country || '').toUpperCase();
+    if (country !== 'US' || !Number.isFinite(Number(baselineAmount)) || Number(baselineAmount) <= 0) return null;
+    if (curr !== 'USD' && curr !== '$' && curr !== 'PHP' && curr !== '₱') return null;
+    return { baselineAmount: Number(baselineAmount), currency: curr === '$' ? 'USD' : (curr === '₱' ? 'PHP' : curr) };
+}
+
+function assertCheckoutTaxFreeDue(due, guard, stage) {
+    if (!guard || isTaxFreeDueAmount(due, guard.baselineAmount, guard.currency)) return due;
+    const target = estimateTaxFreeAmount(guard.baselineAmount, guard.currency);
+    throw checkoutCurrencyError(
+        'BILLING_TAX_NOT_REMOVED',
+        `${stage}应付 ${due?.currency || ''} ${due?.amount ?? '未知'} 与账单地区免税目标 ${guard.currency} ${target ?? '未知'} 不一致，已停止支付`
+    );
+}
+
 /**
  * 检查 Checkout 页面订单明细是否已显式显示 0% 税率或 0 元税额
  * 例如：Sales Tax (0%): ₱0.00 / Tax (0%) / Estimated tax: ₱0.00 / $0.00 / 预估税费: ₱0.00
@@ -779,33 +871,26 @@ async function waitForCheckoutTaxRecalculation(page, options = {}) {
     let lastLogged = null;
 
     while (Date.now() - started < maxWaitMs) {
-        // 优先检查：如果页面已明确显示 0% 税率或 0 元税额，直接放行
-        if (await isCheckoutTaxZero(page)) {
-            const due = await readCheckoutDueAmount(page);
-            console.log(`  [Stripe] ✅ 页面已明确显示 0% 税率 / 零税额，免税已生效: ${due?.currency || ''} ${due?.amount || ''}`);
+        const taxIsZero = await isCheckoutTaxZero(page);
+        const due = await readCheckoutDueAmount(page);
+        if (taxIsZero && isTaxFreeDueAmount(due, baselineAmount, currency || due?.currency)) {
+            console.log(`  [Stripe] ✅ 页面税额为零且应付达到免税目标: ${due.currency} ${due.amount}`);
             return { ok: true, due };
         }
-
-        const due = await readCheckoutDueAmount(page);
         if (due?.amount) {
             const activeCurrency = currency || due.currency;
             const curr = String(activeCurrency || '').toUpperCase();
             const isUsd = curr === 'USD' || curr === '$' || (!curr && baselineAmount <= 500);
             const isPhp = curr === 'PHP' || curr === '₱';
-            const taxFreeTarget = baselineAmount ? estimateTaxFreeAmount(baselineAmount, activeCurrency) : null;
 
             if (isUsd) {
-                if (baselineAmount && due.amount <= baselineAmount + 0.05) {
+                if (isTaxFreeDueAmount(due, baselineAmount, activeCurrency)) {
                     console.log(`  [Stripe] ✅ 税区已更新（免税），应付: ${due.currency || ''} ${due.amount}`);
                     return { ok: true, due };
                 }
-            } else if (isPhp && taxFreeTarget) {
-                if (due.amount <= taxFreeTarget + 0.05 || isPhTaxFreeNet(due.amount)) {
+            } else if (isPhp) {
+                if (isTaxFreeDueAmount(due, baselineAmount, activeCurrency)) {
                     console.log(`  [Stripe] ✅ 税区已更新（PHP 俄勒冈免税），应付: ${due.currency || ''} ${due.amount}`);
-                    return { ok: true, due };
-                }
-                if (baselineAmount && due.amount < baselineAmount * 0.97) {
-                    console.log(`  [Stripe] ✅ 应付已从 ${baselineAmount} 降至 ${due.amount}`);
                     return { ok: true, due };
                 }
             } else {
@@ -821,79 +906,70 @@ async function waitForCheckoutTaxRecalculation(page, options = {}) {
         await page.waitForTimeout(pollMs);
     }
 
-    if (await isCheckoutTaxZero(page)) {
-        const finalDue = await readCheckoutDueAmount(page);
-        console.log(`  [Stripe] ✅ 页面已明确显示 0% 税率 / 零税额，免税已生效: ${finalDue?.currency || ''} ${finalDue?.amount || ''}`);
-        return { ok: true, due: finalDue };
-    }
-
     const finalDue = await readCheckoutDueAmount(page);
     const activeCurrency = currency || finalDue?.currency;
     const curr = String(activeCurrency || '').toUpperCase();
     const isUsd = curr === 'USD' || curr === '$' || (!curr && baselineAmount <= 500);
     const isPhp = curr === 'PHP' || curr === '₱';
-    const taxFreeTarget = baselineAmount ? estimateTaxFreeAmount(baselineAmount, activeCurrency) : null;
 
-    if (isUsd) {
-        if (baselineAmount && finalDue?.amount && finalDue.amount <= baselineAmount + 0.05) {
-            return { ok: true, due: finalDue };
-        }
-        return { ok: false, due: finalDue };
-    }
-    if (isPhp && taxFreeTarget) {
-        if (finalDue?.amount && (finalDue.amount <= taxFreeTarget + 0.05 || isPhTaxFreeNet(finalDue.amount))) {
-            return { ok: true, due: finalDue };
-        }
-        if (baselineAmount && finalDue?.amount && finalDue.amount < baselineAmount * 0.97) {
-            return { ok: true, due: finalDue };
-        }
-        return { ok: false, due: finalDue };
-    }
+    if (isUsd || isPhp) return { ok: isTaxFreeDueAmount(finalDue, baselineAmount, activeCurrency), due: finalDue };
     return { ok: true, due: finalDue };
 }
 
-async function ensureCheckoutTaxFreeAmount(page, address, baselineAmount, currency = null) {
-    const due = await readCheckoutDueAmount(page);
-    if (!baselineAmount || !due?.amount) {
-        return { ok: true, due };
+async function ensureCheckoutTaxFreeAmount(page, address, baselineAmount, currency = null, expectedCurrency = null) {
+    let due = await readCheckoutDueAmount(page);
+    if (expectedCurrency) {
+        const expected = String(expectedCurrency).trim().toUpperCase();
+        if (!due?.amount || !due.currency) {
+            return { ok: false, due, code: 'CHECKOUT_CURRENCY_UNCONFIRMED', error: '税费重算后 Checkout 应付金额或币种无法确认 [CHECKOUT_CURRENCY_UNCONFIRMED]' };
+        }
+        if (due.currency !== expected) {
+            return { ok: false, due, code: 'PAYMENT_CURRENCY_MISMATCH', error: `税费重算后 Checkout 币种 ${due.currency} 与卡密支付币种 ${expected} 不一致 [PAYMENT_CURRENCY_MISMATCH]` };
+        }
     }
-
-    const activeCurrency = currency || due.currency;
+    const activeCurrency = currency || due?.currency;
     const curr = String(activeCurrency || '').toUpperCase();
     const countryUpper = String(address?.country || '').toUpperCase();
     const isUsd = (curr === 'USD' || curr === '$' || (!curr && baselineAmount <= 500)) && (countryUpper === 'US' || !countryUpper);
     const isPhp = curr === 'PHP' || curr === '₱';
     const isUsAddress = countryUpper === 'US' || !countryUpper;
+    const requiresTaxFreeAmount = isUsAddress && (isUsd || isPhp);
 
-    // 仅对 USD + US 免税州，或 PHP + US (俄勒冈免税模式) 执行降税校验；其他纯本土非美地区跳过
-    if (!isUsd && !(isPhp && isUsAddress)) {
+    if (!requiresTaxFreeAmount) {
+        if (!baselineAmount || !due?.amount) return { ok: true, due };
         console.log(`  [Stripe] ✅ 非免税核验区 (${countryUpper || curr})，当前应付金额 ${due.currency || ''} ${due.amount} 为官方标准金额，免税重算校验跳过`);
         return { ok: true, due };
     }
-
-    // 优先检查：如果收银台页面已明确显示 0% 税率或 0 元税额（例如 Sales Tax (0%): ₱0.00），直接放行
-    if (await isCheckoutTaxZero(page)) {
-        console.log(`  [Stripe] ✅ 页面已明确显示 0% 税率 / 零税额，免税已生效: ${due.currency || ''} ${due.amount}`);
-        return { ok: true, due };
+    if (!baselineAmount || !due?.amount) {
+        return { ok: false, due, code: 'CHECKOUT_AMOUNT_UNCONFIRMED', error: '免税校验所需的 Checkout 基准金额或应付金额无法确认，已停止支付 [CHECKOUT_AMOUNT_UNCONFIRMED]' };
     }
 
-    const taxFreeTarget = estimateTaxFreeAmount(baselineAmount, activeCurrency);
-    const taxFreeMax = (taxFreeTarget || baselineAmount) + 0.05;
-
-    if (isUsd) {
-        if (due.amount <= baselineAmount + 0.05) {
-            console.log(`  [Stripe] ✅ 免税金额确认: ${due.currency || ''} ${due.amount}`);
-            return { ok: true, due };
-        }
-    } else if (isPhp && isUsAddress) {
-        if (due.amount <= taxFreeMax || isPhTaxFreeNet(due.amount)) {
-            console.log(`  [Stripe] ✅ 菲律宾俄勒冈免税金额确认: ${due.currency || ''} ${due.amount} (目标约 ₱${taxFreeTarget})`);
-            return { ok: true, due };
-        }
+    const taxFreeGuard = getCheckoutTaxFreeGuard(baselineAmount, activeCurrency, address);
+    if (isTaxFreeDueAmount(due, baselineAmount, activeCurrency)) {
+        console.log(`  [Stripe] ✅ 免税应付金额确认: ${due.currency || ''} ${due.amount}`);
+        return { ok: true, due, taxFreeGuard };
     }
 
+    // 先给 Stripe Tax 的异步去税计算留出平滑等待窗口（500ms~3.5s），避免在失焦后瞬间误判进入重试
+    const initialWait = await waitForCheckoutTaxRecalculation(page, { baselineAmount, currency: activeCurrency, maxWaitMs: 3500 });
+    if (initialWait.due?.amount) {
+        due = initialWait.due;
+        if (expectedCurrency && (!due?.amount || !due.currency)) {
+            return { ok: false, due, code: 'CHECKOUT_CURRENCY_UNCONFIRMED', error: '税费重算后 Checkout 应付金额或币种无法确认 [CHECKOUT_CURRENCY_UNCONFIRMED]' };
+        }
+        if (expectedCurrency && due.currency !== String(expectedCurrency).trim().toUpperCase()) {
+            return { ok: false, due, code: 'PAYMENT_CURRENCY_MISMATCH',
+                error: `税费重算后 Checkout 币种 ${due.currency} 与卡密支付币种 ${expectedCurrency} 不一致 [PAYMENT_CURRENCY_MISMATCH]` };
+        }
+    }
+    if (isTaxFreeDueAmount(due, baselineAmount, activeCurrency)) {
+        console.log(`  [Stripe] ✅ 免税应付金额确认: ${due.currency || ''} ${due.amount}`);
+        return { ok: true, due, taxFreeGuard };
+    }
+
+    const taxIsZero = await isCheckoutTaxZero(page);
     console.warn(
-        `  [Stripe] ⚠️ 仍为含税 ${due.amount}，免税应约 ${isUsd ? baselineAmount : (taxFreeTarget ? taxFreeTarget.toFixed(2) : '')}，重试州/邮编…`
+        `  [Stripe] ⚠️ ${taxIsZero ? '页面虽显示零税，但应付金额' : '应付金额'} ${due.amount} 仍高于免税目标，重试州/邮编…`
     );
     const stateFullName = normalizeStateFullName(address.state);
     await selectBillingState(page, stateFullName, address.state);
@@ -901,22 +977,23 @@ async function ensureCheckoutTaxFreeAmount(page, address, baselineAmount, curren
     await blurActiveBillingField(page);
     const retry = await waitForCheckoutTaxRecalculation(page, { baselineAmount, currency: activeCurrency, maxWaitMs: 15000 });
     const retryDue = retry.due || due;
-    if (retry.ok) {
-        if (isUsd && retryDue?.amount <= baselineAmount + 0.05) {
-            return retry;
-        }
-        if (isPhp && (retryDue?.amount <= taxFreeMax || isPhTaxFreeNet(retryDue?.amount))) {
-            return retry;
-        }
-        // 如果 retry 判定成功（例如来自 isCheckoutTaxZero 页面零税判定），直接放行
-        return retry;
+    if (expectedCurrency && (!retryDue?.amount || !retryDue.currency)) {
+        return { ok: false, due: retryDue, code: 'CHECKOUT_CURRENCY_UNCONFIRMED', error: '税费重算后 Checkout 应付金额或币种无法确认 [CHECKOUT_CURRENCY_UNCONFIRMED]' };
+    }
+    if (expectedCurrency && retryDue.currency !== String(expectedCurrency).trim().toUpperCase()) {
+        return { ok: false, due: retryDue, code: 'PAYMENT_CURRENCY_MISMATCH',
+            error: `税费重算后 Checkout 币种 ${retryDue.currency} 与卡密支付币种 ${expectedCurrency} 不一致 [PAYMENT_CURRENCY_MISMATCH]` };
+    }
+    if (isTaxFreeDueAmount(retryDue, baselineAmount, activeCurrency)) {
+        return { ...retry, ok: true, due: retryDue, taxFreeGuard };
     }
 
     const finalDue = retry.due || due;
-    const expected = isUsd ? baselineAmount : (taxFreeTarget || estimateTaxFreeAmount(baselineAmount, activeCurrency));
+    const expected = estimateTaxFreeAmount(baselineAmount, activeCurrency);
     return {
         ok: false,
         due: finalDue,
+        code: 'BILLING_TAX_NOT_REMOVED',
         error: `账单税区未生效，应付仍为 ${finalDue.currency || ''} ${finalDue.amount}`
             + (expected ? `（免税应约 ${expected}）` : ''),
     };
@@ -965,6 +1042,7 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
     let holderName = String(options.holderName || '').trim();
     const accountEmail = String(options.email || cardInfo.email || '').trim();
     let checkoutDue = null;
+    let checkoutTaxFreeGuard = null;
     let submissionAttempted = false;
     let requireDetailedBilling = false;
     const grokCheckout = options.platform === 'grok';
@@ -973,8 +1051,13 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
     try {
         const openAiCheckout = isOpenAiCustomCheckout(page);
         const claudeCheckout = isClaudeCustomCheckout(page);
+        const requiresPaymentCurrencyGuard = options.platform === 'chatgpt' || !options.platform;
+        const expectedPaymentCurrency = String(options.paymentCurrency || '').trim().toUpperCase();
         if (grokCheckout && !options.grokAccount?.ok) throw grokError('GROK_AUTH_UNCONFIRMED', 'Grok 官方账号未确认，已停止支付');
         if (grokCheckout && isCardRetry) await waitForGrokCheckoutReady(page, options.planType);
+        if (requiresPaymentCurrencyGuard) {
+            checkoutDue = await assertCheckoutDueCurrency(page, expectedPaymentCurrency, '付款前 Checkout');
+        }
 
         if (isCardRetry) {
             console.log(`[Stripe] 换卡重试 #${cardAttempt}：更换卡号并重新提交...`);
@@ -1016,6 +1099,11 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
             await prepareCheckoutCardSection(page);
             await page.waitForTimeout(100);
 
+            // Step 0.5: 优先在进入信用卡填写前，把位于页面最顶端的 Email 填写完毕（自然自顶向下顺序）
+            if (accountEmail && !grokCheckout) {
+                await fillCheckoutEmail(page, accountEmail).catch(() => {});
+            }
+
             if (!openAiCheckout && !claudeCheckout) {
                 // 仅 Stripe hosted 页需要选择支付方式 tab
                 console.log('[Stripe] Step 1: 选择信用卡支付方式...');
@@ -1054,7 +1142,7 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
 
         // 填完卡后让输入框失焦，触发 Stripe 客户端即时格式校验
         await page.keyboard.press('Tab').catch(() => {});
-        await page.waitForTimeout(600);
+        await page.waitForTimeout(150);
 
         // 检查卡号、有效期、CVC 是否存在行内校验错误（如“Your card number is invalid.”）
         const inlineError = await checkStripeCardInlineError(page);
@@ -1071,9 +1159,18 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
             };
         }
 
-        // 离开卡号 iframe，点击主文档账单区
-        if (!claudeCheckout) {
-            await focusOpenAiBillingSection(page);
+        // 填完卡后让输入框平滑失焦
+        await page.evaluate(() => {
+            try {
+                if (document.activeElement && document.activeElement !== document.body) {
+                    document.activeElement.blur();
+                }
+            } catch (_) {}
+        }).catch(() => {});
+
+        // 自顶向下流向：在进入账单地址前，快速确保位于卡片下方的 Email 已经填写完毕
+        if (accountEmail && !grokCheckout) {
+            await fillCheckoutEmail(page, accountEmail).catch(() => {});
         }
 
         if (!holderName) {
@@ -1123,42 +1220,60 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
                 }
                 console.log(`[Stripe] ℹ️ 当前收银台无独立账单地址区域（${address?.country || '非美'}），跳过详细地址等待`);
             }
-            await page.waitForTimeout(300);
 
-            // 检查收银台是否有任何可见的街道或账单输入框
-            const billingValues = await readBillingInputValues(page);
-            const hasAddressInputs = billingValues.present.includes('line1');
-            if (!hasAddressInputs && !isUsCheckout) {
-                console.log(`[Stripe] ℹ️ 当前收银台无需填写街道/城市详细地址，跳过 Step 6`);
-            } else {
-                requireDetailedBilling = true;
-                // 检查账单地址是否完整（重试时若已完整则跳过）
-                const billingComplete = await isOpenAiBillingFormComplete(page, {}, address, holderName);
-                if (!billingComplete) {
-                    console.log('[Stripe] Step 6: 填写账单地址与姓名...');
-                    const billingResult = await fillOpenAiCheckoutBilling(page, address, holderName);
+            if (!isUsCheckout) {
+                const billingValues = await readBillingInputValues(page);
+                if (!billingValues.present.includes('line1')) {
+                    console.log(`[Stripe] ℹ️ 当前收银台无需填写街道/城市详细地址，跳过 Step 6`);
+                } else {
+                    requireDetailedBilling = true;
+                    console.log('[Stripe] Step 6: 核验账单地址与免税金额...');
+                    const billingResult = await fillOpenAiCheckoutBilling(page, address, holderName, expectedPaymentCurrency);
                     if (!billingResult.ok) {
                         const screenshotPath = await saveDebugScreenshot(page, 'billing_address_not_filled');
                         return {
                             success: false,
                             error: billingResult.error || '账单地址填写失败',
+                            code: billingResult.code,
                             screenshot: screenshotPath
                         };
                     }
+                    checkoutTaxFreeGuard = billingResult.taxFreeGuard || null;
                     if (billingResult.dueAmount) {
                         checkoutDue = {
                             amount: billingResult.dueAmount,
                             currency: billingResult.dueCurrency || null,
                         };
-                        console.log(
-                            `[Stripe] ✅ 免税后应付: ${checkoutDue.currency || ''} ${checkoutDue.amount}`
-                        );
+                        console.log(`[Stripe] ✅ 免税后应付: ${checkoutDue.currency || ''} ${checkoutDue.amount}`);
                     }
                     await dismissAddressAutocomplete(page);
-                    console.log(`[Stripe] ✅ OpenAI 账单地址已填写，姓名: ${holderName}`);
-                } else {
-                    console.log('[Stripe] ✅ 账单地址已完整，跳过重复填写');
+                    console.log(`[Stripe] ✅ OpenAI 账单地址及免税金额校验通过，姓名: ${holderName}`);
                 }
+            } else {
+                requireDetailedBilling = true;
+                console.log('[Stripe] Step 6: 核验账单地址与免税金额...');
+                const billingResult = await fillOpenAiCheckoutBilling(page, address, holderName, expectedPaymentCurrency);
+                if (!billingResult.ok) {
+                    const screenshotPath = await saveDebugScreenshot(page, 'billing_address_not_filled');
+                    return {
+                        success: false,
+                        error: billingResult.error || '账单地址填写失败',
+                        code: billingResult.code,
+                        screenshot: screenshotPath
+                    };
+                }
+                checkoutTaxFreeGuard = billingResult.taxFreeGuard || null;
+                if (billingResult.dueAmount) {
+                    checkoutDue = {
+                        amount: billingResult.dueAmount,
+                        currency: billingResult.dueCurrency || null,
+                    };
+                    console.log(
+                        `[Stripe] ✅ 免税后应付: ${checkoutDue.currency || ''} ${checkoutDue.amount}`
+                    );
+                }
+                await dismissAddressAutocomplete(page);
+                console.log(`[Stripe] ✅ OpenAI 账单地址及免税金额校验通过，姓名: ${holderName}`);
             }
             if (accountEmail) {
                 await fillCheckoutEmail(page, accountEmail);
@@ -1239,7 +1354,10 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
             await fillCheckoutEmail(page, accountEmail);
         }
 
-        if (claudeCheckout) {
+        if (requiresPaymentCurrencyGuard) {
+            checkoutDue = await assertCheckoutDueCurrency(page, expectedPaymentCurrency, '最终提交前 Checkout');
+            checkoutDue = assertCheckoutTaxFreeDue(checkoutDue, checkoutTaxFreeGuard, '最终提交前');
+        } else if (claudeCheckout) {
             await verifyAndFixClaudeCard(page, cardInfo);
             checkoutDue = await assertClaudeCheckoutReady(page, options.planType);
         } else if (grokCheckout) {
@@ -1256,6 +1374,10 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
             if (openAiCheckout) {
                 await assertOpenAiCardFieldsReady(page, cardInfo);
                 await createOpenAiCardMethodGuard(page, Date.now()).assertReady({ fieldsReady: true });
+            }
+            if (requiresPaymentCurrencyGuard) {
+                checkoutDue = await assertCheckoutDueCurrency(page, expectedPaymentCurrency, '点击付款前 Checkout');
+                checkoutDue = assertCheckoutTaxFreeDue(checkoutDue, checkoutTaxFreeGuard, '点击付款前');
             }
             if (claudeCheckout) {
                 checkoutDue = await assertClaudeCheckoutReady(page, options.planType);
@@ -1289,6 +1411,7 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
         return {
             success: false,
             error: error.message,
+            code: error.code,
             screenshot: screenshotPath,
             submitted: Boolean(submissionAttempted),
             submissionAttempted: Boolean(submissionAttempted),
@@ -2167,28 +2290,29 @@ async function dismissAddressAutocomplete(page) {
 
         // 1) 优先点击下拉里的关闭按钮（× icon）
         if (hadDropdown) {
-            const closeBtn = page.locator('[aria-label*="close" i], [aria-label*="关闭" i], button:has-text("×")').first();
+            const closeBtn = page.locator('[aria-label*="close" i], [aria-label*="关闭" i], [aria-label*="dismiss" i], button:has-text("×"), button:has-text("x")').first();
             if (await closeBtn.isVisible({ timeout: 400 }).catch(() => false)) {
                 await closeBtn.click({ timeout: 1000 }).catch(() => { });
                 await page.waitForTimeout(200);
             }
         }
 
-        // 2) 主动让当前聚焦元素失焦 + 移除 Google 注入的 pac-container
+        // 2) 主动让当前聚焦元素失焦 + 隐藏/移除 Google 注入的 pac-container 及地址联想列表
         await page.evaluate(() => {
             try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (_) { }
             try {
-                document.querySelectorAll('.pac-container').forEach((el) => { el.style.display = 'none'; });
+                document.querySelectorAll('.pac-container, [role="listbox"]:has(.pac-item), [class*="autocomplete-dropdown"]').forEach((el) => {
+                    el.style.display = 'none';
+                });
             } catch (_) { }
         }).catch(() => { });
 
-        if (!hadDropdown) return;
-
         // 3) 连按两次 Escape
         await page.keyboard.press('Escape').catch(() => { });
-        await page.waitForTimeout(150);
+        await page.waitForTimeout(100);
         await page.keyboard.press('Escape').catch(() => { });
-        await page.waitForTimeout(150);
+
+        if (!hadDropdown) return;
 
         // 4) 点击中性区域（右侧套餐卡 / 账单标题）彻底收起下拉
         const heading = page.getByText(/^\s*Billing address\s*$|^\s*账单地址\s*$/i).first();
@@ -2215,7 +2339,14 @@ async function dismissAddressAutocomplete(page) {
 async function focusOpenAiBillingSection(page) {
     const group = await getAuthoritativeBillingGroup(page);
     const frame = group?.frame || page;
-    await frame.locator('body').click({ position: { x: 12, y: 12 }, timeout: 2000 }).catch(() => { });
+    // 平滑失焦：仅使当前焦点元素失焦，严禁点击 (12,12) 导致页面剧烈上滚跳动
+    await page.evaluate(() => {
+        try {
+            if (document.activeElement && document.activeElement !== document.body) {
+                document.activeElement.blur();
+            }
+        } catch (_) {}
+    }).catch(() => {});
     await page.keyboard.press('Escape').catch(() => { });
     const heading = await locateOpenAiBillingHeading(page, group);
     if (heading) {
@@ -2224,7 +2355,7 @@ async function focusOpenAiBillingSection(page) {
         const street = group?.items.find((item) => billingFieldKey(item) === 'line1');
         await safeScrollIntoView(street?.el);
     }
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(100);
 }
 
 async function getBillingInputsBelowHeading(page, { includeHiddenSelects = false } = {}) {
@@ -2559,6 +2690,18 @@ async function selectBillingComboboxItem(frame, item, optionLabels, logLabel, ti
 
         await item.el.click({ timeout: remaining() });
         opened = true;
+        if (await clickCandidate()) return true;
+
+        // 优化：如果弹层包含搜索框（如国家/地区搜索），直接填入关键词秒级过滤，避免逐个 ArrowDown 遍历 200 个国家
+        try {
+            const popupSearch = frame.locator('input[type="search"]:visible, input[placeholder*="search" i]:visible, input[aria-label*="search" i]:visible').first();
+            if ((await popupSearch.count().catch(() => 0)) > 0) {
+                await popupSearch.fill(options[0]).catch(() => {});
+                await frame.waitForTimeout(50);
+                if (await clickCandidate()) return true;
+            }
+        } catch (_) {}
+
         let keyboardStarted = false;
         while (Date.now() < deadline) {
             if (await clickCandidate()) return true;
@@ -2692,6 +2835,42 @@ async function fillOpenAiBillingDirect(page, address, fullName) {
     // re-find each live billing field, including fields inside a checkout iframe.
     filled.country = await selectBillingCountry(page, billingCountryOptions(address.country));
     if (!filled.country) return filled;
+
+    // 性能优化：切完国家后，等待新表单（包含 state / postal / line1）完成挂载（通常只需 100~300ms），
+    // 避免因瞬间未挂载完成跌入逐字段超时的慢速分支！
+    let group = null;
+    const settleDeadline = Date.now() + 2500;
+    while (Date.now() < settleDeadline) {
+        group = await getAuthoritativeBillingGroup(page);
+        if (group?.items?.some((item) => ['state', 'postal', 'line1'].includes(billingFieldKey(item)))) break;
+        await page.waitForTimeout(80);
+    }
+
+    if (group?.items?.length) {
+        const getItem = (key) => group.items.find((item) => billingFieldKey(item) === key);
+
+        // 关键时序优化：改国家后立刻填写州（State）与邮编（Postal Code），立即触发 Stripe 后台计算销售税！
+        // 在随后填入姓名、街道、城市这 1~2 秒的过程中，Stripe 正在并行算税；
+        // 等全部字段填完进入提交步骤时，算税早已完成，无需在提交按钮处原地等待 6 秒。
+        filled.state = await selectBillingState(page, normalizeStateFullName(address.state), address.state);
+        const postalItem = getItem('postal');
+        if (postalItem) filled.postal = await fillBillingTextItem(postalItem, address.postal_code, '邮编');
+
+        const nameItem = getItem('name');
+        if (nameItem) filled.name = await fillBillingTextItem(nameItem, fullName, '账单全名');
+
+        await suppressGoogleAddressAutocomplete(page);
+        const line1Item = getItem('line1');
+        if (line1Item) filled.line1 = await fillBillingTextItem(line1Item, address.line1, '街道地址');
+        await dismissAddressAutocomplete(page);
+
+        const cityItem = getItem('city');
+        if (cityItem) filled.city = await fillBillingTextItem(cityItem, address.city, '城市');
+
+        await blurActiveBillingField(page);
+        return filled;
+    }
+
     filled.name = await fillBillingTextField(page, 'name', fullName, '账单全名');
     await suppressGoogleAddressAutocomplete(page);
     filled.line1 = await fillBillingTextField(page, 'line1', address.line1, '街道地址');
@@ -2699,6 +2878,7 @@ async function fillOpenAiBillingDirect(page, address, fullName) {
     filled.city = await fillBillingTextField(page, 'city', address.city, '城市');
     filled.state = await selectBillingState(page, normalizeStateFullName(address.state), address.state);
     filled.postal = await fillBillingTextField(page, 'postal', address.postal_code, '邮编');
+    await blurActiveBillingField(page);
     return filled;
 }
 
@@ -2723,6 +2903,7 @@ async function fillOpenAiBillingBySectionMeta(page, address, fullName) {
     filled.city = await fillBillingTextField(page, 'city', address.city, '城市');
     filled.state = await selectBillingState(page, normalizeStateFullName(address.state), address.state);
     filled.postal = await fillBillingTextField(page, 'postal', address.postal_code, '邮编');
+    await blurActiveBillingField(page);
     return filled;
 }
 
@@ -2876,7 +3057,7 @@ async function selectBillingCountry(page, optionLabels, waitMs = 5000) {
                 // the live group while it settles, then verify its selected country.
                 if (!attempted) return true;
                 matchedSince ??= Date.now();
-                if (Date.now() - matchedSince >= Math.min(800, waitMs / 3)) {
+                if (Date.now() - matchedSince >= Math.min(300, waitMs / 3)) {
                     console.log(`  [Stripe] 🌐 已确认账单国家: ${target}`);
                     return true;
                 }
@@ -2911,6 +3092,51 @@ async function selectBillingState(page, stateFullName, stateRaw, waitMs = 3000) 
         stateRaw
     ].filter(Boolean))];
     if (!options.length) return false;
+
+    // Fast-path: 优先检测原生 <select> 直选（Stripe 收银台大部分情况下渲染原生 select，避免等待 combobox 超时）
+    const frames = typeof page.frames === 'function' ? page.frames() : [page];
+    const selectSels = [
+        'select[name*="administrative" i]',
+        'select[name*="state" i]',
+        'select[id*="administrative" i]',
+        'select[id*="state" i]',
+        'select[autocomplete*="address-level1" i]',
+        '#billingAddress-administrativeAreaInput',
+        'select:has(option[value="OR"])',
+        'select:has(option:has-text("Oregon"))'
+    ];
+    for (const frame of frames) {
+        if (frame.isDetached?.()) continue;
+        for (const sel of selectSels) {
+            try {
+                const selectEl = frame.locator(sel).first();
+                if ((await selectEl.count().catch(() => 0)) > 0) {
+                    const targetOpt = await selectEl.evaluate((node, { codeVal, fullVal }) => {
+                        if (!node.options) return null;
+                        const match = Array.from(node.options).find(o =>
+                            !o.disabled && (o.value === codeVal || o.value === fullVal || /oregon/i.test(o.textContent || ''))
+                        );
+                        return match ? { value: match.value, label: match.textContent || match.value } : null;
+                    }, { codeVal: code, fullVal: full }).catch(() => null);
+
+                    if (targetOpt) {
+                        await selectEl.selectOption({ value: targetOpt.value }, { force: true, timeout: 1000 }).catch(() => []);
+                        await selectEl.evaluate((node, val) => {
+                            const proto = window.HTMLSelectElement.prototype;
+                            const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                            if (desc && desc.set) desc.set.call(node, val);
+                            else node.value = val;
+                            node.dispatchEvent(new Event('input', { bubbles: true }));
+                            node.dispatchEvent(new Event('change', { bubbles: true }));
+                        }, targetOpt.value).catch(() => {});
+                        console.log(`  [Stripe] ✅ 州/省 (原生 select 直选): ${targetOpt.label || targetOpt.value}`);
+                        return true;
+                    }
+                }
+            } catch (_) {}
+        }
+    }
+
     const deadline = Date.now() + waitMs;
     while (Date.now() < deadline) {
         const group = await getAuthoritativeBillingGroup(page);
@@ -3150,7 +3376,7 @@ async function assertOpenAiBillingReady(page, address, fullName) {
     throw error;
 }
 
-async function fillOpenAiCheckoutBilling(page, address, fullName) {
+async function fillOpenAiCheckoutBilling(page, address, fullName, expectedCurrency = null) {
     const stateFullName = normalizeStateFullName(address.state);
     let filled = { name: false, country: false, line1: false, city: false, postal: false, state: false };
 
@@ -3159,6 +3385,24 @@ async function fillOpenAiCheckoutBilling(page, address, fullName) {
     await dismissAddressAutocomplete(page);
 
     const preBillingDue = await readCheckoutDueAmount(page);
+    if (expectedCurrency && (!preBillingDue?.amount || !preBillingDue.currency)) {
+        const code = 'CHECKOUT_CURRENCY_UNCONFIRMED';
+        return {
+            ok: false,
+            code,
+            error: `账单填写前 Checkout 应付金额或币种无法确认 [${code}]`,
+            filled,
+        };
+    }
+    if (expectedCurrency && preBillingDue.currency !== String(expectedCurrency).trim().toUpperCase()) {
+        const code = 'PAYMENT_CURRENCY_MISMATCH';
+        return {
+            ok: false,
+            code,
+            error: `账单填写前 Checkout 币种 ${preBillingDue.currency} 与卡密支付币种 ${expectedCurrency} 不一致 [${code}]`,
+            filled,
+        };
+    }
     const baselineAmount = preBillingDue?.amount || null;
     const billingCurrency = preBillingDue?.currency || null;
     if (baselineAmount) {
@@ -3171,14 +3415,15 @@ async function fillOpenAiCheckoutBilling(page, address, fullName) {
 
     if (await isOpenAiBillingFormComplete(page, {}, address, fullName)) {
         console.log('  [Stripe] ✅ 账单表单已完整，跳过重复填写');
-        const taxCheck = await ensureCheckoutTaxFreeAmount(page, address, baselineAmount, billingCurrency);
+        const taxCheck = await ensureCheckoutTaxFreeAmount(page, address, baselineAmount, billingCurrency, expectedCurrency);
         if (!taxCheck.ok) {
-            return { ok: false, error: taxCheck.error, filled, skipped: true };
+            return { ok: false, error: taxCheck.error, code: taxCheck.code, filled, skipped: true };
         }
         return verifyBillingAfterTax(page, address, fullName, {
             ok: true,
             filled,
             skipped: true,
+            taxFreeGuard: taxCheck.taxFreeGuard || null,
             ...(await resolveBillingDueResult(page, taxCheck)),
         });
     }
@@ -3202,13 +3447,14 @@ async function fillOpenAiCheckoutBilling(page, address, fullName) {
 
     if (await isOpenAiBillingFormComplete(page, filled, address, fullName)) {
         console.log('  [Stripe] ✅ 账单地址校验通过（直连填写）');
-        const taxCheck = await ensureCheckoutTaxFreeAmount(page, address, baselineAmount, billingCurrency);
+        const taxCheck = await ensureCheckoutTaxFreeAmount(page, address, baselineAmount, billingCurrency, expectedCurrency);
         if (!taxCheck.ok) {
-            return { ok: false, error: taxCheck.error, filled };
+            return { ok: false, error: taxCheck.error, code: taxCheck.code, filled };
         }
         return verifyBillingAfterTax(page, address, fullName, {
             ok: true,
             filled,
+            taxFreeGuard: taxCheck.taxFreeGuard || null,
             ...(await resolveBillingDueResult(page, taxCheck)),
         });
     }
@@ -3265,13 +3511,14 @@ async function fillOpenAiCheckoutBilling(page, address, fullName) {
 
     console.log('  [Stripe] ✅ 账单地址校验通过');
 
-    const taxCheck = await ensureCheckoutTaxFreeAmount(page, address, baselineAmount, billingCurrency);
+    const taxCheck = await ensureCheckoutTaxFreeAmount(page, address, baselineAmount, billingCurrency, expectedCurrency);
     if (!taxCheck.ok) {
-        return { ok: false, error: taxCheck.error, filled };
+        return { ok: false, error: taxCheck.error, code: taxCheck.code, filled };
     }
     return verifyBillingAfterTax(page, address, fullName, {
         ok: true,
         filled,
+        taxFreeGuard: taxCheck.taxFreeGuard || null,
         ...(await resolveBillingDueResult(page, taxCheck)),
     });
 }
@@ -3325,12 +3572,16 @@ function billingFieldKey(item) {
 
 async function getAuthoritativeBillingGroup(page) {
     const frames = typeof page.frames === 'function' ? page.frames() : [page];
+    let fallback = null;
     for (const frame of frames) {
         if (frame.isDetached?.()) continue;
         const items = await getBillingInputsBelowHeading(frame, { includeHiddenSelects: true });
         if (items.some((item) => billingFieldKey(item) === 'line1')) return { frame, items };
+        if (!fallback && items.some((item) => ['country', 'postal', 'state'].includes(billingFieldKey(item)))) {
+            fallback = { frame, items };
+        }
     }
-    return null;
+    return fallback;
 }
 
 async function readBillingInputValues(page) {
@@ -3726,45 +3977,40 @@ async function fillCheckoutEmail(page, email) {
     }
     const targetEmail = String(email).trim();
 
-    const emailSelectors = [
-        'input[type="email"]',
-        '#email',
-        'input[name="email" i]',
-        'input[name*="email" i]',
-        'input[id*="email" i]',
-        'input[autocomplete*="email" i]',
-        'input[placeholder*="email" i]',
-        'input[aria-label*="email" i]',
-        'input[placeholder*="邮箱" i]',
-        'input[aria-label*="邮箱" i]'
-    ];
+    const emailSelector = 'input[type="email"], #email, input[name="email" i], input[autocomplete*="email" i], input[id*="email" i], input[placeholder*="email" i], input[aria-label*="email" i], input[placeholder*="邮箱" i], input[aria-label*="邮箱" i]';
 
     const contexts = [page, ...page.frames().filter(f => f !== page.mainFrame())];
     for (const ctx of contexts) {
-        for (const sel of emailSelectors) {
-            try {
-                const loc = ctx.locator(sel).first();
-                if (await loc.isVisible({ timeout: 600 }).catch(() => false)) {
-                    const currentVal = (await loc.inputValue({ timeout: 400 }).catch(() => '')).trim();
-                    if (currentVal && currentVal.includes('@')) {
-                        console.log(`[Stripe] ✅ Email 输入框已有值: ${currentVal}`);
-                        return true;
-                    }
-                    await safeScrollIntoView(loc);
-                    await loc.click({ timeout: 1000 }).catch(() => {});
-                    await loc.fill('');
-                    await loc.fill(targetEmail);
-                    let val = (await loc.inputValue({ timeout: 400 }).catch(() => '')).trim();
-                    if (!val) {
-                        await loc.pressSequentially(targetEmail, { delay: 30 }).catch(() => {});
-                        val = (await loc.inputValue({ timeout: 400 }).catch(() => '')).trim();
-                    }
-                    await loc.blur().catch(() => {});
-                    console.log(`[Stripe] ✅ 收银台 Email 已填写: ${val || targetEmail}`);
-                    return true;
-                }
-            } catch (_) { /* next */ }
-        }
+        try {
+            // 先通过毫秒级 DOM 查询快速探测该 frame 是否存在可见 email 输入框，避免 Playwright locator 逐个等待超时的累积延迟
+            const hasVisibleEmail = await ctx.evaluate((sel) => {
+                const el = document.querySelector(sel);
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                return style && style.display !== 'none' && style.visibility !== 'hidden' && el.offsetHeight > 0;
+            }, emailSelector).catch(() => false);
+
+            if (!hasVisibleEmail) continue;
+
+            const loc = ctx.locator(emailSelector).first();
+            const currentVal = (await loc.inputValue({ timeout: 400 }).catch(() => '')).trim();
+            if (currentVal && currentVal.includes('@')) {
+                console.log(`[Stripe] ✅ Email 输入框已有值: ${currentVal}`);
+                return true;
+            }
+            await safeScrollIntoView(loc);
+            await loc.click({ timeout: 1000 }).catch(() => {});
+            await loc.fill('');
+            await loc.fill(targetEmail);
+            let val = (await loc.inputValue({ timeout: 400 }).catch(() => '')).trim();
+            if (!val) {
+                await loc.pressSequentially(targetEmail, { delay: 20 }).catch(() => {});
+                val = (await loc.inputValue({ timeout: 400 }).catch(() => '')).trim();
+            }
+            await loc.blur().catch(() => {});
+            console.log(`[Stripe] ✅ 收银台 Email 已填写: ${val || targetEmail}`);
+            return true;
+        } catch (_) { /* next frame */ }
     }
     return false;
 }
@@ -3846,6 +4092,7 @@ async function clickCheckoutSubmitButton(page, accountEmail = '', onBeforeSubmit
     });
     await page.waitForTimeout(400);
 
+    const maxDisabledWaitMs = Number(process.env.CHECKOUT_SUBMIT_DISABLED_WAIT_MS || 25000);
     const tryClick = async (locator, label) => {
         let actionStarted = false;
         try {
@@ -3853,16 +4100,40 @@ async function clickCheckoutSubmitButton(page, accountEmail = '', onBeforeSubmit
             if (!(await target.isVisible({ timeout: 2000 }).catch(() => false))) {
                 return false;
             }
-            if (await target.isDisabled().catch(() => false)) {
-                for (let i = 0; i < 6; i++) {
-                    await page.waitForTimeout(500);
-                    if (!(await target.isDisabled().catch(() => false))) break;
+
+            let isTargetDisabled = await target.isDisabled().catch(() => false);
+            if (!isTargetDisabled) {
+                const ariaDisabled = await target.getAttribute('aria-disabled').catch(() => null);
+                const hasSpinner = await target.locator('.Spinner, svg, [role="progressbar"], [data-testid*="spinner"]').isVisible().catch(() => false);
+                if (ariaDisabled === 'true' || hasSpinner) {
+                    isTargetDisabled = true;
                 }
             }
-            if (await target.isDisabled().catch(() => false)) {
-                console.log(`[Stripe] ⚠️ 提交按钮暂不可用 (${label})`);
+
+            if (isTargetDisabled) {
+                console.log(`[Stripe] ⏳ 提交按钮处于后台加载/算税中，等待就绪 (${label})...`);
+                const disabledStart = Date.now();
+                while (Date.now() - disabledStart < maxDisabledWaitMs) {
+                    await page.waitForTimeout(150);
+
+                    const disabled = await target.isDisabled().catch(() => false);
+                    const ariaDisabled = await target.getAttribute('aria-disabled').catch(() => null);
+                    const hasSpinner = await target.locator('.Spinner, svg, [role="progressbar"], [data-testid*="spinner"]').isVisible().catch(() => false);
+
+                    if (!disabled && ariaDisabled !== 'true' && !hasSpinner) {
+                        isTargetDisabled = false;
+                        const waitedSec = ((Date.now() - disabledStart) / 1000).toFixed(1);
+                        console.log(`[Stripe] ✅ 提交按钮后台就绪 (等待了 ${waitedSec} 秒)`);
+                        break;
+                    }
+                }
+            }
+
+            if (isTargetDisabled) {
+                console.log(`[Stripe] ⚠️ 提交按钮在等待超时后仍不可用 (${label})`);
                 return false;
             }
+
             await safeScrollIntoView(target);
             await page.waitForTimeout(randomBetween(150, 350));
             // Validate after scroll/button waits, immediately before each submit action.
@@ -4230,10 +4501,13 @@ module.exports = {
     fillCardFieldsOpenAiCheckout,
     prepareCheckoutCardSection,
     readCheckoutDueAmount,
+    waitForCheckoutDueAmount,
+    assertCheckoutDueCurrency,
     estimateTaxFreeAmount,
     waitForCheckoutTaxRecalculation,
     ensureCheckoutTaxFreeAmount,
     captureCheckoutDueAmount,
+    isTaxFreeDueAmount,
     assertClaudeCardFieldsReady,
     fillCheckoutEmail,
     isCheckoutTaxZero,

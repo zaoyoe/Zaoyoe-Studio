@@ -40,7 +40,7 @@ describe('checkout API rejection handling', () => {
         expect(goto).not.toHaveBeenCalled();
     });
 
-    it('allows API checkout errors including unusual-activity to use the existing UI fallback', () => {
+    it('allows ordinary API checkout errors to use UI fallback but stops unusual-activity rejection', () => {
         expect(shouldFallbackToPricingCheckout(
             Object.assign(new Error('Checkout 创建接口返回 HTTP 400：Unsupported currency'), { code: 'CHECKOUT_HTTP_ERROR' }),
             { checkoutMode: 'api' }
@@ -48,7 +48,7 @@ describe('checkout API rejection handling', () => {
         expect(shouldFallbackToPricingCheckout(
             Object.assign(new Error('unusual activity'), { code: 'CHECKOUT_UNUSUAL_ACTIVITY' }),
             { checkoutMode: 'api' }
-        )).toBe(true);
+        )).toBe(false);
         expect(shouldFallbackToPricingCheckout(
             Object.assign(new Error('ordinary failure'), { code: 'CHECKOUT_HTTP_ERROR' }),
             { checkoutMode: 'api', debugOnly: true }

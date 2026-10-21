@@ -386,6 +386,35 @@ describe('isolated native Grok Commerce checkout', () => {
         expect(await pay(f)).toMatchObject({ success: true, submitted: true });
         expect(await f.page.evaluate(() => [window.manualEntryClicks, window.suggestionClicks, window.escapeDismissals, window.payClicks])).toEqual([1,0,0,1]);
     });
+    it('closes a late suggestion popup that marks the submit button aria-hidden at submit_ready', async () => {
+        const f = await fixture('grok_bundle_super_monthly', { locale: 'en', promo: true }); await open(f);
+        await f.page.evaluate(() => {
+            const input = document.querySelector('[name=addressLine1]');
+            const terms = document.querySelector('#terms');
+            const payBtn = document.querySelector('#pay');
+            input.setAttribute('aria-controls', 'address-suggestions');
+            window.suggestionClicks = 0; window.manualEntryClicks = 0;
+            terms.addEventListener('click', () => {
+                const list = document.createElement('div');
+                list.id = 'address-suggestions';
+                list.setAttribute('role', 'listbox');
+                list.style.cssText = 'position:fixed;inset:30px 0 0;z-index:1000;background:white';
+                list.innerHTML = '<button role="option" type="button">150 East Main Street</button><button role="option" type="button">Enter address manually</button>';
+                payBtn.setAttribute('aria-hidden', 'true');
+                document.body.append(list);
+                const [suggestBtn, manualBtn] = list.querySelectorAll('button');
+                suggestBtn.onclick = () => { window.suggestionClicks++; };
+                manualBtn.onclick = () => {
+                    window.manualEntryClicks++;
+                    payBtn.removeAttribute('aria-hidden');
+                    list.remove();
+                };
+            }, { once: true });
+        });
+        expect(await pay(f)).toMatchObject({ success: true, submitted: true, dueAmount: 50 });
+        expect(await f.page.evaluate(() => [window.manualEntryClicks, window.suggestionClicks, window.escapeDismissals, window.payClicks])).toEqual([1, 0, 0, 1]);
+        expect(f.calls.filter(call => call.name === 'Acquire')).toHaveLength(1);
+    });
     it.each([
         ['missing manual entry', { manualMissing: true }, 0],
         ['ambiguous manual entry', { duplicate: true }, 0],
@@ -681,6 +710,26 @@ describe('isolated native Grok Commerce checkout', () => {
         const f = await fixture('grok_bundle_super_annual', { termsStyle: 'base_ui_dual', termsPrechecked: true }); await open(f);
         expect(await pay(f)).toMatchObject({ success: true, submitted: true });
         expect(await f.page.evaluate(() => window.payClicks)).toBe(1);
+    });
+    it('recovers from an empty-zero initial cart tax with pre-discount subtotal and retries when payment options initially fail to load', async () => {
+        const f = await fixture('grok_bundle_super_monthly', { locale: 'en', promo: true, missingInitialTax: true });
+        f.q.cart.data.subtotal = { currencyCode: 'USD', unitMicros: '100000000' };
+        f.q.tax.data.subtotal = { currencyCode: 'USD', unitMicros: '100000000' };
+        await f.page.evaluate(() => {
+            window.paymentRetryClicks = 0;
+            const iframe = document.querySelector('iframe');
+            const holder = document.createElement('div');
+            holder.id = 'payment-load-error';
+            holder.innerHTML = '<p>Payment options couldn\'t load. Try again.</p><button type="button" id="retryPayment">Retry</button>';
+            iframe.replaceWith(holder);
+            holder.querySelector('#retryPayment').onclick = () => {
+                window.paymentRetryClicks++;
+                holder.replaceWith(iframe);
+            };
+        });
+        expect(await open(f)).toMatchObject({ native: true, plan: 'grok_bundle_super_monthly' });
+        expect(await pay(f)).toMatchObject({ success: true, submitted: true, dueAmount: 50 });
+        expect(await f.page.evaluate(() => [window.paymentRetryClicks, window.planClicks, window.payClicks])).toEqual([1, 1, 1]);
     });
 });
 

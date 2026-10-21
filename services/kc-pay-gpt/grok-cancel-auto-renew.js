@@ -1,5 +1,7 @@
 'use strict';
 
+const { decodeRpc } = require('./grok-commerce-wire');
+
 /**
  * Grok / X 组合订阅自动取消续订模块
  * 
@@ -7,6 +9,146 @@
  * 在充值/订阅成功后，自动执行官方取消自动续费操作，
  * 确保当前购买周期的权益不受影响（持续生效至到期日），同时终止下一周期的自动扣费。
  */
+
+function encodeVarint(value) {
+    let n = BigInt.asUintN(64, BigInt(value));
+    const bytes = [];
+    do {
+        const b = Number(n & 127n);
+        n >>= 7n;
+        bytes.push(b | (n ? 128 : 0));
+    } while (n);
+    return Buffer.from(bytes);
+}
+
+function encodeGrpcWebEnvelope(payload) {
+    const header = Buffer.alloc(5);
+    header[0] = 0;
+    header.writeUInt32BE(payload.length, 1);
+    return Buffer.concat([header, payload]);
+}
+
+function encodeCancelAcquisitionGrpcWeb(subscriptionId, idempotencyKey) {
+    const chunks = [];
+    for (const [fieldNo, str] of [[1, subscriptionId], [2, idempotencyKey]]) {
+        if (!str) continue;
+        const data = Buffer.from(String(str), 'utf8');
+        chunks.push(encodeVarint((fieldNo << 3) | 2), encodeVarint(data.length), data);
+    }
+    return encodeGrpcWebEnvelope(Buffer.concat(chunks));
+}
+
+async function cancelGrokAutoRenewGrpcWeb(page, initialSubId, timeoutMs) {
+    const invokeGrpcWeb = async (path, reqBytes) => {
+        return page.evaluate(async ({ rpcPath, bodyBytes, timeout }) => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeout);
+            try {
+                const resp = await fetch(rpcPath, {
+                    method: 'POST',
+                    headers: {
+                        'content-type': 'application/grpc-web+proto',
+                        'x-grpc-web': '1',
+                        accept: 'application/grpc-web+proto'
+                    },
+                    credentials: 'include',
+                    body: new Uint8Array(bodyBytes),
+                    signal: controller.signal
+                });
+                const buf = new Uint8Array(await resp.arrayBuffer());
+                return {
+                    ok: resp.ok,
+                    status: resp.status,
+                    headers: {
+                        'content-type': resp.headers.get('content-type') || '',
+                        'grpc-status': resp.headers.get('grpc-status')
+                    },
+                    bytes: Array.from(buf)
+                };
+            } finally {
+                clearTimeout(timer);
+            }
+        }, { rpcPath: path, bodyBytes: Array.from(reqBytes), timeout: timeoutMs });
+    };
+
+    let targetSubId = initialSubId;
+    if (!targetSubId) {
+        const emptyEnvelope = encodeGrpcWebEnvelope(Buffer.alloc(0));
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                const raw = await invokeGrpcWeb('/commerce.subscription.v1.SubscriptionService/GetSubscriptions', emptyEnvelope);
+                if (raw?.ok && Array.isArray(raw.bytes)) {
+                    const subData = decodeRpc(
+                        'commerce.subscription.v1.SubscriptionService/GetSubscriptions',
+                        'output',
+                        Buffer.from(raw.bytes),
+                        raw.headers
+                    );
+                    const list = subData?.subscriptions || [];
+                    const activeSub = list.find(s => {
+                        const st = s?.state?.status || s?.status;
+                        return st === 'SUBSCRIPTION_STATUS_ACTIVE' || st === 'ACTIVE' || st === 'ACQUISITION_STATUS_SUCCEEDED';
+                    }) || list[0];
+                    if (activeSub?.subscriptionId) {
+                        targetSubId = activeSub.subscriptionId;
+                        break;
+                    }
+                    if (activeSub?.state?.status === 'SUBSCRIPTION_STATUS_EXPIRING' && activeSub?.subscriptionId) {
+                        return {
+                            ok: true,
+                            alreadyCancelled: true,
+                            subscriptionId: activeSub.subscriptionId,
+                            effectiveAt: activeSub.state.expiryTimeTs || null,
+                            message: '自动续费先前已关闭，下月不会自动扣款'
+                        };
+                    }
+                }
+            } catch (_) {}
+        }
+    }
+
+    if (!targetSubId) {
+        return null;
+    }
+
+    const idempotencyKey = `cancel_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const cancelEnvelope = encodeCancelAcquisitionGrpcWeb(targetSubId, idempotencyKey);
+    const rawCancel = await invokeGrpcWeb('/commerce.billing.v1.AcquisitionService/CancelAcquisition', cancelEnvelope);
+    if (!rawCancel?.ok || !Array.isArray(rawCancel.bytes)) {
+        return null;
+    }
+    const cancelData = decodeRpc(
+        'commerce.billing.v1.AcquisitionService/CancelAcquisition',
+        'output',
+        Buffer.from(rawCancel.bytes),
+        rawCancel.headers
+    );
+    const errCode = cancelData?.error?.code;
+    if (errCode === 'SUBSCRIPTION_ALREADY_CANCELED') {
+        return {
+            ok: true,
+            alreadyCancelled: true,
+            subscriptionId: targetSubId,
+            message: '自动续费先前已关闭，下月不会自动扣款'
+        };
+    }
+    if (errCode || cancelData?.error?.message) {
+        return {
+            ok: false,
+            subscriptionId: targetSubId,
+            errorCode: errCode || 'RPC_ERROR',
+            error: cancelData?.error?.message || `取消请求返回错误 ${errCode}`
+        };
+    }
+    return {
+        ok: true,
+        cancelled: true,
+        subscriptionId: targetSubId,
+        effectiveAt: cancelData?.effectiveAt || null,
+        storeManagementUrl: cancelData?.storeManagementUrl || '',
+        message: '已成功关闭次月自动续订，本周期内权益继续有效'
+    };
+}
 
 function formatTimestamp(timestampObj) {
     if (!timestampObj) return '';
@@ -75,7 +217,7 @@ async function cancelGrokAutoRenew(page, options = {}) {
                                 // 优先找 ACTIVE 或处于有效期的订阅
                                 const activeSub = list.find(s => {
                                     const st = s?.state?.status || s?.status;
-                                    return st === 'ACTIVE' || st === 'ACQUISITION_STATUS_SUCCEEDED';
+                                    return st === 'SUBSCRIPTION_STATUS_ACTIVE' || st === 'ACTIVE' || st === 'ACQUISITION_STATUS_SUCCEEDED';
                                 }) || list[0];
 
                                 if (activeSub?.subscriptionId) {
@@ -157,18 +299,32 @@ async function cancelGrokAutoRenew(page, options = {}) {
             }
         }, { subId: initialSubId, timeout: timeoutMs });
 
-        if (result.ok) {
-            const dateStr = formatTimestamp(result.effectiveAt);
+        let finalResult = result;
+        if (!finalResult?.ok) {
+            try {
+                const grpcFallback = await cancelGrokAutoRenewGrpcWeb(
+                    page,
+                    finalResult?.subscriptionId || initialSubId,
+                    timeoutMs
+                );
+                if (grpcFallback) {
+                    finalResult = grpcFallback;
+                }
+            } catch (_) {}
+        }
+
+        if (finalResult.ok) {
+            const dateStr = formatTimestamp(finalResult.effectiveAt);
             const msg = dateStr
                 ? `已成功关闭次月自动续费，当前订阅权益有效至 ${dateStr}`
-                : (result.message || '已成功关闭次月自动续订');
+                : (finalResult.message || '已成功关闭次月自动续订');
             return {
                 ok: true,
-                cancelled: Boolean(result.cancelled),
-                alreadyCancelled: Boolean(result.alreadyCancelled),
+                cancelled: Boolean(finalResult.cancelled),
+                alreadyCancelled: Boolean(finalResult.alreadyCancelled),
                 autoRenewRaw: false,
-                subscriptionId: result.subscriptionId,
-                effectiveAt: dateStr || result.effectiveAt,
+                subscriptionId: finalResult.subscriptionId,
+                effectiveAt: dateStr || finalResult.effectiveAt,
                 message: msg
             };
         }
@@ -176,8 +332,8 @@ async function cancelGrokAutoRenew(page, options = {}) {
         return {
             ok: false,
             verificationUnknown: true,
-            subscriptionId: result.subscriptionId,
-            error: result.error || '取消自动续费请求未能确认'
+            subscriptionId: finalResult.subscriptionId,
+            error: finalResult.error || '取消自动续费请求未能确认'
         };
 
     } catch (err) {

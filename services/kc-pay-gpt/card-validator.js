@@ -28,16 +28,17 @@ function luhnCheck(cardNumber) {
 }
 
 /**
- * 验证卡号格式：13-19 位纯数字，且符合 Luhn 校验算法
+ * 验证卡号格式：13-19 位纯数字，且符合 Luhn 校验算法（支持 options.allowInvalidLuhn 跳过算法校验）
  * @param {string} cardNumber
+ * @param {object} [options]
  * @returns {{ valid: boolean, error?: string }}
  */
-function validateCardNumber(cardNumber) {
+function validateCardNumber(cardNumber, options = {}) {
     if (cardNumber == null || typeof cardNumber !== 'string') {
         return { valid: false, error: '卡号不能为空' };
     }
 
-    const trimmed = cardNumber.trim();
+    const trimmed = cardNumber.replace(/[\s-]/g, '').trim();
 
     if (trimmed.length === 0) {
         return { valid: false, error: '卡号不能为空' };
@@ -51,8 +52,9 @@ function validateCardNumber(cardNumber) {
         return { valid: false, error: '卡号长度必须为 13-19 位' };
     }
 
-    if (!luhnCheck(trimmed)) {
-        return { valid: false, error: '卡号未通过 Luhn 校验（无效卡号）' };
+    const skipLuhn = Boolean(options.allowInvalidLuhn || options.skipLuhn);
+    if (!skipLuhn && !luhnCheck(trimmed)) {
+        return { valid: false, error: '卡号未通过 Luhn 校验（无效卡号，请检查末尾校验位是否输错）' };
     }
 
     return { valid: true };
@@ -113,16 +115,17 @@ function validateCVC(cvc) {
 /**
  * 验证完整卡片对象
  * @param {{ card_number?: string, card_expiry?: string, card_cvc?: string, card_holder?: string }} cardObj
+ * @param {object} [options]
  * @returns {{ valid: boolean, errors: string[] }}
  */
-function validateCard(cardObj) {
+function validateCard(cardObj, options = {}) {
     const errors = [];
 
     if (!cardObj || typeof cardObj !== 'object') {
         return { valid: false, errors: ['卡片数据不能为空'] };
     }
 
-    const numberResult = validateCardNumber(cardObj.card_number);
+    const numberResult = validateCardNumber(cardObj.card_number, options);
     if (!numberResult.valid) {
         errors.push(numberResult.error);
     }

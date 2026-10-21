@@ -11571,3 +11571,10 @@ html:not([data-theme="dark"]) body.shop-page .shop-success-toast[data-shop-toast
         transform: translateX(-50%);
     }
 }
+
+.shop-purchase-recovery { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: 12px; margin-bottom: 16px; padding: 14px 16px; border: 1px solid #a9905b66; border-radius: 14px;
+    background: #a9905b0a; color: inherit; font-size: 13px; line-height: 1.6; }
+.shop-purchase-recovery__button { border: 1px solid #8b8ad766; border-radius: 9px; padding: 8px 12px;
+    background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.shop-purchase-recovery__button:disabled { opacity: .55; cursor: wait; }

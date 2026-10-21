@@ -612,6 +612,7 @@ const ShopClient = {
     availableCategories: [],
     cartItems: new Map(),
     cartSnapshots: {},
+    cartLifecycleTokens: {},
     cartItemDisclosureState: {},
     cartOpen: false,
     cartCheckoutProcessing: false,
@@ -3646,6 +3647,7 @@ const ShopClient = {
                 this.syncGuestCashEntryStage();
                 window.setTimeout(() => {
                     void this.setupStorefrontRealtime({ force: true, reason: 'auth_change' });
+                    void this.restorePendingPointsPurchase();
                 }, 120);
             });
             this.shopRealtimeAuthUnsubscribe = result?.data?.subscription || result?.subscription || result || null;
@@ -4503,6 +4505,7 @@ const ShopClient = {
             if (!rawPayload) {
                 this.cartItems = new Map();
                 this.cartSnapshots = {};
+                this.cartLifecycleTokens = {};
                 return;
             }
 
@@ -4521,11 +4524,15 @@ const ShopClient = {
             this.cartSnapshots = parsed?.snapshots && typeof parsed.snapshots === 'object'
                 ? parsed.snapshots
                 : {};
+            this.cartLifecycleTokens = parsed?.tokens && typeof parsed.tokens === 'object'
+                ? parsed.tokens
+                : {};
             this.sanitizeCartState({ persist: false });
         } catch (error) {
             console.warn('Failed to restore cart state:', error);
             this.cartItems = new Map();
             this.cartSnapshots = {};
+            this.cartLifecycleTokens = {};
         }
     },
 
@@ -4533,7 +4540,8 @@ const ShopClient = {
         try {
             sessionStorage.setItem(this.getCartStorageKey(), JSON.stringify({
                 items: Array.from(this.cartItems.entries()),
-                snapshots: this.cartSnapshots
+                snapshots: this.cartSnapshots,
+                tokens: this.cartLifecycleTokens
             }));
         } catch (error) {
             console.warn('Failed to persist cart state:', error);
@@ -4543,6 +4551,7 @@ const ShopClient = {
     sanitizeCartState: function ({ persist = true } = {}) {
         const nextItems = new Map();
         const nextSnapshots = {};
+        const nextTokens = {};
 
         this.cartItems.forEach((quantity, rawEntryKey) => {
             const entryKey = String(rawEntryKey || '').trim();
@@ -4569,10 +4578,12 @@ const ShopClient = {
                     }) || this.cartSnapshots?.[entryKey] || this.cartSnapshots?.[productId] || product
                 )
                 : (this.cartSnapshots?.[entryKey] || this.cartSnapshots?.[productId] || product);
+            nextTokens[entryKey] = this.ensureCartLifecycleToken(entryKey);
         });
 
         this.cartItems = nextItems;
         this.cartSnapshots = nextSnapshots;
+        this.cartLifecycleTokens = nextTokens;
         this.cartItemDisclosureState = Object.fromEntries(
             Object.entries(this.cartItemDisclosureState || {}).filter(([entryKey]) => nextItems.has(entryKey))
         );
@@ -4606,6 +4617,32 @@ const ShopClient = {
         const normalizedProductId = String(productId || '').trim();
         const normalizedSkuId = String(skuId || '').trim();
         return normalizedSkuId ? `${normalizedProductId}::sku:${normalizedSkuId}` : normalizedProductId;
+    },
+
+    createCartLifecycleToken: function () {
+        const cryptoRef = (typeof window !== 'undefined' && window.crypto)
+            || (typeof crypto !== 'undefined' ? crypto : null);
+        if (typeof cryptoRef?.randomUUID === 'function') return `ct_${cryptoRef.randomUUID()}`;
+        return `ct_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+    },
+
+    ensureCartLifecycleToken: function (entryKey) {
+        const key = String(entryKey || '').trim();
+        if (!key) return null;
+        this.cartLifecycleTokens ||= {};
+        const existing = String(this.cartLifecycleTokens[key] || '').trim();
+        if (existing) return existing;
+        const token = this.createCartLifecycleToken();
+        this.cartLifecycleTokens[key] = token;
+        return token;
+    },
+
+    getCartLifecycleToken: function (entryKey) {
+        return String(this.cartLifecycleTokens?.[entryKey] || '').trim() || null;
+    },
+
+    forgetCartLifecycleToken: function (entryKey) {
+        if (this.cartLifecycleTokens) delete this.cartLifecycleTokens[entryKey];
     },
 
     parseCartEntryKey: function (entryKey = '') {
@@ -4684,6 +4721,7 @@ const ShopClient = {
 
             entries.push({
                 entryKey,
+                cartLifecycleToken: this.ensureCartLifecycleToken(entryKey),
                 productId,
                 productSkuId: skuId || '',
                 selectedSku,
@@ -5972,6 +6010,7 @@ const ShopClient = {
             : this.normalizeCartDiscountSnapshot(this.cartSnapshots?.[entryKey]?.applied_discount || this.cartSnapshots?.[normalizedId]?.applied_discount || null, { quantity: nextQuantity });
 
         this.cartItems.set(entryKey, nextQuantity);
+        this.ensureCartLifecycleToken(entryKey);
         this.updateCartSnapshot(entryKey, product, { appliedDiscount });
         this.renderCart();
         this.playCartAnchorAddFeedback();
@@ -6035,6 +6074,7 @@ const ShopClient = {
         }
 
         this.cartItems.set(normalizedId, normalizedQuantity);
+        this.ensureCartLifecycleToken(normalizedId);
         const pricing = this.resolveProductPricing(productForQuantity, this.agentPricesCache || {});
         const unitPrice = pricing.currentPrice == null
             ? Number(this.cartSnapshots?.[normalizedId]?.resolved_unit_price || product?.resolved_unit_price || 0) || 0
@@ -6056,6 +6096,7 @@ const ShopClient = {
 
         const product = this.getCachedProductById(productId) || this.cartSnapshots?.[entryKey];
         this.cartItems.delete(entryKey);
+        this.forgetCartLifecycleToken(entryKey);
         delete this.cartSnapshots[entryKey];
         if (this.cartItems.size === 0) {
             this.setCartOpen(false);
@@ -6094,11 +6135,15 @@ const ShopClient = {
         const normalizedId = String(productId || '').trim();
         if (!normalizedId) return;
         const entryKey = this.buildCartEntryKey(normalizedId, options.skuId || options.productSkuId || '');
+        const expectedToken = String(options.lifecycleToken || '').trim();
+        const currentToken = this.getCartLifecycleToken(entryKey);
+        if (!expectedToken || !currentToken || expectedToken !== currentToken) return;
 
         const currentQuantity = this.cartItems.get(entryKey) || 0;
         const nextQuantity = currentQuantity - Math.max(1, Math.trunc(Number(purchasedQuantity || 0) || 0));
         if (nextQuantity < 1) {
             this.cartItems.delete(entryKey);
+            this.forgetCartLifecycleToken(entryKey);
             delete this.cartSnapshots[entryKey];
         } else {
             this.cartItems.set(entryKey, nextQuantity);
@@ -6119,7 +6164,8 @@ const ShopClient = {
                 const productId = String(item?.productId || '').trim();
                 if (!productId) return;
                 this.consumePurchasedCartQuantity(productId, item.quantity, {
-                    skuId: String(item?.skuId || '').trim()
+                    skuId: String(item?.skuId || '').trim(),
+                    lifecycleToken: String(item?.lifecycleToken || '').trim()
                 });
             });
             return;
@@ -6127,7 +6173,8 @@ const ShopClient = {
         const productId = String(detail.productId || '').trim();
         if (!productId) return;
         this.consumePurchasedCartQuantity(productId, detail.quantity, {
-            skuId: String(detail.skuId || '').trim()
+            skuId: String(detail.skuId || '').trim(),
+            lifecycleToken: String(detail.lifecycleToken || '').trim()
         });
     },
 
@@ -6264,7 +6311,10 @@ const ShopClient = {
                 forceGuestCash: this.shopAuthStateKnown === false && entry.guestPurchasable === true,
                 cartOrigin: {
                     productId: entry.productId,
-                    skuId: entry.productSkuId || ''
+                    skuId: entry.productSkuId || '',
+                    lifecycleToken: entry.cartLifecycleToken || this.ensureCartLifecycleToken(
+                        entry.entryKey || this.buildCartEntryKey(entry.productId, entry.productSkuId || '')
+                    )
                 }
             }
         );
@@ -6560,7 +6610,8 @@ const ShopClient = {
                 shouldOpen: shouldOpenGuestModal,
                 discountCode: discountCodeEnabled && discountCodeFormatAccepted ? formatAcceptedDiscountCode : '',
                 replaceDiscountCode: true,
-                quantity: Math.max(1, Number.parseInt(String(sourcePurchase?.quantity || '1'), 10) || 1)
+                quantity: Math.max(1, Number.parseInt(String(sourcePurchase?.quantity || '1'), 10) || 1),
+                cartLineToken: String(sourcePurchase?.cartOrigin?.lifecycleToken || '').trim() || null
             });
             if (result && result.started) {
                 // The guest checkout owns the next interaction surface. Close
@@ -8865,6 +8916,83 @@ const ShopClient = {
         });
     },
 
+    getPointsPurchaseJournal: async function (accessToken = '') {
+        const client = window.supabaseClient || supabaseClient;
+        const { data: { session } = {} } = await client.auth.getSession();
+        if (!session?.user?.id || (accessToken && session.access_token !== accessToken)) {
+            throw Object.assign(new Error('登录状态已变化，请重新核对购买信息'), { code: 'purchase_auth_changed' });
+        }
+        const actorId = session.user.id;
+        const site = window.SiteConfig?.site || 'cn';
+        const journal = window.ShopOperationJournal.create({ storage: window.sessionStorage, kind: 'points_purchase', actorId, site });
+        return { actorId, site, journal };
+    },
+
+    restorePendingPointsPurchase: async function () {
+        const generation = this.pointsPurchaseRecoveryGeneration = (this.pointsPurchaseRecoveryGeneration || 0) + 1;
+        const previous = document.getElementById('shopPurchaseRecovery');
+        previous?.remove();
+        try {
+            const context = await this.getPointsPurchaseJournal();
+            const pending = context.journal.read();
+            if (generation !== this.pointsPurchaseRecoveryGeneration || !pending) return;
+            const grid = document.getElementById('userShopGrid');
+            if (!grid?.parentNode) return;
+            const panel = document.createElement('div');
+            panel.id = 'shopPurchaseRecovery';
+            panel.className = 'shop-purchase-recovery';
+            const text = document.createElement('span');
+            text.setAttribute('role', 'status');
+            text.textContent = this.isEnglishShopLocale() ? 'A previous points purchase needs confirmation.' : '有一笔积分购买结果待核对，请先确认原订单。';
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'shop-purchase-recovery__button';
+            button.textContent = this.isEnglishShopLocale() ? 'Check previous purchase' : '核对上次购买';
+            button.addEventListener('click', () => { void this.recoverPendingPointsPurchase(context, pending, panel, text, button); });
+            panel.append(text, button);
+            grid.parentNode.insertBefore(panel, grid);
+        } catch (_) { /* Login may still be loading. Purchase itself requires a saved journal. */ }
+    },
+
+    recoverPendingPointsPurchase: async function (context, pending, panel, text, button) {
+        if (button.disabled) return;
+        button.disabled = true;
+        try {
+            const current = await this.getPointsPurchaseJournal();
+            if (current.actorId !== context.actorId || current.site !== context.site) throw new Error('账号或站点已切换，请使用原账号核对购买记录');
+            const saved = current.journal.read();
+            if (!saved || saved.operationId !== pending.operationId) { panel.remove(); return; }
+            const token = await this.getAccessToken();
+            // Only query the original operation. An unconfirmed response never
+            // starts checkout, changes parameters or creates another operation.
+            const response = await fetch('/api/shop/purchase', { method: 'POST', cache: 'no-store',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ recoverOnly: true, site: context.site, idempotencyKey: saved.operationId }) });
+            const payload = await response.json();
+            const after = await this.getPointsPurchaseJournal(token);
+            if (after.actorId !== context.actorId || after.site !== context.site) throw new Error('账号或站点已切换，请使用原账号核对购买记录');
+            if (!response.ok || payload.success !== true || !payload.recovery) throw new Error(payload.message || '尚未确认原购买结果，请稍后继续核对');
+            if (payload.recovery.status === 'confirmed' && /^[a-f\d-]{36}$/i.test(payload.recovery.orderId || '')) {
+                // Do not mutate the restored cart: it may already have been edited
+                // after the interrupted request. Recovery only acknowledges the order.
+                current.journal.clear(saved.operationId);
+                text.textContent = payload.recovery.resolution?.message || (this.isEnglishShopLocale() ? 'Purchase confirmed. See order history for details.' : '已确认原订单，请在钱包记录中查看供货进度。');
+                button.textContent = this.isEnglishShopLocale() ? 'View orders' : '查看订单记录';
+                const view = button.cloneNode(true);
+                view.disabled = false;
+                view.addEventListener('click', () => { void openShopWalletModal('orders', { entry: 'shop_purchase_recovery' }); });
+                button.replaceWith(view);
+                if (this.currentPurchase?.idempotencyKey === saved.operationId) this.currentPurchase.idempotencyKey = this.createPurchaseIdempotencyKey();
+            } else if (payload.recovery.status === 'unconfirmed') {
+                text.textContent = this.isEnglishShopLocale()
+                    ? 'No confirmed supplier order yet. Check wallet history or contact support; do not purchase again.'
+                    : '尚未查到已确认的供应商订单。请核对钱包记录或联系客服，期间请勿重复购买。';
+            } else throw new Error('核对结果暂不完整，请继续查询原操作');
+        } catch (error) {
+            text.textContent = error.message || '暂时无法核对，请稍后重试';
+        } finally { button.disabled = false; }
+    },
+
     purchaseWithServer: async function (token = '') {
         if (this.isShopCurrentPurchaseManualDelivery()) {
             throw new Error(this.trShop('manualDeliveryUnavailableHint', '人工发货商品请联系客服咨询，暂不支持自助兑换或加入购物车。'));
@@ -8907,6 +9035,36 @@ const ShopClient = {
             || this.createPurchaseIdempotencyKey()
         ).trim();
 
+        const recoveryContext = await this.getPointsPurchaseJournal(accessToken);
+        if (purchasePayload.site && purchasePayload.site !== recoveryContext.site) {
+            throw Object.assign(new Error('站点已切换，请重新核对购买信息'), { code: 'purchase_auth_changed' });
+        }
+        if (recoveryContext.journal.read()) {
+            void this.restorePendingPointsPurchase();
+            const error = new Error('上一笔积分购买尚待核对，请先使用“核对上次购买”确认原订单');
+            error.purchaseOutcomeUnknown = true;
+            error.code = 'shop_operation_pending';
+            throw error;
+        }
+        const prepared = await fetch('/api/shop/purchase', {
+            method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+            body: JSON.stringify({ prepareRecovery: true, productId: purchasePayload.productId,
+                productSkuId: purchasePayload.productSkuId || null, site: recoveryContext.site })
+        });
+        const preparation = await prepared.json().catch(() => ({}));
+        if (!prepared.ok || preparation.success !== true || !['local', 'supplier_v2'].includes(preparation.recoverySource)) {
+            throw Object.assign(new Error(preparation.message || '暂时无法核对供货方式，请稍后重试'), { code: 'purchase_preparation_unavailable' });
+        }
+        const current = await this.getPointsPurchaseJournal(accessToken);
+        if (current.actorId !== recoveryContext.actorId || current.site !== recoveryContext.site) throw new Error('账号或站点已切换，请重新核对购买信息');
+        const requiresRecovery = preparation.recoverySource === 'supplier_v2';
+        // Persist supplier requests before sending, including the interval
+        // between server commit and response delivery. Local inventory keeps
+        // its existing purchase path and never creates an unrecoverable journal.
+        if (requiresRecovery) recoveryContext.journal.begin(idempotencyKey, {
+            productId: purchasePayload.productId, productSkuId: purchasePayload.productSkuId || null,
+            quantity: purchasePayload.quantity, source: this.currentPurchase?.cartOrigin ? 'cart' : 'single'
+        });
         let response;
         try {
             response = await fetch('/api/shop/purchase', {
@@ -8924,25 +9082,50 @@ const ShopClient = {
                     discountSelections: Array.isArray(purchasePayload.discountSelections) ? purchasePayload.discountSelections : [],
                     productSkuId: purchasePayload.productSkuId || null,
                     agentId: purchasePayload.agentId || null,
-                    site: purchasePayload.site || (window.SiteConfig?.site || 'cn'),
+                    site: recoveryContext.site,
                     language: this.isEnglishShopLocale() ? 'en' : 'zh',
-                    idempotencyKey
+                    idempotencyKey,
+                    recoverySource: preparation.recoverySource
                 })
             });
         } catch (error) {
-            throw this.normalizeShopRequestError(error, {
+            const requestError = this.normalizeShopRequestError(error, {
                 fallbackMessage: '兑换请求发送失败，请稍后重试'
             });
+            requestError.purchaseOutcomeUnknown = true;
+            void this.restorePendingPointsPurchase();
+            throw requestError;
         }
 
         const payload = await response.json().catch(() => ({}));
+        try {
+            const after = await this.getPointsPurchaseJournal(accessToken);
+            if (after.actorId !== recoveryContext.actorId || after.site !== recoveryContext.site) throw new Error('账号或站点已切换，请使用原账号核对购买记录');
+        } catch (error) {
+            error.purchaseOutcomeUnknown = true;
+            void this.restorePendingPointsPurchase();
+            throw error;
+        }
         if (!response.ok || payload?.success === false) {
             const error = new Error(payload?.message || (window.i18n?.t('shop.redeemFailed') || '兑换失败'));
             error.code = payload?.code || '';
             error.retryAfterSeconds = payload?.retry_after_seconds || null;
+            error.purchaseOutcomeUnknown = response.status >= 500 || response.status === 408
+                || payload?.success !== false || ['supplier_checkout_unavailable', 'duplicate_submission'].includes(error.code);
+            if (!error.purchaseOutcomeUnknown && requiresRecovery) recoveryContext.journal.clear(idempotencyKey);
+            else void this.restorePendingPointsPurchase();
+            throw error;
+        }
+        if (!payload?.data || typeof payload.data !== 'object' || !(payload.data.order_id || payload.data.id)) {
+            const error = new Error(this.isEnglishShopLocale()
+                ? 'The purchase result is not confirmed. Retry to recover this order.'
+                : '尚未确认购买结果，请重试核对同一笔订单。');
+            error.purchaseOutcomeUnknown = true;
+            void this.restorePendingPointsPurchase();
             throw error;
         }
 
+        if (requiresRecovery) recoveryContext.journal.clear(idempotencyKey);
         return payload;
     },
 
@@ -9012,6 +9195,8 @@ const ShopClient = {
                     console.warn('🛍️ Waiting for Supabase...');
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
+
+                void this.restorePendingPointsPurchase();
 
                 // === Check sessionStorage for prefetched shop data ===
                 let usedPrefetch = false;
@@ -14258,7 +14443,8 @@ const ShopClient = {
             cartOrigin: options?.cartOrigin && typeof options.cartOrigin === 'object'
                 ? {
                     productId: String(options.cartOrigin.productId || productId || '').trim() || null,
-                    skuId: String(options.cartOrigin.skuId || selectedSkuId || '').trim() || null
+                    skuId: String(options.cartOrigin.skuId || selectedSkuId || '').trim() || null,
+                    lifecycleToken: String(options.cartOrigin.lifecycleToken || '').trim() || null
                 }
                 : null,
             forceGuestCash: options?.forceGuestCash === true,
@@ -14821,6 +15007,11 @@ const ShopClient = {
 
         this.sanitizeCartState();
         const entries = this.getCartEntries();
+        const cartCheckoutTokens = new Map();
+        entries.forEach((entry) => {
+            const entryKey = String(entry.entryKey || this.buildCartEntryKey(entry.productId, entry.productSkuId || '')).trim();
+            cartCheckoutTokens.set(entryKey, entry.cartLifecycleToken || this.ensureCartLifecycleToken(entryKey));
+        });
         if (!entries.length) {
             this.showShopToast(this.getCartCopy().cartEmptyToast, 'error');
             this.closeCartCheckoutModal();
@@ -14905,7 +15096,7 @@ const ShopClient = {
 
         try {
             for (const entry of entries) {
-                const response = await this.requestPurchasePayloadWithServer({
+                const purchasePayload = {
                     productId: entry.productId,
                     quantity: entry.quantity,
                     discountCode: entry.appliedDiscount?.code || null,
@@ -14919,10 +15110,25 @@ const ShopClient = {
                         : [],
                     productSkuId: entry.productSkuId || null,
                     agentId: this.currentAgentId,
-                    site: window.SiteConfig?.site || 'cn',
-                    idempotencyKey: this.createPurchaseIdempotencyKey()
-                }, token);
-
+                    site: window.SiteConfig?.site || 'cn'
+                };
+                // Keep the same operation after an uncertain response so a
+                // supplier retry recovers its original quote and funded order.
+                const attemptScope = JSON.stringify(purchasePayload);
+                this.cartPurchaseAttempts ||= new Map();
+                if (!this.cartPurchaseAttempts.has(attemptScope)) {
+                    this.cartPurchaseAttempts.set(attemptScope, this.createPurchaseIdempotencyKey());
+                }
+                let response;
+                try {
+                    response = await this.requestPurchasePayloadWithServer({ ...purchasePayload,
+                        idempotencyKey: this.cartPurchaseAttempts.get(attemptScope) }, token);
+                } catch (error) {
+                    if (!error.purchaseOutcomeUnknown && error.code !== 'supplier_checkout_unavailable'
+                        && error.code !== 'duplicate_submission') this.cartPurchaseAttempts.delete(attemptScope);
+                    throw error;
+                }
+                this.cartPurchaseAttempts.delete(attemptScope);
                 successes.push({ entry, response });
             }
         } catch (error) {
@@ -14933,9 +15139,13 @@ const ShopClient = {
         if (successes.length > 0) {
             successes.forEach(({ entry }) => {
                 const entryKey = String(entry.entryKey || this.buildCartEntryKey(entry.productId, entry.productSkuId || '')).trim();
+                const expectedToken = cartCheckoutTokens.get(entryKey) || null;
+                const currentToken = this.getCartLifecycleToken(entryKey);
+                if (!expectedToken || !currentToken || expectedToken !== currentToken) return;
                 const nextQuantity = (this.cartItems.get(entryKey) || 0) - Math.max(1, Number(entry.quantity || 0) || 1);
                 if (nextQuantity < 1) {
                     this.cartItems.delete(entryKey);
+                    this.forgetCartLifecycleToken(entryKey);
                     delete this.cartSnapshots[entryKey];
                 } else {
                     this.cartItems.set(entryKey, nextQuantity);
@@ -14943,6 +15153,13 @@ const ShopClient = {
             });
 
             const successPayload = this.buildCartSuccessPayload(successes);
+            const deliveredSuccesses = successes.filter(({ response }) => response?.data?.fulfillment_source !== 'supplier_v2'
+                || response.data.delivery_status === 'delivered');
+            const hasPendingSupplier = deliveredSuccesses.length < successes.length;
+            const deliveredPayload = hasPendingSupplier ? this.buildCartSuccessPayload(deliveredSuccesses) : successPayload;
+            const pendingMessage = hasPendingSupplier
+                ? (this.isEnglishShopLocale() ? 'Supplier orders accepted. Track fulfillment in wallet order records.'
+                    : '供应商订单已受理，请在钱包订单记录中查看供货进度') : null;
             const warningMessage = checkoutError
                 ? `${checkoutCopy.partialWarningPrefix}${failedEntry ? ` ${failedEntry.displayName}：` : ' '}${checkoutError.message || ''}`.trim()
                 : null;
@@ -14959,7 +15176,7 @@ const ShopClient = {
                 productId: null,
                 productName: checkoutCopy.cartCheckoutLabel,
                 productNameEn: 'Cart checkout',
-                orderId: successPayload.orderIds.join(', '),
+                orderId: deliveredPayload.orderIds.join(', '),
                 createdAt: latestCreatedAt || new Date().toISOString(),
                 quantity: successes.reduce((total, item) => total + (Number(item.entry?.quantity || 0) || 0), 0),
                 selectedDiscounts: [],
@@ -14973,13 +15190,18 @@ const ShopClient = {
             this.setCartOpen(false);
             this.clearCartAbandonEngagementTimer();
             this.renderCart();
-            this.showSuccessModal(successPayload.content, warningMessage, successPayload.usageInstructions, successPayload.items);
-            this.triggerShopOrderEngagement('order_delivered', {
-                source_event_id: `shop_cart_order_delivered:${successPayload.orderIds.join(',')}`,
+            if (deliveredSuccesses.length > 0) {
+                this.showSuccessModal(deliveredPayload.content, [warningMessage, pendingMessage].filter(Boolean).join('；') || null,
+                    deliveredPayload.usageInstructions, deliveredPayload.items);
+            } else if (pendingMessage) {
+                this.showShopToast([pendingMessage, warningMessage].filter(Boolean).join('；'), 'success');
+            }
+            if (deliveredSuccesses.length > 0) this.triggerShopOrderEngagement('order_delivered', {
+                source_event_id: `shop_cart_order_delivered:${deliveredPayload.orderIds.join(',')}`,
                 source: 'cart_checkout_success',
-                order_ids: successPayload.orderIds,
-                item_count: successPayload.items.length,
-                total_quantity: successes.reduce((total, item) => total + (Number(item.entry?.quantity || 0) || 0), 0),
+                order_ids: deliveredPayload.orderIds,
+                item_count: deliveredPayload.items.length,
+                total_quantity: deliveredSuccesses.reduce((total, item) => total + (Number(item.entry?.quantity || 0) || 0), 0),
                 remaining_points: successPayload.remainingPoints ?? null
             });
 
@@ -15195,6 +15417,8 @@ const ShopClient = {
 
             const data = await this.purchaseWithServer(token);
             const purchaseData = data.data;
+            const supplierPending = purchaseData.fulfillment_source === 'supplier_v2'
+                && purchaseData.delivery_status !== 'delivered';
             let allContents = [];
             if (purchaseData.content) {
                 // The new backend returns newline separated contents
@@ -15247,12 +15471,18 @@ const ShopClient = {
             this.closePurchaseModal();
             if (cartOriginProductId) {
                 const cartOriginEntryKey = this.buildCartEntryKey(cartOriginProductId, cartOriginSkuId);
-                const remainingCartQuantity = (this.cartItems.get(cartOriginEntryKey) || 0) - cartPurchasedQuantity;
-                if (remainingCartQuantity < 1) {
-                    this.cartItems.delete(cartOriginEntryKey);
-                    delete this.cartSnapshots[cartOriginEntryKey];
-                } else {
-                    this.cartItems.set(cartOriginEntryKey, remainingCartQuantity);
+                const cartOriginLifecycleToken = String(this.currentPurchase?.cartOrigin?.lifecycleToken || '').trim();
+                const currentLifecycleToken = this.getCartLifecycleToken(cartOriginEntryKey);
+                if (cartOriginLifecycleToken && currentLifecycleToken
+                    && cartOriginLifecycleToken === currentLifecycleToken) {
+                    const remainingCartQuantity = (this.cartItems.get(cartOriginEntryKey) || 0) - cartPurchasedQuantity;
+                    if (remainingCartQuantity < 1) {
+                        this.cartItems.delete(cartOriginEntryKey);
+                        this.forgetCartLifecycleToken(cartOriginEntryKey);
+                        delete this.cartSnapshots[cartOriginEntryKey];
+                    } else {
+                        this.cartItems.set(cartOriginEntryKey, remainingCartQuantity);
+                    }
                 }
                 this.renderCart();
             }
@@ -15274,7 +15504,11 @@ const ShopClient = {
                 })
             ];
 
-            this.showSuccessModal(finalContent, null, usageInstructions, successItems);
+            if (supplierPending) {
+                this.showShopToast(purchaseData.fulfillment_message || '订单已受理，请在钱包订单记录中查看供货进度', 'success');
+            } else {
+                this.showSuccessModal(finalContent, null, usageInstructions, successItems);
+            }
             this.purchaseProcessing = false;
 
             // Update Points UI
@@ -15322,7 +15556,7 @@ const ShopClient = {
                     eventType: 'conversion',
                     dedupeKey: String(lastOrderId || '').trim() ? `shop_purchase:${String(lastOrderId).trim()}` : ''
                 });
-                this.triggerShopOrderEngagement('order_delivered', {
+                if (!supplierPending) this.triggerShopOrderEngagement('order_delivered', {
                     source_event_id: `shop_order_delivered:${String(lastOrderId || purchasedProductId || 'unknown').trim()}`,
                     source: 'product_purchase_success',
                     order_id: lastOrderId || null,
@@ -15413,7 +15647,7 @@ const ShopClient = {
                 this.showShopToast(toastMessage, 'error');
             }
 
-            if (!isDuplicateSubmission) {
+            if (!isDuplicateSubmission && !err.purchaseOutcomeUnknown && err.code !== 'supplier_checkout_unavailable') {
                 this.currentPurchase.idempotencyKey = this.createPurchaseIdempotencyKey();
             }
 

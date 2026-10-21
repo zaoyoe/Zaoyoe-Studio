@@ -274,8 +274,18 @@ Hard prohibitions:
 
 - Do not enable guest products, guest SKUs, or the guest purchase switch as
   part of a deploy.
-- Do not execute SQL during deploy. Codex never executes SQL; new SQL must be
-  written to a file, given as an absolute path, and left for the user.
+- Do not execute SQL during deploy. Outside a deployment, Codex may execute SQL
+  through the authorized Supabase browser, CLI, API, or local database after the
+  user has explicitly authorized execution in the current conversation. Prefer
+  an isolated local/test target. Before running SQL, verify the target project
+  and environment, review the statement scope and expected effects, and preserve
+  the SQL in a file with an absolute path. For destructive or production changes,
+  verify a recoverable backup and obtain explicit confirmation for that specific
+  operation. Never print secrets or irreversible credentials. If execution fails,
+  diagnose the error and make a safe correction or retry when possible; ask the
+  administrator to assist only when permissions, platform limitations, or
+  unresolved risk prevent safe progress. Do not claim success without verifying
+  the result.
 - Do not run the guest-shop worker installer before the matching `main` commit
   is live on KVM4 Verify Server.
 - Do not pass a custom `--root` / `KVM4_ROOT` to the worker installer.

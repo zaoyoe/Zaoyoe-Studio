@@ -21,8 +21,8 @@ function cartEntry(id, guestPurchasable = true, overrides = {}) {
     };
 }
 
-function createRuntime({ entries = [cartEntry('one')], signedIn = true, cachedAuth = false, getSession } = {}) {
-    const calls = { guest: [], purchases: [], purchaseSheets: [], toasts: [], login: [], successes: [] };
+function createRuntime({ entries = [cartEntry('one')], signedIn = true, cachedAuth = false, getSession, purchase } = {}) {
+    const calls = { guest: [], purchases: [], purchaseSheets: [], toasts: [], login: [], successes: [], engagements: [], balances: [] };
     const activeClasses = new Set();
     const reviewModal = {
         classList: {
@@ -35,6 +35,7 @@ function createRuntime({ entries = [cartEntry('one')], signedIn = true, cachedAu
     const client = { auth: { getSession: getSession || (async () => ({ data: { session } })) } };
     const window = {
         SiteConfig: { site: 'cn' },
+        updateUserPointsUI: value => calls.balances.push(value),
         GuestShopCheckout: {
             async startGuestBatchCheckout(items) {
                 calls.guest.push(items);
@@ -52,7 +53,8 @@ function createRuntime({ entries = [cartEntry('one')], signedIn = true, cachedAu
     });
     const names = [
         'getCartCheckoutPaymentMode', 'resolveShopAuthState', 'openCartCheckoutModal',
-        'openPurchaseModalFromCartEntry', 'isGuestCashEntryCandidate', 'confirmCartCheckout'
+        'openPurchaseModalFromCartEntry', 'isGuestCashEntryCandidate', 'confirmCartCheckout',
+        'createCartLifecycleToken', 'ensureCartLifecycleToken', 'getCartLifecycleToken', 'forgetCartLifecycleToken'
     ];
     const methods = names.map((name) => {
         const match = source.match(new RegExp(`^    ${name}: (?:async )?function \\([^\\n]*\\) \\{[\\s\\S]*?^    \\},`, 'm'));
@@ -67,12 +69,13 @@ function createRuntime({ entries = [cartEntry('one')], signedIn = true, cachedAu
         cartCheckoutProcessing: false,
         cartItems: new Map(entries.map((entry) => [entry.entryKey, entry.quantity])),
         cartSnapshots: {},
+        cartLifecycleTokens: {},
         currentPurchase: {},
         currentAgentId: null,
         getShopSupabaseClient: () => client,
         getCartEntries: () => entries,
         getCartCopy: () => ({
-            cartEmptyToast: 'empty', mixedCheckoutToast: 'mixed',
+            cartEmptyToast: 'empty', mixedCheckoutToast: 'mixed', partialWarningPrefix: 'partial',
             authUnavailableToast: 'auth-unavailable', guestCashDiscountUnsupportedToast: 'guest-discount',
             guestCashCheckoutUnavailableToast: 'guest-unavailable', cartCheckoutLabel: 'Cart'
         }),
@@ -84,6 +87,8 @@ function createRuntime({ entries = [cartEntry('one')], signedIn = true, cachedAu
         renderCartCheckoutModal() {},
         closeCartCheckoutModal() { activeClasses.delete('active'); this.cartCheckoutProcessing = false; },
         getGuestCartCheckoutStartFailureMessage: () => 'guest-start-failed',
+        isEnglishShopLocale: () => false,
+        isInventoryStockErrorMessage: () => false,
         isShopProductManualDelivery: () => false,
         isShopProductUnavailableForCurrentSite: () => false,
         getPurchaseQuantityCapForProduct: () => 10,
@@ -106,6 +111,7 @@ function createRuntime({ entries = [cartEntry('one')], signedIn = true, cachedAu
         createPurchaseIdempotencyKey: () => `synthetic-intent-${++intentSequence}`,
         async requestPurchasePayloadWithServer(payload, token) {
             calls.purchases.push({ payload, token });
+            if (purchase) return purchase(payload, token);
             return { order_id: `synthetic-order-${payload.productId}` };
         },
         buildCartSuccessPayload: (successes) => ({
@@ -117,7 +123,7 @@ function createRuntime({ entries = [cartEntry('one')], signedIn = true, cachedAu
         loadProducts: async () => [],
         clearCartAbandonEngagementTimer() {},
         showSuccessModal: (...args) => calls.successes.push(args),
-        triggerShopOrderEngagement() {}
+        triggerShopOrderEngagement: (...args) => calls.engagements.push(args)
     });
     context.resolveShopSourceContext = () => ({ sourcePage: 'shop' });
     return { shop, calls, activeClasses };
@@ -286,4 +292,62 @@ test('repeated guest checkout clicks during session lookup start the cash review
     await Promise.all([shop.openCartCheckoutModal(), shop.openCartCheckoutModal()]);
     assert.equal(calls.guest.length, 1);
     assert.equal(calls.purchases.length, 0);
+});
+
+test('supplier pending cart success removes paid entries and refreshes balance without claiming delivery', async () => {
+    const { shop, calls } = createRuntime({ entries: [cartEntry('external')], purchase: async () => ({ data: {
+        fulfillment_source: 'supplier_v2', delivery_status: 'pending', order_id: 'funded-order'
+    } }) });
+    await shop.confirmCartCheckout();
+    assert.equal(shop.cartItems.size, 0);
+    assert.equal(calls.successes.length, 0);
+    assert.equal(calls.engagements.length, 0);
+    assert.equal(calls.balances.at(-1), 100);
+    assert.match(calls.toasts.at(-1)[0], /订单已受理/);
+});
+test('mixed local and supplier cart results show secrets and delivery engagement only for delivered items', async () => {
+    const { shop, calls } = createRuntime({ entries: [cartEntry('local'), cartEntry('external')],
+        purchase: async payload => ({ data: payload.productId === 'external'
+            ? { fulfillment_source: 'supplier_v2', delivery_status: 'pending' }
+            : { content: 'synthetic-local-delivery', order_id: 'local-order' } }) });
+    await shop.confirmCartCheckout();
+    assert.equal(shop.cartItems.size, 0);
+    assert.equal(calls.successes.length, 1);
+    assert.deepEqual(Array.from(calls.successes[0][3], item => item.productId), ['local']);
+    assert.match(calls.successes[0][1], /订单已受理/);
+    assert.equal(calls.engagements.length, 1);
+    assert.deepEqual(Array.from(calls.engagements[0][1].order_ids), ['synthetic-order-local']);
+    assert.equal(shop.currentPurchase.orderId, 'synthetic-order-local');
+});
+test('cart retry after an uncertain purchase response reuses the same operation key', async () => {
+    let attempt = 0;
+    const { shop, calls } = createRuntime({ purchase: async () => {
+        if (++attempt === 1) throw Object.assign(new Error('网络响应中断'), { purchaseOutcomeUnknown: true });
+        return { data: { fulfillment_source: 'supplier_v2', delivery_status: 'pending' } };
+    } });
+    await shop.confirmCartCheckout();
+    assert.equal(shop.cartItems.size, 1);
+    await shop.confirmCartCheckout();
+    assert.equal(shop.cartItems.size, 0);
+    assert.equal(calls.purchases.length, 2);
+    assert.equal(calls.purchases[0].payload.idempotencyKey, calls.purchases[1].payload.idempotencyKey);
+    assert.equal(shop.cartPurchaseAttempts.size, 0);
+});
+
+
+test('delivered cart secrets appear while the product refresh is still pending', async () => {
+    const { shop, calls } = createRuntime();
+    let startRefresh;
+    const refreshStarted = new Promise(resolve => { startRefresh = resolve; });
+    let releaseRefresh;
+    const refreshPending = new Promise(resolve => { releaseRefresh = resolve; });
+    shop.loadProducts = () => { startRefresh(); return refreshPending; };
+    let checkoutCompleted = false;
+    const checkout = shop.confirmCartCheckout().then(() => { checkoutCompleted = true; });
+    await refreshStarted;
+    assert.equal(calls.successes.length, 1, 'delivery modal must not wait for the product request');
+    assert.equal(checkoutCompleted, false, 'the background request is still unresolved');
+    releaseRefresh([]);
+    await checkout;
+    assert.equal(checkoutCompleted, true);
 });

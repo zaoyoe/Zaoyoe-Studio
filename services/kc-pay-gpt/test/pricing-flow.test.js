@@ -3,7 +3,8 @@ import { EventEmitter } from 'node:events';
 import { chromium } from 'playwright';
 import {
     waitForPricingContentReady, clickPlanUpgrade, observeCheckout,
-    waitForCheckoutPage, isCheckoutDestination, ensurePricingDialogVisible, waitForPricingPage
+    waitForCheckoutPage, isCheckoutDestination, ensurePricingDialogVisible, waitForPricingPage,
+    openPricingCheckout
 } from '../pricing-checkout.js';
 
 let browser;
@@ -173,10 +174,10 @@ describe('pricing readiness and precise selection', () => {
             <div role="dialog"><h2>Unrelated dialog</h2><button onclick="window.selected='unrelated'">Start now</button></div>
             <div role="dialog"><h2>Upgrade your plan</h2>
                 <section><h3>Go</h3><button onclick="window.selected='Go'">Start now</button></section>
-                <section><h3>Plus</h3><button onclick="window.selected='Plus'">Start now</button></section>
+                <section><h3>Plus</h3><p>₱1,100 / month</p><button onclick="window.selected='Plus'">Start now</button></section>
                 <section><h3>Pro</h3><button onclick="window.selected='Pro'">Start now</button></section>
             </div>`);
-        await clickPlanUpgrade(page, 'plus');
+        await clickPlanUpgrade(page, 'plus', { region: 'PH' });
         expect(await page.evaluate(() => window.selected)).toBe('Plus');
     });
     it('does not click a generic action whose container also contains another plan', async () => {
@@ -185,13 +186,13 @@ describe('pricing readiness and precise selection', () => {
         expect(await page.evaluate(() => window.selected)).toBeUndefined();
     });
     it('propagates a click failure without falling through to another plan', async () => {
-        const page = await fixture('<div role="dialog"><h2>Upgrade your plan</h2><section><h3>Plus</h3><button>Upgrade to Plus</button></section><section><h3>Go</h3><button>Start now</button></section></div>');
+        const page = await fixture('<div role="dialog"><h2>Upgrade your plan</h2><section><h3>Plus</h3><p>₱1,100 / month</p><button>Upgrade to Plus</button></section><section><h3>Go</h3><button>Start now</button></section></div>');
         const originalGetByRole = page.getByRole.bind(page);
         // Get the real locator prototype, replacing click only for the selected upgrade button.
         const proto = Object.getPrototypeOf(originalGetByRole('button').first());
         const spy = vi.spyOn(proto, 'click').mockImplementation(function () { throw new Error('click dispatched then page closed'); });
         try {
-            await expect(clickPlanUpgrade(page, 'plus')).rejects.toThrow('click dispatched');
+            await expect(clickPlanUpgrade(page, 'plus', { region: 'PH' })).rejects.toThrow('click dispatched');
             expect(spy).toHaveBeenCalledOnce();
         } finally { spy.mockRestore(); }
     });
@@ -220,10 +221,10 @@ describe('checkout request diagnostics', () => {
         state.observer.dispose();
     });
     it('reports a no-effect click without a generic navigation timeout', async () => {
-        const page = await fixture('<div role="dialog"><h2>Plus</h2><button>Upgrade to Plus</button></div>');
+        const page = await fixture('<div role="dialog"><h2>Upgrade your plan</h2><section><h3>Plus</h3><p>₱1,100 / month</p><button>Upgrade to Plus</button></section></div>');
         const observer = observeCheckout(page);
         try {
-            await clickPlanUpgrade(page, 'plus');
+            await clickPlanUpgrade(page, 'plus', { region: 'PH' });
             await expect(waitForCheckoutPage(page, 100, { observer })).rejects.toMatchObject({ code: 'CHECKOUT_NO_REQUEST' });
         } finally { observer.dispose(); }
     });
@@ -329,4 +330,130 @@ describe('checkout request diagnostics', () => {
         ['https://example.test/?next=https://checkout.stripe.com/c/pay/offline', false],
         ['http://chatgpt.com/checkout/offline', false]
     ])('validates checkout destination %s', (url, expected) => expect(isCheckoutDestination(url)).toBe(expected));
+
+    it('retries when checkout creation returns unusual-activity and succeeds on second attempt', async () => {
+        const dialogHtml = `
+            <div id="pricing" role="dialog">
+                <h2>Upgrade your plan</h2>
+                <button role="tab" aria-selected="true">Personal</button>
+                <button id="billing">Philippines</button>
+                <section>
+                    <h3>Plus</h3>
+                    <p>₱1,100 / month</p>
+                    <button id="upgrade">Upgrade to Plus</button>
+                </section>
+            </div>
+            <script>
+                let attempts = 0;
+                document.getElementById('upgrade').onclick = async () => {
+                    attempts++;
+                    const res = await fetch('/backend-api/payments/checkout', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ attempt: attempts })
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        window.location.href = data.url;
+                    }
+                };
+            </script>
+        `;
+        const page = await fixture('<h1>temp</h1>');
+        await page.goto('https://chatgpt.com/#pricing');
+        await page.setContent(dialogHtml);
+
+        let callCount = 0;
+        await page.context().route('**/backend-api/payments/checkout', route => {
+            callCount++;
+            if (callCount === 1) {
+                return route.fulfill({
+                    status: 400,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ error: { message: 'Our systems have detected unusual activity. Please try again later.' } })
+                });
+            }
+            return route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ url: 'https://chatgpt.com/checkout/offline' })
+            });
+        });
+
+        const url = await openPricingCheckout(page, { region: 'PH', planType: 'plus', skipPreflight: true });
+        expect(url).toBe('https://chatgpt.com/checkout/offline');
+        expect(callCount).toBe(2);
+    });
+
+    it('throws CHECKOUT_UNUSUAL_ACTIVITY when all retry attempts fail', async () => {
+        const dialogHtml = `
+            <div id="pricing" role="dialog">
+                <h2>Upgrade your plan</h2>
+                <button role="tab" aria-selected="true">Personal</button>
+                <button id="billing">Philippines</button>
+                <section>
+                    <h3>Plus</h3>
+                    <p>₱1,100 / month</p>
+                    <button id="upgrade">Upgrade to Plus</button>
+                </section>
+            </div>
+            <script>
+                document.getElementById('upgrade').onclick = () => {
+                    fetch('/backend-api/payments/checkout', { method: 'POST' });
+                };
+            </script>
+        `;
+        const page = await fixture('<h1>temp</h1>');
+        await page.goto('https://chatgpt.com/#pricing');
+        await page.setContent(dialogHtml);
+
+        let callCount = 0;
+        await page.context().route('**/backend-api/payments/checkout', route => {
+            callCount++;
+            return route.fulfill({
+                status: 400,
+                contentType: 'application/json',
+                body: JSON.stringify({ error: { message: 'Our systems have detected unusual activity. Please try again later.' } })
+            });
+        });
+
+        await expect(openPricingCheckout(page, { region: 'PH', planType: 'plus', skipPreflight: true }))
+            .rejects.toMatchObject({ code: 'CHECKOUT_UNUSUAL_ACTIVITY' });
+        expect(callCount).toBe(2);
+    });
+
+    it('actively hijacks and navigates to captured checkoutUrl when SPA routing is stalled after HTTP 200', async () => {
+        const dialogHtml = `
+            <div id="pricing" role="dialog">
+                <h2>Upgrade your plan</h2>
+                <button role="tab" aria-selected="true">Personal</button>
+                <button id="billing">Philippines</button>
+                <section>
+                    <h3>Plus</h3>
+                    <p>₱1,100 / month</p>
+                    <button id="upgrade">Upgrade to Plus</button>
+                </section>
+            </div>
+            <script>
+                document.getElementById('upgrade').onclick = () => {
+                    // Client does not redirect, simulating stalled SPA routing
+                    fetch('/backend-api/payments/checkout', { method: 'POST' });
+                };
+            </script>
+        `;
+        const page = await fixture('<h1>temp</h1>');
+        await page.goto('https://chatgpt.com/#pricing');
+        await page.setContent(dialogHtml);
+
+        await page.context().route('**/backend-api/payments/checkout', route => {
+            return route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ url: 'https://chatgpt.com/checkout/hijacked-success' })
+            });
+        });
+
+        const url = await openPricingCheckout(page, { region: 'PH', planType: 'plus', skipPreflight: true });
+        expect(url).toBe('https://chatgpt.com/checkout/hijacked-success');
+    });
 });

@@ -85,7 +85,7 @@ async function run(page, cardAttempt = 1) {
     const states = [];
     const result = await completeStripeCardPayment(page, card, {
         line1: '123 Fixture Street', city: 'Fixture', state: 'OR', postal_code: '97000', country: 'US'
-    }, { holderName: 'Offline Customer', email: 'offline@example.test', cardAttempt,
+    }, { holderName: 'Offline Customer', email: 'offline@example.test', cardAttempt, platform: 'chatgpt', paymentCurrency: 'USD',
         onPaymentAttemptStarted: async () => states.push('started') });
     if (result.screenshot) screenshots.push(result.screenshot);
     return { result, states };

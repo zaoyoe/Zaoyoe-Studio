@@ -586,6 +586,36 @@ function buildOrderProfitAttribution(order = {}, linkedInventoryItems = [], opti
         notes.push('订单没有精确关联库存，无法归因采购成本。');
     }
 
+    if (order.fulfillment_source === 'supplier_v2') {
+        const settlement = options.supplierSettlement;
+        const hasVerifiedCost = settlement?.nativeOrderId === order.id && settlement?.site === order.site
+            && settlement?.fundingKind === 'points' && settlement?.costVerified === true
+            && typeof settlement?.actualCostCny === 'string' && /^\d{1,12}(?:\.\d{1,6})?$/.test(settlement.actualCostCny);
+        const delivered = hasVerifiedCost && settlement.deliveryState === 'delivered' && order.delivery_status === 'delivered';
+        return {
+            basis: spendBreakdown.basis, currency: 'CNY', points_to_cny_rate: 1,
+            revenue_points: paidPoints, gross_points: grossPoints, discount_points: discountPoints,
+            paid_points_spent: spendBreakdown.paid_points_spent,
+            bonus_points_spent: spendBreakdown.bonus_points_spent,
+            recognized_revenue_cny: delivered ? roundNumber(recognizedRevenueCny, 4) : null,
+            revenue_recognition_status: delivered ? spendBreakdown.status : 'supplier_pending',
+            revenue_recognition_confidence: spendBreakdown.confidence,
+            purchase_cost_cny: hasVerifiedCost ? Number(settlement.actualCostCny) : null,
+            supplier_actual_debit_cny: hasVerifiedCost ? settlement.actualCostCny : null,
+            recognized_cost_cny: null, net_profit_cny: null, margin_rate: null,
+            cost_coverage: hasVerifiedCost ? 'supplier_verified' : 'supplier_pending',
+            cost_status: hasVerifiedCost ? 'supplier_cost_recorded' : 'awaiting_supplier_cost',
+            profit_ledger_entries: [], profit_ledger_status: 'incomplete',
+            point_lot_consumption_summary: spendBreakdown.point_lot_consumption_summary || null,
+            point_source_traceability: pointSourceTraceability,
+            refunded_points: refundedPoints, refunded, tone: 'neutral',
+            inventory_item_count: 0, costed_item_count: 0, missing_cost_item_count: 1, item_costs: [],
+            notes: [hasVerifiedCost
+                ? '已核验并记录供应商实际扣费；专用外采利润账与售后结算尚未接入，暂不确认净利润。风险占用不计作采购成本。'
+                : '供应商实际采购成本尚未核定，暂不确认成本与净利润。风险占用不计作采购成本。']
+        };
+    }
+
     return {
         basis: spendBreakdown.basis,
         points_to_cny_rate: 1,

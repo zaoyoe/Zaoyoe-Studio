@@ -181,6 +181,7 @@
         ,batchMode: false
         ,batchEntries: []
         ,batchTotal: null
+        ,cartLineToken: ''
         ,paymentConfirmationPending: false
     };
 
@@ -571,6 +572,7 @@
         confirmed: 'payment',
         paid_unfulfillable: 'payment',
         dead_letter: 'payment',
+        customer_resolved: 'payment',
         delivered: 'delivery'
     };
     const ORDER_STATUS_LABELS = {
@@ -595,12 +597,13 @@
         partial: '少付待处理',
         delivered: '已发货',
         error: '需要处理',
-        manual_review: '人工处理中'
+        manual_review: '人工处理中',
+        customer_resolved: '已完结'
     };
 
     const TERMINAL_PAYMENT_STATUSES = new Set([
         'failed', 'expired', 'refunded', 'chargeback', 'cancelled', 'canceled',
-        'amount_mismatch', 'overpaid', 'partial'
+        'amount_mismatch', 'overpaid', 'partial', 'customer_resolved'
     ]);
 
     function orderStatusMessage(status) {
@@ -618,7 +621,16 @@
         return messages[status] || '订单状态需要人工处理，请保留订单号。';
     }
 
-    function deriveOrderDisplayStatus(paymentStatus, fulfillmentStatus, refundStatus, lastErrorCode) {
+    function customerResolutionMessage(order) {
+        const result = order?.customer_resolution;
+        if (order?.fulfillment_source !== 'supplier_v2' || result?.status !== 'compensated'
+            || result.method !== 'manual_compensation' || typeof result.message !== 'string'
+            || result.message.trim().length < 8 || result.message.length > 500) return '';
+        return result.message;
+    }
+
+    function deriveOrderDisplayStatus(paymentStatus, fulfillmentStatus, refundStatus, lastErrorCode, order = null) {
+        if (customerResolutionMessage(order)) return 'customer_resolved';
         const payment = normalizeText(paymentStatus, 80).toLowerCase();
         const fulfillment = normalizeText(fulfillmentStatus, 80).toLowerCase();
         const refund = normalizeText(refundStatus, 80).toLowerCase();
@@ -948,12 +960,14 @@
                     ? record.batchEntries.map((entry) => ({
                         productId: normalizeText(entry?.productId, 100),
                         skuId: normalizeText(entry?.skuId || entry?.productSkuId, 100),
+                        cartLineToken: normalizeText(entry?.cartLineToken, 100),
                         quantity: Math.max(1, Math.min(99, Number.parseInt(String(entry?.quantity || 1), 10) || 1)),
                         productName: normalizeText(entry?.productName || entry?.displayName, 240),
                         skuName: normalizeText(entry?.skuName || entry?.displaySkuName, 240)
                     })).filter((entry) => entry.productId && entry.skuId)
                     : [],
                 batchTotal: roundMoneyAmount(record?.batchTotal),
+                cartLineToken: normalizeText(record?.cartLineToken, 100),
                 expiresAt: normalizeText(record?.expiresAt, 80),
                 provider: normalizeText(record?.provider, 80).toLowerCase(),
                 channel: normalizeText(record?.channel, 80).toLowerCase(),
@@ -979,11 +993,13 @@
         state.batchEntries = Array.isArray(parsed.batchEntries) ? parsed.batchEntries.map((entry) => ({
             productId: normalizeText(entry?.productId, 100),
             skuId: normalizeText(entry?.skuId || entry?.productSkuId, 100),
+            cartLineToken: normalizeText(entry?.cartLineToken, 100),
             quantity: Math.max(1, Math.min(99, Number.parseInt(String(entry?.quantity || 1), 10) || 1)),
             productName: normalizeText(entry?.productName || entry?.displayName, 240),
             skuName: normalizeText(entry?.skuName || entry?.displaySkuName, 240)
         })).filter((entry) => entry.productId && entry.skuId) : [];
         state.batchTotal = roundMoneyAmount(parsed.batchTotal);
+        state.cartLineToken = normalizeText(parsed.cartLineToken, 100);
         state.checkoutIntentId = checkoutIntentId(parsed.intentId);
         state.site = normalizeSite(parsed.site);
         state.productId = normalizeText(parsed.productId, 100);
@@ -1072,6 +1088,7 @@
         state.site = normalizeSite(window.SiteConfig?.site);
         state.productId = '';
         state.skuId = '';
+        state.cartLineToken = '';
         state.expiresAt = '';
         state.provider = '';
         state.channel = '';
@@ -1084,6 +1101,7 @@
         state.fulfillmentStatus = '';
         state.fulfilledAt = '';
         state.refundStatus = '';
+        state.cartLineToken = '';
         state.deliveryCopied = false;
         state.status = 'checking';
         if (state.checkoutIntentId) acknowledgeCheckoutIntent(state.checkoutIntentId);
@@ -2679,6 +2697,7 @@
         return (Array.isArray(entries) ? entries : []).map((entry) => ({
             productId: normalizeText(entry?.productId, 100),
             skuId: normalizeText(entry?.productSkuId || entry?.skuId, 100),
+            cartLineToken: normalizeText(entry?.cartLifecycleToken || entry?.cartLineToken, 100),
             quantity: Math.max(1, Math.min(99, Number.parseInt(String(entry?.quantity || 1), 10) || 1)),
             productName: normalizeText(entry?.displayName, 240),
             skuName: normalizeText(entry?.displaySkuName, 240)
@@ -2730,6 +2749,7 @@
         state.batchMode = true;
         state.batchEntries = normalized;
         state.batchTotal = null;
+        state.cartLineToken = '';
         state.orderNo = '';
         state.checkout = null;
         state.paymentConfirmed = false;
@@ -3352,6 +3372,7 @@
         state.batchMode = false;
         state.batchEntries = [];
         state.batchTotal = null;
+        state.cartLineToken = '';
         state.checkoutIntentId = '';
         state.expiresAt = '';
         state.provider = '';
@@ -3363,6 +3384,7 @@
         state.fulfillmentStatus = '';
         state.fulfilledAt = '';
         state.refundStatus = '';
+        state.cartLineToken = '';
         state.status = 'error';
         state.confirmedPricing = null;
         state.batchPreviewPricing = null;
@@ -3771,6 +3793,7 @@
         state.fulfillmentStatus = '';
         state.fulfilledAt = '';
         state.refundStatus = '';
+        state.cartLineToken = '';
         state.deliveryCopied = false;
         state.status = 'configure';
         state.confirmedPricing = null;
@@ -4082,6 +4105,7 @@
         state.batchMode = false;
         state.batchEntries = [];
         state.batchTotal = null;
+        state.cartLineToken = '';
         state.checkoutIntentId = '';
         state.expiresAt = '';
         state.provider = '';
@@ -4759,12 +4783,15 @@
                             ? (Array.isArray(payload.items) ? payload.items.map((item) => ({
                                 productId: normalizeText(item?.product_id, 100),
                                 skuId: normalizeText(item?.sku_id, 100),
-                                quantity: Math.max(1, Number.parseInt(String(item?.quantity || 1), 10) || 1)
+                                quantity: Math.max(1, Number.parseInt(String(item?.quantity || 1), 10) || 1),
+                                lifecycleToken: state.batchEntries.find((entry) => entry.productId === normalizeText(item?.product_id, 100)
+                                    && entry.skuId === normalizeText(item?.sku_id, 100))?.cartLineToken || ''
                             })) : [])
                             : undefined,
                         productId: state.productId,
                         skuId: state.skuId,
-                        quantity: normalizeQuantity(state.quantity)
+                        quantity: normalizeQuantity(state.quantity),
+                        lifecycleToken: state.cartLineToken
                     }
                 }));
             }
@@ -4856,6 +4883,8 @@
             setStateMessage('查询完成：订单已付款并已发货。', 'delivered');
         } else if (['paid_unfulfillable', 'dead_letter', 'payment_creation_unknown'].includes(state.status)) {
             setStateMessage(`查询完成：${state.stateMessage}`, state.status);
+        } else if (status === 'customer_resolved') {
+            setStateMessage(state.stateMessage, 'customer_resolved');
         } else if (payment === 'confirmed') {
             setStateMessage(
                 fulfillment === 'failed'
@@ -4992,7 +5021,8 @@
                     paymentStatus,
                     fulfillmentStatus,
                     state.refundStatus,
-                    normalizeText(order.last_error_code, 120).toLowerCase()
+                    normalizeText(order.last_error_code, 120).toLowerCase(),
+                    order
                 );
                 const responseCheckout = payload?.checkout;
                 const currentCheckoutDetails = state.checkout ? checkoutDetails(state.checkout) : null;
@@ -5043,7 +5073,15 @@
                     state.paymentCreationUnknown = false;
                     syncAbandonOrderButton();
                 }
-                if (displayStatus === 'payment_confirmation_pending') {
+                if (displayStatus === 'customer_resolved') {
+                    suppressUnsafeCheckout();
+                    stopZpayCountdown();
+                    state.paymentCreationUnknown = false;
+                    setStateMessage(customerResolutionMessage(order), 'customer_resolved');
+                    retryCheckoutIntentAcknowledgement();
+                    clearStoredCheckoutAfterAcknowledgement();
+                    shouldContinue = false;
+                } else if (displayStatus === 'payment_confirmation_pending') {
                     showBatchConfirmationPending();
                     shouldContinue = false;
                 } else if (missingNowpaymentsCheckout) {
@@ -5366,7 +5404,8 @@
             shouldOpen = null,
             discountCode = '',
             replaceDiscountCode = false,
-            quantity = 1
+            quantity = 1,
+            cartLineToken = ''
         } = {}
     ) {
         const handoffCode = String(discountCode ?? '').trim().toUpperCase();
@@ -5407,6 +5446,7 @@
                 generation: ++state.discountHandoffGeneration
             };
         }
+        state.cartLineToken = normalizeText(cartLineToken, 100);
         state.previewPending = true;
         openGuestModal(context, {
             deferScrollLock,
@@ -5625,7 +5665,8 @@
                 paymentStatus,
                 fulfillmentStatus,
                 normalizeText(restoredOrder.refund_status, 80).toLowerCase(),
-                normalizeText(restoredOrder.last_error_code, 120).toLowerCase()
+                normalizeText(restoredOrder.last_error_code, 120).toLowerCase(),
+                restoredOrder
             );
             if (restoredDisplayStatus === 'failed') {
                 clearFailedCheckoutContext();

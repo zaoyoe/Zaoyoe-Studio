@@ -30,6 +30,8 @@ test('wallet shop order detail reads route through PointsService cache and modal
         'buildWalletShopOrderPreviewMarkup(orderId = \'\', previewOrder = {})',
         'const previewOrder = this.findShopOrderPreview(orderId);',
         'pointsService?.peekWalletShopOrderDetail?.({ orderId })',
+        "const isSupplierPreview = previewOrder?.fulfillment_source === 'supplier_v2'",
+        "await pointsService.getWalletShopOrderDetail({ orderId, force: true })",
         'await pointsService.getWalletShopOrderDetail({ orderId })'
     ];
 
@@ -38,13 +40,17 @@ test('wallet shop order detail reads route through PointsService cache and modal
     }
 });
 
-test('shop order detail handler skips unnecessary item lookups and parallelizes guidance loading', () => {
+test('shop order detail handler skips local item lookups for supplier orders and keeps guidance and delivery parallel', () => {
     const shopHandlerSource = readRepoFile('server/api-handlers/public/shop.js');
 
     const markers = [
-        "const needsOrderItems = normalizedItemCount > 1 || !String(order?.inventory_id || '').trim();",
+        "const isSupplierOrder = order.fulfillment_source === 'supplier_v2';",
+        "const needsOrderItems = !isSupplierOrder && (normalizedItemCount > 1 || !String(order?.inventory_id || '').trim());",
+        'const orderItemsPromise = needsOrderItems',
         'const guidancePromise = (async () => {',
-        'const [orderItems, guidance] = await Promise.all(['
+        'const [orderItems, guidance, supplierDelivery] = await Promise.all([',
+        'orderItemsPromise,\n            guidancePromise,',
+        'isSupplierOrder ? loadCustomerDelivery(dataSupabase, {'
     ];
 
     for (const marker of markers) {

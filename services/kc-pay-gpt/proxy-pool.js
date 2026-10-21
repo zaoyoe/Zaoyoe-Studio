@@ -13,11 +13,19 @@ function substituteProxySession(rawProxy) {
     if (!rawProxy) {
         return rawProxy;
     }
-    if (!/\{session\}/i.test(rawProxy)) {
-        return rawProxy;
-    }
     const sid = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-    return rawProxy.replace(/\{session\}/gi, sid);
+    const numSid = String(Math.floor(10000000 + Math.random() * 90000000));
+    let replaced = rawProxy;
+    if (/\{session\}/i.test(replaced)) {
+        replaced = replaced.replace(/\{session\}/gi, numSid);
+    } else if (/-session-[a-zA-Z0-9_]+(?=[-:@/]|$)/i.test(replaced)) {
+        // 自动兼容形如 -session-29028475- 的固定动态住宅 session，替换为全新 8 位随机 session，避免重复使用相同节点
+        replaced = replaced.replace(/-session-[a-zA-Z0-9_]+(?=[-:@/]|$)/i, `-session-${numSid}`);
+    }
+    if (/-sid-[a-zA-Z0-9_-]+-t-/i.test(replaced)) {
+        replaced = replaced.replace(/-sid-[a-zA-Z0-9_-]+-t-/i, `-sid-${sid}-t-`);
+    }
+    return replaced;
 }
 
 function maskProxyUrl(url) {
@@ -142,6 +150,11 @@ async function testProxyUrl(raw, options = {}) {
  * @returns {boolean}
  */
 function matchProxyRegion(proxyUrl, label, targetRegion) {
+    if (proxyUrl && typeof proxyUrl === 'object' && targetRegion === undefined) {
+        targetRegion = label;
+        label = proxyUrl.label || '';
+        proxyUrl = proxyUrl.proxy_url || proxyUrl.url || '';
+    }
     if (!targetRegion) return true;
     const code = String(targetRegion).trim().toUpperCase();
     if (!code) return true;

@@ -1,14 +1,17 @@
 'use strict';
 const { grokError } = require('./grok-checkout-state');
 const { checkoutDialog, uniqueVisible, visibleMatches, waitNativeCheckoutReady, assertNativeCheckoutReady } = require('./grok-native-checkout');
-const { fillNativeBilling, assertNativeBilling } = require('./grok-native-billing');
+const { fillNativeBilling, assertNativeBilling, closeAddressSuggestions } = require('./grok-native-billing');
 const { waitNativeTaxReady } = require('./grok-native-tax');
 const { normalizeNativeBillingAddress } = require('./grok-billing-address');
 const { hasAnyCheckoutCaptchaSignal, clearHumanVerification } = require('./human-verification');
 
+const PAYMENT_LOAD_ERROR_PATTERN = /payment options couldn['’]?t load|(?:无法加载|未能加载)(?:支付|付款)(?:选项|方式)|(?:支付|付款)(?:选项|方式)加载失败/i;
+
 async function nativeCardFields(page, { timeoutMs = 12000, select = false } = {}) {
-    const deadline = Date.now() + timeoutMs;
+    let deadline = Date.now() + timeoutMs;
     const selectedFrames = new Set();
+    let retries = 0, nextRetryAt = 0;
     do {
         if (page.isClosed()) throw grokError('GROK_FORM_UNCONFIRMED', '银行卡表单页面已关闭');
         const candidates = [];
@@ -47,6 +50,26 @@ async function nativeCardFields(page, { timeoutMs = 12000, select = false } = {}
         }
         if (candidates.length > 1) throw grokError('GROK_FORM_UNCONFIRMED', '存在多个可见 Stripe 银行卡表单');
         if (candidates[0]) return candidates[0];
+        if (select && retries < 2 && Date.now() >= nextRetryAt && Date.now() < deadline) {
+            const dialog = await checkoutDialog(page).catch(() => null);
+            const hasLoadError = dialog && await dialog.evaluate((el, pattern) => {
+                const visible = node => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden';
+                const regex = new RegExp(pattern, 'i');
+                return [...el.querySelectorAll('p,div,span,[role="alert"]')].some(node =>
+                    visible(node) && String(node.innerText || '').length <= 240 && regex.test(node.innerText || ''));
+            }, PAYMENT_LOAD_ERROR_PATTERN.source).catch(() => false);
+            if (hasLoadError) {
+                const retryButtons = await visibleMatches(dialog.getByRole('button', { name: /^(Retry|重试|Try again)$/i }));
+                if (retryButtons.length > 1) throw grokError('GROK_FORM_UNCONFIRMED', '支付方式重试按钮存在多个匹配');
+                if (retryButtons.length === 1 && await retryButtons[0].isEnabled()) {
+                    ++retries;
+                    nextRetryAt = Date.now() + 1500;
+                    console.log(`[Grok] 官方支付选项加载失败，点击重试 (${retries}/2)...`);
+                    await retryButtons[0].click({ timeout: Math.min(3000, Math.max(1, deadline - Date.now())) });
+                    deadline = Math.max(deadline, Date.now() + Math.min(timeoutMs, 15000));
+                }
+            }
+        }
         if (Date.now() < deadline) await page.waitForTimeout(Math.min(120, deadline - Date.now()));
     } while (Date.now() < deadline);
     throw grokError('GROK_FORM_UNCONFIRMED', '官方 Stripe 银行卡字段未就绪，尚未提交支付');
@@ -55,7 +78,7 @@ function cardValues(card, helpers) {
     return [helpers.normalizeCardNumber(card.number), helpers.normalizeCardExpiry(card.expiry), String(card.cvc).trim()];
 }
 async function fillNativeCard(page, card, helpers) {
-    const fields = await nativeCardFields(page, { select: true });
+    const fields = await nativeCardFields(page, { select: true, timeoutMs: 25000 });
     const values = cardValues(card, helpers);
     for (let i = 0; i < fields.length; i++) { await fields[i].fill(values[i], { timeout: 4000 }); await fields[i].press('Tab', { timeout: 4000 }); }
     await assertNativeCard(page, card, helpers);
@@ -76,6 +99,7 @@ async function isTermsConfirmed(checkbox) {
 
 async function acceptNativeTerms(page) {
     const dialog = await checkoutDialog(page);
+    await closeAddressSuggestions(page, dialog);
     const labels = dialog.locator('label').filter({ has: page.locator('a[href="https://x.ai/legal/bundled-subscription-terms?us=unified"]') });
     const label = await uniqueVisible(labels, '新版订阅条款');
     const text = await label.innerText();
@@ -92,8 +116,25 @@ async function acceptNativeTerms(page) {
         checkbox = await uniqueVisible(label.getByRole('checkbox'), '订阅条款复选框');
     }
     if (!await isTermsConfirmed(checkbox)) await checkbox.click({ timeout: 3000 });
+    await closeAddressSuggestions(page, dialog);
     if (!await isTermsConfirmed(checkbox)) throw grokError('GROK_FORM_UNCONFIRMED', '订阅条款未被确认');
     return checkbox;
+}
+const SUBMIT_BUTTON_NAME = /^(订阅并付款|订阅并支付|Subscribe\s*(?:&|and)\s*Pay)$/i;
+async function nativeSubmitButton(page, { timeoutMs = 3000 } = {}) {
+    const deadline = Date.now() + timeoutMs;
+    let dialog;
+    do {
+        dialog = await checkoutDialog(page);
+        await closeAddressSuggestions(page, dialog);
+        const matches = await visibleMatches(dialog.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
+        if (matches.length > 1) throw grokError('GROK_ENTRY_AMBIGUOUS', '订阅付款按钮 无法唯一确认，尚未提交支付');
+        if (matches.length === 1) return matches[0];
+        if (Date.now() < deadline) await page.waitForTimeout(Math.min(80, Math.max(1, deadline - Date.now())));
+    } while (Date.now() < deadline);
+    dialog = await checkoutDialog(page);
+    await closeAddressSuggestions(page, dialog);
+    return uniqueVisible(dialog.getByRole('button', { name: SUBMIT_BUTTON_NAME }), '订阅付款按钮');
 }
 const NATIVE_DECLINE_PATTERNS = /your payment method was declined|your card (?:was|has been) declined|card (?:was|has been) declined|payment (?:method )?(?:was )?declined|insufficient funds|do not honor|银行卡被拒绝|支付方式被拒绝|付款方式已被拒绝/i;
 
@@ -171,9 +212,14 @@ async function completeGrokCommercePayment(page, card, address, options, helpers
         stage = 'terms';
         const checkbox = await acceptNativeTerms(page);
         stage = 'submit_ready';
-        const dialog = await checkoutDialog(page);
-        const button = await uniqueVisible(dialog.getByRole('button', { name: /^(订阅并付款|订阅并支付|Subscribe\s*(?:&|and)\s*Pay)$/i }), '订阅付款按钮');
-        await button.click({ trial: true, timeout: 5000 });
+        let button = await nativeSubmitButton(page);
+        try {
+            await button.click({ trial: true, timeout: 5000 });
+        } catch (error) {
+            if (error?.name !== 'TimeoutError' || !await closeAddressSuggestions(page, await checkoutDialog(page))) throw error;
+            button = await nativeSubmitButton(page);
+            await button.click({ trial: true, timeout: 5000 });
+        }
         await assertNativeBilling(page, billing); await assertNativeCard(page, card, helpers);
         due = await assertNativeCheckoutReady(page, observer, { final: true });
         stage = 'persist';
@@ -182,6 +228,7 @@ async function completeGrokCommercePayment(page, card, address, options, helpers
         stage = 'pre_submit';
         // Recheck after asynchronous persistence, then bind the exact cart before
         // this one UI click. Subsequent uncertainty never authorizes another click.
+        button = await nativeSubmitButton(page, { timeoutMs: 1500 });
         await assertNativeBilling(page, billing); await assertNativeCard(page, card, helpers);
         due = await assertNativeCheckoutReady(page, observer, { final: true });
         if (!await isTermsConfirmed(checkbox)) throw grokError('GROK_FORM_UNCONFIRMED', '提交前订阅条款状态发生变化');

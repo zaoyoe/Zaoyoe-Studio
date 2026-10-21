@@ -780,6 +780,7 @@
             const badges = createNode('div', 'guest-orders-item-badges');
             badges.appendChild(createPaymentBadge(payment));
             badges.appendChild(createBadge(PAYMENT_LABELS, order.payment_status));
+            if (order.customer_resolution) badges.appendChild(createNode('span', 'guest-orders-badge', '已完结'));
             top.appendChild(badges);
 
             item.appendChild(top);
@@ -825,6 +826,7 @@
             body.appendChild(priceCol);
 
             item.appendChild(body);
+            if (order.customer_resolution?.message) item.appendChild(createNode('p', 'guest-orders-item-pending-notice', order.customer_resolution.message));
 
             // Warning hint if order is still pending/created
             if (normalizeText(order.payment_status).toLowerCase() === 'pending'
@@ -1209,6 +1211,10 @@
             ['优惠金额', discountData, false, 'discount-amount'],
             ['实付金额', paidText, false, 'paid-amount']
         ];
+        if (detail.customer_resolution) {
+            fields.push(['订单状态', '已完结', false, 'resolution-status']);
+            fields.push(['完结说明', detail.customer_resolution.message, false, 'resolution-note']);
+        }
         if (normalizeText(detail.refund_status) && normalizeText(detail.refund_status) !== 'none') {
             fields.push(['退款状态', normalizeText(detail.refund_status, 40), false, 'refund-status']);
         }

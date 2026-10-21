@@ -1657,10 +1657,11 @@ test('closing during create keeps a late success out of the hidden view but pers
     assert.equal(calls.filter((pathname) => pathname.endsWith('/status')).length, 0);
     const saved = runtime.sessionStorage.snapshot(STORAGE_KEY);
     assert.deepEqual(Object.keys(saved).sort(), [
-        'batchEntries', 'batchMode', 'batchTotal', 'channel', 'expiresAt',
+        'batchEntries', 'batchMode', 'batchTotal', 'cartLineToken', 'channel', 'expiresAt',
         'intentId', 'orderNo', 'productId', 'provider', 'savedAt', 'site',
         'skuId', 'version'
     ]);
+    assert.equal(saved.cartLineToken, '');
     assert.equal(saved.productId, currentPurchase.productId);
     assert.equal(saved.skuId, currentPurchase.productSkuId);
     assert.equal(Object.hasOwn(saved, 'recoveryCode'), false);
@@ -2950,5 +2951,59 @@ for (const scenario of ['unavailable', 'mismatched', 'expired']) {
         await flushEventLoop();
         assert.equal(runtime.checkoutActions().filter(item => ['prepare', 'commit'].includes(item.action)).length, 0);
         assert.equal(runtime.element('guestCashCreateOrderBtn').disabled, false);
+    });
+}
+
+for (const entry of ['active checkout', 'provider return']) {
+    test(`supplier compensation from ${entry} shows the public note, hides payment and stops all automatic work`, async () => {
+        const currentPurchase = purchase();
+        const orderNo = 'GUEST-SUPPLIER-CLOSED';
+        const message = '原订单已完成补偿，请核对收款记录。';
+        const requests = [];
+        let createCalls = 0;
+        const runtime = createRuntime({
+            purchase: currentPurchase,
+            ...(entry === 'provider return' ? {
+                locationHref: `https://www.fatherkey.com/shop.html?order_no=${orderNo}`
+            } : {}),
+            fetchImpl: async (url) => {
+                const parsed = new URL(url, 'https://www.fatherkey.com');
+                requests.push(parsed.pathname);
+                if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
+                if (parsed.pathname.endsWith('/orders')) {
+                    createCalls++;
+                    return jsonResponse(createOrderPayload(orderNo, currentPurchase));
+                }
+                if (parsed.pathname.endsWith('/status')) return jsonResponse(statusPayload(orderNo, currentPurchase, {
+                    fulfillment_source: 'supplier_v2', payment_status: 'confirmed',
+                    fulfillment_status: 'failed', refund_status: 'none',
+                    customer_resolution: { status: 'compensated', method: 'manual_compensation',
+                        message, resolved_at: '2026-10-19T10:00:00Z' }
+                }));
+                throw new Error(`Unexpected request after customer closure: ${parsed.pathname}`);
+            }
+        });
+        if (entry === 'active checkout') {
+            await openCheckout(runtime, currentPurchase);
+            clickPaymentOption(runtime);
+        }
+        await waitFor(() => runtime.element('guestCashState').dataset.state === 'customer_resolved');
+        await flushEventLoop();
+        assert.equal(runtime.element('guestCashState').textContent, message);
+        assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
+        assert.equal(runtime.element('guestCashZpayPanel').hidden, true);
+        assert.equal(runtime.element('guestCashZpayQrImage').src, '');
+        assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, true);
+        assert.equal(runtime.element('guestCashConfigurePanel').hidden, true);
+        assert.equal(runtime.element('guestCashPurchaseDialog').dataset.phase, 'payment');
+        assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY), null);
+        assert.deepEqual(runtime.scheduledTasks(), []);
+        const requestsAfterClose = requests.length;
+        await runtime.runImmediateTimers();
+        await flushEventLoop();
+        assert.equal(requests.length, requestsAfterClose);
+        assert.equal(createCalls, entry === 'active checkout' ? 1 : 0);
+        assert.equal(requests.some(path => /\/(claim|cancel)$/.test(path)), false);
+        assert.equal(requests.filter(path => path.endsWith('/status')).length, 1);
     });
 }

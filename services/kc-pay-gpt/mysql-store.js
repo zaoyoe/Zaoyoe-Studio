@@ -7,7 +7,8 @@ const {
     hashProxyUrl,
     parseProxyMeta,
     normalizeProxyLines,
-    maskProxyUrl
+    maskProxyUrl,
+    matchProxyRegion
 } = require('./proxy-pool');
 const { normalizeCaptchaPlatformApiUrl, DEFAULT_API_URL: CAPTCHA_PLATFORM_DEFAULT_URL, resolveCaptchaPlatformCredentials } = require('./captcha-platform');
 const { encryptSessionPayload, decryptSessionPayload, fingerprintSessionPayload, redactSensitiveText } = require('./session-security');
@@ -1455,6 +1456,25 @@ async function getActivationAttemptLimit(scopeType, scopeKey) {
     return rows[0] || null;
 }
 
+async function setActivationAttemptCooldown(scopeType, scopeKey, minutes = 10) {
+    const type = String(scopeType || '').trim();
+    const key = String(scopeKey || '').trim();
+    const duration = Number(minutes);
+    if (!type || type.length > 16 || !key || key.length > 128) {
+        throw new Error('激活冷却范围无效');
+    }
+    if (!Number.isInteger(duration) || duration < 1 || duration > 1440) {
+        throw new Error('激活冷却时长无效');
+    }
+    await runExecute(
+        `INSERT INTO activation_attempt_limits (scope_type, scope_key, fail_count, cooldown_until)
+         VALUES (?, ?, 0, DATE_ADD(CURRENT_TIMESTAMP, INTERVAL ? MINUTE))
+         ON DUPLICATE KEY UPDATE fail_count = 0,
+             cooldown_until = GREATEST(COALESCE(cooldown_until, CURRENT_TIMESTAMP), DATE_ADD(CURRENT_TIMESTAMP, INTERVAL ? MINUTE))`,
+        [type, key, duration, duration]
+    );
+}
+
 async function recordActivationAttemptFailure(scopeType, scopeKey) {
     await runExecute(
         `INSERT INTO activation_attempt_limits (scope_type, scope_key, fail_count, cooldown_until)
@@ -1994,6 +2014,20 @@ async function deleteProxyAsset(id) {
     return { success: true };
 }
 
+async function clearProxyAssets({ onlyInactive = false } = {}) {
+    let sql = `DELETE FROM proxy_assets`;
+    if (onlyInactive) {
+        sql += ` WHERE last_check_ok = 0`;
+    }
+    const result = await runExecute(sql, []);
+    const count = result.affectedRows || 0;
+    return {
+        success: true,
+        count,
+        message: onlyInactive ? `已清理 ${count} 条不可用代理` : `已清空代理池（共 ${count} 条）`
+    };
+}
+
 async function setProxyAssetActive(id, isActive) {
     const result = await runExecute(
         `UPDATE proxy_assets SET is_active = ? WHERE id = ?`,
@@ -2064,24 +2098,42 @@ async function migrateLegacyProxyConfig() {
     );
 }
 
+const KNOWN_PROXY_REGIONS = ['US', 'PH', 'CL', 'SG', 'MY', 'HK', 'JP', 'TW', 'GB', 'EG'];
+
+function hasExplicitProxyRegionTag(proxyUrl, label) {
+    return KNOWN_PROXY_REGIONS.some((code) => matchProxyRegion(proxyUrl, label, code));
+}
+
 // 只取代理，不占用手机/卡资产；适合注册/协议提取这种只用代理的子流程
 // 支持 {session} 占位符；每次调用替换为新的随机 sticky session ID
-async function getActiveProxy() {
+// 支持按 targetRegion 优先匹配对应地区代理，绝不误选其他明确标注地区的代理
+async function getActiveProxy(targetRegion = '') {
     const rows = await runQuery(
-        `SELECT proxy_url
+        `SELECT proxy_url, label
          FROM proxy_assets
          WHERE is_active = 1
-         ORDER BY RAND()
-         LIMIT 1`
+         ORDER BY RAND()`
     );
     if (!rows.length) {
         return '';
     }
+    const region = String(targetRegion || '').trim().toUpperCase();
+    let picked = null;
+    if (region) {
+        picked = rows.find((r) => matchProxyRegion(r.proxy_url, r.label, region))
+            || rows.find((r) => !hasExplicitProxyRegionTag(r.proxy_url, r.label))
+            || null;
+    } else {
+        picked = rows[0];
+    }
+    if (!picked) {
+        return '';
+    }
     await runExecute(
         `UPDATE proxy_assets SET usage_count = usage_count + 1 WHERE proxy_url = ?`,
-        [rows[0].proxy_url]
+        [picked.proxy_url]
     ).catch(() => { });
-    return substituteProxySession(String(rows[0].proxy_url || ''));
+    return substituteProxySession(String(picked.proxy_url || ''));
 }
 
 // 兼容旧调用：仅返回代理 + 资源快照，不再锁定（防止误用阻塞资产池）
@@ -2098,6 +2150,7 @@ async function getRuntimeAssets() {
             `SELECT card_number, card_expiry, card_cvc, usage_count
              FROM card_assets
              WHERE is_active = 1
+               AND status = '正常'
              ORDER BY usage_count ASC, id ASC
              LIMIT 1`
         ),
@@ -3313,6 +3366,51 @@ async function markCardExhausted(cardId) {
 }
 
 /**
+ * 冻结或解冻卡片
+ * - 冻结：is_active = 0, status = '已冻结'，不可被任何充值任务调用
+ * - 解冻：is_active = 1, status = '正常', cooldown_until = NULL，恢复可用
+ * @param {number} cardId - 卡片 ID
+ * @param {boolean} freeze - true 为冻结，false 为解冻
+ */
+async function setCardFrozen(cardId, freeze = true) {
+    const id = Number(cardId);
+    if (!id || !Number.isFinite(id)) {
+        return { success: false, error: '无效的卡片 ID' };
+    }
+    const shouldFreeze = Boolean(freeze);
+    if (shouldFreeze) {
+        const result = await runExecute(
+            `UPDATE card_assets
+             SET is_active = 0,
+                 status = '已冻结',
+                 locked_at = NULL,
+                 locked_by = NULL
+             WHERE id = ?`,
+            [id]
+        );
+        if (result.affectedRows === 0) {
+            return { success: false, error: '卡片不存在' };
+        }
+        return { success: true, is_frozen: true, message: '卡片已冻结，将不可被调用' };
+    } else {
+        const result = await runExecute(
+            `UPDATE card_assets
+             SET is_active = 1,
+                 status = '正常',
+                 cooldown_until = NULL,
+                 locked_at = NULL,
+                 locked_by = NULL
+             WHERE id = ?`,
+            [id]
+        );
+        if (result.affectedRows === 0) {
+            return { success: false, error: '卡片不存在' };
+        }
+        return { success: true, is_frozen: false, message: '卡片已解冻，已恢复正常调用' };
+    }
+}
+
+/**
  * 记录卡片使用，管理 24h 内使用计数和冷却机制。
  * - 如果 daily_usage_reset_at 为 NULL 或早于 24h 前，重置计数为 1 并设 reset_at = NOW()
  * - 否则递增 daily_usage_count
@@ -3432,9 +3530,10 @@ const { validateCard } = require('./card-validator');
  * - imported + skipped + failed 始终等于输入数组长度
  *
  * @param {Array<{ card_number: string, card_expiry: string, card_cvc: string, card_holder?: string }>} cards
+ * @param {object} [options]
  * @returns {Promise<{ imported: number, skipped: number, failed: number, failures: Array<{ index: number, errors: string[] }> }>}
  */
-async function importCards(cards) {
+async function importCards(cards, options = {}) {
     if (!Array.isArray(cards)) {
         throw new Error('cards 参数必须为数组');
     }
@@ -3449,16 +3548,21 @@ async function importCards(cards) {
     // Step 1: Validate each card
     for (let i = 0; i < cards.length; i++) {
         const card = cards[i];
-        const result = validateCard(card);
+        const result = validateCard(card, options);
         if (!result.valid) {
             failures.push({ index: i, errors: result.errors });
         } else {
             validCards.push({
                 index: i,
-                card_number: String(card.card_number).trim(),
+                card_number: String(card.card_number).replace(/[\s-]/g, '').trim(),
                 card_expiry: String(card.card_expiry).trim(),
                 card_cvc: String(card.card_cvc).trim(),
-                card_holder: String(card.card_holder || '').trim()
+                card_holder: String(card.card_holder || '').trim(),
+                payment_holder_name: String(card.payment_holder_name || card.card_holder || '').trim(),
+                payment_address_line1: String(card.payment_address_line1 || '').trim(),
+                payment_address_city: String(card.payment_address_city || '').trim(),
+                payment_address_state: String(card.payment_address_state || '').trim(),
+                payment_address_postal: String(card.payment_address_postal || '').trim()
             });
         }
     }
@@ -3505,9 +3609,21 @@ async function importCards(cards) {
 
         try {
             await runExecute(
-                `INSERT INTO card_assets (card_number, card_expiry, card_cvc, card_holder, sort_order, is_active, status)
-                 VALUES (?, ?, ?, ?, 0, 1, '正常')`,
-                [card.card_number, card.card_expiry, card.card_cvc, card.card_holder]
+                `INSERT INTO card_assets (card_number, card_expiry, card_cvc, card_holder,
+                    payment_holder_name, payment_address_line1, payment_address_city,
+                    payment_address_state, payment_address_postal, sort_order, is_active, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, '正常')`,
+                [
+                    card.card_number,
+                    card.card_expiry,
+                    card.card_cvc,
+                    card.card_holder,
+                    card.payment_holder_name || card.card_holder || '',
+                    card.payment_address_line1 || '',
+                    card.payment_address_city || '',
+                    card.payment_address_state || '',
+                    card.payment_address_postal || ''
+                ]
             );
             imported++;
         } catch (err) {
@@ -4079,6 +4195,7 @@ module.exports = {
     recordCdkFailure,
     resetCdkFailure,
     getActivationAttemptLimit,
+    setActivationAttemptCooldown,
     recordActivationAttemptFailure,
     resetActivationAttemptFailure,
     deletePhoneAsset,
@@ -4099,6 +4216,7 @@ module.exports = {
     listProxyAssets,
     addProxyAssets,
     deleteProxyAsset,
+    clearProxyAssets,
     setProxyAssetActive,
     updateProxyAssetCheck,
     getProxyAssetById,
@@ -4153,6 +4271,7 @@ module.exports = {
     cooldownCard,
     quarantineCardForReview,
     markCardExhausted,
+    setCardFrozen,
     recordCardUsage,
     bindCardPaymentProfile,
     importCards,

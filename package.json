@@ -66,7 +66,8 @@
     "verify:payment-rollout": "node scripts/payment-rollout-verify.js",
     "upload-to-r2": "node scripts/upload-to-r2.js",
     "test:security": "node --test --test-force-exit tests/*.test.js",
-    "tg:worker": "node scripts/tg-fulfillment-worker.js --once"
+    "tg:worker": "node scripts/tg-fulfillment-worker.js --once",
+    "supplier:worker": "node scripts/shop-supplier-worker.js --once"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.985.0",

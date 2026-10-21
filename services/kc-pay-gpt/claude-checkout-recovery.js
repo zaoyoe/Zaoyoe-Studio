@@ -3,6 +3,7 @@
 const { performance } = require('node:perf_hooks');
 const { getClaudePlanRule, readClaudeCheckoutSnapshot, ensureClaudePlanSelection } = require('./claude-checkout-state');
 const { observeClaudeNavigation, assertClaudeNavigationHealthy, buildClaudeNavigationError } = require('./claude-navigation');
+const { resetActiveProxyTunnels } = require('./playwright-proxy');
 
 function recoveryNotAllowed() {
     return Object.assign(new Error('Claude 已进入填卡或支付阶段，已停止收银台自动恢复'), { code: 'CLAUDE_CHECKOUT_RECOVERY_NOT_ALLOWED' });
@@ -30,7 +31,7 @@ async function assertRecoveryAllowed(page, options) {
 }
 
 function createWaitPolicy(rule, deadline, observer, options) {
-    const graceMs = options.progressGraceMs ?? 15000;
+    const graceMs = options.progressGraceMs ?? 10000;
     const log = options.log || console.log;
     const milestones = snapshot => [
         snapshot.target && 'target',
@@ -83,7 +84,7 @@ function createWaitPolicy(rule, deadline, observer, options) {
 async function prepareClaudeCheckout(page, planType = 'claude_pro', options = {}) {
     if (options.phase !== 'before_card_entry' || (options.paymentState || 'not_started') !== 'not_started') throw recoveryNotAllowed();
     const rule = getClaudePlanRule(planType);
-    const totalMs = options.totalTimeoutMs ?? 60000;
+    const totalMs = options.totalTimeoutMs ?? 90000;
     const deadline = performance.now() + totalMs;
     const log = options.log || console.log;
     const observer = observeClaudeNavigation(page);
@@ -94,7 +95,7 @@ async function prepareClaudeCheckout(page, planType = 'claude_pro', options = {}
         while (true) {
             try {
                 return await ensureClaudePlanSelection(page, planType, {
-                    timeoutMs: Math.min(options.readinessTimeoutMs ?? 30000, Math.max(1, policy.remaining())),
+                    timeoutMs: Math.min(options.readinessTimeoutMs ?? 25000, Math.max(1, policy.remaining())),
                     confirmationTimeoutMs: Math.min(options.confirmationTimeoutMs ?? 15000, Math.max(1, policy.remaining())),
                     networkObserver: observer, waitPolicy: policy, afterRecovery: recovered
                 });
@@ -108,6 +109,7 @@ async function prepareClaudeCheckout(page, planType = 'claude_pro', options = {}
                 recovered = true;
                 log(`[Claude/checkout] 加载停滞，执行一次支付前恢复；剩余总预算 ${Math.ceil(policy.remaining() / 1000)}s`);
                 log(`[Claude/checkout] 官方请求诊断: ${observer.summary()}; ${observer.details()}`);
+                resetActiveProxyTunnels();
                 const retry = page.getByRole('button', { name: /^重试$|^Retry$/i }).first();
                 if (await retry.isVisible()) {
                     log('[Claude/checkout] 使用官方支付表单“重试”入口（1/1）');
