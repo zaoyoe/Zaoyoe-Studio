@@ -406,12 +406,22 @@ const ShopAdmin = {
     supplierCatalogPage: 1,
     supplierCatalogPageSize: 20,
     supplierCatalogProviderId: '16688',
+    supplierCatalogAccountKey: '',
+    supplierCatalogAccountsProviderId: '',
+    supplierCatalogAccounts: [],
+    supplierCatalogDetailContext: null,
+    supplierCatalogPreviewRequestToken: 0,
+    productSupplierSummaryToken: 0,
     supplierCatalogSite: 'cn',
     supplierCatalogKeywords: '',
     supplierCatalogItems: [],
     supplierCatalogTotal: 0,
     supplierCatalogSelectedGoodsNos: new Set(),
     supplierCatalogRequestToken: 0,
+    supplierOrderLookupRequestToken: 0,
+    supplierOrderLookupInFlight: false,
+    supplierOrderLookupResult: null,
+    supplierOperationsRequestToken: 0,
     supplierCatalogDetailRequestToken: 0,
     supplierCatalogDetailItem: null,
     supplierCatalogImportInFlight: false,
@@ -3362,6 +3372,7 @@ Example output format:
         this.closeDynamicModal('guestExceptionDetailModal');
         const overlay = document.createElement('div');
         overlay.id = 'guestExceptionDetailModal';
+        overlay.dataset.orderNo = normalizedOrderNo;
         overlay.dataset.shopOverlayClose = 'dynamic-modal';
         overlay.dataset.modalId = 'guestExceptionDetailModal';
         overlay.className = 'shop-order-content-overlay';
@@ -3564,6 +3575,7 @@ Example output format:
                     <div class="shop-order-detail-section"><div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-boxes-stacked"></i> 库存与预占</div></div><div class="shop-order-detail-hero__pills">${reservationPills}</div>${kv('预占 ID', value(row.reservation_id))}${kv('库存引用 ID', value(row.inventory_id))}${kv('预占截止', time(row.reserved_until))}${kv('订单到期', time(row.expires_at))}<p class="shop-guest-exception-ops-hint">库存内容、卡密、claim secret 和 webhook 原文属于敏感排障资料，默认隐藏，需管理员显式确认后按订单加载。</p><div id="guestExceptionSensitiveDetail" class="shop-guest-sensitive-placeholder"><button type="button" class="shop-guest-exception-action shop-guest-exception-action--sensitive shop-order-detail-inline-btn" data-shop-action="guest-exception-sensitive-detail" data-order-no="${this.escapeForAttr(row.order_no || "")}"><i class="fas fa-eye" aria-hidden="true"></i> 显示敏感详情</button></div></div>
                     <div class="shop-order-detail-section shop-order-detail-section--guest-timeline"><div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-clock"></i> 时间线</div></div><div class="shop-order-detail-grid shop-order-detail-grid--secondary">${kv('创建', time(row.created_at))}${kv('支付', time(row.paid_at))}${kv('发货', time(row.fulfilled_at))}${kv('最近更新', time(row.updated_at))}${kv('最后事件', time(row.last_event_at))}</div>${refundTimelineEvent}</div>
                 </div>
+                ${row.fulfillment_source === 'supplier_v2' ? `<section class="shop-order-detail-section"><strong>供应商订单</strong>${row.supplier_customer_resolution ? `<p class="shop-supplier-resolution__note">${this.escapeHtml(row.supplier_customer_resolution.message || '')}</p>` : ''}<button type="button" class="shop-order-detail-inline-btn" data-shop-action="supplier-resolution-open" data-order-id="${this.escapeForAttr(row.id)}" data-funding-kind="guest_cash" data-site="${this.escapeForAttr(row.site)}">${row.supplier_customer_resolution ? '查看结案记录' : '供应商结案'}</button></section>` : ''}
                 ${errorMarkup}
                 ${fulfillmentMarkup}
                 ${profitMarkup}
@@ -4774,6 +4786,9 @@ Example output format:
             modal.classList.remove('active');
         }
         this.activeProductEditRequestId = '';
+        ++this.productSupplierSummaryToken;
+        const supplierSummary = document.getElementById('productSupplierSummary');
+        if (supplierSummary) supplierSummary.hidden = true;
         this.productModalDirty = false;
         this.productCopyLanguageDrafts = null;
         this.productCopyLanguage = 'zh';
@@ -5969,8 +5984,59 @@ Example output format:
                 case 'shop-switch-tab':
                     this.switchTab(actionEl.dataset.shopTab);
                     break;
+                case 'supplier-operations-toggle':
+                    if (!document.getElementById('supplierOperationsPanel')?.open) void this.loadSupplierOperations();
+                    break;
+                case 'supplier-resolution-open':
+                    void this.openSupplierResolution(actionEl.dataset.orderId, actionEl.dataset.fundingKind, actionEl.dataset.site || 'cn');
+                    break;
+                case 'supplier-resolution-close':
+                    this.closeDynamicModal('supplierResolutionModal');
+                    break;
+                case 'supplier-resolution-query':
+                    void this.submitSupplierResolution('query');
+                    break;
+                case 'supplier-resolution-commit':
+                case 'supplier-resolution-retry':
+                    void this.submitSupplierResolution('commit');
+                    break;
+                case 'supplier-runtime-resume':
+                    void this.resumeSupplierRuntime(actionEl);
+                    break;
+                case 'supplier-operations-refresh':
+                    void this.loadSupplierOperations();
+                    break;
+                case 'supplier-manual-open':
+                    void this.openSupplierManualPurchase(actionEl.dataset.intentId, {
+                        orderNo: actionEl.dataset.orderNo || '',
+                        orderId: actionEl.dataset.orderId || '',
+                        fundingKind: actionEl.dataset.fundingKind || '',
+                        site: actionEl.dataset.site || 'cn'
+                    });
+                    break;
+                case 'supplier-manual-close':
+                    this.closeSupplierManualPurchase();
+                    break;
+                case 'supplier-manual-quote':
+                    void this.submitSupplierManualPurchase('quote');
+                    break;
+                case 'supplier-manual-confirm':
+                    void this.submitSupplierManualPurchase('confirm');
+                    break;
+                case 'supplier-manual-finalize':
+                    void this.submitSupplierManualPurchase('finalize');
+                    break;
+                case 'supplier-catalog-preview':
+                    void this.previewSupplierCatalogDetail();
+                    break;
+                case 'supplier-catalog-edit-product':
+                    void this.editSupplierCatalogProduct(actionEl.dataset.productId, actionEl.dataset.site || 'cn');
+                    break;
                 case 'supplier-catalog-search':
                     this.loadSupplierCatalog({ force: true, page: 1 });
+                    break;
+                case 'supplier-order-lookup':
+                    void this.lookupSupplierOrderByNumber();
                     break;
                 case 'supplier-catalog-import':
                     void this.importSupplierCatalogGoods();
@@ -6548,17 +6614,26 @@ Example output format:
             this.markProductModalDirty(actionEl);
 
             switch (actionEl.dataset.shopChange) {
+                case 'supplier-catalog-race':
+                    ++this.supplierCatalogPreviewRequestToken;
+                    this.syncSupplierCatalogDetailControls();
+                    { const preview = document.getElementById('supplierCatalogPreview'); if (preview) preview.textContent = ''; }
+                    break;
+                case 'supplier-catalog-account':
+                    this.supplierCatalogAccountKey = String(actionEl.value || '');
+                    this.resetSupplierCatalogContext();
+                    void this.loadSupplierCatalog({ page: 1 });
+                    break;
                 case 'supplier-catalog-provider':
                     this.supplierCatalogProviderId = String(actionEl.value || '16688').trim().toLowerCase() || '16688';
-                    this.supplierCatalogPage = 1;
+                    this.resetSupplierCatalogContext({ providerChanged: true });
                     void this.loadSupplierCatalog({ force: true, page: 1 });
                     break;
                 case 'supplier-catalog-site':
                     this.supplierCatalogSite = ['cn', 'intl'].includes(String(actionEl.value || '').trim().toLowerCase())
                         ? String(actionEl.value).trim().toLowerCase()
                         : 'cn';
-                    this.supplierCatalogPage = 1;
-                    this.supplierCatalogSelectedGoodsNos.clear();
+                    this.resetSupplierCatalogContext();
                     void this.loadSupplierCatalog({ force: true, page: 1 });
                     break;
                 case 'supplier-catalog-select-all':
@@ -6711,6 +6786,13 @@ Example output format:
                 case 'import-view-line-count':
                     this.updateImportViewLineCount();
                     break;
+                case 'supplier-order-lookup-number':
+                    ++this.supplierOrderLookupRequestToken;
+                    this.supplierOrderLookupInFlight = false;
+                    this.supplierOrderLookupResult = null;
+                    this.renderSupplierOrderLookupResult(null, '订单号已变化，请确认完整单号后重新查询。');
+                    this.syncSupplierCatalogControls();
+                    break;
             default:
                 break;
             }
@@ -6732,6 +6814,12 @@ Example output format:
                     if (event.key === 'Enter') {
                         event.preventDefault();
                         this.loadSupplierCatalog({ force: true, page: 1 });
+                    }
+                    break;
+                case 'supplier-order-lookup-enter':
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        void this.lookupSupplierOrderByNumber();
                     }
                     break;
                 case 'inventory-search-enter':
@@ -10035,7 +10123,710 @@ Example output format:
         this.supplierCatalogProviderId = providerId;
         this.supplierCatalogSite = site;
         this.supplierCatalogKeywords = keywords;
-        return { providerId, site, keywords };
+        const accountKey = String(document.getElementById('supplierCatalogAccount')?.value || this.supplierCatalogAccountKey || '').trim();
+        this.supplierCatalogAccountKey = accountKey;
+        return { providerId, accountKey, site, keywords };
+    },
+
+    resetSupplierCatalogContext: function ({ providerChanged = false } = {}) {
+        ++this.supplierCatalogRequestToken;
+        ++this.supplierOrderLookupRequestToken;
+        this.supplierOrderLookupInFlight = false;
+        this.supplierOrderLookupResult = null;
+        ++this.supplierOperationsRequestToken;
+        const operationsPanel = document.getElementById('supplierOperationsPanel');
+        if (operationsPanel) operationsPanel.open = false;
+        const operationsBody = document.getElementById('supplierOperationsTableBody');
+        if (operationsBody) operationsBody.innerHTML = '<tr><td colspan="6" class="shop-supplier-catalog__empty">展开后读取当前账号采购记录。</td></tr>';
+        const operationsStatus = document.getElementById('supplierOperationsStatus');
+        if (operationsStatus) operationsStatus.textContent = '展开后读取采购记录。';
+        this.closeSupplierCatalogDetail();
+        this.supplierCatalogSelectedGoodsNos.clear();
+        this.supplierCatalogItems = [];
+        this.supplierCatalogTotal = 0;
+        this.supplierCatalogPage = 1;
+        if (providerChanged) {
+            this.supplierCatalogAccountKey = '';
+            this.supplierCatalogAccountsProviderId = '';
+            this.supplierCatalogAccounts = [];
+            const select = document.getElementById('supplierCatalogAccount');
+            if (select) {
+                select.innerHTML = '<option value="">读取账号中…</option>';
+                select.value = '';
+            }
+        }
+        this.renderSupplierCatalogRows();
+        this.renderSupplierOrderLookupResult(null, '切换供应商、账号或站点后，请重新核对上游订单号。');
+        this.syncSupplierCatalogControls();
+    },
+
+    getSupplierResolutionActor: async function () {
+        const { data: { user } = {} } = await window.supabaseClient.auth.getUser();
+        if (!user?.id) throw new Error('请重新登录管理员账号后核对原操作');
+        return user.id;
+    },
+
+    openSupplierResolution: async function (orderId, fundingKind, site = 'cn') {
+        if (site !== 'cn' || !['points', 'guest_cash'].includes(fundingKind)) return;
+        this.closeDynamicModal('supplierResolutionModal');
+        const overlay = document.createElement('div');
+        overlay.id = 'supplierResolutionModal';
+        overlay.className = 'shop-order-content-overlay';
+        overlay.innerHTML = `<div class="shop-order-content-shell"><section class="shop-order-content-modal shop-supplier-resolution" role="dialog" aria-modal="true" aria-labelledby="supplierResolutionTitle">
+            <header class="shop-order-content-header"><h3 id="supplierResolutionTitle" class="shop-order-content-title">供应商订单结案</h3>
+            <button type="button" class="shop-order-content-close" data-shop-action="supplier-resolution-close" aria-label="关闭">&times;</button></header>
+            <div class="shop-order-content-body"><p id="supplierResolutionStatus" role="status">正在核对订单与原处理记录…</p><div id="supplierResolutionBody" aria-busy="true"></div></div>
+        </section></div>`;
+        this.bindOverlayDismiss(overlay, () => this.closeDynamicModal('supplierResolutionModal'));
+        document.body.appendChild(overlay);
+        requestAnimationFrame(() => overlay.classList.add('is-visible'));
+        try {
+            const actorId = await this.getSupplierResolutionActor();
+            const journal = window.ShopOperationJournal.create({ storage: window.sessionStorage, kind: 'supplier_resolution', actorId, site, orderId, fundingKind });
+            const pending = journal.read();
+            const response = await (window.AdminApi?.fetch || fetch)(this.buildAdminShopUrl('shop/supplier-resolution', { orderId, fundingKind, site }), { credentials: 'include', cache: 'no-store' });
+            const payload = await response.json();
+            if (!response.ok || !payload.success || !payload.order) throw new Error(payload.message || '订单核对失败，请稍后重试');
+            if (!overlay.isConnected) return;
+            if (await this.getSupplierResolutionActor() !== actorId) throw new Error('管理员账号已切换，请使用原账号核对本次处理');
+            if (!overlay.isConnected) return;
+            const row = payload.order;
+            if (row.nativeOrderId !== orderId || row.fundingKind !== fundingKind || row.site !== site) throw new Error('订单核对结果不一致，请重新打开');
+            const context = { overlay, actorId, journal, pending, row, site, orderId, fundingKind, busy: false };
+            this.supplierResolutionContext = context;
+            this.renderSupplierResolutionForm(context);
+            if (pending) void this.submitSupplierResolution('query');
+        } catch (error) {
+            if (overlay.isConnected) overlay.querySelector('#supplierResolutionStatus').textContent = error.message || '订单核对失败';
+        }
+    },
+
+    renderSupplierResolutionForm: function (context) {
+        const { row, pending, fundingKind, overlay } = context;
+        const body = overlay.querySelector('#supplierResolutionBody');
+        const status = overlay.querySelector('#supplierResolutionStatus');
+        body.setAttribute('aria-busy', 'false');
+        if (row.customerResolution) {
+            status.textContent = row.customerResolution.status === 'refunded' ? '原积分已退回，订单已完结。' : '已登记人工补偿，订单已完结。';
+            body.innerHTML = `<div class="shop-order-detail-section"><strong>用户可见的完结说明</strong><p class="shop-supplier-resolution__note">${this.escapeHtml(row.customerResolution.message)}</p></div><p>原上游请求继续保留，可在采购记录中核对最终结果。</p>`;
+            return;
+        }
+        if (!row.canResolve && !pending) {
+            status.textContent = '当前订单不满足未交付结案条件，请先核对资金与交付记录。';
+            return;
+        }
+        const request = pending?.request || {};
+        const points = fundingKind === 'points';
+        status.textContent = pending ? '原处理结果待核对。输入已锁定，查询和重试均沿用同一操作号。' : '结案前请确认用户资金处理。上游未决风险仍保留。';
+        body.innerHTML = `<div class="shop-supplier-resolution__summary"><strong>${this.escapeHtml(row.orderNo || context.orderId)}</strong><span>${points ? '退回原积分' : '登记已完成的人工补偿'} · ${this.escapeHtml(row.resolutionAmount || '—')} ${points ? '积分' : 'CNY'}</span></div>
+            <p>${points ? '按原付费、赠送积分明细返还，不回收本地库存。' : '请先在外部完成补偿，再填写凭据引用。登记不会发起渠道退款，也不会把支付状态改为已退款。'}</p>
+            <div class="shop-supplier-resolution__fields">
+            <label>公开完结说明 <span>用户可见，8–500 字</span><textarea id="supplierResolutionPublicNote" minlength="8" maxlength="500" rows="3">${this.escapeHtml(request.publicNote || '')}</textarea></label>
+            <label>内部备注 <span>仅管理员可见，8–1000 字</span><textarea id="supplierResolutionInternalNote" minlength="8" maxlength="1000" rows="3">${this.escapeHtml(request.internalNote || '')}</textarea></label>
+            <label>${points ? '核对依据引用' : '已完成补偿的凭据引用'} <span>8–500 字</span><input id="supplierResolutionEvidence" maxlength="500" value="${this.escapeForAttr(request.evidenceRef || '')}" autocomplete="off"></label>
+            <label class="shop-supplier-resolution__attest"><input id="supplierResolutionAttested" type="checkbox" ${request.attested ? 'checked' : ''}><span>${points ? '确认退回上述原积分，并向用户公开完结说明' : '确认已按上述订单总额完成外部补偿，凭据可供复核'}</span></label></div>
+            <div class="shop-supplier-resolution__actions">${pending
+                ? '<button type="button" class="shop-order-detail-inline-btn" data-shop-action="supplier-resolution-query">查询本次处理</button><button type="button" class="shop-order-detail-inline-btn" data-shop-action="supplier-resolution-retry">按原信息重试</button>'
+                : '<button type="button" class="shop-order-detail-inline-btn" data-shop-action="supplier-resolution-commit">确认处理并完结</button>'}</div>`;
+        if (pending) body.querySelectorAll('input, textarea').forEach(el => { el.disabled = true; });
+    },
+
+    submitSupplierResolution: async function (action) {
+        const context = this.supplierResolutionContext;
+        if (!context || !context.overlay.isConnected || context.busy) return;
+        const status = context.overlay.querySelector('#supplierResolutionStatus');
+        context.busy = true;
+        try {
+            if (await this.getSupplierResolutionActor() !== context.actorId) throw new Error('管理员账号已切换，请使用原账号核对本次处理');
+            let pending = context.journal.read();
+            if (!pending) {
+                if (action !== 'commit') throw new Error('没有待核对的处理记录');
+                const value = id => context.overlay.querySelector('#' + id).value.trim();
+                const request = { kind: context.fundingKind === 'points' ? 'points_refund' : 'manual_compensation',
+                    publicNote: value('supplierResolutionPublicNote'), internalNote: value('supplierResolutionInternalNote'),
+                    evidenceRef: value('supplierResolutionEvidence'), amount: context.row.resolutionAmount,
+                    attested: context.overlay.querySelector('#supplierResolutionAttested').checked };
+                if (!request.attested || request.publicNote.length < 8 || request.internalNote.length < 8 || request.evidenceRef.length < 8
+                    || !/^\d{1,12}(?:\.\d{1,2})?$/.test(request.amount || '') || Number(request.amount) <= 0) throw new Error('请填写完整说明和凭据引用，并确认处理金额');
+                pending = context.journal.begin(window.crypto.randomUUID(), request);
+                context.pending = pending;
+                this.renderSupplierResolutionForm(context);
+            }
+            const buttons = context.overlay.querySelectorAll('.shop-supplier-resolution__actions button');
+            buttons.forEach(button => { button.disabled = true; });
+            status.textContent = action === 'query' ? '正在核对本次处理结果…' : '正在提交本次处理，请保留页面…';
+            const response = await (window.AdminApi?.fetch || fetch)(this.buildAdminShopUrl('shop/supplier-resolution'), {
+                method: 'POST', credentials: 'include', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action, orderId: context.orderId, fundingKind: context.fundingKind, site: context.site,
+                    operationId: pending.operationId, ...(action === 'commit' ? { confirm: true, request: pending.request } : {}) })
+            });
+            const payload = await response.json();
+            if (await this.getSupplierResolutionActor() !== context.actorId) throw new Error('管理员账号已切换，请使用原账号核对本次处理');
+            if (!response.ok || !payload.success || !payload.result || payload.result.operationId !== pending.operationId) throw new Error(payload.message || '尚未收到处理确认，请查询本次处理结果');
+            if (payload.result.status === 'completed' && payload.result.nativeOrderId === context.orderId && payload.result.fundingKind === context.fundingKind
+                && ['refunded', 'compensated'].includes(payload.result.resolution?.status) && typeof payload.result.resolution.message === 'string') {
+                context.journal.clear(pending.operationId);
+                context.pending = null;
+                context.row.customerResolution = payload.result.resolution;
+                this.invalidateShopTabCache?.('orders');
+                this.invalidateShopTabCache?.('guest-exceptions');
+                if (context.overlay.isConnected) this.renderSupplierResolutionForm(context);
+                void this.refreshSupplierResolutionViews(context).catch(() => {
+                    if (context.overlay.isConnected && this.supplierResolutionContext === context) {
+                        status.textContent += ' 列表或详情更新失败，请刷新查看；本次结案已确认。';
+                    }
+                });
+            } else if (payload.result.status === 'not_found') {
+                status.textContent = '暂未找到已提交的处理凭据。可按原信息重试；原操作号继续保留。';
+            } else throw new Error('处理结果尚未确认，请继续查询同一操作');
+        } catch (error) {
+            if (context.overlay.isConnected) status.textContent = error.message || '尚未收到处理确认，请查询本次处理结果';
+        } finally {
+            context.busy = false;
+            context.overlay.querySelectorAll('.shop-supplier-resolution__actions button').forEach(button => { button.disabled = false; });
+        }
+    },
+
+    refreshSupplierResolutionViews: async function (context) {
+        const tasks = [];
+        if (context.fundingKind === 'points') {
+            const detail = document.getElementById('orderContentModal');
+            const shell = detail?.querySelector('#orderContentShell');
+            const requestToken = this.orderDetailRequestToken;
+            if (shell && this.currentOrderDetailId === context.orderId) {
+                tasks.push(async () => {
+                    const payload = await this.loadOrderDetailViaAdminApi(context.orderId);
+                    if (detail.isConnected && this.currentOrderDetailId === context.orderId
+                        && this.orderDetailRequestToken === requestToken) {
+                        shell.innerHTML = this.renderOrderDetailBody(payload, []);
+                    }
+                });
+            }
+            if (this.currentTab === 'orders') tasks.push(() => this.searchOrders(this.ordersPage || 1, { openDetails: false }));
+        } else {
+            const detail = document.getElementById('guestExceptionDetailModal');
+            const shell = detail?.querySelector('#guestExceptionDetailShell');
+            if (shell && detail.dataset.orderNo === context.row.orderNo) {
+                tasks.push(async () => {
+                    const payload = await this.loadGuestOrdersViaAdminApi({ site: context.site, exception: 'all',
+                        orderNo: context.row.orderNo, page: 1, pageSize: 1 });
+                    const row = Array.isArray(payload?.rows) ? payload.rows.find(item => item.id === context.orderId
+                        && item.order_no === context.row.orderNo) : null;
+                    if (!row) throw new Error('结案后的订单详情尚未读取到');
+                    if (detail.isConnected && detail.dataset.orderNo === context.row.orderNo) {
+                        shell.innerHTML = this.renderGuestExceptionDetailBody(row);
+                    }
+                });
+            }
+            if (this.currentTab === 'guest-exceptions') tasks.push(() => this.loadGuestOrderExceptions(this.guestExceptionsPage || 1));
+        }
+        if (document.getElementById('supplierOperationsPanel')?.open) tasks.push(() => this.loadSupplierOperations());
+        const results = await Promise.allSettled(tasks.map(task => Promise.resolve().then(task)));
+        if (results.some(result => result.status === 'rejected')) throw new Error('结案已确认，部分视图尚未刷新');
+    },
+
+    getSupplierRuntimeJournal: function (row, context) {
+        return window.ShopOperationJournal.create({ storage: window.localStorage, kind: 'supplier_runtime',
+            actorId: context.actorId, site: context.site, orderId: row.nativeOrderId, fundingKind: row.fundingKind });
+    },
+
+    resumeSupplierRuntime: async function (button) {
+        if (button.disabled) return;
+        const context = { providerId: button.dataset.providerId, accountKey: button.dataset.accountKey,
+            site: button.dataset.site, actorId: button.dataset.actorId };
+        const row = { intentId: button.dataset.intentId, nativeOrderId: button.dataset.orderId, fundingKind: button.dataset.fundingKind };
+        const status = document.getElementById('supplierOperationsStatus');
+        const requestToken = this.supplierOperationsRequestToken;
+        const sameScope = () => ['providerId', 'accountKey', 'site'].every(key => this.getSupplierCatalogQuery()[key] === context[key]);
+        const current = () => button.isConnected && requestToken === this.supplierOperationsRequestToken && sameScope();
+        button.disabled = true;
+        let confirmed = false;
+        try {
+            if (await this.getSupplierResolutionActor() !== context.actorId) throw new Error('管理员账号已切换，请使用原账号核对本次处理。');
+            const journal = this.getSupplierRuntimeJournal(row, context);
+            const old = journal.read();
+            const operationId = old?.operationId || window.crypto?.randomUUID?.();
+            journal.begin(operationId, { providerId: context.providerId, accountKey: context.accountKey, intentId: row.intentId });
+            const headers = await this.getAdminAuthHeaders();
+            if (await this.getSupplierResolutionActor() !== context.actorId) throw new Error('管理员账号已切换，请使用原账号核对本次处理。');
+            const response = await (window.AdminApi?.fetch || fetch)(this.buildAdminShopUrl('shop/supplier-catalog'), {
+                method: 'POST', headers, credentials: 'include', body: JSON.stringify({ action: 'runtime-resume',
+                    providerId: context.providerId, accountKey: context.accountKey, site: context.site,
+                    intentId: row.intentId, orderId: row.nativeOrderId, fundingKind: row.fundingKind, operationId })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (await this.getSupplierResolutionActor() !== context.actorId) throw new Error('管理员账号已切换，请使用原账号核对本次处理。');
+            if (!response.ok || payload.success !== true || typeof payload.applied !== 'boolean' || payload.operationId !== operationId) {
+                throw new Error('尚未确认恢复结果，请重试本次操作。');
+            }
+            journal.clear(operationId);
+            confirmed = true;
+            if (!current()) return;
+            const loaded = await this.loadSupplierOperations();
+            if (requestToken + 1 !== this.supplierOperationsRequestToken || !sameScope()) return;
+            if (status) status.textContent = loaded === false ? '恢复结果已确认，列表尚未更新，请刷新记录。'
+                : payload.applied ? '已恢复待调度，执行仍受运行开关和原准入条件约束。'
+                    : '当前任务不能恢复；超出原核对期限的订单请使用供应商结案流程。';
+        } catch (error) {
+            const visible = confirmed ? sameScope() && [requestToken, requestToken + 1].includes(this.supplierOperationsRequestToken) : current();
+            if (visible && status) status.textContent = confirmed ? '恢复结果已确认，列表尚未更新，请刷新记录。'
+                : error.message || '恢复结果尚未确认，请重试本次操作。';
+        } finally { button.disabled = false; }
+    },
+
+    renderSupplierRuntime: function (row = {}, context = null) {
+        const runtime = row.runtime;
+        if (!runtime) return '';
+        const states = { untracked: '尚未调度', paused: '运行暂停', waiting: '等待调度', running: '任务处理中', review: '需人工处理', completed: '处理完成' };
+        const alerts = { outcome_unknown: '仅核对原采购，禁止重复提交', procurement_review: '采购需要人工核对',
+            delivery_quarantined: '交付已隔离，请核对内容与成本', customer_closed_upstream_pending: '客户已完结，原上游风险仍待核对',
+            adapter_unverified: '渠道执行契约未通过核验', runtime_exhausted: '自动核对已达上限，请人工处理',
+            upstream_timeout: '上游超时，等待核对', upstream_rate_limited: '上游限流，已延后重试',
+            upstream_unavailable: '上游暂不可用，等待重试', account_circuit_open: '账号连续异常，暂缓请求',
+            runtime_lease_expired: '上次任务中断，按原请求恢复', dispatch_blocked: '采购条件不满足，等待核对' };
+        const next = runtime.nextRunAt && runtime.state === 'waiting'
+            ? ` · 最早 ${this.formatOrderDetailTime(runtime.nextRunAt)}` : '';
+        let resume = '';
+        if (context?.actorId && context.accountKey && context.site === row.site) {
+            try {
+                const pending = this.getSupplierRuntimeJournal(row, context).read();
+                if (pending || (runtime.state === 'review' && ['dispatch', 'query', 'delivery'].includes(runtime.phase))) {
+                    resume = `<button type="button" class="shop-order-detail-inline-btn" data-shop-action="supplier-runtime-resume" data-intent-id="${this.escapeForAttr(row.intentId)}" data-order-id="${this.escapeForAttr(row.nativeOrderId)}" data-funding-kind="${this.escapeForAttr(row.fundingKind)}" data-provider-id="${this.escapeForAttr(context.providerId)}" data-account-key="${this.escapeForAttr(context.accountKey)}" data-site="${this.escapeForAttr(context.site)}" data-actor-id="${this.escapeForAttr(context.actorId)}">${pending ? '核对并重试本次恢复' : '恢复调度'}</button>`;
+                }
+            } catch { resume = '<span>操作恢复记录暂不可用，请核对浏览器存储后重试。</span>'; }
+        }
+        return `<div class="shop-supplier-runtime"><span>${this.escapeHtml(states[runtime.state] || '运行待核对')}${this.escapeHtml(next)}</span>${runtime.alertCode ? `<div>${this.escapeHtml(alerts[runtime.alertCode] || '运行待核对')}</div>` : ''}${resume}</div>`;
+    },
+
+    getSupplierOperationLabels: function (row = {}) {
+        return {
+            procurement: ({ not_submitted: '待采购', prepared: '采购已准备', dispatching: '正在提交',
+                outcome_unknown: '采购结果待核对', accepted: '上游已受理', rejected: '上游明确拒绝', review: '人工核对' })[row.procurementState] || '待核对',
+            delivery: ({ awaiting_acceptance: '等待采购确认', awaiting_delivery: '等待交付', delivered: '已交付', quarantined: '交付待核对' })[row.deliveryState] || '待核对',
+            reason: ({ native_not_deliverable: '商城订单不满足交付条件', cost_above_ceiling: '实际扣费超出授权成本上限',
+                duplicate_content: '交付内容与其他采购重复' })[row.quarantineReason] || ''
+        };
+    },
+
+    // ── 人工采购（受控 B 方案） ──────────────────────────────────────────
+    // 服务端不会自行下单：管理员先取实时报价、看到确切金额，只有对同一金额
+    // 明确确认后才会发出唯一一次采购请求。请求键沿用 intent 不可变的
+    // original_request_id，因此重试不可能重复扣款。自动调度开关保持关闭。
+    manualPurchaseReasons: {
+        intent_not_submitted: '这笔采购已经进入上游流程，不能再走人工采购。',
+        funding_not_ready: '订单资金尚未确认，暂不能采购。',
+        scope_unsupported: '人工采购当前只支持国内站、单件订单。',
+        exposure_not_held: '成本占用与原始上限不一致，请先核对资金记录。',
+        native_not_ready: '商城订单状态不满足交付条件，请先核对订单本身。',
+        policy_not_ready: '供应商交易策略未开启进货与结算，或成本超出单笔上限。',
+        mapping_not_ready: '商品映射已变更或未启用，请重新核对映射后再试。',
+        account_not_ready: '供应商账号未启用或渠道不一致，请检查供货配置。',
+        manual_purchase_accepted: '这笔采购已由上游受理，无需再次采购。',
+        manual_purchase_unknown: '上次采购结果待核对，请先核对上游结果。',
+        manual_purchase_in_progress: '上一次采购已确认并正在提交，请稍后刷新核对。',
+        not_ready: '当前订单还不满足人工采购条件。'
+    },
+
+    canManualPurchase: function (row = {}) {
+        return row.procurementState === 'not_submitted'
+            && row.deliveryState === 'awaiting_acceptance'
+            && /^[a-f\d]{8}-[a-f\d]{4}-[1-5][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i.test(row.intentId || '');
+    },
+
+    renderSupplierManualEntry: function (row = {}) {
+        if (!row) return '';
+        if (!this.canManualPurchase(row)) return '';
+        return `<button type="button" class="shop-order-detail-inline-btn shop-supplier-manual-entry" data-shop-action="supplier-manual-open" data-intent-id="${this.escapeForAttr(row.intentId)}" data-order-no="${this.escapeForAttr(row.orderNo || '')}" data-order-id="${this.escapeForAttr(row.nativeOrderId || '')}" data-funding-kind="${this.escapeForAttr(row.fundingKind || '')}" data-site="${this.escapeForAttr(row.site || 'cn')}">人工采购</button>`;
+    },
+
+    closeSupplierManualPurchase: function () {
+        if (this.supplierManualTimer) {
+            clearInterval(this.supplierManualTimer);
+            this.supplierManualTimer = null;
+        }
+        this.supplierManualContext = null;
+        this.closeDynamicModal('supplierManualPurchaseDrawer');
+    },
+
+    supplierManualSkeleton: function () {
+        const lines = (count) => new Array(count).fill('<span class="shop-supplier-manual__sk-line"></span>').join('');
+        return `<div class="shop-supplier-manual__skeleton" aria-hidden="true">
+            <div class="shop-supplier-manual__section">
+                <div class="shop-supplier-manual__section-head">${lines(2)}</div>
+                <div class="shop-supplier-manual__sk-facts">${lines(4)}</div>
+            </div>
+            <div class="shop-supplier-manual__section">
+                <div class="shop-supplier-manual__section-head">${lines(2)}</div>
+                <div class="shop-supplier-manual__sk-amount"></div>
+                <div class="shop-supplier-manual__sk-note">${lines(2)}</div>
+                <div class="shop-supplier-manual__actions">
+                    <span class="shop-supplier-manual__sk-btn"></span>
+                    <span class="shop-supplier-manual__sk-btn"></span>
+                </div>
+            </div>
+        </div>`;
+    },
+
+    openSupplierManualPurchase: async function (intentId, meta = {}) {
+        if (!/^[a-f\d]{8}-[a-f\d]{4}-[1-5][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i.test(intentId || '')) return;
+        this.closeSupplierManualPurchase();
+        const overlay = document.createElement('div');
+        overlay.id = 'supplierManualPurchaseDrawer';
+        overlay.className = 'shop-drawer-overlay';
+        overlay.innerHTML = `<aside class="shop-drawer shop-supplier-manual" role="dialog" aria-modal="true" aria-labelledby="supplierManualTitle">
+            <header class="shop-drawer__header">
+                <div class="shop-drawer__heading">
+                    <span class="shop-drawer__eyebrow">供应商人工采购</span>
+                    <h3 id="supplierManualTitle" class="shop-drawer__title">${this.escapeHtml(meta.orderNo || '人工采购')}</h3>
+                </div>
+                <button type="button" class="shop-drawer__close" data-shop-action="supplier-manual-close" aria-label="关闭">&times;</button>
+            </header>
+            <div class="shop-drawer__body" id="supplierManualBody" aria-busy="true">${this.supplierManualSkeleton()}</div>
+        </aside>`;
+        this.bindOverlayDismiss(overlay, () => this.closeSupplierManualPurchase());
+        document.body.appendChild(overlay);
+        requestAnimationFrame(() => overlay.classList.add('is-visible'));
+
+        const ctx = {
+            overlay, intentId, busy: false, quote: null, context: null, notice: null,
+            orderNo: meta.orderNo || '', orderId: meta.orderId || '', fundingKind: meta.fundingKind || '', site: meta.site || 'cn'
+        };
+        this.supplierManualContext = ctx;
+        try {
+            await this.refreshSupplierManualContext(ctx);
+            if (!ctx.context) throw new Error('未能读取这笔采购的资格信息，请刷新后重试');
+        } catch (error) {
+            ctx.notice = { tone: 'error', title: '读取失败', text: error.message || '请稍后重试' };
+        } finally {
+            if (overlay.isConnected && this.supplierManualContext === ctx) {
+                ctx.busy = false;
+                this.renderSupplierManualPanel(ctx);
+            }
+        }
+    },
+
+    refreshSupplierManualContext: async function (ctx) {
+        const headers = await this.getAdminAuthHeaders();
+        const response = await (window.AdminApi?.fetch || fetch)(this.buildAdminShopUrl('shop/supplier-manual-purchase'), {
+            method: 'POST', headers, credentials: 'include', cache: 'no-store',
+            body: JSON.stringify({ action: 'context', intentId: ctx.intentId })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success !== true || !payload.result) {
+            throw Object.assign(new Error(payload.message || '读取采购资格失败，请稍后重试'), { code: payload.code || '' });
+        }
+        ctx.context = payload.result;
+        if (payload.result.purchaseState === 'quoted' && payload.result.quotedAmountCny) {
+            ctx.quote = {
+                purchaseId: payload.result.purchaseId,
+                quotedAmountCny: payload.result.quotedAmountCny,
+                quoteExpiresAt: payload.result.quoteExpiresAt,
+                costCeilingCny: payload.result.costCeilingCny,
+                overCeiling: false
+            };
+        } else {
+            ctx.quote = null;
+        }
+        return ctx.context;
+    },
+
+    renderSupplierManualPanel: function (ctx) {
+        if (!ctx || !ctx.overlay.isConnected) return;
+        const body = ctx.overlay.querySelector('#supplierManualBody');
+        if (!body) return;
+        const context = ctx.context || {};
+        const quote = ctx.quote;
+        const busy = ctx.busy === true;
+        const blocked = context.status === 'blocked';
+        const blockedText = blocked ? (this.manualPurchaseReasons[context.reason] || this.manualPurchaseReasons.not_ready) : '';
+        const stateLabel = ({
+            quoted: '已报价', confirmed: '已确认，正在提交', accepted: '上游已受理',
+            unknown: '结果待核对', rejected: '上游已拒绝', expired: '报价已过期', abandoned: '已放弃'
+        })[context.purchaseState] || '';
+        const variant = context.variant && typeof context.variant === 'object'
+            ? String(context.variant.key || context.variant.variantKey || context.variant.name || '') : '';
+        const fact = (label, value) => `<div><dt>${this.escapeHtml(label)}</dt><dd>${this.escapeHtml(value || '—')}</dd></div>`;
+        const money = (value) => (/^\d{1,12}(?:\.\d{1,6})?$/.test(String(value || '')) ? `${value} CNY` : '—');
+
+        const facts = `<div class="shop-supplier-manual__section">
+            <div class="shop-supplier-manual__section-head">
+                <h4>订单</h4><span>${this.escapeHtml(stateLabel || '待采购')}</span>
+            </div>
+            <dl class="shop-supplier-manual__facts">
+                ${fact('上游货号', context.goodsNo)}
+                ${fact('规格', variant)}
+                ${fact('数量', '1 件')}
+                ${fact('成本上限', money(context.costCeilingCny))}
+            </dl>
+        </div>`;
+
+        let quoteBlock = '';
+        if (quote) {
+            const overCeiling = quote.overCeiling === true
+                || (Number(quote.quotedAmountCny) > Number(quote.costCeilingCny || 0) && Number(quote.costCeilingCny || 0) > 0);
+            quoteBlock = `<div class="shop-supplier-manual__section shop-supplier-manual__section--quote">
+                <div class="shop-supplier-manual__section-head"><h4>上游报价</h4><span>单件含税总价</span></div>
+                <p class="shop-supplier-manual__amount"><span>¥</span><strong>${this.escapeHtml(String(quote.quotedAmountCny))}</strong><em>CNY</em></p>
+                <p class="shop-supplier-manual__countdown" id="supplierManualCountdown" role="status">正在计算报价有效期…</p>
+                ${overCeiling ? `<p class="shop-supplier-manual__flag">报价高于订单授权成本上限 ${this.escapeHtml(money(quote.costCeilingCny))}，请先核对再确认。</p>` : ''}
+                <div class="shop-supplier-manual__actions">
+                    <button type="button" class="shop-supplier-manual__btn shop-supplier-manual__btn--primary" data-shop-action="supplier-manual-confirm"${busy ? ' disabled' : ''}>${busy ? '正在提交…' : '确认采购并扣款'}</button>
+                    <button type="button" class="shop-supplier-manual__btn" data-shop-action="supplier-manual-quote"${busy ? ' disabled' : ''}>重新报价</button>
+                </div>
+            </div>`;
+        } else if (context.canFinalize) {
+            quoteBlock = `<div class="shop-supplier-manual__section shop-supplier-manual__section--quote">
+                <div class="shop-supplier-manual__section-head"><h4>待入账</h4><span>上游单号已取得</span></div>
+                <p class="shop-supplier-manual__note">上游单号 ${this.escapeHtml(context.supplierOrderNo || '—')} 已记录，但卡密尚未完成入账。完成入账不会再次扣款。</p>
+                <div class="shop-supplier-manual__actions">
+                    <button type="button" class="shop-supplier-manual__btn shop-supplier-manual__btn--primary" data-shop-action="supplier-manual-finalize"${busy ? ' disabled' : ''}>${busy ? '正在入账…' : '完成入账'}</button>
+                </div>
+            </div>`;
+        } else if (blocked) {
+            quoteBlock = `<div class="shop-supplier-manual__section shop-supplier-manual__section--quote">
+                <div class="shop-supplier-manual__section-head"><h4>不可采购</h4><span>已阻断</span></div>
+                <p class="shop-supplier-manual__note">${this.escapeHtml(blockedText)}</p>
+            </div>`;
+        } else {
+            quoteBlock = `<div class="shop-supplier-manual__section shop-supplier-manual__section--quote">
+                <div class="shop-supplier-manual__section-head"><h4>上游报价</h4><span>尚未取价</span></div>
+                <p class="shop-supplier-manual__note">先向上游取价，看到确切金额后再确认。确认前不会产生任何扣款。</p>
+                <div class="shop-supplier-manual__actions">
+                    <button type="button" class="shop-supplier-manual__btn shop-supplier-manual__btn--primary" data-shop-action="supplier-manual-quote"${busy ? ' disabled' : ''}>${busy ? '正在取价…' : '获取上游报价'}</button>
+                </div>
+            </div>`;
+        }
+
+        const notice = ctx.notice
+            ? `<div class="shop-supplier-manual__notice shop-supplier-manual__notice--${this.escapeForAttr(ctx.notice.tone || 'info')}" role="status">
+                <strong>${this.escapeHtml(ctx.notice.title || '')}</strong>
+                <span>${this.escapeHtml(ctx.notice.text || '')}</span>
+            </div>`
+            : '';
+
+        body.setAttribute('aria-busy', busy ? 'true' : 'false');
+        body.innerHTML = `${facts}${notice}${quoteBlock}
+            <p class="shop-supplier-manual__footnote">采购只对本次报价发起一次请求；结果不确定时请先核对上游，不要重复采购。</p>`;
+        if (quote) this.startSupplierManualCountdown(ctx);
+    },
+
+    startSupplierManualCountdown: function (ctx) {
+        if (this.supplierManualTimer) {
+            clearInterval(this.supplierManualTimer);
+            this.supplierManualTimer = null;
+        }
+        const expiresAt = ctx.quote?.quoteExpiresAt ? new Date(ctx.quote.quoteExpiresAt).getTime() : 0;
+        if (!Number.isFinite(expiresAt) || expiresAt <= 0) return;
+        const tick = () => {
+            if (!ctx.overlay.isConnected || this.supplierManualContext !== ctx) {
+                clearInterval(this.supplierManualTimer);
+                this.supplierManualTimer = null;
+                return;
+            }
+            const label = ctx.overlay.querySelector('#supplierManualCountdown');
+            if (!label) return;
+            const remain = expiresAt - Date.now();
+            if (remain <= 0) {
+                label.textContent = '报价已过期，请重新报价';
+                label.classList.add('is-expired');
+                const confirm = ctx.overlay.querySelector('[data-shop-action="supplier-manual-confirm"]');
+                if (confirm) confirm.disabled = true;
+                clearInterval(this.supplierManualTimer);
+                this.supplierManualTimer = null;
+                return;
+            }
+            const seconds = Math.floor(remain / 1000);
+            label.textContent = `有效期剩余 ${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+        };
+        tick();
+        this.supplierManualTimer = setInterval(tick, 1000);
+    },
+
+    submitSupplierManualPurchase: async function (action) {
+        const ctx = this.supplierManualContext;
+        if (!ctx || !ctx.overlay.isConnected || ctx.busy) return;
+        const context = ctx.context || {};
+        const payload = { action };
+        if (action === 'quote') {
+            payload.intentId = ctx.intentId;
+        } else if (action === 'confirm') {
+            if (!ctx.quote?.purchaseId || !ctx.quote?.quotedAmountCny) return;
+            payload.purchaseId = ctx.quote.purchaseId;
+            payload.quotedAmountCny = ctx.quote.quotedAmountCny;
+            payload.confirm = true;
+        } else if (action === 'finalize') {
+            const purchaseId = context.purchaseId || ctx.quote?.purchaseId;
+            if (!purchaseId) return;
+            payload.purchaseId = purchaseId;
+        } else {
+            return;
+        }
+
+        ctx.busy = true;
+        ctx.notice = null;
+        this.renderSupplierManualPanel(ctx);
+        try {
+            const headers = await this.getAdminAuthHeaders();
+            const response = await (window.AdminApi?.fetch || fetch)(this.buildAdminShopUrl('shop/supplier-manual-purchase'), {
+                method: 'POST', headers, credentials: 'include', cache: 'no-store', body: JSON.stringify(payload)
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!ctx.overlay.isConnected) return;
+            if (!response.ok || body.success !== true || !body.result) {
+                throw new Error(body.message || '采购请求未能完成，请稍后重试');
+            }
+            const result = body.result;
+            if (action === 'quote') {
+                if (result.status === 'quoted') {
+                    ctx.quote = result;
+                    ctx.notice = result.overCeiling === true
+                        ? { tone: 'warn', title: '报价高于成本上限', text: `上游报价 ${result.quotedAmountCny} CNY 超过订单授权上限 ${result.costCeilingCny} CNY，确认前请先核对。` }
+                        : { tone: 'ok', title: '已取得报价', text: `上游报价 ${result.quotedAmountCny} CNY，确认后才会真实下单扣款。` };
+                } else {
+                    ctx.quote = null;
+                    ctx.notice = { tone: 'warn', title: '暂时无法采购', text: this.manualPurchaseReasons[result.reason] || this.manualPurchaseReasons.not_ready };
+                }
+            } else if (result.status === 'delivered') {
+                ctx.notice = { tone: 'ok', title: '采购完成，卡密已封存', text: `上游单号 ${result.supplierOrderNo || '—'} · 实际扣费 ${result.actualAmountCny || '—'} CNY。用户端已可读取。` };
+            } else if (result.status === 'quarantined') {
+                ctx.notice = { tone: 'warn', title: '已入账，交付被隔离', text: '交付内容未通过校验，请在采购记录中核对后再处理。' };
+            } else if (result.status === 'unknown') {
+                ctx.notice = { tone: 'warn', title: '采购结果待核对', text: result.message || '上游响应未能确认，可能已扣款。请先核对上游，不要重复采购。' };
+            } else if (result.status === 'rejected') {
+                ctx.notice = { tone: 'error', title: '上游明确拒绝', text: `未产生扣款（${result.reason || 'supplier_rejected'}），可核对成本上限或库存后重新报价。` };
+            } else if (result.status === 'not_claimed') {
+                ctx.notice = { tone: 'warn', title: '未能确认本次采购', text: result.message || '报价已失效，请重新报价。' };
+            } else if (result.status === 'not_finalizable') {
+                ctx.notice = { tone: 'warn', title: '尚不能入账', text: result.message || '这次采购还没有可入账的上游订单号。' };
+            } else {
+                ctx.notice = { tone: 'warn', title: '结果待核对', text: '请刷新后核对本次采购状态。' };
+            }
+
+            ctx.busy = false;
+            await this.refreshSupplierManualContext(ctx).catch(() => { /* 保留上一份投影 */ });
+            if (action !== 'quote') {
+                void this.refreshSupplierManualViews(ctx).catch(() => { /* 列表稍后刷新 */ });
+            }
+        } catch (error) {
+            ctx.notice = { tone: 'error', title: '操作未完成', text: error.message || '请稍后重试' };
+        } finally {
+            ctx.busy = false;
+            if (ctx.overlay.isConnected && this.supplierManualContext === ctx) this.renderSupplierManualPanel(ctx);
+        }
+    },
+
+    refreshSupplierManualViews: async function (ctx) {
+        const tasks = [];
+        if (document.getElementById('supplierOperationsPanel')?.open) tasks.push(() => this.loadSupplierOperations());
+        if (ctx.fundingKind === 'points' && this.currentOrderDetailId === ctx.orderId) {
+            const shell = document.getElementById('orderContentModal')?.querySelector('#orderContentShell');
+            const requestToken = this.orderDetailRequestToken;
+            if (shell) {
+                tasks.push(async () => {
+                    const payload = await this.loadOrderDetailViaAdminApi(ctx.orderId);
+                    if (shell.isConnected && this.currentOrderDetailId === ctx.orderId
+                        && this.orderDetailRequestToken === requestToken) {
+                        shell.innerHTML = this.renderOrderDetailBody(payload, []);
+                    }
+                });
+            }
+        }
+        if (ctx.fundingKind === 'guest_cash' && this.currentTab === 'guest-exceptions') {
+            tasks.push(() => this.loadGuestOrderExceptions(this.guestExceptionsPage || 1));
+        }
+        await Promise.allSettled(tasks.map((task) => Promise.resolve().then(task)));
+    },
+
+    loadSupplierOperations: async function () {
+        const body = document.getElementById('supplierOperationsTableBody');
+        const status = document.getElementById('supplierOperationsStatus');
+        if (!body || !status) return false;
+        const query = this.getSupplierCatalogQuery();
+        const requestToken = ++this.supplierOperationsRequestToken;
+        if (!query.accountKey || query.site !== 'cn') {
+            status.textContent = query.site !== 'cn' ? '当前阶段仅提供国内站外采记录。' : '请先选择供应商账号。';
+            body.innerHTML = '<tr><td colspan="6" class="shop-supplier-catalog__empty">暂无可查询的采购记录。</td></tr>';
+            return false;
+        }
+        status.textContent = '正在读取采购与交付记录…';
+        body.innerHTML = '<tr><td colspan="6" class="shop-supplier-catalog__empty">正在读取采购记录…</td></tr>';
+        try {
+            const response = await (window.AdminApi?.fetch || fetch)(this.buildAdminShopUrl('shop/supplier-catalog', {
+                action: 'procurements', providerId: query.providerId, accountKey: query.accountKey, site: query.site
+            }), { credentials: 'include', cache: 'no-store' });
+            const payload = await response.json().catch(() => ({}));
+            if (requestToken !== this.supplierOperationsRequestToken) return false;
+            if (!response.ok || payload.success !== true) throw new Error(payload.message || '采购记录读取失败，请重试。');
+            const rows = Array.isArray(payload.rows) ? payload.rows : [];
+            let actorId = null;
+            if (rows.some(row => row.runtime)) {
+                try { actorId = await this.getSupplierResolutionActor(); } catch { /* Read-only history remains available. */ }
+            }
+            if (requestToken !== this.supplierOperationsRequestToken) return false;
+            const runtimeContext = { ...query, actorId };
+            status.textContent = payload.hasMore ? '显示当前账号最近 50 笔采购；更早订单可从商城订单详情核对。' : `当前账号共 ${rows.length} 笔采购记录`;
+            body.innerHTML = rows.length ? rows.map((row) => {
+                const labels = this.getSupplierOperationLabels(row);
+                const action = row.fundingKind === 'guest_cash' ? 'guest-exception-row-detail' : 'order-show-content';
+                const cost = row.costVerified && /^\d{1,12}(?:\.\d{1,6})?$/.test(row.actualCostCny || '')
+                    ? `${row.actualCostCny} CNY` : '待核验';
+                return `<tr><td data-label="商城订单"><button type="button" class="shop-order-detail-inline-btn" data-shop-action="${action}" data-order-id="${this.escapeHtml(row.nativeOrderId || '')}" data-order-no="${this.escapeHtml(row.orderNo || '')}">${this.escapeHtml(row.orderNo || '订单详情')}</button><div>${this.escapeHtml(row.productName || '')}</div></td>
+                    <td data-label="采购状态">${this.escapeHtml(labels.procurement)}${this.renderSupplierRuntime(row, runtimeContext)}<div class="shop-supplier-operations__row-actions">${this.renderSupplierManualEntry(row)}<button type="button" class="shop-order-detail-inline-btn" data-shop-action="supplier-resolution-open" data-order-id="${this.escapeForAttr(row.nativeOrderId)}" data-funding-kind="${this.escapeForAttr(row.fundingKind)}" data-site="${this.escapeForAttr(row.site)}">${row.customerResolution ? '查看结案' : '供应商结案'}</button></div></td>
+                    <td data-label="交付状态">${this.escapeHtml(labels.delivery)}${labels.reason ? `<div>${this.escapeHtml(labels.reason)}</div>` : ''}</td>
+                    <td data-label="实际扣费">${this.escapeHtml(cost)}</td>
+                    <td data-label="待核对占用">${this.escapeHtml(row.reservedCostCny || '0')} CNY</td>
+                    <td data-label="原上游订单">${this.escapeHtml(row.supplierOrderNo || '尚未取得单号')}</td></tr>`;
+            }).join('') : '<tr><td colspan="6" class="shop-supplier-catalog__empty">当前账号暂无采购记录。</td></tr>';
+            return true;
+        } catch (error) {
+            if (requestToken !== this.supplierOperationsRequestToken) return false;
+            status.textContent = error.message || '采购记录读取失败，请重试。';
+            body.innerHTML = '<tr><td colspan="6" class="shop-supplier-catalog__empty">采购记录暂不可用，点击刷新重试。</td></tr>';
+            return false;
+        }
+    },
+
+    renderSupplierOrderSummary: function (row) {
+        if (!row) return '';
+        const labels = this.getSupplierOperationLabels(row);
+        const cost = row.costVerified && /^\d{1,12}(?:\.\d{1,6})?$/.test(row.actualCostCny || '')
+            ? `${row.actualCostCny} CNY` : '尚未核验';
+        return `<div class="shop-supplier-operations__summary">
+            <div><span>原采购请求</span><strong>${this.escapeHtml(row.originalRequestId || '—')}</strong></div>
+            <div><span>原上游订单</span><strong>${this.escapeHtml(row.supplierOrderNo || '尚未取得单号')}</strong></div>
+            <div><span>采购 / 交付</span><strong>${this.escapeHtml(labels.procurement)} / ${this.escapeHtml(labels.delivery)}</strong></div>
+            <div><span>实际扣费</span><strong>${this.escapeHtml(cost)}</strong></div>
+            <div><span>待核对占用</span><strong>${this.escapeHtml(row.reservedCostCny || '0')} CNY</strong></div>
+            ${this.renderSupplierRuntime(row)}
+            ${row.customerResolution ? `<p class="shop-supplier-resolution__note">完结说明：${this.escapeHtml(row.customerResolution.message)}</p>` : ''}
+            <div class="shop-supplier-operations__row-actions">${this.renderSupplierManualEntry(row)}<button type="button" class="shop-order-detail-inline-btn" data-shop-action="supplier-resolution-open" data-order-id="${this.escapeForAttr(row.nativeOrderId || '')}" data-funding-kind="${this.escapeForAttr(row.fundingKind || '')}" data-site="${this.escapeForAttr(row.site || '')}">${row.customerResolution ? '查看结案记录' : '供应商结案'}</button></div>
+            ${labels.reason ? `<p>${this.escapeHtml(labels.reason)}</p>` : ''}
+        </div>`;
+    },
+
+    loadSupplierCatalogAccounts: async function (query, requestToken) {
+        const response = await (window.AdminApi?.fetch || fetch)(this.buildAdminShopUrl('shop/supplier-catalog', {
+            action: 'accounts', providerId: query.providerId
+        }), { credentials: 'include' });
+        const payload = await response.json().catch(() => ({}));
+        if (requestToken !== this.supplierCatalogRequestToken) return false;
+        if (!response.ok || !payload.success) throw new Error(payload.message || '供应商账号读取失败。');
+        const accounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+        this.supplierCatalogAccounts = accounts;
+        this.supplierCatalogAccountsProviderId = query.providerId;
+        const selected = accounts.find((account) => account.accountKey === query.accountKey)
+            || accounts.find((account) => account.enabled && account.configured) || accounts[0];
+        this.supplierCatalogAccountKey = selected?.accountKey || '';
+        query.accountKey = this.supplierCatalogAccountKey;
+        const select = document.getElementById('supplierCatalogAccount');
+        if (select) {
+            select.innerHTML = accounts.length ? accounts.map((account) => `<option value="${this.escapeForAttr(account.accountKey)}">${this.escapeHtml(account.displayName || account.accountKey)}${!account.enabled ? ' · 已停用' : !account.configured ? ' · 待配置' : ''}</option>`).join('') : '<option value="">尚未初始化账号</option>';
+            select.value = this.supplierCatalogAccountKey;
+        }
+        const badge = document.getElementById('supplierCatalogProviderBadge');
+        if (badge) badge.textContent = query.providerId === 'xiareng' ? '虾仁 · 只读接入' : '16688';
+        if (!selected) throw new Error('供应商账号尚未初始化，请由负责人审阅并应用迁移。');
+        return true;
     },
 
     loadSupplierCatalog: async function ({ force = false, page = this.supplierCatalogPage || 1 } = {}) {
@@ -10055,6 +10846,7 @@ Example output format:
 
         const params = {
             providerId: query.providerId,
+            accountKey: query.accountKey,
             action: 'list',
             pageNo: nextPage,
             pageSize: this.supplierCatalogPageSize,
@@ -10062,6 +10854,14 @@ Example output format:
         };
 
         try {
+            if (force || this.supplierCatalogAccountsProviderId !== query.providerId) {
+                if (!await this.loadSupplierCatalogAccounts(query, requestToken)) return null;
+            }
+            if (requestToken !== this.supplierCatalogRequestToken) return null;
+            const account = this.supplierCatalogAccounts.find((entry) => entry.accountKey === query.accountKey);
+            if (!account?.enabled) throw new Error('该供应商账号已停用，未调用上游接口。');
+            if (!account.configured) throw new Error('该供应商账号尚未配置服务端凭据。');
+            params.accountKey = query.accountKey;
             const response = await (window.AdminApi?.fetch || fetch)(
                 this.buildAdminShopUrl('shop/supplier-catalog', params),
                 { credentials: 'include' }
@@ -10086,7 +10886,7 @@ Example output format:
             this.supplierCatalogTotal = 0;
             tableBody.innerHTML = `<tr><td colspan="7" class="shop-supplier-catalog__empty shop-supplier-catalog__empty--error"><i class="fas fa-circle-exclamation"></i> ${this.escapeHtml(error.message || '供应商目录读取失败。')}</td></tr>`;
             this.syncSupplierCatalogControls();
-            this.renderSupplierCatalogFeedback(error.message || '供应商目录读取失败。', 'error');
+            this.renderSupplierCatalogFeedback(this.escapeHtml(error.message || '供应商目录读取失败。'), 'error');
             return null;
         }
     },
@@ -10102,7 +10902,7 @@ Example output format:
     formatSupplierCatalogPrice: function (item = {}) {
         const rawPrice = String(item.supplierUnitPrice ?? '').trim();
         if (!rawPrice) return '—';
-        const currency = this.escapeHtml(String(item.currency || 'CNY').trim().toUpperCase());
+        const currency = this.escapeHtml(String(item.currency || '币种待核验').trim().toUpperCase());
         return `${this.escapeHtml(rawPrice)} ${currency}`;
     },
 
@@ -10123,18 +10923,18 @@ Example output format:
             return `
                 <tr class="shop-supplier-catalog__row${selected ? ' is-selected' : ''}">
                     <td class="shop-supplier-catalog__check-col" data-label="选择">
-                        <input type="checkbox" aria-label="选择 ${this.escapeForAttr(item.name || goodsNo)}" data-shop-change="supplier-catalog-item" data-goods-no="${this.escapeForAttr(goodsNo)}" ${selected ? 'checked' : ''}>
+                        <input type="checkbox" aria-label="选择 ${this.escapeForAttr(item.name || goodsNo)}" data-shop-change="supplier-catalog-item" data-goods-no="${this.escapeForAttr(goodsNo)}" ${this.supplierCatalogProviderId === 'xiareng' ? 'disabled title="请在详情中核对规格后导入"' : ''} ${selected ? 'checked' : ''}>
                     </td>
                     <td data-label="商品">
                         <div class="shop-supplier-catalog__product">
-                            <strong>${this.escapeHtml(item.name || '未命名商品')}</strong>
-                            ${description ? `<small>${this.escapeHtml(description.slice(0, 120))}</small>` : ''}
+                            <strong class="shop-supplier-catalog__product-name">${this.escapeHtml(item.name || '未命名商品')}</strong>
+                            ${description ? `<small class="shop-supplier-catalog__product-description">${this.escapeHtml(description.slice(0, 120))}</small>` : ''}
                         </div>
                     </td>
                     <td data-label="上游货号"><code>${this.escapeHtml(goodsNo || '—')}</code></td>
                     <td data-label="采购参考价"><span class="shop-supplier-catalog__price">${this.formatSupplierCatalogPrice(item)}</span></td>
                     <td data-label="起购数量">${item.minimumQuantity ? this.escapeHtml(String(item.minimumQuantity)) : '—'}</td>
-                    <td data-label="发货方式"><span class="shop-supplier-catalog__method">${this.escapeHtml(this.formatSupplierCatalogDeliveryMethod(item.deliveryMethod))}</span></td>
+                    <td data-label="发货方式"><span class="shop-supplier-catalog__method">${this.escapeHtml(item.deliveryLabel || this.formatSupplierCatalogDeliveryMethod(item.deliveryMethod))}</span></td>
                     <td data-label="操作">
                         <button type="button" class="btn btn-secondary shop-supplier-catalog__detail-button" data-shop-action="supplier-catalog-detail" data-goods-no="${this.escapeForAttr(goodsNo)}">
                             <i class="fas fa-eye"></i> 查看详情
@@ -10160,18 +10960,34 @@ Example output format:
         const pageInfo = document.getElementById('supplierCatalogPageInfo');
         const prevButton = document.getElementById('supplierCatalogPrevButton');
         const nextButton = document.getElementById('supplierCatalogNextButton');
+        const orderLookupButton = document.getElementById('supplierOrderLookupButton');
+        const query = this.getSupplierCatalogQuery();
+        const selectedAccount = this.supplierCatalogAccountsProviderId === query.providerId
+            ? this.supplierCatalogAccounts.find((entry) => entry.accountKey === query.accountKey)
+            : null;
 
         if (selectAll) {
+            selectAll.disabled = this.supplierCatalogProviderId === 'xiareng' || this.supplierCatalogImportInFlight;
             selectAll.checked = visibleGoodsNos.length > 0 && visibleGoodsNos.every((goodsNo) => this.supplierCatalogSelectedGoodsNos.has(goodsNo));
             selectAll.indeterminate = visibleGoodsNos.some((goodsNo) => this.supplierCatalogSelectedGoodsNos.has(goodsNo)) && !selectAll.checked;
         }
         if (importButton) {
             importButton.disabled = selectedCount === 0 || this.supplierCatalogImportInFlight;
         }
-        if (selectionCount) selectionCount.textContent = `已选 ${selectedCount} 项`;
+        if (selectionCount) selectionCount.textContent = this.supplierCatalogProviderId === 'xiareng' ? '请打开详情核对规格后导入' : `已选 ${selectedCount} 项`;
+        for (const id of ['supplierCatalogProvider', 'supplierCatalogAccount', 'supplierCatalogSite']) {
+            const select = document.getElementById(id);
+            if (select) select.disabled = this.supplierCatalogImportInFlight;
+        }
         if (pageInfo) pageInfo.textContent = this.supplierCatalogTotal ? `第 ${currentPage} / ${totalPages} 页，共 ${this.supplierCatalogTotal} 项` : '第 1 页';
         if (prevButton) prevButton.disabled = currentPage <= 1 || this.supplierCatalogImportInFlight;
         if (nextButton) nextButton.disabled = currentPage >= totalPages || this.supplierCatalogImportInFlight;
+        if (orderLookupButton) {
+            orderLookupButton.disabled = this.supplierOrderLookupInFlight
+                || query.providerId !== 'xiareng'
+                || !selectedAccount?.enabled
+                || !selectedAccount?.configured;
+        }
     },
 
     toggleSupplierCatalogItem: function (goodsNo, checked) {
@@ -10217,7 +11033,82 @@ Example output format:
         feedback.innerHTML = normalizedMessage;
     },
 
-    importSupplierCatalogGoods: async function (goodsNos = null, { confirm = true, button = null } = {}) {
+    renderSupplierOrderLookupResult: function (result = null, message = '输入完整的上游订单号进行只读核对。', tone = 'info') {
+        const container = document.getElementById('supplierOrderLookupResult');
+        if (!container) return;
+        container.className = `shop-supplier-order-lookup__result shop-supplier-order-lookup__result--${tone}`;
+        container.setAttribute('aria-busy', 'false');
+        if (!result) {
+            container.textContent = message;
+            return;
+        }
+        const paymentStatus = result.paymentStatus === 'paid' ? '已支付' : '未支付';
+        const delivery = result.deliveryContentPresent === true ? '检测到发货内容（内容不展示）' : '未检测到发货内容';
+        container.innerHTML = `<dl class="shop-supplier-order-lookup__facts">
+            <div><dt>上游订单号</dt><dd><code>${this.escapeHtml(result.supplierOrderNo)}</code></dd></div>
+            <div><dt>支付状态</dt><dd>${paymentStatus}</dd></div>
+            <div><dt>发货内容</dt><dd>${delivery}</dd></div>
+            <div><dt>查询时间</dt><dd>${this.escapeHtml(result.queriedAt)}</dd></div>
+            <div class="shop-supplier-order-lookup__digest"><dt>本地响应摘要</dt><dd><code>${this.escapeHtml(result.evidenceHash)}</code><small>SHA-256 摘要，不是虾仁签名凭证</small></dd></div>
+        </dl><p class="shop-supplier-order-lookup__caution">此结果不会关联本地订单、认领、采购、扣款、发货或改变订单状态；查无结果、超时或错误不能证明上游未受理。</p>`;
+    },
+
+    lookupSupplierOrderByNumber: async function () {
+        const input = document.getElementById('supplierOrderLookupNumber');
+        const button = document.getElementById('supplierOrderLookupButton');
+        const query = this.getSupplierCatalogQuery();
+        const orderNo = String(input?.value || '').trim();
+        if (query.providerId !== 'xiareng') {
+            this.renderSupplierOrderLookupResult(null, '该只读核对入口目前仅支持虾仁。', 'warning');
+            return null;
+        }
+        if (!/^[\p{L}\p{N}._:-]{6,160}$/u.test(orderNo)) {
+            this.renderSupplierOrderLookupResult(null, '请输入完整的上游订单号（6 至 160 个字母、数字或 . _ : -）。', 'warning');
+            input?.focus();
+            return null;
+        }
+        const requestToken = ++this.supplierOrderLookupRequestToken;
+        const context = { providerId: query.providerId, accountKey: query.accountKey, site: query.site };
+        this.supplierOrderLookupInFlight = true;
+        this.supplierOrderLookupResult = null;
+        this.renderSupplierOrderLookupResult(null, '正在向虾仁查询订单状态，不会读取或展示卡密…');
+        const resultContainer = document.getElementById('supplierOrderLookupResult');
+        resultContainer?.setAttribute('aria-busy', 'true');
+        if (button) button.disabled = true;
+        try {
+            const account = this.supplierCatalogAccountsProviderId === query.providerId
+                ? this.supplierCatalogAccounts.find((entry) => entry.accountKey === query.accountKey)
+                : null;
+            if (!account?.enabled) throw new Error('当前供应商账号未启用，未执行上游查询。');
+            if (!account.configured) throw new Error('当前供应商账号尚未配置服务端凭据，未执行上游查询。');
+            const params = { action: 'reconcile', ...context, orderNo };
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/supplier-catalog', params),
+                { credentials: 'include', cache: 'no-store' }
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success || !payload.result) {
+                throw new Error(payload.message || '上游订单查询失败，请稍后重试。');
+            }
+            if (requestToken !== this.supplierOrderLookupRequestToken) return null;
+            const current = this.getSupplierCatalogQuery();
+            if (current.providerId !== context.providerId || current.accountKey !== context.accountKey || current.site !== context.site) return null;
+            this.supplierOrderLookupResult = payload.result;
+            this.renderSupplierOrderLookupResult(payload.result, '', 'success');
+            return payload.result;
+        } catch (error) {
+            if (requestToken !== this.supplierOrderLookupRequestToken) return null;
+            this.renderSupplierOrderLookupResult(null, error.message || '上游订单查询失败，请稍后重试。', 'error');
+            return null;
+        } finally {
+            if (requestToken === this.supplierOrderLookupRequestToken) {
+                this.supplierOrderLookupInFlight = false;
+                this.syncSupplierCatalogControls();
+            }
+        }
+    },
+
+    importSupplierCatalogGoods: async function (goodsNos = null, { confirm = true, button = null, context = null, variants = {} } = {}) {
         const selectedGoodsNos = Array.isArray(goodsNos)
             ? [...new Set(goodsNos.map((value) => String(value || '').trim()).filter(Boolean))]
             : [...(this.supplierCatalogSelectedGoodsNos instanceof Set ? this.supplierCatalogSelectedGoodsNos : [])];
@@ -10231,7 +11122,8 @@ Example output format:
         }
         if (this.supplierCatalogImportInFlight) return null;
 
-        const query = this.getSupplierCatalogQuery();
+        const query = { ...(context || this.getSupplierCatalogQuery()) };
+        const requestToken = this.supplierCatalogRequestToken;
         if (confirm && typeof window.confirm === 'function') {
             const accepted = window.confirm(`将导入 ${selectedGoodsNos.length} 个商品为商城草稿。导入后不会自动上架，也不会启用供应商映射。是否继续？`);
             if (!accepted) return null;
@@ -10240,6 +11132,7 @@ Example output format:
         const actionButton = button || document.getElementById('supplierCatalogImportButton');
         this.supplierCatalogImportInFlight = true;
         this.syncSupplierCatalogControls();
+        this.syncSupplierCatalogDetailControls();
         this.setActionButtonLoading(actionButton, '导入中...');
         try {
             const headers = await this.getAdminAuthHeaders();
@@ -10252,6 +11145,8 @@ Example output format:
                     body: JSON.stringify({
                         action: 'import',
                         providerId: query.providerId,
+                        accountKey: query.accountKey,
+                        variants,
                         site: query.site,
                         goodsNos: selectedGoodsNos
                     })
@@ -10262,6 +11157,8 @@ Example output format:
                 throw new Error(payload.message || '导入失败，请稍后重试。');
             }
 
+            if (payload.results.some((result) => ['imported_as_draft', 'already_imported'].includes(result.status))) this.invalidateShopTabCache('products');
+            if (requestToken !== this.supplierCatalogRequestToken) return payload;
             const imported = payload.results.filter((result) => ['imported_as_draft', 'already_imported'].includes(result.status));
             const failed = payload.results.filter((result) => result.status === 'failed');
             imported.forEach((result) => this.supplierCatalogSelectedGoodsNos.delete(String(result.goodsNo || '').trim()));
@@ -10272,23 +11169,24 @@ Example output format:
                     : result.status === 'already_imported'
                         ? '<span class="is-muted">已导入</span>'
                         : `<span class="is-error">${this.escapeHtml(result.message || '导入失败')}</span>`;
-                return `<li><code>${goodsNo}</code> ${state}</li>`;
+                const edit = result.productId ? `<button type="button" class="btn btn-secondary" data-shop-action="supplier-catalog-edit-product" data-product-id="${this.escapeForAttr(result.productId)}" data-site="${this.escapeForAttr(result.site || query.site)}">编辑草稿</button>` : '';
+                return `<li><code>${goodsNo}</code> ${state} ${edit}</li>`;
             }).join('');
             const tone = failed.length ? (imported.length ? 'warning' : 'error') : 'success';
             this.renderSupplierCatalogFeedback(
                 `<strong>导入完成：</strong>成功 ${imported.length} 项，失败 ${failed.length} 项。${failed.length ? '<br>失败项不会创建可售商品，请修正后重试。' : ''}<ul>${resultLines}</ul>`,
                 tone
             );
-            this.invalidateShopTabCache('products');
-            await this.loadSupplierCatalog({ force: true, page: this.supplierCatalogPage });
+            this.renderSupplierCatalogRows();
             return payload;
         } catch (error) {
-            this.renderSupplierCatalogFeedback(this.escapeHtml(error.message || '导入失败，请稍后重试。'), 'error');
+            if (requestToken === this.supplierCatalogRequestToken) this.renderSupplierCatalogFeedback(this.escapeHtml(error.message || '导入失败，请稍后重试。'), 'error');
             return null;
         } finally {
             this.supplierCatalogImportInFlight = false;
             this.restoreActionButton(actionButton);
             this.syncSupplierCatalogControls();
+            this.syncSupplierCatalogDetailControls();
         }
     },
 
@@ -10300,15 +11198,24 @@ Example output format:
         if (!modal || !body) return null;
         const requestToken = ++this.supplierCatalogDetailRequestToken;
         this.supplierCatalogDetailItem = null;
-        body.innerHTML = '<div class="shop-supplier-catalog-detail-modal__loading"><i class="fas fa-spinner fa-spin"></i> 正在读取详情...</div>';
+        const query = { ...this.getSupplierCatalogQuery() };
+        this.supplierCatalogDetailContext = query;
+        const title = document.getElementById('supplierCatalogDetailTitle');
+        if (title) title.textContent = '商品详情';
+        body.classList.toggle('is-readonly-catalog', query.providerId === 'xiareng');
+        body.setAttribute('aria-busy', 'true');
+        this.syncSupplierCatalogDetailControls();
+        body.innerHTML = '<div class="shop-supplier-catalog-detail-modal__meta-grid is-loading" aria-label="正在读取详情">' + Array.from({ length: 4 }, () => '<div><span class="shop-supplier-catalog__skeleton"></span><strong class="shop-supplier-catalog__skeleton"></strong></div>').join('') + '</div>'
+            + (query.providerId === 'xiareng' ? '<section class="shop-supplier-catalog-detail-modal__variant is-loading"><span class="shop-supplier-catalog__skeleton"></span><p class="shop-supplier-catalog__skeleton"></p></section>' : '')
+            + '<div class="shop-supplier-catalog-detail-modal__description is-loading"><p class="shop-supplier-catalog__skeleton"></p></div>';
         modal.classList.add('active');
         modal.setAttribute('aria-hidden', 'false');
 
         try {
-            const query = this.getSupplierCatalogQuery();
             const response = await (window.AdminApi?.fetch || fetch)(
                 this.buildAdminShopUrl('shop/supplier-catalog', {
                     providerId: query.providerId,
+                    accountKey: query.accountKey,
                     action: 'detail',
                     goodsNo: normalizedGoodsNo
                 }),
@@ -10326,6 +11233,8 @@ Example output format:
             if (requestToken !== this.supplierCatalogDetailRequestToken) return null;
             body.innerHTML = `<div class="shop-supplier-catalog-detail-modal__error"><i class="fas fa-circle-exclamation"></i> ${this.escapeHtml(error.message || '商品详情读取失败。')}</div>`;
             return null;
+        } finally {
+            if (requestToken === this.supplierCatalogDetailRequestToken) body.setAttribute('aria-busy', 'false');
         }
     },
 
@@ -10335,19 +11244,109 @@ Example output format:
         if (!body) return;
         if (title) title.textContent = String(item.name || '商品详情');
         const safeImageUrl = /^https:\/\//i.test(String(item.imageUrl || '').trim()) ? String(item.imageUrl).trim() : '';
+        const requirements = item.variantRequirements;
         body.innerHTML = `
             ${safeImageUrl ? `<img class="shop-supplier-catalog-detail-modal__image" src="${this.escapeForAttr(safeImageUrl)}" alt="">` : ''}
             <div class="shop-supplier-catalog-detail-modal__meta-grid">
                 <div><span>上游货号</span><strong><code>${this.escapeHtml(item.providerGoodsId || '—')}</code></strong></div>
                 <div><span>采购参考价</span><strong>${this.formatSupplierCatalogPrice(item)}</strong></div>
                 <div><span>起购数量</span><strong>${item.minimumQuantity ? this.escapeHtml(String(item.minimumQuantity)) : '—'}</strong></div>
-                <div><span>发货方式</span><strong>${this.escapeHtml(this.formatSupplierCatalogDeliveryMethod(item.deliveryMethod))}</strong></div>
+                <div><span>发货方式</span><strong>${this.escapeHtml(item.deliveryLabel || this.formatSupplierCatalogDeliveryMethod(item.deliveryMethod))}</strong></div>
             </div>
+            ${requirements ? `<section class="shop-supplier-catalog-detail-modal__variant">
+                <span>规格与交付核验</span>
+                ${requirements.requiresRace ? `<label>商品种类<select id="supplierCatalogRace" data-shop-change="supplier-catalog-race"><option value="">请选择商品种类</option>${requirements.races.map((race) => `<option value="${this.escapeForAttr(race)}">${this.escapeHtml(race)}</option>`).join('')}</select></label>` : '<p>默认规格</p>'}
+                <p>${this.escapeHtml(requirements.reasons?.join('；') || '可保存为下架草稿；采购与交付能力尚未启用。')}</p>
+                <button type="button" class="btn btn-secondary" data-shop-action="supplier-catalog-preview" disabled>读取库存与询价</button>
+                <div id="supplierCatalogPreview" role="status" aria-live="polite"></div>
+            </section>` : ''}
             <div class="shop-supplier-catalog-detail-modal__description">
                 <span>上游描述</span>
                 <p>${this.escapeHtml(item.description || '上游未提供描述。')}</p>
             </div>
         `;
+        this.syncSupplierCatalogDetailControls();
+    },
+
+    isSupplierCatalogDetailImportable: function (forImport = true) {
+        const item = this.supplierCatalogDetailItem;
+        if (!item || this.supplierCatalogImportInFlight) return false;
+        const requirements = item.variantRequirements;
+        if (!requirements) return true; // Existing provider's default variant.
+        if (forImport && this.supplierCatalogDetailContext?.site !== 'cn') return false;
+        if (!requirements.importable) return false;
+        const race = document.getElementById('supplierCatalogRace')?.value || '';
+        return !requirements.requiresRace || requirements.races.includes(race);
+    },
+
+    syncSupplierCatalogDetailControls: function () {
+        const importButton = document.querySelector('[data-shop-action="supplier-catalog-import-detail"]');
+        if (importButton) importButton.disabled = !this.isSupplierCatalogDetailImportable();
+        const previewButton = document.querySelector('[data-shop-action="supplier-catalog-preview"]');
+        if (previewButton) previewButton.disabled = !this.isSupplierCatalogDetailImportable(false);
+        const race = document.getElementById('supplierCatalogRace');
+        if (race) race.disabled = this.supplierCatalogImportInFlight;
+    },
+
+    previewSupplierCatalogDetail: async function () {
+        if (!this.isSupplierCatalogDetailImportable(false)) return null;
+        const context = { ...this.supplierCatalogDetailContext };
+        const goodsNo = this.supplierCatalogDetailItem.providerGoodsId;
+        const race = document.getElementById('supplierCatalogRace')?.value || '';
+        const requestToken = ++this.supplierCatalogPreviewRequestToken;
+        const detailToken = this.supplierCatalogDetailRequestToken;
+        const output = document.getElementById('supplierCatalogPreview');
+        if (output) output.textContent = '正在读取库存与询价…';
+        const button = document.querySelector('[data-shop-action="supplier-catalog-preview"]');
+        if (button) button.disabled = true;
+        try {
+            const response = await (window.AdminApi?.fetch || fetch)(this.buildAdminShopUrl('shop/supplier-catalog', {
+                action: 'preview', providerId: context.providerId, accountKey: context.accountKey, goodsNo, race
+            }), { credentials: 'include' });
+            const payload = await response.json().catch(() => ({}));
+            if (detailToken !== this.supplierCatalogDetailRequestToken || requestToken !== this.supplierCatalogPreviewRequestToken) return null;
+            if (!response.ok || !payload.success) throw new Error(payload.message || '库存与询价读取失败。');
+            if (output) output.textContent = `当前库存 ${payload.stock?.availableQuantity ?? '待确认'} · 上游报价 ${payload.quote?.amount ?? '待确认'} ${payload.quote?.currency || '（币种待核验）'}。按数量 1 询价，单价/总额口径待核验；未锁定库存。`;
+            return payload;
+        } catch (error) {
+            if (detailToken === this.supplierCatalogDetailRequestToken && requestToken === this.supplierCatalogPreviewRequestToken && output) output.textContent = error.message || '库存与询价读取失败。';
+            return null;
+        } finally {
+            if (detailToken === this.supplierCatalogDetailRequestToken && requestToken === this.supplierCatalogPreviewRequestToken) this.syncSupplierCatalogDetailControls();
+        }
+    },
+
+    editSupplierCatalogProduct: async function (productId, site = 'cn') {
+        this.closeSupplierCatalogDetail();
+        if (window.AdminSiteFilter?.getSiteFilter?.() !== site) await window.AdminSiteFilter?.select?.(site);
+        if (this.getEditSite() !== site) {
+            this.renderSupplierCatalogFeedback('请先切换到草稿对应的站点再编辑。', 'warning');
+            return;
+        }
+        await this.editProduct(productId);
+    },
+
+    loadProductSupplierSummary: async function (productId) {
+        const container = document.getElementById('productSupplierSummary');
+        if (!container) return;
+        const token = ++this.productSupplierSummaryToken;
+        container.hidden = true;
+        try {
+            const response = await (window.AdminApi?.fetch || fetch)(this.buildAdminShopUrl('shop/supplier-catalog', {
+                action: 'mappings', productId
+            }), { credentials: 'include' });
+            const payload = await response.json().catch(() => ({}));
+            if (token !== this.productSupplierSummaryToken) return;
+            if (!response.ok || !payload.success) throw new Error('货源信息暂不可用，请稍后重新打开商品核对。');
+            const mappings = Array.isArray(payload.mappings) ? payload.mappings : [];
+            if (!mappings.length) return;
+            container.innerHTML = `<summary>货源与交付 · ${mappings.length} 条映射</summary><div>${mappings.map((mapping) => `<p><strong>${this.escapeHtml(mapping.accountName || mapping.providerId)}</strong> · <code>${this.escapeHtml(mapping.goodsNo)}</code>${mapping.variant?.race ? ` · ${this.escapeHtml(mapping.variant.race)}` : ''}<br>${mapping.enabled ? '映射已启用' : '映射未启用'} · ${mapping.site === 'intl' ? '国际站' : '国内站'}${mapping.snapshot?.supplierUnitPrice != null ? ` · 导入参考价 ${this.formatSupplierCatalogPrice(mapping.snapshot)}` : ''}</p>`).join('')}<p>目录参考与实际履约独立。虾仁采购、自动交付和游客购买仍未开放。</p></div>`;
+            container.hidden = false;
+        } catch (error) {
+            if (token !== this.productSupplierSummaryToken) return;
+            container.innerHTML = '<summary>货源与交付</summary><p>货源信息暂不可用，请重新打开商品核对账号与映射。</p>';
+            container.hidden = false;
+        }
     },
 
     importSupplierCatalogDetail: async function () {
@@ -10357,10 +11356,15 @@ Example output format:
             this.renderSupplierCatalogFeedback('当前详情缺少上游货号，无法导入。', 'warning');
             return null;
         }
+        if (!this.isSupplierCatalogDetailImportable()) return null;
+        const detailToken = this.supplierCatalogDetailRequestToken;
+        const race = document.getElementById('supplierCatalogRace')?.value || '';
         const result = await this.importSupplierCatalogGoods([goodsNo], {
+            context: this.supplierCatalogDetailContext,
+            variants: { [goodsNo]: race ? { race } : {} },
             button: document.querySelector('[data-shop-action="supplier-catalog-import-detail"]')
         });
-        if (result) this.closeSupplierCatalogDetail();
+        if (result?.success && detailToken === this.supplierCatalogDetailRequestToken) this.closeSupplierCatalogDetail();
         return result;
     },
 
@@ -10368,6 +11372,9 @@ Example output format:
         const modal = document.getElementById('supplierCatalogDetailModal');
         if (!modal) return;
         ++this.supplierCatalogDetailRequestToken;
+        ++this.supplierCatalogPreviewRequestToken;
+        this.supplierCatalogDetailItem = null;
+        this.supplierCatalogDetailContext = null;
         modal.classList.remove('active');
         modal.setAttribute('aria-hidden', 'true');
     },
@@ -11906,6 +12913,9 @@ Example output format:
         const modal = document.getElementById('productModal');
         if (!modal) { alert('Modal not found in DOM'); return; }
         this.productModalDirty = false;
+        ++this.productSupplierSummaryToken;
+        const supplierSummary = document.getElementById('productSupplierSummary');
+        if (supplierSummary) supplierSummary.hidden = true;
         this.resetProductIconUploadState();
         this.ensureRichTextEditors();
         this.bindProductModalOverlayDismiss();
@@ -12018,6 +13028,7 @@ Example output format:
         this.productModalDirty = false;
 
         void this.openProductModal(true);
+        void this.loadProductSupplierSummary(id);
 
         const cachedProduct = this.productGridCache instanceof Map
             ? this.productGridCache.get(String(id || ''))
@@ -18212,6 +19223,7 @@ Example output format:
     },
 
     formatShopProfitCny: function (value, emptyText = '—') {
+        if (value === null || value === undefined || value === '') return emptyText;
         if (typeof this.formatProcurementCny === 'function') {
             return this.formatProcurementCny(value, emptyText);
         }
@@ -18224,6 +19236,7 @@ Example output format:
     },
 
     formatShopProfitPercent: function (value) {
+        if (value === null || value === undefined || value === '') return '—';
         const rate = Number(value);
         if (!Number.isFinite(rate)) return '—';
         return `${(rate * 100).toLocaleString('zh-CN', {
@@ -18238,7 +19251,9 @@ Example output format:
             complete: '成本完整',
             partial: '部分缺成本',
             no_cost: '缺少成本',
-            no_inventory: '未关联库存'
+            no_inventory: '未关联库存',
+            supplier_pending: '外采成本待核对',
+            supplier_verified: '外采扣费已核验'
         };
         return labels[normalized] || '待核对';
     },
@@ -18326,7 +19341,9 @@ Example output format:
             ? this.formatShopPointAmount(safeProfit.bonus_points_spent, '0')
             : '未追踪';
         const untrackedSpendPoints = this.formatShopPointAmount(safeProfit.untracked_revenue_points || 0, '0');
-        const recognitionLabel = String(safeProfit.revenue_recognition_status || '').trim() === 'exact'
+        const recognitionLabel = safeProfit.revenue_recognition_status === 'supplier_pending'
+            ? '供货核验后确认'
+            : String(safeProfit.revenue_recognition_status || '').trim() === 'exact'
             ? '精确拆分'
             : (hasSpendBreakdown ? '部分拆分' : '历史估算');
         const traceability = safeProfit.point_source_traceability || {};
@@ -18670,6 +19687,8 @@ Example output format:
             order?.linkage_source ? this.renderDeliveryMetaBadge(`关联 ${this.escapeHtml(String(order.linkage_source).replace(/_/g, ' '))}`, 'muted') : ''
         ].filter(Boolean).join('');
 
+        const supplierMessage = order.fulfillment_source === 'supplier_v2'
+            ? this.escapeHtml(fulfillment.fulfillment_message || '正在等待供货处理') : '';
         const inventoryMarkup = linkedInventoryItems.length
             ? linkedInventoryItems.map((item) => `
                 <div class="shop-order-detail-list-row">
@@ -18689,16 +19708,16 @@ Example output format:
                     ` : ''}
                 </div>
             `).join('')
-            : '<div class="shop-order-detail-empty-inline">当前订单没有精确命中的库存记录。</div>';
+            : `<div class="shop-order-detail-empty-inline">${supplierMessage || '当前订单没有精确命中的库存记录。'}</div>`;
 
         const itemsMarkup = orderItems.length
             ? orderItems.map((item) => `
                 <div class="shop-order-content-item">
                     <div class="shop-order-content-item-title">${this.escapeHtml(item.product_name || '商品')}</div>
-                    <div class="shop-order-content-item-value">${this.escapeHtml(item.content || '无内容')}</div>
+                    <div class="shop-order-content-item-value">${this.escapeHtml(item.content || '') || supplierMessage || '无内容'}</div>
                 </div>
             `).join('')
-            : '<div class="shop-order-detail-empty-inline">暂无订单内容。</div>';
+            : `<div class="shop-order-detail-empty-inline">${supplierMessage || '暂无订单内容。'}</div>`;
 
         const ticketMarkup = ticketRecords.length
             ? ticketRecords.map((ticket) => `
@@ -18801,6 +19820,7 @@ Example output format:
                                 <div class="shop-order-detail-section__title"><i class="fas fa-truck-fast"></i> 履约与动作</div>
                             </div>
                             <div class="shop-order-detail-hero__pills">${fulfillmentPills || '<span class="shop-order-detail-empty-inline">暂无履约上下文</span>'}</div>
+                            ${this.renderSupplierOrderSummary(fulfillment.supplier)}
                             <div class="shop-order-detail-kv">
                                 <div><span>最近错误</span><strong>${this.escapeHtml(fulfillment?.delivery_last_error || deliveryTask?.last_error || '—')}</strong></div>
                                 <div><span>最近更新</span><strong>${this.escapeHtml(this.formatOrderDetailTime(fulfillment?.delivery_updated_at || deliveryTask?.updated_at))}</strong></div>

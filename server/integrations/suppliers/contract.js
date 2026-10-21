@@ -3,6 +3,8 @@
 const CAPABILITY_METHODS = Object.freeze({
     catalog: ['listGoods', 'getGoodsDetail', 'normalizeCatalogItem'],
     quote: ['quotePrice'],
+    stock: ['getStock'],
+    orderLookup: ['queryPurchaseByOrderNo'],
     procurement: ['createPurchase', 'queryPurchase'],
     purchaseHistory: ['listPurchases'],
     accountBalance: ['getBalance']

@@ -143,20 +143,34 @@ function signatureParams(fnName, sql = migrationSql) {
     });
 }
 
-/** 收集仓库里所有 `.rpc('fn_guest_shop_*'` 调用点的第二参数首字符。 */
+/** Resolve only a literal object or a const-bound object; arrays/unknown values fail closed. */
+function namedArgumentObject(source, offset) {
+    const tail = source.slice(offset);
+    const literal = /^\s*\{/u.exec(tail);
+    if (literal) return { body: balancedBraces(source, offset + literal[0].length - 1), binding: null };
+    const name = /^\s*([A-Za-z_$][\w$]*)/u.exec(tail)?.[1];
+    assert.ok(name, 'RPC arguments must be a named object, never positional arguments');
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    const declarations = [...source.matchAll(new RegExp(`\\bconst\\s+${escaped}\\s*=\\s*\\{`, 'gu'))];
+    assert.equal(declarations.length, 1, `${name} must resolve to one const object declaration`);
+    const declaration = declarations[0];
+    assert.ok(declaration.index < offset, `${name} must be declared before use`);
+    return { body: balancedBraces(source, declaration.index + declaration[0].length - 1), binding: name };
+}
+
+/** Collect every static fn_guest_shop_* RPC, including named-object bindings. */
 function rpcCallSites() {
     const sites = [];
     const walk = (dir) => {
         for (const entry of fs.readdirSync(path.join(REPO_ROOT, dir), { withFileTypes: true })) {
             if (entry.name === 'node_modules') continue;
-            const full = path.join(REPO_ROOT, dir, entry.name);
             if (entry.isDirectory()) { walk(path.join(dir, entry.name)); continue; }
             if (!entry.name.endsWith('.js')) continue;
-            const source = fs.readFileSync(full, 'utf8');
-            const re = /\.rpc\(\s*'(fn_guest_shop_[a-z0-9_]+)'\s*,\s*([\[{])/gu;
-            let matched;
-            while ((matched = re.exec(source)) !== null) {
-                sites.push({ file: path.join(dir, entry.name), fn: matched[1], opener: matched[2] });
+            const source = fs.readFileSync(path.join(REPO_ROOT, dir, entry.name), 'utf8');
+            const re = /\.rpc\(\s*['"](fn_guest_shop_[a-z0-9_]+)['"]\s*,/gu;
+            for (const match of source.matchAll(re)) {
+                sites.push({ file: path.join(dir, entry.name), fn: match[1],
+                    ...namedArgumentObject(source, match.index + match[0].length) });
             }
         }
     };
@@ -174,8 +188,8 @@ test('every fn_guest_shop_* RPC call site uses named arguments, never positional
     assert.ok(createSites.length >= 1, 'the order-creation RPC must have at least one runtime caller');
     for (const site of sites) {
         assert.equal(
-            site.opener,
-            '{',
+            typeof site.body,
+            'string',
             `${site.file} calls ${site.fn} with positional arguments; a signature change would silently mis-bind them`
         );
     }
@@ -186,12 +200,27 @@ test('every fn_guest_shop_* RPC call site uses named arguments, never positional
 // ---------------------------------------------------------------------------
 
 function callerKeys() {
-    const callAt = callerSource.indexOf(".rpc('fn_guest_shop_create_order', {");
-    assert.ok(callAt >= 0, 'caller must keep the named-argument object form');
-    const open = callerSource.indexOf('{', callAt);
-    const body = balancedBraces(callerSource, open);
+    const call = /\.rpc\(\s*'fn_guest_shop_create_order'\s*,/u.exec(callerSource);
+    assert.ok(call, 'caller must keep the named-argument object form');
+    const { body } = namedArgumentObject(callerSource, call.index + call[0].length);
     return [...body.matchAll(/(?:^|[,{])\s*(p_[a-z0-9_]+)\s*:/gmu)].map((m) => m[1]);
 }
+
+test('argument resolver rejects positional, unresolved and mutable argument containers', () => {
+    for (const source of ['[]', 'unknown', 'const args = []; use(args)', 'let args = {}; use(args)']) {
+        const offset = source.includes('use(') ? source.indexOf('use(') + 4 : 0;
+        assert.throws(() => namedArgumentObject(source, offset));
+    }
+    const valid = 'const args = { p_site: "cn" }; use(args)';
+    assert.equal(namedArgumentObject(valid, valid.indexOf('use(') + 4).binding, 'args');
+});
+
+test('supplier and local guest creation use the same complete named argument object', () => {
+    const site = rpcCallSites().find((entry) => entry.fn === 'fn_guest_shop_create_order' && entry.file.endsWith('public/guest-shop.js'));
+    assert.ok(site?.binding, 'the local and supplier branches must share one named argument object');
+    assert.match(callerSource, new RegExp(`createGuestOrder\\(getSupabase\\(\\),\\s*\\{\\s*source: supplierSource, params: ${site.binding}\\s*\\}`));
+    assert.doesNotMatch(site.body, /\.\.\./u, 'all native arguments must be explicit for signature review');
+});
 
 test('the caller passes exactly the 15 declared parameters, with no typos', () => {
     const params = signatureParams('fn_guest_shop_create_order', l1l2Sql);

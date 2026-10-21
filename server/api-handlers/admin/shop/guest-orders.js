@@ -1,3 +1,4 @@
+const { supplierResolutionError } = require('../../../integrations/suppliers/order-status');
 const {
     normalizeAdminSite,
     parseJsonBody,
@@ -107,7 +108,9 @@ const SAFE_VIEW_FIELDS = Object.freeze([
     'payment_last_error_code',
     'payment_last_error_message',
     'created_at',
-    'updated_at'
+    'updated_at',
+    'fulfillment_source',
+    'supplier_customer_resolution'
 ]);
 
 const SAFE_VIEW_SELECT = SAFE_VIEW_FIELDS.join(',');
@@ -392,6 +395,8 @@ function extractRaisedException(error) {
 }
 
 function mapAdminRpcError(error) {
+    const supplierError = supplierResolutionError(error);
+    if (supplierError) return supplierError;
     if (isMissingAdminRpcError(error)) {
         return createHttpError(503, '游客后台写操作尚未启用', 'guest_admin_ops_unavailable');
     }

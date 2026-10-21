@@ -13391,7 +13391,25 @@
                         'full_refund': { text: refundedText, class: 'status-refunded' },
                         'partial_refund': { text: partialRefundText, class: 'status-refunded' }
                     };
-                    const statusInfo = statusMap[order.status] || { text: completedText, class: 'status-completed' };
+                    const supplierStatusMap = {
+                        compensated: { text: isEnglish ? 'Completed' : '已完结', class: 'status-completed' },
+                        pending: { text: isEnglish ? 'Awaiting supply' : '待供货', class: 'status-pending' },
+                        awaiting_payment: { text: isEnglish ? 'Awaiting payment' : '待付款', class: 'status-pending' },
+                        review: { text: isEnglish ? 'Under review' : '处理中', class: 'status-pending' },
+                        refunding: { text: isEnglish ? 'Refunding' : '退款中', class: 'status-pending' },
+                        refunded: { text: refundedText, class: 'status-refunded' },
+                        partially_refunded: { text: partialRefundText, class: 'status-refunded' },
+                        expired: { text: isEnglish ? 'Expired' : '已过期', class: 'status-refunded' },
+                        closed: { text: isEnglish ? 'Closed' : '已关闭', class: 'status-refunded' },
+                        failed: { text: isEnglish ? 'Payment failed' : '付款失败', class: 'status-refunded' },
+                        delivered: { text: completedText, class: 'status-completed' }
+                    };
+                    const supplierStatus = order.supplier_status || (order.delivery_status === 'delivered' ? 'delivered' : 'pending');
+                    const statusInfo = statusMap[order.status] && ['full_refund', 'partial_refund'].includes(order.status)
+                        ? statusMap[order.status]
+                        : order.fulfillment_source === 'supplier_v2'
+                            ? (supplierStatusMap[supplierStatus] || supplierStatusMap.review)
+                            : (statusMap[order.status] || { text: completedText, class: 'status-completed' });
                     statusText = statusInfo.text;
                     statusClass = statusInfo.class;
                 } else if (order.transactionType === 'affiliate') {
@@ -13470,6 +13488,7 @@
                     <div class="order-item${actionAttrs ? ' order-item--interactive' : ''}${itemToneClass ? ` ${itemToneClass}` : ''}"${actionAttrs}>
                         <div class="order-main">
                             <div class="${productClass}">${displayName}</div>
+                            ${order.customer_resolution ? `<div class="order-meta">${this.escapeHtml(order.customer_resolution.message)}</div>` : ''}
                             <div class="order-meta">
                                 <span class="order-date">${dateStr}</span>
                             </div>
@@ -14280,7 +14299,11 @@
             // Skeleton HTML - shows immediately with loading animation
             const t = (key, fallback) => window.i18n?.t(key) || fallback;
             const previewOrder = this.findShopOrderPreview(orderId);
-            detailOverlay.innerHTML = previewOrder
+            const pointsService = window.PointsService;
+            const cachedDetail = pointsService?.peekWalletShopOrderDetail?.({ orderId });
+            const isSupplierPreview = previewOrder?.fulfillment_source === 'supplier_v2'
+                || cachedDetail?.order?.fulfillment_source === 'supplier_v2';
+            detailOverlay.innerHTML = previewOrder && !isSupplierPreview
                 ? this.buildWalletShopOrderPreviewMarkup(orderId, previewOrder)
                 : this.buildWalletOrderLoadingMarkup(t('wallet.loading', '加载详情...'), {
                     modalClass: 'wallet-order-modal--shop-detail'
@@ -14291,13 +14314,13 @@
 
             // 🚀 STEP 2: Load data in background
             try {
-                const pointsService = window.PointsService;
                 if (!pointsService?.getWalletShopOrderDetail) {
                     throw new Error('PointsService shop order detail API not available');
                 }
 
-                const detail = pointsService?.peekWalletShopOrderDetail?.({ orderId })
-                    || await pointsService.getWalletShopOrderDetail({ orderId });
+                const detail = isSupplierPreview
+                    ? await pointsService.getWalletShopOrderDetail({ orderId, force: true })
+                    : cachedDetail || await pointsService.getWalletShopOrderDetail({ orderId });
 
                 // Check if modal was closed while loading
                 if (!document.getElementById(`order-detail-${orderId}`)) return;
@@ -14308,6 +14331,7 @@
                     return;
                 }
 
+                const supplierPending = order.fulfillment_source === 'supplier_v2' && order.delivery_status !== 'delivered';
                 const contentFallback = window.i18n?.t('wallet.contentLoadFailed') || '内容加载失败';
                 const items = Array.isArray(detail?.items)
                     ? detail.items.map((item) => {
@@ -14392,7 +14416,9 @@
                     ? 'wallet-content-grid wallet-content-grid--double'
                     : 'wallet-content-grid wallet-content-grid--stacked';
 
-                const contentHtml = `<div class="${gridClass}">` + items.map((item) => {
+                const contentHtml = supplierPending
+                    ? `<div class="wallet-order-guidance-content-body" role="status">${this.escapeHtml(order.fulfillment_message || '正在等待供货处理')}</div>`
+                    : `<div class="${gridClass}">` + items.map((item) => {
                     const encodedContent = this.encodeActionValue(item.content);
                     return `
                     <div class="content-card wallet-copy-card wallet-copy-card--compact js-wallet-copy-content" data-wallet-copy-content="${this.escapeAttribute(encodedContent)}" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">
@@ -14466,10 +14492,10 @@
                             <div class="wallet-order-detail-toolbar">
                                 ${guidanceTogglesMarkup}
                                 <div class="modal-actions wallet-modal-actions--toolbar">
-                                    <button class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-copy js-wallet-copy-all" title="${window.i18n?.t('wallet.copyAll') || '全部复制'}">
+                                    <button ${supplierPending ? 'disabled aria-disabled="true"' : ''} class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-copy js-wallet-copy-all" title="${window.i18n?.t('wallet.copyAll') || '全部复制'}">
                                         <i class="fas fa-copy"></i>
                                     </button>
-                                    <button class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-neutral js-wallet-export-order" title="${window.i18n?.t('wallet.export') || '导出'}">
+                                    <button ${supplierPending ? 'disabled aria-disabled="true"' : ''} class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-neutral js-wallet-export-order" title="${window.i18n?.t('wallet.export') || '导出'}">
                                         <i class="fas fa-download"></i>
                                     </button>
                                     <button class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-danger js-wallet-open-ticket" title="${window.i18n?.t('wallet.submitTicket') || '提交工单'}" aria-label="${window.i18n?.t('wallet.submitTicket') || '提交工单'}">
@@ -14479,7 +14505,7 @@
                             </div>
                             ${guidancePanelsMarkup}
                             <div class="content-section">
-                                <div class="content-section-title">${window.i18n?.t('wallet.purchaseContent') || '购买内容'} (${items.length})</div>
+                                <div class="content-section-title">${supplierPending ? (order.customer_resolution ? '完结说明' : '供货进度') : `${window.i18n?.t('wallet.purchaseContent') || '购买内容'} (${items.length})`}</div>
                                 ${contentHtml}
                             </div>
                         </div>

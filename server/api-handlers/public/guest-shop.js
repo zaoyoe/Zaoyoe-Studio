@@ -1,4 +1,8 @@
+const { loadCustomerDelivery } = require('../../integrations/suppliers/delivery');
 'use strict';
+
+const supplierCheckoutV2 = require('../../integrations/suppliers/checkout');
+const { supplierOrderStatus } = require('../../integrations/suppliers/order-status');
 
 const crypto = require('node:crypto');
 const defaultSecurity = require('../../../api/_lib/guest-shop/security');
@@ -1060,6 +1064,7 @@ function createGuestShopHandlers({
     // oracle), and an unmapped code returns null so the caller keeps the pre-L1
     // 500 instead of inventing a friendlier answer.
     function mapGuestCreateOrderError(error) {
+        if (String(error?.code || '').startsWith('supplier_') && error?.expose === true) return error;
         const mapped = defaultGuestPromo.resolveGuestCreateOrderError(error);
         if (mapped) {
             const mappedError = new security.GuestShopSecurityError(mapped.message, {
@@ -3062,6 +3067,7 @@ function createGuestShopHandlers({
 
 function responseOrder(order, extras = {}) {
         const result = {
+            ...supplierOrderStatus(order),
             order_no: order.order_no,
             payment_order_id: order.payment_order_id,
             amount: extras.amount ?? order.total_amount,
@@ -3115,6 +3121,7 @@ function responseOrder(order, extras = {}) {
 
     function publicOrderSnapshot(order, extras = {}) {
         const snapshot = {
+            ...supplierOrderStatus(order),
             order_no: order.order_no,
             site: order.site,
             product_id: order.product_id,
@@ -3865,7 +3872,10 @@ function responseOrder(order, extras = {}) {
             const expiredBeforeRpc = await loadExpiredIntentOrderOrThrow();
             if (expiredBeforeRpc) return await resumeUnknownOrder(expiredBeforeRpc);
 
-            const { data, error } = await getSupabase().rpc('fn_guest_shop_create_order', {
+            const supplierSource = await supplierCheckoutV2.resolveSupplierSource(getSupabase(), {
+                productId: normalized.productId, productSkuId: normalized.skuId, site: siteName
+            }, env);
+            const createOrderParams = {
                 p_site: siteName, p_product_id: normalized.productId, p_sku_id: normalized.skuId,
                 p_idempotency_key: normalized.idempotencyKey, p_request_fingerprint: fingerprint,
                 p_claim_secret_hash: claimHash, p_provider: provider, p_channel: channel,
@@ -3876,7 +3886,12 @@ function responseOrder(order, extras = {}) {
                 // value that slipped past this process still cannot widen an order.
                 p_quantity: normalized.quantity,
                 p_discount_code: normalized.discountCode || null
-            });
+            };
+            const { data, error } = supplierSource
+                ? { data: await supplierCheckoutV2.createGuestOrder(getSupabase(), {
+                    source: supplierSource, params: createOrderParams
+                }) }
+                : await getSupabase().rpc('fn_guest_shop_create_order', createOrderParams);
             if (error) throw error;
             const order = Array.isArray(data) ? data[0] : data;
             if (!order?.order_id) throw new Error('订单创建失败');
@@ -4276,6 +4291,25 @@ function responseOrder(order, extras = {}) {
 
     async function loadClaimedContent(order) {
         const db = getSupabase();
+        // Both callers complete the existing claim/guest-owner authorization
+        // before reaching here. Supplier secrets never fall back to inventory.
+        if (order.fulfillment_source === 'supplier_v2') {
+            const delivery = await loadCustomerDelivery(db, {
+                orderId: order.id, fundingKind: 'guest_cash', site: order.site
+            }, env);
+            if (delivery.status !== 'delivered') {
+                throw Object.assign(new Error('订单尚未完成发货'), { statusCode: 409, code: 'guest_order_not_ready', expose: true });
+            }
+            const guidance = await loadGuestProductGuidance([order.product_id], order.site);
+            const productGuidance = guidance.get(String(order.product_id || '').trim()) || {};
+            return { content: delivery.content, items: [{
+                product_id: order.product_id || null, sku_id: order.sku_id || null,
+                product_name: order.snapshot_product_name || '商品', sku_name: order.snapshot_sku_name || '',
+                quantity: 1, content: delivery.content, purchase_notes: productGuidance.purchaseNotes || '',
+                usage_instructions: productGuidance.usageInstructions || ''
+            }], guidance: productGuidance };
+        }
+
         if (!db) throw Object.assign(new Error('游客履约数据库不可用'), {
             statusCode: 503,
             code: 'guest_database_unavailable',
@@ -4713,12 +4747,13 @@ function responseOrder(order, extras = {}) {
         try {
             let order = await loadOrderByNo(queryValue(req, 'orderNo') || queryValue(req, 'order_no'));
             await authorizeClaim(req, order);
+            const customerResolved = Boolean(supplierOrderStatus(order).customer_resolution);
             // A prior webhook/status request may have confirmed payment while
             // its in-process kick was unavailable or failed. Re-kick any
             // confirmed order that is still not delivered; the worker's
             // persisted lease/CAS keeps this safe across concurrent callers.
             let kickedConfirmedOrder = false;
-            if (String(order.payment_status || '').trim().toLowerCase() === 'confirmed'
+            if (!customerResolved && String(order.payment_status || '').trim().toLowerCase() === 'confirmed'
                 && String(order.fulfillment_status || '').trim().toLowerCase() !== 'delivered') {
                 kickConfirmedOrder(order.id);
                 kickedConfirmedOrder = true;
@@ -4745,7 +4780,7 @@ function responseOrder(order, extras = {}) {
                         order_id: order.id,
                         merchant_order_no: order.order_no
                     });
-                    if (!paymentStatusIsTerminal(paymentStatus)) {
+                    if (!customerResolved && !paymentStatusIsTerminal(paymentStatus)) {
                         checkout = buildStoredCheckout(order, payment);
                     }
                 } catch (_) {
@@ -4760,7 +4795,7 @@ function responseOrder(order, extras = {}) {
                 // the logged-in wallet recharge flow and actively query the
                 // provider from this endpoint so a genuinely paid order can
                 // self-heal without an operator touching the row.
-                const shouldRefreshProvider = payment
+                const shouldRefreshProvider = !customerResolved && payment
                     && fulfillmentStatus !== 'delivered'
                     && (!paymentStatusIsTerminal(paymentStatus) || paymentStatus === 'confirmed');
                 if (shouldRefreshProvider) {
@@ -4778,7 +4813,7 @@ function responseOrder(order, extras = {}) {
                     }
                 }
             }
-            if (!kickedConfirmedOrder
+            if (!customerResolved && !kickedConfirmedOrder
                 && String(order.payment_status || '').trim().toLowerCase() === 'confirmed'
                 && String(order.fulfillment_status || '').trim().toLowerCase() !== 'delivered') {
                 kickConfirmedOrder(order.id);
@@ -5279,7 +5314,7 @@ function responseOrder(order, extras = {}) {
             // them and never recomputes an amount from them.
             const fields = 'order_no,site,total_amount,currency,quantity,unit_amount,'
                 + 'list_unit_amount,discount_amount,discount_code,payment_fee_amount,'
-                + 'payment_status,fulfillment_status,refund_status,expires_at,created_at';
+                + 'payment_status,fulfillment_status,fulfillment_source,refund_status,supplier_customer_resolution,expires_at,created_at';
             let query = db.from('guest_shop_orders').select(fields, { count: 'exact' });
             // buyer_id is unique per (site, contact_hash), so it already implies
             // the site; no extra site filter is needed or wanted.

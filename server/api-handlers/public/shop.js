@@ -1,3 +1,6 @@
+const { loadCustomerDelivery } = require('../../integrations/suppliers/delivery');
+const { supplierOrderStatus } = require('../../integrations/suppliers/order-status');
+const supplierCheckoutV2 = require('../../integrations/suppliers/checkout');
 const crypto = require('node:crypto');
 const {
     decryptCdk,
@@ -3277,7 +3280,7 @@ function createShopHandlers({
 
         const { data: order, error: orderError } = await dataSupabase
             .from('shop_orders')
-            .select('id, user_id, product_id, inventory_id, snapshot_product_name, created_at, price_paid, total_price, discount_code, discount_amount, discount_snapshot, item_count')
+            .select('id, user_id, product_id, inventory_id, snapshot_product_name, created_at, price_paid, total_price, discount_code, discount_amount, discount_snapshot, item_count, fulfillment_source, delivery_status, refund_status, supplier_customer_resolution')
             .eq('id', normalizedOrderId)
             .eq('user_id', normalizedUserId)
             .eq('site', site)
@@ -3291,7 +3294,8 @@ function createShopHandlers({
 
         const normalizedProductId = String(order?.product_id || '').trim();
         const normalizedItemCount = Math.max(1, Number(order?.item_count || 1) || 1);
-        const needsOrderItems = normalizedItemCount > 1 || !String(order?.inventory_id || '').trim();
+        const isSupplierOrder = order.fulfillment_source === 'supplier_v2';
+        const needsOrderItems = !isSupplierOrder && (normalizedItemCount > 1 || !String(order?.inventory_id || '').trim());
 
         const orderItemsPromise = needsOrderItems
             ? (async () => {
@@ -3336,12 +3340,16 @@ function createShopHandlers({
             return { purchaseNotes, usageInstructions };
         })();
 
-        const [orderItems, guidance] = await Promise.all([
+        const [orderItems, guidance, supplierDelivery] = await Promise.all([
             orderItemsPromise,
-            guidancePromise
+            guidancePromise,
+            // Only after the native order query above has checked user + site.
+            isSupplierOrder ? loadCustomerDelivery(dataSupabase, {
+                orderId: normalizedOrderId, fundingKind: 'points', userId: normalizedUserId, site
+            }, env) : Promise.resolve(null)
         ]);
 
-        const inventoryIds = [...new Set(
+        const inventoryIds = isSupplierOrder ? [] : [...new Set(
             [
                 ...orderItems.map((item) => String(item?.inventory_id || '').trim()).filter(Boolean),
                 String(order?.inventory_id || '').trim()
@@ -3441,7 +3449,11 @@ function createShopHandlers({
         const purchaseNotes = guidance?.purchaseNotes || '';
         const usageInstructions = guidance?.usageInstructions || '';
 
-        const items = orderItems.length
+        const items = supplierDelivery ? [{
+            id: null, inventory_id: null, name: order.snapshot_product_name || '商品',
+            content: supplierDelivery.content, inventory_type: 'standard', delivery_mode: 'supplier_v2',
+            price: Number(order.price_paid || 0) || 0
+        }] : orderItems.length
             ? orderItems.map((item) => {
                 const inventoryId = String(item?.inventory_id || '').trim();
                 return {
@@ -3476,6 +3488,9 @@ function createShopHandlers({
 
         return {
             order: {
+                ...supplierOrderStatus(supplierDelivery
+                    ? { ...order, delivery_status: supplierDelivery.status === 'delivered' ? 'delivered' : (supplierDelivery.status === 'closed' ? order.delivery_status : 'pending') }
+                    : order),
                 id: order.id,
                 created_at: order.created_at || null,
                 product_id: order.product_id || null,
@@ -4570,6 +4585,27 @@ function createShopHandlers({
                     authPromise,
                     bodyPromise
                 ]);
+                // Recovery is authenticated and query-only. It intentionally precedes
+                // current catalog/mapping/intake checks; historical orders remain readable.
+                if (body?.recoverOnly === true) {
+                    if (Object.keys(body).some(key => !['recoverOnly', 'idempotencyKey', 'site'].includes(key))) {
+                        return respond(400, { success: false, message: '购买核对参数无效' });
+                    }
+                    const recovery = await supplierCheckoutV2.recoverPointsPurchase(requestAdminSupabase || adminSupabase, {
+                        userId: user.id, site: body.site, idempotencyKey: body.idempotencyKey
+                    });
+                    return respond(200, { success: true, recovery });
+                }
+                // Read-only source handshake. A changed source is rejected again
+                // before purchase so a local checkout never silently becomes an
+                // unjournaled supplier checkout between these two requests.
+                if (body?.prepareRecovery === true) {
+                    if (Object.keys(body).some(key => !['prepareRecovery', 'productId', 'productSkuId', 'site'].includes(key))) {
+                        return respond(400, { success: false, message: '购买核对参数无效' });
+                    }
+                    const source = await supplierCheckoutV2.resolveSupplierSource(requestAdminSupabase || adminSupabase, body, env);
+                    return respond(200, { success: true, recoverySource: source ? 'supplier_v2' : 'local' });
+                }
                 const payload = normalizePurchaseBody(body, req.headers || {});
                 payload.discountSelections = normalizeDiscountSelectionsInput({
                     discountSelections: payload.discountSelections
@@ -4618,6 +4654,15 @@ function createShopHandlers({
                     });
                 }
 
+                const supplierSource = await supplierCheckoutV2.resolveSupplierSource(
+                    requestAdminSupabase || adminSupabase, payload, env
+                );
+
+                if (body?.recoverySource !== undefined
+                    && (!['local', 'supplier_v2'].includes(body.recoverySource)
+                        || body.recoverySource !== (supplierSource ? 'supplier_v2' : 'local'))) {
+                    return respond(409, { success: false, code: 'purchase_source_changed', message: '商品供货方式已更新，请重新核对订单' });
+                }
                 const idempotencyFingerprint = buildIdempotencyFingerprint({
                     userId: user.id,
                     payload
@@ -4638,6 +4683,8 @@ function createShopHandlers({
                 const idempotencyStartedAt = Date.now();
                 const idempotencyPromise = (async () => {
                     try {
+                        // Supplier retries recover the same native order in the DB.
+                        if (supplierSource) return { allowed: true };
                         return await takeRateLimitToken({
                             supabase: adminSupabase,
                             key: `shop-purchase:idempotency:${user.id}:${idempotencyFingerprint}`,
@@ -4682,7 +4729,11 @@ function createShopHandlers({
                     : 'shop-purchase-rpc';
                 const rpcStartedAt = Date.now();
                 try {
-                    responsePayload = payload.discountSelections.length > 1
+                    responsePayload = supplierSource
+                        ? await supplierCheckoutV2.purchaseWithPoints(requestAdminSupabase || adminSupabase, {
+                            source: supplierSource, payload, userId: user.id
+                        })
+                        : payload.discountSelections.length > 1
                         ? await executeMultiDiscountPurchaseRpc({
                             payload,
                             userId: user.id,
@@ -4746,7 +4797,9 @@ function createShopHandlers({
                     responseData.discount_amount
                 );
                 const followupsStartedAt = Date.now();
-                scheduleShopPurchaseFollowups(async () => {
+                // Supplier rewards and affiliate benefits settle on delivery.
+                // P2B only funds the order; its procurement outbox stays blocked.
+                if (!supplierSource) scheduleShopPurchaseFollowups(async () => {
                     await safeProcessShopPurchaseRewards(systemSupabase, {
                         orderId,
                         site: payload.site
@@ -4801,6 +4854,7 @@ function createShopHandlers({
             } catch (error) {
                 return respond(error.statusCode || 500, {
                     success: false,
+                    ...(String(error.code || '').startsWith('supplier_') ? { code: error.code } : {}),
                     message: error.message || '兑换失败'
                 });
             }

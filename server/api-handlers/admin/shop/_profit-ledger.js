@@ -276,6 +276,9 @@ async function loadPersistedProfitLedgerEntries(supabase, orderId = '') {
 }
 
 async function syncOrderProfitLedger(supabase, order = {}, attribution = {}, options = {}) {
+    if (order.fulfillment_source === 'supplier_v2') {
+        return { source: 'supplier_pending', synced: false, entries: [], status: 'incomplete' };
+    }
     const orderId = normalizeText(order?.id, 160);
     const entries = Array.isArray(attribution?.profit_ledger_entries)
         ? attribution.profit_ledger_entries.filter(Boolean)

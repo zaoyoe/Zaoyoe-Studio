@@ -498,3 +498,40 @@ test('an already processed query event is idempotent and never double-confirms',
     assert.equal(supabase.state.eventInserts, 1);
     assert.equal(second.payload.order.payment_status, 'confirmed');
 });
+
+test('supplier customer closure preserves payment facts and skips provider queries and fulfillment kicks even on forced refresh', async () => {
+    const resolution = {
+        status: 'compensated', method: 'manual_compensation',
+        message: '已按原订单金额完成补偿，请核对收款记录。',
+        resolved_at: '2026-10-19T10:00:00Z',
+        evidenceRef: 'private-reference', internalNote: 'private-note'
+    };
+    const supabase = createSupabaseStub({ order: makeOrder({
+        fulfillment_source: 'supplier_v2', payment_status: 'confirmed',
+        fulfillment_status: 'failed', refund_status: 'none',
+        supplier_customer_resolution: resolution
+    }), payment: makePayment({ status: 'confirmed' }) });
+    const adapter = makeAdapter({ result: makeZpayQueryResult() });
+    const kicks = [];
+    const handlers = createHandlers({ supabase, adapter, kickFulfillment(id) { kicks.push(id); } });
+    const response = createResponse();
+
+    await handlers.status(statusRequest({ force: true }), response);
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload.order.payment_status, 'confirmed');
+    assert.equal(response.payload.order.refund_status, 'none');
+    assert.equal(response.payload.order.fulfillment_status, 'failed');
+    assert.equal(response.payload.order.customer_resolution.message, resolution.message);
+    assert.equal(response.payload.order.customer_resolution.method, 'manual_compensation');
+    assert.equal(response.payload.order.provider, 'zpay');
+    assert.equal(response.payload.order.channel, 'alipay');
+    assert.equal(Object.hasOwn(response.payload, 'checkout'), false);
+    assert.doesNotMatch(JSON.stringify(response.payload), /private-reference|private-note|evidenceRef|internalNote/);
+    assert.deepEqual(kicks, []);
+    assert.equal(adapter.state.queries.length, 0);
+    assert.equal(supabase.state.confirmCalls, 0);
+    assert.equal(supabase.state.eventInserts, 0);
+    assert.equal(supabase.state.metadataUpdates, 0);
+});

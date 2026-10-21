@@ -64,7 +64,7 @@ const REFUND_CANDIDATE_STATUSES = Object.freeze([
 // Promo L1 reads `quantity` so the fulfillment loop knows how many cards the
 // order paid for. It is a bound on the loop, never on an amount: the money was
 // committed by fn_guest_shop_create_order and is not recomputed here.
-const CANDIDATE_SELECT = 'id,order_no,site,currency,total_amount,quantity,payment_status,reservation_status,fulfillment_status,refund_status,expires_at,paid_at,fulfilled_at,updated_at,metadata';
+const CANDIDATE_SELECT = 'id,order_no,site,currency,total_amount,quantity,fulfillment_source,payment_status,reservation_status,fulfillment_status,refund_status,expires_at,paid_at,fulfilled_at,updated_at,metadata';
 const CHECKOUT_BATCH_CANDIDATE_SELECT = 'id,batch_no,payment_status,fulfillment_status,updated_at,paid_at,fulfilled_at';
 // Mirror of guest_shop_orders_quantity_check. Raising it is a migration, not an
 // env change, so the loop bound can never be widened at runtime.
@@ -450,6 +450,9 @@ function createGuestShopWorker({
     async function fetchCandidateRows(limit, filters = []) {
         const db = requireDb();
         let query = db.from('guest_shop_orders').select(CANDIDATE_SELECT);
+        // Exclude external procurement before LIMIT so a pending supplier queue
+        // cannot starve local fulfillment. Thin test clients still hit the guard.
+        if (typeof query.neq === 'function') query = query.neq('fulfillment_source', 'supplier_v2');
         for (const filter of filters) {
             if (filter.type === 'eq') {
                 if (typeof query.eq !== 'function') return [];
@@ -787,6 +790,9 @@ function createGuestShopWorker({
     }
 
     async function processRefund(order, context = {}) {
+        if (order?.fulfillment_source === 'supplier_v2') {
+            return { status: 'skipped', reason: 'supplier_executor_not_enabled' };
+        }
         if (order.refund_status === 'succeeded' || order.refund_status === 'manual_review') {
             return { status: 'skipped', reason: 'refund_terminal' };
         }
@@ -903,6 +909,9 @@ function createGuestShopWorker({
     }
 
     async function processFulfillment(order) {
+        if (order?.fulfillment_source === 'supplier_v2') {
+            return { status: 'skipped', reason: 'supplier_executor_not_enabled' };
+        }
         if (['delivered', 'refunded', 'dead_letter'].includes(order.fulfillment_status)) {
             return { status: 'skipped', reason: 'fulfillment_terminal' };
         }
@@ -1241,6 +1250,11 @@ function createGuestShopWorker({
     async function processOrder(order) {
         if (!order || !normalizeText(order.id, 160)) {
             return { status: 'skipped', reason: 'order_missing' };
+        }
+        // Supplier orders have a separate executor/refund protocol. Do not take
+        // a lease, mutate attempts, reserve stock or auto-refund from this worker.
+        if (order.fulfillment_source === 'supplier_v2') {
+            return { status: 'skipped', reason: 'supplier_executor_not_enabled' };
         }
         const workerInfo = getWorkerMetadata(order).state;
         const needsRefund = REFUND_CANDIDATE_STATUSES.includes(String(order.refund_status || '').toLowerCase());

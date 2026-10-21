@@ -1,3 +1,4 @@
+const { supplierOrderStatus } = require('../../integrations/suppliers/order-status');
 function normalizeText(value, maxLength = 240) {
     const normalized = String(value || '').trim();
     return normalized ? normalized.slice(0, maxLength) : '';
@@ -406,6 +407,10 @@ async function queryWalletBrowseData(client, { userId, site, limit }) {
                 discount_amount,
                 discount_snapshot,
                 item_count,
+                fulfillment_source,
+                supplier_customer_resolution,
+                delivery_status,
+                refund_status,
                 status,
                 created_at,
                 product_id,
@@ -441,7 +446,8 @@ async function queryWalletBrowseData(client, { userId, site, limit }) {
     );
 
     return {
-        shopOrders: await attachShopProductSnapshots(client, dedupeRowsById(shopOrdersResult.data || [])),
+        shopOrders: await attachShopProductSnapshots(client, dedupeRowsById(shopOrdersResult.data || [])
+            .map((order) => ({ ...order, ...supplierOrderStatus(order) }))),
         ledgerEntries: dedupeRowsById(ledgerEntries),
         promptTitles
     };
@@ -474,6 +480,10 @@ async function queryWalletSearchData(client, { userId, site, query, searchLimit 
                 discount_amount,
                 discount_snapshot,
                 item_count,
+                fulfillment_source,
+                supplier_customer_resolution,
+                delivery_status,
+                refund_status,
                 status,
                 created_at,
                 product_id,
@@ -528,6 +538,10 @@ async function queryWalletSearchData(client, { userId, site, query, searchLimit 
                     discount_amount,
                     discount_snapshot,
                     item_count,
+                    fulfillment_source,
+                supplier_customer_resolution,
+                    delivery_status,
+                    refund_status,
                     status,
                     created_at,
                     product_id,
@@ -662,7 +676,8 @@ async function queryWalletSearchData(client, { userId, site, query, searchLimit 
     );
 
     return {
-        shopOrders: await attachShopProductSnapshots(client, dedupeRowsById(shopOrders)),
+        shopOrders: await attachShopProductSnapshots(client, dedupeRowsById(shopOrders)
+            .map((order) => ({ ...order, ...supplierOrderStatus(order) }))),
         ledgerEntries: normalizedLedgerEntries,
         promptTitles: {
             ...promptTitles,
@@ -844,7 +859,7 @@ async function loadWalletShopOrderDetail(client, { orderId = '', userId = '', si
 
     const { data: order, error: orderError } = await client
         .from('shop_orders')
-        .select('id, user_id, product_id, inventory_id, snapshot_product_name, created_at, price_paid, total_price, discount_code, discount_amount, discount_snapshot, item_count')
+        .select('id, user_id, product_id, inventory_id, snapshot_product_name, created_at, price_paid, total_price, discount_code, discount_amount, discount_snapshot, item_count, fulfillment_source, delivery_status, refund_status, supplier_customer_resolution')
         .eq('id', normalizedOrderId)
         .eq('user_id', normalizedUserId)
         .eq('site', site)
@@ -975,6 +990,7 @@ async function loadWalletShopOrderDetail(client, { orderId = '', userId = '', si
 
     return {
         order: {
+            ...supplierOrderStatus(order),
             id: order.id,
             created_at: order.created_at || null,
             product_id: order.product_id || null,

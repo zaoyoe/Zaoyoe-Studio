@@ -719,7 +719,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /const refreshProductsPromise = this\.loadProducts\(\{ forceRefresh: true \}\)\.catch\([\s\S]*this\.showSuccessModal\(successPayload\.content, warningMessage, successPayload\.usageInstructions, successPayload\.items\);[\s\S]*await refreshProductsPromise;/s,
+        /const refreshProductsPromise = this\.loadProducts\(\{ forceRefresh: true \}\)\.catch\([\s\S]*if \(deliveredSuccesses\.length > 0\) \{\s*this\.showSuccessModal\(deliveredPayload\.content,[\s\S]*?deliveredPayload\.usageInstructions, deliveredPayload\.items\);[\s\S]*await refreshProductsPromise;/s,
         'successful cart checkout should show the success modal before waiting on the background product refresh to finish'
     );
     assert.match(

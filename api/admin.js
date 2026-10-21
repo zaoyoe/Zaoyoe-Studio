@@ -209,6 +209,8 @@ const ROUTE_HANDLERS = {
     'shop/orders': shopOrdersHandler,
     'shop/products': shopProductsHandler,
     'shop/supplier-catalog': shopSupplierCatalogHandler,
+    'shop/supplier-resolution': require('../server/api-handlers/admin/shop/supplier-resolution'),
+    'shop/supplier-manual-purchase': require('../server/api-handlers/admin/shop/supplier-manual-purchase'),
     'shop/procurement': shopProcurementHandler,
     'shop/profit-ledger-backfill': shopProfitLedgerBackfillHandler,
     'shop/delivery-actions': shopDeliveryActionsHandler,
