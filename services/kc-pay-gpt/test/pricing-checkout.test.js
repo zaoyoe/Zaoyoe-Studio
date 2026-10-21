@@ -354,7 +354,7 @@ describe('latest upgrade modal compatibility', () => {
 
         expect(await pageShowsTargetRegionPricing(page, 'PH')).toBe(true);
         await selectPricingRegion(page, 'PH');
-        await clickPlanUpgrade(page, 'plus');
+        await clickPlanUpgrade(page, 'plus', { region: 'PH' });
         expect(await page.locator('#rejoin-plus-btn').textContent()).toBe('Opening checkout...');
         await page.close();
     });
@@ -394,7 +394,7 @@ describe('latest upgrade modal compatibility', () => {
             </script>
         `);
 
-        await clickPlanUpgrade(page, 'pro_200');
+        await clickPlanUpgrade(page, 'pro_200', { region: 'US' });
         expect(await page.locator('#upgrade-pro-btn').textContent()).toBe('Opening pro checkout...');
         await page.close();
     });
