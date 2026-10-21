@@ -1951,7 +1951,7 @@ async function openPricingCheckout(page, { region, planType, onCheckoutPage, ski
                 throw firstError;
             }
             throw err;
-    }
+        }
     }
 }
 
