@@ -17,7 +17,10 @@ async function probeUserAgent(browser, fallback = DEFAULT_UA) {
         const tmpPage = await tmpCtx.newPage();
         const ua = await tmpPage.evaluate(() => navigator.userAgent);
         await tmpCtx.close().catch(() => {});
-        return ua || fallback;
+        if (!ua) return fallback;
+        return ua
+            .replace(/HeadlessChrome\//gi, 'Chrome/')
+            .replace(/\((?:Macintosh;[^)]+|X11;[^)]+)\)/i, '(Windows NT 10.0; Win64; x64)');
     } catch (_) {
         return fallback;
     }

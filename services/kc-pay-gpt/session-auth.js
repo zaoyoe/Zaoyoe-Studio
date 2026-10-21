@@ -1,6 +1,7 @@
 'use strict';
 
 const CHATGPT_ORIGIN = 'https://chatgpt.com';
+const PRICING_URL = `${CHATGPT_ORIGIN}/#pricing`;
 const {
     isLoginRedirectUrl,
     isHardLoginRedirectUrl,
@@ -63,6 +64,43 @@ function buildSessionPayload(accessToken, sessionJson = null) {
         accessToken: base.accessToken || base.access_token || token,
         authProvider: base.authProvider || 'google-oauth2'
     };
+}
+
+function mergeVerifiedSessionPayload(sessionData, verifiedSession) {
+    const accessToken = String(verifiedSession?.accessToken || '').trim();
+    const tokenExpiry = Number(decodeJwtPayload(accessToken)?.exp);
+    const merged = {
+        ...sessionData,
+        ...verifiedSession,
+        accessToken,
+        user: {
+            ...(sessionData?.user || {}),
+            ...(verifiedSession?.user || {})
+        }
+    };
+
+    if (!verifiedSession?.expires && Number.isFinite(tokenExpiry) && tokenExpiry > 0) {
+        merged.expires = new Date(tokenExpiry * 1000).toISOString();
+    } else if (!verifiedSession?.expires) {
+        delete merged.expires;
+    }
+    return merged;
+}
+
+function assertSameSessionAccount(sessionJson, inputToken, verifiedSession) {
+    const inputUser = sessionJson?.user || {};
+    const verifiedUser = verifiedSession?.user || {};
+    const inputProfile = extractProfileFromToken(inputToken);
+    const verifiedProfile = extractProfileFromToken(verifiedSession?.accessToken);
+    const inputId = String(inputUser.id || inputProfile.userId || '').trim();
+    const verifiedId = String(verifiedUser.id || verifiedProfile.userId || '').trim();
+    const inputEmail = String(inputUser.email || inputProfile.email || '').trim();
+    const verifiedEmail = String(verifiedUser.email || verifiedProfile.email || '').trim();
+
+    if ((inputId && verifiedId && inputId !== verifiedId)
+        || (inputEmail && verifiedEmail && inputEmail.toLowerCase() !== verifiedEmail.toLowerCase())) {
+        throw buildChatGptAuthError('CHATGPT_ACCOUNT_MISMATCH');
+    }
 }
 
 function parseSessionJson(raw) {
@@ -225,14 +263,6 @@ async function injectChatGptCookies(context, cookieSpecs) {
         return { injected: 0, hasSessionToken: false, failed: [] };
     }
 
-    const warmup = await context.newPage();
-    try {
-        await warmup.goto(`${CHATGPT_COOKIE_URL}/`, {
-            waitUntil: 'domcontentloaded',
-            timeout: 90000
-        });
-    } catch (_) { /* 代理慢时仍尝试写 Cookie */ }
-
     const playwrightCookies = cookieSpecs
         .map((spec) => toPlaywrightCookie(spec))
         .filter(Boolean);
@@ -255,7 +285,6 @@ async function injectChatGptCookies(context, cookieSpecs) {
 
     const stored = await context.cookies(CHATGPT_COOKIE_URL);
     const hasSessionToken = hasStoredSessionToken(stored);
-    await warmup.close().catch(() => {});
 
     return {
         injected,
@@ -348,14 +377,15 @@ function collectCookieSpecs(sessionData, sessionJson) {
 async function verifyRealSessionApi(context) {
     const probe = await context.newPage();
     try {
+        const timeout = Number(process.env.SESSION_PROBE_TIMEOUT_MS || (process.env.NODE_ENV === 'test' ? 60000 : 3500));
         const response = await probe.goto(`${CHATGPT_COOKIE_URL}/api/auth/session`, {
-            waitUntil: 'domcontentloaded',
-            timeout: 60000
+            waitUntil: 'commit',
+            timeout
         });
         const status = response?.status() || 0;
         const headers = response?.headers?.() || {};
         const headerText = Object.keys(headers).map((k) => `${k}:${headers[k]}`).join('\n').toLowerCase();
-        const bodyText = await probe.evaluate(() => document.body?.innerText || '').catch(() => '');
+        const bodyText = await response?.text?.().catch(() => '') || await probe.evaluate(() => document.body?.innerText || '').catch(() => '');
         let data = null;
         try {
             data = JSON.parse(bodyText);
@@ -468,10 +498,14 @@ async function installChatGptSession(context, sessionRaw) {
         throw new Error('缺少 Session：请粘贴完整 Session JSON（来自 chatgpt.com/api/auth/session）');
     }
 
-    const { accessToken: token, sessionData, sessionJson } = resolved;
-    assertLocalSessionFresh(token, sessionJson);
-    const sessionBody = JSON.stringify(sessionData);
+    const { accessToken: token, sessionJson } = resolved;
+    let accessToken = token;
+    let sessionData = resolved.sessionData;
     const cookieSpecs = collectCookieSpecs(sessionData, sessionJson);
+
+    if (!hasStoredSessionToken(cookieSpecs)) {
+        assertLocalSessionFresh(token, sessionJson);
+    }
 
     const sessionTokenValue = String(
         process.env.CHATGPT_SESSION_COOKIE
@@ -514,6 +548,10 @@ async function installChatGptSession(context, sessionRaw) {
         const apiCheck = await verifyRealSessionApi(context);
         if (apiCheck.expired) throw buildChatGptAuthError();
         if (apiCheck.ok) {
+            assertSameSessionAccount(sessionJson, token, apiCheck.data);
+            sessionData = mergeVerifiedSessionPayload(sessionData, apiCheck.data);
+            accessToken = sessionData.accessToken;
+            assertLocalSessionFresh(accessToken, { expires: sessionData.expires });
             cookieVerified = true;
             const email = apiCheck.data?.user?.email || '';
             console.log(`[Session] Cookie 校验通过${email ? `: ${email}` : ''}`);
@@ -525,6 +563,9 @@ async function installChatGptSession(context, sessionRaw) {
             console.warn(`[Session] Cookie 在线预检跳过（HTTP ${apiCheck.status || 'unknown'}: ${apiCheck.error || ''}），转由后续首页流程验证`);
         }
     }
+
+    assertLocalSessionFresh(accessToken, cookieVerified ? { expires: sessionData.expires } : sessionJson);
+    const sessionBody = JSON.stringify(sessionData);
 
     await context.addInitScript((payload) => {
         const sessionStr = JSON.stringify(payload);
@@ -583,7 +624,7 @@ async function installChatGptSession(context, sessionRaw) {
             await route.continue({
                 headers: {
                     ...route.request().headers(),
-                    Authorization: `Bearer ${token}`
+                    Authorization: `Bearer ${accessToken}`
                 }
             });
             return;
@@ -611,8 +652,11 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
     }
 
     const sessionData = options.sessionData || resolved.sessionData;
-    assertLocalSessionFresh(resolved.accessToken, resolved.sessionJson);
-    const email = sessionData?.user?.email || extractProfileFromToken(resolved.accessToken).email || '';
+    const accessToken = sessionData?.accessToken || resolved.accessToken;
+    assertLocalSessionFresh(accessToken, options.cookieVerified
+        ? { expires: sessionData?.expires }
+        : resolved.sessionJson);
+    const email = sessionData?.user?.email || extractProfileFromToken(accessToken).email || '';
 
     if (!email && !sessionData?.user?.id) {
         throw new Error('Session 无效：JSON 中缺少 user 信息，请从 chatgpt.com/api/auth/session 复制完整内容');
@@ -620,11 +664,27 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
 
     console.log('🔐 [步骤] 正在使用 Session 登录 ChatGPT...');
 
-    await page.goto(`${CHATGPT_ORIGIN}/`, {
+    const targetUrl = options.targetUrl || CHATGPT_ORIGIN;
+    const isPricingTarget = targetUrl.includes('#pricing');
+    const pageLabel = isPricingTarget ? '定价页' : '首页';
+
+    await page.goto(targetUrl, {
         waitUntil: 'domcontentloaded',
         timeout: 90000
     });
-    await page.waitForTimeout(options.cookieVerified ? 500 : 2500);
+    if (isPricingTarget) {
+        // 定价页快速唤起：通知 Next.js SPA 挂载 #pricing 弹窗，不再停留聊天首页
+        await page.evaluate(() => {
+            try {
+                if (window.location.hash !== '#pricing') {
+                    window.location.hash = '#pricing';
+                }
+                window.dispatchEvent(new HashChangeEvent('hashchange'));
+                window.dispatchEvent(new PopStateEvent('popstate'));
+            } catch (_) {}
+        }).catch(() => {});
+    }
+    await page.waitForTimeout(options.cookieVerified ? 400 : 800);
     await assertNoExpiredSession(page);
 
     const { clearHumanVerification } = require('./human-verification');
@@ -642,15 +702,32 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
         await page.waitForTimeout(1500);
     }
 
-    await assertChatGptLoggedIn(page, '首页');
+    await assertChatGptLoggedIn(page, pageLabel);
 
     const cookieVerified = options.cookieVerified === true;
-    const officialAccount = await verifyChatGptAccessToken(page, resolved.accessToken);
+    let uiReady = true;
+    if (!options.skipChatUiWait && !isPricingTarget) {
+        uiReady = await waitForLoggedInChatUi(page, cookieVerified ? 4000 : 8000);
+        await assertNoExpiredSession(page);
+    }
+
+    let officialAccount;
+    try {
+        officialAccount = await verifyChatGptAccessToken(page, accessToken, { deadlineMs: 20000 });
+    } catch (err) {
+        if (err?.code === 'CHATGPT_AUTH_UNCONFIRMED' && !page.isClosed()) {
+            console.warn('[Session] 官方鉴权首次确认未通过，等待页面稳定后重试一次...');
+            await page.waitForTimeout(1500);
+            await assertNoExpiredSession(page);
+            officialAccount = await verifyChatGptAccessToken(page, accessToken, { deadlineMs: 20000 });
+        } else {
+            throw err;
+        }
+    }
+
     if (email && officialAccount.email && email.toLowerCase() !== officialAccount.email.toLowerCase()) {
         throw buildChatGptAuthError('CHATGPT_ACCOUNT_MISMATCH');
     }
-    const uiReady = await waitForLoggedInChatUi(page, cookieVerified ? 4000 : 8000);
-    await assertNoExpiredSession(page);
 
     const hasSessionToken = options.hasSessionToken ?? (Array.isArray(sessionData?.cookies) || Boolean(sessionData?.sessionToken || sessionData?.session_token || sessionData?.['__Secure-next-auth.session-token']));
     const failureReason = !hasSessionToken
@@ -658,10 +735,10 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
         : 'sessionToken 凭证已在 OpenAI 端失效或过期，请在浏览器中重新登录并导出最新 Session';
 
     if (await hasVisibleLoginChrome(page)) {
-        throw new Error(buildSessionNotLoggedInError('ChatGPT 首页', failureReason));
+        throw new Error(buildSessionNotLoggedInError(`ChatGPT ${pageLabel}`, failureReason));
     }
     if (!uiReady) {
-        console.log('[Session] 首页 UI 尚未就绪，官方只读账号接口已确认凭证有效，继续流程');
+        console.log(`[Session] ${pageLabel} UI 尚未就绪，官方只读账号接口已确认凭证有效，继续流程`);
     }
 
     const resolvedEmail = officialAccount.email || email;
@@ -731,6 +808,7 @@ function extractEmailFromSession(raw) {
 
 module.exports = {
     CHATGPT_ORIGIN,
+    PRICING_URL,
     installChatGptSession,
     setupChatGptSessionAuth,
     bootstrapChatGptSession,

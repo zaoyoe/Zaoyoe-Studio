@@ -5,11 +5,18 @@ const { getGrokPlan, grokError } = require('./grok-checkout-state');
 
 const fail = (message, code = 'GROK_COMMERCE_UNCONFIRMED') => { throw grokError(code, message); };
 const clean = value => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
-function micros(money) {
-    if (money?.currencyCode !== 'USD' || !/^(?:0|[1-9]\d*)$/.test(String(money.unitMicros))) fail('官方金额或币种无法确认');
+function micros(money, label = '官方金额') {
+    if (money?.currencyCode !== 'USD') fail(`${label}币种无法确认`);
+    if (!/^(?:0|[1-9]\d*)$/.test(String(money?.unitMicros))) fail(`${label}金额无法确认`);
     const value = Number(money.unitMicros);
-    if (!Number.isSafeInteger(value) || value % 10000 !== 0) fail('官方金额精度无法确认');
+    if (!Number.isSafeInteger(value)) fail(`${label}超出安全范围`);
+    if (value % 10000 !== 0) fail(`${label}金额精度无法确认`);
     return value;
+}
+function untaxedCartPreview(tax, first, cartTotal) {
+    if (first !== cartTotal) return false;
+    if (tax == null) return true;
+    return !tax.currencyCode && (tax.unitMicros === undefined || tax.unitMicros === '0' || tax.unitMicros === 0);
 }
 function unexpired(timestamp, now = Date.now()) {
     const seconds = Number(timestamp?.seconds), nanos = Number(timestamp?.nanos || 0);
@@ -117,15 +124,16 @@ function validateCommerceContract(plan, skuId, session, cart, tax, address, now 
     if (matches.length !== 1) fail('无法唯一关联当前地区、周期与支付平台的官方 SKU 报价');
     const sku = matches[0], details = sku.pricing.details, standard = plan.amount * 1000000;
     if (sku.displayOnly || sku.relation?.fromSkuId || sku.pricing.skuId !== skuId || sku.pricing.status !== 'PRICING_STATUS_ACTIVE'
-        || details.country !== 'US' || !periodMatches(details.interval, plan) || micros(details.amount) !== standard) fail('官方 SKU 标价、地区或计费周期与卡密不一致');
+        || details.country !== 'US' || !periodMatches(details.interval, plan)
+        || micros(details.amount, '官方 SKU 标价') !== standard) fail('官方 SKU 标价、地区或计费周期与卡密不一致');
     const segments = cart.data.chargeSchedule?.segments || [];
     if (cart.data.chargeSchedule && (!cart.data.chargeSchedule.startTime || !segments.length)) fail('官方扣款安排不完整');
     let first = standard;
     if (segments.length) {
         if (segments.length > 2 || !segments.every(segment => periodMatches(segment.period, plan))) fail('官方扣款周期无法确认');
         const recurring = segments.at(-1);
-        if (recurring.count !== 0 || micros(recurring.amount) !== standard || recurring.benefitId) fail('官方后续续费金额无法确认');
-        first = micros(segments[0].amount);
+        if (recurring.count !== 0 || micros(recurring.amount, '官方后续续费金额') !== standard || recurring.benefitId) fail('官方后续续费金额无法确认');
+        first = micros(segments[0].amount, '官方首期扣款金额');
         if (segments.length === 2) {
             const initial = segments[0];
             const benefit = (sku.benefits || []).find(item => item.benefitId === initial.benefitId);
@@ -134,15 +142,18 @@ function validateCommerceContract(plan, skuId, session, cart, tax, address, now 
                 || benefit.redeemBy && !unexpired(benefit.redeemBy, now)) fail('首期优惠缺少可确认的官方依据');
             const hasPercent = Number(discount.percent) > 0, hasFixed = !!discount.fixedAmount;
             if (hasPercent === hasFixed) fail('首期优惠计算方式无法确认');
-            const expected = hasPercent ? standard * (1 - Number(discount.percent) / 100) : standard - micros(discount.fixedAmount);
+            const expected = hasPercent ? standard * (1 - Number(discount.percent) / 100)
+                : standard - micros(discount.fixedAmount, '官方优惠金额');
             if (!Number.isFinite(expected) || Math.abs(expected - first) > 0.1) fail('首期优惠与官方扣款安排不一致');
         }
     }
-    const subtotal = micros(cart.data.subtotal), cartTotal = micros(cart.data.total);
-    // The initial official cart may omit tax before an address exists. Accept
-    // that only as an untaxed preview; final submission still requires EstimateTax.
-    const cartTax = cart.data.tax == null && subtotal === cartTotal ? 0 : micros(cart.data.tax);
-    if (subtotal !== first || subtotal + cartTax !== cartTotal) fail('购物车首期金额或税费不一致');
+    const subtotal = micros(cart.data.subtotal, '官方购物车小计'), cartTotal = micros(cart.data.total, '官方购物车总额');
+    // The initial official cart may omit tax or send an empty zero Money message
+    // before an address exists, while subtotal may reflect either the standard
+    // plan price or the discounted first-period amount. Accept that only as an
+    // untaxed preview; final submission still requires EstimateTax.
+    const cartTax = untaxedCartPreview(cart.data.tax, first, cartTotal) ? 0 : micros(cart.data.tax, '官方购物车税费');
+    if (![first, standard].includes(subtotal) || first + cartTax !== cartTotal) fail('购物车首期金额或税费不一致');
     let total = cartTotal, taxMicros = cartTax;
     if (address) {
         if (!tax || tax.request.cartId !== cart.data.cartId || !addressMatches(tax.request.billingAddress, address)) fail('当前账单地址的官方税费尚未确认');
@@ -152,9 +163,10 @@ function validateCommerceContract(plan, skuId, session, cart, tax, address, now 
             if (detail.canRetry) fail('官方税费计算临时失败，尚未提交支付', 'GROK_TAX_RETRYABLE');
             fail('官方税费计算失败，税费尚未确认，尚未提交支付', 'GROK_TAX_FAILED');
         }
-        taxMicros = micros(tax.data.tax); total = micros(tax.data.total);
-        if (micros(tax.data.subtotal) !== first || first + taxMicros !== total) fail('地址税费和今日应付金额不一致');
-        if ((tax.data.taxLines || []).reduce((sum, line) => sum + micros(line.amount), 0) !== taxMicros) fail('官方税费明细不一致');
+        taxMicros = micros(tax.data.tax, '官方地址税费'); total = micros(tax.data.total, '官方地址应付金额');
+        const taxSubtotal = micros(tax.data.subtotal, '官方地址小计');
+        if (![first, standard].includes(taxSubtotal) || first + taxMicros !== total) fail('地址税费和今日应付金额不一致');
+        if ((tax.data.taxLines || []).reduce((sum, line) => sum + micros(line.amount, '官方税费明细'), 0) !== taxMicros) fail('官方税费明细不一致');
     }
     if (total <= 0 || total > standard) fail('本次应付超过套餐标价上限或无法确认，已停止支付');
     return { amount: total / 1000000, currency: 'USD', firstAmount: first / 1000000,

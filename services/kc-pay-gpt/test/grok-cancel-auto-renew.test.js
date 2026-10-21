@@ -1,6 +1,7 @@
 'use strict';
 
 import { describe, it, expect, vi } from 'vitest';
+import { rpc } from './fixtures/grok-commerce.js';
 const { cancelGrokAutoRenew, formatTimestamp } = require('../grok-cancel-auto-renew');
 
 describe('Grok Cancel Auto-Renew Module', () => {
@@ -116,5 +117,50 @@ describe('Grok Cancel Auto-Renew Module', () => {
         expect(result.ok).toBe(false);
         expect(result.verificationUnknown).toBe(true);
         expect(result.error).toContain('Target closed');
+    });
+
+    it('falls back to grpc-web+proto when Connect JSON returns HTTP 415', async () => {
+        const getSubsBytes = Array.from(rpc('GetSubscriptions', 'output', {
+            subscriptions: [{
+                subscriptionId: 'sub_grpc_789',
+                state: { status: 'SUBSCRIPTION_STATUS_ACTIVE' }
+            }]
+        }));
+        const cancelBytes = Array.from(rpc('CancelAcquisition', 'output', {
+            effectiveAt: { seconds: '1794571200', nanos: 0 }
+        }));
+        const mockPage = {
+            evaluate: vi.fn()
+                // 1) Initial JSON attempt returns 415
+                .mockResolvedValueOnce({
+                    ok: false,
+                    notFound: true,
+                    error: 'HTTP 415'
+                })
+                // 2) gRPC-Web GetSubscriptions
+                .mockResolvedValueOnce({
+                    ok: true,
+                    status: 200,
+                    headers: { 'content-type': 'application/grpc-web+proto', 'grpc-status': '0' },
+                    bytes: getSubsBytes
+                })
+                // 3) gRPC-Web CancelAcquisition
+                .mockResolvedValueOnce({
+                    ok: true,
+                    status: 200,
+                    headers: { 'content-type': 'application/grpc-web+proto', 'grpc-status': '0' },
+                    bytes: cancelBytes
+                })
+        };
+
+        const result = await cancelGrokAutoRenew(mockPage, {});
+        expect(result).toMatchObject({
+            ok: true,
+            cancelled: true,
+            alreadyCancelled: false,
+            autoRenewRaw: false,
+            subscriptionId: 'sub_grpc_789'
+        });
+        expect(result.message).toContain('已成功关闭次月自动续费');
     });
 });

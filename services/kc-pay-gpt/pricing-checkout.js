@@ -5,6 +5,7 @@ const { summarizeCheckoutRequest, readCheckoutErrorDetail, buildCheckoutHttpFail
 const { assertChatGptLoggedIn } = require('./session-auth');
 const { assertNoExpiredSession } = require('./auth-page-detect');
 const { clearHumanVerification } = require('./human-verification');
+const { readCheckoutDueAmount } = require('./stripe-payment');
 
 const PRICING_URL = 'https://chatgpt.com/#pricing';
 
@@ -30,7 +31,7 @@ const REGION_PRICE_PATTERNS = {
 };
 
 const REGION_WRONG_CURRENCY = {
-    PH: [/£\s*[\d,.]+/, /[\d,.]+\s*£/, /\bGBP\b/i, /United Kingdom/i, /Great Britain/i, /€\s*[\d,.]+/, /[\d,.]+\s*€/, /\bEUR\b/i],
+    PH: [/£\s*[\d,.]+/, /[\d,.]+\s*£/, /\bGBP\b/i, /United Kingdom/i, /Great Britain/i, /€\s*[\d,.]+/, /[\d,.]+\s*€/, /\bEUR\b/i, /[¥￥]\s*[\d,.]+/, /[\d,.]+\s*[¥￥]/, /\bCNY\b/i, /\bRMB\b/i],
     US: [/£\s*[\d,.]+/, /₱\s*[\d,.]+/, /\bGBP\b/i, /\bPHP\b/i, /S\$\s*[\d,.]+/, /RM\s*[\d,.]+/],
     SG: [/£\s*[\d,.]+/, /₱\s*[\d,.]+/, /\$\s*20(?:\.00)?\s*(?:USD|\/)/i, /RM\s*[\d,.]+/],
     MY: [/£\s*[\d,.]+/, /₱\s*[\d,.]+/, /S\$\s*[\d,.]+/, /\$\s*20(?:\.00)?/]
@@ -61,10 +62,16 @@ const PLAN_UPGRADE_PATTERNS = {
         /✦\s*Upgrade to Plus/i,
         /Get Plus/i,
         /Subscribe to Plus/i,
+        /Rejoin Plus/i,
+        /✦\s*Rejoin Plus/i,
+        /重新加入\s*Plus/i,
+        /重新订阅\s*Plus/i,
         /Start now/i,
         /^Start$/i,
         /✦\s*Start now/i,
-        /^Upgrade$/i
+        /^Upgrade$/i,
+        /Buy now/i,
+        /立即购买/i
     ],
     pro: [/升级至\s*Pro/i, /Upgrade to Pro/i, /Get Pro/i, /^Upgrade$/i, /Start now/i],
     pro_100: [/升级至\s*Pro/i, /Upgrade to Pro/i, /Get Pro/i, /^Upgrade$/i, /Start now/i, /100/i],
@@ -151,13 +158,18 @@ async function isBusinessTabActive(page) {
 
 async function hasVisiblePersonalPlanAction(page) {
     const scope = await getPricingSurface(page);
-    const titles = scope.locator('h1,h2,h3,h4,[role="heading"]').filter({ hasText: /^(?:ChatGPT\s+)?(?:Plus|Pro)$/i });
-    for (let i = 0, count = await titles.count(); i < count; i += 1) {
-        if (await visible(titles.nth(i)) && !await titles.nth(i).evaluate(node => Boolean(node.closest('[data-message-author-role]')))) return true;
-    }
-    const actions = scope.getByRole('button', { name: /^(?:[✦★]\s*)?(?:Upgrade to|Get|Subscribe to|升级至)\s*(?:Plus|Pro)$/i });
+    // 1. 优先检查是否有明确的个人套餐升级按钮（如 + Upgrade to Plus, Rejoin Plus, Upgrade to Pro 等）
+    const actions = scope.getByRole('button').filter({ hasText: /(?:Upgrade to|Get|Subscribe to|Rejoin|重新加入|重新订阅|升级至)\s*(?:Plus|Pro)\b/i });
     for (let i = 0, count = await actions.count(); i < count; i += 1) {
-        if (await visible(actions.nth(i)) && !await actions.nth(i).evaluate(node => Boolean(node.closest('[data-message-author-role]')))) return true;
+        const action = actions.nth(i);
+        if (await visible(action) && !await action.evaluate(node => Boolean(node.closest('[data-message-author-role]')))) return true;
+    }
+
+    // 2. 检查标题（包含 h1-h6、role=heading 以及卡片顶部独立的 Plus / Pro 标签）
+    const titles = scope.locator('h1,h2,h3,h4,h5,h6,[role="heading"],div,span').filter({ hasText: /^(?:ChatGPT\s+)?(?:Plus|Pro)$/i });
+    for (let i = 0, count = await titles.count(); i < count; i += 1) {
+        const title = titles.nth(i);
+        if (await visible(title) && !await title.evaluate(node => Boolean(node.closest('[data-message-author-role]')))) return true;
     }
     return false;
 }
@@ -243,11 +255,11 @@ async function openPlanSwitcher(page) {
     return false;
 }
 
-async function waitForPersonalPlanView(page, timeout = 8000) {
+async function waitForPersonalPlanView(page, timeout = 2500) {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
         if (await isPersonalPlanView(page)) return true;
-        await page.waitForTimeout(350);
+        await page.waitForTimeout(200);
     }
     return false;
 }
@@ -267,9 +279,19 @@ async function describePlanControls(page) {
  * 因此这里先尝试直达目标，再打开 Business/Team 切换器后选择个人入口。
  */
 async function switchToPersonalPlans(page) {
+    // 快速旁路检查：如果页面已在个人套餐视图（有 Upgrade to Plus/Pro 按钮），直接 0ms 秒级放行
     if (await isPersonalPlanView(page)) {
         console.log('✅ [步骤] 已在个人套餐 (Personal/Individual) 视图');
         return;
+    }
+
+    // 给 React 卡片异步挂载留出至多 1 秒的就绪轮询，避免前几百毫秒因渲染时差误判进入 Business 切换
+    for (let i = 0; i < 5; i += 1) {
+        await page.waitForTimeout(200);
+        if (await isPersonalPlanView(page)) {
+            console.log('✅ [步骤] 已在个人套餐 (Personal/Individual) 视图');
+            return;
+        }
     }
 
     console.log(await isBusinessTabActive(page)
@@ -278,21 +300,21 @@ async function switchToPersonalPlans(page) {
 
     // First try a directly rendered Personal/Individual tab or option.
     const clickedDirectPersonal = await clickFirstVisiblePersonalControl(page);
-    if (clickedDirectPersonal && await waitForPersonalPlanView(page)) {
+    if (clickedDirectPersonal && await waitForPersonalPlanView(page, 2000)) {
         console.log('✅ [步骤] 已切换到个人套餐 (Personal/Individual)');
         return;
     }
 
     // On newer pricing surfaces Personal is inside the Business dropdown.
     await openPlanSwitcher(page);
-    if (await waitForPersonalPlanView(page)) {
+    if (await waitForPersonalPlanView(page, 2000)) {
         console.log('✅ [步骤] 已通过套餐切换器进入个人套餐 (Personal/Individual)');
         return;
     }
 
     // One final direct attempt handles delayed menu rendering and portals.
     const clickedFinalPersonal = await clickFirstVisiblePersonalControl(page);
-    if (clickedFinalPersonal && await waitForPersonalPlanView(page, 4000)) {
+    if (clickedFinalPersonal && await waitForPersonalPlanView(page, 1500)) {
         console.log('✅ [步骤] 已切换到个人套餐 (Personal/Individual)');
         return;
     }
@@ -464,12 +486,12 @@ async function closeRegionMenuIfOpen(page) {
 }
 
 async function clickSeeAllPlans(page) {
+    const textPattern = /^(?:See|View|Show)\s+all\s+plans$|^查看(?:所有|全部)(?:套餐|方案|计划)$/i;
     const candidates = [
-        page.getByRole('link', { name: /^See all plans$/i }).first(),
-        page.getByRole('button', { name: /^See all plans$/i }).first(),
-        page.getByText(/^See all plans$/i).first(),
-        page.getByText(/^查看全部套餐$/i).first(),
-        page.getByText(/^查看所有方案$/i).first()
+        page.getByRole('link', { name: textPattern }).first(),
+        page.getByRole('button', { name: textPattern }).first(),
+        page.getByText(textPattern).first(),
+        page.locator('button, a, [role="button"], span, p').filter({ hasText: textPattern }).first()
     ];
 
     for (const candidate of candidates) {
@@ -478,11 +500,33 @@ async function clickSeeAllPlans(page) {
         try {
             await candidate.scrollIntoViewIfNeeded().catch(() => {});
             await candidate.click({ timeout: 2000 });
-            await page.waitForTimeout(500);
-            console.log('[Info] 已点击「See all plans」，正在重新扫描完整套餐页');
+            await page.waitForTimeout(600);
+            console.log('✅ [步骤] 已点击「See all plans」，正在展开完整套餐页');
             return true;
         } catch (_) { /* try the next representation */ }
     }
+
+    // DOM 原生 evaluate 穿透点击兜底
+    const domClicked = await page.evaluate(() => {
+        const re = /^(?:See|View|Show)\s+all\s+plans$|^查看(?:所有|全部)(?:套餐|方案|计划)$/i;
+        const all = Array.from(document.querySelectorAll('a, button, [role="button"], span, p, div'));
+        for (const el of all) {
+            const text = (el.textContent || '').trim();
+            if (re.test(text) && el.children.length <= 1) {
+                el.scrollIntoView({ block: 'center' });
+                el.click();
+                return true;
+            }
+        }
+        return false;
+    }).catch(() => false);
+
+    if (domClicked) {
+        await page.waitForTimeout(600);
+        console.log('✅ [步骤] DOM 原生已触发「See all plans」点击，已展开完整套餐页');
+        return true;
+    }
+
     return false;
 }
 
@@ -927,8 +971,10 @@ async function ensurePricingDialogVisible(page, maxWaitMs = 60000) {
     const upgradeLabel = /^(?:Upgrade plan|Upgrade your plan|升级套餐)$/i;
     const attempts = { entry: 0, profile: 0, menu: 0 };
     const maxEntryAttempts = 3;
-    const retryCooldownMs = 4000;
-    let nextActionAt = startedAt + 500;
+    const maxProfileAttempts = 8;
+    const maxMenuAttempts = 5;
+    const retryCooldownMs = Number(process.env.PRICING_RETRY_COOLDOWN_MS || 1500);
+    let nextActionAt = startedAt + 300;
 
     // isVisible is an immediate check. Rescan every candidate on each poll so
     // hydration, a hidden first match, and delayed portal menus are handled.
@@ -958,20 +1004,26 @@ async function ensurePricingDialogVisible(page, maxWaitMs = 60000) {
         page.getByRole('button', { name: upgradeLabel }),
         page.getByRole('link', { name: upgradeLabel })
     ];
-    const profileLocator = page.locator('button[aria-label*="profile" i], [data-testid*="profile" i], [data-testid*="user-menu" i]');
-    const menuLocator = page.getByRole('menuitem', { name: /^(?:Upgrade plan|Upgrade your plan|Upgrade|升级套餐|升级)$/i });
+    const profileLocator = page.locator('button[data-testid*="profile" i], button[data-testid="accounts-profile-button"], [data-testid*="user-menu" i], button[aria-label*="profile" i], button:has-text("Free"), div[role="button"]:has-text("Free")');
+    const menuLocator = page.locator('[role="menuitem"]:has-text("Upgrade"), [role="menuitem"]:has-text("升级"), [data-testid*="upgrade" i]')
+        .or(page.getByRole('menuitem', { name: /Upgrade|升级/i }));
 
     assertOpen();
     await assertNoExpiredSession(page);
     if (await isPricingDialogVisible(page)) return true;
     console.log(`[Info] 正在唤起定价弹窗（最多等待 ${Math.ceil(maxWaitMs / 1000)} 秒）...`);
-    // The caller has already navigated. A second goto here would discard a
-    // slowly hydrating page and its pending menu/dialog state.
-    await page.evaluate(() => {
-        window.location.hash = '#pricing';
-        window.dispatchEvent(new HashChangeEvent('hashchange'));
-        window.dispatchEvent(new PopStateEvent('popstate'));
-    });
+    // The caller has already navigated. Re-trigger hash to notify Next.js if already on #pricing
+    await page.evaluate(async () => {
+        try {
+            if (window.location.hash === '#pricing') {
+                window.location.hash = '';
+                await new Promise(r => setTimeout(r, 60));
+            }
+            window.location.hash = '#pricing';
+            window.dispatchEvent(new HashChangeEvent('hashchange'));
+            window.dispatchEvent(new PopStateEvent('popstate'));
+        } catch (_) {}
+    }).catch(() => {});
     while (remaining()) {
         assertOpen();
         await assertNoExpiredSession(page);
@@ -980,7 +1032,7 @@ async function ensurePricingDialogVisible(page, maxWaitMs = 60000) {
         if (canTryEntry || attempts.profile && !attempts.menu) {
             let candidate = null;
             let action = 'entry';
-            if (attempts.profile && attempts.menu < maxEntryAttempts) {
+            if (attempts.profile && attempts.menu < maxMenuAttempts) {
                 candidate = await firstActionable(menuLocator);
                 if (candidate) action = 'menu';
             }
@@ -990,20 +1042,24 @@ async function ensurePricingDialogVisible(page, maxWaitMs = 60000) {
                     if (candidate) break;
                 }
             }
-            // Open the account menu once and keep waiting for its items. Toggling
-            // it again could close a menu that is still being rendered.
-            if (!candidate && canTryEntry && !attempts.profile) {
+            // 只要账号菜单尚未弹出且未超最大次数，允许在页面就绪后点击账号菜单唤起
+            const isMenuOpen = await menuLocator.first().isVisible({ timeout: 150 }).catch(() => false);
+            if (!candidate && canTryEntry && (!attempts.profile || (!isMenuOpen && attempts.profile < maxProfileAttempts))) {
                 candidate = await firstActionable(profileLocator);
                 if (candidate) action = 'profile';
             }
             assertOpen();
             if (await isPricingDialogVisible(page)) return true;
             if (candidate && remaining()) {
-                attempts[action] += 1;
                 const label = { entry: '升级套餐入口', profile: '账号菜单', menu: '账号菜单中的升级入口' }[action];
-                console.log(`[Info] 唤起定价弹窗：点击${label}（第 ${attempts[action]} 次）`);
+                console.log(`[Info] 唤起定价弹窗：点击${label}（第 ${attempts[action] + 1} 次）`);
                 try {
-                    await candidate.click({ timeout: Math.min(1500, remaining()) });
+                    await candidate.click({ timeout: Math.min(3500, remaining()) });
+                    attempts[action] += 1;
+                    if (action === 'profile') {
+                        // 账号菜单点击后，微等下拉菜单渲染，快速锁定菜单升级入口
+                        await menuLocator.first().waitFor({ state: 'visible', timeout: 1200 }).catch(() => {});
+                    }
                 } catch (_) {
                     assertOpen();
                     console.warn(`[Warn] 唤起定价弹窗：${label}暂不可点击，继续等待页面就绪`);
@@ -1037,13 +1093,30 @@ async function waitForPricingContentReady(page, timeoutMs = 25000) {
 }
 
 async function waitForPricingPage(page, timeout = 60000) {
-    await page.goto(PRICING_URL, { waitUntil: 'domcontentloaded', timeout });
-    await clearHumanVerification(page, { phase: 'pricing-page', maxWaitMs: 120000 });
-    await assertChatGptLoggedIn(page, '定价页');
+    const currentUrl = page.url ? page.url() : '';
+    const alreadyVisible = currentUrl.includes('chatgpt.com') && await isPricingDialogVisible(page).catch(() => false);
+    if (alreadyVisible) {
+        console.log('✅ [步骤] 定价弹窗已就绪，直接复用当前页面');
+    } else {
+        await page.goto(PRICING_URL, { waitUntil: 'domcontentloaded', timeout });
+        await clearHumanVerification(page, { phase: 'pricing-page', maxWaitMs: 120000 });
+        await assertChatGptLoggedIn(page, '定价页');
 
-    const opened = await ensurePricingDialogVisible(page, timeout);
-    if (!opened) {
-        throw new Error('定价弹窗未能成功弹出（页面停留在聊天首页，未展示 Plus/Pro 定价对话框）');
+        // 极速激活：通知 SPA 挂载 #pricing 弹窗
+        await page.evaluate(() => {
+            try {
+                if (window.location.hash !== '#pricing') {
+                    window.location.hash = '#pricing';
+                }
+                window.dispatchEvent(new HashChangeEvent('hashchange'));
+                window.dispatchEvent(new PopStateEvent('popstate'));
+            } catch (_) {}
+        }).catch(() => {});
+
+        const opened = await ensurePricingDialogVisible(page, timeout);
+        if (!opened) {
+            throw new Error('定价弹窗未能成功弹出（页面停留在聊天首页，未展示 Plus/Pro 定价对话框）');
+        }
     }
 
     const url = page.url();
@@ -1057,27 +1130,54 @@ async function waitForPricingPage(page, timeout = 60000) {
 /**
  * 在定价页选择账单地区（Personal 视图下，右下角/弹窗内地区切换）
  */
-async function selectPricingRegion(page, regionCode) {
+async function selectPricingRegion(page, regionCode, options = {}) {
     const code = String(regionCode || 'PH').toUpperCase();
+    const explicitPlan = options.planType ? String(options.planType).toLowerCase() : null;
     const regionConfig = getRegionConfig(code);
     console.log(`🌏 [步骤] 正在选择账单地区: ${regionConfig?.label || code}...`);
 
     await waitForPricingContentReady(page, 15000);
 
-    // 性能优化：轮询等待页面异步渲染价格与货币符号（最多等待 3 秒，每 200ms 检测一次）
-    // 真实海外网络下，ChatGPT 客户端通过 API 异步获取区域定价通常需要 1~2 秒。
-    // 1. 如果已渲染目标币种（₱ / PHP），立即秒级放行；
-    // 2. 如果已明确渲染错误币种（如 ¥），则无需等待空白，立即尝试检测是否有可用选择器。
-    for (let wait = 0; wait < 15; wait += 1) {
+    // 1. 等待定价卡片价格真正加载出来（骨架屏消失）
+    // 说明：使用海外代理时，ChatGPT 异步拉取 /backend-api/payments/pricing 可能需要 5~15 秒；
+    // 在骨架屏未消失前，页面上没有任何价格和地区选择器，必须等待真实价格渲染后才能进行后续匹配。
+    const priceLoadTimeout = Number(process.env.PRICING_LOAD_TIMEOUT_MS || (process.env.NODE_ENV === 'test' ? 1000 : 35000));
+    const priceLoadDeadline = Date.now() + priceLoadTimeout;
+    let initialStatus = await pagePricingStatus(page, code);
+    if (!initialStatus.hasPrice) {
+        console.log('⏳ [步骤] 定价卡片仍处于骨架加载中 (Skeleton)，等待真实金额与币种渲染...');
+        while (Date.now() < priceLoadDeadline) {
+            await page.waitForTimeout(400);
+            initialStatus = await pagePricingStatus(page, code);
+            if (initialStatus.hasPrice) {
+                console.log('✅ [步骤] 定价卡片金额与币种已成功渲染');
+                break;
+            }
+        }
+    }
+
+    // 等待定价页动态渲染目标地区币种（如 ₱ / PHP）
+    // 说明：ChatGPT 前端挂载定价弹窗时，需要向后台异步获取定价配置并完成 Cloudflare / Arkose 反爬遥测 Token 握手；
+    // 一旦目标价格（如 ₱1,100）渲染出来，立即秒级放行，既保证反爬 Token 充分就绪避免 HTTP 400 unusual activity，又无多余等待。
+    const pollAttempts = Number(process.env.PRICING_REGION_POLL_COUNT || 32);
+    const startWaitTime = Date.now();
+    for (let wait = 0; wait < pollAttempts; wait += 1) {
         const status = await pagePricingStatus(page, code);
         if (status.matches) {
+            // 确保定价弹窗具备足够的反爬握手与 PoW 算力计算时间（至少 2~2.5 秒）
+            // 当地区无需切换（如默认 US）时，瞬时放行容易因 Turnstile/Arkose Token 尚未就绪而触发 HTTP 400 unusual activity
+            const minSettleMs = Number(process.env.PRICING_SETTLE_MIN_MS ?? (process.env.NODE_ENV === 'test' ? 10 : 2200));
+            const elapsed = Date.now() - startWaitTime;
+            if (elapsed < minSettleMs) {
+                await page.waitForTimeout(minSettleMs - elapsed);
+            }
             console.log(`✅ [步骤] 定价页已显示目标地区价格 (${code})，秒级放行`);
             return;
         }
         if (status.wrongCurrency) {
             break;
         }
-        await page.waitForTimeout(200);
+        await page.waitForTimeout(250);
     }
 
     const surfacePreview = (await readPricingSurfaceText(page)).replace(/\s+/g, ' ').slice(0, 120);
@@ -1093,18 +1193,29 @@ async function selectPricingRegion(page, regionCode) {
         const selected = await selectRegionOption(page, code);
         if (selected) {
             await page.waitForTimeout(500);
-            if (await pageShowsTargetRegionPricing(page, code)) {
-                console.log(`✅ [步骤] 已在定价页切换到目标地区: ${regionConfig?.label || code}`);
-                return;
+            const switchDeadline = Date.now() + (process.env.NODE_ENV === 'test' ? 1000 : 15000);
+            while (Date.now() < switchDeadline) {
+                if (await pageShowsTargetRegionPricing(page, code)) {
+                    console.log(`✅ [步骤] 已在定价页切换到目标地区: ${regionConfig?.label || code}`);
+                    return;
+                }
+                await page.waitForTimeout(300);
             }
         }
     }
 
-    // 现代 ChatGPT 的定价弹窗根据 IP/现有账户自动展示币种，内部不提供地区选择入口。
-    // 账单国家和详细地址将在下一步由 Stripe 收银台 (chatgpt.com/checkout) 准确填写并核算。
-    // 非阻塞设计：切勿在此抛出致命异常阻断流程，亦无需无谓死等 30 秒。
     const finalText = (await readPricingSurfaceText(page)).replace(/\s+/g, ' ').slice(0, 160);
-    console.warn(`[Warn] 定价页未提供地区选择入口（现代 ChatGPT 账单地区将在 Stripe 收银台选择，当前页面: ${finalText}）。继续进入套餐升级...`);
+    if (await pageShowsTargetRegionPricing(page, code)) {
+        console.log(`✅ [步骤] 地区选择器不可用，但定价币种已确认与目标地区 ${code} 一致`);
+        return;
+    }
+    const reason = !initialStatus.hasPrice
+        ? `定价卡片价格加载超时（页面仍处于骨架屏状态，未返回真实金额与币种）`
+        : `无法确认定价页面显示的是卡密目标地区 ${code} 的价格`;
+    throw Object.assign(
+        new Error(`${reason}，已停止套餐升级 [PRICING_REGION_UNCONFIRMED]。当前页面: ${finalText}`),
+        { code: 'PRICING_REGION_UNCONFIRMED' }
+    );
 }
 
 /**
@@ -1124,12 +1235,20 @@ async function clickPlanUpgrade(page, planType, options = {}) {
 
     // 如果是 Pro 系列套餐，检查页面是否有 100/200/500 档位选择框（如“配置你的套餐”页面）
     if (plan.startsWith('pro')) {
-        await ensureChatGptProUsageTier(page, plan, { timeout: 2000 }).catch(() => {});
+        await ensureChatGptProUsageTier(page, plan, { immediateOnly: true }).catch(() => {});
     }
 
     const target = plan.startsWith('pro') ? 'Pro' : plan === 'go' ? 'Go' : 'Plus';
-    const precise = new RegExp(`(?:Upgrade to|Get|Subscribe to|升级至)\\s*${target}\\b`, 'i');
+    const precise = new RegExp(`(?:[✦★]\\s*)?(?:Upgrade to|Get|Subscribe to|Rejoin|重新加入|重新订阅|升级至)\\s*(?:ChatGPT\\s*)?${target}\\b`, 'i');
     const deadline = Date.now() + 20000;
+
+    let expandedAllPlans = false;
+    // 如果目标套餐不是 Plus (如 Pro / Go)，弹窗默认只展示 Free 和 Plus 两张卡片，需主动点击「See all plans」展开完整方案
+    if (target.toLowerCase() !== 'plus') {
+        console.log(`🔍 [步骤] 目标套餐为 ${target}，优先检查并点击「See all plans」展开完整套餐卡片...`);
+        expandedAllPlans = await clickSeeAllPlans(page);
+    }
+
     while (Date.now() < deadline) {
         await waitForPricingContentReady(page, Math.min(2000, Math.max(1, deadline - Date.now())));
         const scope = await getPricingSurface(page);
@@ -1155,7 +1274,7 @@ async function clickPlanUpgrade(page, planType, options = {}) {
                         .map((el) => (el.textContent || '').replace(/^ChatGPT\s+/i, '').trim())
                         .filter((text) => /^(Free|Go|Plus|Pro|Business)$/i.test(text));
                     const conflictingActions = [...node.querySelectorAll('button')].some((el) => {
-                        const match = (el.textContent || '').match(/(?:Upgrade to|Get|Subscribe to|升级至)\s*(Go|Plus|Pro)\b/i);
+                        const match = (el.textContent || '').match(/(?:[✦★]\s*)?(?:Upgrade to|Get|Subscribe to|Rejoin|重新加入|重新订阅|升级至)\s*(Go|Plus|Pro)\b/i);
                         return match && match[1].toLowerCase() !== wanted.toLowerCase();
                     });
                     const leafTitles = [...node.querySelectorAll('*')].filter((el) => el.children.length === 0 && el.getClientRects().length)
@@ -1164,15 +1283,36 @@ async function clickPlanUpgrade(page, planType, options = {}) {
                     return !conflictingActions && [...titles, ...leafTitles].every((text) => text.toLowerCase() === wanted.toLowerCase());
                 }, target, { timeout: 1500 });
                 if (!cardSafe) continue;
-                const generic = card.getByRole('button', { name: /^(?:[✦★]\s*)?(?:Start(?: now)?|Upgrade|Subscribe|升级|订阅)$/i });
+                const generic = card.getByRole('button', { name: /^(?:[✦★]\s*)?(?:Start(?: now)?|Get started|Upgrade|Subscribe|Rejoin(?: now)?|Buy now|立即购买|Get\s*(?:ChatGPT\s*)?(?:Pro|Plus|Go)|Rejoin\s*(?:ChatGPT\s*)?(?:Pro|Plus|Go)|升级|订阅|重新加入|重新订阅)$/i });
                 for (let j = 0, n = await generic.count(); j < n; j += 1) {
                     if (await visible(generic.nth(j)) && await generic.nth(j).isEnabled()) { chosen = generic.nth(j); break; }
                 }
             }
         }
+        if (!chosen && !expandedAllPlans) {
+            expandedAllPlans = await clickSeeAllPlans(page);
+            if (expandedAllPlans) {
+                await page.waitForTimeout(500);
+                continue;
+            }
+        }
         if (chosen) {
             // One action only: a click timeout may still have created a Checkout request.
-            await chosen.click({ timeout: Math.min(10000, Math.max(1, deadline - Date.now())) });
+            await chosen.scrollIntoViewIfNeeded().catch(() => {});
+            // 模拟真实用户交互轨迹：平滑划向按钮并 hover，满足 Cloudflare / Arkose 遥测要求
+            const box = await chosen.boundingBox().catch(() => null);
+            if (box && page.mouse) {
+                await page.mouse.move(box.x + box.width / 2, box.y - 30, { steps: 5 }).catch(() => {});
+                await page.waitForTimeout(100);
+                await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 5 }).catch(() => {});
+            }
+            await chosen.hover().catch(() => {});
+            const dwellMs = Number(options.dwellMs ?? (process.env.NODE_ENV === 'test' ? 10 : 700));
+            if (dwellMs > 0) {
+                await page.waitForTimeout(dwellMs);
+            }
+            const clickTimeout = Math.max(5000, Math.min(10000, deadline - Date.now()));
+            await chosen.click({ timeout: clickTimeout });
             console.log(`✅ [步骤] 已点击 ${target} 套餐升级按钮`);
             return;
         }
@@ -1192,12 +1332,46 @@ function isCheckoutDestination(url) {
     } catch (_) { return false; }
 }
 
+async function readCheckoutSuccessUrl(response, { timeout = 1500 } = {}) {
+    if (!response || (typeof response.text !== 'function' && typeof response.json !== 'function')) return null;
+    let timer;
+    try {
+        return await Promise.race([
+            Promise.resolve().then(async () => {
+                let data = null;
+                if (typeof response.json === 'function') {
+                    data = await response.json().catch(() => null);
+                }
+                if (!data && typeof response.text === 'function') {
+                    const text = await response.text().catch(() => '');
+                    try { data = JSON.parse(text); } catch (_) { data = null; }
+                }
+                if (!data || typeof data !== 'object') return null;
+                const apiUrl = String(data.url || '').trim();
+                if (apiUrl.startsWith('http')) return apiUrl;
+                const sessionId = data.checkout_session_id
+                    || data.session_id
+                    || JSON.stringify(data).match(/cs_(?:live|test)_[A-Za-z0-9]+/)?.[0];
+                if (sessionId) {
+                    return `https://chatgpt.com/checkout/openai_llc/${sessionId}`;
+                }
+                return null;
+            }).catch(() => null),
+            new Promise(resolve => { timer = setTimeout(() => resolve(null), timeout); })
+        ]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 function observeCheckout(page) {
     const context = page.context();
     const pages = new Set([page]);
     const requests = new Set();
     const responses = new Map();
     const failures = new Map();
+    let capturedCheckoutUrl = null;
+    let urlResolvingPromise = null;
     const matches = (request) => {
         try {
             const url = new URL(request.url());
@@ -1211,7 +1385,7 @@ function observeCheckout(page) {
         const request = response.request();
         if (matches(request)) {
             requests.add(request);
-            const record = { status: response.status(), requestSummary: '', detail: '' };
+            const record = { status: response.status(), requestSummary: '', detail: '', response };
             responses.set(request, record);
             if (record.status >= 400) {
                 record.requestSummary = summarizeCheckoutRequest(request);
@@ -1227,6 +1401,21 @@ function observeCheckout(page) {
     context.on('requestfailed', onFailed);
     return {
         pages,
+        hasSuccessResponse() {
+            return [...responses.values()].some((record) => record.status === 200);
+        },
+        async resolveCheckoutUrl() {
+            if (capturedCheckoutUrl) return capturedCheckoutUrl;
+            if (urlResolvingPromise) return urlResolvingPromise;
+            const successRecord = [...responses.values()].find((record) => record.status === 200 && record.response);
+            if (!successRecord) return null;
+            urlResolvingPromise = (async () => {
+                const url = await readCheckoutSuccessUrl(successRecord.response);
+                if (url) capturedCheckoutUrl = url;
+                return url;
+            })();
+            return urlResolvingPromise;
+        },
         failure() {
             const failedHttp = [...responses.values()].find((record) => record.status >= 400);
             if (failedHttp) {
@@ -1265,6 +1454,9 @@ function checkoutError(reason) {
 async function waitForCheckoutPage(page, timeout = 35000, { observer, onCheckoutPage } = {}) {
     const monitor = observer || observeCheckout(page);
     const deadline = Date.now() + timeout;
+    let directNavAttempted = false;
+    let successResponseSeenAt = 0;
+    const hijackGraceMs = Number(process.env.CHECKOUT_HIJACK_GRACE_MS || (process.env.NODE_ENV === 'test' ? 300 : 2000));
     console.log('💳 [步骤] 等待 Checkout 页面...');
     try {
         do {
@@ -1290,6 +1482,29 @@ async function waitForCheckoutPage(page, timeout = 35000, { observer, onCheckout
                     .some((node) => node.getClientRects().length && /unusual activity|try again later|something went wrong|failed|blocked|异常|失败/i.test(node.textContent || ''))).catch(() => false);
                 if (pageError) throw checkoutError({ code: 'CHECKOUT_PAGE_ERROR', message: '套餐页面显示创建失败提示' });
             }
+
+            // 智能优化：如果 Checkout API 已响应 200 但前端 SPA 路由迟缓超过阈值，主动导航至目标链接
+            if (!directNavAttempted && monitor.hasSuccessResponse?.() && !page.isClosed()) {
+                // 预先解析 Checkout 目标 URL，避免超时后临时 await 产生额外延迟
+                monitor.resolveCheckoutUrl?.().catch(() => {});
+                if (!successResponseSeenAt) {
+                    successResponseSeenAt = Date.now();
+                } else if (Date.now() - successResponseSeenAt >= hijackGraceMs) {
+                    directNavAttempted = true;
+                    monitor.resolveCheckoutUrl?.().then((capturedUrl) => {
+                        if (capturedUrl && !page.isClosed()) {
+                            const current = page.url();
+                            if (!isCheckoutDestination(current)) {
+                                console.log(`🚀 [Checkout] 检测到 Checkout 接口已返回但前端路由迟缓，主动导航至: ${capturedUrl.slice(0, 80)}...`);
+                                page.goto(capturedUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch((err) => {
+                                    console.warn(`[Checkout] 主动导航异常: ${err.message}`);
+                                });
+                            }
+                        }
+                    }).catch(() => {});
+                }
+            }
+
             const remaining = deadline - Date.now();
             if (remaining <= 0) break;
             // Timer remains usable even when the original tab closes after opening a popup.
@@ -1318,7 +1533,8 @@ function resolveChatGptProUsageTier(planType) {
             label: 'Max usage',
             nameRegex: /Max\s*usage|最高用量|最大用量/i,
             priceHints: ['32,490', '32490', '500'],
-            amountUsd: 500
+            amountUsd: 500,
+            amountPhp: 32490
         };
     }
     if (/200|20x|more/i.test(raw)) {
@@ -1327,15 +1543,17 @@ function resolveChatGptProUsageTier(planType) {
             label: 'More usage',
             nameRegex: /More\s*usage|较高用量|更多用量/i,
             priceHints: ['9,990', '9990', '200'],
-            amountUsd: 200
+            amountUsd: 200,
+            amountPhp: 9990
         };
     }
     return {
         id: 'standard',
         label: 'Standard',
-        nameRegex: /^Standard$|标准/i,
+        nameRegex: /\bStandard\b|标准/i,
         priceHints: ['6,490', '6490', '100'],
-        amountUsd: 100
+        amountUsd: 100,
+        amountPhp: 6490
     };
 }
 
@@ -1352,9 +1570,84 @@ async function ensureChatGptProUsageTier(page, planType, options = {}) {
         return { handled: false, reason: 'not_pro' };
     }
 
+    const isStandardTier = tier.id === 'standard';
+
+    const isTargetCheckedInPage = async () => {
+        // 1. 优先使用已成熟的 readCheckoutDueAmount 直接跨行精准读取应付金额（覆盖 Due today\n$200.00）
+        try {
+            const due = await readCheckoutDueAmount(page);
+            if (due && typeof due.amount === 'number' && due.amount > 0) {
+                if (tier.amountUsd && Math.abs(due.amount - tier.amountUsd) < 0.01) {
+                    return true;
+                }
+                if (tier.amountPhp && Math.abs(due.amount - tier.amountPhp) < 0.01) {
+                    return true;
+                }
+                const dueStr = String(due.amount);
+                if (tier.priceHints && tier.priceHints.some((h) => dueStr === h.replace(/,/g, ''))) {
+                    return true;
+                }
+            }
+        } catch (_) {}
+
+        // 2. 页面文本与卡片 evaluate 检查
+        return page.evaluate(({ nameReStr, priceHints, amountUsd }) => {
+            const re = new RegExp(nameReStr, 'i');
+            const text = document.body ? document.body.innerText : '';
+            // 2.1 价格联动确认（如 Due today\n$200.00 / Monthly subscription\n$200 等）
+            // 允许跨最多 64 字符（包含换行符），切勿使用 [^\n]*
+            const hasPrice = priceHints.some((hint) => {
+                const escapedHint = hint.replace(/,/g, '[,.]?');
+                const priceRe = new RegExp(`(?:Due today|Total due|Monthly subscription|今日应付|应付)[^\\d₱$€£]{0,64}?${escapedHint}`, 'i');
+                return priceRe.test(text);
+            });
+            if (hasPrice) return true;
+
+            // 2.2 只有在页面不存在右侧明细栏时（如纯组件单测环境），才降级检查卡片属性
+            const hasDueSection = /(?:Due today|Total due|Monthly subscription|今日应付|应付)/i.test(text);
+            if (!hasDueSection) {
+                const elements = Array.from(document.querySelectorAll('button, [role="radio"], [role="button"], [data-state], div, span'));
+                const match = elements.find((el) => {
+                    const t = (el.textContent || '').trim();
+                    const hasName = re.test(t);
+                    const hasP = priceHints.some(p => t.includes(p) || t.includes(String(amountUsd)));
+                    if (!hasName || !hasP) return false;
+                    if (/ChatGPT Pro|Top features/i.test(t)) return false;
+                    const otherTiers = ['Standard', 'More usage', 'Max usage'].filter(name => !re.test(name));
+                    if (otherTiers.some(other => (new RegExp(other, 'i')).test(t))) return false;
+                    return true;
+                });
+                if (match) {
+                    const card = match.closest('button, [role="radio"], [role="button"], [data-state], [aria-checked], div[class*="rounded"], div[class*="border"]') || match;
+                    if (card.getAttribute('aria-checked') === 'true'
+                        || card.getAttribute('data-state') === 'checked'
+                        || card.getAttribute('aria-selected') === 'true'
+                        || card.classList.contains('border-black')) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }, { nameReStr: tier.nameRegex.source, priceHints: tier.priceHints, amountUsd: tier.amountUsd }).catch(() => false);
+    };
+
+    if (page.__chatgpt_pro_tier_confirmed === tier.id) {
+        const stillConfirmed = await isTargetCheckedInPage();
+        if (stillConfirmed) {
+            console.log(`✅ [ChatGPT] Pro 用量档位已在之前步骤确认 (${tier.label}): ${tier.id}，且页面状态一致，直接跳过重复检测`);
+            return { handled: true, tier: tier.id, selected: true, cached: true };
+        }
+        delete page.__chatgpt_pro_tier_confirmed;
+    }
+
+    const currentUrl = page.url ? page.url() : '';
+    if (currentUrl.includes('stripe.com') || currentUrl.includes('/pay/')) {
+        return { handled: false, reason: 'already_at_stripe' };
+    }
+
+    const immediateOnly = Boolean(options.immediateOnly);
     const timeout = options.timeout || 12000;
     const deadline = Date.now() + timeout;
-    const isStandardTier = tier.id === 'standard';
 
     console.log(`⚡ [ChatGPT] 检查 Pro 套餐用量档位 (目标: ${tier.label} / ${tier.id}, planType: ${planType})...`);
 
@@ -1364,103 +1657,185 @@ async function ensureChatGptProUsageTier(page, planType, options = {}) {
         const hasUsageSection = /Choose your usage level|Configure your plan|More usage|Max usage|Standard|设置您的套餐|选择您的用量/i.test(pageText);
 
         if (!hasUsageSection) {
+            if (immediateOnly) {
+                return { handled: false, reason: 'not_found' };
+            }
             await page.waitForTimeout(300);
             continue;
         }
 
-        // 检查页面当前是否已经切实处于目标档位状态（通过页面价格联动确认）
-        if (!isStandardTier) {
-            const hasTargetPrice = tier.priceHints.some((hint) => {
-                const re = new RegExp(`(?:Due today|Total due|Monthly subscription|今日应付|应付)[^\\n]*${hint.replace(/,/g, '[,.]?')}`, 'i');
-                return re.test(pageText);
-            });
-            if (hasTargetPrice) {
-                console.log(`✅ [ChatGPT] Pro 用量档位已在目标档位 (页面价格已更新为 ${tier.label}): ${tier.id}`);
-                return { handled: true, tier: tier.id, selected: true };
-            }
+        // 检查页面当前是否已经切实处于目标档位状态（通过页面价格联动或选中状态确认）
+        if (await isTargetCheckedInPage()) {
+            console.log(`✅ [ChatGPT] Pro 用量档位已在目标档位 (页面状态确认 ${tier.label}): ${tier.id}`);
+            page.__chatgpt_pro_tier_confirmed = tier.id;
+            return { handled: true, tier: tier.id, selected: true };
         }
 
         let clicked = false;
 
-        // 1. 通过 evaluate 在浏览器内部执行原生点击穿透（不受任何外层样式或指针遮挡干扰）
-        const evalClicked = await page.evaluate((targetRegexStr) => {
-            const re = new RegExp(targetRegexStr, 'i');
-            const elements = [...document.querySelectorAll('button, [role="radio"], [role="button"], div, span')];
-            const match = elements.find((el) => {
-                if (el.children.length > 2) return false;
-                const text = (el.textContent || '').trim();
-                return re.test(text) && !/ChatGPT Pro|Top features/i.test(text);
-            });
+        // 策略 1: 真实鼠标物理点击（通过 Playwright boundingBox 获取卡片几何中心）
+        const priceRegex = new RegExp(`(?:[₱$]\\s*)?(?:${tier.priceHints.join('|')})\\b`, 'i');
+        const cardLocators = [
+            page.locator('button, [role="radio"], [role="button"], [data-state], div[class*="rounded"], div[class*="border"]').filter({ hasText: tier.nameRegex }).filter({ hasText: priceRegex }),
+            page.locator('button, [role="radio"], [role="button"]').filter({ hasText: tier.nameRegex }),
+            page.getByText(tier.nameRegex).locator('xpath=ancestor::*[self::button or @role="radio" or @role="button" or @data-state or contains(@class, "rounded") or contains(@class, "border")][1]')
+        ];
 
-            if (match) {
-                const card = match.closest('button, [role="radio"], [role="button"], div[class*="rounded"], div[class*="border"]') || match;
-                card.scrollIntoView({ behavior: 'instant', block: 'center' });
-                card.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                card.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                card.click();
-                return true;
-            }
-            return false;
-        }, tier.nameRegex.source).catch(() => false);
-
-        if (evalClicked) {
-            console.log(`👉 [ChatGPT] 原生点击切换 Pro 用量档位卡片: ${tier.label} (${tier.id})`);
-            clicked = true;
-        }
-
-        // 2. 同时使用 Playwright 的定位器执行点击，实现双重保障
-        const textLoc = page.getByText(tier.nameRegex).first();
-        if (await textLoc.isVisible({ timeout: 400 }).catch(() => false)) {
-            const cardParent = textLoc.locator('xpath=ancestor::*[self::button or @role="radio" or @role="button" or contains(@class, "rounded") or contains(@class, "cursor-pointer")][1]');
-            if (await cardParent.count() > 0 && await cardParent.isVisible().catch(() => false)) {
-                await cardParent.click({ timeout: 2000, force: true }).catch(() => {});
-            } else {
-                await textLoc.click({ timeout: 2000, force: true }).catch(() => {});
-            }
-            clicked = true;
-        }
-
-        // 3. 价格特征定位兜底
-        if (!clicked && tier.priceHints.length) {
-            for (const hint of tier.priceHints) {
-                const priceRegex = new RegExp(`(?:[₱$€£S]|RM)?\\s*${hint}`, 'i');
-                const byPrice = page.locator('button, [role="radio"], [role="button"], div').filter({ hasText: priceRegex }).first();
-                if (await byPrice.isVisible({ timeout: 300 }).catch(() => false)) {
-                    await byPrice.click({ timeout: 2000, force: true }).catch(() => {});
+        for (const loc of cardLocators) {
+            const count = await loc.count().catch(() => 0);
+            for (let i = 0; i < count; i += 1) {
+                const el = loc.nth(i);
+                if (!await el.isVisible({ timeout: 200 }).catch(() => false)) continue;
+                const box = await el.boundingBox().catch(() => null);
+                if (box && box.width >= 35 && box.height >= 25) {
+                    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
                     clicked = true;
                     break;
                 }
             }
+            if (clicked) break;
+        }
+
+        // 策略 2: 直接通过 Playwright 定位器点击文字与卡片
+        if (!clicked) {
+            const textLoc = page.getByText(tier.nameRegex).first();
+            if (await textLoc.isVisible({ timeout: 300 }).catch(() => false)) {
+                await textLoc.click({ timeout: 2000, force: true }).catch(() => {});
+                clicked = true;
+            }
+        }
+
+        // 策略 3: DOM 原生深度遍历并触发 Pointer/Mouse/Click 全套事件链（仅在前序点击未命中时兜底）
+        if (!clicked) {
+            const evalClicked = await page.evaluate(({ targetRegexStr, priceHints, amountUsd }) => {
+                const re = new RegExp(targetRegexStr, 'i');
+                const allElements = Array.from(document.querySelectorAll('button, [role="radio"], [role="button"], [data-state], div, span'));
+                const match = allElements.find((el) => {
+                    const text = (el.textContent || '').trim();
+                    const hasName = re.test(text);
+                    const hasPrice = priceHints.some(p => text.includes(p) || text.includes(String(amountUsd)));
+                    if (!hasName || !hasPrice) return false;
+                    if (/ChatGPT Pro|Top features/i.test(text)) return false;
+                    const otherTiers = ['Standard', 'More usage', 'Max usage'].filter(name => !re.test(name));
+                    if (otherTiers.some(other => (new RegExp(other, 'i')).test(text))) return false;
+                    return text.length < 60;
+                });
+
+                if (match) {
+                    let clickTarget = match;
+                    let p = match;
+                    while (p && p !== document.body && p !== document.documentElement) {
+                        if (p.tagName === 'BUTTON' || p.getAttribute('role') === 'radio' || p.getAttribute('role') === 'button' || p.hasAttribute('data-state')) {
+                            clickTarget = p;
+                            break;
+                        }
+                        const r = p.getBoundingClientRect();
+                        if (r.width >= 40 && r.width <= 350 && r.height >= 30 && r.height <= 200) {
+                            clickTarget = p;
+                        }
+                        p = p.parentElement;
+                    }
+                    clickTarget.scrollIntoView({ behavior: 'instant', block: 'center' });
+                    clickTarget.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+                    clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                    clickTarget.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true }));
+                    clickTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                    clickTarget.click();
+                    return true;
+                }
+                return false;
+            }, { targetRegexStr: tier.nameRegex.source, priceHints: tier.priceHints, amountUsd: tier.amountUsd }).catch(() => false);
+
+            if (evalClicked) {
+                clicked = true;
+            }
         }
 
         if (clicked) {
-            // 等待页面 React 状态渲染及金额联动
-            await page.waitForTimeout(800);
-            console.log(`✅ [ChatGPT] 已成功切换并确认 Pro 用量档位: ${tier.label}`);
-            return { handled: true, tier: tier.id, clicked: true, selected: true };
+            console.log(`👉 [ChatGPT] 已触发切换 Pro 用量档位卡片: ${tier.label} (${tier.id})，等待页面价格联动...`);
+            // 点击后主动轮询等待右侧应付金额联动更新（包含后台 API 计算时差与按钮 spinner）
+            // 采用 3.5 秒等待上限，若首轮因页面水合未生效可快速触发二轮点击，避免无谓空等
+            const verifyDeadline = Date.now() + 3500;
+            while (Date.now() < verifyDeadline) {
+                await page.waitForTimeout(250);
+                if (await isTargetCheckedInPage()) {
+                    console.log(`✅ [ChatGPT] Pro 用量档位已成功切换并确认 (页面金额联动确认): ${tier.label}`);
+                    page.__chatgpt_pro_tier_confirmed = tier.id;
+                    return { handled: true, tier: tier.id, clicked: true, selected: true };
+                }
+            }
+            console.warn(`⚠️ [ChatGPT] 已点击 ${tier.label}，但页面金额尚未联动更新，继续重试...`);
         }
 
         await page.waitForTimeout(400);
+    }
+
+    if (!isStandardTier) {
+        throw Object.assign(
+            new Error(`Pro 用量档位切换失败：已尝试切换至 ${tier.label}，但页面应付金额仍未变为 ${tier.label} 对应价格 [PRO_TIER_SELECTION_FAILED]`),
+            { code: 'PRO_TIER_SELECTION_FAILED' }
+        );
     }
 
     console.warn(`⚠️ [ChatGPT] 未在当前页面检测到 Pro 用量选择卡片（可能处于不同页面结构）`);
     return { handled: false, reason: 'not_found' };
 }
 
-async function openPricingCheckout(page, { region, planType, onCheckoutPage }) {
-    await waitForPricingPage(page);
-    await switchToPersonalPlans(page);
-    await selectPricingRegion(page, region);
-    const observer = observeCheckout(page);
-    try {
-        await clickPlanUpgrade(page, planType, { skipPreflight: true });
-        const checkoutUrl = await waitForCheckoutPage(page, 35000, { observer, onCheckoutPage });
-        await ensureChatGptProUsageTier(page, planType).catch((err) => {
-            console.warn('⚠️ [Checkout] Pro 档位选择异常 (非阻塞):', err.message);
-        });
-        return checkoutUrl;
-    } finally {
-        observer.dispose();
+async function openPricingCheckout(page, { region, planType, onCheckoutPage, skipPreflight = false, checkoutTimeout = null } = {}) {
+    if (!skipPreflight) {
+        await waitForPricingPage(page);
+        await switchToPersonalPlans(page);
+        await selectPricingRegion(page, region, { planType });
+    }
+
+    const maxAttempts = Number(process.env.CHECKOUT_CLICK_MAX_ATTEMPTS || 2);
+    const timeout = Number(checkoutTimeout || (process.env.NODE_ENV === 'test' ? 3000 : 35000));
+    let firstError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const observer = observeCheckout(page);
+        try {
+            await clickPlanUpgrade(page, planType, { skipPreflight: true });
+            const checkoutUrl = await waitForCheckoutPage(page, timeout, { observer, onCheckoutPage });
+            await ensureChatGptProUsageTier(page, planType).catch((err) => {
+                console.warn('⚠️ [Checkout] Pro 档位选择异常 (非阻塞):', err.message);
+            });
+            return checkoutUrl;
+        } catch (err) {
+            observer.dispose();
+            if (!firstError) firstError = err;
+
+            const isRetryable = attempt < maxAttempts
+                && (err.code === 'CHECKOUT_UNUSUAL_ACTIVITY' || err.code === 'CHECKOUT_PAGE_ERROR' || err.code === 'CHECKOUT_HTTP_ERROR')
+                && !page.isClosed();
+
+            if (isRetryable) {
+                const cooldownMs = process.env.NODE_ENV === 'test' ? 50 : 5000;
+                console.warn(`⚠️ [Checkout] 创建遇到异常 (${err.message})，正在进行冷却重试 (${attempt}/${maxAttempts - 1})...`);
+                await page.waitForTimeout(cooldownMs);
+
+                // 智能自愈：如果是因为 unusual activity 导致的 400，当前弹窗和会话状态往往已污染
+                // 主动关闭并重新唤起定价弹窗，重置 Cloudflare Turnstile 会话和 PoW 算力上下文
+                if (err.code === 'CHECKOUT_UNUSUAL_ACTIVITY' && !page.isClosed()) {
+                    console.log('🔄 [Checkout] 遇到风控异常，主动刷新/重开定价弹窗以重置反爬会话...');
+                    await page.keyboard.press('Escape').catch(() => {});
+                    await page.waitForTimeout(1000);
+                    await waitForPricingPage(page).catch(() => {});
+                    await switchToPersonalPlans(page).catch(() => {});
+                    await selectPricingRegion(page, region, { planType }).catch(() => {});
+                }
+
+                const modalVisible = await page.locator('#pricing, [role="dialog"]').first().isVisible().catch(() => false);
+                if (modalVisible) {
+                    console.log(`🔄 [Checkout] 定价弹窗仍处于开启状态，发起第 ${attempt + 1} 次点击升级...`);
+                    continue;
+                }
+            }
+            if (err.code === 'CHECKOUT_NO_REQUEST' && firstError && firstError.code !== 'CHECKOUT_NO_REQUEST') {
+                throw firstError;
+            }
+            throw err;
+        }
     }
 }
 

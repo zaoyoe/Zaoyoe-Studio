@@ -308,7 +308,12 @@ async function pickBillingAddressForCheckout(regionOrLastUsedId = 'US', lastUsed
     if (strategy === 'oregon' && region !== 'US') throw new Error('显式俄勒冈账单策略仅支持美国支付地区');
 
     const phBillingStrategy = (process.env.PH_BILLING_ADDRESS_STRATEGY || 'oregon').trim().toLowerCase();
-    if (strategy === 'oregon' || region === 'PH' && phBillingStrategy === 'oregon') {
+    const usBillingStrategy = (process.env.US_BILLING_ADDRESS_STRATEGY || 'oregon').trim().toLowerCase();
+    const shouldUseOregon = strategy === 'oregon'
+        || (region === 'PH' && phBillingStrategy === 'oregon')
+        || (region === 'US' && usBillingStrategy === 'oregon');
+
+    if (shouldUseOregon) {
         let picked;
         try {
             picked = await pickOregonTaxFreeAddress(prevId);

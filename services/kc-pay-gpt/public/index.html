@@ -1729,6 +1729,12 @@
                 heading = '【场景归属】请点击属于右上角场所的设施/物品';
                 guide = '操作指引：请观察右上角地点，在下方点击所有通常属于该场所内部配置的物品。选好后点击右下角按钮提交。';
             }
+            // 交通环境匹配（如 "Tap on the item that travels in the same area as the example"）
+            else if ((combined.includes('same area') || combined.includes('same environment') || combined.includes('same place') || combined.includes('交通环境匹配'))
+                && combined.includes('example') && /(?:travel|move|drive|fly|float|行驶|移动)/i.test(combined)) {
+                heading = '【交通环境匹配】请点击与示例在同一环境中行驶的物体';
+                guide = '操作指引：请观察右上角示例是在水上、陆地还是空中行驶，然后在下方点击所有与示例处于同一行驶环境的物体。选好后点击右下角按钮提交。';
+            }
             // 2. 字母与拼图拖拽 (drag the letter / complete the pair / complete the puzzle)
             else if (combined.includes('letter to the place') || combined.includes('drag the letter') || combined.includes('drag each letter')) {
                 heading = '【字母拖拽】请拖动字母至合适缺口处';
@@ -1796,6 +1802,11 @@
             } else if (combined.includes('kept indoors') || combined.includes('kept inside') || combined.includes('found indoors') || combined.includes('placed indoors')) {
                 heading = '请选出所有【通常放置在室内的物品】';
                 guide = '操作指引：请在下方选出所有通常在室内使用的物品（如台灯、办公桌椅、室内沙发等）。选好后点击右下角按钮继续。';
+            }
+            // 10.5. 开关状态物品 (things with on and off states)
+            else if (combined.includes('on and off state') || combined.includes('turned on and off') || combined.includes('on/off state') || combined.includes('开关状态')) {
+                heading = '请选出所有【有开关状态的物品】';
+                guide = '操作指引：请在下方选出所有具备开启/关闭（On/Off）状态的物品（如手机、平板、电脑、台灯等电子或带开关设备，排除水果、衣物等普通物品）。选好后点击右下角按钮继续。';
             }
             // 11. 阴影 / 投影 (shadow)
             else if (combined.includes('shadow') || combined.includes('silhouette')) {

@@ -27,13 +27,16 @@ function assertLocalSessionFresh(accessToken, sessionJson = {}, now = Date.now()
     // An unexpired timestamp is only an input check, never proof of authentication.
 }
 
-async function verifyChatGptAccessToken(page, accessToken) {
+async function verifyChatGptAccessToken(page, accessToken, options = {}) {
     let result;
     let timeout;
+    let evalError = null;
+    const deadlineMs = Number(options.deadlineMs || 12000);
+    const fetchTimeoutMs = Math.max(5000, deadlineMs - 2000);
     try {
-        result = await Promise.race([page.evaluate(async (token) => {
+        result = await Promise.race([page.evaluate(async ({ token, timeoutMs }) => {
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 10000);
+            const timer = setTimeout(() => controller.abort(), timeoutMs || 10000);
             try {
                 // This endpoint is read only and is never fulfilled by the Session bootstrap patch.
                 const response = await fetch('/backend-api/me', {
@@ -50,15 +53,28 @@ async function verifyChatGptAccessToken(page, accessToken) {
                     id: typeof data?.id === 'string' ? data.id : '',
                     email: typeof data?.email === 'string' ? data.email : ''
                 };
+            } catch (err) {
+                return { fetchError: err?.name || 'Error', message: err?.message };
             } finally { clearTimeout(timer); }
-        }, accessToken), new Promise((_, reject) => {
-            timeout = setTimeout(() => reject(new Error('Official auth verification deadline')), 12000);
+        }, { token: accessToken, timeoutMs: fetchTimeoutMs }), new Promise((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('Official auth verification deadline')), deadlineMs);
         })]);
-    } catch (_) {
-        throw buildChatGptAuthError('CHATGPT_AUTH_UNCONFIRMED');
+    } catch (err) {
+        evalError = err;
     } finally { clearTimeout(timeout); }
+
+    if (evalError) {
+        console.warn(`[Session] 官方鉴权接口评估异常: ${evalError.name || 'Error'}`);
+        throw buildChatGptAuthError('CHATGPT_AUTH_UNCONFIRMED');
+    }
+    if (result?.fetchError) {
+        console.warn(`[Session] 官方 /backend-api/me 网络请求未完成: ${result.fetchError}`);
+    }
     if (result?.expired || isChatGptAuthFailure(null, result?.status)) throw buildChatGptAuthError();
-    if (result?.status !== 200 || !result.id) throw buildChatGptAuthError('CHATGPT_AUTH_UNCONFIRMED');
+    if (result?.status !== 200 || !result.id) {
+        console.warn(`[Session] 官方鉴权未通过: status=${result?.status}, id=${result?.id ? 'present' : 'none'}, email=${result?.email || 'none'}`);
+        throw buildChatGptAuthError('CHATGPT_AUTH_UNCONFIRMED');
+    }
     return result;
 }
 

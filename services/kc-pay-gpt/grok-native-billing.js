@@ -230,6 +230,13 @@ async function fillNativeBilling(page, address, name, email) {
             filled.push(key);
         }
         billingStage = 'suggestions';
+        const suggestionDeadline = Date.now() + 4000;
+        while (!await addressSuggestions(page, dialog)
+            && await street.getAttribute('aria-busy').catch(() => null) === 'true'
+            && Date.now() < suggestionDeadline) {
+            await checkoutDialog(page);
+            await page.waitForTimeout(60);
+        }
         if (await addressSuggestions(page, dialog)) {
             await closeAddressSuggestions(page, dialog);
         }
@@ -250,6 +257,9 @@ async function fillNativeBilling(page, address, name, email) {
 }
 async function assertNativeBilling(page, billing) {
     const dialog = await checkoutDialog(page);
+    if (await addressSuggestions(page, dialog)) {
+        await closeAddressSuggestions(page, dialog);
+    }
     for (const key of ['country', 'state']) if (await selectionValue(dialog, key) !== billing.expected[key]) invalid(`账单 ${key} 在提交前发生变化`);
     for (const key of billing.filled) {
         const input = await field(dialog, key);
@@ -280,4 +290,4 @@ async function recommitNativeTaxAddress(page, billing, assertCurrent) {
     assertCurrent();
     await assertNativeBilling(page, billing);
 }
-module.exports = { fillNativeBilling, assertNativeBilling, recommitNativeTaxAddress };
+module.exports = { fillNativeBilling, assertNativeBilling, recommitNativeTaxAddress, closeAddressSuggestions };

@@ -1172,6 +1172,13 @@ const HCAPTCHA_PROMPT_EXACT_DICT = {
     'select all objects that can float on water': '请选择所有能在水上漂浮的物体',
     'click each image containing an object that can float on water': '请点击每张包含能在水上漂浮物体的图片',
 
+    'tap on the item that travels in the same area as the example': '【交通环境匹配】请点击与示例在同一环境中行驶的物体',
+    'click on the item that travels in the same area as the example': '【交通环境匹配】请点击与示例在同一环境中行驶的物体',
+    'select the item that travels in the same area as the example': '【交通环境匹配】请选择与示例在同一环境中行驶的物体',
+    'tap on the object that travels in the same area as the example': '【交通环境匹配】请点击与示例在同一环境中行驶的物体',
+    'click the object that travels in the same area as the example': '【交通环境匹配】请点击与示例在同一环境中行驶的物体',
+    'tap on the item that travels in the same environment as the example': '【交通环境匹配】请点击与示例在同一环境中行驶的物体',
+
     'please click on the object that is different from the others': '请点击与其他物体不同的图案',
     'click on the object that is different from the others': '请点击与其他物体不同的图案',
     'click the one that is different': '请点击与其他图案不同的那一项',
@@ -1270,7 +1277,20 @@ const HCAPTCHA_PROMPT_EXACT_DICT = {
     'items that are typically kept indoors': '通常放置在室内的物品',
     'items that are typically kept inside': '通常放置在室内的物品',
     'objects that are typically kept indoors': '通常放置在室内的物品',
-    'objects that are typically kept inside': '通常放置在室内的物品'
+    'objects that are typically kept inside': '通常放置在室内的物品',
+
+    'find all things with on and off states': '请选出所有【有开关状态的物品】',
+    'find all items with on and off states': '请选出所有【有开关状态的物品】',
+    'find all objects with on and off states': '请选出所有【有开关状态的物品】',
+    'find all devices with on and off states': '请选出所有【有开关状态的设备】',
+    'find things with on and off states': '请选出【有开关状态的物品】',
+    'click on all things with on and off states': '请点击【所有有开关状态的物品】',
+    'click all things with on and off states': '请点击【所有有开关状态的物品】',
+    'select all things with on and off states': '请选择【所有有开关状态的物品】',
+    'things with on and off states': '有开关状态的物品',
+    'items with on and off states': '有开关状态的物品',
+    'objects with on and off states': '有开关状态的物品',
+    'devices with on and off states': '有开关状态的设备'
 };
 
 const HCAPTCHA_NOUN_DICT = {
@@ -1299,6 +1319,16 @@ const HCAPTCHA_NOUN_DICT = {
     'items that are typically kept inside': '通常放置在室内的物品',
     'objects that are typically kept indoors': '通常放置在室内的物品',
     'objects that are typically kept inside': '通常放置在室内的物品',
+
+    'all things with on and off states': '所有有开关状态的物品',
+    'things with on and off states': '有开关状态的物品',
+    'items with on and off states': '有开关状态的物品',
+    'objects with on and off states': '有开关状态的物品',
+    'devices with on and off states': '有开关状态的设备',
+    'things that have on and off states': '有开关状态的物品',
+    'objects that have on and off states': '有开关状态的物品',
+    'things that can be turned on and off': '有开关状态的物品',
+    'objects that can be turned on and off': '有开关状态的物品',
 
     'animals looking away from you': '背对你（看向别处）的动物',
     'animal looking away from you': '背对你（看向别处）的动物',
@@ -1450,6 +1480,10 @@ function translateHcaptchaPrompt(prompt) {
     if (lower.includes('water travel') || lower.includes('water transport')) {
         return '【水上交通】请点击所有水上交通工具（轮船/艇等）';
     }
+    if (/(?:travel|move|drive|fly|float)/i.test(lower)
+        && /same\s+(?:area|environment|place)\s+as\s+(?:the\s+)?example/i.test(lower)) {
+        return '【交通环境匹配】请点击与示例在同一环境中行驶的物体';
+    }
     if (lower.includes('air travel') || lower.includes('air transport')) {
         return '【空中交通】请点击所有空中交通工具（飞机/直升机等）';
     }
@@ -1507,6 +1541,11 @@ function translateHcaptchaPrompt(prompt) {
     }
     if (/kept\s+(?:indoors|inside)|found\s+(?:indoors|inside)|placed\s+(?:indoors|inside)/i.test(lower)) {
         return '请选出所有【通常放置在室内的物品】';
+    }
+
+    // 开关状态题型（如 "Find all things with on and off states"）
+    if (/on\s+and\s+off\s+states?|turned\s+on\s+and\s+off|on\s*\/\s*off\s+states?/i.test(lower)) {
+        return '请选出所有【有开关状态的物品】';
     }
 
     // 2. 句式模式匹配
@@ -1681,6 +1720,13 @@ function formatCaptchaGuideMessage(promptZh, promptEn) {
             `操作指引：请在下方选出所有航行于水上的船只、快艇或水上载具。选好后点击右下角按钮提交。` +
             `</div>`
         );
+    } else if ((fullText.includes('same area') || fullText.includes('same environment') || fullText.includes('same place') || fullText.includes('交通环境匹配'))
+        && fullText.includes('example') && /(?:travel|move|drive|fly|float|行驶|移动)/i.test(fullText)) {
+        parts.push(
+            `<div class="captcha-prompt-guide">` +
+            `操作指引：请观察右上角示例是在水上、陆地还是空中行驶，然后在下方点击所有与示例处于同一行驶环境的物体。选好后点击右下角按钮提交。` +
+            `</div>`
+        );
     } else if (fullText.includes('drag') || fullText.includes('拖动') || fullText.includes('拖拽') || fullText.includes('slide') || (fullText.includes('fit') && !fullText.includes('fit inside'))) {
         parts.push(
             `<div class="captcha-prompt-guide">` +
@@ -1719,6 +1765,12 @@ function formatCaptchaGuideMessage(promptZh, promptEn) {
                 `</div>`
             );
         }
+    } else if (fullText.includes('on and off state') || fullText.includes('turned on and off') || fullText.includes('开关状态')) {
+        parts.push(
+            `<div class="captcha-prompt-guide">` +
+            `操作指引：请在下方选出所有具备开启/关闭（On/Off）状态的物品（如手机、电脑、台灯等电子或带开关设备，排除水果、衣物等普通物品）。选全后务必点击右下角的「Verify / 提交」按钮完成验证。` +
+            `</div>`
+        );
     } else if (fullText.includes('count shown') || fullText.includes('示例及其数量') || fullText.includes('example and count')) {
         parts.push(
             `<div class="captcha-prompt-guide">` +

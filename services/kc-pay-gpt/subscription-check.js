@@ -293,9 +293,9 @@ function isCloudflareBlock(status, data) {
     return /cloudflare|cf-ray|attention required|just a moment|cf_chl/i.test(text);
 }
 
-async function fetchAccountCheckWithPlaywright(accessToken, timezoneOffsetMin = 0) {
+async function fetchAccountCheckWithPlaywright(accessToken, timezoneOffsetMin = 0, proxyOverride = '') {
     const url = buildCheckUrl(timezoneOffsetMin);
-    const proxyValue = String(process.env.PROXY || '').trim();
+    const proxyValue = String(proxyOverride || process.env.PROXY || '').trim();
     const { proxyConfig, cleanup } = await preparePlaywrightProxy(proxyValue);
     const ctx = await playwrightRequest.newContext({
         userAgent: USER_AGENT,
@@ -329,11 +329,11 @@ async function fetchAccountCheckWithAxios(accessToken, timezoneOffsetMin = 0) {
     return { status: response.status, data: response.data, via: 'axios' };
 }
 
-async function fetchAccountCheck(accessToken, timezoneOffsetMin = 0) {
+async function fetchAccountCheck(accessToken, timezoneOffsetMin = 0, proxyOverride = '') {
     let lastError = null;
 
     try {
-        const playwrightResult = await fetchAccountCheckWithPlaywright(accessToken, timezoneOffsetMin);
+        const playwrightResult = await fetchAccountCheckWithPlaywright(accessToken, timezoneOffsetMin, proxyOverride);
         if (playwrightResult.status === 200 || playwrightResult.status === 401) {
             return playwrightResult;
         }
@@ -359,9 +359,9 @@ async function fetchAccountCheck(accessToken, timezoneOffsetMin = 0) {
     return lastError || { status: 502, data: 'unknown error', via: 'none' };
 }
 
-async function requestOpenAiJson(accessToken, { method = 'GET', url, body = null }) {
+async function requestOpenAiJson(accessToken, { method = 'GET', url, body = null, proxy = '' } = {}) {
     const headers = buildCheckHeaders(accessToken);
-    const proxyValue = String(process.env.PROXY || '').trim();
+    const proxyValue = String(proxy || process.env.PROXY || '').trim();
     let lastError = null;
 
     try {
@@ -443,7 +443,8 @@ async function cancelAutoRenew(accessToken, options = {}) {
 
     const checkResult = await querySubscriptionBySession(token, {
         timezoneOffsetMin: options.timezoneOffsetMin,
-        email: options.email || profile.email || ''
+        email: options.email || profile.email || '',
+        proxy: options.proxy
     });
     if (!checkResult.ok) {
         return checkResult;
@@ -478,7 +479,8 @@ async function cancelAutoRenew(accessToken, options = {}) {
         response = await requestOpenAiJson(token, {
             method: 'POST',
             url: CANCEL_SUBSCRIPTION_URL,
-            body: { account_id: accountId }
+            body: { account_id: accountId },
+            proxy: options.proxy
         });
     } catch (error) {
         return {
@@ -509,7 +511,8 @@ async function cancelAutoRenew(accessToken, options = {}) {
 
     const verify = await querySubscriptionBySession(token, {
         timezoneOffsetMin: options.timezoneOffsetMin,
-        email: options.email || profile.email || ''
+        email: options.email || profile.email || '',
+        proxy: options.proxy
     });
 
     return {
@@ -576,7 +579,8 @@ async function resumeAutoRenew(accessToken, options = {}) {
         response = await requestOpenAiJson(token, {
             method: 'POST',
             url: RESUME_SUBSCRIPTION_URL,
-            body: { account_id: accountId }
+            body: { account_id: accountId },
+            proxy: options.proxy
         });
     } catch (error) {
         return {
@@ -607,7 +611,8 @@ async function resumeAutoRenew(accessToken, options = {}) {
 
     const verify = await querySubscriptionBySession(token, {
         timezoneOffsetMin: options.timezoneOffsetMin,
-        email: options.email || profile.email || ''
+        email: options.email || profile.email || '',
+        proxy: options.proxy
     });
 
     return {
@@ -669,7 +674,7 @@ async function querySubscriptionBySession(accessToken, options = {}) {
 
     let response;
     try {
-        response = await fetchAccountCheck(token, options.timezoneOffsetMin);
+        response = await fetchAccountCheck(token, options.timezoneOffsetMin, options.proxy);
     } catch (error) {
         return {
             ok: false,

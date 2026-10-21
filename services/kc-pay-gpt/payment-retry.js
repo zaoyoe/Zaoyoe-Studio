@@ -11,7 +11,7 @@
  */
 
 const store = require('./mysql-store');
-const { completeStripeCardPayment, readCheckoutDueAmount, estimateTaxFreeAmount } = require('./stripe-payment');
+const { completeStripeCardPayment, readCheckoutDueAmount, waitForCheckoutDueAmount, estimateTaxFreeAmount } = require('./stripe-payment');
 const { ensureChatGptProUsageTier } = require('./pricing-checkout');
 const { pickBillingAddressForCheckout, markAddressBound } = require('./tax-free-address');
 const { getRegionConfig } = require('./region-config');
@@ -23,6 +23,40 @@ const { assertNativeBillingRegion, normalizeNativeBillingAddress } = require('./
 
 const MAX_CARD_ATTEMPTS = Number(process.env.PAYMENT_MAX_CARD_ATTEMPTS) || 3;
 const MAX_AUTOMATION_ATTEMPTS = MAX_CARD_ATTEMPTS;
+const PAYMENT_GUARD_ERROR_CODES = new Set([
+    'PAYMENT_REGION_NETWORK_MISMATCH',
+    'NETWORK_REGION_UNCONFIRMED',
+    'PAYMENT_REGION_UNCONFIRMED',
+    'CDK_PAYMENT_REGION_MISMATCH',
+    'PAYMENT_CURRENCY_MISMATCH',
+    'CHECKOUT_CURRENCY_UNCONFIRMED',
+    'CHECKOUT_AMOUNT_UNCONFIRMED',
+    'CHECKOUT_AMOUNT_MISMATCH',
+    'BILLING_TAX_NOT_REMOVED',
+    'PRICING_REGION_UNCONFIRMED'
+]);
+
+function getExpectedPlanPriceRule(platform, planType, currency) {
+    const plat = String(platform || 'chatgpt').toLowerCase();
+    const plan = String(planType || 'plus').toLowerCase();
+    const curr = String(currency || 'USD').toUpperCase();
+
+    if (plat === 'chatgpt') {
+        if (curr === 'USD') {
+            if (plan === 'plus') return { amount: 20, label: 'Plus $20' };
+            if (plan === 'go') return { amount: 8, label: 'Go $8' };
+            if (/pro_?200|pro_?20x|pro_?more/i.test(plan)) return { amount: 200, label: 'Pro More usage $200' };
+            if (/pro_?500|pro_?max/i.test(plan)) return { amount: 500, label: 'Pro Max usage $500' };
+            if (/pro_?100|pro_?5x|^pro$/i.test(plan)) return { amount: 100, label: 'Pro Standard $100' };
+        }
+        if (curr === 'PHP') {
+            if (/pro_?200|pro_?20x|pro_?more/i.test(plan)) return { min: 8900, max: 10000, label: 'Pro More usage ₱9,990' };
+            if (/pro_?500|pro_?max/i.test(plan)) return { min: 28000, max: 33000, label: 'Pro Max usage ₱32,490' };
+            if (/pro_?100|pro_?5x|^pro$/i.test(plan)) return { min: 5700, max: 6550, label: 'Pro Standard ₱6,490' };
+        }
+    }
+    return null;
+}
 
 function isPaymentDeclined(errorMsg) {
     if (!errorMsg) return false;
@@ -91,12 +125,17 @@ async function executePaymentWithRetry(page, options) {
     };
 
     const regionOverride = String(process.env.PAYMENT_REGION_OVERRIDE || '').trim().toUpperCase();
-    const region = regionOverride || await store.getPaymentRegion();
+    const region = String(options?.paymentRegion || regionOverride || await store.getPaymentRegion()).trim().toUpperCase();
     const regionConfig = getRegionConfig(region);
     if (!regionConfig) {
         return { success: false, error: '不支持的支付地区配置' };
     }
-    const { currency } = regionConfig;
+    const currency = String(options?.paymentCurrency || regionConfig.currency || '').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency) || currency !== String(regionConfig.currency || '').toUpperCase()) {
+        await persistPaymentState('not_started');
+        return { success: false, error: `卡密支付地区 ${region} 的币种配置无法确认，已停止支付 [CHECKOUT_CURRENCY_UNCONFIRMED]`,
+            code: 'CHECKOUT_CURRENCY_UNCONFIRMED', manualIntervention: true, paymentState: 'not_started', screenshots: [] };
+    }
     progress(`支付地区: ${region}, 币种: ${currency}`);
 
     const grokBundle = platform === 'grok' && isGrokBundlePlan(planType);
@@ -135,19 +174,90 @@ async function executePaymentWithRetry(page, options) {
 
     let billedAmount = 0;
     let billedCurrency = currency;
+    const requiresCurrencyPreflight = platform === 'chatgpt' || !options?.platform;
     try {
         if (platform === 'chatgpt' || !platform) {
             await ensureChatGptProUsageTier(page, planType).catch((err) => {
                 console.warn('⚠️ [PaymentRetry] Pro 档位选择异常 (非阻塞):', err.message);
             });
         }
-        const due = await readCheckoutDueAmount(page);
+        if (requiresCurrencyPreflight) {
+            progress('等待 Checkout 应付金额和币种加载确认...');
+        }
+        const due = requiresCurrencyPreflight
+            ? await waitForCheckoutDueAmount(page)
+            : await readCheckoutDueAmount(page);
+        if (requiresCurrencyPreflight && (!due?.amount || !due.currency)) {
+            await persistPaymentState('not_started');
+            const error = 'Checkout 应付金额或币种无法确认，已停止支付 [CHECKOUT_CURRENCY_UNCONFIRMED]';
+            progress(error);
+            return { success: false, error, code: 'CHECKOUT_CURRENCY_UNCONFIRMED',
+                manualIntervention: true, paymentState: 'not_started', screenshots: [] };
+        }
+        if (requiresCurrencyPreflight && due.currency !== currency) {
+            await persistPaymentState('not_started');
+            const error = `Checkout 币种 ${due.currency} 与卡密支付币种 ${currency} 不一致，已停止支付 [PAYMENT_CURRENCY_MISMATCH]`;
+            progress(error);
+            return { success: false, error, code: 'PAYMENT_CURRENCY_MISMATCH',
+                manualIntervention: true, paymentState: 'not_started', screenshots: [] };
+        }
         if (due?.amount) {
             billedAmount = due.amount;
-            if (due.currency) billedCurrency = due.currency;
+            billedCurrency = due.currency || billedCurrency;
             progress(`Checkout 应付金额: ${billedCurrency} ${billedAmount}`);
+
+            const expectedRule = getExpectedPlanPriceRule(platform, planType, billedCurrency);
+            if (expectedRule) {
+                const checkMismatch = (amt) => {
+                    const num = Number(amt);
+                    return expectedRule.amount !== undefined
+                        ? Math.abs(num - expectedRule.amount) > 1.0
+                        : (num < expectedRule.min || num > expectedRule.max);
+                };
+
+                if (checkMismatch(billedAmount)) {
+                    progress(`Checkout 当前应付金额 (${billedCurrency} ${billedAmount}) 暂未与套餐期望金额 (${expectedRule.label}) 联动，等待金额最终就绪...`);
+                    const pollDeadline = Date.now() + 10000;
+                    while (Date.now() < pollDeadline) {
+                        if (page?.waitForTimeout) {
+                            await page.waitForTimeout(600);
+                        } else if (typeof setTimeout !== 'undefined') {
+                            await new Promise(r => setTimeout(r, 20));
+                        }
+                        const refreshed = await readCheckoutDueAmount(page).catch(() => null);
+                        if (refreshed?.amount) {
+                            billedAmount = refreshed.amount;
+                            billedCurrency = refreshed.currency || billedCurrency;
+                            if (!checkMismatch(billedAmount)) {
+                                progress(`Checkout 应付金额已联动就绪: ${billedCurrency} ${billedAmount}`);
+                                break;
+                            }
+                        }
+                        if (!page?.waitForTimeout) break;
+                    }
+                }
+
+                if (checkMismatch(billedAmount)) {
+                    await persistPaymentState('not_started');
+                    const error = `Checkout 应付金额 ${billedCurrency} ${billedAmount} 与套餐 ${planType} 期望金额 (${expectedRule.label}) 不一致，已安全拦截支付 [CHECKOUT_AMOUNT_MISMATCH]`;
+                    progress(error);
+                    return { success: false, error, code: 'CHECKOUT_AMOUNT_MISMATCH',
+                        manualIntervention: true, paymentState: 'not_started', screenshots: [] };
+                }
+            }
         }
-    } catch (_) { /* ignore */ }
+    } catch (error) {
+        if (!requiresCurrencyPreflight) {
+            // Non-ChatGPT payment integrations retain their provider-specific preflight behavior.
+            progress(`无法预读取 Checkout 金额: ${error.message}`);
+        } else {
+            await persistPaymentState('not_started');
+            const message = `Checkout 应付金额或币种无法确认，已停止支付 [CHECKOUT_CURRENCY_UNCONFIRMED]: ${error.message}`;
+            progress(message);
+            return { success: false, error: message, code: 'CHECKOUT_CURRENCY_UNCONFIRMED',
+                manualIntervention: true, paymentState: 'not_started', screenshots: [] };
+        }
+    }
 
     progress(`开始支付（最多尝试 ${MAX_CARD_ATTEMPTS} 张卡）...`);
 
@@ -202,6 +312,8 @@ async function executePaymentWithRetry(page, options) {
             try {
                 paymentResult = await completeStripeCardPayment(page, cardInfo, address, {
                     cardAttempt, holderName: billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
+                    paymentRegion: region,
+                    paymentCurrency: currency,
                     grokCheckout: options.grokCheckout,
                     onPaymentAttemptStarted: async () => {
                         attemptStarted = true;
@@ -226,7 +338,9 @@ async function executePaymentWithRetry(page, options) {
                 || /安全验证|人机验证|hcaptcha|cloudflare|turnstile|captcha|verification|购买未成功|表单|超时|timeout/i.test(paymentResult.error || '')
             );
 
-            const isDeclined = Boolean(paymentResult.declined || paymentResult.canRetryCard
+            const paymentResultCode = String(paymentResult.code || '').trim().toUpperCase();
+            const isPaymentGuardFailure = PAYMENT_GUARD_ERROR_CODES.has(paymentResultCode);
+            const isDeclined = !isPaymentGuardFailure && Boolean(paymentResult.declined || paymentResult.canRetryCard
                 || (!options.grokCheckout?.native && !isCaptchaOrNonCard && paymentResult.code !== 'PAYMENT_RESULT_UNKNOWN' && isPaymentDeclined(paymentResult.error || '')));
 
             const paymentState = classifyPaymentResult({
@@ -383,7 +497,9 @@ async function executePaymentWithRetry(page, options) {
                 email,
                 stripe_session_id: stripeSessionId || null,
                 status: 'failed',
-                error_code: paymentResult.captchaRequired ? 'captcha_required' : 'form_validation_failed',
+                error_code: isPaymentGuardFailure
+                    ? paymentResultCode
+                    : (paymentResult.captchaRequired ? 'captcha_required' : 'form_validation_failed'),
                 error_message: lastError
             });
 

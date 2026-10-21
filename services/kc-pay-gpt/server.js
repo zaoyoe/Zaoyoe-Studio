@@ -32,6 +32,7 @@ const { formatTaskErrorMessage, publicTaskUpdate } = require('./public/task-mess
 const { resolveActivationInput, buildActivationCredentialEnv } = require('./activation-routing');
 const { reportTaskFailure } = require('./task-diagnostics');
 const { validateCdkPlan } = require('./cdk-plan-catalog');
+const { parseCardImportText } = require('./card-parser');
 const { resolveDiagnosticInput, getDiagnosticCatalog, parseDiagnosticOutput, buildDiagnosticRuntimeEnv } = require('./checkout-diagnostic');
 const { EXECUTION_MODE: CHECKOUT_DIAGNOSTIC_MODE, diagnosticError, throwIfDiagnosticAborted,
     waitForDiagnosticAbort, redactDiagnosticLogs, sanitizeDiagnosticReport, appendDiagnosticReport,
@@ -43,18 +44,53 @@ const { classifyInterruptedTask, classifyAutoRenewCancellation, normalizePayment
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+const BIND_HOST = String(process.env.KC_BIND_HOST || '0.0.0.0').trim() || '0.0.0.0';
+const LOCAL_PREVIEW_ENABLED = process.env.KC_LOCAL_PREVIEW === '1';
 const ADMIN_TOKEN_TTL_MS = adminAuth.ADMIN_TOKEN_TTL_MS;
 const ADMIN_REFRESH_AFTER_MS = adminAuth.ADMIN_REFRESH_AFTER_MS;
 const PROCESS_IDLE_TIMEOUT_MS = Number(process.env.PROCESS_IDLE_TIMEOUT_MS) || (3 * 60 * 1000);
 const PROCESS_TOTAL_TIMEOUT_MS = Number(process.env.PROCESS_TOTAL_TIMEOUT_MS) || (15 * 60 * 1000);
 const STALE_TASK_RECOVERY_MS = Number(process.env.STALE_TASK_RECOVERY_MS) || Math.max(PROCESS_TOTAL_TIMEOUT_MS, 15 * 60 * 1000);
-const MAX_PROCESS_ATTEMPTS = Number(process.env.MAX_PROCESS_ATTEMPTS) || 1;
+const MAX_PROCESS_ATTEMPTS = Number(process.env.MAX_PROCESS_ATTEMPTS) || 2;
 const WS_HEARTBEAT_PING_TYPE = 'ping';
 const WS_HEARTBEAT_PONG_TYPE = 'pong';
 const ACCESS_DEACTIVATED_MESSAGES_URL = '';
 const ACCESS_DEACTIVATED_SYNC_KEY = '';
 const ACCESS_DEACTIVATED_SYNC_COOLDOWN_MS = 30 * 1000;
 const ADMIN_TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET || adminAuth.resolveAdminTokenSecret();
+
+function resolveLocalPreviewInfo() {
+    const repoRoot = path.resolve(__dirname, '..', '..');
+    const git = (args) => execFileSync('git', ['-C', repoRoot, ...args], {
+        encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']
+    }).trim();
+
+    try {
+        const status = git(['status', '--porcelain', '--untracked-files=normal']);
+        return {
+            service: 'kc-pay-gpt',
+            sourceCommit: git(['rev-parse', 'HEAD']),
+            sourceBranch: git(['branch', '--show-current']) || 'detached',
+            sourceMode: 'working-tree',
+            workingTreeDirty: Boolean(status),
+            changedFileCount: status ? status.split('\n').length : 0,
+            backend: 'enabled',
+            payments: 'live-capable'
+        };
+    } catch (_) {
+        return {
+            service: 'kc-pay-gpt',
+            sourceCommit: 'unknown',
+            sourceMode: 'working-tree',
+            workingTreeDirty: null,
+            changedFileCount: null,
+            backend: 'enabled',
+            payments: 'live-capable'
+        };
+    }
+}
+
+const LOCAL_PREVIEW_INFO = LOCAL_PREVIEW_ENABLED ? resolveLocalPreviewInfo() : null;
 
 // 追踪活跃的子进程，防止产生僵尸进程
 const activeProcesses = new Set();
@@ -470,6 +506,14 @@ let storeReadyPromise = null;
 const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || '15mb';
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
+app.get('/__preview', (req, res) => {
+    if (!LOCAL_PREVIEW_INFO) {
+        return res.status(404).type('text/plain').send('Not Found');
+    }
+    res.set('Cache-Control', 'no-store');
+    return res.json(LOCAL_PREVIEW_INFO);
+});
+
 let cachedAdminPaths = null;
 
 async function getCachedAdminPaths() {
@@ -679,14 +723,16 @@ async function authenticateAdmin(req, res, next) {
     const token = getBearerToken(req);
     const payload = verifyAdminToken(token);
     if (!payload) {
-        return res.status(401).json({ success: false, message: '未授权，请重新登录' });
+        res.setHeader('X-Admin-Auth-Error', 'unauthorized');
+        return res.status(401).json({ success: false, message: '未授权，请重新登录', authError: true });
     }
 
     try {
         await ensureStoreReady();
         const authConfig = await store.getAdminAuthConfig();
         if (Number(payload.pv || 0) !== authConfig.passwordVersion) {
-            return res.status(401).json({ success: false, message: '登录状态已失效，请重新登录' });
+            res.setHeader('X-Admin-Auth-Error', 'password_version_mismatch');
+            return res.status(401).json({ success: false, message: '登录状态已失效，请重新登录', authError: true });
         }
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
@@ -790,6 +836,26 @@ function splitTaskMediaPaths(items) {
 function extractCheckoutUrlFromOutput(output) {
     const match = String(output || '').match(/CHECKOUT_URL:\s*(https?\S+)/);
     return match ? match[1].trim() : '';
+}
+
+function extractAutoRenewResultFromOutput(output) {
+    const lines = String(output || '').split(/\r?\n/);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+        const line = lines[i].trim();
+        if (!line.startsWith('AUTO_RENEW_RESULT:')) continue;
+        const rawJson = line.slice('AUTO_RENEW_RESULT:'.length).trim();
+        try {
+            const parsed = JSON.parse(rawJson);
+            if (parsed && typeof parsed === 'object') {
+                return {
+                    ok: Boolean(parsed.ok),
+                    data: parsed,
+                    error: parsed.error || ''
+                };
+            }
+        } catch (_) { /* ignore malformed line */ }
+    }
+    return null;
 }
 
 function analyzeCheckoutDebugOutput(output, timedOut) {
@@ -1188,10 +1254,13 @@ function analyzeProcessOutput(output, timedOut) {
 
     if (normalized.includes('OpenAI 鉴权服务异常')
         || normalized.includes('/auth/error?error=undefined')
-        || normalized.includes('chatgpt.com/auth/error')) {
+        || normalized.includes('chatgpt.com/auth/error')
+        || normalized.includes('CHECKOUT_UNUSUAL_ACTIVITY')
+        || normalized.includes('unusual activity')
+        || normalized.includes('上游检测到异常活动')) {
         return {
             status: 'retry',
-            message: 'OpenAI 鉴权风控 (auth/error)，换代理 IP 重试',
+            message: 'OpenAI 接口风控拦截 (unusual activity)，换代理 IP 重试',
             reachedPayment: false,
             shouldRetry: true,
             deletePhone: false,
@@ -1826,18 +1895,23 @@ app.post('/api/public/subscription/check', async (req, res) => {
             return res.status(400).json({ success: false, message: tokenCheck.message });
         }
 
+        await ensureStoreReady();
+        const proxy = await store.getActiveProxy().catch(() => '');
         const timezoneOffsetMin = Number(req.body?.timezone_offset_min);
         const result = await querySubscriptionBySession(token, {
             timezoneOffsetMin: Number.isFinite(timezoneOffsetMin)
                 ? timezoneOffsetMin
                 : -new Date().getTimezoneOffset(),
-            email: extractEmailFromSession(rawSession) || tokenCheck.email || ''
+            email: extractEmailFromSession(rawSession) || tokenCheck.email || '',
+            proxy
         });
 
         if (!result.ok) {
-            return res.status(result.statusCode || 502).json({
+            const httpStatus = (result.statusCode === 401 || !result.statusCode) ? 400 : result.statusCode;
+            return res.status(httpStatus).json({
                 success: false,
-                message: result.error || '查询订阅失败'
+                message: result.error || '查询订阅失败',
+                upstreamStatus: result.statusCode
             });
         }
 
@@ -2400,18 +2474,23 @@ app.post('/api/admin/subscription/cancel-auto-renew', async (req, res) => {
             return res.status(400).json({ success: false, message: tokenCheck.message });
         }
 
+        await ensureStoreReady();
+        const proxy = await store.getActiveProxy().catch(() => '');
         const timezoneOffsetMin = Number(req.body?.timezone_offset_min);
         const result = await cancelAutoRenew(token, {
             timezoneOffsetMin: Number.isFinite(timezoneOffsetMin)
                 ? timezoneOffsetMin
                 : -new Date().getTimezoneOffset(),
-            email: extractEmailFromSession(rawSession) || tokenCheck.email || ''
+            email: extractEmailFromSession(rawSession) || tokenCheck.email || '',
+            proxy
         });
 
         if (!result.ok) {
-            return res.status(result.statusCode || 502).json({
+            const httpStatus = (result.statusCode === 401 || !result.statusCode) ? 400 : result.statusCode;
+            return res.status(httpStatus).json({
                 success: false,
-                message: result.error || '取消自动续费失败'
+                message: result.error || '取消自动续费失败',
+                upstreamStatus: result.statusCode
             });
         }
 
@@ -2434,18 +2513,23 @@ app.post('/api/admin/subscription/enable-auto-renew', async (req, res) => {
             return res.status(400).json({ success: false, message: tokenCheck.message });
         }
 
+        await ensureStoreReady();
+        const proxy = await store.getActiveProxy().catch(() => '');
         const timezoneOffsetMin = Number(req.body?.timezone_offset_min);
         const result = await resumeAutoRenew(token, {
             timezoneOffsetMin: Number.isFinite(timezoneOffsetMin)
                 ? timezoneOffsetMin
                 : -new Date().getTimezoneOffset(),
-            email: extractEmailFromSession(rawSession) || tokenCheck.email || ''
+            email: extractEmailFromSession(rawSession) || tokenCheck.email || '',
+            proxy
         });
 
         if (!result.ok) {
-            return res.status(result.statusCode || 502).json({
+            const httpStatus = (result.statusCode === 401 || !result.statusCode) ? 400 : result.statusCode;
+            return res.status(httpStatus).json({
                 success: false,
-                message: result.error || '开启自动续费失败'
+                message: result.error || '开启自动续费失败',
+                upstreamStatus: result.statusCode
             });
         }
 
@@ -2488,9 +2572,11 @@ app.post('/api/admin/subscription/batch-renewal-status', async (req, res) => {
                 return;
             }
 
+            const proxy = await store.getActiveProxy().catch(() => '');
             const queryResult = await querySubscriptionBySession(token, {
                 timezoneOffsetMin: offset,
-                email: extractEmailFromSession(rawSession) || tokenCheck.email || ''
+                email: extractEmailFromSession(rawSession) || tokenCheck.email || '',
+                proxy
             });
             if (!queryResult.ok) {
                 results[jobKey] = { ok: false, error: queryResult.error || '查询失败' };
@@ -3127,15 +3213,20 @@ app.get('/api/admin/cards', requireSecondaryAuth, async (req, res) => {
 app.post('/api/admin/cards/import', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
-        const cards = Array.isArray(req.body?.cards) ? req.body.cards : [];
+        let cards = Array.isArray(req.body?.cards) ? req.body.cards : [];
+        if (cards.length === 0 && typeof req.body?.text === 'string' && req.body.text.trim()) {
+            const parsed = parseCardImportText(req.body.text);
+            cards = parsed.cards;
+        }
         if (cards.length === 0) {
-            return res.status(400).json({ success: false, error: '缺少 cards 数组或为空' });
+            return res.status(400).json({ success: false, error: '缺少卡片数据或未解析到有效卡片' });
         }
         if (cards.length > 500) {
             return res.status(400).json({ success: false, error: '单次导入上限 500 条' });
         }
 
-        const result = await store.importCards(cards);
+        const allowInvalidLuhn = Boolean(req.body?.allow_invalid_luhn || req.body?.skip_luhn);
+        const result = await store.importCards(cards, { allowInvalidLuhn });
         res.json({ success: true, ...result });
     } catch (error) {
         if (error.message === '单次导入上限 500 条') {
@@ -3172,6 +3263,13 @@ app.post('/api/admin/cards/:id/reset-cooldown', requireSecondaryAuth, async (req
         if (!cardId || !Number.isFinite(cardId)) {
             return res.status(400).json({ success: false, error: '无效的卡片 ID' });
         }
+        const [card] = await store.runQuery(`SELECT id, status FROM card_assets WHERE id = ?`, [cardId]);
+        if (!card) {
+            return res.status(404).json({ success: false, error: '卡片不存在' });
+        }
+        if (card.status === '已冻结') {
+            return res.status(400).json({ success: false, error: '该银行卡当前处于已冻结状态，无法重置冷却；如需使用请先解冻卡片' });
+        }
         const result = await store.runExecute(
             `UPDATE card_assets
              SET cooldown_until = NULL,
@@ -3181,13 +3279,31 @@ app.post('/api/admin/cards/:id/reset-cooldown', requireSecondaryAuth, async (req
                  in_use = 0,
                  locked_at = NULL,
                  locked_by = NULL
-             WHERE id = ?`,
+             WHERE id = ? AND status <> '已冻结'`,
             [cardId]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ success: false, error: '卡片不存在' });
+            return res.status(404).json({ success: false, error: '卡片不存在或已被冻结' });
         }
         res.json({ success: true, message: '卡片已重置并恢复正常可用' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.post('/api/admin/cards/:id/freeze', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const cardId = Number(req.params.id);
+        if (!cardId || !Number.isFinite(cardId)) {
+            return res.status(400).json({ success: false, error: '无效的卡片 ID' });
+        }
+        const freeze = req.body?.freeze !== false;
+        const result = await store.setCardFrozen(cardId, freeze);
+        if (!result.success) {
+            return res.status(result.error === '卡片不存在' ? 404 : 400).json(result);
+        }
+        res.json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -3246,6 +3362,17 @@ app.post('/api/admin/proxies/:id/test', async (req, res) => {
         const result = await testProxyUrl(row.proxy_url);
         await store.updateProxyAssetCheck(row.id, result);
         res.json({ success: true, id: row.id, ...result });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.delete('/api/admin/proxies', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const onlyInactive = req.query?.type === 'inactive';
+        const result = await store.clearProxyAssets({ onlyInactive });
+        res.json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -3631,7 +3758,7 @@ async function spawnCheckoutDebugWorker({ task, input, entry }) {
     };
     try {
         throwIfDiagnosticAborted(signal);
-        const proxy = await waitForDiagnosticAbort(store.getActiveProxy(), signal);
+        const proxy = await waitForDiagnosticAbort(store.getActiveProxy(input.region), signal);
         const hcaptchaCfg = await waitForDiagnosticAbort(store.getHcaptchaConfig(), signal);
         const { env: hcaptchaEnv } = buildHcaptchaEnvFromConfig(hcaptchaCfg);
         throwIfDiagnosticAborted(signal);
@@ -3753,6 +3880,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
         let lastProgress = 0;
         const accountEmail = extractEmailFromSession(sessionRaw) || '';
         const platform = getPlatformForPlan(cdkDetails.plan_type);
+        let lastUsedProxy = '';
 
         try {
             for (let attempt = 1; attempt <= MAX_PROCESS_ATTEMPTS; attempt += 1) {
@@ -3769,7 +3897,8 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 });
 
                 const targetRegion = String(task.paymentRegion || cdkDetails?.payment_region || '').trim().toUpperCase() || await store.getPaymentRegion();
-                const proxy = await store.getActiveProxy();
+                const proxy = await store.getActiveProxy(targetRegion);
+                lastUsedProxy = proxy || lastUsedProxy;
                 const hcaptchaCfg = await store.getHcaptchaConfig();
                 const { env: hcaptchaEnv } = buildHcaptchaEnvFromConfig(hcaptchaCfg);
                 const runtimeEnv = {
@@ -3941,11 +4070,22 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 if (task.executionMode === 'local_card_pool' || !task.executionMode) {
                     let autoRenewResult;
                     try {
-                        autoRenewResult = platform === 'chatgpt' ? await cancelAutoRenew(token, {
-                            email: accountEmail,
-                            timezoneOffsetMin: -new Date().getTimezoneOffset()
-                        }) : { ok: false, data: { verificationUnknown: true },
-                            error: `${platform} 充值已完成，自动续费状态需人工核实` };
+                        const workerAutoRenew = extractAutoRenewResultFromOutput(rawOutput);
+                        if (workerAutoRenew) {
+                            autoRenewResult = workerAutoRenew;
+                        } else if (platform === 'chatgpt') {
+                            autoRenewResult = await cancelAutoRenew(token, {
+                                email: accountEmail,
+                                timezoneOffsetMin: -new Date().getTimezoneOffset(),
+                                proxy: lastUsedProxy
+                            });
+                        } else {
+                            autoRenewResult = {
+                                ok: false,
+                                data: { verificationUnknown: true },
+                                error: `${platform} 充值已完成，自动续费状态需人工核实`
+                            };
+                        }
                     } catch (error) {
                         autoRenewResult = {
                             ok: false,
@@ -4564,8 +4704,13 @@ async function start() {
     setTimeout(() => { void recoverGptOutsourcingAttempts(); }, 0).unref();
     setInterval(() => { void recoverGptOutsourcingAttempts(); }, 60 * 1000).unref();
 
-    const server = app.listen(PORT, () => {
+    const server = app.listen(PORT, BIND_HOST, () => {
         const conn = store.connectionInfo;
+        if (LOCAL_PREVIEW_INFO) {
+            console.log(`[kc-preview] source-commit=${LOCAL_PREVIEW_INFO.sourceCommit}`);
+            console.log(`[kc-preview] source-mode=${LOCAL_PREVIEW_INFO.sourceMode} branch=${LOCAL_PREVIEW_INFO.sourceBranch || 'unknown'} dirty=${LOCAL_PREVIEW_INFO.workingTreeDirty} changed-files=${LOCAL_PREVIEW_INFO.changedFileCount}`);
+            console.log(`[kc-preview] backend=${LOCAL_PREVIEW_INFO.backend} payments=${LOCAL_PREVIEW_INFO.payments} bind=${BIND_HOST}`);
+        }
         runtimeLog.push({
             jobKey: '',
             level: 'system',

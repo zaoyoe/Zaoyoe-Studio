@@ -6,12 +6,15 @@ const { getRegionConfig, getRegionBrowserProfile } = require('./region-config');
 const { installChatGptSession, bootstrapChatGptSession } = require('./session-auth');
 const { connectTaskBrowser, applyCdpEnv, closeTaskBrowser } = require('./browser-runtime');
 const { preparePlaywrightProxy } = require('./playwright-proxy');
-const { checkProxyConnectivity } = require('./proxy-preflight');
+const { checkProxyConnectivity, checkEgressRegion, checkProxyAndRegionFast } = require('./proxy-preflight');
 const { captureDiagnosticScreenshot } = require('./task-diagnostics');
 const { injectClaudeSession, bootstrapClaudeSession } = require('./claude-auth');
 const { openClaudeCheckout } = require('./pricing-checkout-claude');
+const { cancelClaudeAutoRenew } = require('./claude-cancel-auto-renew');
 const { injectGrokSession, bootstrapGrokSession } = require('./grok-auth');
 const { openGrokCheckout } = require('./pricing-checkout-grok');
+const { cancelGrokAutoRenew } = require('./grok-cancel-auto-renew');
+const { cancelChatGptAutoRenew } = require('./chatgpt-cancel-auto-renew');
 const { isBundle } = require('./public/grok-plan-catalog');
 const { observeGrokCommerce } = require('./grok-commerce');
 const { validateCdkPlan } = require('./cdk-plan-catalog');
@@ -258,19 +261,23 @@ async function run() {
     const matched = realUserAgent.match(/Chrome\/(\d+)/);
     const chromeMajor = matched ? Number(matched[1]) : 147;
 
-    let paymentRegion = String(CONFIG.paymentRegionOverride || '').trim().toUpperCase();
-    if (!paymentRegion && CONFIG.cdkCode) {
-        try {
-            const cdkDetails = await store.verifyCdkDetails(CONFIG.cdkCode);
-            if (cdkDetails && cdkDetails.payment_region) {
-                paymentRegion = String(cdkDetails.payment_region).toUpperCase();
-            }
-        } catch (_) {}
+    let cdkPaymentRegion = '';
+    if (CONFIG.cdkCode) {
+        const cdkDetails = await store.verifyCdkDetails(CONFIG.cdkCode);
+        if (!cdkDetails) throw new Error('无法核验卡密商品，已停止充值');
+        cdkPaymentRegion = String(cdkDetails.payment_region || '').trim().toUpperCase();
+        if (!cdkPaymentRegion) throw new Error('卡密未配置支付地区，无法确认目标网络和支付币种，已停止充值 [PAYMENT_REGION_UNCONFIRMED]');
     }
+    const paymentRegionOverride = String(CONFIG.paymentRegionOverride || '').trim().toUpperCase();
+    if (cdkPaymentRegion && paymentRegionOverride && cdkPaymentRegion !== paymentRegionOverride) {
+        throw new Error(`任务地区 ${paymentRegionOverride} 与卡密支付地区 ${cdkPaymentRegion} 不一致，已停止充值 [CDK_PAYMENT_REGION_MISMATCH]`);
+    }
+    let paymentRegion = cdkPaymentRegion || paymentRegionOverride;
     if (!paymentRegion) {
         paymentRegion = await store.getPaymentRegion();
     }
     const regionCfg = getRegionConfig(paymentRegion);
+    if (!regionCfg) throw new Error(`不支持的支付地区配置: ${paymentRegion}`);
     const browserProfile = getRegionBrowserProfile(paymentRegion);
 
     const contextOptions = {
@@ -511,17 +518,41 @@ async function run() {
         } catch (_) { }
     }, chromeMajor);
 
-        // --- Phase 0: Proxy Connectivity Check ---
+        // --- Phase 0: Proxy Connectivity & Region Check ---
+        let regionVerified = false;
         if (proxyConfig) {
             diagnostic?.check('proxy', '代理连通性', 'running');
             console.log('正在检查代理连通性...');
-            const { ip } = await checkProxyConnectivity(context);
-            const ipMasked = ip.includes(':') ? '[IPv6 已隐藏]'
-                : ip.replace(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/, '***.***.$3.$4');
-            console.log(`✅ [系统] 代理连接成功! 代理公网 IP: ${ipMasked}`);
-            diagnostic?.check('proxy', '代理连通性', 'passed', '已通过当前浏览器通道核验');
+            let fastPreflight = null;
+            try {
+                fastPreflight = await checkProxyAndRegionFast(context, paymentRegion);
+            } catch (err) {
+                if (err?.code === 'PAYMENT_REGION_NETWORK_MISMATCH') throw err;
+            }
+
+            if (fastPreflight?.ip && fastPreflight?.actualRegion) {
+                const ip = fastPreflight.ip;
+                const ipMasked = ip.includes(':') ? '[IPv6 已隐藏]'
+                    : ip.replace(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/, '***.***.$3.$4');
+                console.log(`✅ [系统] 代理连接成功! 代理公网 IP: ${ipMasked}`);
+                diagnostic?.check('proxy', '代理连通性', 'passed', '已通过当前浏览器通道核验');
+                diagnostic?.check('network-region', '支付出口地区', 'passed', `已确认出口地区为 ${paymentRegion}`);
+                regionVerified = true;
+            } else {
+                const { ip } = await checkProxyConnectivity(context);
+                const ipMasked = ip.includes(':') ? '[IPv6 已隐藏]'
+                    : ip.replace(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/, '***.***.$3.$4');
+                console.log(`✅ [系统] 代理连接成功! 代理公网 IP: ${ipMasked}`);
+                diagnostic?.check('proxy', '代理连通性', 'passed', '已通过当前浏览器通道核验');
+            }
         } else {
             diagnostic?.check('proxy', '代理连通性', 'skipped', '使用本机网络，未配置代理');
+        }
+
+        if (!regionVerified) {
+            diagnostic?.check('network-region', '支付出口地区', 'running');
+            await checkEgressRegion(context, paymentRegion);
+            diagnostic?.check('network-region', '支付出口地区', 'passed', `已确认出口地区为 ${paymentRegion}`);
         }
 
         // --- Phase 1: Resolve payment parameters ---
@@ -609,13 +640,18 @@ async function run() {
             const hasSessionToken = Boolean(installResult?.hasSessionToken);
 
             loginInfo = await bootstrapChatGptSession(page, sessionRaw, { sessionData, cookieVerified, hasSessionToken });
-            diagnostic?.check('session', '官方登录状态', 'passed', '正式登录检查已完成，继续核验结账接口');
+            diagnostic?.check('session', '官方登录状态', 'passed', '正式登录检查已完成，继续打开官方结账页');
             if (loginInfo.email && !email) {
                 console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
             }
 
-            // --- Phase 2: 创建 Checkout，支持 auto / hybrid 极速通道，并平滑回退至 UI 定价页 ---
-            const checkoutMode = String(process.env.CHECKOUT_MODE || 'auto').toLowerCase();
+            // Real recharge jobs use the official UI flow; API Checkout remains available to diagnostics.
+            const checkoutMode = debugOnly
+                ? String(process.env.CHECKOUT_MODE || 'auto').toLowerCase()
+                : 'ui';
+            if (checkoutMode === 'ui') {
+                console.log('[Checkout] 跳过 API 创建，直接使用官方 UI 定价页');
+            }
             let checkoutOpened = false;
             const planNameOverride = String(CONFIG.planNameOverride || '').trim() || undefined;
             diagnostic?.check('checkout', diagnosticMode === 'link' ? '生成官方链接' : '打开官方结账', 'running');
@@ -706,6 +742,8 @@ async function run() {
         const paymentResult = await executePaymentWithRetry(page, {
             platform,
             planType,
+            paymentRegion,
+            paymentCurrency: billingCurrency,
             cdkCode,
             email: email || loginInfo?.email,
             stripeSessionId,
@@ -723,6 +761,54 @@ async function run() {
             console.log("PAYMENT_SUCCESS");
             for (const screenshotPath of paymentResult.screenshots || []) {
                 console.log(`SUCCESS_SCREENSHOT: ${screenshotPath}`);
+            }
+            if (platform === 'chatgpt') {
+                console.log('🔄 [ChatGPT] 支付已完成，正在自动关闭次月自动续订...');
+                try {
+                    const autoRenewRes = await cancelChatGptAutoRenew(page);
+                    if (autoRenewRes?.ok) {
+                        console.log(`✅ [ChatGPT] ${autoRenewRes.message || '已成功关闭次月自动续订'}`);
+                    } else {
+                        console.warn(`⚠️ [ChatGPT] 自动续费关闭状态未确认: ${autoRenewRes?.error || '需人工复核'}`);
+                    }
+                    console.log(`AUTO_RENEW_RESULT:${JSON.stringify(autoRenewRes)}`);
+                } catch (cancelErr) {
+                    console.warn(`⚠️ [ChatGPT] 自动续费关闭执行异常: ${cancelErr.message}`);
+                    console.log(`AUTO_RENEW_RESULT:${JSON.stringify({ ok: false, verificationUnknown: true, error: cancelErr.message })}`);
+                }
+            } else if (platform === 'grok') {
+                console.log('🔄 [Grok] 支付已完成，正在自动关闭次月自动续订...');
+                try {
+                    const autoRenewRes = await cancelGrokAutoRenew(page, {
+                        subscriptionId: paymentResult.subscriptionId || commerceObserver?.result()?.subscriptionId || ''
+                    });
+                    if (autoRenewRes?.ok) {
+                        console.log(`✅ [Grok] ${autoRenewRes.message || '已成功关闭次月自动续订'}`);
+                    } else {
+                        console.warn(`⚠️ [Grok] 自动续费关闭状态未确认: ${autoRenewRes?.error || '需人工复核'}`);
+                    }
+                    console.log(`AUTO_RENEW_RESULT:${JSON.stringify(autoRenewRes)}`);
+                } catch (cancelErr) {
+                    console.warn(`⚠️ [Grok] 自动续费关闭执行异常: ${cancelErr.message}`);
+                    console.log(`AUTO_RENEW_RESULT:${JSON.stringify({ ok: false, verificationUnknown: true, error: cancelErr.message })}`);
+                }
+            } else if (platform === 'claude') {
+                console.log('🔄 [Claude] 支付已完成，正在自动关闭次月自动续订...');
+                try {
+                    const autoRenewRes = await cancelClaudeAutoRenew(page, {
+                        orgId: loginInfo?.orgId || '',
+                        claudeAccount: loginInfo
+                    });
+                    if (autoRenewRes?.ok) {
+                        console.log(`✅ [Claude] ${autoRenewRes.message || '已成功关闭次月自动续订'}`);
+                    } else {
+                        console.warn(`⚠️ [Claude] 自动续费关闭状态未确认: ${autoRenewRes?.error || '需人工复核'}`);
+                    }
+                    console.log(`AUTO_RENEW_RESULT:${JSON.stringify(autoRenewRes)}`);
+                } catch (cancelErr) {
+                    console.warn(`⚠️ [Claude] 自动续费关闭执行异常: ${cancelErr.message}`);
+                    console.log(`AUTO_RENEW_RESULT:${JSON.stringify({ ok: false, verificationUnknown: true, error: cancelErr.message })}`);
+                }
             }
         } else {
             const errorMsg = paymentResult.error || '支付失败（未知原因）';
@@ -759,7 +845,10 @@ async function run() {
         // 先关闭 context 以 flush 录像并取回路径，再关浏览器
         await finalizeVideo(context, page, { deleteOnSuccess: paymentSucceeded }).catch(() => { });
         await closeTaskBrowser(browserSession, browser);
-        await proxyCleanup();
+        await Promise.race([
+            proxyCleanup(),
+            new Promise((r) => setTimeout(r, 1500))
+        ]).catch(() => { });
         if (debugOnly) {
             process.removeListener?.('SIGTERM', stopDiagnostic);
             process.removeListener?.('SIGINT', stopDiagnostic);
@@ -768,6 +857,6 @@ async function run() {
 }
 
 run().finally(() => {
-    // 录像已在 run() 的 finally 中落盘；此处兜底强制退出，避免 mysql 连接池保持事件循环导致子进程不退出
-    setTimeout(() => process.exit(process.exitCode || 0), 800).unref();
+    // 录像已在 run() 的 finally 中落盘；此处兜底强制退出，避免连接池或代理保持事件循环导致子进程不退出
+    setTimeout(() => process.exit(process.exitCode || 0), 500);
 });

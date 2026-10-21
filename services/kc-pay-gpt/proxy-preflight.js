@@ -4,10 +4,156 @@ const { isIP } = require('node:net');
 const { performance } = require('node:perf_hooks');
 
 const PROBE_URLS = ['https://api.ipify.org/?format=text', 'https://ifconfig.me/ip'];
+const REGION_PROBE_URL = 'https://www.cloudflare.com/cdn-cgi/trace';
 
 function parseProbeIp(body) {
     const value = String(body || '').trim();
     return value.length <= 45 && isIP(value) ? value : null;
+}
+
+function parseNetworkRegion(body) {
+    const matches = [...String(body || '').matchAll(/^loc=([A-Z]{2})\s*$/gm)];
+    if (matches.length !== 1 || matches[0][1] === 'XX') return null;
+    return matches[0][1];
+}
+
+function parseTraceEgress(body) {
+    const text = String(body || '').trim();
+    const ipMatch = text.match(/^ip=([^\r\n]+)/m);
+    const locMatch = text.match(/^loc=([A-Z]{2})\s*$/m);
+    const ip = ipMatch && isIP(ipMatch[1].trim()) ? ipMatch[1].trim() : null;
+    const loc = locMatch && locMatch[1] !== 'XX' ? locMatch[1] : null;
+    return { ip, loc };
+}
+
+function networkRegionError(code, message) {
+    return Object.assign(new Error(`${message}；尚未提交支付 [${code}]`), { code });
+}
+
+/**
+ * 极速合并预检：通过一次 Cloudflare Trace 探针同时核验代理连通性、出口公网 IP 与目标地区（<300ms）。
+ * 成功后避免分开串行请求两次（一次查 IP 一次查地区），在弱网住宅代理下直接节省 4~20 秒。
+ */
+async function checkProxyAndRegionFast(context, expectedRegion, options = {}) {
+    const expected = String(expectedRegion || '').trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(expected)) return null;
+
+    if (typeof context?.request?.get === 'function') {
+        let resp;
+        try {
+            resp = await context.request.get(options.url || REGION_PROBE_URL, {
+                timeout: options.probeTimeoutMs ?? 3500,
+                maxRetries: 0,
+                maxRedirects: 0
+            });
+            if (resp && resp.ok()) {
+                const text = await resp.text();
+                const { ip, loc } = parseTraceEgress(text);
+                if (ip && loc) {
+                    if (loc !== expected) {
+                        throw networkRegionError('PAYMENT_REGION_NETWORK_MISMATCH',
+                            `当前网络出口地区 ${loc} 与卡密支付地区 ${expected} 不一致，已停止支付`);
+                    }
+                    (options.log || console.log)(`[Network/region] 浏览器出口地区核验通过: ${loc}`);
+                    return { ip, actualRegion: loc, expectedRegion: expected, transport: 'request', fastPath: true };
+                }
+            }
+        } catch (err) {
+            if (err?.code === 'PAYMENT_REGION_NETWORK_MISMATCH' || err?.code === 'NETWORK_REGION_UNCONFIRMED') {
+                throw err;
+            }
+        } finally {
+            await resp?.dispose().catch(() => {});
+        }
+    }
+    return null;
+}
+
+async function checkEgressRegion(context, expectedRegion, options = {}) {
+    const expected = String(expectedRegion || '').trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(expected)) {
+        throw networkRegionError('NETWORK_REGION_UNCONFIRMED', '卡密支付地区无效，无法核验网络出口');
+    }
+
+    const log = options.log || console.warn;
+
+    // 性能优化：优先通过 APIRequestContext 发起轻量 GET 探针（<400ms），避免打开整页与视频录制开销（省 5 秒）
+    if (typeof context?.request?.get === 'function') {
+        let resp;
+        try {
+            resp = await context.request.get(options.url || REGION_PROBE_URL, {
+                timeout: options.probeTimeoutMs ?? 4000,
+                maxRetries: 0,
+                maxRedirects: 0
+            });
+            if (resp && resp.ok()) {
+                const actual = parseNetworkRegion(await resp.text());
+                if (actual) {
+                    if (actual !== expected) {
+                        throw networkRegionError('PAYMENT_REGION_NETWORK_MISMATCH',
+                            `当前网络出口地区 ${actual} 与卡密支付地区 ${expected} 不一致，已停止支付`);
+                    }
+                    (options.log || console.log)(`[Network/region] 浏览器出口地区核验通过: ${actual}`);
+                    return { expectedRegion: expected, actualRegion: actual, transport: 'request' };
+                }
+            }
+        } catch (err) {
+            if (err?.code === 'PAYMENT_REGION_NETWORK_MISMATCH' || err?.code === 'NETWORK_REGION_UNCONFIRMED') {
+                throw err;
+            }
+        } finally {
+            await resp?.dispose().catch(() => {});
+        }
+    }
+
+    let page;
+    let video;
+    try {
+        page = await context.newPage();
+        video = page.video();
+        const response = await page.goto(options.url || REGION_PROBE_URL, {
+            timeout: options.timeoutMs ?? 10000,
+            waitUntil: 'domcontentloaded'
+        });
+        const status = Number(response?.status?.());
+        if (!response?.ok()) {
+            const statusLabel = Number.isInteger(status) && status > 0 ? `HTTP ${status}` : '无 HTTP 响应';
+            log(`[Network/region] 地区探针未通过: ${statusLabel}`);
+            throw networkRegionError('NETWORK_REGION_UNCONFIRMED',
+                `无法确认当前网络出口地区（Cloudflare Trace 返回 ${statusLabel}），已停止支付`);
+        }
+
+        const actual = parseNetworkRegion(await response.text());
+        if (!actual) {
+            log('[Network/region] 地区探针未通过: 响应中没有唯一有效的国家代码');
+            throw networkRegionError('NETWORK_REGION_UNCONFIRMED',
+                '无法确认当前网络出口地区（Cloudflare Trace 响应格式无效），已停止支付');
+        }
+        if (actual !== expected) {
+            throw networkRegionError('PAYMENT_REGION_NETWORK_MISMATCH',
+                `当前网络出口地区 ${actual} 与卡密支付地区 ${expected} 不一致，已停止支付`);
+        }
+        (options.log || console.log)(`[Network/region] 浏览器出口地区核验通过: ${actual}`);
+        return { expectedRegion: expected, actualRegion: actual, transport: 'browser' };
+    } catch (error) {
+        if (error?.code === 'PAYMENT_REGION_NETWORK_MISMATCH'
+            || error?.code === 'NETWORK_REGION_UNCONFIRMED') throw error;
+
+        const kind = probeFailureKind(error);
+        log(`[Network/region] 地区探针请求失败: ${kind}`);
+        const labels = {
+            proxy_auth: '代理认证失败',
+            tls_protocol: 'TLS 握手失败',
+            timeout: '请求超时',
+            certificate: '证书验证失败',
+            connection: '连接失败'
+        };
+        throw networkRegionError('NETWORK_REGION_UNCONFIRMED',
+            `无法确认当前网络出口地区（地区探针${labels[kind] || '请求失败'}），已停止支付`);
+    } finally {
+        await page?.close().catch(() => {});
+        await video?.delete().catch(() => {});
+    }
 }
 
 function probeFailureKind(error) {
@@ -32,8 +178,8 @@ function preflightError(kind) {
 // Only used before account navigation/card reservation. All probes keep the
 // browser context's configured proxy and certificate verification enabled.
 async function checkProxyConnectivity(context, options = {}) {
-    const deadline = performance.now() + (options.timeoutMs ?? 24000);
-    const requestTimeout = () => Math.max(1, Math.min(options.probeTimeoutMs ?? 6000, deadline - performance.now()));
+    const deadline = performance.now() + (options.timeoutMs ?? 20000);
+    const requestTimeout = () => Math.max(1, Math.min(options.probeTimeoutMs ?? 3500, deadline - performance.now()));
     const log = options.log || console.log;
     let kind = 'connection';
     for (const url of PROBE_URLS) {
@@ -92,4 +238,4 @@ async function checkProxyConnectivity(context, options = {}) {
     throw preflightError(kind);
 }
 
-module.exports = { parseProbeIp, probeFailureKind, checkProxyConnectivity };
+module.exports = { parseProbeIp, parseNetworkRegion, probeFailureKind, checkProxyConnectivity, checkEgressRegion, checkProxyAndRegionFast };
