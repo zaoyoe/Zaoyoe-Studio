@@ -56,3 +56,42 @@ describe('real card store decline cooldown contract', () => {
         expect(execute).not.toHaveBeenCalled();
     });
 });
+
+describe('Session checkout cooldown store contract', () => {
+    it('persists a bounded cooldown using bound SQL parameters and never shortens an existing cooldown', async () => {
+        const { store, execute, createPool } = harness();
+        const scopeKey = 'a'.repeat(64);
+        expect(createPool).not.toHaveBeenCalled();
+
+        await store.setActivationAttemptCooldown('chatgpt_ua', scopeKey, 10);
+
+        expect(execute).toHaveBeenCalledOnce();
+        const [sql, params] = execute.mock.calls[0];
+        expect(params).toEqual(['chatgpt_ua', scopeKey, 10, 10]);
+        expect(sql).toContain('ON DUPLICATE KEY UPDATE');
+        expect(sql).toContain('GREATEST(COALESCE(cooldown_until, CURRENT_TIMESTAMP)');
+        expect(sql).toContain('INTERVAL ? MINUTE');
+        expect(sql).not.toContain(scopeKey);
+    });
+
+    it.each([
+        ['', 'valid-key', 10, '激活冷却范围无效'],
+        ['scope-type-that-is-too-long', 'valid-key', 10, '激活冷却范围无效'],
+        ['chatgpt_ua', '', 10, '激活冷却范围无效'],
+        ['chatgpt_ua', 'x'.repeat(129), 10, '激活冷却范围无效'],
+        ['chatgpt_ua', 'valid-key', 0, '激活冷却时长无效'],
+        ['chatgpt_ua', 'valid-key', -1, '激活冷却时长无效'],
+        ['chatgpt_ua', 'valid-key', 1.5, '激活冷却时长无效'],
+        ['chatgpt_ua', 'valid-key', 1441, '激活冷却时长无效'],
+        ['chatgpt_ua', 'valid-key', NaN, '激活冷却时长无效'],
+        ['chatgpt_ua', 'valid-key', Infinity, '激活冷却时长无效'],
+        ['chatgpt_ua', 'valid-key', '10); DROP TABLE activation_attempt_limits; --', '激活冷却时长无效']
+    ])('rejects invalid cooldown input before persistence', async (scopeType, scopeKey, minutes, message) => {
+        const { store, execute, createPool } = harness();
+
+        await expect(store.setActivationAttemptCooldown(scopeType, scopeKey, minutes)).rejects.toThrow(message);
+
+        expect(execute).not.toHaveBeenCalled();
+        expect(createPool).not.toHaveBeenCalled();
+    });
+});

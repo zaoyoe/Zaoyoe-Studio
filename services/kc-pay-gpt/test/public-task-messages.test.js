@@ -89,6 +89,11 @@ describe('actual server task delivery with a mock store', () => {
         expect(context.analyzeProcessOutput('PAYMENT_STATE:unknown\n❌ [运行时错误]: token_expired [CHECKOUT_AUTH_ERROR]', false))
             .toMatchObject({ status: 'manual', recoveryRequired: true, paymentState: 'unknown' });
     });
+    it.each(['配置套餐', '定价页', 'https://chatgpt.com/#pricing'])('does not treat %s as reaching payment', marker => {
+        const context = { ...safety };
+        vm.runInNewContext(snippet('function extractRuntimeErrorMessage(', 'function getCheckoutProgress('), context);
+        expect(context.analyzeProcessOutput(marker, false)).toMatchObject({ reachedPayment: false });
+    });
     it('all API checkout modes use the stop/fallback decision in the worker', () => {
         const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
         expect(source).toContain("if (!shouldFallbackToPricingCheckout(apiError, { checkoutMode, debugOnly: debugOnly && diagnosticMode === 'link' }))");

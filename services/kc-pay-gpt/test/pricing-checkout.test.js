@@ -231,8 +231,80 @@ describe('latest upgrade modal compatibility', () => {
 
         expect(await pageShowsTargetRegionPricing(page, 'PH')).toBe(true);
         await selectPricingRegion(page, 'PH');
-        await clickPlanUpgrade(page, 'plus');
+        await clickPlanUpgrade(page, 'plus', { region: 'PH' });
         expect(await page.locator('#upgrade-plus-btn').textContent()).toBe('Opening checkout...');
+        await page.close();
+    });
+
+    it('does not click a plan until the target card shows a stable target-region price', async () => {
+        const page = await newPage(`
+            <div role="dialog"><h2>Upgrade your plan</h2>
+                <section><h3>Plus</h3><p>USD 20 / month</p>
+                    <button id="upgrade" onclick="window.clicked = true">Upgrade to Plus</button>
+                </section>
+            </div>
+            <script>window.clicked = false;</script>
+        `);
+
+        await expect(clickPlanUpgrade(page, 'plus', { region: 'PH', priceConfirmTimeoutMs: 250 }))
+            .rejects.toThrow('未能连续确认 Plus 套餐卡片显示 PHP 价格');
+        expect(await page.evaluate(() => window.clicked)).toBe(false);
+        await page.close();
+    });
+
+    it('does not click while the target-card price keeps changing', async () => {
+        const page = await newPage(`
+            <div role="dialog"><h2>Upgrade your plan</h2>
+                <section><h3>Plus</h3><p id="price">₱1,100 / month</p>
+                    <button id="upgrade" onclick="window.clicked = true">Upgrade to Plus</button>
+                </section>
+            </div>
+            <script>
+                window.clicked = false;
+                let local = false;
+                setInterval(() => {
+                    local = !local;
+                    document.getElementById('price').textContent = local ? '₱1,100 / month' : '₱1,101 / month';
+                }, 100);
+            </script>
+        `);
+
+        await expect(clickPlanUpgrade(page, 'plus', { region: 'PH', priceConfirmTimeoutMs: 450 }))
+            .rejects.toThrow('未能连续确认 Plus 套餐卡片显示 PHP 价格');
+        expect(await page.evaluate(() => window.clicked)).toBe(false);
+        await page.close();
+    });
+
+    it('rejects a Chile card that still explicitly displays USD despite a Chile region label', async () => {
+        const page = await newPage(`
+            <div role="dialog"><h2>Upgrade your plan</h2>
+                <button aria-label="Billing country: Chile">Chile</button>
+                <section><h3>Plus</h3><p>USD $20 / month</p>
+                    <button id="upgrade" onclick="window.clicked = true">Upgrade to Plus</button>
+                </section>
+            </div>
+            <script>window.clicked = false;</script>
+        `);
+
+        await expect(clickPlanUpgrade(page, 'plus', { region: 'CL', priceConfirmTimeoutMs: 250 }))
+            .rejects.toThrow('未能连续确认 Plus 套餐卡片显示 CLP 价格');
+        expect(await page.evaluate(() => window.clicked)).toBe(false);
+        await page.close();
+    });
+
+    it('accepts a stable Chilean peso card when the page identifies Chile', async () => {
+        const page = await newPage(`
+            <div role="dialog"><h2>Upgrade your plan</h2>
+                <button aria-label="Billing country: Chile">Chile</button>
+                <section><h3>Plus</h3><p>$ 19,990 / month</p>
+                    <button id="upgrade" onclick="window.clicked = true">Upgrade to Plus</button>
+                </section>
+            </div>
+            <script>window.clicked = false;</script>
+        `);
+
+        await clickPlanUpgrade(page, 'plus', { region: 'CL', priceConfirmTimeoutMs: 1000 });
+        expect(await page.evaluate(() => window.clicked)).toBe(true);
         await page.close();
     });
 });

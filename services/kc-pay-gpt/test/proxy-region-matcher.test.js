@@ -24,15 +24,22 @@ describe('proxy region matching unit tests', () => {
         expect(matchProxyRegion('http://any-proxy:8080', '智利住宅代理 02', 'PH')).toBe(false);
     });
 
-    it('selects region-specific proxy from database pool when region is specified', async () => {
-        const phProxy = await store.getActiveProxy('PH');
-        if (phProxy) {
-            expect(phProxy).toContain('region-PH');
+    it('selects region-specific proxy from database pool when region is specified', async ({ skip }) => {
+        const matches = [];
+        try {
+            for (const region of ['PH', 'US', 'CL']) {
+                const proxy = await store.getActiveProxy(region);
+                if (proxy) matches.push({ proxy, region });
+            }
+        } catch (err) {
+            if (!/Unknown database|ECONNREFUSED|Access denied/i.test(err.message)) {
+                throw err;
+            }
+            skip('local MySQL test database is unavailable');
         }
-
-        const clProxy = await store.getActiveProxy('CL');
-        if (clProxy) {
-            expect(clProxy).toContain('region-CL');
+        if (!matches.length) skip('no region-specific proxy fixtures are configured');
+        for (const { proxy, region } of matches) {
+            expect(matchProxyRegion(proxy, '', region)).toBe(true);
         }
     });
 });

@@ -11,6 +11,8 @@ const PRICING_URL = 'https://chatgpt.com/#pricing';
 const REGION_UI_LABELS = {
     PH: ['菲律宾', 'Philippines', 'Pilipinas'],
     US: ['美国', 'United States'],
+    EG: ['埃及', 'Egypt', 'مصر'],
+    CL: ['智利', 'Chile'],
     SG: ['新加坡', 'Singapore'],
     MY: ['马来西亚', 'Malaysia']
 };
@@ -18,6 +20,8 @@ const REGION_UI_LABELS = {
 const REGION_CURRENCY_HINTS = {
     PH: ['₱', 'PHP'],
     US: ['$20', '$ 20', 'USD'],
+    EG: ['EGP', 'E£', 'ج.م'],
+    CL: ['CLP', '$'],
     SG: ['S$', 'SGD'],
     MY: ['RM', 'MYR']
 };
@@ -25,6 +29,8 @@ const REGION_CURRENCY_HINTS = {
 const REGION_PRICE_PATTERNS = {
     PH: [/₱\s*[\d,.]+/, /[\d,.]+\s*₱/, /PHP\s*[\d,.]+/i, /[\d,.]+\s*PHP/i],
     US: [/\$\s*20(?:\.00)?/, /USD\s*20/i, /\$\s*[\d,.]+(?:\s*\/)?\s*(?:month|mo)/i],
+    EG: [/EGP\s*[\d,.]+/i, /[\d,.]+\s*EGP/i, /E£\s*[\d,.]+/i, /ج\.?\s*م\.?\s*[\d,.]+/],
+    CL: [/CLP\s*[\d,.]+/i, /[\d,.]+\s*CLP/i, /CL\$\s*[\d,.]+/i],
     SG: [/S\$\s*[\d,.]+/, /[\d,.]+\s*SGD/i],
     MY: [/RM\s*[\d,.]+/, /[\d,.]+\s*MYR/i]
 };
@@ -32,6 +38,8 @@ const REGION_PRICE_PATTERNS = {
 const REGION_WRONG_CURRENCY = {
     PH: [/£\s*[\d,.]+/, /[\d,.]+\s*£/, /\bGBP\b/i, /United Kingdom/i, /Great Britain/i, /€\s*[\d,.]+/, /[\d,.]+\s*€/, /\bEUR\b/i],
     US: [/£\s*[\d,.]+/, /₱\s*[\d,.]+/, /\bGBP\b/i, /\bPHP\b/i, /S\$\s*[\d,.]+/, /RM\s*[\d,.]+/],
+    EG: [/₱\s*[\d,.]+/, /\bPHP\b/i, /\bCLP\b/i, /S\$\s*[\d,.]+/, /RM\s*[\d,.]+/],
+    CL: [/₱\s*[\d,.]+/, /\bPHP\b/i, /\bEGP\b/i, /E£\s*[\d,.]+/i, /\bUSD\b/i, /S\$\s*[\d,.]+/],
     SG: [/£\s*[\d,.]+/, /₱\s*[\d,.]+/, /\$\s*20(?:\.00)?\s*(?:USD|\/)/i, /RM\s*[\d,.]+/],
     MY: [/£\s*[\d,.]+/, /₱\s*[\d,.]+/, /S\$\s*[\d,.]+/, /\$\s*20(?:\.00)?/]
 };
@@ -39,6 +47,8 @@ const REGION_WRONG_CURRENCY = {
 const REGION_CURRENT_COUNTRY_HINTS = {
     PH: [/菲律宾|Philippines|Pilipinas/i],
     US: [/United States|美国(?!地区)/i],
+    EG: [/埃及|Egypt|مصر/i],
+    CL: [/智利|Chile/i],
     SG: [/Singapore|新加坡/i],
     MY: [/Malaysia|马来西亚/i]
 };
@@ -366,9 +376,10 @@ async function pagePricingStatus(page, regionCode) {
     const negative = REGION_WRONG_CURRENCY[code] || [];
     const countryHints = REGION_CURRENT_COUNTRY_HINTS[code] || [];
 
-    const hasPositivePrice = positive.some((pattern) => pattern.test(text));
-    const hasWrongCurrency = negative.some((pattern) => pattern.test(text));
     const hasCountryLabel = countryHints.some((pattern) => pattern.test(text));
+    const hasPositivePrice = positive.some((pattern) => pattern.test(text))
+        || (code === 'CL' && hasCountryLabel && /\$\s*[\d,.]+/.test(text));
+    const hasWrongCurrency = negative.some((pattern) => pattern.test(text));
 
     if (hasWrongCurrency) {
         return { matches: false, wrongCurrency: true, hasPrice: true, text };
@@ -382,7 +393,7 @@ async function pagePricingStatus(page, regionCode) {
             return { matches: true, wrongCurrency: false, hasPrice: true, text };
         }
     }
-    const anyPrice = /[₱$¥€£]|(?:RMB|CNY|PHP|USD|SGD|MYR|\b(?:month|mo|year|yr)\b)/i.test(text);
+    const anyPrice = /[₱$¥€£]|(?:RMB|CNY|PHP|USD|EGP|CLP|SGD|MYR|\b(?:month|mo|year|yr)\b)/i.test(text);
     return { matches: false, wrongCurrency: false, hasPrice: anyPrice, text };
 }
 
@@ -391,8 +402,8 @@ async function pageShowsTargetRegionPricing(page, regionCode) {
     return status.matches;
 }
 
-const ALL_COUNTRY_NAME_PATTERN = /^(United Kingdom|Philippines|United States|Singapore|Malaysia|Afghanistan|Algeria|Andorra|Albania|Australia|Canada|Japan|China|菲律宾)$/i;
-const REGION_ENTRY_HINT = /billing|country|countries|region|currency|地区|账单|国家|货币|更改地区|更改国家|change country|change region|¥|₱|RMB|CNY|PHP|USD|SGD|MYR/i;
+const ALL_COUNTRY_NAME_PATTERN = /^(United Kingdom|Philippines|United States|Egypt|Chile|Singapore|Malaysia|Afghanistan|Algeria|Andorra|Albania|Australia|Canada|Japan|China|菲律宾|埃及|智利)$/i;
+const REGION_ENTRY_HINT = /billing|country|countries|region|currency|地区|账单|国家|货币|更改地区|更改国家|change country|change region|¥|₱|E£|RMB|CNY|PHP|USD|EGP|CLP|SGD|MYR/i;
 const REGION_OPTION_CONTAINER_HINT = /billing\s+(?:country|region)|country(?:\s+or\s+region)?|select country|choose country|地区|账单地区|国家|货币/i;
 const REGION_COUNTRY_OPTION_SELECTOR = '[role="option"],[role="menuitem"],[role="radio"],button,a,li,[data-country],[data-value]';
 
@@ -1107,6 +1118,102 @@ async function selectPricingRegion(page, regionCode) {
     console.warn(`[Warn] 定价页未提供地区选择入口（现代 ChatGPT 账单地区将在 Stripe 收银台选择，当前页面: ${finalText}）。继续进入套餐升级...`);
 }
 
+async function waitForStableTargetPlanCardText(button, target, stableMs, timeoutMs) {
+    return button.evaluate((node, { wanted, requiredStableMs, timeout }) => {
+        const visible = (element) => element.getClientRects().length > 0;
+        const titlePattern = /^(?:ChatGPT\s+)?(Free|Go|Plus|Pro|Business)$/i;
+        let card = null;
+        for (let current = node, depth = 0; current && depth < 10; current = current.parentElement, depth += 1) {
+            const titles = [...current.querySelectorAll('h1,h2,h3,h4,[role="heading"]')]
+                .filter(visible)
+                .map((element) => (element.textContent || '').trim().replace(/^ChatGPT\s+/i, ''))
+                .filter((text) => titlePattern.test(text));
+            const uniqueTitles = [...new Set(titles.map((text) => text.toLowerCase()))];
+            if (uniqueTitles.length === 1 && uniqueTitles[0] === wanted.toLowerCase()) {
+                card = current;
+                break;
+            }
+        }
+        if (!card) return null;
+
+        return new Promise((resolve) => {
+            let settled = false;
+            let lastText = card.innerText || '';
+            let stableSince = performance.now();
+            let pollTimer;
+            let timeoutTimer;
+            const observer = new MutationObserver(() => {
+                const nextText = card.innerText || '';
+                if (nextText !== lastText) {
+                    lastText = nextText;
+                    stableSince = performance.now();
+                }
+            });
+            const finish = (value) => {
+                if (settled) return;
+                settled = true;
+                observer.disconnect();
+                clearInterval(pollTimer);
+                clearTimeout(timeoutTimer);
+                resolve(value);
+            };
+            const inspect = () => {
+                if (!card.isConnected || !node.isConnected) return finish(null);
+                const nextText = card.innerText || '';
+                if (nextText !== lastText) {
+                    lastText = nextText;
+                    stableSince = performance.now();
+                }
+                if (performance.now() - stableSince >= requiredStableMs) finish(lastText);
+            };
+
+            observer.observe(card, { childList: true, characterData: true, subtree: true });
+            pollTimer = setInterval(inspect, 50);
+            timeoutTimer = setTimeout(() => finish(null), timeout);
+            inspect();
+        });
+    }, { wanted: target, requiredStableMs: stableMs, timeout: timeoutMs }).catch(() => null);
+}
+
+function targetPlanPriceMatches(cardText, regionCode, pricingText) {
+    const code = String(regionCode || '').toUpperCase();
+    const patterns = REGION_PRICE_PATTERNS[code] || [];
+    const wrongCurrencyPatterns = REGION_WRONG_CURRENCY[code] || [];
+    if (wrongCurrencyPatterns.some((pattern) => pattern.test(cardText))) return false;
+    const hasExpectedCurrency = patterns.some((pattern) => pattern.test(cardText));
+    if (hasExpectedCurrency) return true;
+    if (code === 'CL' && /\$\s*[\d,.]+/.test(cardText)) {
+        return (REGION_CURRENT_COUNTRY_HINTS.CL || []).some((pattern) => pattern.test(pricingText));
+    }
+    return false;
+}
+
+async function assertStableTargetPlanPrice(page, button, target, regionCode, timeoutMs = 3500) {
+    const code = String(regionCode || '').trim().toUpperCase();
+    if (!getRegionConfig(code) || !REGION_PRICE_PATTERNS[code]) {
+        throw new Error(`账单地区无效，无法验证 ${target} 套餐币种，已停止点击`);
+    }
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        const remainingMs = deadline - Date.now();
+        const cardText = (await waitForStableTargetPlanCardText(
+            button,
+            target,
+            400,
+            Math.min(600, remainingMs)
+        ) || '').replace(/\s+/g, ' ').trim();
+        if (cardText) {
+            const pricingText = await readPricingSurfaceText(page);
+            if (targetPlanPriceMatches(cardText, code, pricingText)) return;
+        }
+        await page.waitForTimeout(Math.min(50, Math.max(1, deadline - Date.now())));
+    }
+
+    const region = getRegionConfig(code);
+    throw new Error(`未能连续确认 ${target} 套餐卡片显示 ${region.currency} 价格，已停止点击`);
+}
+
 /**
  * 点击对应套餐的升级按钮
  */
@@ -1171,6 +1278,13 @@ async function clickPlanUpgrade(page, planType, options = {}) {
             }
         }
         if (chosen) {
+            await assertStableTargetPlanPrice(
+                page,
+                chosen,
+                target,
+                options.region,
+                options.priceConfirmTimeoutMs || 3500
+            );
             // One action only: a click timeout may still have created a Checkout request.
             await chosen.click({ timeout: Math.min(10000, Math.max(1, deadline - Date.now())) });
             console.log(`✅ [步骤] 已点击 ${target} 套餐升级按钮`);
@@ -1453,7 +1567,7 @@ async function openPricingCheckout(page, { region, planType, onCheckoutPage }) {
     await selectPricingRegion(page, region);
     const observer = observeCheckout(page);
     try {
-        await clickPlanUpgrade(page, planType, { skipPreflight: true });
+        await clickPlanUpgrade(page, planType, { skipPreflight: true, region });
         const checkoutUrl = await waitForCheckoutPage(page, 35000, { observer, onCheckoutPage });
         await ensureChatGptProUsageTier(page, planType).catch((err) => {
             console.warn('⚠️ [Checkout] Pro 档位选择异常 (非阻塞):', err.message);

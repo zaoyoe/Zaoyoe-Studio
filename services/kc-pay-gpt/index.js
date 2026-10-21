@@ -65,6 +65,7 @@ const CONFIG = {
 const RECORD_VIDEO = String(process.env.RECORD_VIDEO || '1') !== '0';
 const VIDEO_DIR = path.join(__dirname, 'debug_screenshots', 'videos');
 const VIDEO_TAG = (process.env.JOB_KEY || process.env.CDK_CODE || `${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || `${Date.now()}`;
+const CLEANUP_STEP_TIMEOUT_MS = 2500;
 
 function buildDebugScreenshotPath(prefix) {
     const subdir = process.env.CHECKOUT_DEBUG_ONLY === '1' ? 'checkout_debug' : 'activation';
@@ -76,15 +77,24 @@ function buildDebugScreenshotPath(prefix) {
 // 关闭 context 后把录像重命名为带任务标识的稳定文件名，并输出路径供 server 解析
 async function finalizeVideo(context, page, options = {}) {
     const deleteOnSuccess = Boolean(options.deleteOnSuccess);
-    if (!RECORD_VIDEO || !context) return null;
+    if (!context) return null;
+    let video = null;
+    if (RECORD_VIDEO) {
+        try {
+            const pages = (typeof context.pages === 'function' ? context.pages() : []) || [];
+            const targetPage = (page && typeof page.video === 'function' && page.video()) ? page : pages.find((p) => p && p.video && p.video());
+            video = targetPage && targetPage.video ? targetPage.video() : null;
+        } catch (e) {
+            console.warn(`⚠️ [系统] 读取录像信息失败: ${e.message}`);
+        }
+    }
+
+    await context.close().catch((e) => {
+        console.warn(`⚠️ [系统] 关闭浏览器 context 失败: ${e.message}`);
+    });
+    if (!RECORD_VIDEO || !video) return null;
+
     try {
-        const pages = (typeof context.pages === 'function' ? context.pages() : []) || [];
-        const targetPage = (page && typeof page.video === 'function' && page.video()) ? page : pages.find((p) => p && p.video && p.video());
-        const video = targetPage && targetPage.video ? targetPage.video() : null;
-
-        await context.close().catch(() => { });
-
-        if (!video) return null;
         const rawPath = await video.path().catch(() => null);
         if (!rawPath) return null;
 
@@ -111,6 +121,23 @@ async function finalizeVideo(context, page, options = {}) {
     } catch (e) {
         console.warn(`⚠️ [系统] 录像保存失败: ${e.message}`);
         return null;
+    }
+}
+
+async function runCleanupStep(label, action, timeoutMs = CLEANUP_STEP_TIMEOUT_MS) {
+    let timer;
+    try {
+        return await Promise.race([
+            Promise.resolve().then(action),
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error(`${label} cleanup timed out after ${timeoutMs}ms`)), timeoutMs);
+            })
+        ]);
+    } catch (error) {
+        console.warn(`⚠️ [系统] ${label} 清理未完成: ${error.message}`);
+        return null;
+    } finally {
+        if (timer) clearTimeout(timer);
     }
 }
 
@@ -754,12 +781,12 @@ async function run() {
         // 用 exitCode 而非 process.exit()，确保下方 finally 能完整执行（录像需 context 关闭后才落盘）
         process.exitCode = 1;
     } finally {
-        commerceObserver?.dispose();
+        await runCleanupStep('commerce observer', () => commerceObserver?.dispose());
         console.log("👋 [系统] 流程结束，正在关闭浏览器...");
         // 先关闭 context 以 flush 录像并取回路径，再关浏览器
-        await finalizeVideo(context, page, { deleteOnSuccess: paymentSucceeded }).catch(() => { });
-        await closeTaskBrowser(browserSession, browser);
-        await proxyCleanup();
+        await runCleanupStep('browser context/video', () => finalizeVideo(context, page, { deleteOnSuccess: paymentSucceeded }));
+        await runCleanupStep('browser', () => closeTaskBrowser(browserSession, browser));
+        await runCleanupStep('proxy', () => proxyCleanup());
         if (debugOnly) {
             process.removeListener?.('SIGTERM', stopDiagnostic);
             process.removeListener?.('SIGINT', stopDiagnostic);

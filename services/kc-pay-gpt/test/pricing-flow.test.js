@@ -173,10 +173,10 @@ describe('pricing readiness and precise selection', () => {
             <div role="dialog"><h2>Unrelated dialog</h2><button onclick="window.selected='unrelated'">Start now</button></div>
             <div role="dialog"><h2>Upgrade your plan</h2>
                 <section><h3>Go</h3><button onclick="window.selected='Go'">Start now</button></section>
-                <section><h3>Plus</h3><button onclick="window.selected='Plus'">Start now</button></section>
+                <section><h3>Plus</h3><p>₱1,100 / month</p><button onclick="window.selected='Plus'">Start now</button></section>
                 <section><h3>Pro</h3><button onclick="window.selected='Pro'">Start now</button></section>
             </div>`);
-        await clickPlanUpgrade(page, 'plus');
+        await clickPlanUpgrade(page, 'plus', { region: 'PH' });
         expect(await page.evaluate(() => window.selected)).toBe('Plus');
     });
     it('does not click a generic action whose container also contains another plan', async () => {
@@ -185,13 +185,13 @@ describe('pricing readiness and precise selection', () => {
         expect(await page.evaluate(() => window.selected)).toBeUndefined();
     });
     it('propagates a click failure without falling through to another plan', async () => {
-        const page = await fixture('<div role="dialog"><h2>Upgrade your plan</h2><section><h3>Plus</h3><button>Upgrade to Plus</button></section><section><h3>Go</h3><button>Start now</button></section></div>');
+        const page = await fixture('<div role="dialog"><h2>Upgrade your plan</h2><section><h3>Plus</h3><p>₱1,100 / month</p><button>Upgrade to Plus</button></section><section><h3>Go</h3><button>Start now</button></section></div>');
         const originalGetByRole = page.getByRole.bind(page);
         // Get the real locator prototype, replacing click only for the selected upgrade button.
         const proto = Object.getPrototypeOf(originalGetByRole('button').first());
         const spy = vi.spyOn(proto, 'click').mockImplementation(function () { throw new Error('click dispatched then page closed'); });
         try {
-            await expect(clickPlanUpgrade(page, 'plus')).rejects.toThrow('click dispatched');
+            await expect(clickPlanUpgrade(page, 'plus', { region: 'PH' })).rejects.toThrow('click dispatched');
             expect(spy).toHaveBeenCalledOnce();
         } finally { spy.mockRestore(); }
     });
@@ -220,10 +220,10 @@ describe('checkout request diagnostics', () => {
         state.observer.dispose();
     });
     it('reports a no-effect click without a generic navigation timeout', async () => {
-        const page = await fixture('<div role="dialog"><h2>Plus</h2><button>Upgrade to Plus</button></div>');
+        const page = await fixture('<div role="dialog"><h2>Upgrade your plan</h2><section><h3>Plus</h3><p>₱1,100 / month</p><button>Upgrade to Plus</button></section></div>');
         const observer = observeCheckout(page);
         try {
-            await clickPlanUpgrade(page, 'plus');
+            await clickPlanUpgrade(page, 'plus', { region: 'PH' });
             await expect(waitForCheckoutPage(page, 100, { observer })).rejects.toMatchObject({ code: 'CHECKOUT_NO_REQUEST' });
         } finally { observer.dispose(); }
     });

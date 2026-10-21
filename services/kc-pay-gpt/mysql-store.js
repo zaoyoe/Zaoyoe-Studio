@@ -1455,6 +1455,25 @@ async function getActivationAttemptLimit(scopeType, scopeKey) {
     return rows[0] || null;
 }
 
+async function setActivationAttemptCooldown(scopeType, scopeKey, minutes = 10) {
+    const type = String(scopeType || '').trim();
+    const key = String(scopeKey || '').trim();
+    const duration = Number(minutes);
+    if (!type || type.length > 16 || !key || key.length > 128) {
+        throw new Error('激活冷却范围无效');
+    }
+    if (!Number.isInteger(duration) || duration < 1 || duration > 1440) {
+        throw new Error('激活冷却时长无效');
+    }
+    await runExecute(
+        `INSERT INTO activation_attempt_limits (scope_type, scope_key, fail_count, cooldown_until)
+         VALUES (?, ?, 0, DATE_ADD(CURRENT_TIMESTAMP, INTERVAL ? MINUTE))
+         ON DUPLICATE KEY UPDATE fail_count = 0,
+             cooldown_until = GREATEST(COALESCE(cooldown_until, CURRENT_TIMESTAMP), DATE_ADD(CURRENT_TIMESTAMP, INTERVAL ? MINUTE))`,
+        [type, key, duration, duration]
+    );
+}
+
 async function recordActivationAttemptFailure(scopeType, scopeKey) {
     await runExecute(
         `INSERT INTO activation_attempt_limits (scope_type, scope_key, fail_count, cooldown_until)
@@ -4079,6 +4098,7 @@ module.exports = {
     recordCdkFailure,
     resetCdkFailure,
     getActivationAttemptLimit,
+    setActivationAttemptCooldown,
     recordActivationAttemptFailure,
     resetActivationAttemptFailure,
     deletePhoneAsset,

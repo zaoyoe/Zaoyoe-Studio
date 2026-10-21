@@ -25,6 +25,7 @@ function shouldFallbackToPricingCheckout(error, { checkoutMode = 'ui', debugOnly
     const mode = String(checkoutMode || '').toLowerCase();
     const isApiVariant = mode === 'api' || mode === 'auto' || mode === 'hybrid';
     return isApiVariant && !debugOnly
+        && error?.code !== 'CHECKOUT_UNUSUAL_ACTIVITY'
         && !isChatGptAuthFailure(error)
         && !isBillingCountryMismatchError(error?.message);
 }

@@ -27,7 +27,7 @@ const gptApi = require('./gpt-api-client');
 const { validateOutsourceConfig, canonicalizeOutsourcePlan } = require('./gpt-outsourcing');
 const { createGptOutsourcingService } = require('./gpt-outsourcing-worker');
 const { createGptOutsourcingAdmin } = require('./gpt-outsourcing-admin');
-const { redactSensitiveText } = require('./session-security');
+const { fingerprintSessionPayload, redactSensitiveText } = require('./session-security');
 const { formatTaskErrorMessage, publicTaskUpdate } = require('./public/task-messages');
 const { resolveActivationInput, buildActivationCredentialEnv } = require('./activation-routing');
 const { reportTaskFailure } = require('./task-diagnostics');
@@ -874,10 +874,7 @@ function analyzeProcessOutput(output, timedOut) {
     const reachedPayment = normalized.includes('[Stripe] Step')
         || normalized.includes('正在使用 Stripe 信用卡')
         || normalized.includes('Checkout 页面已打开')
-        || normalized.includes('chatgpt.com/checkout')
-        || normalized.includes('配置套餐')
-        || normalized.includes('定价页')
-        || normalized.includes('#pricing');
+        || normalized.includes('chatgpt.com/checkout');
     const paymentStateMatch = normalized.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g);
     const paymentState = paymentStateMatch?.length
         ? paymentStateMatch[paymentStateMatch.length - 1].split(':')[1]
@@ -3743,7 +3740,7 @@ async function recoverGptOutsourcingAttempts() {
     } finally { outsourceRecoveryRunning = false; }
 }
 
-function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clientIp }) {
+function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clientIp, sessionCooldownScopeKey }) {
     (async () => {
         const checkoutScript = path.join(__dirname, 'index.js');
         let finalRun = null;
@@ -3839,6 +3836,18 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     || (run.output.includes('支付结果未知') ? 'unknown' : 'not_started')
                 );
                 observedPaymentState = attemptPaymentState;
+                if (task.executionMode === 'local_card_pool'
+                    && platform === 'chatgpt'
+                    && sessionCooldownScopeKey
+                    && attemptPaymentState === 'not_started'
+                    && /\[CHECKOUT_UNUSUAL_ACTIVITY\]/.test(run.output)) {
+                    try {
+                        await store.setActivationAttemptCooldown('chatgpt_ua', sessionCooldownScopeKey, 10);
+                        logTask(task.jobKey, 'ChatGPT Session 因 Checkout unusual activity 进入 10 分钟冷却', 'warn');
+                    } catch (error) {
+                        logTask(task.jobKey, `ChatGPT Session 冷却写入失败: ${redactSensitiveText(error.message)}`, 'warn');
+                    }
+                }
                 if (attemptPaymentState) {
                     await store.updateTaskLog(task.jobKey, {
                         status: run.analysis.status === 'success' ? 'success' : 'running',
@@ -4176,6 +4185,16 @@ async function handleActivationRequest(req, res) {
         const gptApiConfig = platform === 'chatgpt' ? await store.getGptApiConfig() : { enabled: false };
         const useGptApi = platform === 'chatgpt' && gptApiConfig.enabled;
         const executionMode = useGptApi ? 'third_party_api' : 'local_card_pool';
+        let sessionCooldownScopeKey = null;
+        if (platform === 'chatgpt' && executionMode === 'local_card_pool') {
+            sessionCooldownScopeKey = fingerprintSessionPayload(token);
+            const sessionLimit = await store.getActivationAttemptLimit('chatgpt_ua', sessionCooldownScopeKey);
+            const sessionCooldownMinutes = getRemainingCooldownMinutes(sessionLimit?.cooldown_until);
+            if (sessionCooldownMinutes > 0) {
+                return rejectActivation(403, 'SESSION_CHECKOUT_COOLDOWN',
+                    `该 ChatGPT Session 最近触发安全风控，请冷却 ${sessionCooldownMinutes} 分钟后再试`);
+            }
+        }
 
         // Validate the selected outsourced channel before locking the CDK or
         // creating a task. An enabled but incomplete channel must fail closed;
@@ -4243,7 +4262,7 @@ async function handleActivationRequest(req, res) {
                 console.error(`[GPT API Worker] ${task.jobKey}:`, error);
             });
         } else {
-            spawnActivationWorker({ task, token, sessionRaw: storedSession, cdk, cdkDetails, clientIp });
+            spawnActivationWorker({ task, token, sessionRaw: storedSession, cdk, cdkDetails, clientIp, sessionCooldownScopeKey });
         }
         workerDispatched = true;
 

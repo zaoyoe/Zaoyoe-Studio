@@ -11,6 +11,7 @@ import * as safety from '../task-safety.js';
 import { getPlatformForPlan, getRegionConfig, getRegionBrowserProfile } from '../region-config.js';
 import { formatTaskErrorMessage } from '../public/task-messages.js';
 import { reportTaskFailure } from '../task-diagnostics.js';
+import { fingerprintSessionPayload } from '../session-security.js';
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
@@ -31,6 +32,7 @@ function handlerHarness(fixture, overrides = {}) {
         getMaxConcurrentActivations: vi.fn(async () => 5),
         verifyCdkDetails: vi.fn(async () => ({ type: '自助', used_at: null, platform: fixture.platform, plan_type: fixture.planType })),
         getRunningTaskByCdk: vi.fn(async () => null),
+        getActivationAttemptLimit: vi.fn(async () => null),
         getGptApiConfig: vi.fn(async () => ({ enabled: true, api_key: 'offline-key',
             base_url: 'https://supplier.example/api', country: 'US', currency: 'USD',
             plan_mapping: { plus: 'plus-monthly', go: 'go-monthly', pro_100: 'pro100-monthly',
@@ -41,7 +43,8 @@ function handlerHarness(fixture, overrides = {}) {
     const spawnActivationWorker = vi.fn(), runGptApiWorker = vi.fn(async () => {});
     const context = { ...sessions, Buffer, Date, store, ensureStoreReady: async () => {},
         validateOutsourceConfig, canonicalizeOutsourcePlan,
-        getClientIp: () => '', getRemainingCooldownMinutes: () => 0, activeForegroundJobs: new Set(),
+        fingerprintSessionPayload, getClientIp: () => '', getRemainingCooldownMinutes: value => value ? 7 : 0,
+        activeForegroundJobs: new Set(),
         resolveActivationInput, formatTaskErrorMessage, redactSensitiveText: s => s,
         logTask: vi.fn(), reserveForegroundSlot: vi.fn(), fireTelegramNotification: vi.fn(),
         spawnActivationWorker, runGptApiWorker, console: { log() {}, error() {} } };
@@ -164,11 +167,37 @@ describe('actual activation request platform routing with a mock store', () => {
             await h.request(); expect(h.response.statusCode).toBe(400); expect(h.store.markCdkUsed).not.toHaveBeenCalled();
         }
     });
+    it('rejects a cooled-down local ChatGPT Session before locking its CDK', async () => {
+        const h = handlerHarness(fixtures[2]);
+        h.store.getGptApiConfig.mockResolvedValue({ enabled: false });
+        h.store.getActivationAttemptLimit.mockResolvedValue({ cooldown_until: 'future-cooldown' });
+        h.context.getRemainingCooldownMinutes = vi.fn(value => value ? 7 : 0);
+
+        await h.request();
+
+        expect(h.response.statusCode).toBe(403);
+        expect(h.response.value.message).toContain('冷却 7 分钟');
+        expect(h.store.getActivationAttemptLimit).toHaveBeenCalledWith('chatgpt_ua', fingerprintSessionPayload(jwt));
+        expect(JSON.stringify(h.store.getActivationAttemptLimit.mock.calls)).not.toContain(jwt);
+        expect(h.store.hasAvailableCard).not.toHaveBeenCalled();
+        expect(h.store.markCdkUsed).not.toHaveBeenCalled();
+        expect(h.store.createTaskLog).not.toHaveBeenCalled();
+        expect(h.spawnActivationWorker).not.toHaveBeenCalled();
+    });
+    it('does not apply the local Session cooldown to third-party ChatGPT checkout', async () => {
+        const h = handlerHarness(fixtures[2]);
+        await h.request();
+        expect(h.response.value.success).toBe(true);
+        expect(h.store.getActivationAttemptLimit).not.toHaveBeenCalled();
+        expect(h.runGptApiWorker).toHaveBeenCalledOnce();
+    });
 });
 
-async function workerHarness(fixture, { mismatch = false, apiError = null, bootstrapError = null, checkoutMode = 'auto' } = {}) {
+async function workerHarness(fixture, { mismatch = false, apiError = null, bootstrapError = null, checkoutMode = 'auto', contextCloseError = null } = {}) {
     const page = { on() {}, url: () => 'https://fixture.test/checkout', isClosed: () => false };
-    const context = { newPage: async () => page, addInitScript: async () => {}, close: async () => {} };
+    const context = { newPage: async () => page, addInitScript: async () => {}, close: vi.fn(async () => { if (contextCloseError) throw contextCloseError; }) };
+    const closeTaskBrowser = vi.fn(async () => {});
+    const proxyCleanup = vi.fn(async () => {});
     const login = { ok: true, email: 'fixture@example.test', session: { accessToken: jwt } };
     const methods = Object.fromEntries(['installChatGptSession', 'bootstrapChatGptSession', 'injectClaudeSession', 'bootstrapClaudeSession',
         'openClaudeCheckout', 'injectGrokSession', 'bootstrapGrokSession', 'openGrokCheckout', 'openApiCheckout',
@@ -185,8 +214,8 @@ async function workerHarness(fixture, { mismatch = false, apiError = null, boots
         './pricing-checkout-claude': methods, './grok-auth': methods, './pricing-checkout-grok': methods,
         './public/grok-plan-catalog': require('../public/grok-plan-catalog'), './grok-commerce': methods, './cdk-plan-catalog': { validateCdkPlan },
         './mysql-store': { getPaymentRegion: async () => 'US', verifyCdkDetails: async () => ({ plan_type: mismatch ? 'plus' : fixture.planType, platform: mismatch ? 'chatgpt' : fixture.platform }) },
-        './browser-runtime': { connectTaskBrowser: async () => ({ browser: { newContext: async () => context }, realUserAgent: 'Chrome/147.0' }), applyCdpEnv() {}, closeTaskBrowser: async () => {} },
-        './playwright-proxy': { preparePlaywrightProxy: async () => ({ cleanup: async () => {}, proxyConfig: null }) },
+        './browser-runtime': { connectTaskBrowser: async () => ({ browser: { newContext: async () => context }, realUserAgent: 'Chrome/147.0' }), applyCdpEnv() {}, closeTaskBrowser },
+        './playwright-proxy': { preparePlaywrightProxy: async () => ({ cleanup: proxyCleanup, proxyConfig: null }) },
         './proxy-preflight': { checkProxyConnectivity: vi.fn() }, './task-diagnostics': { captureDiagnosticScreenshot: async () => null },
         fs: { mkdirSync() {} }, path
     };
@@ -198,7 +227,7 @@ async function workerHarness(fixture, { mismatch = false, apiError = null, boots
         module, process, __dirname: root, console: { log() {}, warn() {}, error() {} },
         require: key => { if (!(key in dependencies)) throw new Error(`Unexpected dependency: ${key}`); return dependencies[key]; }
     });
-    await module.exports.run(); return { methods, process };
+    await module.exports.run(); return { methods, process, context, closeTaskBrowser, proxyCleanup };
 }
 
 describe('real worker entry uses restored platform modules without network or payment', () => {
@@ -233,13 +262,15 @@ describe('real worker entry uses restored platform modules without network or pa
     });
 });
 
-function spawnHarness({ state = 'not_started', failPersist = false, latestState = null } = {}) {
+function spawnHarness({ state = 'not_started', failPersist = false, latestState = null,
+    platform = 'grok', executionMode = 'local_card_pool', runOutput = null, sessionCooldownScopeKey = 'fixture-session-fingerprint' } = {}) {
     let done; const finished = new Promise(resolve => { done = resolve; });
     const store = {
         getPaymentRegion: async () => 'US', getActiveProxy: async () => '', getHcaptchaConfig: async () => ({}),
         updateTaskLog: vi.fn(async () => { if (failPersist) throw new Error('fixture persistence failure'); }),
         getTaskStatus: async () => ({ payment_state: latestState || state }), markCdkUnused: vi.fn(async () => {}),
-        getMaintenanceModeState: async () => ({ enabled: false })
+        getMaintenanceModeState: async () => ({ enabled: false }),
+        setActivationAttemptCooldown: vi.fn(async () => {})
     };
     let runtimeEnv;
     const sandbox = { ...safety, ...sessions, path, __dirname: root, process: { env: { CHATGPT_TOKEN: 'unrelated-token' } },
@@ -250,13 +281,20 @@ function spawnHarness({ state = 'not_started', failPersist = false, latestState 
         extractTaskMediaFromOutput: () => ({ screenshots: [], videos: [] }), getCheckoutProgress: () => 10,
         getTotalActiveJobs: () => 1, releaseForegroundSlot: () => done(),
         runCheckoutScript: async (_key, _script, env, _attempt, _progress, payment) => {
-            runtimeEnv = env; await payment(state); throw new Error('fixture worker interruption');
+            runtimeEnv = env;
+            if (runOutput !== null) {
+                return { output: runOutput, analysis: { status: 'failed', message: 'offline fixture', paymentState: state, shouldRetry: false } };
+            }
+            await payment(state); throw new Error('fixture worker interruption');
         },
         spawnWorkerWithBrowser: ({ runtimeEnv, runScript }) => runScript(runtimeEnv), console: { error() {} }
     };
     vm.runInNewContext(snippet('function spawnActivationWorker(', 'async function handleActivationRequest('), sandbox);
-    sandbox.spawnActivationWorker({ task: { jobKey: 'fixture-job', executionMode: 'local_card_pool' }, token: 'offline-token',
-        sessionRaw: fixtures[0].credential, cdk: 'OFFLINE-CDK', cdkDetails: { platform: 'grok', plan_type: fixtures[0].planType }, clientIp: '' });
+    const fixture = fixtures.find(item => item.platform === platform);
+    const planType = fixture?.planType || 'plus';
+    const token = platform === 'chatgpt' ? jwt : 'offline-token';
+    sandbox.spawnActivationWorker({ task: { jobKey: 'fixture-job', executionMode }, token,
+        sessionRaw: fixture?.credential || '', cdk: 'OFFLINE-CDK', cdkDetails: { platform, plan_type: planType }, clientIp: '', sessionCooldownScopeKey });
     return finished.then(() => ({ store, runtimeEnv, sandbox }));
 }
 
@@ -270,5 +308,26 @@ describe('server dispatch and interruption preserve payment resources', () => {
         const h = await spawnHarness({ state, failPersist: true, latestState: 'not_started' });
         expect(h.store.markCdkUnused).not.toHaveBeenCalled();
         expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'manual', recoveryRequired: true }));
+    });
+    it('cools a ChatGPT Session after unusual activity only before payment starts', async () => {
+        const h = await spawnHarness({ platform: 'chatgpt', runOutput: '[CHECKOUT_UNUSUAL_ACTIVITY]', sessionCooldownScopeKey: 'a'.repeat(64) });
+        expect(h.store.setActivationAttemptCooldown).toHaveBeenCalledOnce();
+        expect(h.store.setActivationAttemptCooldown).toHaveBeenCalledWith('chatgpt_ua', 'a'.repeat(64), 10);
+    });
+    it.each([
+        ['another platform', { platform: 'grok' }],
+        ['third-party API mode', { platform: 'chatgpt', executionMode: 'third_party_api' }],
+        ['payment already started', { platform: 'chatgpt', state: 'started' }],
+        ['ordinary checkout failure', { platform: 'chatgpt', runOutput: 'ordinary checkout failure' }]
+    ])('does not set Session cooldown for %s', async (_label, options) => {
+        const h = await spawnHarness({ runOutput: '[CHECKOUT_UNUSUAL_ACTIVITY]', ...options });
+        expect(h.store.setActivationAttemptCooldown).not.toHaveBeenCalled();
+    });
+    it('closes the context with recording disabled and continues cleanup after close failure', async () => {
+        const h = await workerHarness(fixtures[0], { contextCloseError: new Error('fixture context close failure') });
+        expect(h.process.exitCode).toBe(1);
+        expect(h.context.close).toHaveBeenCalledOnce();
+        expect(h.closeTaskBrowser).toHaveBeenCalledOnce();
+        expect(h.proxyCleanup).toHaveBeenCalledOnce();
     });
 });
