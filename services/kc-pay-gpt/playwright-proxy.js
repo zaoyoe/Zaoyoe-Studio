@@ -86,8 +86,11 @@ function substituteProxySession(rawProxy) {
     } else if (/-session-[a-zA-Z0-9_]+(?=[-:@/]|$)/i.test(replaced)) {
         // 自动兼容形如 -session-29028475- 的固定动态住宅 session，替换为全新 8 位随机 session，避免重复使用相同节点
         replaced = replaced.replace(/-session-[a-zA-Z0-9_]+(?=[-:@/]|$)/i, `-session-${numSid}`);
+    } else if (/([-_](?:sid|sessid|sessionid)[-_])([A-Za-z0-9]+)(?=[-_:@/]|$)/i.test(replaced)) {
+        // 自动兼容形如 -sid-abc123- 或 -sessid-abc123- 的住宅代理格式，原地轮换 SID
+        replaced = replaced.replace(/([-_](?:sid|sessid|sessionid)[-_])([A-Za-z0-9]+)(?=[-_:@/]|$)/i, `$1${sid}`);
     }
-    // 自动兼容形如 -sid-xxxx- 的固定 session，将其转换为新随机 session 避免 5 分钟超时
+    // 自动兼容形如 -sid-xxxx-t- 的固定 session，将其转换为新随机 session 避免 5 分钟超时
     if (/-sid-[a-zA-Z0-9_-]+-t-/i.test(replaced)) {
         replaced = replaced.replace(/-sid-[a-zA-Z0-9_-]+-t-/i, `-sid-${sid}-t-`);
     }
