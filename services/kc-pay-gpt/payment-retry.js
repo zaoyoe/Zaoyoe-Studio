@@ -183,13 +183,18 @@ async function executePaymentWithRetry(page, options) {
 
     if (canTryProtocol) {
         billedCurrency = currency;
+        const isOregon = (address?.country === 'US' && /oregon|or\b/i.test(address?.state || ''));
         const expectedRule = getExpectedPlanPriceRule(platform, planType, billedCurrency);
         if (expectedRule?.amount) {
             billedAmount = expectedRule.amount;
         } else if (billedCurrency === 'PHP' && /plus/i.test(planType)) {
-            billedAmount = 1100;
+            billedAmount = isOregon ? (estimateTaxFreeAmount(1100, 'PHP') || 982.14) : 1100;
         } else if (billedCurrency === 'USD' && /plus/i.test(planType)) {
             billedAmount = 20;
+        }
+        if (isOregon && billedAmount > 0) {
+            const taxFree = estimateTaxFreeAmount(billedAmount, billedCurrency);
+            if (taxFree) billedAmount = taxFree;
         }
         progress(`⚡ [极速协议] 预设套餐结算金额: ${billedCurrency} ${billedAmount || '(按上游结算)'}`);
     }
@@ -364,8 +369,8 @@ async function executePaymentWithRetry(page, options) {
                         if (protoRes.success || protoRes.declined) {
                             paymentResult = {
                                 ...protoRes,
-                                dueAmount: billedAmount,
-                                dueCurrency: billedCurrency,
+                                dueAmount: protoRes.amount != null ? protoRes.amount : billedAmount,
+                                dueCurrency: protoRes.currency || billedCurrency,
                                 holderName: address.name || billingHolderName || ''
                             };
                             if (protoRes.declined) {
