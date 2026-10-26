@@ -26,6 +26,8 @@ function shouldFallbackToPricingCheckout(error, { checkoutMode = 'ui', debugOnly
     const isApiVariant = mode === 'api' || mode === 'auto' || mode === 'hybrid';
     return isApiVariant && !debugOnly
         && !isChatGptAuthFailure(error)
+        && error?.code !== 'ACCOUNT_ALREADY_SUBSCRIBED'
+        && !String(error?.message || '').includes('ACCOUNT_ALREADY_SUBSCRIBED')
         && !isBillingCountryMismatchError(error?.message);
 }
 
@@ -429,6 +431,11 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
             throw new Error(buildBillingCountryMismatchError({ country: region, currency: billingCurrency }));
         }
         if (checkout.httpStatus != null && checkout.httpStatus !== 200) {
+            if (/already_subscribed|has active subscription|已有有效/i.test(String(checkout.error || ''))) {
+                const error = new Error('该账号已有有效 Plus 订阅，无需重复充值，请更换其他未订阅账号 [ACCOUNT_ALREADY_SUBSCRIBED]');
+                error.code = 'ACCOUNT_ALREADY_SUBSCRIBED';
+                throw error;
+            }
             const failure = buildCheckoutHttpFailure(checkout.httpStatus, checkout.error);
             const error = new Error(`${failure.message} [${failure.code}]`);
             error.code = failure.code;
@@ -446,7 +453,7 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
         return { checkoutUrl: url, sessionId: checkout.sessionId };
     }
 
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.goto(url, { waitUntil: 'commit', timeout: 30000 });
     // 快速等待页面主要元素加载或短暂网络平稳，最多等待 2.5 秒，绝不硬卡 30 秒 networkidle 超时
     await Promise.race([
         page.waitForSelector('iframe, input, button', { timeout: 8000 }),

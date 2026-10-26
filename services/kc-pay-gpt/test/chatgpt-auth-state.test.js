@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { chromium } from 'playwright';
-import { assertLocalSessionFresh, verifyChatGptAccessToken, isChatGptAuthFailure } from '../chatgpt-auth-state.js';
+import { assertLocalSessionFresh, verifyChatGptAccessToken, isChatGptAuthFailure, checkChatGptSubscriptionStatus, assertChatGptAccountEligible } from '../chatgpt-auth-state.js';
 import { installChatGptSession, bootstrapChatGptSession, buildSessionPayload } from '../session-auth.js';
 import { hasLoggedInChatUi, hasLoggedInSessionApi } from '../auth-page-detect.js';
 import { ensurePricingDialogVisible } from '../pricing-checkout.js';
@@ -175,5 +175,59 @@ describe('official authentication and visible expiry', () => {
         await vi.advanceTimersByTimeAsync(12000);
         await assertion;
         expect(vi.getTimerCount()).toBe(0);
+    });
+});
+
+describe('subscription eligibility and active subscription protection', () => {
+    it('rejects an account that already has an active Plus subscription and prevents delivery', async () => {
+        const { context } = await fixture();
+        const page = await context.newPage();
+        await page.route('**/backend-api/accounts/check/v4*', route => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                accounts: {
+                    default: {
+                        account: { account_id: 'user-sub-1', plan_type: 'plus' },
+                        entitlement: { subscription_plan: 'chatgptplusplan', has_active_subscription: true }
+                    }
+                }
+            })
+        }));
+        await page.route('**/backend-api/me', route => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ id: 'user-sub-1', email: 'subscribed@example.test' })
+        }));
+        await page.goto('https://chatgpt.com/');
+        await expect(assertChatGptAccountEligible(page, 'token')).rejects.toMatchObject({
+            code: 'ACCOUNT_ALREADY_SUBSCRIBED',
+            message: expect.stringContaining('已有有效 PLUS 订阅')
+        });
+
+        const raw = JSON.stringify({ user: { id: 'user-sub-1', email: 'subscribed@example.test' }, accessToken: jwt({ exp: 9999999999 }) });
+        await expect(bootstrapChatGptSession(page, raw, { cookieVerified: true, hasSessionToken: true }))
+            .rejects.toMatchObject({ code: 'ACCOUNT_ALREADY_SUBSCRIBED' });
+    });
+
+    it('allows an un-subscribed free account to proceed to checkout', async () => {
+        const { context } = await fixture();
+        const page = await context.newPage();
+        await page.route('**/backend-api/accounts/check/v4*', route => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                accounts: {
+                    default: {
+                        account: { account_id: 'user-free-1', plan_type: 'free' },
+                        entitlement: { subscription_plan: 'chatgptfreeplan', has_active_subscription: false }
+                    }
+                }
+            })
+        }));
+        await page.goto('https://chatgpt.com/');
+        const result = await assertChatGptAccountEligible(page, 'token');
+        expect(result.isFree).toBe(true);
+        expect(result.hasActive).toBe(false);
     });
 });

@@ -38,7 +38,7 @@ const { EXECUTION_MODE: CHECKOUT_DIAGNOSTIC_MODE, diagnosticError, throwIfDiagno
     waitForDiagnosticAbort, redactDiagnosticLogs, sanitizeDiagnosticReport, appendDiagnosticReport,
     pendingDiagnosticReport, diagnosticProgress, finishDiagnosticReport, createCheckoutDebugManager } = require('./checkout-debug-manager');
 const { classifyInterruptedTask, classifyAutoRenewCancellation, normalizePaymentState, mergePaymentState,
-    shouldRetainCdk, classifyChatGptAuthFailure, classifyChatGptNavigationFailure, classifyCheckoutFailure, classifyProxyPreflightFailure,
+    shouldRetainCdk, classifyChatGptAuthFailure, classifyAccountAlreadySubscribed, classifyChatGptNavigationFailure, classifyCheckoutFailure, classifyProxyPreflightFailure,
     classifyClaudeNavigationFailure, classifyClaudeCheckoutReadinessFailure, classifyGrokFailure,
     classifyOpenAiCardMethodFailure, finalizeRetryAnalysis } = require('./task-safety');
 
@@ -965,6 +965,7 @@ function analyzeProcessOutput(output, timedOut) {
 
     const failureState = success ? 'succeeded' : paymentState;
     const guardedFailure = classifyChatGptAuthFailure(runtimeError, failureState)
+        || classifyAccountAlreadySubscribed(runtimeError, failureState)
         || classifyChatGptNavigationFailure(runtimeError, failureState, normalized)
         || classifyCheckoutFailure(runtimeError, failureState)
         || classifyProxyPreflightFailure(runtimeError, failureState)
@@ -3898,7 +3899,11 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 });
 
                 const targetRegion = String(task.paymentRegion || cdkDetails?.payment_region || '').trim().toUpperCase() || await store.getPaymentRegion();
-                const proxy = await store.getActiveProxy(targetRegion);
+                let proxy = await store.getActiveProxy(targetRegion);
+                if (proxy) {
+                    const { alignProxyRegion } = require('./playwright-proxy');
+                    proxy = alignProxyRegion(proxy, targetRegion);
+                }
                 lastUsedProxy = proxy || lastUsedProxy;
                 const hcaptchaCfg = await store.getHcaptchaConfig();
                 const { env: hcaptchaEnv } = buildHcaptchaEnvFromConfig(hcaptchaCfg);

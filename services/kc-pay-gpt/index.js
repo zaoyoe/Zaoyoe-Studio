@@ -645,10 +645,8 @@ async function run() {
                 console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
             }
 
-            // Real recharge jobs use the official UI flow; API Checkout remains available to diagnostics.
-            const checkoutMode = debugOnly
-                ? String(process.env.CHECKOUT_MODE || 'auto').toLowerCase()
-                : 'ui';
+            // 2.0 升级：默认优先使用 API 协议直达 Stripe 收银台（标准全价，避开 0 元试用弹窗困境），失败时平滑回退 UI
+            const checkoutMode = String(process.env.CHECKOUT_MODE || 'auto').toLowerCase();
             if (checkoutMode === 'ui') {
                 console.log('[Checkout] 跳过 API 创建，直接使用官方 UI 定价页');
             }

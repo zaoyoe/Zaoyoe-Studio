@@ -1318,6 +1318,17 @@ async function clickPlanUpgrade(page, planType, options = {}) {
         }
         await page.waitForTimeout(Math.min(250, Math.max(1, deadline - Date.now())));
     }
+
+    const scopeCheck = await getPricingSurface(page).catch(() => null);
+    const alreadySubscribedCard = scopeCheck
+        ? await scopeCheck.getByText(/Your current plan|Current plan|当前套餐|当前计划|Manage subscription|Manage my subscription|管理我的订阅/i).first().isVisible().catch(() => false)
+        : false;
+    if (alreadySubscribedCard) {
+        const err = new Error(`该账号已有有效 ${target} 订阅，无需重复充值，请更换其他未订阅账号 [ACCOUNT_ALREADY_SUBSCRIBED]`);
+        err.code = 'ACCOUNT_ALREADY_SUBSCRIBED';
+        throw err;
+    }
+
     throw new Error(`未找到可明确归属 ${target} 套餐的升级按钮，已停止点击`);
 }
 
@@ -1496,7 +1507,7 @@ async function waitForCheckoutPage(page, timeout = 35000, { observer, onCheckout
                             const current = page.url();
                             if (!isCheckoutDestination(current)) {
                                 console.log(`🚀 [Checkout] 检测到 Checkout 接口已返回但前端路由迟缓，主动导航至: ${capturedUrl.slice(0, 80)}...`);
-                                page.goto(capturedUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch((err) => {
+                                page.goto(capturedUrl, { waitUntil: 'commit', timeout: 30000 }).catch((err) => {
                                     console.warn(`[Checkout] 主动导航异常: ${err.message}`);
                                 });
                             }

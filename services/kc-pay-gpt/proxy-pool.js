@@ -28,6 +28,31 @@ function substituteProxySession(rawProxy) {
     return replaced;
 }
 
+function alignProxyRegion(rawProxy, targetRegion) {
+    if (!rawProxy || !targetRegion) return rawProxy;
+    const regionUpper = String(targetRegion).trim().toUpperCase();
+    const regionLower = regionUpper.toLowerCase();
+    if (!/^[A-Z]{2}$/.test(regionUpper)) return rawProxy;
+
+    let aligned = rawProxy;
+    aligned = aligned.replace(/\{region\}/gi, regionLower);
+    aligned = aligned.replace(/\{country\}/gi, regionLower);
+
+    if (/-region-[a-zA-Z]{2}-/i.test(aligned)) {
+        aligned = aligned.replace(/-region-[a-zA-Z]{2}-/i, `-region-${regionUpper}-`);
+    }
+    if (/-country-[a-zA-Z]{2}-/i.test(aligned)) {
+        aligned = aligned.replace(/-country-[a-zA-Z]{2}-/i, `-country-${regionUpper}-`);
+    } else if (/_country-[a-zA-Z]{2}(?=[-:@/]|$)/i.test(aligned)) {
+        aligned = aligned.replace(/_country-[a-zA-Z]{2}(?=[-:@/]|$)/i, `_country-${regionLower}`);
+    }
+    if (/-res_sc-[a-zA-Z]{2}(?:_[a-zA-Z0-9]+)?(?=[-:@/]|$)/i.test(aligned)) {
+        aligned = aligned.replace(/-res_sc-[a-zA-Z]{2}(?:_[a-zA-Z0-9]+)?(?=[-:@/]|$)/i, `-res_sc-${regionUpper}`);
+    }
+
+    return aligned;
+}
+
 function maskProxyUrl(url) {
     return String(url || '').replace(/\/\/([^:@/]+):([^@/]+)@/i, '//$1:***@');
 }
@@ -201,5 +226,6 @@ module.exports = {
     parseProxyMeta,
     normalizeProxyLines,
     testProxyUrl,
-    matchProxyRegion
+    matchProxyRegion,
+    alignProxyRegion
 };
