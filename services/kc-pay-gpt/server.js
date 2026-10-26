@@ -38,7 +38,7 @@ const { EXECUTION_MODE: CHECKOUT_DIAGNOSTIC_MODE, diagnosticError, throwIfDiagno
     waitForDiagnosticAbort, redactDiagnosticLogs, sanitizeDiagnosticReport, appendDiagnosticReport,
     pendingDiagnosticReport, diagnosticProgress, finishDiagnosticReport, createCheckoutDebugManager } = require('./checkout-debug-manager');
 const { classifyInterruptedTask, classifyAutoRenewCancellation, normalizePaymentState, mergePaymentState,
-    shouldRetainCdk, classifyChatGptAuthFailure, classifyCheckoutFailure, classifyProxyPreflightFailure,
+    shouldRetainCdk, classifyChatGptAuthFailure, classifyChatGptNavigationFailure, classifyCheckoutFailure, classifyProxyPreflightFailure,
     classifyClaudeNavigationFailure, classifyClaudeCheckoutReadinessFailure, classifyGrokFailure,
     classifyOpenAiCardMethodFailure, finalizeRetryAnalysis } = require('./task-safety');
 
@@ -965,6 +965,7 @@ function analyzeProcessOutput(output, timedOut) {
 
     const failureState = success ? 'succeeded' : paymentState;
     const guardedFailure = classifyChatGptAuthFailure(runtimeError, failureState)
+        || classifyChatGptNavigationFailure(runtimeError, failureState, normalized)
         || classifyCheckoutFailure(runtimeError, failureState)
         || classifyProxyPreflightFailure(runtimeError, failureState)
         || classifyClaudeNavigationFailure(runtimeError, failureState)

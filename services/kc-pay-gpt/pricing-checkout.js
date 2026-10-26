@@ -1098,7 +1098,7 @@ async function waitForPricingPage(page, timeout = 60000) {
     if (alreadyVisible) {
         console.log('✅ [步骤] 定价弹窗已就绪，直接复用当前页面');
     } else {
-        await page.goto(PRICING_URL, { waitUntil: 'domcontentloaded', timeout });
+        await page.goto(PRICING_URL, { waitUntil: 'commit', timeout });
         await clearHumanVerification(page, { phase: 'pricing-page', maxWaitMs: 120000 });
         await assertChatGptLoggedIn(page, '定价页');
 

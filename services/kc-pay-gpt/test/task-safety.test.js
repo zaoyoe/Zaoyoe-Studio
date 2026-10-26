@@ -7,7 +7,8 @@ import {
     mergePaymentState,
     classifyCheckoutFailure,
     classifyOpenAiCardMethodFailure,
-    classifyGrokFailure
+    classifyGrokFailure,
+    classifyChatGptNavigationFailure
 } from '../task-safety.js';
 
 describe('payment and recovery safety decisions', () => {
@@ -105,5 +106,34 @@ describe('checkout failures before payment submission', () => {
 
     it.each(['普通错误', 'card declined [STRIPE_CARD_DECLINED]', '[CHECKOUT_HTTP_ERROR] extra text', '[CHECKOUT_INVALID_CODE]'])('requires a recognized trailing creation-error code', message => {
         expect(classifyCheckoutFailure(message, 'not_started')).toBeNull();
+    });
+});
+
+describe('ChatGPT navigation timeout failures trigger proxy retry', () => {
+    it('classifies CHATGPT_NAV_TIMEOUT as retryable', () => {
+        const message = 'ChatGPT 页面加载超时（未能在时限内呈现有效界面）[CHATGPT_NAV_TIMEOUT]';
+        expect(classifyChatGptNavigationFailure(message, 'not_started')).toMatchObject({
+            status: 'retry',
+            shouldRetry: true,
+            reachedPayment: false,
+            paymentState: 'not_started'
+        });
+    });
+
+    it('classifies page.goto Timeout 90000ms exceeded as retryable', () => {
+        const message = 'page.goto: Timeout 90000ms exceeded.';
+        const fullOutput = 'navigating to "https://chatgpt.com/", waiting until "domcontentloaded"';
+        expect(classifyChatGptNavigationFailure(message, 'not_started', fullOutput)).toMatchObject({
+            status: 'retry',
+            shouldRetry: true,
+            reachedPayment: false,
+            paymentState: 'not_started'
+        });
+    });
+
+    it('never overrides payment states that have already started', () => {
+        for (const paymentState of ['started', 'unknown', 'succeeded', 'declined']) {
+            expect(classifyChatGptNavigationFailure('page.goto: Timeout 90000ms exceeded.', paymentState)).toBeNull();
+        }
     });
 });
