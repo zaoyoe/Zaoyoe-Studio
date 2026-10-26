@@ -8,6 +8,25 @@ function classifyChatGptAuthFailure(message, paymentState) {
         deletePhone: false, deleteCard: false, paymentState: 'not_started' };
 }
 
+function classifyChatGptNavigationFailure(message, paymentState, fullOutput = '') {
+    if (paymentState != null && normalizePaymentState(paymentState) !== 'not_started') return null;
+    const text = `${String(message || '')} ${String(fullOutput || '')}`;
+    const hasNavTimeout = text.includes('[CHATGPT_NAV_TIMEOUT]')
+        || /page\.goto:\s*Timeout\s*\d*ms\s*exceeded/i.test(text)
+        || (/Timeout\s*\d*ms\s*exceeded/i.test(text) && /chatgpt\.com/i.test(text));
+    if (!hasNavTimeout) return null;
+    return {
+        status: 'retry',
+        message: '连接 ChatGPT 官方页面超时，准备重试',
+        exhaustedMessage: '多次尝试连接 ChatGPT 官方页面均超时，请稍后重试或检查代理网络质量',
+        reachedPayment: false,
+        shouldRetry: true,
+        deletePhone: false,
+        deleteCard: false,
+        paymentState: 'not_started'
+    };
+}
+
 const KNOWN_PAYMENT_STATES = new Set(['not_started', 'started', 'succeeded', 'declined', 'unknown']);
 
 function normalizePaymentState(value) {
@@ -171,6 +190,7 @@ function classifyInterruptedTask(task = {}) {
 
 module.exports = {
     classifyChatGptAuthFailure,
+    classifyChatGptNavigationFailure,
     KNOWN_PAYMENT_STATES,
     normalizePaymentState,
     mergePaymentState,

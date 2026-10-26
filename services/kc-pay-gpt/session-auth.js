@@ -11,6 +11,7 @@ const {
     hasVisibleLoginChrome,
     hasLoggedInChatUi,
     waitForLoggedInChatUi,
+    hasVisibleExpiredSession,
     assertNoExpiredSession,
     buildSessionNotLoggedInError
 } = require('./auth-page-detect');
@@ -643,6 +644,83 @@ function setupChatGptSessionAuth(context, accessToken) {
 }
 
 /**
+ * 稳健导航到 ChatGPT 页面：优先等待 commit（响应头到达），并竞态轮询核心 UI 状态，
+ * 避免在动态住宅代理环境下因后台挂起的遥测长连接而死等 domcontentloaded 导致 90s 超时
+ */
+async function navigateChatGptSessionPage(page, targetUrl, options = {}) {
+    const isPricingTarget = options.isPricingTarget || targetUrl.includes('#pricing');
+    const navTimeout = Number(process.env.CHATGPT_NAV_TIMEOUT_MS || (process.env.NODE_ENV === 'test' ? 10000 : 45000));
+    const deadline = Date.now() + navTimeout;
+    const remaining = () => Math.max(1000, deadline - Date.now());
+
+    try {
+        await page.goto(targetUrl, {
+            waitUntil: 'commit',
+            timeout: Math.min(30000, remaining())
+        });
+    } catch (gotoErr) {
+        if (await hasLoggedInChatUi(page).catch(() => false)) {
+            console.log('[Session] 页面导航事件异常，但检测到已登录 UI 存在，继续执行流程');
+            return;
+        }
+        throw Object.assign(
+            new Error(`ChatGPT 页面连接超时（${gotoErr.message}）[CHATGPT_NAV_TIMEOUT]`),
+            { code: 'CHATGPT_NAV_TIMEOUT', cause: gotoErr }
+        );
+    }
+
+    if (isPricingTarget) {
+        await page.evaluate(() => {
+            try {
+                if (window.location.hash !== '#pricing') {
+                    window.location.hash = '#pricing';
+                }
+                window.dispatchEvent(new HashChangeEvent('hashchange'));
+                window.dispatchEvent(new PopStateEvent('popstate'));
+            } catch (_) {}
+        }).catch(() => {});
+    }
+
+    while (Date.now() < deadline) {
+        if (page.isClosed()) {
+            throw new Error('页面在加载过程中被意外关闭 [CHATGPT_NAV_TIMEOUT]');
+        }
+        if (await hasLoggedInChatUi(page).catch(() => false)) {
+            return;
+        }
+        if (await hasVisibleLoginChrome(page).catch(() => false) || await isLoginPageContent(page).catch(() => false)) {
+            return;
+        }
+        if (await hasVisibleExpiredSession(page).catch(() => false)) {
+            return;
+        }
+        const isCf = await page.evaluate(() => {
+            const text = document.body ? document.body.innerText : '';
+            return /Verify you are human|Just a moment|Cloudflare/i.test(text);
+        }).catch(() => false);
+        if (isCf) {
+            return;
+        }
+        const domReady = await page.evaluate(() => {
+            return Boolean(document.body && (document.readyState === 'interactive' || document.readyState === 'complete') && document.body.childElementCount > 0);
+        }).catch(() => false);
+        if (domReady) {
+            await page.waitForTimeout(options.cookieVerified ? 200 : 500);
+            return;
+        }
+        await page.waitForTimeout(300);
+    }
+
+    if (await hasLoggedInChatUi(page).catch(() => false)) {
+        return;
+    }
+    throw Object.assign(
+        new Error('ChatGPT 页面加载超时（未能在时限内呈现有效界面）[CHATGPT_NAV_TIMEOUT]'),
+        { code: 'CHATGPT_NAV_TIMEOUT' }
+    );
+}
+
+/**
  * 打开 ChatGPT 并验证 Session 在浏览器 UI 中生效
  */
 async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
@@ -668,22 +746,10 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
     const isPricingTarget = targetUrl.includes('#pricing');
     const pageLabel = isPricingTarget ? '定价页' : '首页';
 
-    await page.goto(targetUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: 90000
+    await navigateChatGptSessionPage(page, targetUrl, {
+        isPricingTarget,
+        cookieVerified: options.cookieVerified
     });
-    if (isPricingTarget) {
-        // 定价页快速唤起：通知 Next.js SPA 挂载 #pricing 弹窗，不再停留聊天首页
-        await page.evaluate(() => {
-            try {
-                if (window.location.hash !== '#pricing') {
-                    window.location.hash = '#pricing';
-                }
-                window.dispatchEvent(new HashChangeEvent('hashchange'));
-                window.dispatchEvent(new PopStateEvent('popstate'));
-            } catch (_) {}
-        }).catch(() => {});
-    }
     await page.waitForTimeout(options.cookieVerified ? 400 : 800);
     await assertNoExpiredSession(page);
 
@@ -698,7 +764,7 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
     }
 
     if (await hasVisibleLoginChrome(page)) {
-        await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+        await page.reload({ waitUntil: 'commit', timeout: 25000 }).catch(() => {});
         await page.waitForTimeout(1500);
     }
 
