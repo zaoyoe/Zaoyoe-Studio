@@ -141,12 +141,16 @@ async function executePaymentWithRetry(page, options) {
     const grokBundle = platform === 'grok' && isGrokBundlePlan(planType);
     let address;
     try {
-        if (grokBundle) assertNativeBillingRegion(region, currency);
-        const lastUsedIdRaw = await store.getAppConfigValue('last_used_address_id', null);
-        const lastUsedId = lastUsedIdRaw ? Number(lastUsedIdRaw) : null;
-        address = grokBundle
-            ? normalizeNativeBillingAddress(await pickBillingAddressForCheckout(region, lastUsedId, { strategy: 'oregon' }))
-            : await pickBillingAddressForCheckout(region, lastUsedId);
+        if (options?.prewarmedPayment?.address) {
+            address = options.prewarmedPayment.address;
+        } else {
+            if (grokBundle) assertNativeBillingRegion(region, currency);
+            const lastUsedIdRaw = await store.getAppConfigValue('last_used_address_id', null);
+            const lastUsedId = lastUsedIdRaw ? Number(lastUsedIdRaw) : null;
+            address = grokBundle
+                ? normalizeNativeBillingAddress(await pickBillingAddressForCheckout(region, lastUsedId, { strategy: 'oregon' }))
+                : await pickBillingAddressForCheckout(region, lastUsedId);
+        }
     } catch (error) {
         if (!grokBundle) throw error;
         const billingError = error.code === 'GROK_BILLING_UNCONFIRMED' ? error
@@ -279,7 +283,17 @@ async function executePaymentWithRetry(page, options) {
     progress(`开始支付（最多尝试 ${MAX_CARD_ATTEMPTS} 张卡）...`);
 
     for (let cardAttempt = 1; cardAttempt <= MAX_CARD_ATTEMPTS; cardAttempt += 1) {
-        const card = await store.reserveCard(ownerKey);
+        let card = null;
+        let prewarmedTokens = null;
+
+        if (cardAttempt === 1 && options?.prewarmedPayment?.card) {
+            card = options.prewarmedPayment.card;
+            options.prewarmedPayment.consumed = true;
+            prewarmedTokens = options.prewarmedPayment.tokenPromise;
+        } else {
+            card = await store.reserveCard(ownerKey);
+        }
+
         if (!card) {
             progress(cardAttempt === 1 ? '卡池无可用卡，终止支付' : `卡池已无更多可用卡（已拒 ${declinedLast4s.length} 张）`);
             if (cardAttempt === 1) {
@@ -340,6 +354,7 @@ async function executePaymentWithRetry(page, options) {
                             accessToken: options.accessToken,
                             currency,
                             proxy: options.proxy || '',
+                            prewarmedTokens,
                             onPaymentAttemptStarted: async () => {
                                 attemptStarted = true;
                                 await persistPaymentState('started', '正在提交银行卡支付 (Stripe 纯协议直充)');

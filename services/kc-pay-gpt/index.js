@@ -203,6 +203,7 @@ async function run() {
     let page = null;
     let commerceObserver = null;
     let paymentSucceeded = false;
+    let prewarmedPayment = null;
     const debugOnly = process.env.CHECKOUT_DEBUG_ONLY === '1';
     const diagnosticMode = String(process.env.CHECKOUT_DIAGNOSTIC_MODE || 'checkout').toLowerCase();
     let diagnostic = null;
@@ -592,6 +593,33 @@ async function run() {
 
         console.log(`[1] 平台: ${platform.toUpperCase()}, 套餐类型: ${planType}, 地区: ${paymentRegion}, 币种: ${billingCurrency}`);
 
+        const ownerKey = process.env.JOB_KEY || `${cdkCode || 'job'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        if (platform === 'chatgpt' && !debugOnly) {
+            try {
+                const preCard = await store.reserveCard(ownerKey);
+                if (preCard) {
+                    const { pickBillingAddressForCheckout } = require('./tax-free-address');
+                    const lastUsedIdRaw = await store.getAppConfigValue('last_used_address_id', null);
+                    const preAddress = await pickBillingAddressForCheckout(paymentRegion, lastUsedIdRaw ? Number(lastUsedIdRaw) : null);
+                    const { prewarmStripeConfirmationToken } = require('./stripe-protocol-payment');
+                    const prewarmPromise = prewarmStripeConfirmationToken({
+                        card: preCard,
+                        billing: preAddress,
+                        proxy: proxyConfig?.server || CONFIG.proxy
+                    });
+                    prewarmedPayment = {
+                        card: preCard,
+                        address: preAddress,
+                        tokenPromise: prewarmPromise,
+                        ownerKey,
+                        consumed: false
+                    };
+                }
+            } catch (preErr) {
+                console.warn(`⚠️ [协议预热] 卡片与令牌前置预热跳过: ${preErr.message}`);
+            }
+        }
+
         page = await context.newPage();
         page.on('close', () => {
             console.warn(`⚠️ [系统] 当前页面已关闭，关闭前最后 URL: ${page.url()}`);
@@ -751,7 +779,8 @@ async function run() {
             proxy: proxyConfig?.server || CONFIG.proxy,
             grokAccount: platform === 'grok' ? loginInfo : null,
             grokCheckout: platform === 'grok' ? checkoutResult : null,
-            ownerKey: process.env.JOB_KEY || `${cdkCode || 'job'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            ownerKey,
+            prewarmedPayment,
             onPaymentState: async (state, message) => {
                 console.log(`PAYMENT_STATE:${state}${message ? `:${message}` : ''}`);
             }
@@ -842,6 +871,12 @@ async function run() {
         // 用 exitCode 而非 process.exit()，确保下方 finally 能完整执行（录像需 context 关闭后才落盘）
         process.exitCode = 1;
     } finally {
+        if (prewarmedPayment?.card?.id && !prewarmedPayment.consumed) {
+            try {
+                await store.releaseCard(prewarmedPayment.card.id);
+                console.log(`[协议预热] 任务未进入支付流程，已安全释放预留卡片 #${prewarmedPayment.card.id}`);
+            } catch (_) { }
+        }
         commerceObserver?.dispose();
         console.log("👋 [系统] 流程结束，正在关闭浏览器...");
         // 先关闭 context 以 flush 录像并取回路径，再关浏览器

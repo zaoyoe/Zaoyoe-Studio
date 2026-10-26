@@ -4,6 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 const {
     createStripePaymentMethod,
     createStripeConfirmationToken,
+    prewarmStripeConfirmationToken,
     executeStripeProtocolPayment
 } = require('../stripe-protocol-payment');
 
@@ -33,6 +34,30 @@ describe('Stripe pure protocol payment integration', () => {
         expect(result.declined).toBe(true);
         expect(result.canRetryCard).toBe(true);
         expect(result.error).toContain('Your card number is incorrect');
+        expect(result.protocolDirect).toBe(true);
+    });
+
+    it('consumes prewarmed Stripe tokens directly and proceeds with parallel ChatGPT risk track', async () => {
+        const card = { number: '4000000000008043', expiry: '12/28', cvc: '123' };
+        const billing = { name: 'Sarah Smith', country: 'US', state: 'Oregon', city: 'Hillsboro', line1: '150 E Main St', postal_code: '97123' };
+        const prewarmed = Promise.resolve({
+            ok: true,
+            pmId: 'pm_prewarmed_123456789',
+            ctoken: 'ctoken_prewarmed_123456789'
+        });
+
+        const result = await executeStripeProtocolPayment({
+            card,
+            billing,
+            sessionId: 'oaics_prewarm_test',
+            accessToken: 'test_token',
+            currency: 'PHP',
+            prewarmedTokens: prewarmed
+        });
+
+        // Test token triggers terminal decline on ChatGPT test confirmation
+        expect(result.success).toBe(false);
+        expect(result.declined).toBe(true);
         expect(result.protocolDirect).toBe(true);
     });
 });
