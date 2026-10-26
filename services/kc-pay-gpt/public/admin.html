@@ -3558,6 +3558,10 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                                     <span>Plus</span>
                                     <i data-lucide="check" class="item-check"></i>
                                 </button>
+                                <button type="button" class="custom-dropdown-item" data-value="team" onclick="selectCdkPlanType('team', 'ChatGPT Team')">
+                                    <span>ChatGPT Team</span>
+                                    <i data-lucide="check" class="item-check"></i>
+                                </button>
                                 <button type="button" class="custom-dropdown-item" data-value="pro_100" onclick="selectCdkPlanType('pro_100', 'PRO 100')">
                                     <span>PRO 100</span>
                                     <i data-lucide="check" class="item-check"></i>
@@ -3658,6 +3662,10 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                                     <span>Plus</span>
                                     <i data-lucide="check" class="item-check"></i>
                                 </button>
+                                <button type="button" class="custom-dropdown-item" data-value="team" onclick="selectCdkImportPlanType('team', 'ChatGPT Team')">
+                                    <span>ChatGPT Team</span>
+                                    <i data-lucide="check" class="item-check"></i>
+                                </button>
                                 <button type="button" class="custom-dropdown-item" data-value="pro_100" onclick="selectCdkImportPlanType('pro_100', 'PRO 100')">
                                     <span>PRO 100</span>
                                     <i data-lucide="check" class="item-check"></i>
@@ -3729,6 +3737,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                             <button class="filter-option active" onclick="selectCdkPlanTypeFilter('all', '全部套餐')">全部套餐</button>
                             <button class="filter-option" onclick="selectCdkPlanTypeFilter('go', 'ChatGPT Go')">ChatGPT Go</button>
                             <button class="filter-option" onclick="selectCdkPlanTypeFilter('plus', 'Plus')">Plus</button>
+                            <button class="filter-option" onclick="selectCdkPlanTypeFilter('team', 'ChatGPT Team')">ChatGPT Team</button>
                             <button class="filter-option" onclick="selectCdkPlanTypeFilter('pro_100', 'PRO 100')">PRO 100</button>
                             <button class="filter-option" onclick="selectCdkPlanTypeFilter('pro_200', 'PRO 200')">PRO 200</button>
                             <button class="filter-option" onclick="selectCdkPlanTypeFilter('pro_500', 'PRO 500')">PRO 500</button>
@@ -4000,6 +4009,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                             <optgroup label="ChatGPT">
                                 <option value="go">ChatGPT Go</option>
                                 <option value="plus">Plus</option>
+                                <option value="team">ChatGPT Team</option>
                                 <option value="pro_100">PRO 100</option>
                                 <option value="pro_200">PRO 200</option>
                                 <option value="pro_500">PRO 500</option>
@@ -7332,6 +7342,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const planTypeLabel = {
                     go: 'ChatGPT Go',
                     plus: 'Plus',
+                    team: 'ChatGPT Team',
                     pro_100: 'PRO 100',
                     pro_200: 'PRO 200',
                     pro_500: 'PRO 500',
@@ -7350,6 +7361,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const planTypeColor = {
                     go: '#059669',
                     plus: '#2563eb',
+                    team: '#10b981',
                     pro_100: '#8b5cf6',
                     pro_200: '#ec4899',
                     pro_500: '#f59e0b',
@@ -7377,6 +7389,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const planTypeBg = {
                     go: 'rgba(5, 150, 105, 0.12)',
                     plus: 'rgba(37, 99, 235, 0.12)',
+                    team: 'rgba(16, 185, 129, 0.12)',
                     pro_100: 'rgba(139, 92, 246, 0.12)',
                     pro_200: 'rgba(236, 72, 153, 0.12)',
                     pro_500: 'rgba(245, 158, 11, 0.12)',
@@ -8054,6 +8067,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             chatgpt: [
                 { value: 'go', label: 'ChatGPT Go' },
                 { value: 'plus', label: 'Plus' },
+                { value: 'team', label: 'ChatGPT Team' },
                 { value: 'pro_100', label: 'PRO 100' },
                 { value: 'pro_200', label: 'PRO 200' },
                 { value: 'pro_500', label: 'PRO 500' }
@@ -9232,6 +9246,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             const planLabels = {
                 go: 'ChatGPT Go',
                 plus: 'Plus',
+                team: 'ChatGPT Team',
                 pro_100: 'PRO 100',
                 pro_200: 'PRO 200',
                 pro_500: 'PRO 500',
