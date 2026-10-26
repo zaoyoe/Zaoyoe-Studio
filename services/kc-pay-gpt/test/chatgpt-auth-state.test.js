@@ -227,7 +227,37 @@ describe('subscription eligibility and active subscription protection', () => {
         }));
         await page.goto('https://chatgpt.com/');
         const result = await assertChatGptAccountEligible(page, 'token');
-        expect(result.isFree).toBe(true);
+        expect(result.isActivelySubscribed).toBe(false);
         expect(result.hasActive).toBe(false);
+    });
+
+    it('allows an account with an expired past subscription to proceed to recharge', async () => {
+        const { context } = await fixture();
+        const page = await context.newPage();
+        await page.route('**/backend-api/accounts/check/v4*', route => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                accounts: {
+                    default: {
+                        account: { account_id: 'user-expired-pro', plan_type: 'free' },
+                        entitlement: {
+                            subscription_plan: 'chatgptpro',
+                            has_active_subscription: false,
+                            expires_at: '2026-05-05T20:03:44+00:00'
+                        },
+                        last_active_subscription: {
+                            will_renew: false,
+                            expires_at: '2026-05-05T20:03:44+00:00'
+                        }
+                    }
+                }
+            })
+        }));
+        await page.goto('https://chatgpt.com/');
+        const result = await assertChatGptAccountEligible(page, 'token');
+        expect(result.isActivelySubscribed).toBe(false);
+        expect(result.hasActive).toBe(false);
+        expect(result.isExpired).toBe(true);
     });
 });

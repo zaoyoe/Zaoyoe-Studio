@@ -107,18 +107,24 @@ async function checkChatGptSubscriptionStatus(page, accessToken, options = {}) {
                 const entry = accounts.default || Object.values(accounts)[0] || {};
                 const account = entry.account || {};
                 const entitlement = entry.entitlement || {};
+                const lastActive = entry.last_active_subscription || {};
                 const hasActive = Boolean(entitlement.has_active_subscription);
                 const rawPlan = String(entitlement.subscription_plan || '').toLowerCase();
                 const planType = String(account.plan_type || '').toLowerCase();
-                const isFree = (planType === 'free' || !planType)
-                    && (rawPlan === 'chatgptfreeplan' || rawPlan === 'free' || !rawPlan)
-                    && !hasActive;
+                const expiresAt = entitlement.expires_at || lastActive.expires_at || null;
+                const isExpired = expiresAt ? (Date.parse(expiresAt) <= Date.now()) : false;
+
+                // 仅当官方明确 has_active_subscription 为 true、套餐不是 free 且未过期时，才认定为存在有效订阅
+                const isActivelySubscribed = hasActive && planType !== 'free' && !isExpired;
+
                 return {
                     status: 200,
-                    isFree,
+                    isActivelySubscribed,
                     hasActive,
                     planType,
                     rawPlan,
+                    expiresAt,
+                    isExpired,
                     accountId: account.account_id || ''
                 };
             } catch (err) {
@@ -133,20 +139,20 @@ async function checkChatGptSubscriptionStatus(page, accessToken, options = {}) {
 
     if (evalError) {
         console.warn(`[Session] 官方账号订阅核验接口评估异常: ${evalError.message}`);
-        return { isFree: true, unconfirmed: true };
+        return { isActivelySubscribed: false, unconfirmed: true };
     }
     if (result?.expired) {
         throw buildChatGptAuthError();
     }
-    return result || { isFree: true };
+    return result || { isActivelySubscribed: false };
 }
 
 async function assertChatGptAccountEligible(page, accessToken, options = {}) {
     const sub = await checkChatGptSubscriptionStatus(page, accessToken, options);
-    if (sub?.status === 200 && sub?.isFree === false) {
+    if (sub?.status === 200 && sub?.isActivelySubscribed === true) {
         const planName = (sub.planType && sub.planType !== 'free')
             ? sub.planType.toUpperCase()
-            : (sub.rawPlan && !sub.rawPlan.includes('free') ? 'Plus' : 'Plus');
+            : 'Plus';
         const error = new Error(`该账号已有有效 ${planName} 订阅，无需重复充值，请更换其他未订阅账号 [ACCOUNT_ALREADY_SUBSCRIBED]`);
         error.code = 'ACCOUNT_ALREADY_SUBSCRIBED';
         throw error;
