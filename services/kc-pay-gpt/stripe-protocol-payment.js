@@ -398,15 +398,26 @@ async function executeStripeProtocolPayment({
         };
     }
 
-    // 检查是否拒卡
-    if (confirmResult.status >= 400 || statusStr === 'failed' || piStatus === 'requires_payment_method') {
-        const errorDetail = payload.error?.message || payload.message || payload.detail || confirmResult.rawText || '上游银行拒绝交易';
-        console.warn(`[-] [协议支付] 上游返回支付未完成或拒卡: ${String(errorDetail).slice(0, 160)}`);
+    // 检查是否拒卡 / 支付未通过终态
+    const isTerminalDecline = confirmResult.status >= 400
+        || ['failed', 'expired', 'canceled', 'cancelled', 'blocked', 'rejected', 'declined', 'not_approved'].includes(statusStr)
+        || ['requires_payment_method', 'canceled', 'cancelled'].includes(piStatus)
+        || Boolean(pi.last_payment_error);
+
+    if (isTerminalDecline) {
+        let errorDetail = payload.error?.message || payload.message || payload.detail;
+        if (!errorDetail && statusStr === 'expired') {
+            errorDetail = '上游处理支付异常或会话已失效 (There was an error processing your payment / expired)';
+        }
+        if (!errorDetail) {
+            errorDetail = confirmResult.rawText || '上游银行拒绝交易';
+        }
+        console.warn(`[-] [协议支付] 上游返回支付未完成或拒卡: ${String(errorDetail).slice(0, 160)} (status=${statusStr || confirmResult.status})`);
         return {
             success: false,
             declined: true,
             canRetryCard: true,
-            error: errorDetail,
+            error: String(errorDetail),
             submitted: true,
             submissionAttempted: true,
             protocolDirect: true
