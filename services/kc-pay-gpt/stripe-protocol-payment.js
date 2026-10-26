@@ -189,6 +189,97 @@ async function confirmStripePaymentIntent({
 }
 
 /**
+ * 向 ChatGPT 同步免税账单地址与计税状态 (/backend-api/payments/checkout/taxes)
+ */
+async function syncCheckoutBillingTax({
+    page,
+    sessionId,
+    billing,
+    currency = 'PHP',
+    targetHeaders,
+    proxy = ''
+}) {
+    const billingCountry = (billing?.country || 'US').toUpperCase();
+    const taxBody = {
+        checkout_session_id: sessionId,
+        tax_id: null,
+        processor_entity: 'openai_llc',
+        currency: String(currency || 'PHP').toUpperCase(),
+        billing_country: billingCountry,
+        billing_name: billing?.name || '',
+        billing_address: {
+            line1: billing?.line1 || '',
+            city: billing?.city || '',
+            state: billing?.state || '',
+            postal_code: billing?.postal_code || '',
+            country: billingCountry
+        }
+    };
+
+    const taxHeaders = {
+        ...targetHeaders,
+        'x-openai-target-path': '/backend-api/payments/checkout/taxes',
+        'x-openai-target-route': '/backend-api/payments/checkout/taxes'
+    };
+
+    console.log(`⚡ [协议支付] 正在向 ChatGPT 同步免税账单地址 (国家=${billingCountry}, 州=${taxBody.billing_address.state || 'Oregon'}, 币种=${taxBody.currency})...`);
+
+    // 优先通过 page.evaluate 发送同源 /taxes
+    if (page && typeof page.evaluate === 'function' && !page.isClosed()) {
+        try {
+            const pageRes = await page.evaluate(async ({ url, headers, bodyObj }) => {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers,
+                    credentials: 'include',
+                    body: JSON.stringify(bodyObj)
+                });
+                const bodyText = await res.text();
+                let json = {};
+                try { json = JSON.parse(bodyText); } catch (_) {}
+                return { status: res.status, ok: res.ok, data: json, rawText: bodyText };
+            }, {
+                url: 'https://chatgpt.com/backend-api/payments/checkout/taxes',
+                headers: taxHeaders,
+                bodyObj: taxBody
+            });
+            if (pageRes && pageRes.ok) {
+                const sess = pageRes.data?.checkout_session || {};
+                const amountTotal = sess.amount_total || pageRes.data?.snapshot?.amount_total;
+                const taxAmount = sess.total_details?.amount_tax ?? 0;
+                console.log(`⚡ [协议支付] ✅ 免税地址同步成功！总金额: ${taxBody.currency} ${amountTotal ? (amountTotal / 100) : ''} (税额: ${taxAmount})`);
+                return { ok: true, data: pageRes.data, amountTotal, taxAmount };
+            }
+        } catch (evalErr) {
+            console.warn(`⚠️ [协议支付] 页面同源 /taxes 调用异常: ${evalErr.message}，尝试切入 Node 客户端...`);
+        }
+    }
+
+    // Node axios 客户端兜底
+    try {
+        const client = createHttpClient(proxy);
+        const nodeRes = await client.post('https://chatgpt.com/backend-api/payments/checkout/taxes', taxBody, {
+            headers: taxHeaders,
+            validateStatus: () => true
+        });
+        const data = typeof nodeRes.data === 'object' && nodeRes.data !== null ? nodeRes.data : {};
+        if (nodeRes.status === 200) {
+            const sess = data.checkout_session || {};
+            const amountTotal = sess.amount_total || data.snapshot?.amount_total;
+            const taxAmount = sess.total_details?.amount_tax ?? 0;
+            console.log(`⚡ [协议支付] ✅ 免税地址同步成功！总金额: ${taxBody.currency} ${amountTotal ? (amountTotal / 100) : ''} (税额: ${taxAmount})`);
+            return { ok: true, data, amountTotal, taxAmount };
+        } else {
+            console.warn(`⚠️ [协议支付] /taxes 上游返回 HTTP ${nodeRes.status}，继续推进确认`);
+        }
+    } catch (nodeErr) {
+        console.warn(`⚠️ [协议支付] /taxes 网络请求异常: ${nodeErr.message}，继续推进确认`);
+    }
+
+    return { ok: false };
+}
+
+/**
  * 发送 ChatGPT 支付确认请求（支持页面同源和 Node 网络客户端两种通道）
  */
 async function postConfirmRequest({
@@ -291,7 +382,7 @@ async function executeStripeProtocolPayment({
     }
 
     // --- 1. 创建 Stripe PaymentMethod ---
-    console.log(`⚡ [协议支付] 1/4 正在协议向 Stripe 提交卡片 (pm_)...`);
+    console.log(`⚡ [协议支付] 1/5 正在协议向 Stripe 提交卡片 (pm_)...`);
     let pmResult;
     try {
         pmResult = await createStripePaymentMethod(card, billing, { proxy, publishableKey });
@@ -330,7 +421,7 @@ async function executeStripeProtocolPayment({
     console.log(`⚡ [协议支付] ✅ Stripe 卡片预留成功: ${pmId.slice(0, 14)}...`);
 
     // --- 2. 创建 Stripe ConfirmationToken ---
-    console.log(`⚡ [协议支付] 2/4 正在生成 ConfirmationToken (ctoken_)...`);
+    console.log(`⚡ [协议支付] 2/5 正在生成 ConfirmationToken (ctoken_)...`);
     let ctokenResult;
     try {
         ctokenResult = await createStripeConfirmationToken(pmId, { proxy, publishableKey });
@@ -361,7 +452,7 @@ async function executeStripeProtocolPayment({
     console.log(`⚡ [协议支付] ✅ ConfirmationToken 就绪: ${ctoken.slice(0, 14)}...`);
 
     // --- 3. 签发 Sentinel 令牌 (flow: checkout_session_approval) ---
-    console.log(`⚡ [协议支付] 3/4 正在签发结算确认风控令牌 (Sentinel PoW)...`);
+    console.log(`⚡ [协议支付] 3/5 正在签发结算确认风控令牌 (Sentinel PoW)...`);
     let sentinelTokens = {};
     try {
         const checkoutUrl = `https://chatgpt.com/checkout/openai_llc/${sessionId}`;
@@ -376,8 +467,7 @@ async function executeStripeProtocolPayment({
         console.warn(`⚠️ [协议支付] 确认阶段 Sentinel 签发跳过: ${e.message}`);
     }
 
-    // --- 4. 提交支付确认 (默认不带 save_payment_method_for_reuse，遵循 OpenAI 上游规范) ---
-    console.log(`⚡ [协议支付] 4/4 正在向 ChatGPT 提交支付确认...`);
+    // --- 4. 同步免税账单地址与计税 (/backend-api/payments/checkout/taxes) ---
     const checkoutPageUrl = `https://chatgpt.com/checkout/openai_llc/${sessionId}`;
     const targetHeaders = {
         'Authorization': `Bearer ${accessToken}`,
@@ -390,6 +480,23 @@ async function executeStripeProtocolPayment({
         ...(sentinelTokens.sentinelToken ? { 'openai-sentinel-token': sentinelTokens.sentinelToken } : {}),
         ...(sentinelTokens.sentinelSoToken ? { 'openai-sentinel-so-token': sentinelTokens.sentinelSoToken } : {})
     };
+
+    let taxSyncResult = null;
+    try {
+        taxSyncResult = await syncCheckoutBillingTax({
+            page,
+            sessionId,
+            billing,
+            currency,
+            targetHeaders,
+            proxy
+        });
+    } catch (taxErr) {
+        console.warn(`⚠️ [协议支付] 免税地址同步非阻塞跳过: ${taxErr.message}`);
+    }
+
+    // --- 5. 提交支付确认 (默认不带 save_payment_method_for_reuse，遵循 OpenAI 上游规范) ---
+    console.log(`⚡ [协议支付] 5/5 正在向 ChatGPT 提交支付确认...`);
 
     let confirmResult = await postConfirmRequest({
         page,
