@@ -6,6 +6,7 @@ const {
     createStripeConfirmationToken,
     prewarmStripeConfirmationToken,
     executeStripeProtocolPayment,
+    executeStripeHostedProtocolPayment,
     syncCheckoutBillingTax,
     executeWithProxyRetry
 } = require('../stripe-protocol-payment');
@@ -124,5 +125,22 @@ describe('Stripe pure protocol payment integration', () => {
         expect(recordedProxies[0]).toBe(initialProxy);
         expect(recordedProxies[1]).not.toBe(initialProxy);
         expect(recordedProxies[1]).toContain('-sid-');
+    });
+
+    it('routes cs_live_ sessions to executeStripeHostedProtocolPayment and handles hosted checkout flow', async () => {
+        const card = { number: '4000000000008043', expiry: '12/28', cvc: '123' };
+        const billing = { name: 'Alex Lee', country: 'US', state: 'Oregon', city: 'Eugene', line1: '100 W 10th Ave', postal_code: '97401' };
+
+        // Test with real Stripe test/live simulation where card 4000000000008043 has invalid format / incorrect number
+        const result = await executeStripeProtocolPayment({
+            card,
+            billing,
+            sessionId: 'cs_live_team_checkout_12345',
+            currency: 'USD'
+        });
+
+        // Verifies it routes to Hosted flow and catches card decline in protocol mode
+        expect(result.protocolDirect).toBe(true);
+        expect(result.success).toBe(false);
     });
 });

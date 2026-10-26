@@ -178,7 +178,8 @@ async function executePaymentWithRetry(page, options) {
 
     let billedAmount = 0;
     let billedCurrency = currency;
-    const canTryProtocol = (platform === 'chatgpt' || !platform) && Boolean(stripeSessionId && options?.accessToken);
+    const isHostedSession = Boolean(stripeSessionId && (stripeSessionId.startsWith('cs_live_') || stripeSessionId.startsWith('cs_test_')));
+    const canTryProtocol = (platform === 'chatgpt' || !platform) && Boolean(stripeSessionId && (isHostedSession || options?.accessToken));
     const requiresCurrencyPreflight = (platform === 'chatgpt' || !options?.platform) && !canTryProtocol;
 
     if (canTryProtocol) {
@@ -347,7 +348,7 @@ async function executePaymentWithRetry(page, options) {
             let paymentResult;
             try {
                 // 2.0 极速协议通道：优先尝试 Stripe 纯协议直接开卡（跳过收银台 DOM 加载与交互延迟）
-                const canTryProtocol = (platform === 'chatgpt' || !platform) && stripeSessionId && options?.accessToken;
+                const canTryProtocol = (platform === 'chatgpt' || !platform) && stripeSessionId && (isHostedSession || options?.accessToken);
                 if (canTryProtocol) {
                     try {
                         const { executeStripeProtocolPayment } = require('./stripe-protocol-payment');
@@ -395,7 +396,10 @@ async function executePaymentWithRetry(page, options) {
 
                 if (!paymentResult) {
                     if (canTryProtocol) {
-                        const checkoutUrl = options.checkoutUrl || `https://chatgpt.com/checkout/openai_llc/${stripeSessionId}`;
+                        const defaultCheckoutUrl = isHostedSession
+                            ? `https://pay.openai.com/c/pay/${stripeSessionId}`
+                            : `https://chatgpt.com/checkout/openai_llc/${stripeSessionId}`;
+                        const checkoutUrl = options.checkoutUrl || defaultCheckoutUrl;
                         progress(`⚡ [协议回退] 唤醒浏览器收银台: ${checkoutUrl}`);
                         if (page && typeof page.goto === 'function') {
                             const curUrl = page.url ? page.url() : '';
