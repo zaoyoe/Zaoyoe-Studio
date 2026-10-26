@@ -218,15 +218,20 @@ describe('real worker entry uses restored platform modules without network or pa
             expect(h.methods.bootstrapClaudeSession).toHaveBeenCalledWith(expect.anything(), fixture.credential, { planType: fixture.planType });
             expect(h.methods.installChatGptSession).not.toHaveBeenCalled(); expect(h.methods.openGrokCheckout).not.toHaveBeenCalled();
         } else {
-            expect(h.methods.openApiCheckout).not.toHaveBeenCalled();
-            expect(h.methods.openPricingCheckout).toHaveBeenCalledOnce();
+            expect(h.methods.openApiCheckout).toHaveBeenCalledOnce();
             expect(h.methods.bootstrapGrokSession).not.toHaveBeenCalled();
             expect(h.methods.installChatGptSession.mock.calls[0][1]).toBe(fixture.credential);
         }
     });
-    it.each(['api', 'auto', 'hybrid'])('keeps real recharge on UI Checkout when CHECKOUT_MODE=%s', async checkoutMode => {
+    it.each(['api', 'auto', 'hybrid'])('falls back to UI Checkout when API checkout fails in CHECKOUT_MODE=%s', async checkoutMode => {
         const h = await workerHarness(fixtures[2], { checkoutMode,
-            apiError: Object.assign(new Error('fixture API should not be called'), { code: 'CHECKOUT_HTTP_ERROR' }) });
+            apiError: Object.assign(new Error('fixture API error for fallback'), { code: 'CHECKOUT_HTTP_ERROR' }) });
+        expect(h.methods.openApiCheckout).toHaveBeenCalledOnce();
+        expect(h.methods.openPricingCheckout).toHaveBeenCalledOnce();
+        expect(h.methods.executePaymentWithRetry).toHaveBeenCalledOnce();
+    });
+    it('keeps real recharge directly on UI Checkout when CHECKOUT_MODE=ui', async () => {
+        const h = await workerHarness(fixtures[2], { checkoutMode: 'ui' });
         expect(h.methods.openApiCheckout).not.toHaveBeenCalled();
         expect(h.methods.openPricingCheckout).toHaveBeenCalledOnce();
         expect(h.methods.executePaymentWithRetry).toHaveBeenCalledOnce();

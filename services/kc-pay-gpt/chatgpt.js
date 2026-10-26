@@ -196,14 +196,26 @@ class ChatGPTService {
      * @param {string} [planNameOverride] - 可选，覆盖默认 plan_name
      * @returns {Promise<{ sessionId: string|null, checkoutUrl: string|null, error?: string }>}
      */
-    async createCheckoutSession(planType, country, currency, planNameOverride) {
+    async createCheckoutSession(planType, country, currency, planNameOverride, options = {}) {
         try {
             const planName = String(planNameOverride || store.resolvePlanName(planType)).trim();
             const payload = buildCheckoutPayload(planName, country, currency);
             console.log(`[ChatGPT] 创建 Checkout Session: plan_name=${planName}, country=${country}, currency=${currency}, checkout_ui_mode=${payload.checkout_ui_mode}`);
 
+            const requestHeaders = {
+                ...this.headers,
+                'Referer': 'https://chatgpt.com/',
+                'Origin': 'https://chatgpt.com',
+                'x-openai-target-path': '/backend-api/payments/checkout',
+                'x-openai-target-route': '/backend-api/payments/checkout',
+                ...(options.headers || {})
+            };
+            if (options.userAgent) {
+                requestHeaders['User-Agent'] = options.userAgent;
+            }
+
             const response = await this.request.post("https://chatgpt.com/backend-api/payments/checkout", {
-                headers: this.headers,
+                headers: requestHeaders,
                 data: payload
             });
 
@@ -413,7 +425,7 @@ async function assertCheckoutPageReady(page) {
 /**
  * 通过 API 注入 billing_details 创建 Checkout，并打开 chatgpt.com/checkout
  */
-async function openApiCheckout(page, { accessToken, planType, country, currency, planNameOverride, verifyPage = true }) {
+async function openApiCheckout(page, { accessToken, planType, country, currency, planNameOverride, verifyPage = true, proxy } = {}) {
     const { assertChatGptLoggedIn } = require('./session-auth');
     const token = String(accessToken || '').trim();
     if (!token) {
@@ -424,8 +436,46 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
     const billingCurrency = String(currency || getRegionConfig(region)?.currency || 'PHP').toUpperCase();
     console.log(`🧭 [步骤] 正在通过 API 创建 Checkout (country=${region}, currency=${billingCurrency}, plan=${planType})...`);
 
+    // 1. 尝试从浏览器上下文中提取 UA 和 oai-did
+    let userAgent = '';
+    let didCookie = '';
+    try {
+        if (page && typeof page.evaluate === 'function') {
+            userAgent = await page.evaluate(() => navigator.userAgent).catch(() => '');
+            const cookies = await page.context().cookies('https://chatgpt.com').catch(() => []);
+            didCookie = cookies.find((c) => c.name === 'oai-did')?.value || '';
+        }
+    } catch (_) {}
+
+    // 2. 铸造 OpenAI-Sentinel 风控挑战令牌 (PoW + SO 传感器指纹)
+    const extraHeaders = {};
+    const { mintSentinelToken } = require('./sentinel/sentinel-client');
+    try {
+        console.log('⚡ [Sentinel] 正在为 Checkout API 签发风控令牌 (PoW)...');
+        const sentinel = await mintSentinelToken({
+            flow: 'chatgpt_checkout',
+            deviceId: didCookie,
+            userAgent: userAgent || undefined,
+            proxy: proxy || '',
+            pageUrl: (page && typeof page.url === 'function' ? page.url() : '') || 'https://chatgpt.com/',
+            timeoutMs: 15000
+        });
+        if (sentinel.sentinelToken) {
+            extraHeaders['openai-sentinel-token'] = sentinel.sentinelToken;
+        }
+        if (sentinel.sentinelSoToken) {
+            extraHeaders['openai-sentinel-so-token'] = sentinel.sentinelSoToken;
+        }
+        console.log('⚡ [Sentinel] ✅ 风控令牌签发成功，已注入 Checkout 请求头');
+    } catch (sentinelErr) {
+        console.warn('⚠️ [Sentinel] 风控令牌签发跳过/异常 (尝试原生发包):', sentinelErr.message);
+    }
+
     const gpt = new ChatGPTService(page.context().request, token);
-    const checkout = await gpt.createCheckoutSession(planType, region, billingCurrency, planNameOverride);
+    const checkout = await gpt.createCheckoutSession(planType, region, billingCurrency, planNameOverride, {
+        headers: extraHeaders,
+        userAgent
+    });
     if (!checkout.checkoutUrl) {
         if (isBillingCountryMismatchError(checkout.error)) {
             throw new Error(buildBillingCountryMismatchError({ country: region, currency: billingCurrency }));

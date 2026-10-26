@@ -663,7 +663,8 @@ async function run() {
                         country: billingCountry,
                         currency: billingCurrency,
                         planNameOverride,
-                        verifyPage: !debugOnly || diagnosticMode === 'checkout'
+                        verifyPage: !debugOnly || diagnosticMode === 'checkout',
+                        proxy: proxyConfig?.server || CONFIG.proxy
                     });
                     checkoutOpened = true;
                     console.log('⚡ [极速通道] ✅ API 直达收银台成功，已跳过 UI 定价页！');
