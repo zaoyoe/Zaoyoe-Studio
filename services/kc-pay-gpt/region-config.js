@@ -29,7 +29,11 @@ const PLATFORM_CONFIG = {
         plans: {
             go: { label: 'ChatGPT Go', amount: 5.00 },
             plus: { label: 'ChatGPT Plus', amount: 20.00 },
-            team: { label: 'ChatGPT Team', amount: 30.00 },
+            team: { label: 'ChatGPT Team', amount: 60.00 },
+            team_2: { label: 'ChatGPT Team (2席)', amount: 60.00 },
+            team_5: { label: 'ChatGPT Team (5席)', amount: 150.00 },
+            team_10: { label: 'ChatGPT Team (10席)', amount: 300.00 },
+            team_20: { label: 'ChatGPT Team (20席)', amount: 600.00 },
             pro_100: { label: 'ChatGPT PRO 100', amount: 100.00 },
             pro_200: { label: 'ChatGPT PRO 200', amount: 200.00 },
             pro_500: { label: 'ChatGPT PRO 500', amount: 500.00 }
@@ -78,6 +82,10 @@ const PLAN_TYPE_LABELS = {
     plus: 'ChatGPT Plus',
     team: 'ChatGPT Team',
     chatgpt_team: 'ChatGPT Team',
+    team_2: 'ChatGPT Team (2席)',
+    team_5: 'ChatGPT Team (5席)',
+    team_10: 'ChatGPT Team (10席)',
+    team_20: 'ChatGPT Team (20席)',
     pro_100: 'ChatGPT PRO 100',
     pro_200: 'ChatGPT PRO 200',
     pro_500: 'ChatGPT PRO 500',
@@ -147,6 +155,15 @@ function getRegionBrowserProfile(regionCode) {
 }
 
 function getPlanTypeLabel(planType) {
+    const key = String(planType || '').toLowerCase();
+    if (PLAN_TYPE_LABELS[key]) {
+        return PLAN_TYPE_LABELS[key];
+    }
+    const teamMatch = key.match(/^team_?(\d+)$/i);
+    if (teamMatch) {
+        const seats = parseInt(teamMatch[1], 10);
+        return `ChatGPT Team (${seats}席)`;
+    }
     return PLAN_TYPE_LABELS[planType] || String(planType || '未知套餐');
 }
 

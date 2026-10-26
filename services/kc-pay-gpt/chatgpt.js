@@ -12,9 +12,21 @@ function isTeamPlan(planName, planType) {
     return raw.includes('team');
 }
 
+function parseTeamSeatsFromPlan(planType, explicitSeats) {
+    if (explicitSeats != null && !isNaN(parseInt(explicitSeats, 10))) {
+        return Math.max(2, Math.min(999, parseInt(explicitSeats, 10)));
+    }
+    const raw = String(planType || '').trim().toLowerCase();
+    const m = raw.match(/^team_?(\d+)$/i);
+    if (m && m[1]) {
+        return Math.max(2, Math.min(999, parseInt(m[1], 10) || 2));
+    }
+    return 2;
+}
+
 function buildCheckoutPayload(planName, country, currency, options = {}) {
     if (isTeamPlan(planName, options.planType)) {
-        const seats = Math.max(2, Math.min(999, parseInt(options.seatQuantity || options.seats || 5, 10) || 5));
+        const seats = parseTeamSeatsFromPlan(options.planType, options.seatQuantity ?? options.seats);
         const interval = String(options.priceInterval || 'month').toLowerCase() === 'year' ? 'year' : 'month';
         const workspaceName = String(options.workspaceName || 'Team Workspace').slice(0, 80);
         const payload = {

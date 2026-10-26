@@ -41,6 +41,43 @@ describe('ChatGPT Team & Promo Campaign Protocol Integration', () => {
             const { getPlanTypeLabel } = require('../region-config');
             expect(getPlanTypeLabel('team')).toBe('ChatGPT Team');
             expect(getPlanTypeLabel('chatgpt_team')).toBe('ChatGPT Team');
+            expect(getPlanTypeLabel('team_2')).toBe('ChatGPT Team (2席)');
+            expect(getPlanTypeLabel('team_5')).toBe('ChatGPT Team (5席)');
+            expect(getPlanTypeLabel('team_10')).toBe('ChatGPT Team (10席)');
+            expect(getPlanTypeLabel('team_20')).toBe('ChatGPT Team (20席)');
+            expect(getPlanTypeLabel('team_8')).toBe('ChatGPT Team (8席)');
+        });
+
+        it('resolves team seat sub-options and custom seats in catalog and validation', () => {
+            const { parseTeamSeats } = require('../cdk-plan-catalog');
+            const { PLATFORM_CONFIG } = require('../region-config');
+
+            expect(parseTeamSeats('team')).toBe(2);
+            expect(parseTeamSeats('team_2')).toBe(2);
+            expect(parseTeamSeats('team_5')).toBe(5);
+            expect(parseTeamSeats('team_10')).toBe(10);
+            expect(parseTeamSeats('team_20')).toBe(20);
+            expect(parseTeamSeats('team_8')).toBe(8);
+            expect(parseTeamSeats('plus')).toBeNull();
+
+            // Preset pricing verification ($30/seat)
+            expect(PLATFORM_CONFIG.chatgpt.plans.team_2.amount).toBe(60.00);
+            expect(PLATFORM_CONFIG.chatgpt.plans.team_5.amount).toBe(150.00);
+            expect(PLATFORM_CONFIG.chatgpt.plans.team_10.amount).toBe(300.00);
+            expect(PLATFORM_CONFIG.chatgpt.plans.team_20.amount).toBe(600.00);
+
+            // Validation with seat quantity mapping
+            const v2 = validateCdkPlan('team_2', 'chatgpt');
+            expect(v2.planName).toBe('chatgptteamplan');
+            expect(v2.seatQuantity).toBe(2);
+
+            const v5 = validateCdkPlan('team_5', 'chatgpt');
+            expect(v5.planName).toBe('chatgptteamplan');
+            expect(v5.seatQuantity).toBe(5);
+
+            const vCustom = validateCdkPlan('team_15', 'chatgpt');
+            expect(vCustom.planName).toBe('chatgptteamplan');
+            expect(vCustom.seatQuantity).toBe(15);
         });
     });
 
@@ -49,6 +86,29 @@ describe('ChatGPT Team & Promo Campaign Protocol Integration', () => {
             // Test through ChatGPTService constructor & createHostedCheckoutLink or exported functions
             const service = new chatgpt.ChatGPTService(null, 'test_token');
             expect(service).toBeDefined();
+        });
+
+        it('builds Team checkout payload with seats dynamically parsed from planType', () => {
+            const p2 = chatgpt.buildCheckoutPayload('chatgptteamplan', 'US', 'USD', { planType: 'team_2' });
+            expect(p2.team_plan_data.seat_quantity).toBe(2);
+
+            const p5 = chatgpt.buildCheckoutPayload('chatgptteamplan', 'US', 'USD', { planType: 'team_5' });
+            expect(p5.team_plan_data.seat_quantity).toBe(5);
+
+            const p10 = chatgpt.buildCheckoutPayload('chatgptteamplan', 'US', 'USD', { planType: 'team_10' });
+            expect(p10.team_plan_data.seat_quantity).toBe(10);
+
+            const p20 = chatgpt.buildCheckoutPayload('chatgptteamplan', 'US', 'USD', { planType: 'team_20' });
+            expect(p20.team_plan_data.seat_quantity).toBe(20);
+
+            const pCustom = chatgpt.buildCheckoutPayload('chatgptteamplan', 'US', 'USD', { planType: 'team_8' });
+            expect(pCustom.team_plan_data.seat_quantity).toBe(8);
+
+            const pDefault = chatgpt.buildCheckoutPayload('chatgptteamplan', 'US', 'USD', { planType: 'team' });
+            expect(pDefault.team_plan_data.seat_quantity).toBe(2);
+
+            const pExplicitOverride = chatgpt.buildCheckoutPayload('chatgptteamplan', 'US', 'USD', { planType: 'team_2', seatQuantity: 12 });
+            expect(pExplicitOverride.team_plan_data.seat_quantity).toBe(12);
         });
 
         it('builds Team checkout payload with team_workspace_purchase_modal and redirect mode', async () => {
