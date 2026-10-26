@@ -123,6 +123,72 @@ async function createStripeConfirmationToken(pmId, options = {}) {
 }
 
 /**
+ * 向 Stripe 提交 PaymentIntent 真实扣款确认
+ */
+async function confirmStripePaymentIntent({
+    intentId,
+    clientSecret,
+    pmId,
+    ctoken,
+    sessionId,
+    publishableKey = DEFAULT_OPENAI_PK,
+    proxy = ''
+}) {
+    const client = createHttpClient(proxy);
+    const returnUrl = `https://chatgpt.com/checkout/verify?stripe_session_id=${sessionId}`;
+
+    // Stripe 订阅扣款通常要求 setup_future_usage: 'off_session' 的 confirmation_token
+    let intentCtoken = ctoken;
+    if (pmId) {
+        try {
+            const setupTokenRes = await createStripeConfirmationToken(pmId, {
+                publishableKey,
+                proxy,
+                setupFutureUsage: 'off_session'
+            });
+            if (setupTokenRes.ok && setupTokenRes.ctoken) {
+                intentCtoken = setupTokenRes.ctoken;
+            }
+        } catch (_) {}
+    }
+
+    const kind = intentId.startsWith('seti_') ? 'setup_intents' : 'payment_intents';
+    const body = {
+        'key': publishableKey,
+        'client_secret': clientSecret,
+        '_stripe_version': V_HOSTED,
+        'client_attribution_metadata[merchant_integration_source]': 'l1'
+    };
+    if (intentCtoken) {
+        body['confirmation_token'] = intentCtoken;
+    }
+    if (returnUrl) {
+        body['return_url'] = returnUrl;
+    }
+
+    const headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': 'https://js.stripe.com',
+        'Referer': 'https://js.stripe.com/',
+        'Accept': 'application/json'
+    };
+
+    console.log(`⚡ [协议支付] 5/5 正在向 Stripe 提交最终扣款确认 (${intentId.slice(0, 14)}...)...`);
+    const res = await client.post(
+        `https://api.stripe.com/v1/${kind}/${intentId}/confirm`,
+        querystring.stringify(body),
+        { headers, validateStatus: () => true }
+    );
+    const data = typeof res.data === 'object' && res.data !== null ? res.data : {};
+    return {
+        status: res.status,
+        ok: res.status === 200,
+        data,
+        rawText: typeof res.data === 'string' ? res.data : JSON.stringify(data)
+    };
+}
+
+/**
  * 发送 ChatGPT 支付确认请求（支持页面同源和 Node 网络客户端两种通道）
  */
 async function postConfirmRequest({
@@ -371,34 +437,7 @@ async function executeStripeProtocolPayment({
     const pi = payload.payment_intent || {};
     const piStatus = String(pi.status || '').toLowerCase();
 
-    // 检查是否成功
-    if (confirmResult.ok && (statusStr === 'success' || piStatus === 'succeeded')) {
-        console.log(`⚡ [协议支付] 🏆 恭喜！纯协议充值全链路秒级开通成功！(status=${statusStr}, pi=${pi.id || 'none'})`);
-        return {
-            success: true,
-            status: statusStr,
-            paymentState: 'paid',
-            submitted: true,
-            submissionAttempted: true,
-            protocolDirect: true
-        };
-    }
-
-    // 检查是否需要 3DS / 人机交互
-    if (piStatus === 'requires_action' || payload.client_secret || payload.type === 'challenge') {
-        console.log(`⚡ [协议支付] 检测到该卡触发了银行 3DS 强安全验证或人机核验，正在平滑交由 UI 浏览器打开处理...`);
-        return {
-            success: false,
-            declined: false,
-            fallbackToUi: true,
-            requiresAction: true,
-            reason: '3ds_required',
-            error: '银行卡需要 3DS 验证，平滑切入收银台 UI',
-            protocolDirect: true
-        };
-    }
-
-    // 检查是否拒卡 / 支付未通过终态
+    // 检查是否在 ChatGPT 侧直接判定为拒卡 / 支付未通过终态
     const isTerminalDecline = confirmResult.status >= 400
         || ['failed', 'expired', 'canceled', 'cancelled', 'blocked', 'rejected', 'declined', 'not_approved'].includes(statusStr)
         || ['requires_payment_method', 'canceled', 'cancelled'].includes(piStatus)
@@ -420,6 +459,115 @@ async function executeStripeProtocolPayment({
             error: String(errorDetail),
             submitted: true,
             submissionAttempted: true,
+            protocolDirect: true
+        };
+    }
+
+    // 提取 PaymentIntent id 和 client_secret
+    let clientSecret = String(payload.client_secret || pi.client_secret || '').trim();
+    let intentId = String(pi.id || '').trim();
+    if (!intentId && clientSecret.includes('_secret_')) {
+        intentId = clientSecret.split('_secret_')[0];
+    }
+
+    // 若 ChatGPT 确认通过并返回了 client_secret / PaymentIntent，
+    // 注意：ChatGPT 侧的 status=success 仅代表「结账意图已受理」，
+    // 必须向 Stripe 官方提交实际扣款确认 (payment_intents/:id/confirm) 才能真正执行扣款并出票！
+    if (intentId && clientSecret && piStatus !== 'succeeded') {
+        const stripeConfirm = await confirmStripePaymentIntent({
+            intentId,
+            clientSecret,
+            pmId,
+            ctoken,
+            sessionId,
+            publishableKey,
+            proxy
+        });
+
+        if (!stripeConfirm.ok || stripeConfirm.status >= 400) {
+            const err = stripeConfirm.data?.error || {};
+            const code = err.code || 'card_declined';
+            const declineCode = err.decline_code || '';
+            const msg = err.message || `Stripe 扣款拒绝 (HTTP ${stripeConfirm.status})`;
+            console.warn(`[-] [协议支付] Stripe 真实扣款未通过: ${msg} (code=${code}, decline=${declineCode})`);
+            return {
+                success: false,
+                declined: true,
+                canRetryCard: true,
+                error: msg,
+                code,
+                decline_code: declineCode,
+                submitted: true,
+                submissionAttempted: true,
+                protocolDirect: true
+            };
+        }
+
+        const stripeData = stripeConfirm.data || {};
+        const finalStatus = String(stripeData.status || '').toLowerCase();
+        if (finalStatus === 'succeeded') {
+            console.log(`⚡ [协议支付] 🏆 恭喜！Stripe 真实扣款成功，订阅已正式生效！(pi=${intentId})`);
+            return {
+                success: true,
+                status: 'succeeded',
+                paymentState: 'paid',
+                submitted: true,
+                submissionAttempted: true,
+                protocolDirect: true
+            };
+        }
+
+        if (finalStatus === 'requires_action') {
+            console.log(`⚡ [协议支付] Stripe 扣款要求银行 3DS 强安全验证，平滑切入收银台 UI...`);
+            return {
+                success: false,
+                declined: false,
+                fallbackToUi: true,
+                requiresAction: true,
+                reason: '3ds_required',
+                error: '银行卡需要 3DS 验证，平滑切入收银台 UI',
+                protocolDirect: true
+            };
+        }
+
+        if (['requires_payment_method', 'canceled', 'cancelled', 'failed'].includes(finalStatus)) {
+            const lastErr = stripeData.last_payment_error?.message || '银行拒绝扣款交易';
+            console.warn(`[-] [协议支付] Stripe 扣款状态拒付: ${lastErr} (status=${finalStatus})`);
+            return {
+                success: false,
+                declined: true,
+                canRetryCard: true,
+                error: lastErr,
+                submitted: true,
+                submissionAttempted: true,
+                protocolDirect: true
+            };
+        }
+    }
+
+    // 检查是否已经无需二次确认即成功
+    if (confirmResult.ok && (statusStr === 'success' || piStatus === 'succeeded') && !clientSecret) {
+        console.log(`⚡ [协议支付] 🏆 恭喜！纯协议充值全链路秒级开通成功！(status=${statusStr}, pi=${pi.id || 'none'})`);
+        return {
+            success: true,
+            status: statusStr,
+            paymentState: 'paid',
+            submitted: true,
+            submissionAttempted: true,
+            protocolDirect: true
+        };
+    }
+
+    // 检查是否需要 3DS / 人机交互
+    if (piStatus === 'requires_action' || payload.type === 'challenge') {
+        console.log(`⚡ [协议支付] 检测到该卡触发了银行 3DS 强安全验证或人机核验，正在平滑交由 UI 浏览器打开处理...`);
+        return {
+            success: false,
+            declined: false,
+            fallbackToUi: true,
+            requiresAction: true,
+            reason: '3ds_required',
+            error: '银行卡需要 3DS 验证，平滑切入收银台 UI',
             protocolDirect: true
         };
     }
