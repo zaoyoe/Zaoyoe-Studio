@@ -5,7 +5,9 @@ const {
     createStripePaymentMethod,
     createStripeConfirmationToken,
     prewarmStripeConfirmationToken,
-    executeStripeProtocolPayment
+    executeStripeProtocolPayment,
+    syncCheckoutBillingTax,
+    executeWithProxyRetry
 } = require('../stripe-protocol-payment');
 
 describe('Stripe pure protocol payment integration', () => {
@@ -59,5 +61,68 @@ describe('Stripe pure protocol payment integration', () => {
         expect(result.success).toBe(false);
         expect(result.declined).toBe(true);
         expect(result.protocolDirect).toBe(true);
+    });
+
+    it('syncCheckoutBillingTax coordinates /taxes and /update_tax_id for Oregon tax-free billing', async () => {
+        const mockPage = {
+            isClosed: () => false,
+            evaluate: vi.fn().mockImplementation(async (fn, args) => {
+                expect(args.taxUrl).toContain('/backend-api/payments/checkout/taxes');
+                expect(args.updateTaxIdUrl).toContain('/backend-api/payments/checkout/update_tax_id');
+                expect(args.updateBodyObj).toEqual({
+                    checkout_session_id: 'oaics_tax_sync_test',
+                    tax_id_info: null
+                });
+                return {
+                    status: 200,
+                    ok: true,
+                    data: {
+                        checkout_session: {
+                            amount_total: 98214,
+                            total_details: { amount_tax: 0 }
+                        }
+                    }
+                };
+            })
+        };
+
+        const taxRes = await syncCheckoutBillingTax({
+            page: mockPage,
+            sessionId: 'oaics_tax_sync_test',
+            billing: { country: 'US', state: 'Oregon', postal_code: '97123' },
+            currency: 'PHP',
+            targetHeaders: { authorization: 'Bearer test' }
+        });
+
+        expect(mockPage.evaluate).toHaveBeenCalledTimes(1);
+        expect(taxRes.ok).toBe(true);
+        expect(taxRes.taxAmount).toBe(0);
+        expect(taxRes.amountTotal).toBe(98214);
+    });
+
+    it('executeWithProxyRetry automatically rotates proxy SID upon transient socket/TLS failure', async () => {
+        let attempts = 0;
+        const initialProxy = 'http://user-region-ph-sid-old123:pass@gateway.proxy.com:3010';
+        const recordedProxies = [];
+
+        const result = await executeWithProxyRetry(async (_client, currentProxy) => {
+            attempts++;
+            recordedProxies.push(currentProxy);
+            if (attempts === 1) {
+                const err = new Error('Client network socket disconnected before secure TLS connection was established');
+                err.code = 'ECONNRESET';
+                throw err;
+            }
+            return { ok: true, attempts, proxy: currentProxy };
+        }, {
+            proxy: initialProxy,
+            maxRetries: 3
+        });
+
+        expect(result.ok).toBe(true);
+        expect(attempts).toBe(2);
+        expect(recordedProxies[0]).toBe(initialProxy);
+        expect(recordedProxies[1]).not.toBe(initialProxy);
+        expect(recordedProxies[1]).toContain('-sid-');
     });
 });

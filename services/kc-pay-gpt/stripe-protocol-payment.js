@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const querystring = require('querystring');
 const axios = require('axios');
 const { mintSentinelToken } = require('./sentinel/sentinel-client');
+const { substituteProxySession, resetActiveProxyTunnels } = require('./playwright-proxy');
 
 const RUNTIME_HASH = '5412f474d5';
 const V_HOSTED = '2020-08-27;custom_checkout_beta=v1';
@@ -32,6 +33,55 @@ function createHttpClient(proxy) {
 }
 
 /**
+ * 带有代理瞬态故障自动轮换 SID 重试的 HTTP 请求执行器
+ * 针对代理出口 SSL 断开、EOF、TLS 握手失败、ECONNRESET 等瞬态故障，
+ * 原地更换代理 SID 获取全新可用住宅出口节点重试，避免整单挂掉。
+ */
+async function executeWithProxyRetry(requestFn, options = {}) {
+    const maxRetries = options.maxRetries ?? 3;
+    let currentProxy = options.proxy;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const client = createHttpClient(currentProxy);
+            return await requestFn(client, currentProxy);
+        } catch (err) {
+            lastError = err;
+            const errMsg = String(err.message || '');
+            const errCode = String(err.code || '');
+
+            const isTransientProxyError = (
+                errCode === 'ECONNRESET' ||
+                errCode === 'ETIMEDOUT' ||
+                errCode === 'ECONNREFUSED' ||
+                errCode === 'EPIPE' ||
+                errMsg.includes('socket hang up') ||
+                errMsg.includes('UNEXPECTED_EOF') ||
+                errMsg.includes('Client network socket disconnected') ||
+                errMsg.includes('TLS') ||
+                errMsg.includes('handshake')
+            );
+
+            if (!isTransientProxyError || attempt >= maxRetries || !currentProxy) {
+                throw err;
+            }
+
+            const nextProxy = substituteProxySession(currentProxy);
+            if (nextProxy && nextProxy !== currentProxy) {
+                console.warn(`🔄 [协议网络] 代理出现瞬态握手故障 (${errMsg || errCode})，正在就地轮换出口 SID 重试 (尝试 ${attempt + 1}/${maxRetries})...`);
+                currentProxy = nextProxy;
+                try { resetActiveProxyTunnels(); } catch (_) {}
+            } else {
+                console.warn(`🔄 [协议网络] 代理出现瞬态网络异常 (${errMsg || errCode})，准备重试 (尝试 ${attempt + 1}/${maxRetries})...`);
+                await new Promise(r => setTimeout(r, 600));
+            }
+        }
+    }
+    throw lastError;
+}
+
+/**
  * 格式化卡片有效期为两位月份与四位年份
  */
 function normalizeExpiry(card) {
@@ -54,7 +104,6 @@ function normalizeExpiry(card) {
 async function createStripePaymentMethod(card, billing, options = {}) {
     const pk = options.publishableKey || DEFAULT_OPENAI_PK;
     const { month, year } = normalizeExpiry(card);
-    const client = createHttpClient(options.proxy);
 
     const body = {
         'type': 'card',
@@ -89,9 +138,11 @@ async function createStripePaymentMethod(card, billing, options = {}) {
         'Accept': 'application/json'
     };
 
-    const res = await client.post('https://api.stripe.com/v1/payment_methods', querystring.stringify(body), { headers });
-    const data = res.data || {};
-    return { status: res.status, ok: res.status === 200, data, pmId: data.id || '' };
+    return await executeWithProxyRetry(async (client) => {
+        const res = await client.post('https://api.stripe.com/v1/payment_methods', querystring.stringify(body), { headers });
+        const data = res.data || {};
+        return { status: res.status, ok: res.status === 200, data, pmId: data.id || '' };
+    }, { proxy: options.proxy, maxRetries: 3 });
 }
 
 /**
@@ -99,7 +150,6 @@ async function createStripePaymentMethod(card, billing, options = {}) {
  */
 async function createStripeConfirmationToken(pmId, options = {}) {
     const pk = options.publishableKey || DEFAULT_OPENAI_PK;
-    const client = createHttpClient(options.proxy);
 
     const body = {
         'key': pk,
@@ -117,9 +167,11 @@ async function createStripeConfirmationToken(pmId, options = {}) {
         'Accept': 'application/json'
     };
 
-    const res = await client.post('https://api.stripe.com/v1/confirmation_tokens', querystring.stringify(body), { headers });
-    const data = res.data || {};
-    return { status: res.status, ok: res.status === 200, data, ctoken: data.id || '' };
+    return await executeWithProxyRetry(async (client) => {
+        const res = await client.post('https://api.stripe.com/v1/confirmation_tokens', querystring.stringify(body), { headers });
+        const data = res.data || {};
+        return { status: res.status, ok: res.status === 200, data, ctoken: data.id || '' };
+    }, { proxy: options.proxy, maxRetries: 3 });
 }
 
 /**
@@ -136,7 +188,6 @@ async function confirmStripePaymentIntent({
     amount = null,
     currency = ''
 }) {
-    const client = createHttpClient(proxy);
     const returnUrl = `https://chatgpt.com/checkout/verify?stripe_session_id=${sessionId}`;
 
     // Stripe 订阅扣款通常要求 setup_future_usage: 'off_session' 的 confirmation_token
@@ -177,11 +228,13 @@ async function confirmStripePaymentIntent({
 
     const amountSuffix = amount != null ? `, 扣款金额: ${currency || ''} ${amount}` : '';
     console.log(`⚡ [协议支付] 5/5 正在向 Stripe 提交最终扣款确认 (${intentId.slice(0, 14)}...${amountSuffix})...`);
-    const res = await client.post(
-        `https://api.stripe.com/v1/${kind}/${intentId}/confirm`,
-        querystring.stringify(body),
-        { headers, validateStatus: () => true }
-    );
+    const res = await executeWithProxyRetry(async (client) => {
+        return await client.post(
+            `https://api.stripe.com/v1/${kind}/${intentId}/confirm`,
+            querystring.stringify(body),
+            { headers, validateStatus: () => true }
+        );
+    }, { proxy, maxRetries: 3 });
     const data = typeof res.data === 'object' && res.data !== null ? res.data : {};
     return {
         status: res.status,
@@ -192,7 +245,7 @@ async function confirmStripePaymentIntent({
 }
 
 /**
- * 向 ChatGPT 同步免税账单地址与计税状态 (/backend-api/payments/checkout/taxes)
+ * 向 ChatGPT 同步免税账单地址与计税状态 (/backend-api/payments/checkout/taxes 及 /update_tax_id)
  */
 async function syncCheckoutBillingTax({
     page,
@@ -225,13 +278,24 @@ async function syncCheckoutBillingTax({
         'x-openai-target-route': '/backend-api/payments/checkout/taxes'
     };
 
+    const updateTaxIdBody = {
+        checkout_session_id: sessionId,
+        tax_id_info: null
+    };
+
+    const updateTaxIdHeaders = {
+        ...targetHeaders,
+        'x-openai-target-path': '/backend-api/payments/checkout/update_tax_id',
+        'x-openai-target-route': '/backend-api/payments/checkout/update_tax_id'
+    };
+
     console.log(`⚡ [协议支付] 正在向 ChatGPT 同步免税账单地址 (国家=${billingCountry}, 州=${taxBody.billing_address.state || 'Oregon'}, 币种=${taxBody.currency})...`);
 
-    // 优先通过 page.evaluate 发送同源 /taxes
+    // 优先通过 page.evaluate 发送同源 /taxes 与配套的 /update_tax_id
     if (page && typeof page.evaluate === 'function' && !page.isClosed()) {
         try {
-            const pageRes = await page.evaluate(async ({ url, headers, bodyObj }) => {
-                const res = await fetch(url, {
+            const pageRes = await page.evaluate(async ({ taxUrl, updateTaxIdUrl, headers, bodyObj, updateHeaders, updateBodyObj }) => {
+                const res = await fetch(taxUrl, {
                     method: 'POST',
                     headers,
                     credentials: 'include',
@@ -240,11 +304,25 @@ async function syncCheckoutBillingTax({
                 const bodyText = await res.text();
                 let json = {};
                 try { json = JSON.parse(bodyText); } catch (_) {}
+
+                // 配套清空 tax_id，确保免税州地址与税号完全解耦，不产生税务冲突
+                try {
+                    await fetch(updateTaxIdUrl, {
+                        method: 'POST',
+                        headers: updateHeaders,
+                        credentials: 'include',
+                        body: JSON.stringify(updateBodyObj)
+                    });
+                } catch (_) {}
+
                 return { status: res.status, ok: res.ok, data: json, rawText: bodyText };
             }, {
-                url: 'https://chatgpt.com/backend-api/payments/checkout/taxes',
+                taxUrl: 'https://chatgpt.com/backend-api/payments/checkout/taxes',
+                updateTaxIdUrl: 'https://chatgpt.com/backend-api/payments/checkout/update_tax_id',
                 headers: taxHeaders,
-                bodyObj: taxBody
+                bodyObj: taxBody,
+                updateHeaders: updateTaxIdHeaders,
+                updateBodyObj: updateTaxIdBody
             });
             if (pageRes && pageRes.ok) {
                 const sess = pageRes.data?.checkout_session || pageRes.data || {};
@@ -261,13 +339,23 @@ async function syncCheckoutBillingTax({
         }
     }
 
-    // Node axios 客户端兜底
+    // Node axios 客户端兜底（集成代理自动轮换重试）
     try {
-        const client = createHttpClient(proxy);
-        const nodeRes = await client.post('https://chatgpt.com/backend-api/payments/checkout/taxes', taxBody, {
-            headers: taxHeaders,
-            validateStatus: () => true
-        });
+        const nodeRes = await executeWithProxyRetry(async (client) => {
+            const res = await client.post('https://chatgpt.com/backend-api/payments/checkout/taxes', taxBody, {
+                headers: taxHeaders,
+                validateStatus: () => true
+            });
+            // 配套清空 tax_id
+            try {
+                await client.post('https://chatgpt.com/backend-api/payments/checkout/update_tax_id', updateTaxIdBody, {
+                    headers: updateTaxIdHeaders,
+                    validateStatus: () => true
+                });
+            } catch (_) {}
+            return res;
+        }, { proxy, maxRetries: 2 });
+
         const data = typeof nodeRes.data === 'object' && nodeRes.data !== null ? nodeRes.data : {};
         if (nodeRes.status === 200) {
             const sess = data.checkout_session || data || {};
@@ -333,13 +421,14 @@ async function postConfirmRequest({
         }
     }
 
-    // 若页面内调用未果，采用 Node axios 兜底
+    // 若页面内调用未果，采用 Node axios 兜底（集成代理自动轮换重试）
     try {
-        const client = createHttpClient(proxy);
-        const nodeRes = await client.post('https://chatgpt.com/backend-api/payments/checkout/confirm', confirmBody, {
-            headers: targetHeaders,
-            validateStatus: () => true
-        });
+        const nodeRes = await executeWithProxyRetry(async (client) => {
+            return await client.post('https://chatgpt.com/backend-api/payments/checkout/confirm', confirmBody, {
+                headers: targetHeaders,
+                validateStatus: () => true
+            });
+        }, { proxy, maxRetries: 2 });
         const rawText = typeof nodeRes.data === 'string' ? nodeRes.data : JSON.stringify(nodeRes.data || {});
         return {
             status: nodeRes.status,
@@ -789,5 +878,7 @@ module.exports = {
     createStripeConfirmationToken,
     prewarmStripeConfirmationToken,
     executeStripeProtocolPayment,
+    syncCheckoutBillingTax,
+    executeWithProxyRetry,
     DEFAULT_OPENAI_PK
 };
