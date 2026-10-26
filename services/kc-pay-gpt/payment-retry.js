@@ -310,16 +310,64 @@ async function executePaymentWithRetry(page, options) {
         try {
             let paymentResult;
             try {
-                paymentResult = await completeStripeCardPayment(page, cardInfo, address, {
-                    cardAttempt, holderName: billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
-                    paymentRegion: region,
-                    paymentCurrency: currency,
-                    grokCheckout: options.grokCheckout,
-                    onPaymentAttemptStarted: async () => {
-                        attemptStarted = true;
-                        await persistPaymentState('started', '正在提交银行卡支付');
+                // 2.0 极速协议通道：优先尝试 Stripe 纯协议直接开卡（跳过收银台 DOM 加载与交互延迟）
+                const canTryProtocol = (platform === 'chatgpt' || !platform) && stripeSessionId && options?.accessToken;
+                if (canTryProtocol) {
+                    try {
+                        const { executeStripeProtocolPayment } = require('./stripe-protocol-payment');
+                        const protoRes = await executeStripeProtocolPayment({
+                            page,
+                            card: cardInfo,
+                            billing: address,
+                            sessionId: stripeSessionId,
+                            accessToken: options.accessToken,
+                            currency,
+                            proxy: options.proxy || '',
+                            onPaymentAttemptStarted: async () => {
+                                attemptStarted = true;
+                                await persistPaymentState('started', '正在提交银行卡支付 (Stripe 纯协议直充)');
+                            }
+                        });
+
+                        if (protoRes.success || protoRes.declined) {
+                            paymentResult = {
+                                ...protoRes,
+                                dueAmount: billedAmount,
+                                dueCurrency: billedCurrency,
+                                holderName: address.name || billingHolderName || ''
+                            };
+                            if (protoRes.declined) {
+                                progress(`[协议支付] 卡片 ...${cardLast4} 协议核验未果或被拒: ${protoRes.error}`);
+                                if (page && typeof page.screenshot === 'function' && !page.isClosed()) {
+                                    try {
+                                        const screenshotDir = path.join(__dirname, 'debug_screenshots', 'stripe');
+                                        fs.mkdirSync(screenshotDir, { recursive: true });
+                                        const filePath = path.join(screenshotDir, `protocol_declined_${Date.now()}.png`);
+                                        await page.screenshot({ path: filePath, timeout: 5000 });
+                                        paymentResult.screenshot = filePath;
+                                    } catch (_) {}
+                                }
+                            }
+                        } else if (protoRes.fallbackToUi) {
+                            progress(`[协议支付] ${protoRes.error || '转入收银台 UI 进行后续处理'}...`);
+                        }
+                    } catch (protoErr) {
+                        console.warn('⚠️ [协议支付] 协议尝试异常，平滑转入收银台 UI:', protoErr.message);
                     }
-                });
+                }
+
+                if (!paymentResult) {
+                    paymentResult = await completeStripeCardPayment(page, cardInfo, address, {
+                        cardAttempt, holderName: billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
+                        paymentRegion: region,
+                        paymentCurrency: currency,
+                        grokCheckout: options.grokCheckout,
+                        onPaymentAttemptStarted: async () => {
+                            attemptStarted = true;
+                            await persistPaymentState('started', '正在提交银行卡支付');
+                        }
+                    });
+                }
             } catch (error) {
                 paymentResult = { success: false, error: error.message,
                     submitted: attemptStarted, submissionAttempted: attemptStarted };

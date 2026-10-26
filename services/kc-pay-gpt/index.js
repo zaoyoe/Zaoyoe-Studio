@@ -734,7 +734,7 @@ async function run() {
         console.log(`✅ [步骤] ${platform.toUpperCase()} Checkout 页面已打开，开始信用卡支付流程...`);
 
         const stripeSessionMatch = String(page.url() || '').match(/(oaics_[a-f0-9]+|cs_live_[a-zA-Z0-9]+|cs_test_[a-zA-Z0-9]+)/i);
-        const stripeSessionId = stripeSessionMatch ? stripeSessionMatch[1] : null;
+        const stripeSessionId = stripeSessionMatch ? stripeSessionMatch[1] : (checkoutResult?.sessionId || null);
 
         // --- Phase 4: Execute Payment with Card Pool Retry ---
         console.log("[步骤] 正在使用 Stripe 信用卡卡池支付流程（单次尝试）...");
@@ -746,6 +746,8 @@ async function run() {
             cdkCode,
             email: email || loginInfo?.email,
             stripeSessionId,
+            accessToken: loginInfo?.session?.accessToken || CONFIG.chatgptToken,
+            proxy: proxyConfig?.server || CONFIG.proxy,
             grokAccount: platform === 'grok' ? loginInfo : null,
             grokCheckout: platform === 'grok' ? checkoutResult : null,
             ownerKey: process.env.JOB_KEY || `${cdkCode || 'job'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
