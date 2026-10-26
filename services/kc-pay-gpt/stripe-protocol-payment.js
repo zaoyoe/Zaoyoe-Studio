@@ -1,11 +1,35 @@
 'use strict';
 
 const crypto = require('crypto');
+const querystring = require('querystring');
+const axios = require('axios');
 const { mintSentinelToken } = require('./sentinel/sentinel-client');
 
 const RUNTIME_HASH = '5412f474d5';
 const V_HOSTED = '2020-08-27;custom_checkout_beta=v1';
 const DEFAULT_OPENAI_PK = 'pk_live_51HOrSwC6h1nxGoI3lTAgRjYVrz4dU3fVOabyCcKR3pbEJguCVAlqCxdxCUvoRh1XWwRacViovU3kLKvpkjh7IqkW00iXQsjo3n';
+
+/**
+ * 创建带可选代理支持的 Axios HTTP 客户端
+ */
+function createHttpClient(proxy) {
+    const config = {
+        timeout: 25000,
+        validateStatus: () => true
+    };
+    if (proxy && String(proxy).trim()) {
+        try {
+            const { ProxyAgent } = require('proxy-agent');
+            const agent = new ProxyAgent({ getProxyForUrl: () => String(proxy).trim() });
+            config.httpAgent = agent;
+            config.httpsAgent = agent;
+            config.proxy = false; // 禁用 axios 自带代理处理，由 proxy-agent 完整接管 CONNECT 隧道
+        } catch (e) {
+            console.warn('⚠️ [协议支付] 初始化 ProxyAgent 警告:', e.message);
+        }
+    }
+    return axios.create(config);
+}
 
 /**
  * 格式化卡片有效期为两位月份与四位年份
@@ -30,22 +54,9 @@ function normalizeExpiry(card) {
 async function createStripePaymentMethod(card, billing, options = {}) {
     const pk = options.publishableKey || DEFAULT_OPENAI_PK;
     const { month, year } = normalizeExpiry(card);
+    const client = createHttpClient(options.proxy);
 
-    let dispatcher = null;
-    if (options.proxy) {
-        try {
-            const { ProxyAgent } = require('undici');
-            const pu = new URL(options.proxy);
-            const proxyOpts = { uri: pu.origin };
-            if (pu.username || pu.password) {
-                const auth = decodeURIComponent(pu.username) + ':' + decodeURIComponent(pu.password);
-                proxyOpts.token = 'Basic ' + Buffer.from(auth, 'utf8').toString('base64');
-            }
-            dispatcher = new ProxyAgent(proxyOpts);
-        } catch (_) {}
-    }
-
-    const body = new URLSearchParams({
+    const body = {
         'type': 'card',
         'card[number]': String(card.number || card.cardNumber || '').replace(/\s+/g, ''),
         'card[exp_month]': month,
@@ -69,7 +80,7 @@ async function createStripePaymentMethod(card, billing, options = {}) {
         'sid': crypto.randomUUID(),
         'key': pk,
         '_stripe_version': V_HOSTED
-    });
+    };
 
     const headers = {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -78,18 +89,9 @@ async function createStripePaymentMethod(card, billing, options = {}) {
         'Accept': 'application/json'
     };
 
-    const fetchOpts = {
-        method: 'POST',
-        headers,
-        body: body.toString()
-    };
-    if (dispatcher) {
-        fetchOpts.dispatcher = dispatcher;
-    }
-
-    const res = await fetch('https://api.stripe.com/v1/payment_methods', fetchOpts);
-    const data = await res.json().catch(() => ({}));
-    return { status: res.status, ok: res.ok, data, pmId: data.id || '' };
+    const res = await client.post('https://api.stripe.com/v1/payment_methods', querystring.stringify(body), { headers });
+    const data = res.data || {};
+    return { status: res.status, ok: res.status === 200, data, pmId: data.id || '' };
 }
 
 /**
@@ -97,54 +99,35 @@ async function createStripePaymentMethod(card, billing, options = {}) {
  */
 async function createStripeConfirmationToken(pmId, options = {}) {
     const pk = options.publishableKey || DEFAULT_OPENAI_PK;
-    let dispatcher = null;
-    if (options.proxy) {
-        try {
-            const { ProxyAgent } = require('undici');
-            const pu = new URL(options.proxy);
-            const proxyOpts = { uri: pu.origin };
-            if (pu.username || pu.password) {
-                const auth = decodeURIComponent(pu.username) + ':' + decodeURIComponent(pu.password);
-                proxyOpts.token = 'Basic ' + Buffer.from(auth, 'utf8').toString('base64');
-            }
-            dispatcher = new ProxyAgent(proxyOpts);
-        } catch (_) {}
-    }
+    const client = createHttpClient(options.proxy);
 
-    const body = new URLSearchParams({
+    const body = {
         'key': pk,
         'payment_method': pmId,
         'setup_future_usage': 'off_session',
         '_stripe_version': V_HOSTED
-    });
-
-    const fetchOpts = {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Origin': 'https://js.stripe.com',
-            'Referer': 'https://js.stripe.com/',
-            'Accept': 'application/json'
-        },
-        body: body.toString()
     };
-    if (dispatcher) {
-        fetchOpts.dispatcher = dispatcher;
-    }
 
-    const res = await fetch('https://api.stripe.com/v1/confirmation_tokens', fetchOpts);
-    const data = await res.json().catch(() => ({}));
-    return { status: res.status, ok: res.ok, data, ctoken: data.id || '' };
+    const headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': 'https://js.stripe.com',
+        'Referer': 'https://js.stripe.com/',
+        'Accept': 'application/json'
+    };
+
+    const res = await client.post('https://api.stripe.com/v1/confirmation_tokens', querystring.stringify(body), { headers });
+    const data = res.data || {};
+    return { status: res.status, ok: res.status === 200, data, ctoken: data.id || '' };
 }
 
 /**
  * 执行 Stripe 纯协议支付闭环
  *
  * 流程：
- * 1. 协议提交银行卡信息至 Stripe -> 获取 pm_
+ * 1. 协议提交银行卡信息至 Stripe -> 获取 pm_ (秒级判定无效卡/拒卡)
  * 2. 协议生成 ConfirmationToken -> 获取 ctoken_
  * 3. 动态签发 checkout_session_approval 场景的 Sentinel PoW 令牌
- * 4. 协议调用 ChatGPT /taxes 接口同步免税地址
+ * 4. 协议调用 ChatGPT /taxes 接口同步免税地址与金额
  * 5. 协议调用 ChatGPT /confirm 接口提交订阅
  * 6. 成功直接出票；若需 3DS 强人机或复杂校验，平滑回退至 UI 收银台
  */
@@ -170,7 +153,20 @@ async function executeStripeProtocolPayment({
 
     // --- 1. 创建 Stripe PaymentMethod ---
     console.log(`⚡ [协议支付] 1/4 正在协议向 Stripe 提交卡片 (pm_)...`);
-    const pmResult = await createStripePaymentMethod(card, billing, { proxy, publishableKey });
+    let pmResult;
+    try {
+        pmResult = await createStripePaymentMethod(card, billing, { proxy, publishableKey });
+    } catch (netErr) {
+        console.warn(`[-] [协议支付] Stripe 网络请求异常: ${netErr.message}`);
+        return {
+            success: false,
+            declined: false,
+            fallbackToUi: true,
+            error: `Stripe 协议网络异常: ${netErr.message}`,
+            protocolDirect: true
+        };
+    }
+
     if (!pmResult.ok) {
         const err = pmResult.data?.error || {};
         const errMsg = err.message || `Stripe HTTP ${pmResult.status}`;
@@ -196,10 +192,23 @@ async function executeStripeProtocolPayment({
 
     // --- 2. 创建 Stripe ConfirmationToken ---
     console.log(`⚡ [协议支付] 2/4 正在生成 ConfirmationToken (ctoken_)...`);
-    const ctokenResult = await createStripeConfirmationToken(pmId, { proxy, publishableKey });
+    let ctokenResult;
+    try {
+        ctokenResult = await createStripeConfirmationToken(pmId, { proxy, publishableKey });
+    } catch (tokenErr) {
+        console.warn(`[-] [协议支付] ConfirmationToken 网络异常: ${tokenErr.message}`);
+        return {
+            success: false,
+            declined: false,
+            fallbackToUi: true,
+            error: `ConfirmationToken 异常: ${tokenErr.message}`,
+            protocolDirect: true
+        };
+    }
+
     if (!ctokenResult.ok || !ctokenResult.ctoken) {
         const err = ctokenResult.data?.error || {};
-        console.warn(`[-] [协议支付] ConfirmationToken 生成失败: ${err.message || '未知错误'}`);
+        console.warn(`[-] [协议支付] ConfirmationToken 生成未通过: ${err.message || '未知错误'}`);
         return {
             success: false,
             declined: false,
@@ -275,24 +284,18 @@ async function executeStripeProtocolPayment({
         }
     }
 
-    // 若页面内调用未果，采用 Node fetch 兜底
+    // 若页面内调用未果，采用 Node axios 兜底
     if (!confirmResult) {
         try {
-            const nodeRes = await fetch('https://chatgpt.com/backend-api/payments/checkout/confirm', {
-                method: 'POST',
-                headers: targetHeaders,
-                body: JSON.stringify({
-                    checkout_session_id: sessionId,
-                    confirmation_token: ctoken,
-                    confirm_token: ctoken,
-                    selected_payment_method_type: 'card',
-                    save_payment_method_for_reuse: 'true'
-                })
-            });
-            const text = await nodeRes.text();
-            let json = {};
-            try { json = JSON.parse(text); } catch (_) {}
-            confirmResult = { status: nodeRes.status, ok: nodeRes.ok, data: json, rawText: text };
+            const client = createHttpClient(proxy);
+            const nodeRes = await client.post('https://chatgpt.com/backend-api/payments/checkout/confirm', {
+                checkout_session_id: sessionId,
+                confirmation_token: ctoken,
+                confirm_token: ctoken,
+                selected_payment_method_type: 'card',
+                save_payment_method_for_reuse: 'true'
+            }, { headers: targetHeaders });
+            confirmResult = { status: nodeRes.status, ok: nodeRes.status === 200, data: nodeRes.data, rawText: JSON.stringify(nodeRes.data || {}) };
         } catch (nodeErr) {
             console.warn(`[-] [协议支付] Node 网络发送 confirm 失败: ${nodeErr.message}`);
             return {
