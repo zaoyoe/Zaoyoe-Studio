@@ -5,6 +5,7 @@ const querystring = require('querystring');
 const axios = require('axios');
 const { mintSentinelToken } = require('./sentinel/sentinel-client');
 const { substituteProxySession, resetActiveProxyTunnels } = require('./playwright-proxy');
+const { registerStripeDeviceFingerprint } = require('./stripe-device-fingerprint');
 
 const RUNTIME_HASH = '5412f474d5';
 const V_HOSTED = '2020-08-27;custom_checkout_beta=v1';
@@ -105,6 +106,15 @@ async function createStripePaymentMethod(card, billing, options = {}) {
     const pk = options.publishableKey || DEFAULT_OPENAI_PK;
     const { month, year } = normalizeExpiry(card);
 
+    // 获取真实 Stripe 设备指纹（优先复用预热产物，否则通过 m.stripe.com/6 注册获取，网络异常自动降级本地 ID）
+    let fp = options.fingerprint;
+    if (!fp || !fp.guid || !fp.muid || !fp.sid) {
+        fp = await registerStripeDeviceFingerprint({ proxy: options.proxy });
+    }
+    if (fp?.source === 'stripe_registered') {
+        console.log(`⚡ [协议支付] ✅ 已挂载 Stripe 真实设备指纹 (Radar 防风控增强: muid=${fp.muid.slice(0, 8)}..., sid=${fp.sid.slice(0, 8)}...)`);
+    }
+
     const body = {
         'type': 'card',
         'card[number]': String(card.number || card.cardNumber || '').replace(/\s+/g, ''),
@@ -124,9 +134,9 @@ async function createStripePaymentMethod(card, billing, options = {}) {
         'client_attribution_metadata[merchant_integration_source]': 'elements',
         'client_attribution_metadata[merchant_integration_version]': '2021',
         'client_attribution_metadata[payment_method_selection_flow]': 'automatic',
-        'guid': crypto.randomUUID(),
-        'muid': crypto.randomUUID(),
-        'sid': crypto.randomUUID(),
+        'guid': fp.guid,
+        'muid': fp.muid,
+        'sid': fp.sid,
         'key': pk,
         '_stripe_version': V_HOSTED
     };
