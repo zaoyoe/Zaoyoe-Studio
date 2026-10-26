@@ -678,6 +678,22 @@ async function waitForCheckoutDueAmount(page, {
         if (due?.amount && due.currency) return due;
         if (page?.isClosed?.() || Date.now() >= deadline) return null;
 
+        // 快速检测页面是否已经进入不可逆的错误/失效状态（例如 "There was an error processing your payment"）
+        const fatalError = await page?.evaluate?.(() => {
+            const body = document.body?.innerText || '';
+            if (/There was an error processing your payment|Payment failed|Unable to process payment|This checkout session has expired/i.test(body)) {
+                return 'There was an error processing your payment';
+            }
+            return null;
+        }).catch(() => null);
+        if (fatalError) {
+            console.warn(`[Checkout] 页面显示支付处理错误/会话已失效: ${fatalError}`);
+            throw Object.assign(new Error(`收银台页面报错: ${fatalError} [CHECKOUT_SESSION_FAILED]`), {
+                code: 'CHECKOUT_SESSION_FAILED',
+                declined: true
+            });
+        }
+
         // 周期性输出加载日志，感知骨架屏加载进度（避免盲目刷新打断慢速代理下的正常资源下载）
         if (Date.now() - lastLogAt >= 10000) {
             lastLogAt = Date.now();
