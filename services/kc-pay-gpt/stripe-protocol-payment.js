@@ -250,7 +250,9 @@ async function syncCheckoutBillingTax({
                 const sess = pageRes.data?.checkout_session || pageRes.data || {};
                 const rawTotal = sess.amount_total ?? pageRes.data?.snapshot?.amount_total ?? pageRes.data?.amount_total ?? pageRes.data?.total;
                 const taxAmount = sess.total_details?.amount_tax ?? pageRes.data?.amount_tax ?? 0;
-                const displayTotal = (rawTotal != null && !isNaN(rawTotal)) ? (rawTotal / 100) : (taxBody.currency === 'PHP' ? 1100 : 20);
+                const isOregon = (billing?.country === 'US' && /oregon|or\b/i.test(billing?.state || ''));
+                const defaultPhAmount = isOregon ? 982.14 : 1100;
+                const displayTotal = (rawTotal != null && !isNaN(rawTotal)) ? (rawTotal / 100) : (taxBody.currency === 'PHP' ? defaultPhAmount : 20);
                 console.log(`⚡ [协议支付] ✅ 免税地址同步成功！总金额: ${taxBody.currency} ${displayTotal} (税额: ${taxAmount})`);
                 return { ok: true, data: pageRes.data, amountTotal: rawTotal, taxAmount };
             }
@@ -271,7 +273,9 @@ async function syncCheckoutBillingTax({
             const sess = data.checkout_session || data || {};
             const rawTotal = sess.amount_total ?? data.snapshot?.amount_total ?? data.amount_total ?? data.total;
             const taxAmount = sess.total_details?.amount_tax ?? data.amount_tax ?? 0;
-            const displayTotal = (rawTotal != null && !isNaN(rawTotal)) ? (rawTotal / 100) : (taxBody.currency === 'PHP' ? 1100 : 20);
+            const isOregon = (billing?.country === 'US' && /oregon|or\b/i.test(billing?.state || ''));
+            const defaultPhAmount = isOregon ? 982.14 : 1100;
+            const displayTotal = (rawTotal != null && !isNaN(rawTotal)) ? (rawTotal / 100) : (taxBody.currency === 'PHP' ? defaultPhAmount : 20);
             console.log(`⚡ [协议支付] ✅ 免税地址同步成功！总金额: ${taxBody.currency} ${displayTotal} (税额: ${taxAmount})`);
             return { ok: true, data, amountTotal: rawTotal, taxAmount };
         } else {
@@ -659,9 +663,11 @@ async function executeStripeProtocolPayment({
     // 注意：ChatGPT 侧的 status=success 仅代表「结账意图已受理」，
     // 必须向 Stripe 官方提交实际扣款确认 (payment_intents/:id/confirm) 才能真正执行扣款并出票！
     if (intentId && clientSecret && piStatus !== 'succeeded') {
+        const isOregon = (billing?.country === 'US' && /oregon|or\b/i.test(billing?.state || ''));
+        const defaultPhAmount = isOregon ? 982.14 : 1100;
         const piRawAmount = pi.amount ?? payload.amount;
         const piCurrency = String(pi.currency || payload.currency || currency || 'PHP').toUpperCase();
-        const piDisplayAmount = (piRawAmount != null && !isNaN(piRawAmount)) ? (piRawAmount / 100) : (piCurrency === 'PHP' ? 1100 : 20);
+        const piDisplayAmount = (piRawAmount != null && !isNaN(piRawAmount)) ? (piRawAmount / 100) : (piCurrency === 'PHP' ? defaultPhAmount : 20);
 
         const stripeConfirm = await confirmStripePaymentIntent({
             intentId,
@@ -690,7 +696,9 @@ async function executeStripeProtocolPayment({
                 decline_code: declineCode,
                 submitted: true,
                 submissionAttempted: true,
-                protocolDirect: true
+                protocolDirect: true,
+                amount: piDisplayAmount,
+                currency: piCurrency
             };
         }
 
@@ -704,7 +712,9 @@ async function executeStripeProtocolPayment({
                 paymentState: 'paid',
                 submitted: true,
                 submissionAttempted: true,
-                protocolDirect: true
+                protocolDirect: true,
+                amount: piDisplayAmount,
+                currency: piCurrency
             };
         }
 
