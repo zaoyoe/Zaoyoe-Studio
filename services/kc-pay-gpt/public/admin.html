@@ -1896,6 +1896,28 @@
             font-weight: 600;
         }
 
+        .btn-seat-pill {
+            padding: 2px 7px;
+            font-size: 11px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-hover);
+            color: var(--text-muted);
+            cursor: pointer;
+            line-height: 1.4;
+            transition: all 0.15s ease;
+        }
+        .btn-seat-pill:hover {
+            color: var(--text-main);
+            border-color: var(--primary);
+        }
+        .btn-seat-pill.active {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+            font-weight: 600;
+        }
+
         /* 自定义下拉菜单 (Custom Dropdown) */
         .custom-dropdown {
             position: relative;
@@ -3558,8 +3580,24 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                                     <span>Plus</span>
                                     <i data-lucide="check" class="item-check"></i>
                                 </button>
+                                <button type="button" class="custom-dropdown-item" data-value="team_2" onclick="selectCdkPlanType('team_2', 'ChatGPT Team (2席)')">
+                                    <span>ChatGPT Team (2席)</span>
+                                    <i data-lucide="check" class="item-check"></i>
+                                </button>
+                                <button type="button" class="custom-dropdown-item" data-value="team_5" onclick="selectCdkPlanType('team_5', 'ChatGPT Team (5席)')">
+                                    <span>ChatGPT Team (5席)</span>
+                                    <i data-lucide="check" class="item-check"></i>
+                                </button>
+                                <button type="button" class="custom-dropdown-item" data-value="team_10" onclick="selectCdkPlanType('team_10', 'ChatGPT Team (10席)')">
+                                    <span>ChatGPT Team (10席)</span>
+                                    <i data-lucide="check" class="item-check"></i>
+                                </button>
+                                <button type="button" class="custom-dropdown-item" data-value="team_20" onclick="selectCdkPlanType('team_20', 'ChatGPT Team (20席)')">
+                                    <span>ChatGPT Team (20席)</span>
+                                    <i data-lucide="check" class="item-check"></i>
+                                </button>
                                 <button type="button" class="custom-dropdown-item" data-value="team" onclick="selectCdkPlanType('team', 'ChatGPT Team')">
-                                    <span>ChatGPT Team</span>
+                                    <span>ChatGPT Team (默认2席)</span>
                                     <i data-lucide="check" class="item-check"></i>
                                 </button>
                                 <button type="button" class="custom-dropdown-item" data-value="pro_100" onclick="selectCdkPlanType('pro_100', 'PRO 100')">
@@ -3576,6 +3614,19 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                                 </button>
                             </div>
                             <input type="hidden" id="cdk_plan_type" value="plus">
+                        </div>
+                        <div id="cdk_team_seats_bar" style="display: none; align-items: center; gap: 4px; padding: 3px 8px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px;">
+                            <span style="font-size: 12px; color: var(--text-dim); white-space: nowrap;"><i data-lucide="users" style="width: 13px; height: 13px; vertical-align: -2px; margin-right: 2px;"></i>席位:</span>
+                            <button type="button" class="btn-seat-pill active" data-seats="2" onclick="quickSelectTeamSeats(2)">2席</button>
+                            <button type="button" class="btn-seat-pill" data-seats="5" onclick="quickSelectTeamSeats(5)">5席</button>
+                            <button type="button" class="btn-seat-pill" data-seats="10" onclick="quickSelectTeamSeats(10)">10席</button>
+                            <button type="button" class="btn-seat-pill" data-seats="20" onclick="quickSelectTeamSeats(20)">20席</button>
+                            <div style="display: inline-flex; align-items: center; border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; margin-left: 2px;">
+                                <button type="button" onclick="stepTeamSeats(-1)" style="border: none; background: var(--bg-hover); padding: 2px 7px; cursor: pointer; color: var(--text-main); font-size: 12px; font-weight: bold;">-</button>
+                                <input type="number" id="cdk_team_seats_input" value="2" min="2" max="999" oninput="onTeamSeatsInput(this.value)" style="width: 44px; text-align: center; border: none; background: transparent; color: var(--text-main); font-size: 12px; padding: 2px 0;">
+                                <button type="button" onclick="stepTeamSeats(1)" style="border: none; background: var(--bg-hover); padding: 2px 7px; cursor: pointer; color: var(--text-main); font-size: 12px; font-weight: bold;">+</button>
+                            </div>
+                            <span id="cdk_team_seats_summary" style="font-size: 12px; color: var(--primary); font-weight: 600; white-space: nowrap; margin-left: 4px;">共 2 席 ($60/月)</span>
                         </div>
                         <div class="custom-dropdown" id="dropdown_cdk_region" style="width: 145px;">
                             <button type="button" class="custom-dropdown-trigger" onclick="toggleCustomDropdown('cdk_region')">
@@ -3662,8 +3713,24 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                                     <span>Plus</span>
                                     <i data-lucide="check" class="item-check"></i>
                                 </button>
+                                <button type="button" class="custom-dropdown-item" data-value="team_2" onclick="selectCdkImportPlanType('team_2', 'ChatGPT Team (2席)')">
+                                    <span>ChatGPT Team (2席)</span>
+                                    <i data-lucide="check" class="item-check"></i>
+                                </button>
+                                <button type="button" class="custom-dropdown-item" data-value="team_5" onclick="selectCdkImportPlanType('team_5', 'ChatGPT Team (5席)')">
+                                    <span>ChatGPT Team (5席)</span>
+                                    <i data-lucide="check" class="item-check"></i>
+                                </button>
+                                <button type="button" class="custom-dropdown-item" data-value="team_10" onclick="selectCdkImportPlanType('team_10', 'ChatGPT Team (10席)')">
+                                    <span>ChatGPT Team (10席)</span>
+                                    <i data-lucide="check" class="item-check"></i>
+                                </button>
+                                <button type="button" class="custom-dropdown-item" data-value="team_20" onclick="selectCdkImportPlanType('team_20', 'ChatGPT Team (20席)')">
+                                    <span>ChatGPT Team (20席)</span>
+                                    <i data-lucide="check" class="item-check"></i>
+                                </button>
                                 <button type="button" class="custom-dropdown-item" data-value="team" onclick="selectCdkImportPlanType('team', 'ChatGPT Team')">
-                                    <span>ChatGPT Team</span>
+                                    <span>ChatGPT Team (默认2席)</span>
                                     <i data-lucide="check" class="item-check"></i>
                                 </button>
                                 <button type="button" class="custom-dropdown-item" data-value="pro_100" onclick="selectCdkImportPlanType('pro_100', 'PRO 100')">
@@ -3680,6 +3747,19 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                                 </button>
                             </div>
                             <input type="hidden" id="cdk_import_plan_type" value="plus">
+                        </div>
+                        <div id="cdk_import_team_seats_bar" style="display: none; align-items: center; gap: 4px; padding: 3px 8px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px;">
+                            <span style="font-size: 12px; color: var(--text-dim); white-space: nowrap;"><i data-lucide="users" style="width: 13px; height: 13px; vertical-align: -2px; margin-right: 2px;"></i>席位:</span>
+                            <button type="button" class="btn-seat-pill active" data-seats="2" onclick="quickSelectImportTeamSeats(2)">2席</button>
+                            <button type="button" class="btn-seat-pill" data-seats="5" onclick="quickSelectImportTeamSeats(5)">5席</button>
+                            <button type="button" class="btn-seat-pill" data-seats="10" onclick="quickSelectImportTeamSeats(10)">10席</button>
+                            <button type="button" class="btn-seat-pill" data-seats="20" onclick="quickSelectImportTeamSeats(20)">20席</button>
+                            <div style="display: inline-flex; align-items: center; border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; margin-left: 2px;">
+                                <button type="button" onclick="stepImportTeamSeats(-1)" style="border: none; background: var(--bg-hover); padding: 2px 7px; cursor: pointer; color: var(--text-main); font-size: 12px; font-weight: bold;">-</button>
+                                <input type="number" id="cdk_import_team_seats_input" value="2" min="2" max="999" oninput="onImportTeamSeatsInput(this.value)" style="width: 44px; text-align: center; border: none; background: transparent; color: var(--text-main); font-size: 12px; padding: 2px 0;">
+                                <button type="button" onclick="stepImportTeamSeats(1)" style="border: none; background: var(--bg-hover); padding: 2px 7px; cursor: pointer; color: var(--text-main); font-size: 12px; font-weight: bold;">+</button>
+                            </div>
+                            <span id="cdk_import_team_seats_summary" style="font-size: 12px; color: var(--primary); font-weight: 600; white-space: nowrap; margin-left: 4px;">共 2 席 ($60/月)</span>
                         </div>
                         <label style="font-size:13px; color:var(--text-secondary); margin-left:4px;">绑定地区：</label>
                         <div class="custom-dropdown" id="dropdown_cdk_import_region" style="width: 145px;">
@@ -3737,7 +3817,11 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                             <button class="filter-option active" onclick="selectCdkPlanTypeFilter('all', '全部套餐')">全部套餐</button>
                             <button class="filter-option" onclick="selectCdkPlanTypeFilter('go', 'ChatGPT Go')">ChatGPT Go</button>
                             <button class="filter-option" onclick="selectCdkPlanTypeFilter('plus', 'Plus')">Plus</button>
-                            <button class="filter-option" onclick="selectCdkPlanTypeFilter('team', 'ChatGPT Team')">ChatGPT Team</button>
+                            <button class="filter-option" onclick="selectCdkPlanTypeFilter('team', 'ChatGPT Team (全部)')">ChatGPT Team (全部)</button>
+                            <button class="filter-option" onclick="selectCdkPlanTypeFilter('team_2', 'ChatGPT Team (2席)')">ChatGPT Team (2席)</button>
+                            <button class="filter-option" onclick="selectCdkPlanTypeFilter('team_5', 'ChatGPT Team (5席)')">ChatGPT Team (5席)</button>
+                            <button class="filter-option" onclick="selectCdkPlanTypeFilter('team_10', 'ChatGPT Team (10席)')">ChatGPT Team (10席)</button>
+                            <button class="filter-option" onclick="selectCdkPlanTypeFilter('team_20', 'ChatGPT Team (20席)')">ChatGPT Team (20席)</button>
                             <button class="filter-option" onclick="selectCdkPlanTypeFilter('pro_100', 'PRO 100')">PRO 100</button>
                             <button class="filter-option" onclick="selectCdkPlanTypeFilter('pro_200', 'PRO 200')">PRO 200</button>
                             <button class="filter-option" onclick="selectCdkPlanTypeFilter('pro_500', 'PRO 500')">PRO 500</button>
@@ -4009,7 +4093,11 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                             <optgroup label="ChatGPT">
                                 <option value="go">ChatGPT Go</option>
                                 <option value="plus">Plus</option>
-                                <option value="team">ChatGPT Team</option>
+                                <option value="team">ChatGPT Team (全部)</option>
+                                <option value="team_2">ChatGPT Team (2席)</option>
+                                <option value="team_5">ChatGPT Team (5席)</option>
+                                <option value="team_10">ChatGPT Team (10席)</option>
+                                <option value="team_20">ChatGPT Team (20席)</option>
                                 <option value="pro_100">PRO 100</option>
                                 <option value="pro_200">PRO 200</option>
                                 <option value="pro_500">PRO 500</option>
@@ -5609,6 +5697,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                         }
                         if (cdkPlanTypeFilter === 'pro_200') {
                             return planType === 'pro_200' || planType === 'pro_20x';
+                        }
+                        if (cdkPlanTypeFilter === 'team') {
+                            return planType === 'team' || planType === 'chatgpt_team' || planType.startsWith('team_');
+                        }
+                        if (cdkPlanTypeFilter === 'team_2') {
+                            return planType === 'team_2' || planType === 'team' || planType === 'chatgpt_team';
                         }
                         return planType === cdkPlanTypeFilter;
                     });
@@ -7339,10 +7433,14 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const planType = typeof cdk === 'string' ? 'plus' : (cdk.plan_type || 'plus');
                 const usedAt = typeof cdk === 'string' ? null : cdk.used_at;
 
-                const planTypeLabel = {
+                let resolvedLabel = {
                     go: 'ChatGPT Go',
                     plus: 'Plus',
                     team: 'ChatGPT Team',
+                    team_2: 'ChatGPT Team (2席)',
+                    team_5: 'ChatGPT Team (5席)',
+                    team_10: 'ChatGPT Team (10席)',
+                    team_20: 'ChatGPT Team (20席)',
                     pro_100: 'PRO 100',
                     pro_200: 'PRO 200',
                     pro_500: 'PRO 500',
@@ -7357,11 +7455,20 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     claude_max_20x: 'Claude Max 200 (20x)',
                     claude_team: 'Claude Team',
                     ...GrokPlanCatalog.labels,
-                }[planType] || planType;
+                }[planType];
+                if (!resolvedLabel && String(planType).startsWith('team')) {
+                    const m = String(planType).match(/^team_?(\d+)$/i);
+                    resolvedLabel = m ? `ChatGPT Team (${m[1]}席)` : 'ChatGPT Team';
+                }
+                const planTypeLabel = resolvedLabel || planType;
                 const planTypeColor = {
                     go: '#059669',
                     plus: '#2563eb',
                     team: '#10b981',
+                    team_2: '#10b981',
+                    team_5: '#10b981',
+                    team_10: '#10b981',
+                    team_20: '#10b981',
                     pro_100: '#8b5cf6',
                     pro_200: '#ec4899',
                     pro_500: '#f59e0b',
@@ -7385,11 +7492,15 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     grok_heavy: '#ec4899',
                     grok_premium: '#6366f1',
                     grok_premium_plus: '#4f46e5'
-                }[planType] || '#2563eb';
+                }[planType] || (String(planType).startsWith('team') ? '#10b981' : '#2563eb');
                 const planTypeBg = {
                     go: 'rgba(5, 150, 105, 0.12)',
                     plus: 'rgba(37, 99, 235, 0.12)',
                     team: 'rgba(16, 185, 129, 0.12)',
+                    team_2: 'rgba(16, 185, 129, 0.12)',
+                    team_5: 'rgba(16, 185, 129, 0.12)',
+                    team_10: 'rgba(16, 185, 129, 0.12)',
+                    team_20: 'rgba(16, 185, 129, 0.12)',
                     pro_100: 'rgba(139, 92, 246, 0.12)',
                     pro_200: 'rgba(236, 72, 153, 0.12)',
                     pro_500: 'rgba(245, 158, 11, 0.12)',
@@ -7413,7 +7524,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     grok_heavy: 'rgba(236, 72, 153, 0.12)',
                     grok_premium: 'rgba(99, 102, 241, 0.12)',
                     grok_premium_plus: 'rgba(79, 70, 229, 0.12)'
-                }[planType] || 'rgba(37, 99, 235, 0.12)';
+                }[planType] || (String(planType).startsWith('team') ? 'rgba(16, 185, 129, 0.12)' : 'rgba(37, 99, 235, 0.12)');
 
                 const platform = typeof cdk === 'string' ? 'chatgpt' : (cdk.platform || (planType.startsWith('claude') ? 'claude' : ((planType.startsWith('grok') || planType.startsWith('supergrok')) ? 'grok' : 'chatgpt')));
                 const platformBadge = {
@@ -8067,7 +8178,11 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             chatgpt: [
                 { value: 'go', label: 'ChatGPT Go' },
                 { value: 'plus', label: 'Plus' },
-                { value: 'team', label: 'ChatGPT Team' },
+                { value: 'team_2', label: 'ChatGPT Team (2席起订 - $60/月)' },
+                { value: 'team_5', label: 'ChatGPT Team (5席 - $150/月)' },
+                { value: 'team_10', label: 'ChatGPT Team (10席 - $300/月)' },
+                { value: 'team_20', label: 'ChatGPT Team (20席 - $600/月)' },
+                { value: 'team', label: 'ChatGPT Team (默认2席)' },
                 { value: 'pro_100', label: 'PRO 100' },
                 { value: 'pro_200', label: 'PRO 200' },
                 { value: 'pro_500', label: 'PRO 500' }
@@ -8099,6 +8214,90 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             updateCdkPlanTypeOptions(platform);
         }
 
+        function syncTeamSeatsUI(barId, inputId, summaryId, seats) {
+            const s = Math.max(2, Math.min(999, parseInt(seats, 10) || 2));
+            const input = document.getElementById(inputId);
+            if (input) input.value = s;
+            const summary = document.getElementById(summaryId);
+            if (summary) summary.textContent = `共 ${s} 席 ($${s * 30}/月)`;
+            const bar = document.getElementById(barId);
+            if (bar) {
+                bar.querySelectorAll('.btn-seat-pill').forEach(btn => {
+                    btn.classList.toggle('active', parseInt(btn.getAttribute('data-seats'), 10) === s);
+                });
+            }
+            return s;
+        }
+
+        function updateTeamSeatsBarVisibility(planType, barId, inputId, summaryId) {
+            const bar = document.getElementById(barId);
+            if (!bar) return;
+            const isTeam = String(planType || '').startsWith('team');
+            bar.style.display = isTeam ? 'inline-flex' : 'none';
+            if (isTeam) {
+                const m = String(planType).match(/^team_?(\d+)$/i);
+                const seats = m ? parseInt(m[1], 10) : 2;
+                syncTeamSeatsUI(barId, inputId, summaryId, seats);
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+        }
+
+        function quickSelectTeamSeats(seats) {
+            const s = syncTeamSeatsUI('cdk_team_seats_bar', 'cdk_team_seats_input', 'cdk_team_seats_summary', seats);
+            const planValue = s === 2 ? 'team_2' : `team_${s}`;
+            const planLabel = `ChatGPT Team (${s}席 - $${s * 30}/月)`;
+            const input = document.getElementById('cdk_plan_type');
+            if (input) input.value = planValue;
+            const labelEl = document.getElementById('label_cdk_plan_type');
+            if (labelEl) labelEl.textContent = planLabel;
+            const menu = document.getElementById('menu_cdk_plan_type');
+            if (menu) {
+                menu.querySelectorAll('.custom-dropdown-item').forEach(item => {
+                    const v = item.getAttribute('data-value');
+                    item.classList.toggle('active', v === planValue || (s === 2 && (v === 'team_2' || v === 'team')));
+                });
+            }
+        }
+
+        function stepTeamSeats(delta) {
+            const input = document.getElementById('cdk_team_seats_input');
+            const cur = parseInt(input ? input.value : '2', 10) || 2;
+            quickSelectTeamSeats(Math.max(2, cur + delta));
+        }
+
+        function onTeamSeatsInput(val) {
+            const s = Math.max(2, Math.min(999, parseInt(val, 10) || 2));
+            quickSelectTeamSeats(s);
+        }
+
+        function quickSelectImportTeamSeats(seats) {
+            const s = syncTeamSeatsUI('cdk_import_team_seats_bar', 'cdk_import_team_seats_input', 'cdk_import_team_seats_summary', seats);
+            const planValue = s === 2 ? 'team_2' : `team_${s}`;
+            const planLabel = `ChatGPT Team (${s}席 - $${s * 30}/月)`;
+            const input = document.getElementById('cdk_import_plan_type');
+            if (input) input.value = planValue;
+            const labelEl = document.getElementById('label_cdk_import_plan_type');
+            if (labelEl) labelEl.textContent = planLabel;
+            const menu = document.getElementById('menu_cdk_import_plan_type');
+            if (menu) {
+                menu.querySelectorAll('.custom-dropdown-item').forEach(item => {
+                    const v = item.getAttribute('data-value');
+                    item.classList.toggle('active', v === planValue || (s === 2 && (v === 'team_2' || v === 'team')));
+                });
+            }
+        }
+
+        function stepImportTeamSeats(delta) {
+            const input = document.getElementById('cdk_import_team_seats_input');
+            const cur = parseInt(input ? input.value : '2', 10) || 2;
+            quickSelectImportTeamSeats(Math.max(2, cur + delta));
+        }
+
+        function onImportTeamSeatsInput(val) {
+            const s = Math.max(2, Math.min(999, parseInt(val, 10) || 2));
+            quickSelectImportTeamSeats(s);
+        }
+
         function updateCdkPlanTypeOptions(platform) {
             const plans = PLATFORM_PLANS[platform] || PLATFORM_PLANS.chatgpt;
             const defaultIdx = platform === 'chatgpt' ? 1 : 0;
@@ -8122,6 +8321,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const regOpt = REGION_OPTIONS.find(r => r.value === rec) || REGION_OPTIONS[0];
                 selectCdkRegion(regOpt.value, regOpt.label, false);
             }
+            updateTeamSeatsBarVisibility(defaultPlan.value, 'cdk_team_seats_bar', 'cdk_team_seats_input', 'cdk_team_seats_summary');
         }
 
         function selectCdkPlanType(value, label) {
@@ -8141,6 +8341,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const regOpt = REGION_OPTIONS.find(r => r.value === rec) || REGION_OPTIONS[0];
                 selectCdkRegion(regOpt.value, regOpt.label, false);
             }
+            updateTeamSeatsBarVisibility(value, 'cdk_team_seats_bar', 'cdk_team_seats_input', 'cdk_team_seats_summary');
             closeCustomDropdowns();
         }
 
@@ -8180,6 +8381,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             const rec = getRecommendedRegionForPlan(defaultPlan.value, platform);
             const regOpt = REGION_OPTIONS.find(r => r.value === rec) || REGION_OPTIONS[0];
             selectCdkImportRegion(regOpt.value, regOpt.label);
+            updateTeamSeatsBarVisibility(defaultPlan.value, 'cdk_import_team_seats_bar', 'cdk_import_team_seats_input', 'cdk_import_team_seats_summary');
         }
 
         function selectCdkImportPlanType(value, label) {
@@ -8197,6 +8399,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             const rec = getRecommendedRegionForPlan(value, plat);
             const regOpt = REGION_OPTIONS.find(r => r.value === rec) || REGION_OPTIONS[0];
             selectCdkImportRegion(regOpt.value, regOpt.label);
+            updateTeamSeatsBarVisibility(value, 'cdk_import_team_seats_bar', 'cdk_import_team_seats_input', 'cdk_import_team_seats_summary');
             closeCustomDropdowns();
         }
 
@@ -9247,6 +9450,10 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 go: 'ChatGPT Go',
                 plus: 'Plus',
                 team: 'ChatGPT Team',
+                team_2: 'ChatGPT Team (2席)',
+                team_5: 'ChatGPT Team (5席)',
+                team_10: 'ChatGPT Team (10席)',
+                team_20: 'ChatGPT Team (20席)',
                 pro_100: 'PRO 100',
                 pro_200: 'PRO 200',
                 pro_500: 'PRO 500',
@@ -9266,7 +9473,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const time = r.payment_time ? new Date(r.payment_time).toLocaleString('zh-CN') : '-';
                 const statusClass = r.status === 'success' ? 'status-success' : 'status-failed';
                 const statusText = r.status === 'success' ? '成功' : '失败';
-                const planLabel = planLabels[r.plan_type] || r.plan_type || '-';
+                let rPlanLabel = planLabels[r.plan_type];
+                if (!rPlanLabel && String(r.plan_type || '').startsWith('team')) {
+                    const m = String(r.plan_type).match(/^team_?(\d+)$/i);
+                    rPlanLabel = m ? `ChatGPT Team (${m[1]}席)` : 'ChatGPT Team';
+                }
+                const planLabel = rPlanLabel || r.plan_type || '-';
                 const cardDisplay = escapeHtml(r.card_number || r.card_last4 || '-');
                 const cardSummaryKey = escapeHtml(r.card_last4 || (r.card_number ? String(r.card_number).slice(-4) : ''));
                 const platform = r.platform || (r.plan_type?.startsWith('claude') ? 'claude' : ((r.plan_type?.startsWith('grok') || r.plan_type?.startsWith('supergrok')) ? 'grok' : 'chatgpt'));

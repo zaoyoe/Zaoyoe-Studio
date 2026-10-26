@@ -296,6 +296,10 @@
             plus: 'ChatGPT Plus',
             team: 'ChatGPT Team',
             chatgpt_team: 'ChatGPT Team',
+            team_2: 'ChatGPT Team (2席)',
+            team_5: 'ChatGPT Team (5席)',
+            team_10: 'ChatGPT Team (10席)',
+            team_20: 'ChatGPT Team (20席)',
             pro_100: 'ChatGPT PRO 100',
             pro_200: 'ChatGPT PRO 200',
             pro_500: 'ChatGPT PRO 500',
@@ -313,6 +317,14 @@
             claude_team: 'Claude Team',
             ...GrokPlanCatalog.labels,
         };
+
+        function resolveClientPlanLabel(planType) {
+            if (!planType) return PLAN_LABELS.plus;
+            if (PLAN_LABELS[planType]) return PLAN_LABELS[planType];
+            const m = String(planType).match(/^team_?(\d+)$/i);
+            if (m) return `ChatGPT Team (${m[1]}席)`;
+            return planType;
+        }
 
         let currentPlatform = 'chatgpt';
         const platformNav = document.getElementById('platformNav');
@@ -899,7 +911,7 @@
                     const platformIcons = { chatgpt: '⚡ ChatGPT', claude: '🤖 Claude', grok: '🚀 Grok' };
                     const platformKey = String(data.data.platform || currentPlatform).toLowerCase();
                     const platformName = platformIcons[platformKey] || (data.data.platform ? data.data.platform.toUpperCase() : 'ChatGPT');
-                    const planLabel = data.data.plan_label || PLAN_LABELS[data.data.plan_type] || currentPlanLabel || '标准版';
+                    const planLabel = data.data.plan_label || resolveClientPlanLabel(data.data.plan_type) || currentPlanLabel || '标准版';
                     const boundAccount = String(data.data.boundAccount || '').trim();
 
                     if (['chatgpt', 'claude', 'grok'].includes(platformKey)) {
@@ -1316,7 +1328,7 @@
                                 setButtonText(redeemBtn, '验证卡密');
 
                                 const planType = data.data?.plan_type || 'plus';
-                                const planLabel = data.data?.plan_label || PLAN_LABELS[planType] || PLAN_LABELS.plus;
+                                const planLabel = data.data?.plan_label || resolveClientPlanLabel(planType);
                                 currentPlanLabel = planLabel;
                                 const cdkPlatform = data.data?.platform || 'chatgpt';
                                 setPlatform(cdkPlatform);
