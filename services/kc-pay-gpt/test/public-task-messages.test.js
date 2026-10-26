@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import * as safety from '../task-safety.js';
-import { formatTaskErrorMessage, publicTaskUpdate, GENERIC_FAILURE, AUTH_FAILURE, PAYMENT_UNCONFIRMED, CARD_DECLINED } from '../public/task-messages.js';
+import { formatTaskErrorMessage, publicTaskUpdate, GENERIC_FAILURE, AUTH_FAILURE, PAYMENT_UNCONFIRMED, CARD_DECLINED, ALREADY_SUBSCRIBED } from '../public/task-messages.js';
 
 const server = fs.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
 function snippet(start, end) { return server.slice(server.indexOf(start), server.indexOf(end, server.indexOf(start))); }
@@ -25,6 +25,15 @@ describe('public task error boundary', () => {
     it.each(['Session 已失效或过期 [CHATGPT_SESSION_EXPIRED]', 'HTTP 401 [CHECKOUT_AUTH_ERROR]', 'token_expired', AUTH_FAILURE])('keeps credentials failures actionable and idempotent', message => {
         expect(formatTaskErrorMessage('failed', message)).toBe(AUTH_FAILURE);
         expect(formatTaskErrorMessage('failed', formatTaskErrorMessage('failed', message))).toBe(AUTH_FAILURE);
+    });
+    it.each([
+        '该账号已有有效 Plus 订阅，无需重复充值，请更换其他未订阅账号 [ACCOUNT_ALREADY_SUBSCRIBED]',
+        '该账号已有有效 PRO 订阅，无需重复充值，请更换其他未订阅账号 [ACCOUNT_ALREADY_SUBSCRIBED]',
+        'already_subscribed',
+        ALREADY_SUBSCRIBED
+    ])('formats active subscription errors into clear user-facing guidance', message => {
+        expect(formatTaskErrorMessage('failed', message)).toBe(ALREADY_SUBSCRIBED);
+        expect(formatTaskErrorMessage('failed', formatTaskErrorMessage('failed', message))).toBe(ALREADY_SUBSCRIBED);
     });
     it('preserves the requested decline copy and strips the last four digits', () => {
         expect(formatTaskErrorMessage('manual', '支付卡被官方系统拒付 (尾号 ...2226) (Card Declined)')).toBe(CARD_DECLINED);

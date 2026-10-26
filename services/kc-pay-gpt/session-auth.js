@@ -15,7 +15,7 @@ const {
     assertNoExpiredSession,
     buildSessionNotLoggedInError
 } = require('./auth-page-detect');
-const { assertLocalSessionFresh, verifyChatGptAccessToken, buildChatGptAuthError } = require('./chatgpt-auth-state');
+const { assertLocalSessionFresh, verifyChatGptAccessToken, assertChatGptAccountEligible, buildChatGptAuthError } = require('./chatgpt-auth-state');
 
 function decodeJwtPayload(token) {
     const parts = String(token || '').split('.');
@@ -793,6 +793,10 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
 
     if (email && officialAccount.email && email.toLowerCase() !== officialAccount.email.toLowerCase()) {
         throw buildChatGptAuthError('CHATGPT_ACCOUNT_MISMATCH');
+    }
+
+    if (!options.skipSubscriptionCheck) {
+        await assertChatGptAccountEligible(page, accessToken, { deadlineMs: 15000 });
     }
 
     const hasSessionToken = options.hasSessionToken ?? (Array.isArray(sessionData?.cookies) || Boolean(sessionData?.sessionToken || sessionData?.session_token || sessionData?.['__Secure-next-auth.session-token']));

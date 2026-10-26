@@ -51,6 +51,31 @@ function formatToStandardProxyUrl(raw) {
     return `http://${line}`;
 }
 
+function alignProxyRegion(rawProxy, targetRegion) {
+    if (!rawProxy || !targetRegion) return rawProxy;
+    const regionUpper = String(targetRegion).trim().toUpperCase();
+    const regionLower = regionUpper.toLowerCase();
+    if (!/^[A-Z]{2}$/.test(regionUpper)) return rawProxy;
+
+    let aligned = rawProxy;
+    aligned = aligned.replace(/\{region\}/gi, regionLower);
+    aligned = aligned.replace(/\{country\}/gi, regionLower);
+
+    if (/-region-[a-zA-Z]{2}-/i.test(aligned)) {
+        aligned = aligned.replace(/-region-[a-zA-Z]{2}-/i, `-region-${regionUpper}-`);
+    }
+    if (/-country-[a-zA-Z]{2}-/i.test(aligned)) {
+        aligned = aligned.replace(/-country-[a-zA-Z]{2}-/i, `-country-${regionUpper}-`);
+    } else if (/_country-[a-zA-Z]{2}(?=[-:@/]|$)/i.test(aligned)) {
+        aligned = aligned.replace(/_country-[a-zA-Z]{2}(?=[-:@/]|$)/i, `_country-${regionLower}`);
+    }
+    if (/-res_sc-[a-zA-Z]{2}(?:_[a-zA-Z0-9]+)?(?=[-:@/]|$)/i.test(aligned)) {
+        aligned = aligned.replace(/-res_sc-[a-zA-Z]{2}(?:_[a-zA-Z0-9]+)?(?=[-:@/]|$)/i, `-res_sc-${regionUpper}`);
+    }
+
+    return aligned;
+}
+
 function substituteProxySession(rawProxy) {
     if (!rawProxy) return rawProxy;
     const sid = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
@@ -299,13 +324,16 @@ async function createResilientHttpProxyRelay(parsedProxy, stdUrl) {
  * @param {string} proxyValue
  * @returns {Promise<{ proxyConfig: object|null, cleanup: () => Promise<void>, relayed?: boolean }>}
  */
-async function preparePlaywrightProxy(proxyValue) {
+async function preparePlaywrightProxy(proxyValue, options = {}) {
     const raw = String(proxyValue || '').trim();
     if (!raw) {
         return { proxyConfig: null, cleanup: async () => { } };
     }
 
-    const stdUrl = substituteProxySession(formatToStandardProxyUrl(raw));
+    const targetRegion = options.region || process.env.PAYMENT_REGION_OVERRIDE || '';
+    const formatted = formatToStandardProxyUrl(raw);
+    const aligned = targetRegion ? alignProxyRegion(formatted, targetRegion) : formatted;
+    const stdUrl = substituteProxySession(aligned);
 
     let parsed;
     try {
@@ -360,6 +388,7 @@ async function preparePlaywrightProxy(proxyValue) {
 module.exports = {
     preparePlaywrightProxy,
     isSocksProtocol,
+    alignProxyRegion,
     substituteProxySession,
     formatToStandardProxyUrl,
     resetActiveProxyTunnels,

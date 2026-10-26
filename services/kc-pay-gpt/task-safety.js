@@ -8,6 +8,23 @@ function classifyChatGptAuthFailure(message, paymentState) {
         deletePhone: false, deleteCard: false, paymentState: 'not_started' };
 }
 
+function classifyAccountAlreadySubscribed(message, paymentState) {
+    if (paymentState != null && normalizePaymentState(paymentState) !== 'not_started') return null;
+    const text = String(message || '');
+    if (!text.includes('ACCOUNT_ALREADY_SUBSCRIBED') && !text.includes('已有有效') && !text.includes('already_subscribed')) {
+        return null;
+    }
+    return {
+        status: 'failed',
+        message: '该账号已有有效 Plus 订阅，无需重复充值，请更换其他未订阅账号',
+        reachedPayment: false,
+        shouldRetry: false,
+        deletePhone: false,
+        deleteCard: false,
+        paymentState: 'not_started'
+    };
+}
+
 function classifyChatGptNavigationFailure(message, paymentState, fullOutput = '') {
     if (paymentState != null && normalizePaymentState(paymentState) !== 'not_started') return null;
     const text = `${String(message || '')} ${String(fullOutput || '')}`;
@@ -190,6 +207,7 @@ function classifyInterruptedTask(task = {}) {
 
 module.exports = {
     classifyChatGptAuthFailure,
+    classifyAccountAlreadySubscribed,
     classifyChatGptNavigationFailure,
     KNOWN_PAYMENT_STATES,
     normalizePaymentState,

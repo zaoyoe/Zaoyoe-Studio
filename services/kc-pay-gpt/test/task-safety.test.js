@@ -8,7 +8,8 @@ import {
     classifyCheckoutFailure,
     classifyOpenAiCardMethodFailure,
     classifyGrokFailure,
-    classifyChatGptNavigationFailure
+    classifyChatGptNavigationFailure,
+    classifyAccountAlreadySubscribed
 } from '../task-safety.js';
 
 describe('payment and recovery safety decisions', () => {
@@ -134,6 +135,27 @@ describe('ChatGPT navigation timeout failures trigger proxy retry', () => {
     it('never overrides payment states that have already started', () => {
         for (const paymentState of ['started', 'unknown', 'succeeded', 'declined']) {
             expect(classifyChatGptNavigationFailure('page.goto: Timeout 90000ms exceeded.', paymentState)).toBeNull();
+        }
+    });
+});
+
+describe('already subscribed account failure safety', () => {
+    it('classifies ACCOUNT_ALREADY_SUBSCRIBED as non-retryable failure that releases CDK', () => {
+        const message = '该账号已有有效 Plus 订阅，无需重复充值，请更换其他未订阅账号 [ACCOUNT_ALREADY_SUBSCRIBED]';
+        const result = classifyAccountAlreadySubscribed(message, 'not_started');
+        expect(result).toMatchObject({
+            status: 'failed',
+            shouldRetry: false,
+            reachedPayment: false,
+            paymentState: 'not_started',
+            message: '该账号已有有效 Plus 订阅，无需重复充值，请更换其他未订阅账号'
+        });
+        expect(shouldRetainCdk({ executionMode: 'local_card_pool', paymentState: result.paymentState })).toBe(false);
+    });
+
+    it('never overrides in-flight or succeeded payment states', () => {
+        for (const paymentState of ['started', 'unknown', 'succeeded']) {
+            expect(classifyAccountAlreadySubscribed('ACCOUNT_ALREADY_SUBSCRIBED', paymentState)).toBeNull();
         }
     });
 });

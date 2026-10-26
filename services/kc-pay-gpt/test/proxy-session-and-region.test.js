@@ -1,8 +1,8 @@
 import http from 'node:http';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { matchProxyRegion, substituteProxySession as poolSubstituteSession } from '../proxy-pool.js';
-import { attachTunnelWatchdog, preparePlaywrightProxy, resetActiveProxyTunnels, substituteProxySession as playwrightSubstituteSession } from '../playwright-proxy.js';
+import { matchProxyRegion, substituteProxySession as poolSubstituteSession, alignProxyRegion as poolAlignRegion } from '../proxy-pool.js';
+import { attachTunnelWatchdog, preparePlaywrightProxy, resetActiveProxyTunnels, substituteProxySession as playwrightSubstituteSession, alignProxyRegion as playwrightAlignRegion } from '../playwright-proxy.js';
 
 function fakeSocket() {
     const socket = new PassThrough();
@@ -59,6 +59,19 @@ describe('proxy session routing, region matching, and resilient CONNECT relay', 
         const templateSub = poolSubstituteSession(templateRaw);
         expect(templateSub).not.toContain('{session}');
         expect(templateSub).toMatch(/-session-\d{8}-sessTime-5-sessAuto-1/);
+    });
+
+    it('aligns dynamic proxy region with checkout target region', () => {
+        const rotgbRaw = 'http://USER184188-zone-custom-region-US-session-29028475-sessTime-5-sessAuto-1:bc6ee6@hk.rotgb.trustsource.live:10000';
+        expect(poolAlignRegion(rotgbRaw, 'PH')).toContain('-region-PH-');
+        expect(playwrightAlignRegion(rotgbRaw, 'PH')).toContain('-region-PH-');
+
+        const iprocketRaw = 'http://com91454197-res_sc-US_Oregon:secret123@prem.country.iprocket.io:9595';
+        expect(poolAlignRegion(iprocketRaw, 'PH')).toContain('-res_sc-PH');
+        expect(playwrightAlignRegion(iprocketRaw, 'PH')).toContain('-res_sc-PH');
+
+        const templateRaw = 'http://user:pass@proxy.example.com:8080?country={country}&region={region}';
+        expect(playwrightAlignRegion(templateRaw, 'PH')).toBe('http://user:pass@proxy.example.com:8080?country=ph&region=ph');
     });
 
     it('matches proxy regions accurately from label and URL patterns', () => {
