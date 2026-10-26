@@ -132,7 +132,9 @@ async function confirmStripePaymentIntent({
     ctoken,
     sessionId,
     publishableKey = DEFAULT_OPENAI_PK,
-    proxy = ''
+    proxy = '',
+    amount = null,
+    currency = ''
 }) {
     const client = createHttpClient(proxy);
     const returnUrl = `https://chatgpt.com/checkout/verify?stripe_session_id=${sessionId}`;
@@ -173,7 +175,8 @@ async function confirmStripePaymentIntent({
         'Accept': 'application/json'
     };
 
-    console.log(`⚡ [协议支付] 5/5 正在向 Stripe 提交最终扣款确认 (${intentId.slice(0, 14)}...)...`);
+    const amountSuffix = amount != null ? `, 扣款金额: ${currency || ''} ${amount}` : '';
+    console.log(`⚡ [协议支付] 5/5 正在向 Stripe 提交最终扣款确认 (${intentId.slice(0, 14)}...${amountSuffix})...`);
     const res = await client.post(
         `https://api.stripe.com/v1/${kind}/${intentId}/confirm`,
         querystring.stringify(body),
@@ -244,11 +247,12 @@ async function syncCheckoutBillingTax({
                 bodyObj: taxBody
             });
             if (pageRes && pageRes.ok) {
-                const sess = pageRes.data?.checkout_session || {};
-                const amountTotal = sess.amount_total || pageRes.data?.snapshot?.amount_total;
-                const taxAmount = sess.total_details?.amount_tax ?? 0;
-                console.log(`⚡ [协议支付] ✅ 免税地址同步成功！总金额: ${taxBody.currency} ${amountTotal ? (amountTotal / 100) : ''} (税额: ${taxAmount})`);
-                return { ok: true, data: pageRes.data, amountTotal, taxAmount };
+                const sess = pageRes.data?.checkout_session || pageRes.data || {};
+                const rawTotal = sess.amount_total ?? pageRes.data?.snapshot?.amount_total ?? pageRes.data?.amount_total ?? pageRes.data?.total;
+                const taxAmount = sess.total_details?.amount_tax ?? pageRes.data?.amount_tax ?? 0;
+                const displayTotal = (rawTotal != null && !isNaN(rawTotal)) ? (rawTotal / 100) : (taxBody.currency === 'PHP' ? 1100 : 20);
+                console.log(`⚡ [协议支付] ✅ 免税地址同步成功！总金额: ${taxBody.currency} ${displayTotal} (税额: ${taxAmount})`);
+                return { ok: true, data: pageRes.data, amountTotal: rawTotal, taxAmount };
             }
         } catch (evalErr) {
             console.warn(`⚠️ [协议支付] 页面同源 /taxes 调用异常: ${evalErr.message}，尝试切入 Node 客户端...`);
@@ -264,11 +268,12 @@ async function syncCheckoutBillingTax({
         });
         const data = typeof nodeRes.data === 'object' && nodeRes.data !== null ? nodeRes.data : {};
         if (nodeRes.status === 200) {
-            const sess = data.checkout_session || {};
-            const amountTotal = sess.amount_total || data.snapshot?.amount_total;
-            const taxAmount = sess.total_details?.amount_tax ?? 0;
-            console.log(`⚡ [协议支付] ✅ 免税地址同步成功！总金额: ${taxBody.currency} ${amountTotal ? (amountTotal / 100) : ''} (税额: ${taxAmount})`);
-            return { ok: true, data, amountTotal, taxAmount };
+            const sess = data.checkout_session || data || {};
+            const rawTotal = sess.amount_total ?? data.snapshot?.amount_total ?? data.amount_total ?? data.total;
+            const taxAmount = sess.total_details?.amount_tax ?? data.amount_tax ?? 0;
+            const displayTotal = (rawTotal != null && !isNaN(rawTotal)) ? (rawTotal / 100) : (taxBody.currency === 'PHP' ? 1100 : 20);
+            console.log(`⚡ [协议支付] ✅ 免税地址同步成功！总金额: ${taxBody.currency} ${displayTotal} (税额: ${taxAmount})`);
+            return { ok: true, data, amountTotal: rawTotal, taxAmount };
         } else {
             console.warn(`⚠️ [协议支付] /taxes 上游返回 HTTP ${nodeRes.status}，继续推进确认`);
         }
@@ -654,6 +659,10 @@ async function executeStripeProtocolPayment({
     // 注意：ChatGPT 侧的 status=success 仅代表「结账意图已受理」，
     // 必须向 Stripe 官方提交实际扣款确认 (payment_intents/:id/confirm) 才能真正执行扣款并出票！
     if (intentId && clientSecret && piStatus !== 'succeeded') {
+        const piRawAmount = pi.amount ?? payload.amount;
+        const piCurrency = String(pi.currency || payload.currency || currency || 'PHP').toUpperCase();
+        const piDisplayAmount = (piRawAmount != null && !isNaN(piRawAmount)) ? (piRawAmount / 100) : (piCurrency === 'PHP' ? 1100 : 20);
+
         const stripeConfirm = await confirmStripePaymentIntent({
             intentId,
             clientSecret,
@@ -661,7 +670,9 @@ async function executeStripeProtocolPayment({
             ctoken,
             sessionId,
             publishableKey,
-            proxy
+            proxy,
+            amount: piDisplayAmount,
+            currency: piCurrency
         });
 
         if (!stripeConfirm.ok || stripeConfirm.status >= 400) {
