@@ -104,9 +104,11 @@ async function createStripeConfirmationToken(pmId, options = {}) {
     const body = {
         'key': pk,
         'payment_method': pmId,
-        'setup_future_usage': 'off_session',
         '_stripe_version': V_HOSTED
     };
+    if (options.setupFutureUsage) {
+        body['setup_future_usage'] = options.setupFutureUsage;
+    }
 
     const headers = {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -118,6 +120,77 @@ async function createStripeConfirmationToken(pmId, options = {}) {
     const res = await client.post('https://api.stripe.com/v1/confirmation_tokens', querystring.stringify(body), { headers });
     const data = res.data || {};
     return { status: res.status, ok: res.status === 200, data, ctoken: data.id || '' };
+}
+
+/**
+ * 发送 ChatGPT 支付确认请求（支持页面同源和 Node 网络客户端两种通道）
+ */
+async function postConfirmRequest({
+    page,
+    sessionId,
+    ctoken,
+    targetHeaders,
+    proxy,
+    saveChoice = null
+}) {
+    const confirmBody = {
+        checkout_session_id: sessionId,
+        confirmation_token: ctoken,
+        confirm_token: ctoken,
+        selected_payment_method_type: 'card'
+    };
+    if (saveChoice !== null && saveChoice !== undefined) {
+        confirmBody.save_payment_method_for_reuse = saveChoice ? 'true' : 'false';
+    }
+
+    // 优先通过 page.evaluate 发送同源 confirm，兼具原生浏览器 Cookie、TLS 指纹和最高信任度
+    if (page && typeof page.evaluate === 'function' && !page.isClosed()) {
+        try {
+            return await page.evaluate(async ({ url, headers, bodyObj }) => {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers,
+                    credentials: 'include',
+                    body: JSON.stringify(bodyObj)
+                });
+                const bodyText = await res.text();
+                let json = {};
+                try { json = JSON.parse(bodyText); } catch (_) {}
+                return { status: res.status, ok: res.ok, data: json, rawText: bodyText };
+            }, {
+                url: 'https://chatgpt.com/backend-api/payments/checkout/confirm',
+                headers: targetHeaders,
+                bodyObj: confirmBody
+            });
+        } catch (evalErr) {
+            console.warn(`⚠️ [协议支付] 页面同源 confirm 调用异常: ${evalErr.message}，切入 Node 网络客户端重试...`);
+        }
+    }
+
+    // 若页面内调用未果，采用 Node axios 兜底
+    try {
+        const client = createHttpClient(proxy);
+        const nodeRes = await client.post('https://chatgpt.com/backend-api/payments/checkout/confirm', confirmBody, {
+            headers: targetHeaders,
+            validateStatus: () => true
+        });
+        const rawText = typeof nodeRes.data === 'string' ? nodeRes.data : JSON.stringify(nodeRes.data || {});
+        return {
+            status: nodeRes.status,
+            ok: nodeRes.status === 200,
+            data: typeof nodeRes.data === 'object' && nodeRes.data !== null ? nodeRes.data : {},
+            rawText
+        };
+    } catch (nodeErr) {
+        console.warn(`[-] [协议支付] Node 网络发送 confirm 失败: ${nodeErr.message}`);
+        return {
+            status: 500,
+            ok: false,
+            data: {},
+            rawText: nodeErr.message,
+            networkError: nodeErr.message
+        };
+    }
 }
 
 /**
@@ -237,8 +310,8 @@ async function executeStripeProtocolPayment({
         console.warn(`⚠️ [协议支付] 确认阶段 Sentinel 签发跳过: ${e.message}`);
     }
 
-    // --- 4. 同步免税地址与税费 ---
-    console.log(`⚡ [协议支付] 4/4 正在向 ChatGPT 同步免税地址并提交确认...`);
+    // --- 4. 提交支付确认 (默认不带 save_payment_method_for_reuse，遵循 OpenAI 上游规范) ---
+    console.log(`⚡ [协议支付] 4/4 正在向 ChatGPT 提交支付确认...`);
     const checkoutPageUrl = `https://chatgpt.com/checkout/openai_llc/${sessionId}`;
     const targetHeaders = {
         'Authorization': `Bearer ${accessToken}`,
@@ -252,59 +325,44 @@ async function executeStripeProtocolPayment({
         ...(sentinelTokens.sentinelSoToken ? { 'openai-sentinel-so-token': sentinelTokens.sentinelSoToken } : {})
     };
 
-    // 优先通过 page.evaluate 发送同源 confirm，兼具原生浏览器 Cookie、TLS 指纹和最高信任度
-    let confirmResult = null;
-    if (page && typeof page.evaluate === 'function' && !page.isClosed()) {
-        try {
-            confirmResult = await page.evaluate(async ({ url, headers, ctokenVal, sessId }) => {
-                const res = await fetch(url, {
-                    method: 'POST',
-                    headers,
-                    credentials: 'include',
-                    body: JSON.stringify({
-                        checkout_session_id: sessId,
-                        confirmation_token: ctokenVal,
-                        confirm_token: ctokenVal,
-                        selected_payment_method_type: 'card',
-                        save_payment_method_for_reuse: 'true'
-                    })
-                });
-                const bodyText = await res.text();
-                let json = {};
-                try { json = JSON.parse(bodyText); } catch (_) {}
-                return { status: res.status, ok: res.ok, data: json, rawText: bodyText };
-            }, {
-                url: 'https://chatgpt.com/backend-api/payments/checkout/confirm',
-                headers: targetHeaders,
-                ctokenVal: ctoken,
-                sessId: sessionId
-            });
-        } catch (evalErr) {
-            console.warn(`⚠️ [协议支付] 页面同源 confirm 调用异常: ${evalErr.message}，切入 Node 网络客户端重试...`);
-        }
+    let confirmResult = await postConfirmRequest({
+        page,
+        sessionId,
+        ctoken,
+        targetHeaders,
+        proxy,
+        saveChoice: null // 默认不传，防止被上游报错 Save choice is not available
+    });
+
+    if (confirmResult.networkError) {
+        return {
+            success: false,
+            declined: false,
+            fallbackToUi: true,
+            error: `协议确认网络错误: ${confirmResult.networkError}，平滑转入收银台 UI`,
+            protocolDirect: true
+        };
     }
 
-    // 若页面内调用未果，采用 Node axios 兜底
-    if (!confirmResult) {
-        try {
-            const client = createHttpClient(proxy);
-            const nodeRes = await client.post('https://chatgpt.com/backend-api/payments/checkout/confirm', {
-                checkout_session_id: sessionId,
-                confirmation_token: ctoken,
-                confirm_token: ctoken,
-                selected_payment_method_type: 'card',
-                save_payment_method_for_reuse: 'true'
-            }, { headers: targetHeaders });
-            confirmResult = { status: nodeRes.status, ok: nodeRes.status === 200, data: nodeRes.data, rawText: JSON.stringify(nodeRes.data || {}) };
-        } catch (nodeErr) {
-            console.warn(`[-] [协议支付] Node 网络发送 confirm 失败: ${nodeErr.message}`);
-            return {
-                success: false,
-                declined: false,
-                fallbackToUi: true,
-                error: `协议确认网络错误: ${nodeErr.message}，平滑转入收银台 UI`,
-                protocolDirect: true
-            };
+    // 参考项目经验：如果上游返回 400 且要求保存选项 (new_card_save_choice_required / save choice)，才补发
+    const needsSaveChoice = (res) => {
+        if (!res || res.status !== 400) return false;
+        const text = String(res.rawText || JSON.stringify(res.data || '')).toLowerCase();
+        return text.includes('save_choice') || text.includes('save choice');
+    };
+
+    if (needsSaveChoice(confirmResult)) {
+        for (const choice of [true, false]) {
+            console.log(`⚡ [协议支付] 上游要求明确保存卡片选项，尝试 save_payment_method_for_reuse=${choice}...`);
+            confirmResult = await postConfirmRequest({
+                page,
+                sessionId,
+                ctoken,
+                targetHeaders,
+                proxy,
+                saveChoice: choice
+            });
+            if (!needsSaveChoice(confirmResult)) break;
         }
     }
 
@@ -342,8 +400,8 @@ async function executeStripeProtocolPayment({
 
     // 检查是否拒卡
     if (confirmResult.status >= 400 || statusStr === 'failed' || piStatus === 'requires_payment_method') {
-        const errorDetail = payload.error?.message || payload.message || confirmResult.rawText || '上游银行拒绝交易';
-        console.warn(`[-] [协议支付] 上游返回支付未完成或拒卡: ${errorDetail.slice(0, 160)}`);
+        const errorDetail = payload.error?.message || payload.message || payload.detail || confirmResult.rawText || '上游银行拒绝交易';
+        console.warn(`[-] [协议支付] 上游返回支付未完成或拒卡: ${String(errorDetail).slice(0, 160)}`);
         return {
             success: false,
             declined: true,

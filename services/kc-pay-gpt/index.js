@@ -690,7 +690,7 @@ async function run() {
                         country: billingCountry,
                         currency: billingCurrency,
                         planNameOverride,
-                        verifyPage: !debugOnly || diagnosticMode === 'checkout',
+                        verifyPage: Boolean(debugOnly && diagnosticMode === 'checkout'),
                         proxy: proxyConfig?.server || CONFIG.proxy
                     });
                     checkoutOpened = true;
@@ -773,6 +773,7 @@ async function run() {
             cdkCode,
             email: email || loginInfo?.email,
             stripeSessionId,
+            checkoutUrl: checkoutResult?.checkoutUrl,
             accessToken: loginInfo?.session?.accessToken || CONFIG.chatgptToken,
             proxy: proxyConfig?.server || CONFIG.proxy,
             grokAccount: platform === 'grok' ? loginInfo : null,

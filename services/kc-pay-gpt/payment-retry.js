@@ -174,75 +174,92 @@ async function executePaymentWithRetry(page, options) {
 
     let billedAmount = 0;
     let billedCurrency = currency;
-    const requiresCurrencyPreflight = platform === 'chatgpt' || !options?.platform;
+    const canTryProtocol = (platform === 'chatgpt' || !platform) && Boolean(stripeSessionId && options?.accessToken);
+    const requiresCurrencyPreflight = (platform === 'chatgpt' || !options?.platform) && !canTryProtocol;
+
+    if (canTryProtocol) {
+        billedCurrency = currency;
+        const expectedRule = getExpectedPlanPriceRule(platform, planType, billedCurrency);
+        if (expectedRule?.amount) {
+            billedAmount = expectedRule.amount;
+        } else if (billedCurrency === 'PHP' && /plus/i.test(planType)) {
+            billedAmount = 1100;
+        } else if (billedCurrency === 'USD' && /plus/i.test(planType)) {
+            billedAmount = 20;
+        }
+        progress(`⚡ [极速协议] 预设套餐结算金额: ${billedCurrency} ${billedAmount || '(按上游结算)'}`);
+    }
+
     try {
-        if (platform === 'chatgpt' || !platform) {
-            await ensureChatGptProUsageTier(page, planType).catch((err) => {
-                console.warn('⚠️ [PaymentRetry] Pro 档位选择异常 (非阻塞):', err.message);
-            });
-        }
-        if (requiresCurrencyPreflight) {
-            progress('等待 Checkout 应付金额和币种加载确认...');
-        }
-        const due = requiresCurrencyPreflight
-            ? await waitForCheckoutDueAmount(page)
-            : await readCheckoutDueAmount(page);
-        if (requiresCurrencyPreflight && (!due?.amount || !due.currency)) {
-            await persistPaymentState('not_started');
-            const error = 'Checkout 应付金额或币种无法确认，已停止支付 [CHECKOUT_CURRENCY_UNCONFIRMED]';
-            progress(error);
-            return { success: false, error, code: 'CHECKOUT_CURRENCY_UNCONFIRMED',
-                manualIntervention: true, paymentState: 'not_started', screenshots: [] };
-        }
-        if (requiresCurrencyPreflight && due.currency !== currency) {
-            await persistPaymentState('not_started');
-            const error = `Checkout 币种 ${due.currency} 与卡密支付币种 ${currency} 不一致，已停止支付 [PAYMENT_CURRENCY_MISMATCH]`;
-            progress(error);
-            return { success: false, error, code: 'PAYMENT_CURRENCY_MISMATCH',
-                manualIntervention: true, paymentState: 'not_started', screenshots: [] };
-        }
-        if (due?.amount) {
-            billedAmount = due.amount;
-            billedCurrency = due.currency || billedCurrency;
-            progress(`Checkout 应付金额: ${billedCurrency} ${billedAmount}`);
+        if (!canTryProtocol) {
+            if (platform === 'chatgpt' || !platform) {
+                await ensureChatGptProUsageTier(page, planType).catch((err) => {
+                    console.warn('⚠️ [PaymentRetry] Pro 档位选择异常 (非阻塞):', err.message);
+                });
+            }
+            if (requiresCurrencyPreflight) {
+                progress('等待 Checkout 应付金额和币种加载确认...');
+            }
+            const due = requiresCurrencyPreflight
+                ? await waitForCheckoutDueAmount(page)
+                : await readCheckoutDueAmount(page);
+            if (requiresCurrencyPreflight && (!due?.amount || !due.currency)) {
+                await persistPaymentState('not_started');
+                const error = 'Checkout 应付金额或币种无法确认，已停止支付 [CHECKOUT_CURRENCY_UNCONFIRMED]';
+                progress(error);
+                return { success: false, error, code: 'CHECKOUT_CURRENCY_UNCONFIRMED',
+                    manualIntervention: true, paymentState: 'not_started', screenshots: [] };
+            }
+            if (requiresCurrencyPreflight && due.currency !== currency) {
+                await persistPaymentState('not_started');
+                const error = `Checkout 币种 ${due.currency} 与卡密支付币种 ${currency} 不一致，已停止支付 [PAYMENT_CURRENCY_MISMATCH]`;
+                progress(error);
+                return { success: false, error, code: 'PAYMENT_CURRENCY_MISMATCH',
+                    manualIntervention: true, paymentState: 'not_started', screenshots: [] };
+            }
+            if (due?.amount) {
+                billedAmount = due.amount;
+                billedCurrency = due.currency || billedCurrency;
+                progress(`Checkout 应付金额: ${billedCurrency} ${billedAmount}`);
 
-            const expectedRule = getExpectedPlanPriceRule(platform, planType, billedCurrency);
-            if (expectedRule) {
-                const checkMismatch = (amt) => {
-                    const num = Number(amt);
-                    return expectedRule.amount !== undefined
-                        ? Math.abs(num - expectedRule.amount) > 1.0
-                        : (num < expectedRule.min || num > expectedRule.max);
-                };
+                const expectedRule = getExpectedPlanPriceRule(platform, planType, billedCurrency);
+                if (expectedRule) {
+                    const checkMismatch = (amt) => {
+                        const num = Number(amt);
+                        return expectedRule.amount !== undefined
+                            ? Math.abs(num - expectedRule.amount) > 1.0
+                            : (num < expectedRule.min || num > expectedRule.max);
+                    };
 
-                if (checkMismatch(billedAmount)) {
-                    progress(`Checkout 当前应付金额 (${billedCurrency} ${billedAmount}) 暂未与套餐期望金额 (${expectedRule.label}) 联动，等待金额最终就绪...`);
-                    const pollDeadline = Date.now() + 10000;
-                    while (Date.now() < pollDeadline) {
-                        if (page?.waitForTimeout) {
-                            await page.waitForTimeout(600);
-                        } else if (typeof setTimeout !== 'undefined') {
-                            await new Promise(r => setTimeout(r, 20));
-                        }
-                        const refreshed = await readCheckoutDueAmount(page).catch(() => null);
-                        if (refreshed?.amount) {
-                            billedAmount = refreshed.amount;
-                            billedCurrency = refreshed.currency || billedCurrency;
-                            if (!checkMismatch(billedAmount)) {
-                                progress(`Checkout 应付金额已联动就绪: ${billedCurrency} ${billedAmount}`);
-                                break;
+                    if (checkMismatch(billedAmount)) {
+                        progress(`Checkout 当前应付金额 (${billedCurrency} ${billedAmount}) 暂未与套餐期望金额 (${expectedRule.label}) 联动，等待金额最终就绪...`);
+                        const pollDeadline = Date.now() + 10000;
+                        while (Date.now() < pollDeadline) {
+                            if (page?.waitForTimeout) {
+                                await page.waitForTimeout(600);
+                            } else if (typeof setTimeout !== 'undefined') {
+                                await new Promise(r => setTimeout(r, 20));
                             }
+                            const refreshed = await readCheckoutDueAmount(page).catch(() => null);
+                            if (refreshed?.amount) {
+                                billedAmount = refreshed.amount;
+                                billedCurrency = refreshed.currency || billedCurrency;
+                                if (!checkMismatch(billedAmount)) {
+                                    progress(`Checkout 应付金额已联动就绪: ${billedCurrency} ${billedAmount}`);
+                                    break;
+                                }
+                            }
+                            if (!page?.waitForTimeout) break;
                         }
-                        if (!page?.waitForTimeout) break;
                     }
-                }
 
-                if (checkMismatch(billedAmount)) {
-                    await persistPaymentState('not_started');
-                    const error = `Checkout 应付金额 ${billedCurrency} ${billedAmount} 与套餐 ${planType} 期望金额 (${expectedRule.label}) 不一致，已安全拦截支付 [CHECKOUT_AMOUNT_MISMATCH]`;
-                    progress(error);
-                    return { success: false, error, code: 'CHECKOUT_AMOUNT_MISMATCH',
-                        manualIntervention: true, paymentState: 'not_started', screenshots: [] };
+                    if (checkMismatch(billedAmount)) {
+                        await persistPaymentState('not_started');
+                        const error = `Checkout 应付金额 ${billedCurrency} ${billedAmount} 与套餐 ${planType} 期望金额 (${expectedRule.label}) 不一致，已安全拦截支付 [CHECKOUT_AMOUNT_MISMATCH]`;
+                        progress(error);
+                        return { success: false, error, code: 'CHECKOUT_AMOUNT_MISMATCH',
+                            manualIntervention: true, paymentState: 'not_started', screenshots: [] };
+                    }
                 }
             }
         }
@@ -357,6 +374,21 @@ async function executePaymentWithRetry(page, options) {
                 }
 
                 if (!paymentResult) {
+                    if (canTryProtocol) {
+                        const checkoutUrl = options.checkoutUrl || `https://chatgpt.com/checkout/openai_llc/${stripeSessionId}`;
+                        progress(`⚡ [协议回退] 唤醒浏览器收银台: ${checkoutUrl}`);
+                        if (page && typeof page.goto === 'function') {
+                            const curUrl = page.url ? page.url() : '';
+                            if (!curUrl.includes(stripeSessionId)) {
+                                await page.goto(checkoutUrl, { waitUntil: 'commit', timeout: 30000 }).catch(() => {});
+                            }
+                        }
+                        const due = await waitForCheckoutDueAmount(page).catch(() => null);
+                        if (due?.amount) {
+                            billedAmount = due.amount;
+                            billedCurrency = due.currency || billedCurrency;
+                        }
+                    }
                     paymentResult = await completeStripeCardPayment(page, cardInfo, address, {
                         cardAttempt, holderName: billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
                         paymentRegion: region,
