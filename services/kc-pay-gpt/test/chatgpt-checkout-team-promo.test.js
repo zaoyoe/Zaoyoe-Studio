@@ -19,6 +19,29 @@ describe('ChatGPT Team & Promo Campaign Protocol Integration', () => {
             expect(plan.platform).toBe('chatgpt');
             expect(plan.planName).toBe('chatgptteamplan');
         });
+
+        it('resolves activation input correctly for team CDK', () => {
+            const { resolveActivationInput } = require('../activation-routing');
+            const cdkDetails = {
+                cdk_code: 'KC-TEAM12345',
+                plan_type: 'team',
+                platform: 'chatgpt'
+            };
+            const res = resolveActivationInput({
+                cdkDetails,
+                rawSession: 'fake_token.payload.signature',
+                validateChatGpt: () => ({ token: 'mock_token', storedSession: 'mock_session' })
+            });
+            expect(res.platform).toBe('chatgpt');
+            expect(res.planType).toBe('team');
+            expect(res.planName).toBe('chatgptteamplan');
+        });
+
+        it('returns proper plan labels from getPlanTypeLabel', () => {
+            const { getPlanTypeLabel } = require('../region-config');
+            expect(getPlanTypeLabel('team')).toBe('ChatGPT Team');
+            expect(getPlanTypeLabel('chatgpt_team')).toBe('ChatGPT Team');
+        });
     });
 
     describe('ChatGPT Checkout Payload Generation', () => {
