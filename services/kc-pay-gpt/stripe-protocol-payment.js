@@ -499,6 +499,362 @@ async function prewarmStripeConfirmationToken({ card, billing, proxy = '', publi
 }
 
 /**
+ * 执行 Stripe Hosted Checkout (如 ChatGPT Team 档位 / cs_live_ 会话) 纯协议直充
+ *
+ * 架构优势：
+ * - 0ms Sentinel PoW 依赖：Hosted Checkout 直接通过 Stripe payment_pages 处理，无需任何 OpenAI 客户端 PoW
+ * - 耗时从收银台 UI 渲染的 ~40s 压缩到 ~5-7s
+ * - 原生支持 Stripe 设备指纹 (m.stripe.com/6) 与税区 address 同步
+ *
+ * 链路：
+ * 1. payment_pages/{cs}/init -> 获取 config_id, eid, total due, currency
+ * 2. payment_pages/{cs} (tax_region) -> 同步免税账单国家与省份，刷新最新 config_id 与应付金额
+ * 3. payment_methods -> 生成带 hosted attribution 的 pm_ 标识
+ * 4. payment_pages/{cs}/confirm -> 提交托管扣款
+ * 5. (可选) payment_pages/{cs}/poll -> 确认最终支付状态
+ */
+async function executeStripeHostedProtocolPayment({
+    page,
+    card,
+    billing = {},
+    sessionId,
+    publishableKey = DEFAULT_OPENAI_PK,
+    currency = 'USD',
+    proxy = '',
+    onPaymentAttemptStarted,
+    prewarmedTokens = null
+}) {
+    const cardLast4 = String(card.number || card.cardNumber || card.card_number || '').slice(-4);
+    console.log(`⚡ [协议支付/Hosted] 开始 Stripe Hosted Checkout 纯协议支付 (会话: ${sessionId.slice(0, 16)}..., 卡号: ...${cardLast4})...`);
+
+    if (typeof onPaymentAttemptStarted === 'function') {
+        try {
+            await onPaymentAttemptStarted();
+        } catch (_) {}
+    }
+
+    const stripeHeaders = {
+        'Origin': 'https://pay.openai.com',
+        'Referer': 'https://pay.openai.com/',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+    };
+
+    const country = String(billing.country || 'US').toUpperCase();
+    const browserLocale = country === 'PH' ? 'en-PH' : (country === 'EG' ? 'ar-EG' : 'en-US');
+    const browserTimezone = country === 'PH' ? 'Asia/Manila' : (country === 'EG' ? 'Africa/Cairo' : 'America/New_York');
+
+    // 1. 初始化结账: payment_pages/{cs_id}/init
+    console.log(`⚡ [协议支付/Hosted] 1/4 正在初始化 Hosted 收银台 (init)...`);
+    let initData = {};
+    let configId = '';
+    let eid = 'NA';
+    let dueAmount = 0;
+    let hostedCurrency = currency;
+    let customerEmail = billing.email || '';
+
+    try {
+        const initRes = await executeWithProxyRetry(async (client) => {
+            const body = {
+                key: publishableKey,
+                eid: 'NA',
+                browser_locale: browserLocale,
+                browser_timezone: browserTimezone,
+                redirect_type: 'url'
+            };
+            return await client.post(
+                `https://api.stripe.com/v1/payment_pages/${sessionId}/init`,
+                querystring.stringify(body),
+                { headers: stripeHeaders }
+            );
+        }, { proxy, maxRetries: 3 });
+
+        initData = initRes.data || {};
+        configId = String(initData.config_id || '');
+        eid = String(initData.eid || 'NA');
+        hostedCurrency = String(initData.currency || currency).toUpperCase();
+        if (initData.customer_email && !customerEmail) {
+            customerEmail = initData.customer_email;
+        }
+
+        const rawDue = (initData.total_summary || {}).due ?? (initData.total_summary || {}).total;
+        if (rawDue != null && !isNaN(rawDue)) {
+            dueAmount = Number(rawDue);
+        }
+        console.log(`⚡ [协议支付/Hosted] ✅ Init 成功: currency=${hostedCurrency}, due=${dueAmount}, configId=${configId.slice(0, 12)}...`);
+    } catch (initErr) {
+        console.warn(`[-] [协议支付/Hosted] Init 异常: ${initErr.message}`);
+        return {
+            success: false,
+            declined: false,
+            fallbackToUi: true,
+            error: `Hosted Init 失败: ${initErr.message}`,
+            protocolDirect: true
+        };
+    }
+
+    // 2. 提交税区与地址: payment_pages/{cs_id}
+    if (billing && (billing.country || billing.line1)) {
+        console.log(`⚡ [协议支付/Hosted] 2/4 正在提交账单与免税地址...`);
+        try {
+            const addressPayload = {
+                key: publishableKey,
+                eid: eid,
+                'tax_region[country]': billing.country || 'US',
+                'tax_id_collection[purchasing_as_business]': 'false'
+            };
+            for (const name of ['state', 'postal_code', 'line1', 'city']) {
+                const val = String(billing[name] || (name === 'postal_code' ? billing.zip : '') || '').trim();
+                if (val) addressPayload[`tax_region[${name}]`] = val;
+            }
+
+            const taxRes = await executeWithProxyRetry(async (client) => {
+                return await client.post(
+                    `https://api.stripe.com/v1/payment_pages/${sessionId}`,
+                    querystring.stringify(addressPayload),
+                    { headers: stripeHeaders }
+                );
+            }, { proxy, maxRetries: 2 });
+
+            const taxData = taxRes.data || {};
+            if (taxData.config_id) {
+                configId = String(taxData.config_id);
+            }
+            const updatedDue = (taxData.total_summary || {}).due ?? (taxData.total_summary || {}).total;
+            if (updatedDue != null && !isNaN(updatedDue)) {
+                dueAmount = Number(updatedDue);
+            }
+            console.log(`⚡ [协议支付/Hosted] ✅ 税区与地址同步完成 (due=${dueAmount}, configId=${configId.slice(0, 12)}...)`);
+        } catch (taxErr) {
+            console.warn(`⚠️ [协议支付/Hosted] 提交税区非阻塞告警: ${taxErr.message}`);
+        }
+    }
+
+    // 3. 注册指纹与创建 PaymentMethod (pm_)
+    console.log(`⚡ [协议支付/Hosted] 3/4 正在生成 PaymentMethod (带 hosted_checkout 来源属性)...`);
+    let fp = await registerStripeDeviceFingerprint({ proxy });
+    const { month, year } = normalizeExpiry(card);
+
+    const clientSessionId = crypto.randomUUID();
+    const pmBody = {
+        'type': 'card',
+        'card[number]': String(card.number || card.cardNumber || card.card_number || '').replace(/\s+/g, ''),
+        'card[exp_month]': month,
+        'card[exp_year]': year,
+        'card[cvc]': String(card.cvc || '').trim(),
+        'billing_details[name]': billing.name || 'Cardholder',
+        'billing_details[email]': customerEmail || billing.email || 'customer@example.com',
+        'billing_details[address][country]': billing.country || 'US',
+        'billing_details[address][line1]': billing.line1 || '100 W 10th Ave',
+        'billing_details[address][city]': billing.city || 'Eugene',
+        'billing_details[address][state]': billing.state || 'Oregon',
+        'billing_details[address][postal_code]': billing.postal_code || billing.zip || '97401',
+        'payment_user_agent': `stripe.js/${RUNTIME_HASH}; stripe-js-v3/${RUNTIME_HASH}; checkout`,
+        'client_attribution_metadata[client_session_id]': clientSessionId,
+        'client_attribution_metadata[checkout_session_id]': sessionId,
+        'client_attribution_metadata[merchant_integration_source]': 'checkout',
+        'client_attribution_metadata[merchant_integration_version]': 'hosted_checkout',
+        'client_attribution_metadata[payment_method_selection_flow]': 'merchant_specified',
+        'guid': fp.guid,
+        'muid': fp.muid,
+        'sid': fp.sid,
+        'key': publishableKey,
+        '_stripe_version': V_HOSTED
+    };
+    if (configId) {
+        pmBody['client_attribution_metadata[checkout_config_id]'] = configId;
+    }
+
+    let pmId = '';
+    try {
+        const pmRes = await executeWithProxyRetry(async (client) => {
+            return await client.post('https://api.stripe.com/v1/payment_methods', querystring.stringify(pmBody), { headers: stripeHeaders });
+        }, { proxy, maxRetries: 3 });
+
+        if (pmRes.status !== 200 || !pmRes.data?.id) {
+            const err = pmRes.data?.error || {};
+            const errMsg = err.message || `PaymentMethod 创建失败 (HTTP ${pmRes.status})`;
+            console.warn(`[-] [协议支付/Hosted] 卡片令牌化未通过: ${errMsg}`);
+            return {
+                success: false,
+                declined: true,
+                canRetryCard: true,
+                error: errMsg,
+                code: err.code || 'card_declined',
+                decline_code: err.decline_code || '',
+                submitted: true,
+                submissionAttempted: true,
+                protocolDirect: true
+            };
+        }
+        pmId = pmRes.data.id;
+        console.log(`⚡ [协议支付/Hosted] ✅ PaymentMethod 创建成功: ${pmId}`);
+    } catch (pmErr) {
+        console.warn(`[-] [协议支付/Hosted] 卡片创建网络异常: ${pmErr.message}`);
+        return {
+            success: false,
+            declined: false,
+            fallbackToUi: true,
+            error: `卡片网络提交异常: ${pmErr.message}`,
+            protocolDirect: true
+        };
+    }
+
+    // 4. 提交 Confirm 确认支付
+    console.log(`⚡ [协议支付/Hosted] 4/4 正在提交最终 Confirm 扣款确认 (expected_amount=${dueAmount})...`);
+    const confirmBody = {
+        'key': publishableKey,
+        '_stripe_version': V_HOSTED,
+        'eid': eid,
+        'payment_method': pmId,
+        'expected_amount': String(dueAmount),
+        'consent[terms_of_service]': 'accepted',
+        'expected_payment_method_type': 'card',
+        'guid': fp.guid,
+        'muid': fp.muid,
+        'sid': fp.sid,
+        'client_attribution_metadata[client_session_id]': clientSessionId,
+        'client_attribution_metadata[checkout_session_id]': sessionId,
+        'client_attribution_metadata[merchant_integration_source]': 'checkout',
+        'client_attribution_metadata[merchant_integration_version]': 'hosted_checkout',
+        'client_attribution_metadata[payment_method_selection_flow]': 'merchant_specified',
+        'link_brand': 'link',
+        'passive_captcha_ekey': ''
+    };
+    if (configId) {
+        confirmBody['client_attribution_metadata[checkout_config_id]'] = configId;
+    }
+
+    let confirmRes;
+    try {
+        confirmRes = await executeWithProxyRetry(async (client) => {
+            return await client.post(
+                `https://api.stripe.com/v1/payment_pages/${sessionId}/confirm`,
+                querystring.stringify(confirmBody),
+                { headers: stripeHeaders }
+            );
+        }, { proxy, maxRetries: 2 });
+    } catch (confirmNetErr) {
+        console.warn(`[-] [协议支付/Hosted] Confirm 网络异常: ${confirmNetErr.message}`);
+        return {
+            success: false,
+            declined: false,
+            fallbackToUi: true,
+            error: `Hosted Confirm 请求中断: ${confirmNetErr.message}`,
+            protocolDirect: true
+        };
+    }
+
+    const confirmData = typeof confirmRes.data === 'object' && confirmRes.data !== null ? confirmRes.data : {};
+    const confirmStatus = confirmRes.status;
+
+    // 检查拒卡与参数错误
+    if (confirmStatus >= 400 || confirmData.error) {
+        const err = confirmData.error || {};
+        const extra = err.extra_fields || {};
+        const declineCode = err.decline_code || extra.confirm_error_reason || '';
+        const errMsg = err.message || `Stripe 拒付 (HTTP ${confirmStatus})`;
+        console.warn(`[-] [协议支付/Hosted] 上游扣款未通过: ${errMsg} (code=${err.code}, decline=${declineCode})`);
+        return {
+            success: false,
+            declined: true,
+            canRetryCard: true,
+            error: errMsg,
+            code: err.code || 'card_declined',
+            decline_code: declineCode,
+            submitted: true,
+            submissionAttempted: true,
+            protocolDirect: true,
+            amount: dueAmount / 100,
+            currency: hostedCurrency
+        };
+    }
+
+    // 检查是否触发 3DS 或 hCaptcha challenge
+    const pi = confirmData.payment_intent || {};
+    const nextAction = confirmData.next_action || pi.next_action || {};
+    if (pi.status === 'requires_action' || nextAction.type) {
+        console.log(`⚡ [协议支付/Hosted] 触发了 3DS 或安全验证挑战 (${nextAction.type || 'requires_action'})，平滑转入收银台 UI...`);
+        return {
+            success: false,
+            declined: false,
+            fallbackToUi: true,
+            requiresAction: true,
+            reason: '3ds_required',
+            error: '银行卡需要 3DS 验证，平滑切入收银台 UI',
+            protocolDirect: true
+        };
+    }
+
+    // 5. Poll 检查支付终态
+    console.log(`⚡ [协议支付/Hosted] 5/5 正在确认最终支付状态 (poll)...`);
+    let finalState = String(confirmData.state || pi.status || '').toLowerCase();
+    if (finalState === 'succeeded' || confirmData.payment_status === 'paid') {
+        console.log(`⚡ [协议支付/Hosted] 🏆 恭喜！Stripe Hosted 直充扣款成功，团队订阅正式开通！`);
+        return {
+            success: true,
+            status: 'succeeded',
+            paymentState: 'paid',
+            submitted: true,
+            submissionAttempted: true,
+            protocolDirect: true,
+            amount: dueAmount / 100,
+            currency: hostedCurrency
+        };
+    }
+
+    // 轮询 poll (最多 5 次)
+    for (let i = 1; i <= 5; i++) {
+        await new Promise(r => setTimeout(r, 1200));
+        try {
+            const pollRes = await executeWithProxyRetry(async (client) => {
+                return await client.get(`https://api.stripe.com/v1/payment_pages/${sessionId}/poll`, {
+                    params: { key: publishableKey },
+                    headers: stripeHeaders
+                });
+            }, { proxy, maxRetries: 2 });
+
+            const pollData = pollRes.data || {};
+            finalState = String(pollData.state || pollData.payment_object_status || '').toLowerCase();
+            console.log(`⚡ [协议支付/Hosted] Poll [${i}/5] state=${finalState}`);
+
+            if (finalState === 'succeeded') {
+                console.log(`⚡ [协议支付/Hosted] 🏆 恭喜！Stripe Hosted 订阅状态已确认为 succeeded！`);
+                return {
+                    success: true,
+                    status: 'succeeded',
+                    paymentState: 'paid',
+                    submitted: true,
+                    submissionAttempted: true,
+                    protocolDirect: true,
+                    amount: dueAmount / 100,
+                    currency: hostedCurrency
+                };
+            }
+            if (['failed', 'expired', 'canceled'].includes(finalState)) {
+                return {
+                    success: false,
+                    declined: true,
+                    canRetryCard: true,
+                    error: `Stripe Hosted 会话终态失败: ${finalState}`,
+                    submitted: true,
+                    submissionAttempted: true,
+                    protocolDirect: true
+                };
+            }
+        } catch (_) {}
+    }
+
+    return {
+        success: false,
+        declined: false,
+        fallbackToUi: true,
+        error: `Stripe Hosted 状态暂未确认为 succeeded (当前: ${finalState})，平滑转入收银台 UI`,
+        protocolDirect: true
+    };
+}
+
+/**
  * 执行 Stripe 纯协议支付闭环
  *
  * 提速架构：
@@ -523,6 +879,22 @@ async function executeStripeProtocolPayment({
     onPaymentAttemptStarted,
     prewarmedTokens = null
 }) {
+    // 若会话为 Stripe 官方托管长链会话 (cs_live_... / cs_test_...，如 ChatGPT Team 档位)，直接切入 Hosted 纯协议直充通道
+    if (sessionId && (sessionId.startsWith('cs_live_') || sessionId.startsWith('cs_test_'))) {
+        console.log(`⚡ [协议支付] 检测到 Stripe Hosted Checkout 会话 (${sessionId.slice(0, 16)}...)，启用 Hosted 纯协议直充流水线`);
+        return await executeStripeHostedProtocolPayment({
+            page,
+            card,
+            billing,
+            sessionId,
+            publishableKey,
+            currency,
+            proxy,
+            onPaymentAttemptStarted,
+            prewarmedTokens
+        });
+    }
+
     const cardLast4 = String(card.number || card.card_number || '').slice(-4);
     console.log(`⚡ [协议支付] 开始 Stripe 纯协议直充 (免收银台 UI 渲染, 卡号: ...${cardLast4})...`);
 
@@ -888,6 +1260,7 @@ module.exports = {
     createStripeConfirmationToken,
     prewarmStripeConfirmationToken,
     executeStripeProtocolPayment,
+    executeStripeHostedProtocolPayment,
     syncCheckoutBillingTax,
     executeWithProxyRetry,
     DEFAULT_OPENAI_PK

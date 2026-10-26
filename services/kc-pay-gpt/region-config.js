@@ -29,6 +29,7 @@ const PLATFORM_CONFIG = {
         plans: {
             go: { label: 'ChatGPT Go', amount: 5.00 },
             plus: { label: 'ChatGPT Plus', amount: 20.00 },
+            team: { label: 'ChatGPT Team', amount: 30.00 },
             pro_100: { label: 'ChatGPT PRO 100', amount: 100.00 },
             pro_200: { label: 'ChatGPT PRO 200', amount: 200.00 },
             pro_500: { label: 'ChatGPT PRO 500', amount: 500.00 }
@@ -75,6 +76,8 @@ const PLAN_TYPE_LABELS = {
     // ChatGPT
     go: 'ChatGPT Go',
     plus: 'ChatGPT Plus',
+    team: 'ChatGPT Team',
+    chatgpt_team: 'ChatGPT Team',
     pro_100: 'ChatGPT PRO 100',
     pro_200: 'ChatGPT PRO 200',
     pro_500: 'ChatGPT PRO 500',

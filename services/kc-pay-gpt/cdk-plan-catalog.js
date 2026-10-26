@@ -2,9 +2,11 @@
 
 const { PLATFORM_CONFIG, getPlatformForPlan } = require('./region-config');
 const { isLegacy } = require('./public/grok-plan-catalog');
-const chatgptNames = { go: 'chatgptgoplan', plus: 'chatgptplusplan', pro_100: 'chatgptprolite',
-    pro_200: 'chatgptpro', pro_500: 'chatgptpromax', pro_5x: 'chatgptprolite', pro_20x: 'chatgptpro',
-    pro5x: 'chatgptprolite', pro20x: 'chatgptpro', pro100: 'chatgptprolite', pro200: 'chatgptpro', pro500: 'chatgptpromax' };
+const chatgptNames = { go: 'chatgptgoplan', plus: 'chatgptplusplan', team: 'chatgptteamplan',
+    chatgpt_team: 'chatgptteamplan', team_monthly: 'chatgptteamplan', team_yearly: 'chatgptteamplan',
+    pro_100: 'chatgptprolite', pro_200: 'chatgptpro', pro_500: 'chatgptpromax', pro_5x: 'chatgptprolite',
+    pro_20x: 'chatgptpro', pro5x: 'chatgptprolite', pro20x: 'chatgptpro', pro100: 'chatgptprolite',
+    pro200: 'chatgptpro', pro500: 'chatgptpromax' };
 const aliases = { claude_pro_yearly: 'claude_pro_annual', claude_max_5x: 'claude_max_100', claude_max_20x: 'claude_max_200',
     claude_max5x: 'claude_max_100', claude_max20x: 'claude_max_200', grok_lite: 'supergrok_lite',
     grok_super: 'supergrok', grok_plus: 'supergrok_plus', grok_heavy: 'supergrok_heavy' };

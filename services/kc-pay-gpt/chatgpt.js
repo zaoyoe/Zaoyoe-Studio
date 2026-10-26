@@ -7,14 +7,50 @@ const { executePaymentWithRetry } = require('./payment-retry');
 const { summarizeCheckoutErrorBody, buildCheckoutHttpFailure, isCheckoutUnusualActivityError } = require('./checkout-diagnostics');
 const { isChatGptAuthFailure } = require('./chatgpt-auth-state');
 
-function buildCheckoutPayload(planName, country, currency) {
+function isTeamPlan(planName, planType) {
+    const raw = String(planName || planType || '').toLowerCase();
+    return raw.includes('team');
+}
+
+function buildCheckoutPayload(planName, country, currency, options = {}) {
+    if (isTeamPlan(planName, options.planType)) {
+        const seats = Math.max(2, Math.min(999, parseInt(options.seatQuantity || options.seats || 5, 10) || 5));
+        const interval = String(options.priceInterval || 'month').toLowerCase() === 'year' ? 'year' : 'month';
+        const workspaceName = String(options.workspaceName || 'Team Workspace').slice(0, 80);
+        const payload = {
+            entry_point: 'team_workspace_purchase_modal',
+            plan_name: 'chatgptteamplan',
+            billing_details: { country, currency },
+            cancel_url: 'https://chatgpt.com/',
+            checkout_ui_mode: 'redirect',
+            check_card_proxy: true,
+            team_plan_data: {
+                workspace_name: workspaceName,
+                price_interval: interval,
+                seat_quantity: seats
+            }
+        };
+        if (options.promoCode) {
+            payload.promo_code = String(options.promoCode).trim();
+        }
+        return payload;
+    }
+
     const uiMode = String(process.env.CHECKOUT_UI_MODE || 'custom').trim() || 'custom';
-    return {
+    const payload = {
         entry_point: 'all_plans_pricing_modal',
         plan_name: planName,
         billing_details: { country, currency },
         checkout_ui_mode: uiMode
     };
+    if (options.promoCampaignId || options.promo) {
+        const campaignId = String(options.promoCampaignId || 'plus-1-month-free').trim();
+        payload.promo_campaign = {
+            promo_campaign_id: campaignId,
+            is_coupon_from_query_param: false
+        };
+    }
+    return payload;
 }
 
 function isBillingCountryMismatchError(message) {
@@ -84,7 +120,7 @@ function parseCheckoutApiResponse(status, bodyText) {
 /**
  * 使用 axios 直接调用 Checkout API（供后台调试 / 无 Playwright 场景）
  */
-async function createHostedCheckoutLink({ accessToken, planType = 'plus', planName, country, currency }) {
+async function createHostedCheckoutLink({ accessToken, planType = 'plus', planName, country, currency, ...options }) {
     const token = String(accessToken || '').trim();
     if (!token) {
         return { success: false, error: '缺少 AccessToken' };
@@ -93,7 +129,7 @@ async function createHostedCheckoutLink({ accessToken, planType = 'plus', planNa
     const region = String(country || 'PH').toUpperCase();
     const billingCurrency = String(currency || getRegionConfig(region)?.currency || 'PHP').toUpperCase();
     const planNameResolved = String(planName || store.resolvePlanName(planType)).trim();
-    const payload = buildCheckoutPayload(planNameResolved, region, billingCurrency);
+    const payload = buildCheckoutPayload(planNameResolved, region, billingCurrency, { ...options, planType });
 
     const response = await axios.post(
         'https://chatgpt.com/backend-api/payments/checkout',
@@ -199,7 +235,7 @@ class ChatGPTService {
     async createCheckoutSession(planType, country, currency, planNameOverride, options = {}) {
         try {
             const planName = String(planNameOverride || store.resolvePlanName(planType)).trim();
-            const payload = buildCheckoutPayload(planName, country, currency);
+            const payload = buildCheckoutPayload(planName, country, currency, { ...options, planType });
             console.log(`[ChatGPT] 创建 Checkout Session: plan_name=${planName}, country=${country}, currency=${currency}, checkout_ui_mode=${payload.checkout_ui_mode}`);
 
             const requestHeaders = {
