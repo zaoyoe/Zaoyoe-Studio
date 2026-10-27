@@ -13,7 +13,15 @@
 const store = require('./mysql-store');
 const { completeStripeCardPayment, readCheckoutDueAmount, waitForCheckoutDueAmount, estimateTaxFreeAmount } = require('./stripe-payment');
 const { ensureChatGptProUsageTier } = require('./pricing-checkout');
-const { pickBillingAddressForCheckout, markAddressBound } = require('./tax-free-address');
+const taxFreeAddress = require('./tax-free-address');
+const pickBillingAddressForCheckout = taxFreeAddress.pickBillingAddressForCheckout;
+const markAddressBound = taxFreeAddress.markAddressBound;
+const resolveCardBillingProfile = typeof taxFreeAddress.resolveCardBillingProfile === 'function'
+    ? taxFreeAddress.resolveCardBillingProfile
+    : (card, fallback) => (fallback || card);
+const isUsTaxFreeState = typeof taxFreeAddress.isUsTaxFreeState === 'function'
+    ? taxFreeAddress.isUsTaxFreeState
+    : (state) => /oregon|or\b|alaska|ak\b|delaware|de\b|montana|mt\b|new hampshire|nh\b/i.test(String(state || ''));
 const { getRegionConfig } = require('./region-config');
 const { classifyPaymentResult, classifyOpenAiCardMethodFailure } = require('./task-safety');
 const { validateCardNumber } = require('./card-validator');
@@ -192,20 +200,20 @@ async function executePaymentWithRetry(page, options) {
 
     if (canTryProtocol) {
         billedCurrency = currency;
-        const isOregon = (address?.country === 'US' && /oregon|or\b/i.test(address?.state || ''));
+        const isTaxFree = (address?.country === 'US' && (isUsTaxFreeState(address?.state) || /oregon|or\b/i.test(address?.state || '')));
         const expectedRule = getExpectedPlanPriceRule(platform, planType, billedCurrency);
-        if (isOregon && expectedRule?.netAmount !== undefined) {
+        if (isTaxFree && expectedRule?.netAmount !== undefined) {
             billedAmount = expectedRule.netAmount;
         } else if (expectedRule?.grossAmount !== undefined) {
             billedAmount = expectedRule.grossAmount;
         } else if (expectedRule?.amount !== undefined) {
             billedAmount = expectedRule.amount;
         } else if (billedCurrency === 'PHP' && /plus/i.test(planType)) {
-            billedAmount = isOregon ? (estimateTaxFreeAmount(1100, 'PHP') || 982.14) : 1100;
+            billedAmount = isTaxFree ? (estimateTaxFreeAmount(1100, 'PHP') || 982.14) : 1100;
         } else if (billedCurrency === 'USD' && /plus/i.test(planType)) {
             billedAmount = 20;
         }
-        if (isOregon && billedAmount > 0) {
+        if (isTaxFree && billedAmount > 0) {
             const taxFree = estimateTaxFreeAmount(billedAmount, billedCurrency);
             if (taxFree) billedAmount = taxFree;
         }
@@ -304,13 +312,18 @@ async function executePaymentWithRetry(page, options) {
     for (let cardAttempt = 1; cardAttempt <= MAX_CARD_ATTEMPTS; cardAttempt += 1) {
         let card = null;
         let prewarmedTokens = null;
+        let cardBilling = null;
 
         if (cardAttempt === 1 && options?.prewarmedPayment?.card) {
             card = options.prewarmedPayment.card;
             options.prewarmedPayment.consumed = true;
             prewarmedTokens = options.prewarmedPayment.tokenPromise;
+            cardBilling = options.prewarmedPayment.address || resolveCardBillingProfile(card, address, { email });
         } else {
             card = await store.reserveCard(ownerKey);
+            if (card) {
+                cardBilling = resolveCardBillingProfile(card, address, { email });
+            }
         }
 
         if (!card) {
@@ -349,9 +362,17 @@ async function executePaymentWithRetry(page, options) {
             number: card.card_number,
             expiry: card.card_expiry,
             cvc: card.card_cvc,
-            holder: card.card_holder
+            holder: card.payment_holder_name || card.card_holder || card.holder,
+            payment_holder_name: card.payment_holder_name || card.card_holder || card.holder,
+            payment_address_line1: card.payment_address_line1 || '',
+            payment_address_city: card.payment_address_city || '',
+            payment_address_state: card.payment_address_state || '',
+            payment_address_postal: card.payment_address_postal || ''
         };
         progress(`已预留卡片 #${cardAttempt}: ...${cardLast4}`);
+        if (cardBilling?.isCardAvs) {
+            progress(`⚡ [AVS账单] 卡片 ...${cardLast4} 优先匹配专属 AVS 账单信息: ${cardBilling.name || '持卡人'} · ${cardBilling.line1}, ${cardBilling.city}, ${cardBilling.state} ${cardBilling.postal_code}`);
+        }
 
         let cardHandled = false;
         let attemptStarted = false;
@@ -375,7 +396,7 @@ async function executePaymentWithRetry(page, options) {
                         protoRes = await executeStripeProtocolPayment({
                             page,
                             card: cardInfo,
-                            billing: { ...address, email: address?.email || email || '' },
+                            billing: { ...(cardBilling || address), email: (cardBilling || address)?.email || email || '' },
                             sessionId: stripeSessionId,
                             accessToken: options.accessToken,
                             currency,
@@ -396,7 +417,7 @@ async function executePaymentWithRetry(page, options) {
                                 ...protoRes,
                                 dueAmount: protoRes.amount != null ? protoRes.amount : billedAmount,
                                 dueCurrency: protoRes.currency || billedCurrency,
-                                holderName: address.name || billingHolderName || ''
+                                holderName: cardBilling?.name || cardInfo.holder || address.name || billingHolderName || ''
                             };
                         } else if (protoRes.declined) {
                             // 协议支付已明确收到上游拒卡终态，重置前置 started 状态
@@ -490,7 +511,7 @@ async function executePaymentWithRetry(page, options) {
                             canRetryCard: false,
                             dueAmount: protoRes.amount != null ? protoRes.amount : billedAmount,
                             dueCurrency: protoRes.currency || billedCurrency,
-                            holderName: address.name || billingHolderName || ''
+                            holderName: cardBilling?.name || cardInfo.holder || address.name || billingHolderName || ''
                         };
                     } else {
                         const defaultCheckoutUrl = isHostedSession
@@ -515,8 +536,8 @@ async function executePaymentWithRetry(page, options) {
                         }
 
                         uiFallbackActive = true;
-                        paymentResult = await completeStripeCardPayment(page, cardInfo, address, {
-                            cardAttempt, holderName: billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
+                        paymentResult = await completeStripeCardPayment(page, cardInfo, cardBilling || address, {
+                            cardAttempt, holderName: cardBilling?.name || cardInfo.holder || billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
                             paymentRegion: region,
                             paymentCurrency: currency,
                             grokCheckout: options.grokCheckout,
@@ -578,10 +599,11 @@ async function executePaymentWithRetry(page, options) {
                 billedCurrency = resolved.currency;
                 progress(`实际扣款金额（免税后）: ${billedCurrency} ${billedAmount}`);
 
-                const holderName = paymentResult.holderName || card.card_holder || billingHolderName || '';
-                await store.bindCardPaymentProfile(card.id, { holderName, address });
-                if (address.id) {
-                    await markAddressBound(address.id, card.id);
+                const holderName = paymentResult.holderName || cardBilling?.name || card.card_holder || billingHolderName || '';
+                const finalAddress = cardBilling || address;
+                await store.bindCardPaymentProfile(card.id, { holderName, address: finalAddress });
+                if (finalAddress.id) {
+                    await markAddressBound(finalAddress.id, card.id);
                 }
                 await store.recordCardUsage(card.id);
                 await store.releaseCard(card.id);
@@ -598,7 +620,7 @@ async function executePaymentWithRetry(page, options) {
                     stripe_session_id: stripeSessionId || null,
                     status: 'success'
                 });
-                progress(`支付成功！卡片: ...${cardLast4}，姓名: ${holderName}，地址: ${address.line1}, ${address.city}`);
+                progress(`支付成功！卡片: ...${cardLast4}，姓名: ${holderName}，地址: ${finalAddress.line1}, ${finalAddress.city}`);
                 if (paymentResult.screenshot) {
                     screenshots.push(paymentResult.screenshot);
                     progress(`SUCCESS_SCREENSHOT: ${paymentResult.screenshot}`);

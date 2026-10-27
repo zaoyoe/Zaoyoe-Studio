@@ -6,6 +6,7 @@ const axios = require('axios');
 const { mintSentinelToken } = require('./sentinel/sentinel-client');
 const { substituteProxySession, resetActiveProxyTunnels } = require('./playwright-proxy');
 const { registerStripeDeviceFingerprint } = require('./stripe-device-fingerprint');
+const { isUsTaxFreeState } = require('./tax-free-address');
 
 const RUNTIME_HASH = '5412f474d5';
 const V_HOSTED = '2020-08-27;custom_checkout_beta=v1';
@@ -200,6 +201,9 @@ async function createStripePaymentMethod(card, billing, options = {}) {
         console.log(`⚡ [协议支付] ✅ 已挂载 Stripe 真实设备指纹 (Radar 防风控增强: muid=${fp.muid.slice(0, 8)}..., sid=${fp.sid.slice(0, 8)}...)`);
     }
 
+    const cardHolder = String(card.holder || card.card_holder || card.payment_holder_name || billing.name || '').trim();
+    const billingName = cardHolder || billing.name || 'Sarah Smith';
+
     const body = {
         'type': 'card',
         'card[number]': String(card.number || card.cardNumber || '').replace(/\s+/g, ''),
@@ -207,7 +211,7 @@ async function createStripePaymentMethod(card, billing, options = {}) {
         'card[exp_year]': year,
         'card[cvc]': String(card.cvc || '').trim(),
         'allow_redisplay': 'always',
-        'billing_details[name]': billing.name || 'Sarah Smith',
+        'billing_details[name]': billingName,
         'billing_details[email]': billing.email || '',
         'billing_details[address][country]': billing.country || 'US',
         'billing_details[address][line1]': billing.line1 || '150 E Main St',
@@ -365,19 +369,19 @@ async function confirmStripePaymentIntent({
 /**
  * 根据套餐类型/名称、币种与免税州标志，推算默认展示/兜底金额（避免 Pro/Team 等套餐在未返回 minorUnitsAmount 时被错误兜底为 Plus 982.14 / $20）
  */
-function getDefaultPlanDisplayAmount(planHint, currency = 'PHP', isOregon = true) {
+function getDefaultPlanDisplayAmount(planHint, currency = 'PHP', isTaxFree = true) {
     const plan = String(planHint || 'plus').trim().toLowerCase();
     const curr = String(currency || 'PHP').trim().toUpperCase();
     const teamMatch = plan.match(/^team_?(\d+)$/i);
     const seats = teamMatch ? Math.max(2, parseInt(teamMatch[1], 10) || 2) : 2;
 
     if (curr === 'PHP') {
-        if (/pro_?500|pro_?max|chatgptpromax/i.test(plan)) return isOregon ? 29008.93 : 32490;
-        if (/pro_?100|pro_?5x|chatgptprolite|^pro$/i.test(plan)) return isOregon ? 5794.64 : 6490;
-        if (/pro_?200|pro_?20x|pro_?more|chatgptpro/i.test(plan)) return isOregon ? 8919.64 : 9990;
-        if (/\bgo\b|chatgptgoplan/i.test(plan)) return isOregon ? 267.86 : 300;
+        if (/pro_?500|pro_?max|chatgptpromax/i.test(plan)) return isTaxFree ? 29008.93 : 32490;
+        if (/pro_?100|pro_?5x|chatgptprolite|^pro$/i.test(plan)) return isTaxFree ? 5794.64 : 6490;
+        if (/pro_?200|pro_?20x|pro_?more|chatgptpro/i.test(plan)) return isTaxFree ? 8919.64 : 9990;
+        if (/\bgo\b|chatgptgoplan/i.test(plan)) return isTaxFree ? 267.86 : 300;
         if (/team|chatgptteamplan/i.test(plan)) return seats * 1450;
-        return isOregon ? 982.14 : 1100;
+        return isTaxFree ? 982.14 : 1100;
     }
 
     if (curr === 'USD') {
@@ -685,7 +689,7 @@ async function prewarmStripeConfirmationToken({ card, billing, proxy = '', publi
             number: card.number || card.card_number,
             expiry: card.expiry || card.card_expiry,
             cvc: card.cvc || card.card_cvc,
-            holder: card.holder || card.card_holder
+            holder: card.holder || card.card_holder || card.payment_holder_name || billing?.name
         };
         const pmResult = await createStripePaymentMethod(cardPayload, billing, { proxy, publishableKey });
         if (!pmResult.ok) {
@@ -861,13 +865,15 @@ async function executeStripeHostedProtocolPayment({
     const { month, year } = normalizeExpiry(card);
 
     const clientSessionId = fp.clientSessionId || crypto.randomUUID();
+    const cardHolder = String(card.holder || card.card_holder || card.payment_holder_name || billing.name || '').trim();
+    const billingName = cardHolder || billing.name || 'Cardholder';
     const pmBody = {
         'type': 'card',
         'card[number]': String(card.number || card.cardNumber || card.card_number || '').replace(/\s+/g, ''),
         'card[exp_month]': month,
         'card[exp_year]': year,
         'card[cvc]': String(card.cvc || '').trim(),
-        'billing_details[name]': billing.name || 'Cardholder',
+        'billing_details[name]': billingName,
         'billing_details[email]': customerEmail || billing.email || 'customer@example.com',
         'billing_details[address][country]': billing.country || 'US',
         'billing_details[address][line1]': billing.line1 || '100 W 10th Ave',
@@ -1396,13 +1402,13 @@ async function executeStripeProtocolPayment({
     // 注意：ChatGPT 侧的 status=success 仅代表「结账意图已受理」，
     // 必须向 Stripe 官方提交实际扣款确认 (payment_intents/:id/confirm) 才能真正执行扣款并出票！
     if (intentId && clientSecret && piStatus !== 'succeeded') {
-        const isOregon = (billing?.country === 'US' && /oregon|or\b/i.test(billing?.state || ''));
+        const isTaxFree = (billing?.country === 'US' && (isUsTaxFreeState(billing?.state) || /oregon|or\b/i.test(billing?.state || '')));
         const taxSyncedAmount = chatgptRes?.taxSyncResult?.amountTotal;
         const confirmStateTotal = payload?.checkout_session?.checkout_state?.total?.total?.minorUnitsAmount;
         const piRawAmount = pi.amount ?? payload.amount ?? confirmStateTotal ?? taxSyncedAmount;
         const piCurrency = String(pi.currency || payload.currency || currency || 'PHP').toUpperCase();
         const planHint = planType || chatgptRes?.taxSyncResult?.planName || payload?.checkout_session?.plan_name || '';
-        const fallbackDisplayAmount = getDefaultPlanDisplayAmount(planHint, piCurrency, isOregon);
+        const fallbackDisplayAmount = getDefaultPlanDisplayAmount(planHint, piCurrency, isTaxFree);
         const piDisplayAmount = (piRawAmount != null && !isNaN(piRawAmount)) ? (piRawAmount / 100) : fallbackDisplayAmount;
 
         const stripeConfirm = await confirmStripePaymentIntent({

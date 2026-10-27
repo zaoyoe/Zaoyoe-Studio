@@ -2155,7 +2155,9 @@ async function getRuntimeAssets() {
              LIMIT 1`
         ),
         runQuery(
-            `SELECT card_number, card_expiry, card_cvc, usage_count
+            `SELECT card_number, card_expiry, card_cvc, card_holder,
+                    payment_holder_name, payment_address_line1, payment_address_city,
+                    payment_address_state, payment_address_postal, payment_address_id, usage_count
              FROM card_assets
              WHERE is_active = 1
                AND status = '正常'
@@ -2172,7 +2174,19 @@ async function getRuntimeAssets() {
             ? { phone: phoneRow.phone, key: phoneRow.sms_api_key, usage_count: Number(phoneRow.usage_count || 0) }
             : { phone: '未配置', key: '', usage_count: 0 },
         card: cardRow
-            ? { number: cardRow.card_number, expiry: cardRow.card_expiry, cvc: cardRow.card_cvc, usage_count: Number(cardRow.usage_count || 0) }
+            ? {
+                number: cardRow.card_number,
+                expiry: cardRow.card_expiry,
+                cvc: cardRow.card_cvc,
+                holder: cardRow.payment_holder_name || cardRow.card_holder || '',
+                payment_holder_name: cardRow.payment_holder_name || cardRow.card_holder || '',
+                payment_address_line1: cardRow.payment_address_line1 || '',
+                payment_address_city: cardRow.payment_address_city || '',
+                payment_address_state: cardRow.payment_address_state || '',
+                payment_address_postal: cardRow.payment_address_postal || '',
+                payment_address_id: cardRow.payment_address_id || null,
+                usage_count: Number(cardRow.usage_count || 0)
+            }
             : { number: '', expiry: '', cvc: '', usage_count: 0 },
         proxy
     };
@@ -3279,7 +3293,9 @@ async function hasAvailableCard() {
 async function reserveCard(ownerKey) {
     return withTransaction(async (connection) => {
         const [rows] = await connection.query(
-            `SELECT id, card_number, card_expiry, card_cvc, card_holder, usage_count
+            `SELECT id, card_number, card_expiry, card_cvc, card_holder,
+                    payment_holder_name, payment_address_line1, payment_address_city,
+                    payment_address_state, payment_address_postal, payment_address_id, usage_count
              FROM card_assets
              WHERE is_active = 1
                AND in_use = 0
@@ -3310,6 +3326,13 @@ async function reserveCard(ownerKey) {
             card_expiry: row.card_expiry,
             card_cvc: row.card_cvc,
             card_holder: row.card_holder,
+            holder: row.payment_holder_name || row.card_holder || '',
+            payment_holder_name: row.payment_holder_name || row.card_holder || '',
+            payment_address_line1: row.payment_address_line1 || '',
+            payment_address_city: row.payment_address_city || '',
+            payment_address_state: row.payment_address_state || '',
+            payment_address_postal: row.payment_address_postal || '',
+            payment_address_id: row.payment_address_id || null,
             usage_count: Number(row.usage_count || 0)
         };
     });

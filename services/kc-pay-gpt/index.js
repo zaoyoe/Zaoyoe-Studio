@@ -670,12 +670,16 @@ async function run() {
             try {
                 const preCard = await store.reserveCard(ownerKey);
                 if (preCard) {
-                    const { pickBillingAddressForCheckout } = require('./tax-free-address');
+                    const { pickBillingAddressForCheckout, resolveCardBillingProfile } = require('./tax-free-address');
                     const lastUsedIdRaw = await store.getAppConfigValue('last_used_address_id', null);
-                    const preAddress = await pickBillingAddressForCheckout(paymentRegion, lastUsedIdRaw ? Number(lastUsedIdRaw) : null);
+                    const poolAddress = await pickBillingAddressForCheckout(paymentRegion, lastUsedIdRaw ? Number(lastUsedIdRaw) : null);
                     const preEmail = email || (typeof extractEmailFromSession === 'function' ? extractEmailFromSession(sessionRaw) : '') || '';
+                    const preAddress = resolveCardBillingProfile(preCard, poolAddress, { email: preEmail });
                     if (preAddress && preEmail && !preAddress.email) {
                         preAddress.email = preEmail;
+                    }
+                    if (preAddress?.isCardAvs) {
+                        console.log(`⚡ [协议预热] 优先匹配卡片专属 AVS 账单信息: ${preAddress.name || '持卡人'} · ${preAddress.line1}, ${preAddress.city}, ${preAddress.state} ${preAddress.postal_code}`);
                     }
                     const { prewarmStripeConfirmationToken } = require('./stripe-protocol-payment');
                     const prewarmPromise = prewarmStripeConfirmationToken({
@@ -781,12 +785,16 @@ async function run() {
                     try {
                         const preCard = await store.reserveCard(ownerKey);
                         if (preCard) {
-                            const { pickBillingAddressForCheckout } = require('./tax-free-address');
+                            const { pickBillingAddressForCheckout, resolveCardBillingProfile } = require('./tax-free-address');
                             const lastUsedIdRaw = await store.getAppConfigValue('last_used_address_id', null);
-                            const preAddress = await pickBillingAddressForCheckout(paymentRegion, lastUsedIdRaw ? Number(lastUsedIdRaw) : null);
+                            const poolAddress = await pickBillingAddressForCheckout(paymentRegion, lastUsedIdRaw ? Number(lastUsedIdRaw) : null);
                             const preEmail = email || (typeof extractEmailFromSession === 'function' ? extractEmailFromSession(CONFIG.chatgptSessionJson || CONFIG.chatgptToken) : '') || '';
+                            const preAddress = resolveCardBillingProfile(preCard, poolAddress, { email: preEmail });
                             if (preAddress && preEmail && !preAddress.email) {
                                 preAddress.email = preEmail;
+                            }
+                            if (preAddress?.isCardAvs) {
+                                console.log(`⚡ [协议预热] 优先匹配卡片专属 AVS 账单信息: ${preAddress.name || '持卡人'} · ${preAddress.line1}, ${preAddress.city}, ${preAddress.state} ${preAddress.postal_code}`);
                             }
                             const { prewarmStripeConfirmationToken } = require('./stripe-protocol-payment');
                             const prewarmPromise = prewarmStripeConfirmationToken({
