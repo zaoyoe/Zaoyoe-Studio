@@ -2867,11 +2867,23 @@
             <div class="config-grid">
                 <!-- 左：并发与维护 -->
                 <div class="panel">
-                    <h2 class="panel-title">并发与维护</h2>
+                    <h2 class="panel-title">并发、通道与维护</h2>
                     <div class="form-group" style="margin-top: 24px;">
                         <label>最大并发激活数</label>
                         <input type="number" id="max_concurrent_activations" min="1" step="1" class="asset-input" placeholder="1">
                         <p style="font-size: 13px; color: var(--text-dim); margin-top: 10px;">超过该数量时，前台将提示「当前任务过多，请稍后再试」。</p>
+                    </div>
+                    <div class="form-group" style="margin-top: 22px;">
+                        <div class="toggle-field">
+                            <div class="toggle-label">
+                                <span>极速协议直充模式</span>
+                            </div>
+                            <label class="toggle-control">
+                                <input type="checkbox" id="fast_protocol_enabled" class="toggle-input">
+                                <span class="toggle-switch"></span>
+                            </label>
+                        </div>
+                        <p id="fast_protocol_enabled_hint" style="font-size: 13px; color: var(--text-dim); margin-top: 10px;">开启后优先使用纯协议接口秒级直充；关闭后完全跳过协议直接打开浏览器收银台完成支付。</p>
                     </div>
                     <div class="form-group" style="margin-top: 22px;">
                         <div class="toggle-field">
@@ -6419,6 +6431,10 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             if (maxConcurrentEl) {
                 maxConcurrentEl.value = cfg.max_concurrent_activations || 1;
             }
+            const fastProtocolEl = document.getElementById('fast_protocol_enabled');
+            if (fastProtocolEl) {
+                fastProtocolEl.checked = cfg.fast_protocol_enabled !== false && cfg.fast_protocol_enabled !== '0';
+            }
             loadTelegramConfig(data.telegram || {});
             loadHcaptchaConfig(data.hcaptcha || {});
             lastMaintenanceModeValue = Boolean(cfg.maintenance_mode);
@@ -7259,7 +7275,10 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 max_concurrent_activations: Math.max(1, parseInt(document.getElementById('max_concurrent_activations').value, 10) || 1),
                 maintenance_mode: Object.prototype.hasOwnProperty.call(overrides, 'maintenance_mode')
                     ? Boolean(overrides.maintenance_mode)
-                    : document.getElementById('maintenance_mode').checked
+                    : document.getElementById('maintenance_mode').checked,
+                fast_protocol_enabled: Object.prototype.hasOwnProperty.call(overrides, 'fast_protocol_enabled')
+                    ? Boolean(overrides.fast_protocol_enabled)
+                    : (document.getElementById('fast_protocol_enabled')?.checked ?? true)
             };
         }
 
@@ -9724,6 +9743,25 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             saveMaintenanceMode().catch((error) => {
                 console.error('Maintenance mode save failed', error);
             });
+        });
+
+        document.getElementById('fast_protocol_enabled')?.addEventListener('change', async (e) => {
+            const enabled = e.target.checked;
+            try {
+                const res = await authFetch('/api/admin/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(buildConfigPayload({ fast_protocol_enabled: enabled }))
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.message || '保存失败');
+                }
+                showMessage(enabled ? '已启用极速协议直充模式' : '已关闭极速协议直充，将直接使用浏览器收银台支付', 'success');
+            } catch (err) {
+                e.target.checked = !enabled;
+                showMessage(`切换极速协议直充模式失败: ${err.message}`, 'error');
+            }
         });
 
         document.querySelectorAll('input[name="email_source"]').forEach((el) => {

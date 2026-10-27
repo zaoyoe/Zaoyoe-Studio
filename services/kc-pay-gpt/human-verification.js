@@ -107,13 +107,16 @@ function isInvisibleStripeHcaptchaUrl(url) {
 
 function isBlockingCaptchaFrameUrl(url) {
     const u = String(url || '').toLowerCase();
-    if (u.includes('frame=challenge') || u.includes('hcaptcha.com/captcha/v1') || u.includes('hcaptcha.html')) {
-        return true;
-    }
     if (isInvisibleStripeHcaptchaUrl(url)) {
         return false;
     }
-    if (u.includes('frame=checkbox')) {
+    if (u.includes('/static/') || u.includes('/assets/')) {
+        return false;
+    }
+    if (u.includes('frame=challenge')) {
+        return true;
+    }
+    if (u.includes('frame=checkbox') && !u.includes('invisible')) {
         return true;
     }
     return u.includes('challenges.cloudflare')
@@ -126,15 +129,22 @@ function isCaptchaFrameUrl(url) {
 }
 
 function isHcaptchaCheckboxFrameUrl(url) {
-    return String(url || '').toLowerCase().includes('frame=checkbox');
+    const u = String(url || '').toLowerCase();
+    if (isInvisibleStripeHcaptchaUrl(u) || u.includes('frame=challenge')) {
+        return false;
+    }
+    return u.includes('frame=checkbox')
+        || u.includes('frame=anchor')
+        || u.includes('hcaptcha.html')
+        || u.includes('hcaptchainvisible.html');
 }
 
 function isHcaptchaChallengeFrameUrl(url) {
     const u = String(url || '').toLowerCase();
-    if (isInvisibleStripeHcaptchaUrl(u) || u.includes('frame=checkbox')) {
+    if (isInvisibleStripeHcaptchaUrl(u) || u.includes('frame=checkbox') || u.includes('frame=anchor')) {
         return false;
     }
-    return u.includes('frame=challenge') || u.includes('hcaptcha.com/captcha/v1') || u.includes('hcaptcha.html');
+    return u.includes('frame=challenge');
 }
 
 async function hasHcaptchaImageChallenge(page) {
@@ -215,36 +225,52 @@ async function logCaptchaFrameSnapshot(page, phase) {
 
 async function clickHcaptchaCheckboxFrames(page, phase = 'hcaptcha-checkbox') {
     let clicked = false;
-    const selectors = ['#checkbox', '#anchor', '[id="checkbox"]', '[role="checkbox"]', 'div[aria-checked]', '.checkbox'];
+    const selectors = ['#checkbox', '#anchor', '[id="checkbox"]', '[role="checkbox"]', 'div[aria-checked]', '.checkbox', '[aria-label*="human" i]', '[aria-label*="checkbox" i]'];
 
+    // 0. 优先检测主页面是否有 Checkout 的「One more step」复选框弹层，直接对其内部 iframe 执行精准点击
+    try {
+        const modal = page.locator('div:has-text("One more step"), div:has-text("Select the checkbox below")').first();
+        if (await modal.isVisible({ timeout: 500 }).catch(() => false)) {
+            const modalIframe = modal.locator('iframe').first();
+            if (await modalIframe.isVisible({ timeout: 500 }).catch(() => false)) {
+                if (await humanClickLocator(page, modalIframe, 'checkbox-left')) {
+                    captchaLog(phase, '已点击 Checkout hCaptcha 弹层中的 checkbox iframe');
+                    clicked = true;
+                }
+            }
+        }
+    } catch (_) {}
+
+    // 1. 遍历 frame 寻找真实的 checkbox 元素并点击
     for (const frame of page.frames()) {
         const url = frame.url() || '';
-        if (!isHcaptchaCheckboxFrameUrl(url)) {
+        if (isHcaptchaChallengeFrameUrl(url) || isInvisibleStripeHcaptchaUrl(url)) {
             continue;
         }
         for (const sel of selectors) {
             try {
                 const loc = frame.locator(sel).first();
-                if (!(await loc.isVisible({ timeout: 600 }).catch(() => false))) {
+                if (!(await loc.isVisible({ timeout: 400 }).catch(() => false))) {
                     continue;
                 }
                 const box = await loc.boundingBox({ timeout: 1000 }).catch(() => null);
-                if (box) {
+                if (box && box.width > 5 && box.height > 5) {
                     await humanClickBoundingBox(page, box, 'center');
                 }
                 await loc.click({ timeout: 2000, delay: randomBetween(40, 120) }).catch(() => {});
-                captchaLog(phase, `已点击 hCaptcha checkbox frame (${url.slice(0, 70)}...)`);
+                captchaLog(phase, `已点击 hCaptcha checkbox frame (${url.slice(0, 70)}...) [sel=${sel}]`);
                 clicked = true;
                 break;
             } catch (_) { /* next selector */ }
         }
+        if (clicked) break;
     }
 
     if (!clicked) {
         const iframes = await collectCaptchaIframeLocators(page);
         for (const iframe of iframes) {
             const src = await iframe.getAttribute('src').catch(() => '') || '';
-            if (!/hcaptcha/i.test(src) || isHcaptchaChallengeFrameUrl(src)) {
+            if (isHcaptchaChallengeFrameUrl(src) || isInvisibleStripeHcaptchaUrl(src)) {
                 continue;
             }
             if (await humanClickLocator(page, iframe, 'checkbox-left')) {
@@ -2951,6 +2977,20 @@ async function clearHumanVerification(page, options = {}) {
 
         let overlayCaptcha = await hasAnyCheckoutCaptchaSignal(page);
         let imageChallenge = await hasHcaptchaImageChallenge(page);
+
+        // 如果检测到弹出了 Checkout hCaptcha 复选框弹层（One more step...），但尚未展开图片题：
+        // 必须先自动点击复选框！很多时候一点击就直接勾选通过，无需打码或人工
+        if (overlayCaptcha && !imageChallenge) {
+            captchaLog(phase, '检测到 Checkout hCaptcha 复选框弹层，正在自动点击「I am human」复选框...');
+            await clickHcaptchaCheckboxFrames(page, `${phase}-checkbox-click`);
+            await page.waitForTimeout(2000);
+            if (await isVerificationCleared(page, verifyOpts)) {
+                captchaLog(phase, '点击复选框后验证直接静默通过！');
+                return { cleared: true, rounds: round, via: 'checkbox-passive-pass' };
+            }
+            // 重新刷新图片题状态
+            imageChallenge = await hasHcaptchaImageChallenge(page);
+        }
 
         // 若优先使用前端人工交互透传（自动求解已关闭、未配置打码平台或指定优先），立即唤起协助，跳过被动等待
         if (prioritizeUserInteractive && (imageChallenge || overlayCaptcha)) {

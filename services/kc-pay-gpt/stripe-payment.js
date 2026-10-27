@@ -215,6 +215,7 @@ async function discoverCardInputs(page, timeout = 45000) {
         if (page.isClosed()) throw new Error('[CHECKOUT_PAGE_CLOSED] 查找信用卡字段时支付页面已关闭');
         const fields = await scanCardInputs(page);
         if (fields.card && fields.expiry && fields.cvc) return fields;
+        await dismissStripeLinkVerification(page);
         const remaining = deadline - Date.now();
         if (remaining <= 0) break;
         await page.waitForTimeout(Math.min(200, remaining));
@@ -236,6 +237,42 @@ async function prepareCheckoutCardSection(page) {
     if (await orSep.isVisible({ timeout: 300 }).catch(() => false)) {
         await orSep.click({ timeout: 500 }).catch(() => {});
     }
+
+    // 在多支付方式收银台（如 US 地区的 Card / PayPal 单选框），确保点击选中「Card」展开银行卡表单
+    const cardRadio = page.locator('input[type="radio"][value="card"], input[name="payment_method"][value="card"], [role="radio"]:has-text("Card"), label:has-text("Card")').first();
+    if (await cardRadio.isVisible({ timeout: 400 }).catch(() => false)) {
+        const isChecked = await cardRadio.isChecked().catch(() => false);
+        if (!isChecked) {
+            console.log('[Stripe] 🔘 检测到收银台多支付方式，正在点击选中「Card」信用卡选项...');
+            await cardRadio.click({ timeout: 1500 }).catch(() => {});
+            await page.waitForTimeout(500);
+        }
+    }
+
+    await dismissStripeLinkVerification(page);
+}
+
+/**
+ * 自动识别并跳过 Stripe Link 弹窗
+ * 当买家邮箱之前在其他站点注册过 Stripe Link 时，Stripe Hosted Checkout 会弹出短信/手机号验证遮蔽卡号输入框。
+ * 点击「Pay without Link」即可立即恢复常规信用卡卡号/有效期/CVC 输入。
+ */
+async function dismissStripeLinkVerification(page) {
+    if (!page || page.isClosed()) return false;
+    try {
+        const contexts = [page, ...page.frames().filter(f => !f.isDetached())];
+        for (const ctx of contexts) {
+            const linkBtn = ctx.locator('button, a, [role="button"]')
+                .filter({ hasText: /Pay without Link|Not you\?|Skip Link/i }).first();
+            if (await linkBtn.isVisible({ timeout: 150 }).catch(() => false)) {
+                console.log('[Stripe] ⚡ 检测到 Stripe Link 弹窗拦截，正在自动点击「Pay without Link」恢复银行卡输入...');
+                await linkBtn.click({ timeout: 1000 }).catch(() => {});
+                await page.waitForTimeout(500);
+                return true;
+            }
+        }
+    } catch (_) {}
+    return false;
 }
 
 /** Single scan for older Stripe forms with unnamed, separate iframe inputs. */
@@ -355,6 +392,11 @@ async function fillCardFieldsOpenAiCheckout(page, cardInfo, timeout = 45000) {
                 nextFormRetryAt = Date.now() + 2500;
             } else if (formRetryCount >= 2 && Date.now() >= nextFormRetryAt) break;
         }
+
+        if (!inputs) {
+            await dismissStripeLinkVerification(page);
+        }
+
         const remaining = deadline - Date.now();
         if (remaining <= 0) break;
         if (Date.now() - lastWaitLog >= 5000) {
@@ -635,7 +677,7 @@ async function checkStripeCardInlineError(page) {
  */
 async function readCheckoutDueAmount(page) {
     try {
-        const bodyText = String(await page.textContent('body', { timeout: 8000 }).catch(() => '') || '');
+        const bodyText = String(await page.locator('body').innerText({ timeout: 3000 }).catch(() => '') || '');
         const currencyToken = '(?:US\\$|CL\\$|S\\$|E£|LE|₱|[$€£]|[A-Z]{3})';
         const patterns = [
             new RegExp(`(?:Due today|Total due|Pay today|今日应付总额|今日应付|应付总额)[^\\d₱$€£]{0,48}?(${currencyToken})\\s*([\\d,]+(?:\\.\\d{1,2})?)`, 'i'),
@@ -673,6 +715,7 @@ async function waitForCheckoutDueAmount(page, {
     const deadline = Date.now() + Math.max(0, timeoutMs);
     let lastLogAt = Date.now();
     const startWait = Date.now();
+    let reloadedOnce = false;
     do {
         const due = await readCheckoutDueAmount(page);
         if (due?.amount && due.currency) return due;
@@ -694,17 +737,25 @@ async function waitForCheckoutDueAmount(page, {
             });
         }
 
-        // 周期性输出加载日志，感知骨架屏加载进度（避免盲目刷新打断慢速代理下的正常资源下载）
+        // 周期性输出加载日志，感知骨架屏加载进度（若超过 20s 仍卡死在初始白屏骨架屏且无任何 Stripe iframe，执行一次安全重载自愈）
         if (Date.now() - lastLogAt >= 10000) {
             lastLogAt = Date.now();
             const elapsed = Math.round((Date.now() - startWait) / 1000);
             const totalSec = Math.round(timeoutMs / 1000);
-            const isPlanReady = await page?.evaluate?.(() => {
+            const planState = await page?.evaluate?.(() => {
                 const text = (document.body?.innerText || '');
-                return /Getting your plan ready|正在准备你的套餐|Making room for even more files|Unlocking access|Warming up/i.test(text);
-            }).catch(() => false);
-            if (isPlanReady) {
-                console.log(`[Checkout] 官方收银台骨架屏仍在加载中 (${elapsed}s/${totalSec}s，正在通过代理拉取 Stripe 资源)...`);
+                const isPlanReady = /Getting your plan ready|正在准备你的套餐|Making room for even more files|Unlocking access|Warming up/i.test(text);
+                const hasStripeFrame = Array.from(document.querySelectorAll('iframe')).some(f => /stripe\.com/i.test(f.src || ''));
+                return { isPlanReady, hasStripeFrame };
+            }).catch(() => ({ isPlanReady: false, hasStripeFrame: false }));
+            if (planState.isPlanReady) {
+                if (!reloadedOnce && !planState.hasStripeFrame && elapsed >= 20 && timeoutMs >= 30000 && typeof page?.reload === 'function') {
+                    reloadedOnce = true;
+                    console.log(`[Checkout] ⚠️ 骨架屏已滞留 ${elapsed}s（代理连接可能挂死），正在执行一次安全原地刷新自愈...`);
+                    await page.reload({ waitUntil: 'commit', timeout: 20000 }).catch(() => {});
+                } else {
+                    console.log(`[Checkout] 官方收银台骨架屏仍在加载中 (${elapsed}s/${totalSec}s，正在通过代理拉取 Stripe 资源)...`);
+                }
             }
         }
 
@@ -737,29 +788,43 @@ async function assertCheckoutDueCurrency(page, expectedCurrency, stage = 'Checko
 const PH_VAT_RATE = 0.12;
 
 /**
- * ChatGPT 菲律宾官方套餐已知免税净价（12% VAT 标价 / 1.12）：
+ * ChatGPT 菲律宾官方套餐已知免税净价（12% VAT 标价 / 1.12 或 B2B 净价）：
  * Plus: 1,100 PHP / 1.12 ≈ 982.14 PHP
  * Pro 100 (Standard): 6,490 PHP / 1.12 ≈ 5,794.64 PHP
  * Pro 200 (More usage): 9,990 PHP / 1.12 ≈ 8,919.64 PHP
  * Pro 500 (Max usage): 32,490 PHP / 1.12 ≈ 29,008.93 PHP
+ * Team (Business): 1,450 PHP / 席位（B2B 定价本身无 VAT，Tax 为 ₱0.00）
+ *   Team 2: 2,900 PHP
+ *   Team 5: 7,250 PHP
+ *   Team 10: 14,500 PHP
+ *   Team 20: 29,000 PHP
  */
 const KNOWN_PH_NET_PRICES = [
     982.14,
     5794.64,
     8919.64,
     29008.93,
+    2900.00,
+    7250.00,
+    14500.00,
+    29000.00,
 ];
 
 /**
  * 判断金额是否已经是免税后的菲律宾净价
  * 1. 匹配已知套餐净价字典
- * 2. 算术逆向检验：菲律宾标价含 12% VAT（通常为整百整十数，如 1100, 6490, 9990, 32490）。
+ * 2. ChatGPT Team / Business 菲律宾席位为 1450 PHP / 席的倍数（2 席及以上，标价即为净价）
+ * 3. 算术逆向检验：菲律宾标价含 12% VAT（通常为整百整十数，如 1100, 6490, 9990, 32490）。
  *    若金额 n 逆算含税值 (n * 1.12) 非常接近整十数，且 n 本身非整数，说明已被去税一次，避免二次除以 1.12。
  */
 function isPhTaxFreeNet(amount) {
     const n = Number(amount);
     if (!Number.isFinite(n) || n <= 0) return false;
     if (KNOWN_PH_NET_PRICES.some(net => Math.abs(n - net) < 2.0)) {
+        return true;
+    }
+    // Team 席位价格：1,450 PHP × N 席
+    if (n >= 2900 && Math.abs(n % 1450) < 0.05) {
         return true;
     }
     const gross = n * (1 + PH_VAT_RATE);
@@ -880,7 +945,7 @@ async function waitForCheckoutTaxRecalculation(page, options = {}) {
         baselineAmount = null,
         currency = null,
         maxWaitMs = 18000,
-        pollMs = 700,
+        pollMs = 250,
     } = options;
 
     const started = Date.now();
@@ -1303,27 +1368,30 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
                 console.log('[Stripe] Step 6: 填写账单地址...');
                 await fillBillingAddress(page, address);
                 console.log('[Stripe] ✅ 账单地址已填写');
+            }
+        }
 
-                console.log('[Stripe] Step 7: 填写持卡人姓名（如有）...');
-                const stripeHolderName = (cardInfo.holder && cardInfo.holder.trim()) ? cardInfo.holder.trim() : holderName;
-                const nameSelectors = [
-                    '#billingName',
-                    'input[name="billingName"]',
-                    'input[name="name"]',
-                    'input[autocomplete="cc-name"]',
-                    'input[autocomplete="name"]',
-                    'input[placeholder*="name" i]',
-                    'input[placeholder*="Name" i]',
-                    'input[placeholder*="全名" i]',
-                    '[data-testid="billingName"]'
-                ];
-
-                const el = page.locator(nameSelectors.join(', ')).first();
-                if (await el.isVisible({ timeout: 600 }).catch(() => false)) {
-                    await el.fill('').catch(() => {});
-                    await humanType(page, nameSelectors.join(', '), stripeHolderName);
-                    console.log(`[Stripe] ✅ 持卡人姓名已填写: ${stripeHolderName}`);
-                }
+        // Step 7: 确保收银台卡号下方单独的持卡人姓名（Full name on card / Cardholder name）已填写
+        const stripeHolderName = (cardInfo.holder && cardInfo.holder.trim()) ? cardInfo.holder.trim() : (holderName || generateRandomName());
+        const cardholderNameSelectors = [
+            '#billingName',
+            'input[name="billingName"]',
+            'input[name="name"]',
+            'input[placeholder*="Full name on card" i]',
+            'input[placeholder*="name on card" i]',
+            'input[placeholder*="Cardholder name" i]',
+            'input[aria-label*="Cardholder name" i]',
+            'input[aria-label*="Full name on card" i]',
+            'input[autocomplete="cc-name"]',
+            'input[autocomplete="name"]',
+            '[data-testid="billingName"]'
+        ];
+        const holderEl = page.locator(cardholderNameSelectors.join(', ')).first();
+        if (await holderEl.isVisible({ timeout: 600 }).catch(() => false)) {
+            const currentVal = await holderEl.inputValue().catch(() => '');
+            if (!currentVal.trim()) {
+                await holderEl.fill(stripeHolderName).catch(() => {});
+                console.log(`[Stripe] ✅ 持卡人姓名已填写 (Cardholder name): ${stripeHolderName}`);
             }
         }
 
@@ -1333,35 +1401,49 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
             await checkClaudeAgreement(page);
         } else {
             try {
-                // 确保取消勾选「保存支付信息/Link」复选框，防止触发短信验证码和多余表单
-                const saveCb = page.locator('input[type="checkbox"][name*="save" i], input[type="checkbox"][id*="save" i], input[type="checkbox"][aria-label*="save" i]').first();
-                if (await saveCb.isVisible({ timeout: 500 }).catch(() => false)) {
-                    if (await saveCb.isChecked().catch(() => false)) {
-                        await saveCb.uncheck().catch(() => {});
-                        console.log('[Stripe] ⚠️ 已取消勾选「保存支付信息」复选框');
+                // 1. 确保取消勾选「保存支付信息/Link」复选框，防止触发短信验证码和多余表单
+                const saveSelectors = [
+                    'label:has-text("Save my payment information")',
+                    'label:has-text("Save your payment information")',
+                    'input[type="checkbox"][name*="save" i]'
+                ];
+                for (const sel of saveSelectors) {
+                    const el = page.locator(sel).first();
+                    if (await el.isVisible({ timeout: 300 }).catch(() => false)) {
+                        const cb = el.locator('input[type="checkbox"]').first();
+                        const isChecked = (await cb.count() > 0) ? await cb.isChecked().catch(() => false) : false;
+                        if (isChecked) {
+                            await el.click().catch(() => {});
+                            console.log('[Stripe] ⚠️ 已取消勾选「保存支付信息」复选框');
+                        }
                     }
                 }
 
-                const checkboxSelectors = [
-                    'input[type="checkbox"][name*="agree" i]',
+                // 2. 勾选 Team/OpenAI 服务条款协议复选框
+                const termsSelectors = [
+                    'label:has-text("Business Terms")',
+                    'label:has-text("terms to complete your transaction")',
+                    'label:has-text("charged monthly based on the seats")',
+                    '.CheckboxInput:has-text("terms")',
                     'input[type="checkbox"][name*="terms" i]',
-                    'input[type="checkbox"][id*="agree" i]',
                     'input[type="checkbox"][id*="terms" i]',
-                    '.CheckboxInput input[type="checkbox"]',
-                    '[data-testid*="agreement"] input[type="checkbox"]',
-                    '[data-testid*="terms"] input[type="checkbox"]'
+                    'input[type="checkbox"][aria-label*="terms" i]'
                 ];
-
-                const checkbox = page.locator(checkboxSelectors.join(', ')).first();
-                if (await checkbox.isVisible({ timeout: 500 }).catch(() => false)) {
-                    const isChecked = await checkbox.isChecked().catch(() => false);
-                    if (!isChecked) {
-                        await checkbox.check().catch(() => {});
-                        console.log('[Stripe] ✅ 已勾选服务协议');
+                for (const sel of termsSelectors) {
+                    const el = page.locator(sel).first();
+                    if (await el.isVisible({ timeout: 400 }).catch(() => false)) {
+                        const isTagInput = (await el.evaluate(e => e.tagName.toLowerCase()).catch(() => '')) === 'input';
+                        const cb = isTagInput ? el : el.locator('input[type="checkbox"]').first();
+                        const isChecked = (await cb.count() > 0) ? await cb.isChecked().catch(() => false) : false;
+                        if (!isChecked) {
+                            await el.click({ timeout: 1000 }).catch(() => {});
+                            console.log('[Stripe] ✅ 已勾选 Team Business Terms 服务协议');
+                            break;
+                        }
                     }
                 }
             } catch (e) {
-                console.log('[Stripe] 未发现服务协议复选框，继续...');
+                console.log('[Stripe] 服务协议处理提示:', e.message);
             }
         }
 
@@ -1747,6 +1829,12 @@ async function finalizeCheckoutPayment(page, holderName, onBeforeSubmit = null, 
     console.log('[Stripe] Step 9: 点击订阅/支付...');
     const submitted = await clickCheckoutSubmitButton(page, accountEmail, onBeforeSubmit);
     if (!submitted) {
+        const preSubmitDecline = await detectPaymentDeclineOnPage(page);
+        if (preSubmitDecline) {
+            console.log(`[Stripe] ❌ 提交前页面已呈现明确拒付/失败提示: ${preSubmitDecline}`);
+            const screenshotPath = await saveDebugScreenshot(page, 'payment_declined_pre_submit');
+            return buildDeclinedPaymentResult(page, preSubmitDecline, screenshotPath);
+        }
         const screenshotPath = await saveDebugScreenshot(page, 'submit_not_found');
         return { success: false, error: '无法找到提交/支付按钮', screenshot: screenshotPath, submitted: false };
     }
@@ -1881,7 +1969,7 @@ async function waitForPaymentResult(page, holderName) {
             return buildPaymentSuccessResult(page, holderName);
         }
 
-        const bodyText = String(await page.textContent('body', { timeout: 8000 }).catch(() => '') || '');
+        const bodyText = String(await page.locator('body').innerText({ timeout: 3000 }).catch(() => '') || '');
 
         if (/无法验证.*浏览器|未能验证.*浏览器|我们无法验证您的浏览器|unable to verify (your )?browser|failed to verify (your )?browser/i.test(bodyText)) {
             console.log('[Stripe] ❌ 官方收银台拦截：我们无法验证您的浏览器');
@@ -1950,7 +2038,7 @@ async function waitForPaymentResult(page, holderName) {
             const alerts = page.getByRole('alert');
             const alertCount = await alerts.count();
             for (let i = 0; i < alertCount; i += 1) {
-                const alertText = String(await alerts.nth(i).textContent({ timeout: 500 }).catch(() => '') || '');
+                const alertText = String(await alerts.nth(i).innerText({ timeout: 500 }).catch(() => '') || '');
                 if (!alertText.trim()) continue;
                 if (PAYMENT_DECLINE_PATTERNS.some((re) => re.test(alertText))) {
                     console.log(`[Stripe] ❌ Alert 拒付: ${alertText.trim()}`);
@@ -2480,6 +2568,16 @@ async function fillBillingTextItem(item, value, logLabel) {
     if (!item?.el || value === undefined || value === null || value === '') return false;
     try {
         await safeScrollIntoView(item.el);
+        if (await item.el.isDisabled().catch(() => false)) {
+            console.log(`  [Stripe] ⚠️ ${logLabel} 处于只读/disabled 锁定状态，通过 DOM 属性注入值`);
+            await item.el.evaluate((input, text) => {
+                input.removeAttribute('disabled');
+                input.value = text;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }, String(value)).catch(() => {});
+            return true;
+        }
         await item.el.click({ timeout: 2000 }).catch(() => {});
         await item.el.fill(String(value));
         console.log(`  [Stripe] ✅ ${logLabel}: ${value}`);
@@ -2826,7 +2924,29 @@ async function quickSelectField(page, candidates, optionLabels, label) {
     return false;
 }
 
+async function fillBillingFullNameFallback(page, fullName) {
+    if (!fullName || !page || page.isClosed()) return false;
+    for (const sel of BILLING_FULL_NAME_SELECTORS) {
+        try {
+            const el = page.locator(sel).first();
+            if ((await el.count()) > 0 && (await el.isVisible({ timeout: 200 }).catch(() => false))) {
+                await el.fill(fullName).catch(() => {});
+                const val = (await el.inputValue().catch(() => '')).trim();
+                if (val) {
+                    console.log(`  [Stripe] ✅ 账单全名 (Cardholder name): ${fullName}`);
+                    return true;
+                }
+            }
+        } catch (_) {}
+    }
+    return false;
+}
+
 async function fillBillingTextField(page, key, value, logLabel) {
+    if (key === 'name') {
+        const directNameFilled = await fillBillingFullNameFallback(page, value);
+        if (directNameFilled) return true;
+    }
     const group = await getAuthoritativeBillingGroup(page);
     const item = group?.items.find((item) => billingFieldKey(item) === key);
     if (!item || !['input', 'textarea'].includes(item.meta.tag)) return false;
@@ -2873,7 +2993,11 @@ async function fillOpenAiBillingDirect(page, address, fullName) {
         if (postalItem) filled.postal = await fillBillingTextItem(postalItem, address.postal_code, '邮编');
 
         const nameItem = getItem('name');
-        if (nameItem) filled.name = await fillBillingTextItem(nameItem, fullName, '账单全名');
+        if (nameItem) {
+            filled.name = await fillBillingTextItem(nameItem, fullName, '账单全名');
+        } else {
+            filled.name = await fillBillingFullNameFallback(page, fullName);
+        }
 
         await suppressGoogleAddressAutocomplete(page);
         const line1Item = getItem('line1');
@@ -3028,6 +3152,16 @@ async function fillBillingControl(page, labelPatterns, value, logLabel) {
                 await dismissAddressAutocomplete(page);
             }
             return ok;
+        }
+        if (await field.isDisabled().catch(() => false)) {
+            console.log(`  [Stripe] ⚠️ ${logLabel} 处于只读/disabled 锁定状态，通过 DOM 属性注入值`);
+            await field.evaluate((input, text) => {
+                input.removeAttribute('disabled');
+                input.value = text;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }, String(value)).catch(() => {});
+            return true;
         }
         await field.click({ timeout: 2000 }).catch(() => {});
         await field.fill(String(value));
@@ -3383,8 +3517,63 @@ async function verifyBillingAfterTax(page, address, fullName, result) {
     return result;
 }
 
+/**
+ * 检测当前 Checkout 页面的账单国家是否已被上游锁定
+ * 提示 "To change your billing address, leave this page and restart checkout."
+ * 此时账单国家已被锁定为当前国家（通常为美国），不可也不应切换国家，
+ * 但仍需填写街道、州/省、邮编等具体地址信息。
+ */
+async function isBillingCountryLocked(page) {
+    if (!page || page.isClosed()) return false;
+    try {
+        const lockedNotice = page.getByText(/To change your billing address, leave this page and restart checkout|如需更改账单地址/i).first();
+        if (await lockedNotice.isVisible({ timeout: 200 }).catch(() => false)) {
+            return true;
+        }
+    } catch (_) {}
+    return false;
+}
+
+/**
+ * 检测账单地址是否完全被锁定且已有有效值（如全字段只读且邮编不为空）
+ */
+async function isBillingAddressLocked(page) {
+    if (!page || page.isClosed()) return false;
+    try {
+        const postal = page.locator('#billingPostalCode, input[name="billingPostalCode"], input[autocomplete*="postal-code"]').first();
+        if (await postal.count() > 0) {
+            const isDisabled = await postal.isDisabled().catch(() => false);
+            const val = await postal.inputValue().catch(() => '');
+            if (isDisabled && val.trim()) {
+                return true;
+            }
+        }
+    } catch (_) {}
+    return false;
+}
+
+/**
+ * 若收银台处于单行 Google 建议模式，点击「Enter address manually」展开详细地址字段
+ */
+async function expandManualAddressIfAvailable(page) {
+    if (!page || page.isClosed()) return false;
+    try {
+        const manualBtn = page.getByText(/Enter address manually|手动输入地址/i).first();
+        if (await manualBtn.isVisible({ timeout: 300 }).catch(() => false)) {
+            console.log('  [Stripe] 📍 检测到「Enter address manually」，点击展开详细地址字段...');
+            await manualBtn.click({ timeout: 2000 }).catch(() => {});
+            await page.waitForTimeout(400);
+            return true;
+        }
+    } catch (_) {}
+    return false;
+}
+
 async function assertOpenAiBillingReady(page, address, fullName) {
+    if (await isBillingAddressLocked(page)) return;
+    const countryLocked = await isBillingCountryLocked(page);
     const status = getBillingFieldStatus(await readBillingInputValues(page), {}, address?.country, address, fullName);
+    if (countryLocked) status.country = true;
     const missing = listBillingMissing(status);
     if (!missing.length) return;
     const error = new Error(`提交前账单字段缺失或与目标地址不一致: ${missing.join(', ')} [BILLING_FORM_CHANGED]`);
@@ -3393,12 +3582,27 @@ async function assertOpenAiBillingReady(page, address, fullName) {
 }
 
 async function fillOpenAiCheckoutBilling(page, address, fullName, expectedCurrency = null) {
+    if (await isBillingAddressLocked(page)) {
+        console.log('  [Stripe] ⚡ 检测到账单地址已被锁定（由上游协议锁定或只读），免税税率已固定，跳过表单填写');
+        return {
+            ok: true,
+            filled: { name: true, country: true, line1: true, city: true, postal: true, state: true },
+            skipped: true
+        };
+    }
     const stateFullName = normalizeStateFullName(address.state);
     let filled = { name: false, country: false, line1: false, city: false, postal: false, state: false };
 
     console.log('  [Stripe] 开始填写账单地址（必填项）...');
+    await expandManualAddressIfAvailable(page);
     await suppressGoogleAddressAutocomplete(page);
     await dismissAddressAutocomplete(page);
+
+    const countryLocked = await isBillingCountryLocked(page);
+    if (countryLocked) {
+        console.log('  [Stripe] ℹ️ 账单国家已被上游锁定 (United States)，免选国家，直接补填详细地址');
+        filled.country = true;
+    }
 
     const preBillingDue = await readCheckoutDueAmount(page);
     if (expectedCurrency && (!preBillingDue?.amount || !preBillingDue.currency)) {
@@ -3457,7 +3661,7 @@ async function fillOpenAiCheckoutBilling(page, address, fullName, expectedCurren
     filled = await fillOpenAiBillingDirect(page, address, fullName);
     filled = await syncFilledFlags(page, filled);
     await dismissAddressAutocomplete(page);
-    if (!getBillingFieldStatus(await readBillingInputValues(page), filled, address.country || 'US').country) {
+    if (!countryLocked && !getBillingFieldStatus(await readBillingInputValues(page), filled, address.country || 'US').country) {
         return billingCountryFailure(page, address, filled);
     }
 
@@ -3476,6 +3680,7 @@ async function fillOpenAiCheckoutBilling(page, address, fullName, expectedCurren
     }
 
     let status = getBillingFieldStatus(await readBillingInputValues(page), filled, address?.country, address, fullName);
+    if (countryLocked) status.country = true;
     let missing = listBillingMissing(status);
 
     if (missing.length > 0) {
@@ -3484,10 +3689,11 @@ async function fillOpenAiCheckoutBilling(page, address, fullName, expectedCurren
         if (!status.name) {
             filled.name = await fillBillingTextField(page, 'name', fullName, '账单全名');
         }
-        if (!status.country) {
+        if (!status.country && !countryLocked) {
             filled.country = await selectBillingCountry(page, billingCountryOptions(address.country));
             if (!filled.country) return billingCountryFailure(page, address, filled);
             status = getBillingFieldStatus(await readBillingInputValues(page), filled, address.country || 'US', address, fullName);
+            if (countryLocked) status.country = true;
             // Country changes may also reset a previously correct full name.
             if (!status.name) filled.name = await fillBillingTextField(page, 'name', fullName, '账单全名');
         }
@@ -3541,8 +3747,16 @@ async function fillOpenAiCheckoutBilling(page, address, fullName, expectedCurren
 
 const BILLING_FULL_NAME_SELECTORS = [
     '#billingAddress-nameInput',
+    '#cardholderName',
+    '#billingName',
     'input[name="billingName"]',
-    'input[autocomplete="billing name"]'
+    'input[name="cardholderName"]',
+    'input[autocomplete="billing name"]',
+    'input[autocomplete="cc-name"]',
+    'input[placeholder*="Full name on card" i]',
+    'input[placeholder*="Name on card" i]',
+    'input[aria-label*="Cardholder name" i]',
+    'input[aria-label*="持卡人" i]'
 ];
 
 async function readControlValue(item) {
@@ -3575,9 +3789,10 @@ async function readControlValue(item) {
 function billingFieldKey(item) {
     const hay = item.hay;
     if (/^(?:section-\S+\s+)?(?:billing\s+)?name$/i.test(item.meta?.autocomplete || '')
-        || /^name$/i.test(item.meta?.name || '')
-        || /full.?name|billing.?name|billingAddress-name|billing name|姓名/i.test(hay)
-        || /^name$/i.test(item.meta?.labelText || item.meta?.ariaLabel || '')) return 'name';
+        || /^cc-name$/i.test(item.meta?.autocomplete || '')
+        || /^name$|^cardholderName$/i.test(item.meta?.name || '')
+        || /full.?name|billing.?name|billingAddress-name|cardholder.?name|billing name|持卡人|姓名/i.test(hay)
+        || /^name$|^cardholder name$/i.test(item.meta?.labelText || item.meta?.ariaLabel || '')) return 'name';
     if (/address.?line.?1|line1|street|街道/i.test(hay) && !/line.?2/i.test(hay)) return 'line1';
     if (/locality|address-level2|\bcity\b|城市/i.test(hay)) return 'city';
     if (/postal|zip|邮政|邮编/i.test(hay)) return 'postal';
@@ -3636,6 +3851,21 @@ async function readBillingInputValues(page) {
             if (!result.present.includes('state')) result.present.push('state');
         }
     }
+    if (!result.name) {
+        for (const sel of BILLING_FULL_NAME_SELECTORS) {
+            try {
+                const el = page.locator(sel).first();
+                if ((await el.count()) > 0) {
+                    const val = (await el.inputValue({ timeout: 200 }).catch(() => '')).trim();
+                    if (val) {
+                        result.name = val;
+                        if (!result.present.includes('name')) result.present.push('name');
+                        break;
+                    }
+                }
+            } catch (_) {}
+        }
+    }
     return result;
 }
 
@@ -3690,8 +3920,12 @@ async function syncFilledFlags(page, filled) {
 }
 
 async function isOpenAiBillingFormComplete(page, filled = {}, targetAddress = null, fullName = null) {
+    if (await isBillingAddressLocked(page)) return true;
+    const countryLocked = await isBillingCountryLocked(page);
     const values = await readBillingInputValues(page);
-    return listBillingMissing(getBillingFieldStatus(values, filled, targetAddress?.country, targetAddress, fullName)).length === 0;
+    const status = getBillingFieldStatus(values, filled, targetAddress?.country, targetAddress, fullName);
+    if (countryLocked) status.country = true;
+    return listBillingMissing(status).length === 0;
 }
 
 async function billingFullNameHasValue(page) {
@@ -3919,7 +4153,8 @@ async function fillBillingLine1Strict(page, value) {
         '#billingAddress-addressLine1Input',
         '#billingAddressLine1',
         'input.pac-target-input',
-        'input[placeholder*="Address line 1" i]'
+        'input[placeholder*="Address line 1" i]',
+        'input[placeholder="Address"]'
     ];
     if (await fillFirstVisibleSelector(page, directSels, value, '街道地址', 3000)) {
         await dismissAddressAutocomplete(page);
@@ -4108,7 +4343,18 @@ async function clickCheckoutSubmitButton(page, accountEmail = '', onBeforeSubmit
     });
     await page.waitForTimeout(400);
 
-    const maxDisabledWaitMs = Number(process.env.CHECKOUT_SUBMIT_DISABLED_WAIT_MS || 25000);
+    // 0. 检查页面是否有「Retry / 重试」提示（如 Checkout could not be completed. Please try again. [Retry]）
+    try {
+        const retryBtn = page.locator('button:has-text("Retry"), [role="button"]:has-text("Retry"), button:has-text("重试")').first();
+        if (await retryBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+            console.log('[Stripe] 🔄 检测到收银台存在重试提示 (Checkout could not be completed)，点击「Retry」重置会话状态...');
+            await retryBtn.click().catch(() => {});
+            await page.waitForTimeout(1000);
+        }
+    } catch (_) {}
+
+    // 全局共享的禁用等待预算（默认最多等待 12s 算税/就绪，绝不在多个策略间重复等待 25s）
+    let remainingDisabledWaitMs = Number(process.env.CHECKOUT_SUBMIT_DISABLED_WAIT_MS || 12000);
     const tryClick = async (locator, label) => {
         let actionStarted = false;
         try {
@@ -4127,9 +4373,27 @@ async function clickCheckoutSubmitButton(page, accountEmail = '', onBeforeSubmit
             }
 
             if (isTargetDisabled) {
+                if (remainingDisabledWaitMs <= 0) {
+                    console.log(`[Stripe] ⚠️ 提交按钮依然处于禁用状态，跳过重复等待 (${label})`);
+                    return false;
+                }
                 console.log(`[Stripe] ⏳ 提交按钮处于后台加载/算税中，等待就绪 (${label})...`);
                 const disabledStart = Date.now();
-                while (Date.now() - disabledStart < maxDisabledWaitMs) {
+                while (Date.now() - disabledStart < remainingDisabledWaitMs) {
+                    // 若页面已弹出明确拒付/错误横幅，停止盲目等待按钮解禁
+                    const declineOnPage = await detectPaymentDeclineOnPage(page);
+                    if (declineOnPage) {
+                        console.log(`[Stripe] ⚠️ 等待期间检测到页面错误/拒付提示 (${declineOnPage})`);
+                        const retryBtn = page.locator('button:has-text("Retry"), [role="button"]:has-text("Retry")').first();
+                        if (await retryBtn.isVisible({ timeout: 200 }).catch(() => false)) {
+                            console.log('[Stripe] 🔄 正在点击「Retry」尝试解禁提交按钮...');
+                            await retryBtn.click().catch(() => {});
+                            await page.waitForTimeout(1000);
+                        } else {
+                            break;
+                        }
+                    }
+
                     await page.waitForTimeout(150);
 
                     const disabled = await target.isDisabled().catch(() => false);
@@ -4143,6 +4407,7 @@ async function clickCheckoutSubmitButton(page, accountEmail = '', onBeforeSubmit
                         break;
                     }
                 }
+                remainingDisabledWaitMs = Math.max(0, remainingDisabledWaitMs - (Date.now() - disabledStart));
             }
 
             if (isTargetDisabled) {
@@ -4516,6 +4781,10 @@ module.exports = {
     discoverCardInputs,
     fillCardFieldsOpenAiCheckout,
     prepareCheckoutCardSection,
+    dismissStripeLinkVerification,
+    isBillingAddressLocked,
+    isBillingCountryLocked,
+    expandManualAddressIfAvailable,
     readCheckoutDueAmount,
     waitForCheckoutDueAmount,
     assertCheckoutDueCurrency,

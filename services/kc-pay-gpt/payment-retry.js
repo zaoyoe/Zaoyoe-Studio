@@ -42,17 +42,25 @@ function getExpectedPlanPriceRule(platform, planType, currency) {
     const curr = String(currency || 'USD').toUpperCase();
 
     if (plat === 'chatgpt') {
+        const teamMatch = plan.match(/^team_?(\d+)$/i);
+        const isTeam = Boolean(teamMatch || plan === 'team' || plan === 'chatgpt_team' || plan === 'team_monthly' || plan === 'team_yearly');
+        const seats = teamMatch ? Math.max(2, parseInt(teamMatch[1], 10) || 2) : 2;
+
         if (curr === 'USD') {
-            if (plan === 'plus') return { amount: 20, label: 'Plus $20' };
-            if (plan === 'go') return { amount: 8, label: 'Go $8' };
-            if (/pro_?200|pro_?20x|pro_?more/i.test(plan)) return { amount: 200, label: 'Pro More usage $200' };
-            if (/pro_?500|pro_?max/i.test(plan)) return { amount: 500, label: 'Pro Max usage $500' };
-            if (/pro_?100|pro_?5x|^pro$/i.test(plan)) return { amount: 100, label: 'Pro Standard $100' };
+            if (plan === 'plus') return { amount: 20, grossAmount: 20, netAmount: 20, label: 'Plus $20' };
+            if (plan === 'go') return { amount: 8, grossAmount: 8, netAmount: 8, label: 'Go $8' };
+            if (/pro_?200|pro_?20x|pro_?more/i.test(plan)) return { amount: 200, grossAmount: 200, netAmount: 200, label: 'Pro More usage $200' };
+            if (/pro_?500|pro_?max/i.test(plan)) return { amount: 500, grossAmount: 500, netAmount: 500, label: 'Pro Max usage $500' };
+            if (/pro_?100|pro_?5x|^pro$/i.test(plan)) return { amount: 100, grossAmount: 100, netAmount: 100, label: 'Pro Standard $100' };
+            if (isTeam) return { min: 0, max: seats * 30, grossAmount: seats * 30, netAmount: seats * 30, label: `Team (${seats}席) $${seats * 30}` };
         }
         if (curr === 'PHP') {
-            if (/pro_?200|pro_?20x|pro_?more/i.test(plan)) return { min: 8900, max: 10000, label: 'Pro More usage ₱9,990' };
-            if (/pro_?500|pro_?max/i.test(plan)) return { min: 28000, max: 33000, label: 'Pro Max usage ₱32,490' };
-            if (/pro_?100|pro_?5x|^pro$/i.test(plan)) return { min: 5700, max: 6550, label: 'Pro Standard ₱6,490' };
+            if (plan === 'plus') return { min: 980, max: 1105, grossAmount: 1100, netAmount: 982.14, label: 'Plus ₱1,100' };
+            if (plan === 'go') return { min: 260, max: 350, grossAmount: 300, netAmount: 267.86, label: 'Go ₱300' };
+            if (/pro_?200|pro_?20x|pro_?more/i.test(plan)) return { min: 8900, max: 10000, grossAmount: 9990, netAmount: 8919.64, label: 'Pro More usage ₱9,990' };
+            if (/pro_?500|pro_?max/i.test(plan)) return { min: 28000, max: 33000, grossAmount: 32490, netAmount: 29008.93, label: 'Pro Max usage ₱32,490' };
+            if (/pro_?100|pro_?5x|^pro$/i.test(plan)) return { min: 5700, max: 6550, grossAmount: 6490, netAmount: 5794.64, label: 'Pro Standard ₱6,490' };
+            if (isTeam) return { min: 0, max: seats * 1450, grossAmount: seats * 1450, netAmount: seats * 1450, label: `Team (${seats}席) ₱${seats * 1450}` };
         }
     }
     return null;
@@ -108,7 +116,7 @@ async function resolveBilledAmountForRecord(page, paymentResult, preTaxAmount, c
  * @returns {Promise<{ success: boolean, error?: string, cardLast4?: string, manualIntervention?: boolean, screenshots?: string[] }>}
  */
 async function executePaymentWithRetry(page, options) {
-    const { platform = 'chatgpt', planType, cdkCode, email, onProgress, stripeSessionId, onPaymentState } = options || {};
+    let { platform = 'chatgpt', planType, cdkCode, email, onProgress, stripeSessionId, onPaymentState } = options || {};
     let lastPersistedPaymentState = 'not_started';
     const persistPaymentState = async (state, message = '') => {
         if (typeof onPaymentState === 'function') {
@@ -186,7 +194,11 @@ async function executePaymentWithRetry(page, options) {
         billedCurrency = currency;
         const isOregon = (address?.country === 'US' && /oregon|or\b/i.test(address?.state || ''));
         const expectedRule = getExpectedPlanPriceRule(platform, planType, billedCurrency);
-        if (expectedRule?.amount) {
+        if (isOregon && expectedRule?.netAmount !== undefined) {
+            billedAmount = expectedRule.netAmount;
+        } else if (expectedRule?.grossAmount !== undefined) {
+            billedAmount = expectedRule.grossAmount;
+        } else if (expectedRule?.amount !== undefined) {
             billedAmount = expectedRule.amount;
         } else if (billedCurrency === 'PHP' && /plus/i.test(planType)) {
             billedAmount = isOregon ? (estimateTaxFreeAmount(1100, 'PHP') || 982.14) : 1100;
@@ -287,6 +299,7 @@ async function executePaymentWithRetry(page, options) {
     }
 
     progress(`开始支付（最多尝试 ${MAX_CARD_ATTEMPTS} 张卡）...`);
+    let uiFallbackActive = false;
 
     for (let cardAttempt = 1; cardAttempt <= MAX_CARD_ATTEMPTS; cardAttempt += 1) {
         let card = null;
@@ -347,34 +360,70 @@ async function executePaymentWithRetry(page, options) {
         try {
             let paymentResult;
             try {
-                // 2.0 极速协议通道：优先尝试 Stripe 纯协议直接开卡（跳过收银台 DOM 加载与交互延迟）
-                const canTryProtocol = (platform === 'chatgpt' || !platform) && stripeSessionId && (isHostedSession || options?.accessToken);
+                const fastProtocolEnv = String(process.env.FAST_PROTOCOL_ENABLED ?? '').trim().toLowerCase();
+                const isFastProtocolEnabled = (options.fastProtocol !== false) && (fastProtocolEnv !== 'false' && fastProtocolEnv !== '0');
+                // 2.0 极速协议通道：首张卡优先尝试 Stripe 纯协议直接开卡（跳过收银台 DOM 加载与交互延迟）；
+                // 若首张卡回退唤醒了浏览器 UI 且仍被拒，后续换卡直接在已打开的收银台 UI 内填卡重试，避免重复创建 oaics_ 会话触发 429 限流
+                const canTryProtocol = isFastProtocolEnabled && !uiFallbackActive && (platform === 'chatgpt' || !platform) && stripeSessionId && (isHostedSession || options?.accessToken);
+                let protoRes = null;
+                if (!isFastProtocolEnabled && cardAttempt === 1 && (platform === 'chatgpt' || !platform)) {
+                    progress('⚡ [极速协议] 协议直充已关闭，直接转入收银台 UI 进行支付...');
+                }
                 if (canTryProtocol) {
                     try {
                         const { executeStripeProtocolPayment } = require('./stripe-protocol-payment');
-                        const protoRes = await executeStripeProtocolPayment({
+                        protoRes = await executeStripeProtocolPayment({
                             page,
                             card: cardInfo,
-                            billing: address,
+                            billing: { ...address, email: address?.email || email || '' },
                             sessionId: stripeSessionId,
                             accessToken: options.accessToken,
                             currency,
+                            planType,
                             proxy: options.proxy || '',
                             prewarmedTokens,
+                            cookieHeader: options.cookieHeader || '',
+                            deviceId: options.deviceId || '',
+                            userAgent: options.userAgent || '',
                             onPaymentAttemptStarted: async () => {
                                 attemptStarted = true;
                                 await persistPaymentState('started', '正在提交银行卡支付 (Stripe 纯协议直充)');
                             }
                         });
 
-                        if (protoRes.success || protoRes.declined) {
+                        if (protoRes.success) {
                             paymentResult = {
                                 ...protoRes,
                                 dueAmount: protoRes.amount != null ? protoRes.amount : billedAmount,
                                 dueCurrency: protoRes.currency || billedCurrency,
                                 holderName: address.name || billingHolderName || ''
                             };
-                            if (protoRes.declined) {
+                        } else if (protoRes.declined) {
+                            // 协议支付已明确收到上游拒卡终态，重置前置 started 状态，防止后续 UI 回退若未能点击提交按钮时被误判为 started->unknown 挂单
+                            attemptStarted = false;
+                            lastPersistedPaymentState = 'declined';
+
+                            // 只要页面可用（或支持按需懒加载唤醒浏览器）且允许回退，协议提交未果或拒付
+                            // 均平滑回退收银台 UI 进行真实环境二次抢救提交
+                            const allowFallback = process.env.CHECKOUT_PROTOCOL_DECLINE_FALLBACK !== 'false';
+                            const canFallback = Boolean(
+                                allowFallback
+                                && (
+                                    (page && typeof page.goto === 'function' && !page.isClosed())
+                                    || typeof options.ensureBrowserPage === 'function'
+                                )
+                            );
+
+                            if (canFallback) {
+                                progress(`⚡ [协议回退] 卡片 ...${cardLast4} 纯协议提交被拒 (${protoRes.error || protoRes.code || 'declined'})，平滑唤醒收银台 UI 进行真实环境提交通道...`);
+                                // 不设置 paymentResult，自动顺延进入收银台 UI 兜底流水线
+                            } else {
+                                paymentResult = {
+                                    ...protoRes,
+                                    dueAmount: protoRes.amount != null ? protoRes.amount : billedAmount,
+                                    dueCurrency: protoRes.currency || billedCurrency,
+                                    holderName: address.name || billingHolderName || ''
+                                };
                                 progress(`[协议支付] 卡片 ...${cardLast4} 协议核验未果或被拒: ${protoRes.error}`);
                                 if (page && typeof page.screenshot === 'function' && !page.isClosed()) {
                                     try {
@@ -387,24 +436,91 @@ async function executePaymentWithRetry(page, options) {
                                 }
                             }
                         } else if (protoRes.fallbackToUi) {
+                            attemptStarted = false;
                             progress(`[协议支付] ${protoRes.error || '转入收银台 UI 进行后续处理'}...`);
                         }
                     } catch (protoErr) {
+                        attemptStarted = false;
                         console.warn('⚠️ [协议支付] 协议尝试异常，平滑转入收银台 UI:', protoErr.message);
                     }
                 }
 
                 if (!paymentResult) {
-                    if (canTryProtocol) {
+                    let checkoutUrl = options.checkoutUrl;
+                    const needsCleanSession = Boolean(
+                        canTryProtocol && !isHostedSession && (protoRes?.declined || protoRes?.fallbackToUi || !protoRes)
+                        && typeof options.refreshCheckoutSession === 'function'
+                    );
+                    const needsLazyBrowser = Boolean(
+                        (!page || (typeof page.isClosed === 'function' && page.isClosed()))
+                        && typeof options.ensureBrowserPage === 'function'
+                    );
+                    let cleanSessionObtained = !needsCleanSession;
+
+                    if (needsCleanSession && needsLazyBrowser) {
+                        progress('⚡ [协议回退] 正在并发执行：按需懒加载唤醒 Chromium 浏览器 || 换取全新干净 Checkout 会话...');
+                        const [lazyPage, refreshed] = await Promise.all([
+                            options.ensureBrowserPage('纯协议支付未果/被拒，按需唤醒浏览器收银台'),
+                            options.refreshCheckoutSession().catch((e) => {
+                                progress(`[协议回退] 刷新会话异常: ${e.message}`);
+                                return null;
+                            })
+                        ]);
+                        page = lazyPage;
+                        if (refreshed?.checkoutUrl) {
+                            checkoutUrl = refreshed.checkoutUrl;
+                            stripeSessionId = refreshed.sessionId || stripeSessionId;
+                            cleanSessionObtained = true;
+                            progress(`⚡ [协议回退] 获取到全新未污染收银台链接: ${stripeSessionId.slice(0, 18)}...`);
+                        }
+                    } else {
+                        if (needsLazyBrowser) {
+                            progress('⚡ [按需唤醒] 正在按需懒加载启动 Chromium 浏览器环境以接管收银台 UI...');
+                            page = await options.ensureBrowserPage('纯协议支付转入浏览器收银台 UI');
+                        }
+                        if (needsCleanSession) {
+                            // 对于 ChatGPT Plus 的定制收银台 (oaics_...)，底层 PaymentIntent 在纯协议扣款失败后会直接死锁该会话。
+                            // 回退到收银台 UI 必须重新签发一个全新的干净 Checkout 会话，否则打开必定提示「Checkout could not be completed」！
+                            progress(`⚡ [协议回退] 旧 Checkout 会话已被协议占用，正在为收银台 UI 换取全新干净会话...`);
+                            const refreshed = await options.refreshCheckoutSession().catch((e) => {
+                                progress(`[协议回退] 刷新会话异常: ${e.message}`);
+                                return null;
+                            });
+                            if (refreshed?.checkoutUrl) {
+                                checkoutUrl = refreshed.checkoutUrl;
+                                stripeSessionId = refreshed.sessionId || stripeSessionId;
+                                cleanSessionObtained = true;
+                                progress(`⚡ [协议回退] 获取到全新未污染收银台链接: ${stripeSessionId.slice(0, 18)}...`);
+                            }
+                        }
+                    }
+
+                    // 若协议已明确拒付 (protoRes.declined)，且需要刷新干净 oaics_ 会话却因上游 429 (checkout_creation_rate_limited) 等原因未能拿到新会话，
+                    // 严禁继续导航至已被协议锁死的旧 oaics_ 会话（旧会话打开必报 Checkout could not be completed 且按钮禁用），
+                    // 同时设置 canRetryCard: false 防止在无可用新会话时继续消耗卡池中的下一张卡！
+                    if (needsCleanSession && !cleanSessionObtained && protoRes?.declined) {
+                        progress(`⚠️ [协议回退] 无法获取新 Checkout 会话（上游创建限流或异常），跳过已污染旧会话的 UI 复核，直接采纳协议拒卡结果: ${protoRes.error || 'declined'}`);
+                        paymentResult = {
+                            ...protoRes,
+                            canRetryCard: false,
+                            dueAmount: protoRes.amount != null ? protoRes.amount : billedAmount,
+                            dueCurrency: protoRes.currency || billedCurrency,
+                            holderName: address.name || billingHolderName || ''
+                        };
+                    } else {
                         const defaultCheckoutUrl = isHostedSession
                             ? `https://pay.openai.com/c/pay/${stripeSessionId}`
-                            : `https://chatgpt.com/checkout/openai_llc/${stripeSessionId}`;
-                        const checkoutUrl = options.checkoutUrl || defaultCheckoutUrl;
-                        progress(`⚡ [协议回退] 唤醒浏览器收银台: ${checkoutUrl}`);
-                        if (page && typeof page.goto === 'function') {
-                            const curUrl = page.url ? page.url() : '';
-                            if (!curUrl.includes(stripeSessionId)) {
-                                await page.goto(checkoutUrl, { waitUntil: 'commit', timeout: 30000 }).catch(() => {});
+                            : (stripeSessionId ? `https://chatgpt.com/checkout/openai_llc/${stripeSessionId}` : '');
+                        const targetUrl = checkoutUrl || defaultCheckoutUrl;
+
+                        const currentUrl = (page && typeof page.url === 'function' ? page.url() : '') || '';
+                        const isAlreadyOnTarget = Boolean(targetUrl && currentUrl.includes(stripeSessionId));
+
+                        if (targetUrl && (!isAlreadyOnTarget || protoRes?.declined || protoRes?.fallbackToUi)) {
+                            const navMsg = canTryProtocol ? '⚡ [协议回退] 唤醒浏览器收银台' : '🧭 [收银台] 浏览器加载收银台';
+                            progress(`${navMsg}: ${targetUrl}`);
+                            if (page && typeof page.goto === 'function') {
+                                await page.goto(targetUrl, { waitUntil: 'commit', timeout: 30000 }).catch(() => {});
                             }
                         }
                         const due = await waitForCheckoutDueAmount(page).catch(() => null);
@@ -412,17 +528,19 @@ async function executePaymentWithRetry(page, options) {
                             billedAmount = due.amount;
                             billedCurrency = due.currency || billedCurrency;
                         }
+
+                        uiFallbackActive = true;
+                        paymentResult = await completeStripeCardPayment(page, cardInfo, address, {
+                            cardAttempt, holderName: billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
+                            paymentRegion: region,
+                            paymentCurrency: currency,
+                            grokCheckout: options.grokCheckout,
+                            onPaymentAttemptStarted: async () => {
+                                attemptStarted = true;
+                                await persistPaymentState('started', '正在提交银行卡支付');
+                            }
+                        });
                     }
-                    paymentResult = await completeStripeCardPayment(page, cardInfo, address, {
-                        cardAttempt, holderName: billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
-                        paymentRegion: region,
-                        paymentCurrency: currency,
-                        grokCheckout: options.grokCheckout,
-                        onPaymentAttemptStarted: async () => {
-                            attemptStarted = true;
-                            await persistPaymentState('started', '正在提交银行卡支付');
-                        }
-                    });
                 }
             } catch (error) {
                 paymentResult = { success: false, error: error.message,

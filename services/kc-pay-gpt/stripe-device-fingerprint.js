@@ -37,6 +37,8 @@ function generateLocalFingerprintIds() {
         guid: one(),
         muid: one(),
         sid: one(),
+        clientSessionId: crypto.randomUUID(),
+        userAgent: DEFAULT_UA,
         source: 'local_fallback'
     };
 }
@@ -134,14 +136,40 @@ async function registerStripeDeviceFingerprint(options = {}) {
 
     try {
         const bodyData = encodeFingerprintPayload(payload);
-        const res = await axios.post(FINGERPRINT_URL, bodyData, config);
-        if (res.status === 200 && res.data && typeof res.data === 'object') {
-            const data = res.data;
+        const proxyStr = String(options.proxy || '').trim();
+        let data = null;
+        let status = 0;
+
+        try {
+            const { Impit } = require('impit');
+            const client = new Impit({
+                browser: 'chrome',
+                proxyUrl: proxyStr || undefined,
+                ignoreTlsErrors: true,
+                timeout: timeoutMs
+            });
+            const resp = await client.fetch(FINGERPRINT_URL, {
+                method: 'POST',
+                headers: config.headers,
+                body: bodyData
+            });
+            status = resp.status;
+            const text = await resp.text();
+            data = JSON.parse(text);
+        } catch (_) {
+            const res = await axios.post(FINGERPRINT_URL, bodyData, config);
+            status = res.status;
+            data = res.data;
+        }
+
+        if (status === 200 && data && typeof data === 'object') {
             if (data.guid && data.muid && data.sid) {
                 return {
                     guid: String(data.guid).trim(),
                     muid: String(data.muid).trim(),
                     sid: String(data.sid).trim(),
+                    clientSessionId: ids.clientSessionId,
+                    userAgent: ua,
                     source: 'stripe_registered'
                 };
             }
