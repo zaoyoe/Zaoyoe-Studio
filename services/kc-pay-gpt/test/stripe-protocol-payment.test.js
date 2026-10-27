@@ -8,6 +8,7 @@ const {
     executeStripeProtocolPayment,
     executeStripeHostedProtocolPayment,
     syncCheckoutBillingTax,
+    getDefaultPlanDisplayAmount,
     executeWithProxyRetry
 } = require('../stripe-protocol-payment');
 
@@ -142,5 +143,28 @@ describe('Stripe pure protocol payment integration', () => {
         // Verifies it routes to Hosted flow and catches card decline in protocol mode
         expect(result.protocolDirect).toBe(true);
         expect(result.success).toBe(false);
+    });
+
+    it('calibrates default and fallback amounts accurately across all ChatGPT plan types (Go, Plus, Pro 100/200/500, Team)', () => {
+        // PHP Tax-Free (Oregon)
+        expect(getDefaultPlanDisplayAmount('go', 'PHP', true)).toBe(267.86);
+        expect(getDefaultPlanDisplayAmount('plus', 'PHP', true)).toBe(982.14);
+        expect(getDefaultPlanDisplayAmount('pro_100', 'PHP', true)).toBe(5794.64);
+        expect(getDefaultPlanDisplayAmount('chatgptprolite', 'PHP', true)).toBe(5794.64);
+        expect(getDefaultPlanDisplayAmount('pro_200', 'PHP', true)).toBe(8919.64);
+        expect(getDefaultPlanDisplayAmount('chatgptpro', 'PHP', true)).toBe(8919.64);
+        expect(getDefaultPlanDisplayAmount('pro_500', 'PHP', true)).toBe(29008.93);
+        expect(getDefaultPlanDisplayAmount('chatgptpromax', 'PHP', true)).toBe(29008.93);
+        expect(getDefaultPlanDisplayAmount('team_2', 'PHP', true)).toBe(2900);
+        expect(getDefaultPlanDisplayAmount('team_5', 'PHP', true)).toBe(7250);
+
+        // USD
+        expect(getDefaultPlanDisplayAmount('go', 'USD', true)).toBe(8);
+        expect(getDefaultPlanDisplayAmount('plus', 'USD', true)).toBe(20);
+        expect(getDefaultPlanDisplayAmount('pro_100', 'USD', true)).toBe(100);
+        expect(getDefaultPlanDisplayAmount('pro_200', 'USD', true)).toBe(200);
+        expect(getDefaultPlanDisplayAmount('pro_500', 'USD', true)).toBe(500);
+        expect(getDefaultPlanDisplayAmount('team_2', 'USD', true)).toBe(60);
+        expect(getDefaultPlanDisplayAmount('team_5', 'USD', true)).toBe(150);
     });
 });

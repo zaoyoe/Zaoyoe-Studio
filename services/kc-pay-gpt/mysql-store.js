@@ -915,7 +915,7 @@ async function getAdminData() {
         runQuery(
             `SELECT config_key, config_value
              FROM app_config
-             WHERE config_key IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             WHERE config_key IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 'proxy',
                 'max_concurrent_activations',
@@ -929,7 +929,8 @@ async function getAdminData() {
                 'email_source',
                 'inbox_api_base',
                 'inbox_email_domain',
-                'inbox_email_domains'
+                'inbox_email_domains',
+                'fast_protocol_enabled'
             ]
         ),
         runQuery(
@@ -977,6 +978,10 @@ async function getAdminData() {
             max_background_concurrent: Math.max(1, Number(configMap.max_background_concurrent || 1)),
             maintenance_mode: String(configMap.maintenance_mode || '0') === '1',
             maintenance_mode_drain: String(configMap.maintenance_mode_drain || '0') === '1',
+            fast_protocol_enabled: parseBooleanConfig(
+                configMap.fast_protocol_enabled ?? process.env.FAST_PROTOCOL_ENABLED,
+                true
+            ),
             email_source: ['random', 'pool', 'inbox'].includes(String(configMap.email_source || ''))
                 ? String(configMap.email_source)
                 : (String(configMap.pool_email_enabled || '0') === '1' ? 'pool' : 'random'),
@@ -1047,6 +1052,9 @@ async function saveConfig(config = {}) {
     }
     if (hasOwn('maintenance_mode_drain')) {
         configEntries.push(['maintenance_mode_drain', config.maintenance_mode_drain ? '1' : '0']);
+    }
+    if (hasOwn('fast_protocol_enabled')) {
+        configEntries.push(['fast_protocol_enabled', config.fast_protocol_enabled ? '1' : '0']);
     }
     if (hasOwn('email_source') || hasOwn('pool_email_enabled')) {
         const emailSource = ['random', 'pool', 'inbox'].includes(String(config.email_source))
@@ -2227,6 +2235,21 @@ async function setBrowserPoolEnabled(enabled) {
     return Boolean(enabled);
 }
 
+const FAST_PROTOCOL_CONFIG_KEY = 'fast_protocol_enabled';
+
+async function getFastProtocolEnabled() {
+    const fromDb = await getAppConfigValue(FAST_PROTOCOL_CONFIG_KEY, '');
+    if (fromDb !== '') {
+        return parseBooleanConfig(fromDb, true);
+    }
+    return parseBooleanConfig(process.env.FAST_PROTOCOL_ENABLED, true);
+}
+
+async function setFastProtocolEnabled(enabled) {
+    await setAppConfigValue(FAST_PROTOCOL_CONFIG_KEY, enabled ? '1' : '0');
+    return Boolean(enabled);
+}
+
 async function getTelegramConfig() {
     const keys = [
         'telegram_bot_token',
@@ -3303,6 +3326,22 @@ async function releaseCard(cardId) {
 }
 
 /**
+ * 释放指定 ownerKey (通常为 jobKey) 持有的未完成卡片锁
+ */
+async function releaseCardsByOwner(ownerKey) {
+    if (!ownerKey) return 0;
+    const res = await runExecute(
+        `UPDATE card_assets
+         SET in_use = 0,
+             locked_at = NULL,
+             locked_by = NULL
+         WHERE in_use = 1 AND status = '正常' AND (locked_by = ? OR locked_by LIKE ?)`,
+        [ownerKey, `%${ownerKey}%`]
+    );
+    return Number(res?.affectedRows || 0);
+}
+
+/**
  * 将官方明确拒付的卡片置入短期冷却，并释放本次任务锁。
  * 冷却依靠 cooldown_until 参与 reserveCard 的可用性筛选，避免同一张卡立即重试。
  * @param {number} cardId - 卡片 ID
@@ -4205,6 +4244,8 @@ module.exports = {
     setAppConfigValue,
     getBrowserPoolEnabled,
     setBrowserPoolEnabled,
+    getFastProtocolEnabled,
+    setFastProtocolEnabled,
     getTelegramConfig,
     saveTelegramConfig,
     getGptApiConfig,
@@ -4248,6 +4289,7 @@ module.exports = {
     reserveCard,
     hasAvailableCard,
     releaseCard,
+    releaseCardsByOwner,
     cooldownCard,
     quarantineCardForReview,
     markCardExhausted,

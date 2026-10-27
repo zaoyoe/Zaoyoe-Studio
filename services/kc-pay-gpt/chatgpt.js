@@ -262,13 +262,81 @@ class ChatGPTService {
                 requestHeaders['User-Agent'] = options.userAgent;
             }
 
-            const response = await this.request.post("https://chatgpt.com/backend-api/payments/checkout", {
-                headers: requestHeaders,
-                data: payload
-            });
+            let status = 0;
+            let bodyText = "";
+            if (this.request && typeof this.request.post === 'function') {
+                const response = await this.request.post("https://chatgpt.com/backend-api/payments/checkout", {
+                    headers: requestHeaders,
+                    data: payload
+                });
+                status = response.status();
+                bodyText = await response.text().catch(() => "");
+            } else {
+                const proxyStr = String(options.proxy || '').trim();
+                const timeoutMs = Number(options.timeoutMs || 25000);
+                const fullHeaders = {
+                    'User-Agent': options.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+                    'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="147", "Google Chrome";v="147"',
+                    'sec-ch-ua-mobile': '?0',
+                    'sec-ch-ua-platform': '"Windows"',
+                    ...requestHeaders
+                };
+                const bodyStr = JSON.stringify(payload);
+                let impitClient = null;
+                try {
+                    const { Impit } = require('impit');
+                    impitClient = new Impit({
+                        browser: 'chrome',
+                        proxyUrl: proxyStr || undefined,
+                        ignoreTlsErrors: true,
+                        timeout: timeoutMs
+                    });
+                } catch (_) {}
 
-            const bodyText = await response.text().catch(() => "");
-            const parsed = parseCheckoutApiResponse(response.status(), bodyText);
+                if (impitClient) {
+                    let lastErr = null;
+                    for (let attempt = 1; attempt <= 2; attempt += 1) {
+                        try {
+                            const response = await impitClient.fetch("https://chatgpt.com/backend-api/payments/checkout", {
+                                method: 'POST',
+                                headers: fullHeaders,
+                                body: bodyStr
+                            });
+                            status = response.status;
+                            bodyText = await response.text().catch(() => "");
+                            lastErr = null;
+                            break;
+                        } catch (err) {
+                            lastErr = err;
+                            if (attempt < 2) {
+                                await new Promise((r) => setTimeout(r, 350));
+                            }
+                        }
+                    }
+                    if (lastErr) throw lastErr;
+                } else {
+                    const { fetch: undiciFetch, ProxyAgent } = require('undici');
+                    const dispatcher = proxyStr ? new ProxyAgent(proxyStr) : undefined;
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), timeoutMs);
+                    try {
+                        const response = await undiciFetch("https://chatgpt.com/backend-api/payments/checkout", {
+                            method: 'POST',
+                            headers: fullHeaders,
+                            body: bodyStr,
+                            dispatcher,
+                            signal: controller.signal
+                        });
+                        status = response.status;
+                        bodyText = await response.text().catch(() => "");
+                    } finally {
+                        clearTimeout(timer);
+                        await dispatcher?.close?.().catch(() => {});
+                    }
+                }
+            }
+
+            const parsed = parseCheckoutApiResponse(status, bodyText);
 
             if (!parsed.ok) {
                 const detail = parsed.error;
@@ -473,7 +541,7 @@ async function assertCheckoutPageReady(page) {
 /**
  * 通过 API 注入 billing_details 创建 Checkout，并打开 chatgpt.com/checkout
  */
-async function openApiCheckout(page, { accessToken, planType, country, currency, planNameOverride, verifyPage = true, proxy } = {}) {
+async function openApiCheckout(page, { accessToken, planType, country, currency, planNameOverride, verifyPage = true, proxy, sentinelPromise = null, cookieHeader = '', deviceId = '', userAgent: initialUserAgent = '' } = {}) {
     const { assertChatGptLoggedIn } = require('./session-auth');
     const token = String(accessToken || '').trim();
     if (!token) {
@@ -484,34 +552,48 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
     const billingCurrency = String(currency || getRegionConfig(region)?.currency || 'PHP').toUpperCase();
     console.log(`🧭 [步骤] 正在通过 API 创建 Checkout (country=${region}, currency=${billingCurrency}, plan=${planType})...`);
 
-    // 1. 尝试从浏览器上下文中提取 UA 和 oai-did
-    let userAgent = '';
-    let didCookie = '';
+    // 1. 尝试从浏览器上下文或传入参数中提取 UA 和 oai-did
+    let userAgent = initialUserAgent || '';
+    let didCookie = deviceId || '';
     try {
         if (page && typeof page.evaluate === 'function') {
-            userAgent = await page.evaluate(() => navigator.userAgent).catch(() => '');
+            userAgent = (await page.evaluate(() => navigator.userAgent).catch(() => '')) || userAgent;
             const cookies = await page.context().cookies('https://chatgpt.com').catch(() => []);
-            didCookie = cookies.find((c) => c.name === 'oai-did')?.value || '';
+            didCookie = cookies.find((c) => c.name === 'oai-did')?.value || didCookie;
         }
     } catch (_) {}
 
     // 2. 铸造 OpenAI-Sentinel 风控挑战令牌 (PoW + SO 传感器指纹)
     const extraHeaders = {};
+    if (cookieHeader && (!page || typeof page.context !== 'function')) {
+        extraHeaders['Cookie'] = cookieHeader;
+    }
+    if (didCookie) {
+        extraHeaders['oai-device-id'] = didCookie;
+    }
     const { mintSentinelToken } = require('./sentinel/sentinel-client');
     try {
-        console.log('⚡ [Sentinel] 正在为 Checkout API 签发风控令牌 (PoW)...');
-        const sentinel = await mintSentinelToken({
-            flow: 'chatgpt_checkout',
-            deviceId: didCookie,
-            userAgent: userAgent || undefined,
-            proxy: proxy || '',
-            pageUrl: (page && typeof page.url === 'function' ? page.url() : '') || 'https://chatgpt.com/',
-            timeoutMs: 15000
-        });
-        if (sentinel.sentinelToken) {
+        let sentinel = null;
+        if (sentinelPromise) {
+            sentinel = await sentinelPromise.catch(() => null);
+        }
+        if (!sentinel?.sentinelToken) {
+            console.log('⚡ [Sentinel] 正在为 Checkout API 签发风控令牌 (PoW)...');
+            sentinel = await mintSentinelToken({
+                flow: 'chatgpt_checkout',
+                deviceId: didCookie,
+                userAgent: userAgent || undefined,
+                proxy: proxy || '',
+                pageUrl: (page && typeof page.url === 'function' && /^https?:/i.test(page.url()) ? page.url() : '') || 'https://chatgpt.com/',
+                timeoutMs: 15000
+            });
+        } else {
+            console.log('⚡ [Sentinel] ⚡ 命中前置异步风控令牌 (耗时 0ms)!');
+        }
+        if (sentinel?.sentinelToken) {
             extraHeaders['openai-sentinel-token'] = sentinel.sentinelToken;
         }
-        if (sentinel.sentinelSoToken) {
+        if (sentinel?.sentinelSoToken) {
             extraHeaders['openai-sentinel-so-token'] = sentinel.sentinelSoToken;
         }
         console.log('⚡ [Sentinel] ✅ 风控令牌签发成功，已注入 Checkout 请求头');
@@ -519,10 +601,12 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
         console.warn('⚠️ [Sentinel] 风控令牌签发跳过/异常 (尝试原生发包):', sentinelErr.message);
     }
 
-    const gpt = new ChatGPTService(page.context().request, token);
+    const requestCtx = (page && typeof page.context === 'function') ? page.context()?.request : null;
+    const gpt = new ChatGPTService(requestCtx, token);
     const checkout = await gpt.createCheckoutSession(planType, region, billingCurrency, planNameOverride, {
         headers: extraHeaders,
-        userAgent
+        userAgent,
+        proxy
     });
     if (!checkout.checkoutUrl) {
         if (isBillingCountryMismatchError(checkout.error)) {
@@ -546,7 +630,7 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
     const url = checkout.checkoutUrl;
     console.log(`🔗 [步骤] 正在打开支付链接: ${url.slice(0, 120)}...`);
 
-    if (!verifyPage) {
+    if (!verifyPage || !page) {
         console.log('✅ [步骤] Checkout Session 已创建（跳过页面打开验证）');
         return { checkoutUrl: url, sessionId: checkout.sessionId };
     }

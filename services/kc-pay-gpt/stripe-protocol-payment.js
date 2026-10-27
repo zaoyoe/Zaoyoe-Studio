@@ -10,6 +10,88 @@ const { registerStripeDeviceFingerprint } = require('./stripe-device-fingerprint
 const RUNTIME_HASH = '5412f474d5';
 const V_HOSTED = '2020-08-27;custom_checkout_beta=v1';
 const DEFAULT_OPENAI_PK = 'pk_live_51HOrSwC6h1nxGoI3lTAgRjYVrz4dU3fVOabyCcKR3pbEJguCVAlqCxdxCUvoRh1XWwRacViovU3kLKvpkjh7IqkW00iXQsjo3n';
+const DEFAULT_STRIPE_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
+const DEFAULT_STRIPE_SEC_CH_UA = '"Not.A/Brand";v="99", "Chromium";v="136", "Google Chrome";v="136"';
+
+function buildStripeBrowserHeaders(origin = 'https://js.stripe.com', userAgent = DEFAULT_STRIPE_CHROME_UA) {
+    const cleanOrigin = String(origin || 'https://js.stripe.com').replace(/\/+$/, '');
+    return {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': cleanOrigin,
+        'Referer': `${cleanOrigin}/`,
+        'User-Agent': userAgent || DEFAULT_STRIPE_CHROME_UA,
+        'sec-ch-ua': DEFAULT_STRIPE_SEC_CH_UA,
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-site'
+    };
+}
+
+/**
+ * 使用 Chrome BoringSSL TLS (impit) 向 api.stripe.com 发送表单 POST 请求，
+ * 彻底消除 axios 默认 User-Agent 泄露与 Node OpenSSL TLS JA3/JA4 指纹特征
+ */
+async function postStripeFormChromeTls(url, bodyObj, headers, proxy = '', maxRetries = 3) {
+    const bodyStr = typeof bodyObj === 'string' ? bodyObj : querystring.stringify(bodyObj);
+    let ImpitClass = null;
+    try {
+        ({ Impit: ImpitClass } = require('impit'));
+    } catch (_) {}
+
+    if (ImpitClass) {
+        let currentProxy = String(proxy || '').trim();
+        let lastErr = null;
+        for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+            try {
+                const client = new ImpitClass({
+                    browser: 'chrome',
+                    proxyUrl: currentProxy || undefined,
+                    ignoreTlsErrors: true,
+                    timeout: 25000
+                });
+                const res = await client.fetch(url, {
+                    method: 'POST',
+                    headers,
+                    body: bodyStr
+                });
+                const rawText = await res.text();
+                let data = {};
+                try { data = JSON.parse(rawText); } catch (_) {}
+                return { status: res.status, ok: res.status === 200, data, rawText };
+            } catch (err) {
+                lastErr = err;
+                if (attempt >= maxRetries || !currentProxy) break;
+                const nextProxy = substituteProxySession(currentProxy);
+                if (nextProxy && nextProxy !== currentProxy) {
+                    currentProxy = nextProxy;
+                    try { resetActiveProxyTunnels(); } catch (_) {}
+                }
+                await new Promise((r) => setTimeout(r, 400));
+            }
+        }
+        if (lastErr && !proxy) {
+            // Fall through to executeWithProxyRetry fallback if impit failed locally
+        }
+    }
+
+    const res = await executeWithProxyRetry(async (client) => {
+        return await client.post(url, bodyStr, {
+            headers,
+            validateStatus: () => true
+        });
+    }, { proxy, maxRetries });
+    const data = typeof res.data === 'object' && res.data !== null ? res.data : {};
+    return {
+        status: res.status,
+        ok: res.status === 200,
+        data,
+        rawText: typeof res.data === 'string' ? res.data : JSON.stringify(data)
+    };
+}
 
 /**
  * 创建带可选代理支持的 Axios HTTP 客户端
@@ -111,6 +193,9 @@ async function createStripePaymentMethod(card, billing, options = {}) {
     if (!fp || !fp.guid || !fp.muid || !fp.sid) {
         fp = await registerStripeDeviceFingerprint({ proxy: options.proxy });
     }
+    if (!fp.clientSessionId) {
+        fp.clientSessionId = crypto.randomUUID();
+    }
     if (fp?.source === 'stripe_registered') {
         console.log(`⚡ [协议支付] ✅ 已挂载 Stripe 真实设备指纹 (Radar 防风控增强: muid=${fp.muid.slice(0, 8)}..., sid=${fp.sid.slice(0, 8)}...)`);
     }
@@ -130,7 +215,9 @@ async function createStripePaymentMethod(card, billing, options = {}) {
         'billing_details[address][state]': billing.state || 'Oregon',
         'billing_details[address][postal_code]': billing.postal_code || billing.zip || '97123',
         'payment_user_agent': `stripe.js/${RUNTIME_HASH}; stripe-js-v3/${RUNTIME_HASH}; payment-element`,
-        'client_attribution_metadata[client_session_id]': crypto.randomUUID(),
+        'time_on_page': String(Math.floor(18000 + Math.random() * 24000)),
+        'pasted_fields': 'number',
+        'client_attribution_metadata[client_session_id]': fp.clientSessionId,
         'client_attribution_metadata[merchant_integration_source]': 'elements',
         'client_attribution_metadata[merchant_integration_version]': '2021',
         'client_attribution_metadata[payment_method_selection_flow]': 'automatic',
@@ -141,18 +228,16 @@ async function createStripePaymentMethod(card, billing, options = {}) {
         '_stripe_version': V_HOSTED
     };
 
-    const headers = {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Origin': 'https://js.stripe.com',
-        'Referer': 'https://js.stripe.com/',
-        'Accept': 'application/json'
-    };
-
-    return await executeWithProxyRetry(async (client) => {
-        const res = await client.post('https://api.stripe.com/v1/payment_methods', querystring.stringify(body), { headers });
-        const data = res.data || {};
-        return { status: res.status, ok: res.status === 200, data, pmId: data.id || '' };
-    }, { proxy: options.proxy, maxRetries: 3 });
+    const headers = buildStripeBrowserHeaders('https://js.stripe.com', fp?.userAgent);
+    const res = await postStripeFormChromeTls(
+        'https://api.stripe.com/v1/payment_methods',
+        body,
+        headers,
+        options.proxy,
+        3
+    );
+    const data = res.data || {};
+    return { status: res.status, ok: res.status === 200, data, pmId: data.id || '', fingerprint: fp };
 }
 
 /**
@@ -160,28 +245,34 @@ async function createStripePaymentMethod(card, billing, options = {}) {
  */
 async function createStripeConfirmationToken(pmId, options = {}) {
     const pk = options.publishableKey || DEFAULT_OPENAI_PK;
+    const clientSessionId = options.fingerprint?.clientSessionId || options.clientSessionId || crypto.randomUUID();
 
+    // 注意：guid/muid/sid 与 payment_user_agent 已在 Step 1 createStripePaymentMethod 绑定至 pm_ 内部，
+    // /v1/confirmation_tokens 在接收 payment_method=pm_ 时仅接受 client_attribution_metadata，传入顶层 guid/muid/sid 会报 parameter_unknown
     const body = {
         'key': pk,
         'payment_method': pmId,
-        '_stripe_version': V_HOSTED
+        '_stripe_version': V_HOSTED,
+        'client_attribution_metadata[client_session_id]': clientSessionId,
+        'client_attribution_metadata[merchant_integration_source]': 'elements',
+        'client_attribution_metadata[merchant_integration_version]': '2021',
+        'client_attribution_metadata[payment_method_selection_flow]': 'automatic'
     };
-    if (options.setupFutureUsage) {
-        body['setup_future_usage'] = options.setupFutureUsage;
+    const setupFutureUsage = options.setupFutureUsage !== undefined ? options.setupFutureUsage : 'off_session';
+    if (setupFutureUsage) {
+        body['setup_future_usage'] = setupFutureUsage;
     }
 
-    const headers = {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Origin': 'https://js.stripe.com',
-        'Referer': 'https://js.stripe.com/',
-        'Accept': 'application/json'
-    };
-
-    return await executeWithProxyRetry(async (client) => {
-        const res = await client.post('https://api.stripe.com/v1/confirmation_tokens', querystring.stringify(body), { headers });
-        const data = res.data || {};
-        return { status: res.status, ok: res.status === 200, data, ctoken: data.id || '' };
-    }, { proxy: options.proxy, maxRetries: 3 });
+    const headers = buildStripeBrowserHeaders('https://js.stripe.com', options.fingerprint?.userAgent);
+    const res = await postStripeFormChromeTls(
+        'https://api.stripe.com/v1/confirmation_tokens',
+        body,
+        headers,
+        options.proxy,
+        3
+    );
+    const data = res.data || {};
+    return { status: res.status, ok: res.status === 200, data, ctoken: data.id || '' };
 }
 
 /**
@@ -196,62 +287,109 @@ async function confirmStripePaymentIntent({
     publishableKey = DEFAULT_OPENAI_PK,
     proxy = '',
     amount = null,
-    currency = ''
+    currency = '',
+    fingerprint = null,
+    page = null
 }) {
     const returnUrl = `https://chatgpt.com/checkout/verify?stripe_session_id=${sessionId}`;
-
-    // Stripe 订阅扣款通常要求 setup_future_usage: 'off_session' 的 confirmation_token
-    let intentCtoken = ctoken;
-    if (pmId) {
-        try {
-            const setupTokenRes = await createStripeConfirmationToken(pmId, {
-                publishableKey,
-                proxy,
-                setupFutureUsage: 'off_session'
-            });
-            if (setupTokenRes.ok && setupTokenRes.ctoken) {
-                intentCtoken = setupTokenRes.ctoken;
-            }
-        } catch (_) {}
-    }
-
     const kind = intentId.startsWith('seti_') ? 'setup_intents' : 'payment_intents';
+    const isHosted = Boolean(sessionId && (sessionId.startsWith('cs_live_') || sessionId.startsWith('cs_test_')));
+    const source = isHosted ? 'l1' : 'elements';
+    const clientSessionId = fingerprint?.clientSessionId || crypto.randomUUID();
+
+    // 严禁在此处重复请求生成新的 ConfirmationToken（会在毫秒内对同一卡号产生多重申领，被 Stripe Radar 判定为高危欺诈）
+    // 直接使用前置绑定生成的 ctoken（已内嵌 Step 1 绑定的 Radar 设备指纹 muid/sid/guid）
     const body = {
         'key': publishableKey,
         'client_secret': clientSecret,
         '_stripe_version': V_HOSTED,
-        'client_attribution_metadata[merchant_integration_source]': 'l1'
+        'client_attribution_metadata[client_session_id]': clientSessionId,
+        'client_attribution_metadata[merchant_integration_source]': source,
+        'client_attribution_metadata[merchant_integration_version]': '2021',
+        'client_attribution_metadata[payment_method_selection_flow]': 'automatic',
+        'use_stripe_sdk': 'true'
     };
-    if (intentCtoken) {
-        body['confirmation_token'] = intentCtoken;
+
+    if (ctoken) {
+        body['confirmation_token'] = ctoken;
+    } else if (pmId) {
+        body['payment_method'] = pmId;
     }
     if (returnUrl) {
         body['return_url'] = returnUrl;
     }
 
-    const headers = {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Origin': 'https://js.stripe.com',
-        'Referer': 'https://js.stripe.com/',
-        'Accept': 'application/json'
-    };
+    const headers = buildStripeBrowserHeaders('https://js.stripe.com', fingerprint?.userAgent);
 
     const amountSuffix = amount != null ? `, 扣款金额: ${currency || ''} ${amount}` : '';
     console.log(`⚡ [协议支付] 5/5 正在向 Stripe 提交最终扣款确认 (${intentId.slice(0, 14)}...${amountSuffix})...`);
-    const res = await executeWithProxyRetry(async (client) => {
-        return await client.post(
-            `https://api.stripe.com/v1/${kind}/${intentId}/confirm`,
-            querystring.stringify(body),
-            { headers, validateStatus: () => true }
-        );
-    }, { proxy, maxRetries: 3 });
-    const data = typeof res.data === 'object' && res.data !== null ? res.data : {};
-    return {
-        status: res.status,
-        ok: res.status === 200,
-        data,
-        rawText: typeof res.data === 'string' ? res.data : JSON.stringify(data)
-    };
+
+    // 优先通过已有 Chromium 浏览器页面同源 fetch 提交扣款确认
+    // 兼具 Chrome 原生 TLS 指纹 (JA3/JA4)、HTTP/2 帧特性、真实 User-Agent 与全套 Radar 探针
+    if (page && typeof page.evaluate === 'function' && !page.isClosed()) {
+        try {
+            const pageRes = await page.evaluate(async ({ url, bodyStr }) => {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json'
+                    },
+                    body: bodyStr
+                });
+                const text = await res.text();
+                let json = {};
+                try { json = JSON.parse(text); } catch (_) {}
+                return { status: res.status, ok: res.ok, data: json, rawText: text };
+            }, {
+                url: `https://api.stripe.com/v1/${kind}/${intentId}/confirm`,
+                bodyStr: querystring.stringify(body)
+            });
+            if (pageRes && (pageRes.status === 200 || pageRes.data?.error)) {
+                return pageRes;
+            }
+        } catch (evalErr) {
+            console.warn(`⚠️ [协议支付] 页面同源确认尝试未果 (${evalErr.message})，转入 Chrome TLS 客户端直接发包...`);
+        }
+    }
+
+    return await postStripeFormChromeTls(
+        `https://api.stripe.com/v1/${kind}/${intentId}/confirm`,
+        body,
+        headers,
+        proxy,
+        3
+    );
+}
+
+/**
+ * 根据套餐类型/名称、币种与免税州标志，推算默认展示/兜底金额（避免 Pro/Team 等套餐在未返回 minorUnitsAmount 时被错误兜底为 Plus 982.14 / $20）
+ */
+function getDefaultPlanDisplayAmount(planHint, currency = 'PHP', isOregon = true) {
+    const plan = String(planHint || 'plus').trim().toLowerCase();
+    const curr = String(currency || 'PHP').trim().toUpperCase();
+    const teamMatch = plan.match(/^team_?(\d+)$/i);
+    const seats = teamMatch ? Math.max(2, parseInt(teamMatch[1], 10) || 2) : 2;
+
+    if (curr === 'PHP') {
+        if (/pro_?500|pro_?max|chatgptpromax/i.test(plan)) return isOregon ? 29008.93 : 32490;
+        if (/pro_?100|pro_?5x|chatgptprolite|^pro$/i.test(plan)) return isOregon ? 5794.64 : 6490;
+        if (/pro_?200|pro_?20x|pro_?more|chatgptpro/i.test(plan)) return isOregon ? 8919.64 : 9990;
+        if (/\bgo\b|chatgptgoplan/i.test(plan)) return isOregon ? 267.86 : 300;
+        if (/team|chatgptteamplan/i.test(plan)) return seats * 1450;
+        return isOregon ? 982.14 : 1100;
+    }
+
+    if (curr === 'USD') {
+        if (/pro_?500|pro_?max|chatgptpromax/i.test(plan)) return 500;
+        if (/pro_?100|pro_?5x|chatgptprolite|^pro$/i.test(plan)) return 100;
+        if (/pro_?200|pro_?20x|pro_?more|chatgptpro/i.test(plan)) return 200;
+        if (/\bgo\b|chatgptgoplan/i.test(plan)) return 8;
+        if (/team|chatgptteamplan/i.test(plan)) return seats * 30;
+        return 20;
+    }
+
+    return null;
 }
 
 /**
@@ -262,6 +400,7 @@ async function syncCheckoutBillingTax({
     sessionId,
     billing,
     currency = 'PHP',
+    planType = '',
     targetHeaders,
     proxy = ''
 }) {
@@ -336,46 +475,57 @@ async function syncCheckoutBillingTax({
             });
             if (pageRes && pageRes.ok) {
                 const sess = pageRes.data?.checkout_session || pageRes.data || {};
-                const rawTotal = sess.amount_total ?? pageRes.data?.snapshot?.amount_total ?? pageRes.data?.amount_total ?? pageRes.data?.total;
-                const taxAmount = sess.total_details?.amount_tax ?? pageRes.data?.amount_tax ?? 0;
+                const checkoutStateTotal = sess.checkout_state?.total;
+                const rawTotal = checkoutStateTotal?.total?.minorUnitsAmount
+                    ?? sess.checkout_state?.lineItems?.[0]?.total?.minorUnitsAmount
+                    ?? sess.amount_total
+                    ?? pageRes.data?.snapshot?.amount_total
+                    ?? pageRes.data?.amount_total
+                    ?? pageRes.data?.total;
+                const taxAmount = checkoutStateTotal?.taxExclusive?.minorUnitsAmount
+                    ?? checkoutStateTotal?.taxInclusive?.minorUnitsAmount
+                    ?? sess.total_details?.amount_tax
+                    ?? pageRes.data?.amount_tax
+                    ?? 0;
                 const isOregon = (billing?.country === 'US' && /oregon|or\b/i.test(billing?.state || ''));
-                const defaultPhAmount = isOregon ? 982.14 : 1100;
-                const displayTotal = (rawTotal != null && !isNaN(rawTotal)) ? (rawTotal / 100) : (taxBody.currency === 'PHP' ? defaultPhAmount : 20);
+                const fallbackAmount = getDefaultPlanDisplayAmount(planType || sess.plan_name, taxBody.currency, isOregon);
+                const displayTotal = (rawTotal != null && !isNaN(rawTotal)) ? (rawTotal / 100) : fallbackAmount;
                 console.log(`⚡ [协议支付] ✅ 免税地址同步成功！总金额: ${taxBody.currency} ${displayTotal} (税额: ${taxAmount})`);
-                return { ok: true, data: pageRes.data, amountTotal: rawTotal, taxAmount };
+                return { ok: true, data: pageRes.data, amountTotal: rawTotal, taxAmount, planName: sess.plan_name || '' };
             }
         } catch (evalErr) {
             console.warn(`⚠️ [协议支付] 页面同源 /taxes 调用异常: ${evalErr.message}，尝试切入 Node 客户端...`);
         }
     }
 
-    // Node axios 客户端兜底（集成代理自动轮换重试）
+    // 0 浏览器模式或页面同源异常：优先使用 Chrome BoringSSL TLS 指纹 (impit) 直连，完美绕过 Cloudflare JA3/JA4 403 盾
     try {
-        const nodeRes = await executeWithProxyRetry(async (client) => {
-            const res = await client.post('https://chatgpt.com/backend-api/payments/checkout/taxes', taxBody, {
-                headers: taxHeaders,
-                validateStatus: () => true
-            });
-            // 配套清空 tax_id
-            try {
-                await client.post('https://chatgpt.com/backend-api/payments/checkout/update_tax_id', updateTaxIdBody, {
-                    headers: updateTaxIdHeaders,
-                    validateStatus: () => true
-                });
-            } catch (_) {}
-            return res;
-        }, { proxy, maxRetries: 2 });
+        const nodeRes = await postChatGptChromeTls('https://chatgpt.com/backend-api/payments/checkout/taxes', taxBody, taxHeaders, proxy, 2);
 
         const data = typeof nodeRes.data === 'object' && nodeRes.data !== null ? nodeRes.data : {};
         if (nodeRes.status === 200) {
             const sess = data.checkout_session || data || {};
-            const rawTotal = sess.amount_total ?? data.snapshot?.amount_total ?? data.amount_total ?? data.total;
-            const taxAmount = sess.total_details?.amount_tax ?? data.amount_tax ?? 0;
+            // 仅当上游会话仍残留非空 taxIdInfo 时才补发 /update_tax_id 清空，避免无意义阻塞
+            if (sess.checkout_state?.taxIdInfo) {
+                await postChatGptChromeTls('https://chatgpt.com/backend-api/payments/checkout/update_tax_id', updateTaxIdBody, updateTaxIdHeaders, proxy, 1).catch(() => {});
+            }
+            const checkoutStateTotal = sess.checkout_state?.total;
+            const rawTotal = checkoutStateTotal?.total?.minorUnitsAmount
+                ?? sess.checkout_state?.lineItems?.[0]?.total?.minorUnitsAmount
+                ?? sess.amount_total
+                ?? data.snapshot?.amount_total
+                ?? data.amount_total
+                ?? data.total;
+            const taxAmount = checkoutStateTotal?.taxExclusive?.minorUnitsAmount
+                ?? checkoutStateTotal?.taxInclusive?.minorUnitsAmount
+                ?? sess.total_details?.amount_tax
+                ?? data.amount_tax
+                ?? 0;
             const isOregon = (billing?.country === 'US' && /oregon|or\b/i.test(billing?.state || ''));
-            const defaultPhAmount = isOregon ? 982.14 : 1100;
-            const displayTotal = (rawTotal != null && !isNaN(rawTotal)) ? (rawTotal / 100) : (taxBody.currency === 'PHP' ? defaultPhAmount : 20);
+            const fallbackAmount = getDefaultPlanDisplayAmount(planType || sess.plan_name, taxBody.currency, isOregon);
+            const displayTotal = (rawTotal != null && !isNaN(rawTotal)) ? (rawTotal / 100) : fallbackAmount;
             console.log(`⚡ [协议支付] ✅ 免税地址同步成功！总金额: ${taxBody.currency} ${displayTotal} (税额: ${taxAmount})`);
-            return { ok: true, data, amountTotal: rawTotal, taxAmount };
+            return { ok: true, data, amountTotal: rawTotal, taxAmount, planName: sess.plan_name || '' };
         } else {
             console.warn(`⚠️ [协议支付] /taxes 上游返回 HTTP ${nodeRes.status}，继续推进确认`);
         }
@@ -387,7 +537,66 @@ async function syncCheckoutBillingTax({
 }
 
 /**
- * 发送 ChatGPT 支付确认请求（支持页面同源和 Node 网络客户端两种通道）
+ * 使用 Chrome BoringSSL TLS 指纹 (impit) 向 chatgpt.com 发送 JSON POST，规避 Node OpenSSL JA3/JA4 触发 Cloudflare 403
+ */
+async function postChatGptChromeTls(url, bodyObj, headers, proxy = '', maxRetries = 2) {
+    let ImpitClass = null;
+    try {
+        ({ Impit: ImpitClass } = require('impit'));
+    } catch (_) {}
+
+    if (ImpitClass) {
+        let currentProxy = String(proxy || '').trim();
+        let lastErr = null;
+        const bodyStr = JSON.stringify(bodyObj);
+        for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+            try {
+                const client = new ImpitClass({
+                    browser: 'chrome',
+                    proxyUrl: currentProxy || undefined,
+                    ignoreTlsErrors: true,
+                    timeout: 25000
+                });
+                const res = await client.fetch(url, {
+                    method: 'POST',
+                    headers,
+                    body: bodyStr
+                });
+                const rawText = await res.text();
+                let data = {};
+                try { data = JSON.parse(rawText); } catch (_) {}
+                return { status: res.status, ok: res.status === 200, data, rawText };
+            } catch (err) {
+                lastErr = err;
+                if (attempt >= maxRetries) break;
+                const nextProxy = currentProxy ? substituteProxySession(currentProxy) : '';
+                if (nextProxy && nextProxy !== currentProxy) {
+                    currentProxy = nextProxy;
+                }
+                try { resetActiveProxyTunnels(); } catch (_) {}
+                await new Promise((r) => setTimeout(r, 350));
+            }
+        }
+        if (lastErr) throw lastErr;
+    }
+
+    const nodeRes = await executeWithProxyRetry(async (client) => {
+        return await client.post(url, bodyObj, {
+            headers,
+            validateStatus: () => true
+        });
+    }, { proxy, maxRetries });
+    const rawText = typeof nodeRes.data === 'string' ? nodeRes.data : JSON.stringify(nodeRes.data || {});
+    return {
+        status: nodeRes.status,
+        ok: nodeRes.status === 200,
+        data: typeof nodeRes.data === 'object' && nodeRes.data !== null ? nodeRes.data : {},
+        rawText
+    };
+}
+
+/**
+ * 发送 ChatGPT 支付确认请求（支持页面同源和 Chrome TLS 指纹直连两种通道）
  */
 async function postConfirmRequest({
     page,
@@ -427,25 +636,19 @@ async function postConfirmRequest({
                 bodyObj: confirmBody
             });
         } catch (evalErr) {
-            console.warn(`⚠️ [协议支付] 页面同源 confirm 调用异常: ${evalErr.message}，切入 Node 网络客户端重试...`);
+            console.warn(`⚠️ [协议支付] 页面同源 confirm 调用异常: ${evalErr.message}，切入 Chrome TLS 客户端重试...`);
         }
     }
 
-    // 若页面内调用未果，采用 Node axios 兜底（集成代理自动轮换重试）
+    // 0 浏览器模式或页面内调用未果：采用 Chrome TLS 指纹客户端直连（集成代理自动轮换重试）
     try {
-        const nodeRes = await executeWithProxyRetry(async (client) => {
-            return await client.post('https://chatgpt.com/backend-api/payments/checkout/confirm', confirmBody, {
-                headers: targetHeaders,
-                validateStatus: () => true
-            });
-        }, { proxy, maxRetries: 2 });
-        const rawText = typeof nodeRes.data === 'string' ? nodeRes.data : JSON.stringify(nodeRes.data || {});
-        return {
-            status: nodeRes.status,
-            ok: nodeRes.status === 200,
-            data: typeof nodeRes.data === 'object' && nodeRes.data !== null ? nodeRes.data : {},
-            rawText
-        };
+        return await postChatGptChromeTls(
+            'https://chatgpt.com/backend-api/payments/checkout/confirm',
+            confirmBody,
+            targetHeaders,
+            proxy,
+            2
+        );
     } catch (nodeErr) {
         console.warn(`[-] [协议支付] Node 网络发送 confirm 失败: ${nodeErr.message}`);
         return {
@@ -462,10 +665,21 @@ async function postConfirmRequest({
  * 前置预热 Stripe ConfirmationToken (pm_ + ctoken_)
  * 可在任务启动或结账创建阶段于后台异步执行，使协议支付耗时再降 4~5 秒
  */
-async function prewarmStripeConfirmationToken({ card, billing, proxy = '', publishableKey = DEFAULT_OPENAI_PK }) {
+async function prewarmStripeConfirmationToken({ card, billing, proxy = '', publishableKey = DEFAULT_OPENAI_PK, planType = '' }) {
     if (!card || !billing) return null;
     const cardLast4 = String(card.number || card.card_number || '').slice(-4);
+    const isTeam = /team/i.test(String(planType || ''));
     try {
+        if (isTeam) {
+            console.log(`⚡ [协议预热] Team 托管模式：正在后台异步预热 Stripe Radar 设备指纹 (卡号: ...${cardLast4})...`);
+            const fp = await registerStripeDeviceFingerprint({ proxy });
+            return {
+                ok: true,
+                hostedOnly: true,
+                publishableKey,
+                fingerprint: fp
+            };
+        }
         console.log(`⚡ [协议预热] 正在后台异步预热卡片 Stripe 令牌 (卡号: ...${cardLast4})...`);
         const cardPayload = {
             number: card.number || card.card_number,
@@ -479,7 +693,11 @@ async function prewarmStripeConfirmationToken({ card, billing, proxy = '', publi
             console.warn(`[-] [协议预热] 卡片预热 pm_ 未通过: ${msg}`);
             return { ok: false, error: msg, data: pmResult.data, status: pmResult.status };
         }
-        const ctokenResult = await createStripeConfirmationToken(pmResult.pmId, { proxy, publishableKey });
+        const ctokenResult = await createStripeConfirmationToken(pmResult.pmId, {
+            proxy,
+            publishableKey,
+            fingerprint: pmResult.fingerprint
+        });
         if (!ctokenResult.ok || !ctokenResult.ctoken) {
             const msg = ctokenResult.data?.error?.message || 'ctoken failed';
             console.warn(`[-] [协议预热] 卡片预热 ctoken_ 未通过: ${msg}`);
@@ -490,7 +708,8 @@ async function prewarmStripeConfirmationToken({ card, billing, proxy = '', publi
             ok: true,
             pmId: pmResult.pmId,
             ctoken: ctokenResult.ctoken,
-            publishableKey
+            publishableKey,
+            fingerprint: pmResult.fingerprint
         };
     } catch (err) {
         console.warn(`⚠️ [协议预热] 预热执行异常 (非阻塞): ${err.message}`);
@@ -533,12 +752,7 @@ async function executeStripeHostedProtocolPayment({
         } catch (_) {}
     }
 
-    const stripeHeaders = {
-        'Origin': 'https://pay.openai.com',
-        'Referer': 'https://pay.openai.com/',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-    };
+    const stripeHeaders = buildStripeBrowserHeaders('https://pay.openai.com');
 
     const country = String(billing.country || 'US').toUpperCase();
     const browserLocale = country === 'PH' ? 'en-PH' : (country === 'EG' ? 'ar-EG' : 'en-US');
@@ -554,20 +768,20 @@ async function executeStripeHostedProtocolPayment({
     let customerEmail = billing.email || '';
 
     try {
-        const initRes = await executeWithProxyRetry(async (client) => {
-            const body = {
-                key: publishableKey,
-                eid: 'NA',
-                browser_locale: browserLocale,
-                browser_timezone: browserTimezone,
-                redirect_type: 'url'
-            };
-            return await client.post(
-                `https://api.stripe.com/v1/payment_pages/${sessionId}/init`,
-                querystring.stringify(body),
-                { headers: stripeHeaders }
-            );
-        }, { proxy, maxRetries: 3 });
+        const initBody = {
+            key: publishableKey,
+            eid: 'NA',
+            browser_locale: browserLocale,
+            browser_timezone: browserTimezone,
+            redirect_type: 'url'
+        };
+        const initRes = await postStripeFormChromeTls(
+            `https://api.stripe.com/v1/payment_pages/${sessionId}/init`,
+            initBody,
+            stripeHeaders,
+            proxy,
+            3
+        );
 
         initData = initRes.data || {};
         configId = String(initData.config_id || '');
@@ -608,13 +822,13 @@ async function executeStripeHostedProtocolPayment({
                 if (val) addressPayload[`tax_region[${name}]`] = val;
             }
 
-            const taxRes = await executeWithProxyRetry(async (client) => {
-                return await client.post(
-                    `https://api.stripe.com/v1/payment_pages/${sessionId}`,
-                    querystring.stringify(addressPayload),
-                    { headers: stripeHeaders }
-                );
-            }, { proxy, maxRetries: 2 });
+            const taxRes = await postStripeFormChromeTls(
+                `https://api.stripe.com/v1/payment_pages/${sessionId}`,
+                addressPayload,
+                stripeHeaders,
+                proxy,
+                2
+            );
 
             const taxData = taxRes.data || {};
             if (taxData.config_id) {
@@ -632,10 +846,21 @@ async function executeStripeHostedProtocolPayment({
 
     // 3. 注册指纹与创建 PaymentMethod (pm_)
     console.log(`⚡ [协议支付/Hosted] 3/4 正在生成 PaymentMethod (带 hosted_checkout 来源属性)...`);
-    let fp = await registerStripeDeviceFingerprint({ proxy });
+    let fp = null;
+    if (prewarmedTokens) {
+        try {
+            const pre = await prewarmedTokens;
+            if (pre?.fingerprint?.guid && pre?.fingerprint?.muid && pre?.fingerprint?.sid) {
+                fp = pre.fingerprint;
+            }
+        } catch (_) {}
+    }
+    if (!fp) {
+        fp = await registerStripeDeviceFingerprint({ proxy });
+    }
     const { month, year } = normalizeExpiry(card);
 
-    const clientSessionId = crypto.randomUUID();
+    const clientSessionId = fp.clientSessionId || crypto.randomUUID();
     const pmBody = {
         'type': 'card',
         'card[number]': String(card.number || card.cardNumber || card.card_number || '').replace(/\s+/g, ''),
@@ -650,6 +875,8 @@ async function executeStripeHostedProtocolPayment({
         'billing_details[address][state]': billing.state || 'Oregon',
         'billing_details[address][postal_code]': billing.postal_code || billing.zip || '97401',
         'payment_user_agent': `stripe.js/${RUNTIME_HASH}; stripe-js-v3/${RUNTIME_HASH}; checkout`,
+        'time_on_page': String(Math.floor(18000 + Math.random() * 24000)),
+        'pasted_fields': 'number',
         'client_attribution_metadata[client_session_id]': clientSessionId,
         'client_attribution_metadata[checkout_session_id]': sessionId,
         'client_attribution_metadata[merchant_integration_source]': 'checkout',
@@ -667,9 +894,13 @@ async function executeStripeHostedProtocolPayment({
 
     let pmId = '';
     try {
-        const pmRes = await executeWithProxyRetry(async (client) => {
-            return await client.post('https://api.stripe.com/v1/payment_methods', querystring.stringify(pmBody), { headers: stripeHeaders });
-        }, { proxy, maxRetries: 3 });
+        const pmRes = await postStripeFormChromeTls(
+            'https://api.stripe.com/v1/payment_methods',
+            pmBody,
+            stripeHeaders,
+            proxy,
+            3
+        );
 
         if (pmRes.status !== 200 || !pmRes.data?.id) {
             const err = pmRes.data?.error || {};
@@ -727,13 +958,13 @@ async function executeStripeHostedProtocolPayment({
 
     let confirmRes;
     try {
-        confirmRes = await executeWithProxyRetry(async (client) => {
-            return await client.post(
-                `https://api.stripe.com/v1/payment_pages/${sessionId}/confirm`,
-                querystring.stringify(confirmBody),
-                { headers: stripeHeaders }
-            );
-        }, { proxy, maxRetries: 2 });
+        confirmRes = await postStripeFormChromeTls(
+            `https://api.stripe.com/v1/payment_pages/${sessionId}/confirm`,
+            confirmBody,
+            stripeHeaders,
+            proxy,
+            2
+        );
     } catch (confirmNetErr) {
         console.warn(`[-] [协议支付/Hosted] Confirm 网络异常: ${confirmNetErr.message}`);
         return {
@@ -874,10 +1105,14 @@ async function executeStripeProtocolPayment({
     sessionId,
     accessToken,
     currency = 'PHP',
+    planType = '',
     proxy = '',
     publishableKey = DEFAULT_OPENAI_PK,
     onPaymentAttemptStarted,
-    prewarmedTokens = null
+    prewarmedTokens = null,
+    cookieHeader = '',
+    deviceId = '',
+    userAgent = ''
 }) {
     // 若会话为 Stripe 官方托管长链会话 (cs_live_... / cs_test_...，如 ChatGPT Team 档位)，直接切入 Hosted 纯协议直充通道
     if (sessionId && (sessionId.startsWith('cs_live_') || sessionId.startsWith('cs_test_'))) {
@@ -936,7 +1171,11 @@ async function executeStripeProtocolPayment({
         console.log(`⚡ [协议支付] [Stripe轨] ✅ 卡片已预留 (${pmResult.pmId.slice(0, 14)}...)，正在生成 ConfirmationToken (ctoken_)...`);
         let ctokenResult;
         try {
-            ctokenResult = await createStripeConfirmationToken(pmResult.pmId, { proxy, publishableKey });
+            ctokenResult = await createStripeConfirmationToken(pmResult.pmId, {
+                proxy,
+                publishableKey,
+                fingerprint: pmResult.fingerprint
+            });
         } catch (tokenErr) {
             return { ok: false, networkError: tokenErr.message };
         }
@@ -945,7 +1184,8 @@ async function executeStripeProtocolPayment({
             pmId: pmResult.pmId,
             ctoken: ctokenResult.ctoken,
             data: ctokenResult.data,
-            status: ctokenResult.status
+            status: ctokenResult.status,
+            fingerprint: pmResult.fingerprint
         };
     };
 
@@ -958,7 +1198,13 @@ async function executeStripeProtocolPayment({
             'Accept': 'application/json',
             'Origin': 'https://chatgpt.com',
             'Referer': checkoutUrl,
-            'x-openai-session-id': sessionId
+            'x-openai-session-id': sessionId,
+            'User-Agent': userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+            'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="147", "Google Chrome";v="147"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
+            ...(deviceId ? { 'oai-device-id': deviceId } : {})
         };
 
         console.log(`⚡ [协议支付] [ChatGPT轨] 正在并行签发结算风控令牌与同步免税地址...`);
@@ -968,6 +1214,8 @@ async function executeStripeProtocolPayment({
                     const tokens = await mintSentinelToken({
                         flow: 'checkout_session_approval',
                         pageUrl: checkoutUrl,
+                        deviceId: deviceId || undefined,
+                        userAgent: userAgent || undefined,
                         proxy: proxy || '',
                         timeoutMs: 15000
                     });
@@ -985,6 +1233,7 @@ async function executeStripeProtocolPayment({
                         sessionId,
                         billing,
                         currency,
+                        planType,
                         targetHeaders: baseHeaders,
                         proxy
                     });
@@ -1097,6 +1346,19 @@ async function executeStripeProtocolPayment({
     const pi = payload.payment_intent || {};
     const piStatus = String(pi.status || '').toLowerCase();
 
+    // 若在 0 浏览器纯协议模式下被 Cloudflare 403 拦截，并非银行拒付，应无损回退唤醒浏览器
+    if (confirmResult.status === 403 && /just a moment|cloudflare|cf-mitigated|challenge/i.test(String(confirmResult.rawText || ''))) {
+        console.warn('⚠️ [协议支付] /confirm 请求遇到 Cloudflare 403 验证挑战，平滑转入浏览器收银台 UI...');
+        return {
+            success: false,
+            declined: false,
+            fallbackToUi: true,
+            reason: 'cloudflare_challenge',
+            error: '协议确认请求触发 Cloudflare 验证挑战 (HTTP 403)，平滑转入浏览器收银台 UI',
+            protocolDirect: true
+        };
+    }
+
     // 检查是否在 ChatGPT 侧直接判定为拒卡 / 支付未通过终态
     const isTerminalDecline = confirmResult.status >= 400
         || ['failed', 'expired', 'canceled', 'cancelled', 'blocked', 'rejected', 'declined', 'not_approved'].includes(statusStr)
@@ -1135,10 +1397,13 @@ async function executeStripeProtocolPayment({
     // 必须向 Stripe 官方提交实际扣款确认 (payment_intents/:id/confirm) 才能真正执行扣款并出票！
     if (intentId && clientSecret && piStatus !== 'succeeded') {
         const isOregon = (billing?.country === 'US' && /oregon|or\b/i.test(billing?.state || ''));
-        const defaultPhAmount = isOregon ? 982.14 : 1100;
-        const piRawAmount = pi.amount ?? payload.amount;
+        const taxSyncedAmount = chatgptRes?.taxSyncResult?.amountTotal;
+        const confirmStateTotal = payload?.checkout_session?.checkout_state?.total?.total?.minorUnitsAmount;
+        const piRawAmount = pi.amount ?? payload.amount ?? confirmStateTotal ?? taxSyncedAmount;
         const piCurrency = String(pi.currency || payload.currency || currency || 'PHP').toUpperCase();
-        const piDisplayAmount = (piRawAmount != null && !isNaN(piRawAmount)) ? (piRawAmount / 100) : (piCurrency === 'PHP' ? defaultPhAmount : 20);
+        const planHint = planType || chatgptRes?.taxSyncResult?.planName || payload?.checkout_session?.plan_name || '';
+        const fallbackDisplayAmount = getDefaultPlanDisplayAmount(planHint, piCurrency, isOregon);
+        const piDisplayAmount = (piRawAmount != null && !isNaN(piRawAmount)) ? (piRawAmount / 100) : fallbackDisplayAmount;
 
         const stripeConfirm = await confirmStripePaymentIntent({
             intentId,
@@ -1149,8 +1414,15 @@ async function executeStripeProtocolPayment({
             publishableKey,
             proxy,
             amount: piDisplayAmount,
-            currency: piCurrency
+            currency: piCurrency,
+            fingerprint: stripeRes.fingerprint,
+            page
         });
+
+        const confirmedRawAmount = stripeConfirm.data?.amount ?? stripeConfirm.data?.error?.payment_intent?.amount ?? piRawAmount;
+        const resolvedAmount = (confirmedRawAmount != null && !isNaN(confirmedRawAmount))
+            ? (confirmedRawAmount / 100)
+            : piDisplayAmount;
 
         if (!stripeConfirm.ok || stripeConfirm.status >= 400) {
             const err = stripeConfirm.data?.error || {};
@@ -1168,7 +1440,7 @@ async function executeStripeProtocolPayment({
                 submitted: true,
                 submissionAttempted: true,
                 protocolDirect: true,
-                amount: piDisplayAmount,
+                amount: resolvedAmount,
                 currency: piCurrency
             };
         }
@@ -1184,7 +1456,7 @@ async function executeStripeProtocolPayment({
                 submitted: true,
                 submissionAttempted: true,
                 protocolDirect: true,
-                amount: piDisplayAmount,
+                amount: resolvedAmount,
                 currency: piCurrency
             };
         }
@@ -1262,6 +1534,7 @@ module.exports = {
     executeStripeProtocolPayment,
     executeStripeHostedProtocolPayment,
     syncCheckoutBillingTax,
+    getDefaultPlanDisplayAmount,
     executeWithProxyRetry,
     DEFAULT_OPENAI_PK
 };

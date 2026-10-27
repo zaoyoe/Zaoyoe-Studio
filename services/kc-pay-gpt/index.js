@@ -3,10 +3,10 @@ const { openPricingCheckout } = require('./pricing-checkout');
 const { openApiCheckout, isBillingCountryMismatchError, shouldFallbackToPricingCheckout } = require('./chatgpt');
 const store = require('./mysql-store');
 const { getRegionConfig, getRegionBrowserProfile } = require('./region-config');
-const { installChatGptSession, bootstrapChatGptSession } = require('./session-auth');
+const { installChatGptSession, bootstrapChatGptSession, extractEmailFromSession, verifyChatGptSessionProtocol } = require('./session-auth');
 const { connectTaskBrowser, applyCdpEnv, closeTaskBrowser } = require('./browser-runtime');
 const { preparePlaywrightProxy } = require('./playwright-proxy');
-const { checkProxyConnectivity, checkEgressRegion, checkProxyAndRegionFast } = require('./proxy-preflight');
+const { checkProxyConnectivity, checkEgressRegion, checkProxyAndRegionFast, checkProxyAndRegionProtocol } = require('./proxy-preflight');
 const { captureDiagnosticScreenshot } = require('./task-diagnostics');
 const { injectClaudeSession, bootstrapClaudeSession } = require('./claude-auth');
 const { openClaudeCheckout } = require('./pricing-checkout-claude');
@@ -48,6 +48,16 @@ const path = require('path');
  * - "支付失败 (payment_failed)" → 全部卡片均失败
  * - "支付失败 (stripe_card_declined)" → 卡被拒
  */
+
+// 捕获良性异步异常（如 playwright-extra 在页面/上下文关闭时触发的 cdpSession.send 报错），避免 Node.js v25 进程崩溃导致卡片锁未释放
+process.on?.('unhandledRejection', (reason) => {
+    const msg = String(reason?.message || reason || '');
+    if (msg.includes('Target page, context or browser has been closed') || msg.includes('cdpSession.send') || msg.includes('Execution context was destroyed')) {
+        console.warn(`[系统/CDP] 捕获到良性页面生命周期关闭异常 (已忽略): ${msg}`);
+        return;
+    }
+    console.error('⚠️ [系统] 未处理的异步 Promise Rejection:', reason);
+});
 
 // 全部敏感配置请通过环境变量传入
 const CONFIG = {
@@ -246,28 +256,23 @@ async function run() {
         console.log(`🌐 [系统] 代理已配置${preparedProxy.relayed ? '（SOCKS→本地 HTTP 中继）' : ''}`);
     }
 
-    browserSession = await connectTaskBrowser({
-        proxyConfig,
-        headful: DEBUG_HEADFUL,
-        chromiumChannel: CHROMIUM_CHANNEL
-    });
-    applyCdpEnv(browserSession);
-    browser = browserSession.browser;
-    assertDiagnosticActive();
-    diagnostic?.check('browser', '浏览器启动', 'passed');
-
-    const realUserAgent = browserSession.realUserAgent;
-
-    const viewport = { width: 1920, height: 1080 };
-    const matched = realUserAgent.match(/Chrome\/(\d+)/);
-    const chromeMajor = matched ? Number(matched[1]) : 147;
-
     let cdkPaymentRegion = '';
-    if (CONFIG.cdkCode) {
-        const cdkDetails = await store.verifyCdkDetails(CONFIG.cdkCode);
+    let planType = CONFIG.planType;
+    let cdkPlatform = '';
+    const cdkCode = CONFIG.cdkCode;
+    const email = CONFIG.email;
+
+    if (cdkCode) {
+        const cdkDetails = await store.verifyCdkDetails(cdkCode);
         if (!cdkDetails) throw new Error('无法核验卡密商品，已停止充值');
         cdkPaymentRegion = String(cdkDetails.payment_region || '').trim().toUpperCase();
         if (!cdkPaymentRegion) throw new Error('卡密未配置支付地区，无法确认目标网络和支付币种，已停止充值 [PAYMENT_REGION_UNCONFIRMED]');
+        const validated = validateCdkPlan(cdkDetails.plan_type, cdkDetails.platform, { activation: true });
+        if (planType && validateCdkPlan(planType).planName !== validated.planName) {
+            throw new Error('任务套餐与卡密商品不一致，已停止充值');
+        }
+        planType = validated.planType;
+        cdkPlatform = validated.platform;
     }
     const paymentRegionOverride = String(CONFIG.paymentRegionOverride || '').trim().toUpperCase();
     if (cdkPaymentRegion && paymentRegionOverride && cdkPaymentRegion !== paymentRegionOverride) {
@@ -281,331 +286,378 @@ async function run() {
     if (!regionCfg) throw new Error(`不支持的支付地区配置: ${paymentRegion}`);
     const browserProfile = getRegionBrowserProfile(paymentRegion);
 
-    const contextOptions = {
-        userAgent: realUserAgent,
-        viewport,
-        locale: browserProfile.locale,
-        timezoneId: browserProfile.timezoneId,
-        screen: { width: 1920, height: 1080 },
-        deviceScaleFactor: 1,
-        isMobile: false,
-        hasTouch: false,
-        extraHTTPHeaders: {
-            'sec-ch-ua': `"Not)A;Brand";v="8", "Chromium";v="${chromeMajor}", "Google Chrome";v="${chromeMajor}"`,
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"'
+    if (!planType) {
+        planType = 'plus';
+    }
+    const validatedPlan = validateCdkPlan(planType, CONFIG.platform || cdkPlatform || undefined, { activation: true });
+    planType = validatedPlan.planType;
+    const platform = validatedPlan.platform;
+    const billingCountry = paymentRegion;
+    const billingCurrency = regionCfg ? regionCfg.currency : 'USD';
+
+    let realUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36';
+    const ensureBrowserReady = async (reason = '') => {
+        if (context && page && (typeof page.isClosed !== 'function' || !page.isClosed())) {
+            return { browserSession, browser, context, page, realUserAgent };
         }
-    };
-    if (proxyConfig) {
-        contextOptions.proxy = proxyConfig;
-    }
+        if (reason) {
+            console.log(`🚀 [按需唤醒] ${reason}`);
+        }
+        browserSession = await connectTaskBrowser({
+            proxyConfig,
+            headful: DEBUG_HEADFUL,
+            chromiumChannel: CHROMIUM_CHANNEL
+        });
+        applyCdpEnv(browserSession);
+        browser = browserSession.browser;
+        assertDiagnosticActive();
+        diagnostic?.check('browser', '浏览器启动', 'passed');
 
-    // 全程录像，便于回看自动化卡在哪一步（输出到挂载目录，前台可播放）
-    if (RECORD_VIDEO) {
-        contextOptions.recordVideo = {
-            dir: VIDEO_DIR,
-            size: { width: 1280, height: 720 }
-        };
-    }
+        realUserAgent = browserSession.realUserAgent || realUserAgent;
+        const viewport = { width: 1920, height: 1080 };
+        const matched = realUserAgent.match(/Chrome\/(\d+)/);
+        const chromeMajor = matched ? Number(matched[1]) : 147;
 
-    context = await browser.newContext(contextOptions);
-    assertDiagnosticActive();
-    // ============= 指纹伪装 =============
-    await context.addInitScript((injectedChromeMajor) => {
-        const NavProto = Object.getPrototypeOf(navigator);
-        const ScrProto = Object.getPrototypeOf(screen);
-        const safeDefine = (obj, key, getter) => {
-            try {
-                Object.defineProperty(obj, key, { get: getter, configurable: true });
-            } catch (_) { /* ignore */ }
-        };
-
-        // 隐藏 webdriver
-        try { delete Object.getPrototypeOf(navigator).webdriver; } catch (_) { }
-        safeDefine(NavProto, 'webdriver', () => undefined);
-        try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true }); } catch (_) { }
-
-        // navigator.userAgentData
-        try {
-            const uaData = {
-                brands: [
-                    { brand: 'Not)A;Brand', version: '8' },
-                    { brand: 'Chromium', version: String(injectedChromeMajor) },
-                    { brand: 'Google Chrome', version: String(injectedChromeMajor) }
-                ],
-                mobile: false,
-                platform: 'Windows',
-                getHighEntropyValues: () => Promise.resolve({
-                    architecture: 'x86',
-                    bitness: '64',
-                    mobile: false,
-                    model: '',
-                    platform: 'Windows',
-                    platformVersion: '15.0.0',
-                    wow64: false
-                }),
-                toJSON: () => ({ brands: uaData.brands, mobile: uaData.mobile, platform: uaData.platform })
-            };
-            safeDefine(NavProto, 'userAgentData', () => uaData);
-        } catch (_) { }
-
-        // plugins / mimeTypes
-        try {
-            const pdfMime = Object.create(MimeType.prototype);
-            Object.defineProperties(pdfMime, {
-                type: { get: () => 'application/pdf' },
-                suffixes: { get: () => 'pdf' },
-                description: { get: () => 'Portable Document Format' }
-            });
-            const pdfPlugin = Object.create(Plugin.prototype);
-            Object.defineProperties(pdfPlugin, {
-                name: { get: () => 'Chrome PDF Plugin' },
-                filename: { get: () => 'internal-pdf-viewer' },
-                description: { get: () => 'Portable Document Format' },
-                length: { get: () => 1 },
-                0: { get: () => pdfMime }
-            });
-            pdfPlugin.item = () => pdfMime;
-            pdfPlugin.namedItem = () => pdfMime;
-
-            const fakePlugins = Object.create(PluginArray.prototype);
-            Object.defineProperties(fakePlugins, {
-                length: { get: () => 1 },
-                0: { get: () => pdfPlugin }
-            });
-            fakePlugins.item = () => pdfPlugin;
-            fakePlugins.namedItem = (n) => n === pdfPlugin.name ? pdfPlugin : null;
-            fakePlugins.refresh = () => { };
-
-            const fakeMimeTypes = Object.create(MimeTypeArray.prototype);
-            Object.defineProperties(fakeMimeTypes, {
-                length: { get: () => 1 },
-                0: { get: () => pdfMime }
-            });
-            fakeMimeTypes.item = () => pdfMime;
-            fakeMimeTypes.namedItem = (n) => n === pdfMime.type ? pdfMime : null;
-
-            safeDefine(NavProto, 'plugins', () => fakePlugins);
-            safeDefine(NavProto, 'mimeTypes', () => fakeMimeTypes);
-        } catch (_) { }
-
-        // 语言、平台、硬件
-        safeDefine(NavProto, 'languages', () => ['en-US', 'en']);
-        safeDefine(NavProto, 'language', () => 'en-US');
-        safeDefine(NavProto, 'platform', () => 'Win32');
-        safeDefine(NavProto, 'hardwareConcurrency', () => 8);
-        safeDefine(NavProto, 'deviceMemory', () => 8);
-        safeDefine(NavProto, 'maxTouchPoints', () => 0);
-        safeDefine(NavProto, 'vendor', () => 'Google Inc.');
-
-        // navigator.connection
-        try {
-            const conn = { effectiveType: '4g', rtt: 100, downlink: 10, saveData: false };
-            safeDefine(NavProto, 'connection', () => conn);
-        } catch (_) { }
-
-        // window.chrome
-        try {
-            const fakeChrome = {
-                app: {
-                    isInstalled: false,
-                    InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
-                    RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
-                    getDetails: () => null,
-                    getIsInstalled: () => false
-                },
-                runtime: {
-                    OnInstalledReason: { CHROME_UPDATE: 'chrome_update', INSTALL: 'install', SHARED_MODULE_UPDATE: 'shared_module_update', UPDATE: 'update' },
-                    OnRestartRequiredReason: { APP_UPDATE: 'app_update', OS_UPDATE: 'os_update', PERIODIC: 'periodic' },
-                    PlatformArch: { ARM: 'arm', ARM64: 'arm64', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
-                    PlatformNaclArch: { ARM: 'arm', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
-                    PlatformOs: { ANDROID: 'android', CROS: 'cros', LINUX: 'linux', MAC: 'mac', OPENBSD: 'openbsd', WIN: 'win' },
-                    RequestUpdateCheckStatus: { NO_UPDATE: 'no_update', THROTTLED: 'throttled', UPDATE_AVAILABLE: 'update_available' },
-                    connect: () => { },
-                    sendMessage: () => { }
-                },
-                csi: () => ({ onloadT: Date.now(), pageT: Date.now() - 1000, startE: Date.now() - 2000, tran: 15 }),
-                loadTimes: () => ({
-                    requestTime: Date.now() / 1000 - 2,
-                    startLoadTime: Date.now() / 1000 - 1.5,
-                    commitLoadTime: Date.now() / 1000 - 1,
-                    finishDocumentLoadTime: Date.now() / 1000 - 0.5,
-                    finishLoadTime: Date.now() / 1000,
-                    firstPaintTime: Date.now() / 1000 - 0.3,
-                    firstPaintAfterLoadTime: 0,
-                    navigationType: 'Other',
-                    wasFetchedViaSpdy: true,
-                    wasNpnNegotiated: true,
-                    npnNegotiatedProtocol: 'h2',
-                    wasAlternateProtocolAvailable: false,
-                    connectionInfo: 'h2'
-                })
-            };
-            Object.defineProperty(window, 'chrome', { value: fakeChrome, writable: true, configurable: true });
-        } catch (_) { }
-
-        // permissions.query
-        try {
-            const origQuery = navigator.permissions.query.bind(navigator.permissions);
-            navigator.permissions.query = (params) => {
-                if (params && params.name === 'notifications') {
-                    return Promise.resolve({ state: typeof Notification !== 'undefined' ? Notification.permission : 'default', onchange: null });
-                }
-                return origQuery(params).catch(() => ({ state: 'prompt', onchange: null }));
-            };
-        } catch (_) { }
-
-        // screen
-        safeDefine(ScrProto, 'availHeight', () => 1032);
-        safeDefine(ScrProto, 'availWidth', () => 1920);
-        safeDefine(ScrProto, 'colorDepth', () => 24);
-        safeDefine(ScrProto, 'pixelDepth', () => 24);
-        safeDefine(ScrProto, 'width', () => 1920);
-        safeDefine(ScrProto, 'height', () => 1080);
-
-        // Canvas 微噪声
-        try {
-            const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
-            HTMLCanvasElement.prototype.toDataURL = function (...args) {
-                const ctx = this.getContext('2d');
-                if (ctx) {
-                    try {
-                        const w = this.width, h = this.height;
-                        if (w > 0 && h > 0) {
-                            const data = ctx.getImageData(0, 0, 1, 1);
-                            data.data[3] = Math.max(1, data.data[3] - 1);
-                            ctx.putImageData(data, 0, 0);
-                        }
-                    } catch (_) { }
-                }
-                return origToDataURL.apply(this, args);
-            };
-        } catch (_) { }
-
-        // WebGL
-        try {
-            const fakeWebGL = (gl) => {
-                const origGetParameter = gl.getParameter.bind(gl);
-                gl.getParameter = function (param) {
-                    if (param === 0x9245) return 'Google Inc. (Intel)';
-                    if (param === 0x9246) return 'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)';
-                    return origGetParameter(param);
-                };
-            };
-            const origGetCtx = HTMLCanvasElement.prototype.getContext;
-            HTMLCanvasElement.prototype.getContext = function (type, ...args) {
-                const ctx = origGetCtx.call(this, type, ...args);
-                if (ctx && (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl')) {
-                    try { fakeWebGL(ctx); } catch (_) { }
-                }
-                return ctx;
-            };
-        } catch (_) { }
-
-        // ChromeDriver 痕迹
-        try {
-            for (const key of Object.keys(window)) {
-                if (/^(cdc_|\$cdc_|_phantom|callPhantom|webdriver-|driver-)/.test(key)) {
-                    try { delete window[key]; } catch (_) { }
-                }
+        const contextOptions = {
+            userAgent: realUserAgent,
+            viewport,
+            locale: browserProfile.locale,
+            timezoneId: browserProfile.timezoneId,
+            screen: { width: 1920, height: 1080 },
+            deviceScaleFactor: 1,
+            isMobile: false,
+            hasTouch: false,
+            extraHTTPHeaders: {
+                'sec-ch-ua': `"Not)A;Brand";v="8", "Chromium";v="${chromeMajor}", "Google Chrome";v="${chromeMajor}"`,
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"'
             }
-        } catch (_) { }
-
-        // Notification.permission
-        try {
-            if (typeof Notification !== 'undefined') {
-                Object.defineProperty(Notification, 'permission', { get: () => 'default', configurable: true });
-            }
-        } catch (_) { }
-    }, chromeMajor);
-
-        // --- Phase 0: Proxy Connectivity & Region Check ---
-        let regionVerified = false;
+        };
         if (proxyConfig) {
-            diagnostic?.check('proxy', '代理连通性', 'running');
-            console.log('正在检查代理连通性...');
-            let fastPreflight = null;
+            contextOptions.proxy = proxyConfig;
+        }
+        if (RECORD_VIDEO) {
+            contextOptions.recordVideo = {
+                dir: VIDEO_DIR,
+                size: { width: 1280, height: 720 }
+            };
+        }
+
+        context = await browser.newContext(contextOptions);
+        assertDiagnosticActive();
+        // ============= 指纹伪装 =============
+        await context.addInitScript((injectedChromeMajor) => {
+            const NavProto = Object.getPrototypeOf(navigator);
+            const ScrProto = Object.getPrototypeOf(screen);
+            const safeDefine = (obj, key, getter) => {
+                try {
+                    Object.defineProperty(obj, key, { get: getter, configurable: true });
+                } catch (_) { /* ignore */ }
+            };
+
+            // 隐藏 webdriver
+            try { delete Object.getPrototypeOf(navigator).webdriver; } catch (_) { }
+            safeDefine(NavProto, 'webdriver', () => undefined);
+            try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true }); } catch (_) { }
+
+            // navigator.userAgentData
             try {
-                fastPreflight = await checkProxyAndRegionFast(context, paymentRegion);
-            } catch (err) {
-                if (err?.code === 'PAYMENT_REGION_NETWORK_MISMATCH') throw err;
-            }
+                const uaData = {
+                    brands: [
+                        { brand: 'Not)A;Brand', version: '8' },
+                        { brand: 'Chromium', version: String(injectedChromeMajor) },
+                        { brand: 'Google Chrome', version: String(injectedChromeMajor) }
+                    ],
+                    mobile: false,
+                    platform: 'Windows',
+                    getHighEntropyValues: () => Promise.resolve({
+                        architecture: 'x86',
+                        bitness: '64',
+                        mobile: false,
+                        model: '',
+                        platform: 'Windows',
+                        platformVersion: '15.0.0',
+                        wow64: false
+                    }),
+                    toJSON: () => ({ brands: uaData.brands, mobile: uaData.mobile, platform: uaData.platform })
+                };
+                safeDefine(NavProto, 'userAgentData', () => uaData);
+            } catch (_) { }
 
-            if (fastPreflight?.ip && fastPreflight?.actualRegion) {
-                const ip = fastPreflight.ip;
-                const ipMasked = ip.includes(':') ? '[IPv6 已隐藏]'
-                    : ip.replace(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/, '***.***.$3.$4');
-                console.log(`✅ [系统] 代理连接成功! 代理公网 IP: ${ipMasked}`);
-                diagnostic?.check('proxy', '代理连通性', 'passed', '已通过当前浏览器通道核验');
-                diagnostic?.check('network-region', '支付出口地区', 'passed', `已确认出口地区为 ${paymentRegion}`);
-                regionVerified = true;
-            } else {
-                const { ip } = await checkProxyConnectivity(context);
-                const ipMasked = ip.includes(':') ? '[IPv6 已隐藏]'
-                    : ip.replace(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/, '***.***.$3.$4');
-                console.log(`✅ [系统] 代理连接成功! 代理公网 IP: ${ipMasked}`);
-                diagnostic?.check('proxy', '代理连通性', 'passed', '已通过当前浏览器通道核验');
-            }
-        } else {
-            diagnostic?.check('proxy', '代理连通性', 'skipped', '使用本机网络，未配置代理');
+            // plugins / mimeTypes
+            try {
+                const pdfMime = Object.create(MimeType.prototype);
+                Object.defineProperties(pdfMime, {
+                    type: { get: () => 'application/pdf' },
+                    suffixes: { get: () => 'pdf' },
+                    description: { get: () => 'Portable Document Format' }
+                });
+                const pdfPlugin = Object.create(Plugin.prototype);
+                Object.defineProperties(pdfPlugin, {
+                    name: { get: () => 'Chrome PDF Plugin' },
+                    filename: { get: () => 'internal-pdf-viewer' },
+                    description: { get: () => 'Portable Document Format' },
+                    length: { get: () => 1 },
+                    0: { get: () => pdfMime }
+                });
+                pdfPlugin.item = () => pdfMime;
+                pdfPlugin.namedItem = () => pdfMime;
+
+                const fakePlugins = Object.create(PluginArray.prototype);
+                Object.defineProperties(fakePlugins, {
+                    length: { get: () => 1 },
+                    0: { get: () => pdfPlugin }
+                });
+                fakePlugins.item = () => pdfPlugin;
+                fakePlugins.namedItem = (n) => n === pdfPlugin.name ? pdfPlugin : null;
+                fakePlugins.refresh = () => { };
+
+                const fakeMimeTypes = Object.create(MimeTypeArray.prototype);
+                Object.defineProperties(fakeMimeTypes, {
+                    length: { get: () => 1 },
+                    0: { get: () => pdfMime }
+                });
+                fakeMimeTypes.item = () => pdfMime;
+                fakeMimeTypes.namedItem = (n) => n === pdfMime.type ? pdfMime : null;
+
+                safeDefine(NavProto, 'plugins', () => fakePlugins);
+                safeDefine(NavProto, 'mimeTypes', () => fakeMimeTypes);
+            } catch (_) { }
+
+            // 语言、平台、硬件
+            safeDefine(NavProto, 'languages', () => ['en-US', 'en']);
+            safeDefine(NavProto, 'language', () => 'en-US');
+            safeDefine(NavProto, 'platform', () => 'Win32');
+            safeDefine(NavProto, 'hardwareConcurrency', () => 8);
+            safeDefine(NavProto, 'deviceMemory', () => 8);
+            safeDefine(NavProto, 'maxTouchPoints', () => 0);
+            safeDefine(NavProto, 'vendor', () => 'Google Inc.');
+
+            // navigator.connection
+            try {
+                const conn = { effectiveType: '4g', rtt: 100, downlink: 10, saveData: false };
+                safeDefine(NavProto, 'connection', () => conn);
+            } catch (_) { }
+
+            // window.chrome
+            try {
+                const fakeChrome = {
+                    app: {
+                        isInstalled: false,
+                        InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+                        RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
+                        getDetails: () => null,
+                        getIsInstalled: () => false
+                    },
+                    runtime: {
+                        OnInstalledReason: { CHROME_UPDATE: 'chrome_update', INSTALL: 'install', SHARED_MODULE_UPDATE: 'shared_module_update', UPDATE: 'update' },
+                        OnRestartRequiredReason: { APP_UPDATE: 'app_update', OS_UPDATE: 'os_update', PERIODIC: 'periodic' },
+                        PlatformArch: { ARM: 'arm', ARM64: 'arm64', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
+                        PlatformNaclArch: { ARM: 'arm', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
+                        PlatformOs: { ANDROID: 'android', CROS: 'cros', LINUX: 'linux', MAC: 'mac', OPENBSD: 'openbsd', WIN: 'win' },
+                        RequestUpdateCheckStatus: { NO_UPDATE: 'no_update', THROTTLED: 'throttled', UPDATE_AVAILABLE: 'update_available' },
+                        connect: () => { },
+                        sendMessage: () => { }
+                    },
+                    csi: () => ({ onloadT: Date.now(), pageT: Date.now() - 1000, startE: Date.now() - 2000, tran: 15 }),
+                    loadTimes: () => ({
+                        requestTime: Date.now() / 1000 - 2,
+                        startLoadTime: Date.now() / 1000 - 1.5,
+                        commitLoadTime: Date.now() / 1000 - 1,
+                        finishDocumentLoadTime: Date.now() / 1000 - 0.5,
+                        finishLoadTime: Date.now() / 1000,
+                        firstPaintTime: Date.now() / 1000 - 0.3,
+                        firstPaintAfterLoadTime: 0,
+                        navigationType: 'Other',
+                        wasFetchedViaSpdy: true,
+                        wasNpnNegotiated: true,
+                        npnNegotiatedProtocol: 'h2',
+                        wasAlternateProtocolAvailable: false,
+                        connectionInfo: 'h2'
+                    })
+                };
+                Object.defineProperty(window, 'chrome', { value: fakeChrome, writable: true, configurable: true });
+            } catch (_) { }
+
+            // permissions.query
+            try {
+                const origQuery = navigator.permissions.query.bind(navigator.permissions);
+                navigator.permissions.query = (params) => {
+                    if (params && params.name === 'notifications') {
+                        return Promise.resolve({ state: typeof Notification !== 'undefined' ? Notification.permission : 'default', onchange: null });
+                    }
+                    return origQuery(params).catch(() => ({ state: 'prompt', onchange: null }));
+                };
+            } catch (_) { }
+
+            // screen
+            safeDefine(ScrProto, 'availHeight', () => 1032);
+            safeDefine(ScrProto, 'availWidth', () => 1920);
+            safeDefine(ScrProto, 'colorDepth', () => 24);
+            safeDefine(ScrProto, 'pixelDepth', () => 24);
+            safeDefine(ScrProto, 'width', () => 1920);
+            safeDefine(ScrProto, 'height', () => 1080);
+
+            // Canvas 微噪声
+            try {
+                const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+                HTMLCanvasElement.prototype.toDataURL = function (...args) {
+                    const ctx = this.getContext('2d');
+                    if (ctx) {
+                        try {
+                            const w = this.width, h = this.height;
+                            if (w > 0 && h > 0) {
+                                const data = ctx.getImageData(0, 0, 1, 1);
+                                data.data[3] = Math.max(1, data.data[3] - 1);
+                                ctx.putImageData(data, 0, 0);
+                            }
+                        } catch (_) { }
+                    }
+                    return origToDataURL.apply(this, args);
+                };
+            } catch (_) { }
+
+            // WebGL
+            try {
+                const fakeWebGL = (gl) => {
+                    const origGetParameter = gl.getParameter.bind(gl);
+                    gl.getParameter = function (param) {
+                        if (param === 0x9245) return 'Google Inc. (Intel)';
+                        if (param === 0x9246) return 'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+                        return origGetParameter(param);
+                    };
+                };
+                const origGetCtx = HTMLCanvasElement.prototype.getContext;
+                HTMLCanvasElement.prototype.getContext = function (type, ...args) {
+                    const ctx = origGetCtx.call(this, type, ...args);
+                    if (ctx && (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl')) {
+                        try { fakeWebGL(ctx); } catch (_) { }
+                    }
+                    return ctx;
+                };
+            } catch (_) { }
+
+            // ChromeDriver 痕迹
+            try {
+                for (const key of Object.keys(window)) {
+                    if (/^(cdc_|\$cdc_|_phantom|callPhantom|webdriver-|driver-)/.test(key)) {
+                        try { delete window[key]; } catch (_) { }
+                    }
+                }
+            } catch (_) { }
+
+            // Notification.permission
+            try {
+                if (typeof Notification !== 'undefined') {
+                    Object.defineProperty(Notification, 'permission', { get: () => 'default', configurable: true });
+                }
+            } catch (_) { }
+        }, chromeMajor);
+
+        page = await context.newPage();
+        if (typeof page.on === 'function') {
+            page.on('close', () => {
+                console.warn(`⚠️ [系统] 当前页面已关闭，关闭前最后 URL: ${page.url()}`);
+            });
         }
-
-        if (!regionVerified) {
-            diagnostic?.check('network-region', '支付出口地区', 'running');
-            await checkEgressRegion(context, paymentRegion);
-            diagnostic?.check('network-region', '支付出口地区', 'passed', `已确认出口地区为 ${paymentRegion}`);
-        }
-
-        // --- Phase 1: Resolve payment parameters ---
-        if (debugOnly) {
-            console.log(`[诊断] ${diagnosticMode === 'link' ? '仅生成链接' : '完整结账检查'}：不预留银行卡，不填写卡片或账单地址，不提交支付`);
-        } else {
-            console.log('[1] 准备自助充值流程...');
-        }
-
-        // Determine plan_type and platform: prefer env variable, fallback to CDK lookup
-        let planType = CONFIG.planType;
-        let cdkPlatform = '';
-        const cdkCode = CONFIG.cdkCode;
-        const email = CONFIG.email;
-
-        if (cdkCode) {
-            const cdkDetails = await store.verifyCdkDetails(cdkCode);
-            if (!cdkDetails) throw new Error('无法核验卡密商品，已停止充值');
-            const validated = validateCdkPlan(cdkDetails.plan_type, cdkDetails.platform, { activation: true });
-            if (planType && validateCdkPlan(planType).planName !== validated.planName) {
-                throw new Error('任务套餐与卡密商品不一致，已停止充值');
-            }
-            planType = validated.planType;
-            cdkPlatform = validated.platform;
-        }
-        if (!planType) {
-            planType = 'plus';
-        }
-
-        const validatedPlan = validateCdkPlan(planType, CONFIG.platform || cdkPlatform || undefined, { activation: true });
-        planType = validatedPlan.planType;
-        const platform = validatedPlan.platform;
-
-        // Resolve region and currency (与浏览器 profile 一致)
-        const billingCountry = paymentRegion;
-        const billingCurrency = regionCfg ? regionCfg.currency : 'USD';
-
-        console.log(`[1] 平台: ${platform.toUpperCase()}, 套餐类型: ${planType}, 地区: ${paymentRegion}, 币种: ${billingCurrency}`);
+        return { browserSession, browser, context, page, realUserAgent };
+    };
 
         const ownerKey = process.env.JOB_KEY || `${cdkCode || 'job'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        if (platform === 'chatgpt' && !debugOnly) {
+        const fastProtocolEnv = String(process.env.FAST_PROTOCOL_ENABLED ?? '').trim().toLowerCase();
+        const fastProtocolEnabled = fastProtocolEnv !== 'false' && fastProtocolEnv !== '0';
+        const checkoutMode = String(process.env.CHECKOUT_MODE || 'auto').toLowerCase();
+        const canStartZeroBrowser = platform === 'chatgpt'
+            && !debugOnly
+            && fastProtocolEnabled
+            && checkoutMode !== 'ui'
+            && typeof verifyChatGptSessionProtocol === 'function'
+            && typeof checkProxyAndRegionProtocol === 'function';
+
+        let regionVerified = false;
+        let loginInfo = null;
+        let checkoutResult = null;
+        let checkoutOpened = false;
+        let chatgptBrowserSessionInstalled = false;
+        const proxyUrl = proxyConfig?.server || CONFIG.proxy;
+        const planNameOverride = String(CONFIG.planNameOverride || '').trim() || undefined;
+
+        const runBrowserProxyPreflight = async () => {
+            if (regionVerified) return;
+            if (proxyConfig) {
+                diagnostic?.check('proxy', '代理连通性', 'running');
+                console.log('正在检查代理连通性...');
+                let fastPreflight = null;
+                try {
+                    if (typeof checkProxyAndRegionFast === 'function') {
+                        fastPreflight = await checkProxyAndRegionFast(context, paymentRegion);
+                    }
+                } catch (err) {
+                    if (err?.code === 'PAYMENT_REGION_NETWORK_MISMATCH') throw err;
+                }
+
+                if (fastPreflight?.ip && fastPreflight?.actualRegion) {
+                    const ip = fastPreflight.ip;
+                    const ipMasked = ip.includes(':') ? '[IPv6 已隐藏]'
+                        : ip.replace(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/, '***.***.$3.$4');
+                    console.log(`✅ [系统] 代理连接成功! 代理公网 IP: ${ipMasked}`);
+                    diagnostic?.check('proxy', '代理连通性', 'passed', '已通过当前浏览器通道核验');
+                    diagnostic?.check('network-region', '支付出口地区', 'passed', `已确认出口地区为 ${paymentRegion}`);
+                    regionVerified = true;
+                } else {
+                    const { ip } = await checkProxyConnectivity(context);
+                    const ipMasked = ip.includes(':') ? '[IPv6 已隐藏]'
+                        : ip.replace(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/, '***.***.$3.$4');
+                    console.log(`✅ [系统] 代理连接成功! 代理公网 IP: ${ipMasked}`);
+                    diagnostic?.check('proxy', '代理连通性', 'passed', '已通过当前浏览器通道核验');
+                }
+            } else {
+                diagnostic?.check('proxy', '代理连通性', 'skipped', '使用本机网络，未配置代理');
+            }
+
+            if (!regionVerified) {
+                diagnostic?.check('network-region', '支付出口地区', 'running');
+                await checkEgressRegion(context, paymentRegion);
+                diagnostic?.check('network-region', '支付出口地区', 'passed', `已确认出口地区为 ${paymentRegion}`);
+                regionVerified = true;
+            }
+        };
+
+        const ensureChatGptBrowserPage = async (reason = '') => {
+            await ensureBrowserReady(reason || '按需懒加载唤醒 Chromium 浏览器收银台');
+            if (!chatgptBrowserSessionInstalled && context) {
+                const sessionRaw = CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
+                await installChatGptSession(context, sessionRaw, {
+                    skipOnlineProbe: true,
+                    cookieVerified: true
+                });
+                chatgptBrowserSessionInstalled = true;
+            }
+            return page;
+        };
+
+        if (canStartZeroBrowser) {
+            console.log('[1] 准备自助充值流程...');
+            console.log(`[1] 平台: ${platform.toUpperCase()}, 套餐类型: ${planType}, 地区: ${paymentRegion}, 币种: ${billingCurrency}`);
+            console.log('⚡ [零浏览器协议] 启动 0 浏览器纯协议极速流水线（跳过 Chromium 启动，仅在风控盾/3DS/拒卡时按需懒加载浏览器）...');
+
+            const sessionRaw = CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
             try {
                 const preCard = await store.reserveCard(ownerKey);
                 if (preCard) {
                     const { pickBillingAddressForCheckout } = require('./tax-free-address');
                     const lastUsedIdRaw = await store.getAppConfigValue('last_used_address_id', null);
                     const preAddress = await pickBillingAddressForCheckout(paymentRegion, lastUsedIdRaw ? Number(lastUsedIdRaw) : null);
+                    const preEmail = email || (typeof extractEmailFromSession === 'function' ? extractEmailFromSession(sessionRaw) : '') || '';
+                    if (preAddress && preEmail && !preAddress.email) {
+                        preAddress.email = preEmail;
+                    }
                     const { prewarmStripeConfirmationToken } = require('./stripe-protocol-payment');
                     const prewarmPromise = prewarmStripeConfirmationToken({
                         card: preCard,
                         billing: preAddress,
-                        proxy: proxyConfig?.server || CONFIG.proxy
+                        proxy: proxyUrl,
+                        planType
                     });
                     prewarmedPayment = {
                         card: preCard,
@@ -618,107 +670,229 @@ async function run() {
             } catch (preErr) {
                 console.warn(`⚠️ [协议预热] 卡片与令牌前置预热跳过: ${preErr.message}`);
             }
-        }
 
-        page = await context.newPage();
-        page.on('close', () => {
-            console.warn(`⚠️ [系统] 当前页面已关闭，关闭前最后 URL: ${page.url()}`);
-        });
+            let prewarmedSentinelPromise = null;
+            try {
+                const { mintSentinelToken } = require('./sentinel/sentinel-client');
+                prewarmedSentinelPromise = mintSentinelToken({
+                    flow: 'chatgpt_checkout',
+                    proxy: proxyUrl,
+                    pageUrl: 'https://chatgpt.com/',
+                    timeoutMs: 15000
+                }).catch(() => null);
+            } catch (_) {}
 
-        let loginInfo = null;
-        let checkoutResult = null;
-        diagnostic?.check('session', '官方登录状态', 'running', '等待官方登录组件核验');
+            console.log('正在检查代理连通性...');
+            const [proxyProtoRes, sessionProtoRes] = await Promise.all([
+                checkProxyAndRegionProtocol(proxyUrl, paymentRegion),
+                verifyChatGptSessionProtocol(sessionRaw, { proxy: proxyUrl })
+            ]);
 
-        if (platform === 'claude') {
-            console.log('🤖 [平台] 启动 Claude 自助升级流程...');
-            const claudeCred = CONFIG.claudeSessionKey || CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
-            await injectClaudeSession(context, claudeCred);
-            loginInfo = await bootstrapClaudeSession(page, claudeCred, { planType });
-            if (diagnostic) {
-                const account = require('./claude-auth').getClaudeAccountSnapshot(page);
-                diagnostic.check('session', '官方登录状态', account?.accountId ? 'passed' : 'unconfirmed',
-                    account?.accountId ? '官方账号接口已确认登录' : '页面已打开，账号接口暂未确认；继续检查结账组件');
-            }
-            if (loginInfo && loginInfo.email) {
-                console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
-            }
-            console.log('🧭 [步骤] 正在打开 Claude 订阅收银台...');
-            diagnostic?.check('checkout', '打开官方结账', 'running');
-            checkoutResult = await openClaudeCheckout(page, { planType });
-        } else if (platform === 'grok') {
-            console.log('⚡ [平台] 启动 Grok (X) 自助升级流程...');
-            const grokCred = CONFIG.grokToken || CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
-            await injectGrokSession(context, grokCred);
-            if (isBundle(planType)) commerceObserver = observeGrokCommerce(page, planType);
-            loginInfo = await bootstrapGrokSession(page, grokCred, { planType });
-            diagnostic?.check('session', '官方登录状态', 'passed', '正式登录检查已完成，继续核验结账页面');
-            if (loginInfo && loginInfo.email) {
-                console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
-            }
-            console.log('🧭 [步骤] 正在打开 Grok 订阅收银台...');
-            diagnostic?.check('checkout', '打开官方结账', 'running');
-            checkoutResult = await openGrokCheckout(page, { planType, platformMode: loginInfo?.platformMode, commerceObserver,
-                onCheckoutPage: checkoutPage => { page = checkoutPage; } });
-        } else {
-            // --- Phase 0.5: Install ChatGPT Session ---
-            const sessionRaw = CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
-            const installResult = await installChatGptSession(context, sessionRaw);
-            const sessionData = installResult?.sessionData || installResult;
-            const cookieVerified = Boolean(installResult?.cookieVerified);
-            const hasSessionToken = Boolean(installResult?.hasSessionToken);
-
-            loginInfo = await bootstrapChatGptSession(page, sessionRaw, { sessionData, cookieVerified, hasSessionToken });
-            diagnostic?.check('session', '官方登录状态', 'passed', '正式登录检查已完成，继续打开官方结账页');
-            if (loginInfo.email && !email) {
-                console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
+            if (proxyProtoRes?.ip && proxyProtoRes?.actualRegion) {
+                const ip = proxyProtoRes.ip;
+                const ipMasked = ip.includes(':') ? '[IPv6 已隐藏]'
+                    : ip.replace(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/, '***.***.$3.$4');
+                console.log(`✅ [系统] 代理连接成功! 代理公网 IP: ${ipMasked}`);
+                regionVerified = true;
             }
 
-            // 2.0 升级：默认优先使用 API 协议直达 Stripe 收银台（标准全价，避开 0 元试用弹窗困境），失败时平滑回退 UI
-            const checkoutMode = String(process.env.CHECKOUT_MODE || 'auto').toLowerCase();
-            if (checkoutMode === 'ui') {
-                console.log('[Checkout] 跳过 API 创建，直接使用官方 UI 定价页');
-            }
-            let checkoutOpened = false;
-            const planNameOverride = String(CONFIG.planNameOverride || '').trim() || undefined;
-            diagnostic?.check('checkout', diagnosticMode === 'link' ? '生成官方链接' : '打开官方结账', 'running');
+            if (regionVerified && sessionProtoRes?.ok) {
+                loginInfo = sessionProtoRes;
+                if (loginInfo.email && !email) {
+                    console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
+                }
+                if (prewarmedPayment?.address && loginInfo.email && !prewarmedPayment.address.email) {
+                    prewarmedPayment.address.email = loginInfo.email;
+                }
 
-            if (checkoutMode !== 'ui') {
                 try {
-                    console.log('⚡ [极速通道] 正在尝试通过 API 闪电直达 Stripe 收银台...');
-                    checkoutResult = await openApiCheckout(page, {
-                        accessToken: loginInfo.session?.accessToken || CONFIG.chatgptToken,
+                    console.log('⚡ [极速通道] 正在尝试通过 0 浏览器纯协议闪电创建 Stripe 收银台...');
+                    checkoutResult = await openApiCheckout(null, {
+                        accessToken: loginInfo.accessToken || loginInfo.session?.accessToken || CONFIG.chatgptToken,
                         planType,
                         country: billingCountry,
                         currency: billingCurrency,
                         planNameOverride,
-                        verifyPage: Boolean(debugOnly && diagnosticMode === 'checkout'),
-                        proxy: proxyConfig?.server || CONFIG.proxy
+                        verifyPage: false,
+                        proxy: proxyUrl,
+                        sentinelPromise: prewarmedSentinelPromise,
+                        cookieHeader: loginInfo.cookieHeader,
+                        deviceId: loginInfo.deviceId
                     });
                     checkoutOpened = true;
-                    console.log('⚡ [极速通道] ✅ API 直达收银台成功，已跳过 UI 定价页！');
+                    console.log('⚡ [极速通道] ✅ 0 浏览器纯协议创建收银台会话成功，全程免浏览器开销！');
                 } catch (apiError) {
-                    console.warn(`[Warn] API Checkout 尝试未果: ${apiError.message}`);
+                    console.warn(`[Warn] 0 浏览器纯协议创建 Checkout 未果: ${apiError.message}`);
                     if (!shouldFallbackToPricingCheckout(apiError, { checkoutMode, debugOnly: debugOnly && diagnosticMode === 'link' })) {
                         if (isBillingCountryMismatchError(apiError.message)) {
                             console.warn('[Warn] 检测到账单地区不匹配，已停止 UI 回退，避免在错误地区继续尝试支付');
                         }
                         throw apiError;
                     }
-                    console.log('🧭 [智能回退] 正在平滑转入 UI 定价页流程...');
+                    console.log('🧭 [按需唤醒] 纯协议创建 Checkout 遇阻，平滑唤醒浏览器接管...');
+                }
+            } else {
+                const reason = !regionVerified
+                    ? '纯协议代理探针未响应，切换浏览器通道复核'
+                    : `纯协议 Session 鉴权触发风控盾或未确认 (${sessionProtoRes?.error || 'unknown'})，唤醒浏览器过盾`;
+                console.log(`⚠️ [零浏览器协议] ${reason}`);
+            }
+        }
+
+        // 若未启用 0 浏览器模式，或 0 浏览器前置环节需回退浏览器，则唤醒浏览器并执行标准预检与登录
+        if (!checkoutOpened) {
+            await ensureBrowserReady(canStartZeroBrowser ? '纯协议前置阶段需浏览器接管，正在启动 Chromium...' : '');
+            await runBrowserProxyPreflight();
+
+            if (!canStartZeroBrowser) {
+                if (debugOnly) {
+                    console.log(`[诊断] ${diagnosticMode === 'link' ? '仅生成链接' : '完整结账检查'}：不预留银行卡，不填写卡片或账单地址，不提交支付`);
+                } else {
+                    console.log('[1] 准备自助充值流程...');
+                }
+                console.log(`[1] 平台: ${platform.toUpperCase()}, 套餐类型: ${planType}, 地区: ${paymentRegion}, 币种: ${billingCurrency}`);
+
+                if (platform === 'chatgpt' && !debugOnly && fastProtocolEnabled) {
+                    try {
+                        const preCard = await store.reserveCard(ownerKey);
+                        if (preCard) {
+                            const { pickBillingAddressForCheckout } = require('./tax-free-address');
+                            const lastUsedIdRaw = await store.getAppConfigValue('last_used_address_id', null);
+                            const preAddress = await pickBillingAddressForCheckout(paymentRegion, lastUsedIdRaw ? Number(lastUsedIdRaw) : null);
+                            const preEmail = email || (typeof extractEmailFromSession === 'function' ? extractEmailFromSession(CONFIG.chatgptSessionJson || CONFIG.chatgptToken) : '') || '';
+                            if (preAddress && preEmail && !preAddress.email) {
+                                preAddress.email = preEmail;
+                            }
+                            const { prewarmStripeConfirmationToken } = require('./stripe-protocol-payment');
+                            const prewarmPromise = prewarmStripeConfirmationToken({
+                                card: preCard,
+                                billing: preAddress,
+                                proxy: proxyUrl
+                            });
+                            prewarmedPayment = {
+                                card: preCard,
+                                address: preAddress,
+                                tokenPromise: prewarmPromise,
+                                ownerKey,
+                                consumed: false
+                            };
+                        }
+                    } catch (preErr) {
+                        console.warn(`⚠️ [协议预热] 卡片与令牌前置预热跳过: ${preErr.message}`);
+                    }
+                } else if (platform === 'chatgpt' && !debugOnly) {
+                    console.log('⚡ [极速协议] 协议直充模式已关闭，跳过卡片与令牌前置异步预热');
                 }
             }
 
-            if (!checkoutOpened) {
-                if (debugOnly && diagnosticMode === 'link') {
-                    throw new Error('API Checkout 失败，调试模式不启用 UI 定价页');
+            diagnostic?.check('session', '官方登录状态', 'running', '等待官方登录组件核验');
+
+            if (platform === 'claude') {
+                console.log('🤖 [平台] 启动 Claude 自助升级流程...');
+                const claudeCred = CONFIG.claudeSessionKey || CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
+                await injectClaudeSession(context, claudeCred);
+                loginInfo = await bootstrapClaudeSession(page, claudeCred, { planType });
+                if (diagnostic) {
+                    const account = require('./claude-auth').getClaudeAccountSnapshot(page);
+                    diagnostic.check('session', '官方登录状态', account?.accountId ? 'passed' : 'unconfirmed',
+                        account?.accountId ? '官方账号接口已确认登录' : '页面已打开，账号接口暂未确认；继续检查结账组件');
                 }
-                console.log('🧭 [步骤] 正在打开定价页并选择升级套餐...');
-                const checkoutUrl = await openPricingCheckout(page, {
-                    region: billingCountry,
-                    planType,
-                    onCheckoutPage: (checkoutPage) => { page = checkoutPage; }
+                if (loginInfo && loginInfo.email) {
+                    console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
+                }
+                console.log('🧭 [步骤] 正在打开 Claude 订阅收银台...');
+                diagnostic?.check('checkout', '打开官方结账', 'running');
+                checkoutResult = await openClaudeCheckout(page, { planType });
+            } else if (platform === 'grok') {
+                console.log('⚡ [平台] 启动 Grok (X) 自助升级流程...');
+                const grokCred = CONFIG.grokToken || CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
+                await injectGrokSession(context, grokCred);
+                if (isBundle(planType)) commerceObserver = observeGrokCommerce(page, planType);
+                loginInfo = await bootstrapGrokSession(page, grokCred, { planType });
+                diagnostic?.check('session', '官方登录状态', 'passed', '正式登录检查已完成，继续核验结账页面');
+                if (loginInfo && loginInfo.email) {
+                    console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
+                }
+                console.log('🧭 [步骤] 正在打开 Grok 订阅收银台...');
+                diagnostic?.check('checkout', '打开官方结账', 'running');
+                checkoutResult = await openGrokCheckout(page, { planType, platformMode: loginInfo?.platformMode, commerceObserver,
+                    onCheckoutPage: checkoutPage => { page = checkoutPage; } });
+            } else {
+                // --- Phase 0.5: Install ChatGPT Session ---
+                const sessionRaw = CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
+                const installResult = await installChatGptSession(context, sessionRaw);
+                chatgptBrowserSessionInstalled = true;
+                const sessionData = installResult?.sessionData || installResult;
+                const cookieVerified = Boolean(installResult?.cookieVerified);
+                const hasSessionToken = Boolean(installResult?.hasSessionToken);
+
+                // ⚡ [并发优化] 提前在后台异步签发 Checkout API 专用的 Sentinel PoW 令牌，立减 4~5 秒
+                let prewarmedSentinelPromise = null;
+                try {
+                    const { mintSentinelToken } = require('./sentinel/sentinel-client');
+                    prewarmedSentinelPromise = mintSentinelToken({
+                        flow: 'chatgpt_checkout',
+                        proxy: proxyUrl,
+                        pageUrl: 'https://chatgpt.com/',
+                        timeoutMs: 15000
+                    }).catch(() => null);
+                } catch (_) {}
+
+                loginInfo = await bootstrapChatGptSession(page, sessionRaw, {
+                    sessionData,
+                    cookieVerified,
+                    hasSessionToken,
+                    skipChatUiWait: true
                 });
-                checkoutResult = { checkoutUrl };
+                diagnostic?.check('session', '官方登录状态', 'passed', '正式登录检查已完成，继续打开官方结账页');
+                if (loginInfo.email && !email) {
+                    console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
+                }
+
+                if (checkoutMode === 'ui') {
+                    console.log('[Checkout] 跳过 API 创建，直接使用官方 UI 定价页');
+                }
+                diagnostic?.check('checkout', diagnosticMode === 'link' ? '生成官方链接' : '打开官方结账', 'running');
+
+                if (checkoutMode !== 'ui') {
+                    try {
+                        console.log('⚡ [极速通道] 正在尝试通过 API 闪电直达 Stripe 收银台...');
+                        checkoutResult = await openApiCheckout(page, {
+                            accessToken: loginInfo.session?.accessToken || CONFIG.chatgptToken,
+                            planType,
+                            country: billingCountry,
+                            currency: billingCurrency,
+                            planNameOverride,
+                            verifyPage: Boolean(debugOnly && diagnosticMode === 'checkout'),
+                            proxy: proxyUrl,
+                            sentinelPromise: prewarmedSentinelPromise
+                        });
+                        checkoutOpened = true;
+                        console.log('⚡ [极速通道] ✅ API 直达收银台成功，已跳过 UI 定价页！');
+                    } catch (apiError) {
+                        console.warn(`[Warn] API Checkout 尝试未果: ${apiError.message}`);
+                        if (!shouldFallbackToPricingCheckout(apiError, { checkoutMode, debugOnly: debugOnly && diagnosticMode === 'link' })) {
+                            if (isBillingCountryMismatchError(apiError.message)) {
+                                console.warn('[Warn] 检测到账单地区不匹配，已停止 UI 回退，避免在错误地区继续尝试支付');
+                            }
+                            throw apiError;
+                        }
+                        console.log('🧭 [智能回退] 正在平滑转入 UI 定价页流程...');
+                    }
+                }
+
+                if (!checkoutOpened) {
+                    if (debugOnly && diagnosticMode === 'link') {
+                        throw new Error('API Checkout 失败，调试模式不启用 UI 定价页');
+                    }
+                    console.log('🧭 [步骤] 正在打开定价页并选择升级套餐...');
+                    const checkoutUrl = await openPricingCheckout(page, {
+                        region: billingCountry,
+                        planType,
+                        onCheckoutPage: (checkoutPage) => { page = checkoutPage; }
+                    });
+                    checkoutResult = { checkoutUrl };
+                }
             }
         }
 
@@ -759,13 +933,28 @@ async function run() {
             return;
         }
 
-        console.log(`✅ [步骤] ${platform.toUpperCase()} Checkout 页面已打开，开始信用卡支付流程...`);
+        console.log(`✅ [步骤] ${platform.toUpperCase()} Checkout 会话已就绪，开始信用卡支付流程...`);
 
-        const stripeSessionMatch = String(page.url() || '').match(/(oaics_[a-f0-9]+|cs_live_[a-zA-Z0-9]+|cs_test_[a-zA-Z0-9]+)/i);
+        const currentPageUrl = (page && typeof page.url === 'function') ? page.url() : '';
+        const stripeSessionMatch = String(currentPageUrl || checkoutResult?.checkoutUrl || '').match(/(oaics_[a-f0-9]+|cs_live_[a-zA-Z0-9]+|cs_test_[a-zA-Z0-9]+)/i);
         const stripeSessionId = stripeSessionMatch ? stripeSessionMatch[1] : (checkoutResult?.sessionId || null);
 
         // --- Phase 4: Execute Payment with Card Pool Retry ---
         console.log("[步骤] 正在使用 Stripe 信用卡卡池支付流程（单次尝试）...");
+        let fallbackSentinelPromise = null;
+        if (platform === 'chatgpt' && fastProtocolEnabled) {
+            try {
+                const { mintSentinelToken } = require('./sentinel/sentinel-client');
+                fallbackSentinelPromise = mintSentinelToken({
+                    flow: 'chatgpt_checkout',
+                    proxy: proxyUrl,
+                    pageUrl: 'https://chatgpt.com/',
+                    deviceId: loginInfo?.deviceId || undefined,
+                    timeoutMs: 15000
+                }).catch(() => null);
+            } catch (_) {}
+        }
+
         const paymentResult = await executePaymentWithRetry(page, {
             platform,
             planType,
@@ -775,12 +964,34 @@ async function run() {
             email: email || loginInfo?.email,
             stripeSessionId,
             checkoutUrl: checkoutResult?.checkoutUrl,
-            accessToken: loginInfo?.session?.accessToken || CONFIG.chatgptToken,
-            proxy: proxyConfig?.server || CONFIG.proxy,
+            accessToken: loginInfo?.accessToken || loginInfo?.session?.accessToken || CONFIG.chatgptToken,
+            cookieHeader: loginInfo?.cookieHeader || '',
+            deviceId: loginInfo?.deviceId || '',
+            proxy: proxyUrl,
             grokAccount: platform === 'grok' ? loginInfo : null,
             grokCheckout: platform === 'grok' ? checkoutResult : null,
             ownerKey,
             prewarmedPayment,
+            ensureBrowserPage: platform === 'chatgpt' ? ensureChatGptBrowserPage : undefined,
+            refreshCheckoutSession: async () => {
+                if (platform === 'chatgpt' && (loginInfo?.accessToken || loginInfo?.session?.accessToken || CONFIG.chatgptToken)) {
+                    const consumedSentinel = fallbackSentinelPromise;
+                    fallbackSentinelPromise = null;
+                    return await openApiCheckout(loginInfo?.cookieHeader ? null : page, {
+                        accessToken: loginInfo?.accessToken || loginInfo?.session?.accessToken || CONFIG.chatgptToken,
+                        planType,
+                        country: billingCountry,
+                        currency: billingCurrency,
+                        planNameOverride,
+                        verifyPage: false,
+                        proxy: proxyUrl,
+                        sentinelPromise: consumedSentinel,
+                        cookieHeader: loginInfo?.cookieHeader || '',
+                        deviceId: loginInfo?.deviceId || ''
+                    });
+                }
+                return null;
+            },
             onPaymentState: async (state, message) => {
                 console.log(`PAYMENT_STATE:${state}${message ? `:${message}` : ''}`);
             }
@@ -796,7 +1007,14 @@ async function run() {
             if (platform === 'chatgpt') {
                 console.log('🔄 [ChatGPT] 支付已完成，正在自动关闭次月自动续订...');
                 try {
-                    const autoRenewRes = await cancelChatGptAutoRenew(page);
+                    const autoRenewRes = await cancelChatGptAutoRenew(page, {
+                        accessToken: loginInfo?.accessToken || loginInfo?.session?.accessToken || CONFIG.chatgptToken,
+                        accountId: loginInfo?.accountId || '',
+                        planType,
+                        cookieHeader: loginInfo?.cookieHeader || '',
+                        deviceId: loginInfo?.deviceId || '',
+                        proxy: proxyUrl
+                    });
                     if (autoRenewRes?.ok) {
                         console.log(`✅ [ChatGPT] ${autoRenewRes.message || '已成功关闭次月自动续订'}`);
                     } else {
@@ -878,7 +1096,11 @@ async function run() {
             } catch (_) { }
         }
         commerceObserver?.dispose();
-        console.log("👋 [系统] 流程结束，正在关闭浏览器...");
+        if (browser || browserSession || context) {
+            console.log("👋 [系统] 流程结束，正在关闭浏览器...");
+        } else {
+            console.log("👋 [系统] 0 浏览器纯协议流程结束，正在清理网络资源...");
+        }
         // 先关闭 context 以 flush 录像并取回路径，再关浏览器
         await finalizeVideo(context, page, { deleteOnSuccess: paymentSucceeded }).catch(() => { });
         await closeTaskBrowser(browserSession, browser);

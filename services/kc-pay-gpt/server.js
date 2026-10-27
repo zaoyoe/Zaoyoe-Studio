@@ -1359,14 +1359,20 @@ function getCheckoutProgress(output, status = 'running') {
     const text = String(output || '');
     const markers = [
         ['正在检查代理连通性', 2],
+        ['正在通过纯协议检查代理连通性', 5],
         ['代理连接成功! 代理公网 IP', 5],
         ['[1] 准备自助充值', 8],
         ['Session 登录成功', 12],
+        ['Session 与订阅资格纯协议核验通过', 15],
         ['正在通过 API 创建 Checkout', 20],
+        ['正在通过纯协议创建官方 Checkout', 25],
+        ['Checkout 会话创建成功', 35],
         ['Checkout 页面已打开', 35],
         ['CHECKOUT_DEBUG_SUCCESS', 100],
         ['CHECKOUT_URL:', 95],
         ['已打开 ChatGPT 定价页', 15],
+        ['[协议支付] 开始极速协议支付', 55],
+        ['[协议支付] 正在提交订单最终确认', 85],
         ['[Stripe] Step 1', 45],
         ['[Stripe] Step 6', 60],
         ['[Stripe] Step 9', 80],
@@ -3687,7 +3693,14 @@ async function spawnWorkerWithBrowser({ jobKey, runtimeEnv, runScript, signal = 
     throwIfDiagnosticAborted(signal);
     const poolEnabled = browserPool.getRuntimeEnabled();
     if (!poolEnabled) {
-        logTask(jobKey, '浏览器模式: 独立启动（后台已关闭浏览器池）');
+        const isZeroBrowserFast = String(runtimeEnv?.FAST_PROTOCOL_ENABLED || '').toLowerCase() !== 'false'
+            && String(runtimeEnv?.FAST_PROTOCOL_ENABLED || '') !== '0'
+            && (!runtimeEnv?.CDK_PLAN_TYPE || /^(?:plus|pro|pro_\d+|pro\d+|pro_\w+|team|team_\d+|go)$/i.test(String(runtimeEnv.CDK_PLAN_TYPE).trim()))
+            && runtimeEnv?.CHECKOUT_DEBUG_ONLY !== '1'
+            && String(runtimeEnv?.CHATGPT_CHECKOUT_MODE || '').toLowerCase() !== 'ui';
+        logTask(jobKey, isZeroBrowserFast
+            ? '浏览器模式: 0 浏览器纯协议先行（异常/拒卡按需懒加载 Chromium）'
+            : '浏览器模式: 独立启动（后台已关闭浏览器池）');
         throwIfDiagnosticAborted(signal);
         return runScript(buildWorkerRuntimeEnv(runtimeEnv, null, 'standalone'));
     }
@@ -3907,6 +3920,9 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 lastUsedProxy = proxy || lastUsedProxy;
                 const hcaptchaCfg = await store.getHcaptchaConfig();
                 const { env: hcaptchaEnv } = buildHcaptchaEnvFromConfig(hcaptchaCfg);
+                const fastProtocolEnabled = typeof store.getFastProtocolEnabled === 'function'
+                    ? await store.getFastProtocolEnabled()
+                    : true;
                 const runtimeEnv = {
                     ...process.env,
                     ...hcaptchaEnv,
@@ -3915,7 +3931,8 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     CDK_CODE: cdk,
                     CDK_PLAN_TYPE: cdkDetails.plan_type || 'plus',
                     PAYMENT_REGION_OVERRIDE: targetRegion,
-                    PROXY: proxy
+                    PROXY: proxy,
+                    FAST_PROTOCOL_ENABLED: fastProtocolEnabled ? 'true' : 'false'
                 };
 
                 logTask(task.jobKey, `尝试 ${attempt} 启动自动化 proxy=${proxy ? 'yes' : 'no'} 地区=${targetRegion}`);
@@ -4020,6 +4037,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     break;
                 }
                 logTask(task.jobKey, `尝试 ${attempt} 失败，准备重试`, 'warn');
+                await store.releaseCardsByOwner(task.jobKey).catch(() => {});
             }
 
             const rawOutput = finalRun?.output || '';
@@ -4163,6 +4181,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
             if (finalStatus !== 'success' && shouldRollbackCdk && finalPaymentState !== 'unknown') {
                 await store.markCdkUnused(cdk);
                 logTask(task.jobKey, `CDK ${cdk} 已回滚为未使用`);
+                await store.releaseCardsByOwner(task.jobKey).catch(() => {});
             } else if (shouldRetainCdk({ paymentState: finalPaymentState })) {
                 logTask(task.jobKey, `CDK ${cdk} 保留，等待人工核对支付结果`, 'warn');
             }

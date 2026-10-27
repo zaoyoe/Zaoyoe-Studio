@@ -1,7 +1,13 @@
 'use strict';
 
 import { describe, it, expect, vi } from 'vitest';
-const { cancelChatGptAutoRenew, cancelInsideStripeCustomerPortal } = require('../chatgpt-cancel-auto-renew');
+const {
+    cancelChatGptAutoRenew,
+    cancelChatGptAutoRenewProtocol,
+    cancelInsideStripeCustomerPortal,
+    resolveAccountIdsFromCheckData,
+    inspectSubscriptionState
+} = require('../chatgpt-cancel-auto-renew');
 
 describe('ChatGPT Cancel Auto-Renew Module', () => {
     it('returns controlled error when page is invalid', async () => {
@@ -11,6 +17,140 @@ describe('ChatGPT Cancel Auto-Renew Module', () => {
             verificationUnknown: true
         });
         expect(result.error).toContain('缺少可用的 ChatGPT 浏览器页面上下文');
+    });
+
+    it('cancels auto-renew via 0-browser pure protocol native API (with webhook sync polling) and never wakes browser', async () => {
+        const ensureBrowserPage = vi.fn();
+        let subQueryCount = 0;
+        const calls = [];
+
+        const mockFetch = vi.fn(async (url, init = {}) => {
+            calls.push({ url, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : null });
+
+            if (url.includes('/backend-api/accounts/check/')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        accounts: {
+                            'acc-uuid-1234': {
+                                account: { account_id: 'acc-uuid-1234', plan_type: 'plus', structure: 'personal' },
+                                entitlement: { has_active_subscription: true }
+                            }
+                        },
+                        account_ordering: ['acc-uuid-1234']
+                    })
+                };
+            }
+
+            if (url.includes('/backend-api/subscriptions?account_id=acc-uuid-1234')) {
+                subQueryCount += 1;
+                if (subQueryCount === 1) {
+                    // Simulate Stripe webhook not yet synced (historical expired subscription has will_renew: false)
+                    return {
+                        ok: true,
+                        status: 200,
+                        json: async () => ({
+                            id: 'sub-old',
+                            is_active: false,
+                            will_renew: false,
+                            entitlement: {
+                                has_active_subscription: false,
+                                expires_at: '2026-05-05T20:03:44+00:00',
+                                cancels_at: null
+                            }
+                        })
+                    };
+                }
+                if (subQueryCount === 2) {
+                    // Webhook synced: active subscription with will_renew: true
+                    return {
+                        ok: true,
+                        status: 200,
+                        json: async () => ({
+                            id: 'sub-new',
+                            is_active: true,
+                            will_renew: true,
+                            entitlement: {
+                                has_active_subscription: true,
+                                subscription_plan: 'chatgptplusplan',
+                                expires_at: '2026-11-27T20:00:00+00:00',
+                                renews_at: '2026-11-27T20:00:00+00:00',
+                                cancels_at: null
+                            }
+                        })
+                    };
+                }
+                // Post-cancel verification
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        id: 'sub-new',
+                        is_active: true,
+                        will_renew: false,
+                        entitlement: {
+                            has_active_subscription: true,
+                            subscription_plan: 'chatgptplusplan',
+                            expires_at: '2026-11-27T20:00:00+00:00',
+                            renews_at: null,
+                            cancels_at: '2026-11-27T20:00:00+00:00'
+                        }
+                    })
+                };
+            }
+
+            if (url === 'https://chatgpt.com/backend-api/subscriptions/cancel' && init.method === 'POST') {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ status: 'canceled', will_renew: false })
+                };
+            }
+
+            return { ok: false, status: 404, json: async () => ({ detail: 'not found' }) };
+        });
+
+        const result = await cancelChatGptAutoRenew(null, {
+            accessToken: 'eyJhbGciOiJSUzI1NiJ9.test',
+            fetchImpl: mockFetch,
+            pollIntervalMs: 50,
+            maxPollAttempts: 4,
+            ensureBrowserPage
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.cancelled).toBe(true);
+        expect(result.autoRenewRaw).toBe(false);
+        expect(result.accountId).toBe('acc-uuid-1234');
+        expect(result.effectiveAt).toBe('2026-11-27T20:00:00+00:00');
+        expect(ensureBrowserPage).not.toHaveBeenCalled();
+
+        const cancelCall = calls.find((c) => c.url.endsWith('/backend-api/subscriptions/cancel'));
+        expect(cancelCall).toEqual({
+            url: 'https://chatgpt.com/backend-api/subscriptions/cancel',
+            method: 'POST',
+            body: { account_id: 'acc-uuid-1234' }
+        });
+    });
+
+    it('prioritizes active team workspace account_id when planType is team', () => {
+        const accData = {
+            accounts: {
+                'personal-uuid': {
+                    account: { account_id: 'personal-uuid', plan_type: 'free', structure: 'personal' },
+                    entitlement: { has_active_subscription: false }
+                },
+                'team-ws-uuid': {
+                    account: { account_id: 'team-ws-uuid', plan_type: 'team', structure: 'workspace' },
+                    entitlement: { has_active_subscription: true }
+                }
+            },
+            account_ordering: ['personal-uuid', 'team-ws-uuid']
+        };
+
+        const ids = resolveAccountIdsFromCheckData(accData, 'team');
+        expect(ids[0]).toBe('team-ws-uuid');
     });
 
     it('cancels auto-renew successfully via ChatGPT Web API', async () => {
