@@ -3693,13 +3693,11 @@ async function spawnWorkerWithBrowser({ jobKey, runtimeEnv, runScript, signal = 
     throwIfDiagnosticAborted(signal);
     const poolEnabled = browserPool.getRuntimeEnabled();
     if (!poolEnabled) {
-        const isZeroBrowserFast = String(runtimeEnv?.FAST_PROTOCOL_ENABLED || '').toLowerCase() !== 'false'
-            && String(runtimeEnv?.FAST_PROTOCOL_ENABLED || '') !== '0'
-            && (!runtimeEnv?.CDK_PLAN_TYPE || /^(?:plus|pro|pro_\d+|pro\d+|pro_\w+|team|team_\d+|go)$/i.test(String(runtimeEnv.CDK_PLAN_TYPE).trim()))
+        const isZeroBrowserFast = (!runtimeEnv?.CDK_PLAN_TYPE || /^(?:plus|pro|pro_\d+|pro\d+|pro_\w+|team|team_\d+|go)$/i.test(String(runtimeEnv.CDK_PLAN_TYPE).trim()))
             && runtimeEnv?.CHECKOUT_DEBUG_ONLY !== '1'
             && String(runtimeEnv?.CHATGPT_CHECKOUT_MODE || '').toLowerCase() !== 'ui';
         logTask(jobKey, isZeroBrowserFast
-            ? '浏览器模式: 0 浏览器纯协议先行（异常/拒卡按需懒加载 Chromium）'
+            ? '浏览器模式: 0 浏览器纯协议先行（异常/3DS按需懒加载 Chromium）'
             : '浏览器模式: 独立启动（后台已关闭浏览器池）');
         throwIfDiagnosticAborted(signal);
         return runScript(buildWorkerRuntimeEnv(runtimeEnv, null, 'standalone'));

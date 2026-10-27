@@ -564,12 +564,10 @@ async function run() {
     };
 
         const ownerKey = process.env.JOB_KEY || `${cdkCode || 'job'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const fastProtocolEnv = String(process.env.FAST_PROTOCOL_ENABLED ?? '').trim().toLowerCase();
-        const fastProtocolEnabled = fastProtocolEnv !== 'false' && fastProtocolEnv !== '0';
         const checkoutMode = String(process.env.CHECKOUT_MODE || 'auto').toLowerCase();
+        const fastProtocolEnabled = true;
         const canStartZeroBrowser = platform === 'chatgpt'
             && !debugOnly
-            && fastProtocolEnabled
             && checkoutMode !== 'ui'
             && typeof verifyChatGptSessionProtocol === 'function'
             && typeof checkProxyAndRegionProtocol === 'function';
