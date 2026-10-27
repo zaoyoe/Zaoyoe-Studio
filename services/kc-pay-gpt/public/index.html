@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="recharge-html">
 
 <head>
     <meta charset="UTF-8">
@@ -259,37 +259,34 @@
         const pageShell = document.querySelector('.page-shell');
 
         function lockShellTopPosition() {
-            if (!pageShell) return;
-            if (pageShell.dataset.topLocked) return;
-            let statusOffset = 0;
-            if (statusMsg && statusMsg.style.display !== 'none') {
-                const style = window.getComputedStyle(statusMsg);
-                const marginTop = parseFloat(style.marginTop) || 18;
-                const marginBottom = parseFloat(style.marginBottom) || 0;
-                statusOffset = (statusMsg.offsetHeight || 0) + marginTop + marginBottom;
+            if (pageShell) {
+                pageShell.style.marginTop = '';
+                pageShell.style.marginBottom = '';
             }
-            const shellHeight = Math.max(100, pageShell.offsetHeight - statusOffset);
-            const computedTop = Math.max(16, Math.round((window.innerHeight - shellHeight) / 2));
-            pageShell.style.marginTop = `${computedTop}px`;
-            pageShell.style.marginBottom = 'auto';
-            pageShell.dataset.topLocked = 'true';
+            if (window.scrollY !== 0 || window.scrollX !== 0) {
+                window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+            }
         }
 
         function unlockShellTopPosition() {
             if (!pageShell) return;
-            delete pageShell.dataset.topLocked;
             pageShell.style.marginTop = '';
             pageShell.style.marginBottom = '';
+            delete pageShell.dataset.topLocked;
         }
 
         window.addEventListener('resize', () => {
-            if (pageShell && pageShell.dataset.topLocked) {
-                unlockShellTopPosition();
-                if (step2 && step2.style.display !== 'none') {
-                    lockShellTopPosition();
-                }
+            if (window.scrollY !== 0) {
+                window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
             }
         });
+
+        // 视口与 Session 输入防抖锁定：杜绝外层页面滚动与跳动
+        window.addEventListener('scroll', () => {
+            if (window.scrollY !== 0 || window.scrollX !== 0) {
+                window.scrollTo(0, 0);
+            }
+        }, { passive: true });
 
         const PLAN_LABELS = {
             go: 'ChatGPT Go',
@@ -1282,6 +1279,22 @@
         tokenInput.addEventListener('paste', () => {
             setTimeout(() => applyTokenInput(tokenInput.value.trim()), 0);
         });
+
+        tokenInput.addEventListener('focus', () => {
+            if (window.scrollY !== 0) {
+                window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+            }
+        });
+
+        tokenInput.addEventListener('wheel', (e) => {
+            const el = tokenInput;
+            const isScrollingDown = e.deltaY > 0;
+            const isAtBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 1;
+            const isAtTop = el.scrollTop <= 0;
+            if ((isScrollingDown && isAtBottom) || (!isScrollingDown && isAtTop)) {
+                e.preventDefault();
+            }
+        }, { passive: false });
 
         cdkInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {

@@ -550,14 +550,23 @@ body {
 }
 
 /* ============ 页面主体与极夜氛围背景 ============ */
+html.recharge-html,
+body.recharge-page {
+    height: 100%;
+    min-height: 100%;
+    min-height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
 body.recharge-page {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
     background: var(--bg);
     color: var(--text-main);
     position: relative;
-    overflow-x: hidden;
     background-image:
         radial-gradient(at 12% 8%, rgba(186, 243, 92, 0.04) 0px, transparent 40%),
         radial-gradient(at 88% 12%, rgba(112, 92, 244, 0.06) 0px, transparent 45%),
@@ -567,11 +576,18 @@ body.recharge-page {
 
 .page-shell {
     width: min(680px, calc(100% - 36px));
-    margin: auto;
-    padding: 36px 0 48px;
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    padding: 0;
     animation: fadeIn 0.45s ease;
     position: relative;
     z-index: 1;
+    overscroll-behavior: none;
 }
 
 /* ============ 头部 HERO 区 ============ */
@@ -868,7 +884,14 @@ body.recharge-page {
     -webkit-backdrop-filter: blur(28px);
     border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: 28px;
-    padding: 56px 48px 52px;
+    padding: 38px 44px 34px;
+    width: 100%;
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9),
                 0 10px 24px rgba(0, 0, 0, 0.7),
                 0 0 0 1px rgba(255, 255, 255, 0.06),
@@ -877,6 +900,23 @@ body.recharge-page {
                 inset 0 0 0 1px rgba(255, 255, 255, 0.03);
     position: relative;
     transition: padding 0.3s ease;
+}
+
+[data-theme="light"] .recharge-card {
+    scrollbar-color: rgba(15, 23, 42, 0.16) transparent;
+}
+
+.recharge-card::-webkit-scrollbar {
+    width: 5px;
+}
+
+.recharge-card::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+}
+
+[data-theme="light"] .recharge-card::-webkit-scrollbar-thumb {
+    background: rgba(15, 23, 42, 0.16);
 }
 
 .card-head {
@@ -892,8 +932,8 @@ body.recharge-page {
     align-items: center;
     justify-content: center;
     text-align: center;
-    margin-bottom: 42px;
-    gap: 12px;
+    margin-bottom: 26px;
+    gap: 10px;
 }
 
 .card-head.is-centered div,
@@ -912,12 +952,12 @@ body.recharge-page {
 }
 
 .card-head.is-centered h2 {
-    font-size: 38px;
+    font-size: 34px;
     font-weight: 900;
     letter-spacing: -0.8px;
     line-height: 1.2;
     color: #ffffff;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
     text-shadow: 0 2px 18px rgba(0, 0, 0, 0.7);
 }
 
@@ -1647,12 +1687,21 @@ textarea:-moz-autofill:focus {
 
 #tokenInput,
 #sessionInput {
-    padding: 20px 22px 62px;
-    min-height: 165px;
+    padding: 18px 20px 58px;
+    min-height: 145px;
     font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
-    font-size: 14.5px;
+    font-size: 14px;
     line-height: 1.6;
     border-radius: 16px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -ms-scroll-chaining: none;
+}
+
+.textarea-wrapper {
+    position: relative;
+    width: 100%;
+    overscroll-behavior: contain;
 }
 
 textarea {
@@ -2736,21 +2785,23 @@ a:hover {
 @media (max-width: 640px) {
     .page-shell {
         width: calc(100% - 24px);
-        margin: auto;
-        padding: 20px 0 36px;
+        margin: 0 auto;
+        padding: 0;
+        max-height: calc(100vh - 16px);
+        max-height: calc(100dvh - 16px);
     }
 
     .recharge-card {
-        padding: 38px 22px 34px;
+        padding: 30px 20px 24px;
         border-radius: 20px;
     }
 
     .card-head.is-centered {
-        margin-bottom: 28px;
+        margin-bottom: 20px;
     }
 
     .card-head.is-centered h2 {
-        font-size: 28px;
+        font-size: 26px;
     }
 
     #cdkInput,
@@ -2812,6 +2863,65 @@ a:hover {
     }
 }
 
+/* ============ 紧凑高度视口适配 (保持卡片固定居中不溢出) ============ */
+@media (max-height: 840px) {
+    .recharge-card {
+        padding: 28px 36px 24px;
+    }
+    .card-head.is-centered {
+        margin-bottom: 18px;
+        gap: 8px;
+    }
+    .card-head.is-centered h2 {
+        font-size: 28px;
+        margin-bottom: 6px;
+    }
+    .card-head p.plan-subtitle {
+        font-size: 15px;
+    }
+    .tab-nav {
+        margin-bottom: 16px;
+    }
+    #tokenInput,
+    #sessionInput {
+        min-height: 125px;
+        padding: 14px 18px 50px;
+        font-size: 13.5px;
+    }
+    .status-message {
+        margin-top: 12px;
+        padding: 10px 14px;
+        font-size: 13.5px;
+    }
+}
+
+@media (max-height: 680px) {
+    .recharge-card {
+        padding: 20px 26px 16px;
+    }
+    .card-head.is-centered {
+        margin-bottom: 12px;
+        gap: 6px;
+    }
+    .card-head.is-centered h2 {
+        font-size: 24px;
+        margin-bottom: 4px;
+    }
+    .tab-nav {
+        margin-bottom: 12px;
+    }
+    #tokenInput,
+    #sessionInput {
+        min-height: 95px;
+        padding: 10px 14px 42px;
+        font-size: 13px;
+    }
+    .status-message {
+        margin-top: 8px;
+        padding: 8px 12px;
+        font-size: 12.5px;
+    }
+}
 
 /* ============ 亮暗主题切换按钮 (Theme Toggle Button) ============ */
 .theme-toggle-btn {
