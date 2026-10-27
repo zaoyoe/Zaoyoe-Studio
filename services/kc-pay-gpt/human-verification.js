@@ -45,7 +45,8 @@ function randomBetween(min, max) {
 }
 
 function isCheckoutOrUpgradeUrl(url) {
-    return /checkout|upgrade|subscribe|billing/i.test(String(url || ''));
+    const str = String(url || '');
+    return /checkout|upgrade|subscribe|billing|pay\.openai\.com|\/c\/pay\//i.test(str) || isCheckoutPageUrl(str);
 }
 
 const CAPTCHA_FAILURE_TEXT_PATTERNS = [
@@ -229,7 +230,7 @@ async function clickHcaptchaCheckboxFrames(page, phase = 'hcaptcha-checkbox') {
 
     // 0. 优先检测主页面是否有 Checkout 的「One more step」复选框弹层，直接对其内部 iframe 执行精准点击
     try {
-        const modal = page.locator('div:has-text("One more step"), div:has-text("Select the checkbox below")').first();
+        const modal = page.locator('div:has-text("One more step"), div:has-text("Select the checkbox below"), div:has-text("完成验证"), div:has-text("人机验证"), [role="dialog"]:has(iframe[src*="hcaptcha"]), div[class*="modal"]:has(iframe[src*="hcaptcha"])').first();
         if (await modal.isVisible({ timeout: 500 }).catch(() => false)) {
             const modalIframe = modal.locator('iframe').first();
             if (await modalIframe.isVisible({ timeout: 500 }).catch(() => false)) {
@@ -582,7 +583,7 @@ async function isCheckoutPaymentReady(page) {
     const probes = [
         () => page.getByText(/^(Card number|卡号)$/i).first().isVisible({ timeout: 250 }),
         () => page.getByText(/Configure your plan|Due today|今日应付|付款方式|支付详细信息|付款详情|账单信息/i).first().isVisible({ timeout: 250 }),
-        () => page.getByText(/Plus plan|Pro plan|Monthly subscription|Pro 套餐|按月计费/i).first().isVisible({ timeout: 250 }),
+        () => page.getByText(/Plus plan|Pro plan|Team plan|ChatGPT Team|Team 套餐|Monthly subscription|Pro 套餐|按月计费/i).first().isVisible({ timeout: 250 }),
         () => page.getByRole('button', { name: /subscribe|订阅|pay|升级/i }).first().isVisible({ timeout: 250 }),
         () => page.locator('input[autocomplete="cc-number"]').first().isVisible({ timeout: 250 })
     ];
@@ -2800,7 +2801,7 @@ async function clearHumanVerification(page, options = {}) {
         maxWaitMs = Number(process.env.CAPTCHA_CLEAR_TIMEOUT_MS || 120000),
         maxBypassRounds = 4,
         useVisualSolver = true,
-        requireCheckoutReady = /checkout/i.test(page.url() || ''),
+        requireCheckoutReady = isCheckoutOrUpgradeUrl(page.url() || ''),
         checkoutReadyWaitMs = Number(process.env.CHECKOUT_READY_WAIT_MS || 60000)
     } = options;
 
@@ -2809,7 +2810,7 @@ async function clearHumanVerification(page, options = {}) {
         ? Math.max(maxBypassRounds, Number(process.env.CAPTCHA_CHECKOUT_MAX_ROUNDS || 15))
         : maxBypassRounds;
 
-    const onCheckout = /checkout/i.test(page.url() || '');
+    const onCheckout = isCheckoutOrUpgradeUrl(page.url() || '');
     const waitOverlayMs = Number(options.overlayWaitMs || 0);
     const isPostSubmitCheckout = onCheckout && String(phase).startsWith('post_submit');
     if (onCheckout && (isPostSubmitCheckout || waitOverlayMs > 0)) {
@@ -3165,6 +3166,7 @@ async function clearHumanVerification(page, options = {}) {
 }
 
 module.exports = {
+    isCheckoutOrUpgradeUrl,
     isCheckoutOverlayCaptchaVisible,
     hasCheckoutCaptchaOverlayText,
     hasAnyCheckoutCaptchaSignal,

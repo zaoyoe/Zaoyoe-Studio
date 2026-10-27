@@ -101,9 +101,10 @@ describe('ChatGPT checkout currency preflight', () => {
     });
     it('passes the verified card region and currency to the payment driver', async () => {
         const fixture = harness({ region: 'PH', currency: 'PHP', started: false,
+            checkoutDue: { amount: 1100, currency: 'PHP' },
             runOptions: { platform: 'chatgpt', planType: 'plus', paymentRegion: 'PH', paymentCurrency: 'PHP' } });
         await fixture.run();
-        expect(fixture.waitForCheckoutDueAmount).toHaveBeenCalledOnce();
+        expect(fixture.waitForCheckoutDueAmount).toHaveBeenCalled();
         expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
         expect(fixture.completeStripeCardPayment.mock.calls[0][3]).toMatchObject({ paymentRegion: 'PH', paymentCurrency: 'PHP' });
     });

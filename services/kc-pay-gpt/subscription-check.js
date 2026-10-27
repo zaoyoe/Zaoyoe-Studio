@@ -247,11 +247,35 @@ function parsePromoCampaigns(eligiblePromoCampaignsRaw) {
     return campaigns;
 }
 
+function pickActiveAccount(data) {
+    const accounts = (data && typeof data === 'object' ? data.accounts : null) || {};
+    const defaultAccount = accounts.default || {};
+    if (defaultAccount?.entitlement?.has_active_subscription) {
+        return defaultAccount;
+    }
+    // If another account (such as a Team workspace) has active subscription, prefer it
+    for (const [key, acc] of Object.entries(accounts)) {
+        if (key === 'default' || !acc || typeof acc !== 'object') continue;
+        if (acc.entitlement?.has_active_subscription) {
+            return acc;
+        }
+    }
+    const ordering = Array.isArray(data?.account_ordering) ? data.account_ordering : [];
+    for (const id of ordering) {
+        const acc = accounts[id];
+        if (acc?.entitlement?.has_active_subscription) {
+            return acc;
+        }
+    }
+    return defaultAccount;
+}
+
 function parseAccountCheckResponse(data, profile = {}) {
+    const activeAccount = pickActiveAccount(data);
     const defaultAccount = (data?.accounts || {}).default || {};
-    const account = defaultAccount.account || {};
-    const entitlement = defaultAccount.entitlement || {};
-    const lastActive = defaultAccount.last_active_subscription || {};
+    const account = activeAccount.account || defaultAccount.account || {};
+    const entitlement = activeAccount.entitlement || defaultAccount.entitlement || {};
+    const lastActive = activeAccount.last_active_subscription || defaultAccount.last_active_subscription || {};
 
     const hasActive = Boolean(entitlement.has_active_subscription);
     const rawPlan = String(entitlement.subscription_plan || '');
