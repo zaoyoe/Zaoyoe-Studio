@@ -34,7 +34,7 @@
     "puppeteer-core": "^24.42.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "undici": "^8.12.3",
+    "undici": "^6.29.1",
     "uuid": "^14.0.0",
     "ws": "^8.20.0"
   },
