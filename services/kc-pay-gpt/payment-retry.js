@@ -360,9 +360,9 @@ async function executePaymentWithRetry(page, options) {
         try {
             let paymentResult;
             try {
+                // 2.0 极速协议通道：默认完全固定为纯协议先行，确切拒卡执行 Fail-Fast 毫秒级轮换卡片
                 const fastProtocolEnv = String(process.env.FAST_PROTOCOL_ENABLED ?? '').trim().toLowerCase();
                 const isFastProtocolEnabled = (options.fastProtocol !== false) && (fastProtocolEnv !== 'false' && fastProtocolEnv !== '0');
-                // 2.0 极速协议通道：首张卡优先尝试 Stripe 纯协议直接开卡（跳过收银台 DOM 加载与交互延迟）；
                 // 若首张卡回退唤醒了浏览器 UI 且仍被拒，后续换卡直接在已打开的收银台 UI 内填卡重试，避免重复创建 oaics_ 会话触发 429 限流
                 const canTryProtocol = isFastProtocolEnabled && !uiFallbackActive && (platform === 'chatgpt' || !platform) && stripeSessionId && (isHostedSession || options?.accessToken);
                 let protoRes = null;
@@ -399,45 +399,32 @@ async function executePaymentWithRetry(page, options) {
                                 holderName: address.name || billingHolderName || ''
                             };
                         } else if (protoRes.declined) {
-                            // 协议支付已明确收到上游拒卡终态，重置前置 started 状态，防止后续 UI 回退若未能点击提交按钮时被误判为 started->unknown 挂单
+                            // 协议支付已明确收到上游拒卡终态，重置前置 started 状态
                             attemptStarted = false;
                             lastPersistedPaymentState = 'declined';
 
-                            // 只要页面可用（或支持按需懒加载唤醒浏览器）且允许回退，协议提交未果或拒付
-                            // 均平滑回退收银台 UI 进行真实环境二次抢救提交
-                            const allowFallback = process.env.CHECKOUT_PROTOCOL_DECLINE_FALLBACK !== 'false';
-                            const canFallback = Boolean(
-                                allowFallback
-                                && (
-                                    (page && typeof page.goto === 'function' && !page.isClosed())
-                                    || typeof options.ensureBrowserPage === 'function'
-                                )
-                            );
-
-                            if (canFallback) {
-                                progress(`⚡ [协议回退] 卡片 ...${cardLast4} 纯协议提交被拒 (${protoRes.error || protoRes.code || 'declined'})，平滑唤醒收银台 UI 进行真实环境提交通道...`);
-                                // 不设置 paymentResult，自动顺延进入收银台 UI 兜底流水线
-                            } else {
-                                paymentResult = {
-                                    ...protoRes,
-                                    dueAmount: protoRes.amount != null ? protoRes.amount : billedAmount,
-                                    dueCurrency: protoRes.currency || billedCurrency,
-                                    holderName: address.name || billingHolderName || ''
-                                };
-                                progress(`[协议支付] 卡片 ...${cardLast4} 协议核验未果或被拒: ${protoRes.error}`);
-                                if (page && typeof page.screenshot === 'function' && !page.isClosed()) {
-                                    try {
-                                        const screenshotDir = path.join(__dirname, 'debug_screenshots', 'stripe');
-                                        fs.mkdirSync(screenshotDir, { recursive: true });
-                                        const filePath = path.join(screenshotDir, `protocol_declined_${Date.now()}.png`);
-                                        await page.screenshot({ path: filePath, timeout: 5000 });
-                                        paymentResult.screenshot = filePath;
-                                    } catch (_) {}
-                                }
+                            // 确切拒卡（卡号错误/余额不足/发卡行拒付）执行 Fail-Fast 机制：
+                            // 绝不唤醒 Chromium 浏览器，直接判定卡片失败，触发智能冷却与极速切卡轮换！
+                            paymentResult = {
+                                ...protoRes,
+                                canRetryCard: true,
+                                dueAmount: protoRes.amount != null ? protoRes.amount : billedAmount,
+                                dueCurrency: protoRes.currency || billedCurrency,
+                                holderName: address.name || billingHolderName || ''
+                            };
+                            progress(`[-] [协议支付] 卡片 ...${cardLast4} 明确被拒 (${protoRes.error || protoRes.code || 'declined'})，Fail-Fast 快速判定失败并进入卡池轮换...`);
+                            if (page && typeof page.screenshot === 'function' && !page.isClosed()) {
+                                try {
+                                    const screenshotDir = path.join(__dirname, 'debug_screenshots', 'stripe');
+                                    fs.mkdirSync(screenshotDir, { recursive: true });
+                                    const filePath = path.join(screenshotDir, `protocol_declined_${Date.now()}.png`);
+                                    await page.screenshot({ path: filePath, timeout: 5000 });
+                                    paymentResult.screenshot = filePath;
+                                } catch (_) {}
                             }
                         } else if (protoRes.fallbackToUi) {
                             attemptStarted = false;
-                            progress(`[协议支付] ${protoRes.error || '转入收银台 UI 进行后续处理'}...`);
+                            progress(`[协议支付] ${protoRes.error || '银行卡需要 3DS 验证，平滑切入收银台 UI'}...`);
                         }
                     } catch (protoErr) {
                         attemptStarted = false;
@@ -458,11 +445,11 @@ async function executePaymentWithRetry(page, options) {
                     let cleanSessionObtained = !needsCleanSession;
 
                     if (needsCleanSession && needsLazyBrowser) {
-                        progress('⚡ [协议回退] 正在并发执行：按需懒加载唤醒 Chromium 浏览器 || 换取全新干净 Checkout 会话...');
+                        progress('⚡ [按需唤醒] 正在并发执行：按需唤醒 Chromium 浏览器处理 3DS/收银台 || 换取全新干净 Checkout 会话...');
                         const [lazyPage, refreshed] = await Promise.all([
-                            options.ensureBrowserPage('纯协议支付未果/被拒，按需唤醒浏览器收银台'),
+                            options.ensureBrowserPage('按需唤醒浏览器收银台处理 3DS 验证/收银台交互'),
                             options.refreshCheckoutSession().catch((e) => {
-                                progress(`[协议回退] 刷新会话异常: ${e.message}`);
+                                progress(`[协议唤醒] 刷新会话异常: ${e.message}`);
                                 return null;
                             })
                         ]);
@@ -471,26 +458,24 @@ async function executePaymentWithRetry(page, options) {
                             checkoutUrl = refreshed.checkoutUrl;
                             stripeSessionId = refreshed.sessionId || stripeSessionId;
                             cleanSessionObtained = true;
-                            progress(`⚡ [协议回退] 获取到全新未污染收银台链接: ${stripeSessionId.slice(0, 18)}...`);
+                            progress(`⚡ [按需唤醒] 获取到全新未污染收银台链接: ${stripeSessionId.slice(0, 18)}...`);
                         }
                     } else {
                         if (needsLazyBrowser) {
-                            progress('⚡ [按需唤醒] 正在按需懒加载启动 Chromium 浏览器环境以接管收银台 UI...');
-                            page = await options.ensureBrowserPage('纯协议支付转入浏览器收银台 UI');
+                            progress('⚡ [按需唤醒] 正在按需启动 Chromium 浏览器环境接管 3DS 验证/收银台 UI...');
+                            page = await options.ensureBrowserPage('按需唤醒浏览器收银台处理 3DS 验证/收银台交互');
                         }
                         if (needsCleanSession) {
-                            // 对于 ChatGPT Plus 的定制收银台 (oaics_...)，底层 PaymentIntent 在纯协议扣款失败后会直接死锁该会话。
-                            // 回退到收银台 UI 必须重新签发一个全新的干净 Checkout 会话，否则打开必定提示「Checkout could not be completed」！
-                            progress(`⚡ [协议回退] 旧 Checkout 会话已被协议占用，正在为收银台 UI 换取全新干净会话...`);
+                            progress(`⚡ [按需唤醒] 正在为收银台 UI 换取全新干净会话...`);
                             const refreshed = await options.refreshCheckoutSession().catch((e) => {
-                                progress(`[协议回退] 刷新会话异常: ${e.message}`);
+                                progress(`[按需唤醒] 刷新会话异常: ${e.message}`);
                                 return null;
                             });
                             if (refreshed?.checkoutUrl) {
                                 checkoutUrl = refreshed.checkoutUrl;
                                 stripeSessionId = refreshed.sessionId || stripeSessionId;
                                 cleanSessionObtained = true;
-                                progress(`⚡ [协议回退] 获取到全新未污染收银台链接: ${stripeSessionId.slice(0, 18)}...`);
+                                progress(`⚡ [按需唤醒] 获取到全新未污染收银台链接: ${stripeSessionId.slice(0, 18)}...`);
                             }
                         }
                     }

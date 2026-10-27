@@ -136,13 +136,67 @@ describe('Payment Protocol Decline UI Fallback', () => {
         expect(result.success).toBe(true);
     });
 
-    it('lazily initializes browser page in parallel with session refresh when 0-browser protocol declines', async () => {
+    it('fails fast on card decline without waking up Chromium or falling back to UI', async () => {
         const fixture = createFixture({
             protoRes: {
                 success: false,
                 declined: true,
                 error: 'Your card was declined.',
-                code: 'card_declined'
+                code: 'card_declined',
+                decline_code: 'generic_decline'
+            },
+            uiPaymentResult: {
+                success: true,
+                dueAmount: 982.14,
+                dueCurrency: 'PHP'
+            }
+        });
+        const ensureBrowserPage = vi.fn();
+
+        const result = await fixture.run({ ensureBrowserPage }, null);
+
+        // Protocol was attempted across all 3 cards in the pool via pure protocol
+        expect(fixture.executeStripeProtocolPayment).toHaveBeenCalledTimes(3);
+        // Fail-Fast: Never woke up the browser or called UI payment!
+        expect(ensureBrowserPage).not.toHaveBeenCalled();
+        expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
+        expect(result.success).toBe(false);
+        expect(result.cardsDeclined).toBe(3);
+    });
+
+    it('fails fast even when protocol returns incorrect_number without launching browser', async () => {
+        const fixture = createFixture({
+            protoRes: {
+                success: false,
+                declined: true,
+                error: 'Your card number is incorrect.',
+                code: 'incorrect_number'
+            },
+            uiPaymentResult: {
+                success: true,
+                dueAmount: 982.14,
+                dueCurrency: 'PHP'
+            }
+        });
+        const ensureBrowserPage = vi.fn();
+
+        const result = await fixture.run({ ensureBrowserPage }, null);
+
+        expect(fixture.executeStripeProtocolPayment).toHaveBeenCalledTimes(3);
+        expect(ensureBrowserPage).not.toHaveBeenCalled();
+        expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
+        expect(result.success).toBe(false);
+        expect(result.cardsDeclined).toBe(3);
+    });
+
+    it('lazily wakes up browser and UI only when protocol explicitly requests fallbackToUi (e.g. 3DS required)', async () => {
+        const fixture = createFixture({
+            protoRes: {
+                success: false,
+                declined: false,
+                fallbackToUi: true,
+                requiresAction: true,
+                error: '银行卡需要 3DS 验证，平滑切入收银台 UI'
             },
             uiPaymentResult: {
                 success: true,
@@ -168,96 +222,6 @@ describe('Payment Protocol Decline UI Fallback', () => {
         expect(refreshCheckoutSession).toHaveBeenCalledTimes(1);
         expect(fixture.mockPage.goto).toHaveBeenCalledWith(
             expect.stringContaining('oaics_lazy_clean_999'),
-            expect.anything()
-        );
-        expect(fixture.completeStripeCardPayment).toHaveBeenCalledTimes(1);
-        expect(result.success).toBe(true);
-    });
-
-    it('falls back to UI checkout when protocol returns generic_decline and page is open', async () => {
-        const fixture = createFixture({
-            protoRes: {
-                success: false,
-                declined: true,
-                error: 'Your card was declined.',
-                code: 'card_declined',
-                decline_code: 'generic_decline'
-            },
-            uiPaymentResult: {
-                success: true,
-                dueAmount: 982.14,
-                dueCurrency: 'PHP'
-            }
-        });
-
-        const result = await fixture.run();
-
-        // Protocol was attempted first
-        expect(fixture.executeStripeProtocolPayment).toHaveBeenCalledTimes(1);
-        // Then smoothly fell back to UI checkout
-        expect(fixture.mockPage.goto).toHaveBeenCalledWith(
-            expect.stringContaining('oaics_test123'),
-            expect.anything()
-        );
-        expect(fixture.completeStripeCardPayment).toHaveBeenCalledTimes(1);
-        expect(result.success).toBe(true);
-    });
-
-    it('refreshes to a clean checkout session when falling back on ChatGPT Plus custom checkout', async () => {
-        const refreshCheckoutSession = vi.fn(async () => ({
-            sessionId: 'oaics_clean_session_789',
-            checkoutUrl: 'https://chatgpt.com/checkout/openai_llc/oaics_clean_session_789'
-        }));
-
-        const fixture = createFixture({
-            protoRes: {
-                success: false,
-                declined: true,
-                error: 'Your card number is incorrect.',
-                code: 'incorrect_number'
-            },
-            uiPaymentResult: {
-                success: true,
-                dueAmount: 982.14,
-                dueCurrency: 'PHP'
-            },
-            extraOptions: {
-                refreshCheckoutSession
-            }
-        });
-
-        const result = await fixture.run();
-
-        expect(refreshCheckoutSession).toHaveBeenCalledTimes(1);
-        // Navigates to the clean unpolluted session rather than the burned one
-        expect(fixture.mockPage.goto).toHaveBeenCalledWith(
-            expect.stringContaining('oaics_clean_session_789'),
-            expect.anything()
-        );
-        expect(fixture.completeStripeCardPayment).toHaveBeenCalledTimes(1);
-        expect(result.success).toBe(true);
-    });
-
-    it('falls back to UI checkout even when protocol returns incorrect_number', async () => {
-        const fixture = createFixture({
-            protoRes: {
-                success: false,
-                declined: true,
-                error: 'Your card number is incorrect.',
-                code: 'incorrect_number'
-            },
-            uiPaymentResult: {
-                success: true,
-                dueAmount: 982.14,
-                dueCurrency: 'PHP'
-            }
-        });
-
-        const result = await fixture.run();
-
-        expect(fixture.executeStripeProtocolPayment).toHaveBeenCalledTimes(1);
-        expect(fixture.mockPage.goto).toHaveBeenCalledWith(
-            expect.stringContaining('oaics_test123'),
             expect.anything()
         );
         expect(fixture.completeStripeCardPayment).toHaveBeenCalledTimes(1);
@@ -327,7 +291,7 @@ describe('Payment Protocol Decline UI Fallback', () => {
         expect(result.success).toBe(true);
     });
 
-    it('skips navigating to burned oaics_ session and adopts protocol decline when refreshCheckoutSession returns null (e.g. HTTP 429)', async () => {
+    it('fails fast on card decline without calling refreshCheckoutSession or navigating to burned session', async () => {
         const refreshCheckoutSession = vi.fn(async () => null);
         const ensureBrowserPage = vi.fn();
         const fixture = createFixture({
@@ -347,9 +311,9 @@ describe('Payment Protocol Decline UI Fallback', () => {
 
         const result = await fixture.run({}, null);
 
-        expect(fixture.executeStripeProtocolPayment).toHaveBeenCalledTimes(1);
-        expect(refreshCheckoutSession).toHaveBeenCalledTimes(1);
-        // Should NOT navigate to the burned oaics_test123 session or invoke UI card payment
+        expect(fixture.executeStripeProtocolPayment).toHaveBeenCalledTimes(3);
+        // Fail-Fast: Does NOT call refreshCheckoutSession because it doesn't fall back to browser!
+        expect(refreshCheckoutSession).not.toHaveBeenCalled();
         expect(fixture.mockPage.goto).not.toHaveBeenCalled();
         expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
         expect(result.success).toBe(false);
