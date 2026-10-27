@@ -44,6 +44,11 @@ function randomBetween(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function isPaymentCheckoutUrl(url) {
+    const str = String(url || '');
+    return /checkout|pay\.openai\.com|\/c\/pay\//i.test(str) || isCheckoutPageUrl(str);
+}
+
 function isCheckoutOrUpgradeUrl(url) {
     const str = String(url || '');
     return /checkout|upgrade|subscribe|billing|pay\.openai\.com|\/c\/pay\//i.test(str) || isCheckoutPageUrl(str);
@@ -1229,6 +1234,31 @@ const HCAPTCHA_PROMPT_EXACT_DICT = {
     'select the two identical shapes': '请选择完全相同的【两个形状】',
     'please click on the two identical objects': '请点击完全相同的【两个物体】',
     'click on the two identical objects': '请点击完全相同的【两个物体】',
+
+    'find the three shapes with the same form': '请找出 3 个形状相同的图形',
+    'find three shapes with the same form': '请找出 3 个形状相同的图形',
+    'find the 3 shapes with the same form': '请找出 3 个形状相同的图形',
+    'find 3 shapes with the same form': '请找出 3 个形状相同的图形',
+    'click the three shapes with the same form': '请找出 3 个形状相同的图形',
+    'click on the three shapes with the same form': '请找出 3 个形状相同的图形',
+    'select the three shapes with the same form': '请选出 3 个形状相同的图形',
+    'select three shapes with the same form': '请选出 3 个形状相同的图形',
+    'find the two shapes with the same form': '请找出 2 个形状相同的图形',
+    'find two shapes with the same form': '请找出 2 个形状相同的图形',
+    'find the 2 shapes with the same form': '请找出 2 个形状相同的图形',
+    'find 2 shapes with the same form': '请找出 2 个形状相同的图形',
+    'click the two shapes with the same form': '请找出 2 个形状相同的图形',
+    'click on the two shapes with the same form': '请找出 2 个形状相同的图形',
+    'select the two shapes with the same form': '请选出 2 个形状相同的图形',
+    'select two shapes with the same form': '请选出 2 个形状相同的图形',
+    'find the shapes with the same form': '请找出形状相同的图形',
+    'find shapes with the same form': '请找出形状相同的图形',
+    'click on the shapes with the same form': '请找出形状相同的图形',
+    'select the shapes with the same form': '请选出形状相同的图形',
+    'three shapes with the same form': '3 个形状相同的图形',
+    'two shapes with the same form': '2 个形状相同的图形',
+    'shapes with the same form': '形状相同的图形',
+
     'tap all objects that can be completely concealed by the item shown': '请选出所有能被所示物品（完全遮蔽）的物体',
     'click all objects that can be completely concealed by the item shown': '请选出所有能被所示物品（完全遮蔽）的物体',
     'select all objects that can be completely concealed by the item shown': '请选出所有能被所示物品（完全遮蔽）的物体',
@@ -1324,6 +1354,11 @@ const HCAPTCHA_NOUN_DICT = {
     'letter': '字母', 'letters': '字母',
     'puzzle piece': '拼图碎片', 'puzzle pieces': '拼图碎片',
     'slider': '滑块', 'shape': '形状', 'shapes': '形状',
+    'three shapes with the same form': '3 个形状相同的图形',
+    'the three shapes with the same form': '3 个形状相同的图形',
+    'two shapes with the same form': '2 个形状相同的图形',
+    'the two shapes with the same form': '2 个形状相同的图形',
+    'shapes with the same form': '形状相同的图形',
     'outline': '轮廓', 'shadow': '阴影', 'silhouette': '剪影',
 
     'things that spin when you use them': '使用时会旋转的物品',
@@ -1492,6 +1527,32 @@ function translateHcaptchaPrompt(prompt) {
     if (lower.includes('identical') || lower.includes('that are the same')) {
         if (lower.includes('two')) return '请点击完全相同的【两个形状】';
         return '请点击完全相同的形状';
+    }
+
+    // 针对“相同形状/形式”几何图形（如 "Find the THREE shapes with the same form"）
+    const sameFormMatch = lower.match(/^(?:please\s+)?(?:find|click(?:\s+on)?|select|tap(?:\s+on)?|choose)\s+(?:the\s+)?(?:(\w+)\s+)?(shapes?|objects?|items?|patterns?|figures?)\s+(?:with|of|having)\s+(?:the\s+)?same\s+(?:form|shape|structure)$/i);
+    if (sameFormMatch) {
+        const numWord = (sameFormMatch[1] || '').toLowerCase();
+        const noun = (sameFormMatch[2] || '').toLowerCase();
+        const numZhMap = {
+            'two': '2 个', '2': '2 个',
+            'three': '3 个', '3': '3 个',
+            'four': '4 个', '4': '4 个',
+            'five': '5 个', '5': '5 个',
+            'one': '1 个', '1': '1 个'
+        };
+        const numZh = numZhMap[numWord] || (numWord ? `${numWord} 个` : '');
+        const nounZh = /pattern/i.test(noun) ? '图案' : (/object|item/i.test(noun) ? '物体' : '图形');
+        if (numZh) {
+            return `请找出 ${numZh}形状相同的${nounZh}`;
+        }
+        return `请找出形状相同的${nounZh}`;
+    }
+    if (lower.includes('same form') || lower.includes('same shape')) {
+        if (lower.includes('three') || /\b3\b/.test(lower)) return '请找出 3 个形状相同的图形';
+        if (lower.includes('two') || /\b2\b/.test(lower)) return '请找出 2 个形状相同的图形';
+        if (lower.includes('four') || /\b4\b/.test(lower)) return '请找出 4 个形状相同的图形';
+        return '请找出形状相同的图形';
     }
 
     // 场所与情境匹配（如 "Tap the thing you can take inside the place"）
@@ -1776,6 +1837,12 @@ function formatCaptchaGuideMessage(promptZh, promptEn) {
         parts.push(
             `<div class="captcha-prompt-guide">` +
             `操作指引：请观察图中的几何图形，找出其中与其他项形状/特征明显不同的目标点击选定，确认选好后务必点击右下角「Verify / 提交」按钮完成验证。` +
+            `</div>`
+        );
+    } else if (fullText.includes('same form') || fullText.includes('相同图形') || fullText.includes('形状相同') || fullText.includes('相同形状')) {
+        parts.push(
+            `<div class="captcha-prompt-guide">` +
+            `操作指引：请仔细观察图中的几何图形，找出其中形状外形完全相同的目标点击选定。选好后务必点击右下角按钮继续（若有「Next」请点击下一步，最后一页点击「Verify / 提交」）。` +
             `</div>`
         );
     } else if (fullText.includes('meet your eye') || fullText.includes('目光') || fullText.includes('对视')) {
@@ -2801,7 +2868,7 @@ async function clearHumanVerification(page, options = {}) {
         maxWaitMs = Number(process.env.CAPTCHA_CLEAR_TIMEOUT_MS || 120000),
         maxBypassRounds = 4,
         useVisualSolver = true,
-        requireCheckoutReady = isCheckoutOrUpgradeUrl(page.url() || ''),
+        requireCheckoutReady = (typeof isPaymentCheckoutUrl === 'function' ? isPaymentCheckoutUrl(page.url() || '') : /checkout|pay\.openai\.com|\/c\/pay\//i.test(page.url() || '')),
         checkoutReadyWaitMs = Number(process.env.CHECKOUT_READY_WAIT_MS || 60000)
     } = options;
 
@@ -2810,7 +2877,7 @@ async function clearHumanVerification(page, options = {}) {
         ? Math.max(maxBypassRounds, Number(process.env.CAPTCHA_CHECKOUT_MAX_ROUNDS || 15))
         : maxBypassRounds;
 
-    const onCheckout = isCheckoutOrUpgradeUrl(page.url() || '');
+    const onCheckout = typeof isPaymentCheckoutUrl === 'function' ? isPaymentCheckoutUrl(page.url() || '') : /checkout|pay\.openai\.com|\/c\/pay\//i.test(page.url() || '');
     const waitOverlayMs = Number(options.overlayWaitMs || 0);
     const isPostSubmitCheckout = onCheckout && String(phase).startsWith('post_submit');
     if (onCheckout && (isPostSubmitCheckout || waitOverlayMs > 0)) {

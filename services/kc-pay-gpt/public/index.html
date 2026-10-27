@@ -1768,6 +1768,19 @@
                 }
                 guide = '操作指引：请仔细观察图中的几何图形，找出其中形状、凹凸特征或纹理与其他项明显不同的目标点击选定，确认选好后点击右下角按钮完成验证。';
             }
+            // 3.5. 形状相同 / 相同形式 (same form / same shape)
+            else if (combined.includes('same form') || combined.includes('same shape') || combined.includes('相同图形') || combined.includes('形状相同')) {
+                if (combined.includes('three') || combined.includes('3')) {
+                    heading = '请找出 3 个形状相同的图形';
+                } else if (combined.includes('two') || combined.includes('2')) {
+                    heading = '请找出 2 个形状相同的图形';
+                } else if (combined.includes('four') || combined.includes('4')) {
+                    heading = '请找出 4 个形状相同的图形';
+                } else {
+                    heading = '请找出形状相同的图形';
+                }
+                guide = '操作指引：请仔细观察图中的几何图形，找出其中形状外形完全相同的目标点击选定。选好后点击右下角按钮完成验证（多页请先点「Next / 下一步」）。';
+            }
             // 4. 动物眼神对视 / 避开目光 (meet your eye / looking away)
             else if (combined.includes('meet your eye') || combined.includes('meet your eyes') || combined.includes('looking at you') || combined.includes('looking directly')) {
                 if (combined.includes('not meet') || combined.includes("don't meet") || combined.includes('away from you')) {

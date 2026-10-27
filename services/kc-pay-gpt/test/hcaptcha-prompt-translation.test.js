@@ -93,6 +93,35 @@ describe('hCaptcha challenge prompt translation and guidance', () => {
             .toBe('请拖动相匹配的形状');
     });
 
+    it('translates same-form shapes challenge prompts and guidance', () => {
+        expect(translateHcaptchaPrompt('Find the THREE shapes with the same form'))
+            .toBe('请找出 3 个形状相同的图形');
+        expect(translateHcaptchaPrompt('Find THREE shapes with the same form'))
+            .toBe('请找出 3 个形状相同的图形');
+        expect(translateHcaptchaPrompt('Find the 3 shapes with the same form'))
+            .toBe('请找出 3 个形状相同的图形');
+        expect(translateHcaptchaPrompt('Find three shapes with the same form'))
+            .toBe('请找出 3 个形状相同的图形');
+        expect(translateHcaptchaPrompt('Select the three shapes with the same form'))
+            .toBe('请选出 3 个形状相同的图形');
+        expect(translateHcaptchaPrompt('Click on the three shapes with the same form'))
+            .toBe('请找出 3 个形状相同的图形');
+        expect(translateHcaptchaPrompt('three shapes with the same form'))
+            .toBe('3 个形状相同的图形');
+        expect(translateHcaptchaPrompt('Find the two shapes with the same form'))
+            .toBe('请找出 2 个形状相同的图形');
+        expect(translateHcaptchaPrompt('Find the shapes with the same form'))
+            .toBe('请找出形状相同的图形');
+
+        const msg = formatCaptchaGuideMessage(
+            '请找出 3 个形状相同的图形',
+            'Find the THREE shapes with the same form'
+        );
+        expect(msg).toContain('Find the THREE shapes with the same form');
+        expect(msg).toContain('几何图形');
+        expect(msg).toContain('形状外形完全相同');
+    });
+
     it('translates common noun pattern prompts', () => {
         expect(translateHcaptchaPrompt('Click each image containing a bicycle'))
             .toBe('请点击每张包含【自行车】的图片');
