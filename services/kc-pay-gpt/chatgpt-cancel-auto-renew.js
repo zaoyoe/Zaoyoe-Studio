@@ -43,7 +43,7 @@ function resolveAccountIdsFromCheckData(accData, planType = '') {
             || String(account.structure || '').toLowerCase() === 'workspace';
         let score = 0;
         if (hasActive) score += 10;
-        if (normalizedPlan === 'team' && isTeam) score += 5;
+        if ((normalizedPlan === 'team' || /team/i.test(normalizedPlan)) && isTeam) score += 5;
         entries.push({ id: cleanId, score });
     };
 
@@ -170,7 +170,7 @@ async function cancelChatGptAutoRenewProtocol(options = {}) {
     try {
         let candidateAccountIds = [];
         const initialAccountId = String(options.accountId || '').trim();
-        const isTeamPlan = String(options.planType || '').trim().toLowerCase() === 'team';
+        const isTeamPlan = /team/i.test(String(options.planType || ''));
 
         if (initialAccountId && !isTeamPlan) {
             candidateAccountIds.push(initialAccountId);
@@ -567,7 +567,7 @@ async function cancelChatGptAutoRenew(page, options = {}) {
 
                 // 1. 获取 account_id
                 let accountId = initialAccountId || '';
-                if (!accountId || String(planType || '').toLowerCase() === 'team') {
+                if (!accountId || /team/i.test(String(planType || ''))) {
                     try {
                         const accResp = await fetch('/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0', {
                             credentials: 'include',

@@ -677,7 +677,13 @@ async function checkStripeCardInlineError(page) {
  */
 async function readCheckoutDueAmount(page) {
     try {
-        const bodyText = String(await page.locator('body').innerText({ timeout: 3000 }).catch(() => '') || '');
+        let bodyText = '';
+        if (typeof page?.locator === 'function') {
+            bodyText = String(await page.locator('body').innerText({ timeout: 3000 }).catch(() => '') || '');
+        }
+        if (!bodyText && typeof page?.textContent === 'function') {
+            bodyText = String(await page.textContent('body').catch(() => '') || '');
+        }
         const currencyToken = '(?:US\\$|CL\\$|S\\$|E£|LE|₱|[$€£]|[A-Z]{3})';
         const patterns = [
             new RegExp(`(?:Due today|Total due|Pay today|今日应付总额|今日应付|应付总额)[^\\d₱$€£]{0,48}?(${currencyToken})\\s*([\\d,]+(?:\\.\\d{1,2})?)`, 'i'),
@@ -1536,6 +1542,8 @@ const PAYMENT_SUCCESS_PATTERNS = [
     /支付成功/i,
     /welcome to plus/i,
     /welcome to pro/i,
+    /welcome to team/i,
+    /team workspace/i,
     /已成功订阅/i
 ];
 
@@ -1954,8 +1962,8 @@ async function waitForPaymentResult(page, holderName) {
             };
         }
 
-        if (url.includes('redirect_status=succeeded')) {
-            console.log('[Stripe] ✅ URL 含 redirect_status=succeeded');
+        if (url.includes('redirect_status=succeeded') || /pay\.openai\.com.*(?:\/receipt|\/success|status=success)/i.test(url)) {
+            console.log('[Stripe] ✅ URL 确认支付成功');
             return buildPaymentSuccessResult(page, holderName);
         }
 
@@ -1969,7 +1977,13 @@ async function waitForPaymentResult(page, holderName) {
             return buildPaymentSuccessResult(page, holderName);
         }
 
-        const bodyText = String(await page.locator('body').innerText({ timeout: 3000 }).catch(() => '') || '');
+        let bodyText = '';
+        if (typeof page?.locator === 'function') {
+            bodyText = String(await page.locator('body').innerText({ timeout: 3000 }).catch(() => '') || '');
+        }
+        if (!bodyText && typeof page?.textContent === 'function') {
+            bodyText = String(await page.textContent('body').catch(() => '') || '');
+        }
 
         if (/无法验证.*浏览器|未能验证.*浏览器|我们无法验证您的浏览器|unable to verify (your )?browser|failed to verify (your )?browser/i.test(bodyText)) {
             console.log('[Stripe] ❌ 官方收银台拦截：我们无法验证您的浏览器');
