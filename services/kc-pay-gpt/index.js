@@ -592,12 +592,18 @@ async function run() {
 
         const ownerKey = process.env.JOB_KEY || `${cdkCode || 'job'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const checkoutMode = String(process.env.CHECKOUT_MODE || 'auto').toLowerCase();
-        const fastProtocolEnabled = true;
-        const canStartZeroBrowser = platform === 'chatgpt'
-            && !debugOnly
-            && checkoutMode !== 'ui'
+        const protocolOnlyMode = platform === 'chatgpt' && !debugOnly && checkoutMode !== 'ui';
+        const fastProtocolEnabled = protocolOnlyMode;
+        const canStartZeroBrowser = protocolOnlyMode
             && typeof verifyChatGptSessionProtocol === 'function'
             && typeof checkProxyAndRegionProtocol === 'function';
+
+        if (protocolOnlyMode && !canStartZeroBrowser) {
+            throw Object.assign(
+                new Error('纯协议模式缺少 Session/网络协议前置能力，已停止；不启动浏览器 [PROTOCOL_PREREQUISITE_MISSING]'),
+                { code: 'PROTOCOL_PREREQUISITE_MISSING' }
+            );
+        }
 
         let regionVerified = false;
         let loginInfo = null;
@@ -664,52 +670,9 @@ async function run() {
         if (canStartZeroBrowser) {
             console.log('[1] 准备自助充值流程...');
             console.log(`[1] 平台: ${platform.toUpperCase()}, 套餐类型: ${planType}, 地区: ${paymentRegion}, 币种: ${billingCurrency}`);
-            console.log('⚡ [零浏览器协议] 启动 0 浏览器纯协议极速流水线（跳过 Chromium 启动，仅在风控盾/3DS/拒卡时按需懒加载浏览器）...');
+            console.log('⚡ [零浏览器协议] 启动纯协议极速流水线（全程不启动 Chromium；风控盾、3DS、challenge 或未知结果均停止并转人工复核）...');
 
             const sessionRaw = CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
-            try {
-                const preCard = await store.reserveCard(ownerKey);
-                if (preCard) {
-                    const { pickBillingAddressForCheckout, resolveCardBillingProfile } = require('./tax-free-address');
-                    const lastUsedIdRaw = await store.getAppConfigValue('last_used_address_id', null);
-                    const poolAddress = await pickBillingAddressForCheckout(paymentRegion, lastUsedIdRaw ? Number(lastUsedIdRaw) : null);
-                    const preEmail = email || (typeof extractEmailFromSession === 'function' ? extractEmailFromSession(sessionRaw) : '') || '';
-                    const preAddress = resolveCardBillingProfile(preCard, poolAddress, { email: preEmail });
-                    if (preAddress && preEmail && !preAddress.email) {
-                        preAddress.email = preEmail;
-                    }
-                    if (preAddress?.isCardAvs) {
-                        console.log(`⚡ [协议预热] 优先匹配卡片专属 AVS 账单信息: ${preAddress.name || '持卡人'} · ${preAddress.line1}, ${preAddress.city}, ${preAddress.state} ${preAddress.postal_code}`);
-                    }
-                    const { prewarmStripeConfirmationToken } = require('./stripe-protocol-payment');
-                    const prewarmPromise = prewarmStripeConfirmationToken({
-                        card: preCard,
-                        billing: preAddress,
-                        proxy: proxyUrl,
-                        planType
-                    });
-                    prewarmedPayment = {
-                        card: preCard,
-                        address: preAddress,
-                        tokenPromise: prewarmPromise,
-                        ownerKey,
-                        consumed: false
-                    };
-                }
-            } catch (preErr) {
-                console.warn(`⚠️ [协议预热] 卡片与令牌前置预热跳过: ${preErr.message}`);
-            }
-
-            let prewarmedSentinelPromise = null;
-            try {
-                const { mintSentinelToken } = require('./sentinel/sentinel-client');
-                prewarmedSentinelPromise = mintSentinelToken({
-                    flow: 'chatgpt_checkout',
-                    proxy: proxyUrl,
-                    pageUrl: 'https://chatgpt.com/',
-                    timeoutMs: 15000
-                }).catch(() => null);
-            } catch (_) {}
 
             console.log('正在检查代理连通性...');
             const [proxyProtoRes, sessionProtoRes] = await Promise.all([
@@ -730,10 +693,6 @@ async function run() {
                 if (loginInfo.email && !email) {
                     console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
                 }
-                if (prewarmedPayment?.address && loginInfo.email && !prewarmedPayment.address.email) {
-                    prewarmedPayment.address.email = loginInfo.email;
-                }
-
                 try {
                     console.log('⚡ [极速通道] 正在尝试通过 0 浏览器纯协议闪电创建 Stripe 收银台...');
                     checkoutResult = await openApiCheckout(null, {
@@ -744,7 +703,6 @@ async function run() {
                         planNameOverride,
                         verifyPage: false,
                         proxy: proxyUrl,
-                        sentinelPromise: prewarmedSentinelPromise,
                         cookieHeader: loginInfo.cookieHeader,
                         deviceId: loginInfo.deviceId
                     });
@@ -752,25 +710,34 @@ async function run() {
                     console.log('⚡ [极速通道] ✅ 0 浏览器纯协议创建收银台会话成功，全程免浏览器开销！');
                 } catch (apiError) {
                     console.warn(`[Warn] 0 浏览器纯协议创建 Checkout 未果: ${apiError.message}`);
-                    if (!shouldFallbackToPricingCheckout(apiError, { checkoutMode, debugOnly: debugOnly && diagnosticMode === 'link' })) {
-                        if (isBillingCountryMismatchError(apiError.message)) {
-                            console.warn('[Warn] 检测到账单地区不匹配，已停止 UI 回退，避免在错误地区继续尝试支付');
-                        }
-                        throw apiError;
+                    if (isBillingCountryMismatchError(apiError.message)) {
+                        console.warn('[Warn] 检测到账单地区不匹配，纯协议模式已停止，不进入浏览器回退');
                     }
-                    console.log('🧭 [按需唤醒] 纯协议创建 Checkout 遇阻，平滑唤醒浏览器接管...');
+                    throw Object.assign(
+                        new Error(`纯协议创建 Checkout 未确认成功: ${apiError.message}`),
+                        { code: apiError.code || 'PROTOCOL_CHECKOUT_FAILED', cause: apiError }
+                    );
                 }
             } else {
                 const reason = !regionVerified
-                    ? '纯协议代理探针未响应，切换浏览器通道复核'
-                    : `纯协议 Session 鉴权触发风控盾或未确认 (${sessionProtoRes?.error || 'unknown'})，唤醒浏览器过盾`;
-                console.log(`⚠️ [零浏览器协议] ${reason}`);
+                    ? '纯协议代理探针未确认目标地区'
+                    : `纯协议 Session 鉴权未确认 (${sessionProtoRes?.error || 'unknown'})`;
+                throw Object.assign(
+                    new Error(`${reason}，已停止且不启动浏览器 [PROTOCOL_PREREQUISITE_FAILED]`),
+                    { code: 'PROTOCOL_PREREQUISITE_FAILED' }
+                );
             }
         }
 
-        // 若未启用 0 浏览器模式，或 0 浏览器前置环节需回退浏览器，则唤醒浏览器并执行标准预检与登录
+        // 只有显式 CHECKOUT_MODE=ui 或非 ChatGPT 平台才允许进入浏览器流程。
         if (!checkoutOpened) {
-            await ensureBrowserReady(canStartZeroBrowser ? '纯协议前置阶段需浏览器接管，正在启动 Chromium...' : '');
+            if (protocolOnlyMode) {
+                throw Object.assign(
+                    new Error('纯协议 Checkout 会话未建立，已停止且不启动浏览器 [PROTOCOL_CHECKOUT_FAILED]'),
+                    { code: 'PROTOCOL_CHECKOUT_FAILED' }
+                );
+            }
+            await ensureBrowserReady('');
             await runBrowserProxyPreflight();
 
             if (!canStartZeroBrowser) {
@@ -785,16 +752,12 @@ async function run() {
                     try {
                         const preCard = await store.reserveCard(ownerKey);
                         if (preCard) {
-                            const { pickBillingAddressForCheckout, resolveCardBillingProfile } = require('./tax-free-address');
+                            const { pickBillingAddressForCheckout } = require('./tax-free-address');
                             const lastUsedIdRaw = await store.getAppConfigValue('last_used_address_id', null);
-                            const poolAddress = await pickBillingAddressForCheckout(paymentRegion, lastUsedIdRaw ? Number(lastUsedIdRaw) : null);
+                            const preAddress = await pickBillingAddressForCheckout(paymentRegion, lastUsedIdRaw ? Number(lastUsedIdRaw) : null);
                             const preEmail = email || (typeof extractEmailFromSession === 'function' ? extractEmailFromSession(CONFIG.chatgptSessionJson || CONFIG.chatgptToken) : '') || '';
-                            const preAddress = resolveCardBillingProfile(preCard, poolAddress, { email: preEmail });
                             if (preAddress && preEmail && !preAddress.email) {
                                 preAddress.email = preEmail;
-                            }
-                            if (preAddress?.isCardAvs) {
-                                console.log(`⚡ [协议预热] 优先匹配卡片专属 AVS 账单信息: ${preAddress.name || '持卡人'} · ${preAddress.line1}, ${preAddress.city}, ${preAddress.state} ${preAddress.postal_code}`);
                             }
                             const { prewarmStripeConfirmationToken } = require('./stripe-protocol-payment');
                             const prewarmPromise = prewarmStripeConfirmationToken({
@@ -859,18 +822,6 @@ async function run() {
                 const cookieVerified = Boolean(installResult?.cookieVerified);
                 const hasSessionToken = Boolean(installResult?.hasSessionToken);
 
-                // ⚡ [并发优化] 提前在后台异步签发 Checkout API 专用的 Sentinel PoW 令牌，立减 4~5 秒
-                let prewarmedSentinelPromise = null;
-                try {
-                    const { mintSentinelToken } = require('./sentinel/sentinel-client');
-                    prewarmedSentinelPromise = mintSentinelToken({
-                        flow: 'chatgpt_checkout',
-                        proxy: proxyUrl,
-                        pageUrl: 'https://chatgpt.com/',
-                        timeoutMs: 15000
-                    }).catch(() => null);
-                } catch (_) {}
-
                 loginInfo = await bootstrapChatGptSession(page, sessionRaw, {
                     sessionData,
                     cookieVerified,
@@ -898,15 +849,20 @@ async function run() {
                             planNameOverride,
                             verifyPage: Boolean(debugOnly && diagnosticMode === 'checkout'),
                             proxy: proxyUrl,
-                            sentinelPromise: prewarmedSentinelPromise
                         });
                         checkoutOpened = true;
                         console.log('⚡ [极速通道] ✅ API 直达收银台成功，已跳过 UI 定价页！');
                     } catch (apiError) {
                         console.warn(`[Warn] API Checkout 尝试未果: ${apiError.message}`);
-                        if (!shouldFallbackToPricingCheckout(apiError, { checkoutMode, debugOnly: debugOnly && diagnosticMode === 'link' })) {
+                        if (protocolOnlyMode || !shouldFallbackToPricingCheckout(apiError, { checkoutMode, debugOnly: debugOnly && diagnosticMode === 'link' })) {
                             if (isBillingCountryMismatchError(apiError.message)) {
                                 console.warn('[Warn] 检测到账单地区不匹配，已停止 UI 回退，避免在错误地区继续尝试支付');
+                            }
+                            if (protocolOnlyMode) {
+                                throw Object.assign(
+                                    new Error(`纯协议 API Checkout 未确认成功: ${apiError.message}`),
+                                    { code: apiError.code || 'PROTOCOL_CHECKOUT_FAILED', cause: apiError }
+                                );
                             }
                             throw apiError;
                         }
@@ -915,6 +871,12 @@ async function run() {
                 }
 
                 if (!checkoutOpened) {
+                    if (protocolOnlyMode) {
+                        throw Object.assign(
+                            new Error('纯协议 API Checkout 未建立会话，已停止且不进入定价页 UI [PROTOCOL_CHECKOUT_FAILED]'),
+                            { code: 'PROTOCOL_CHECKOUT_FAILED' }
+                        );
+                    }
                     if (debugOnly && diagnosticMode === 'link') {
                         throw new Error('API Checkout 失败，调试模式不启用 UI 定价页');
                     }
@@ -974,21 +936,7 @@ async function run() {
 
         // --- Phase 4: Execute Payment with Card Pool Retry ---
         console.log("[步骤] 正在使用 Stripe 信用卡卡池支付流程（单次尝试）...");
-        let fallbackSentinelPromise = null;
-        if (platform === 'chatgpt' && fastProtocolEnabled) {
-            try {
-                const { mintSentinelToken } = require('./sentinel/sentinel-client');
-                fallbackSentinelPromise = mintSentinelToken({
-                    flow: 'chatgpt_checkout',
-                    proxy: proxyUrl,
-                    pageUrl: 'https://chatgpt.com/',
-                    deviceId: loginInfo?.deviceId || undefined,
-                    timeoutMs: 15000
-                }).catch(() => null);
-            } catch (_) {}
-        }
-
-        const paymentResult = await executePaymentWithRetry(page, {
+        const paymentResult = await executePaymentWithRetry(protocolOnlyMode ? null : page, {
             platform,
             planType,
             paymentRegion,
@@ -1004,12 +952,11 @@ async function run() {
             grokAccount: platform === 'grok' ? loginInfo : null,
             grokCheckout: platform === 'grok' ? checkoutResult : null,
             ownerKey,
-            prewarmedPayment,
-            ensureBrowserPage: platform === 'chatgpt' ? ensureChatGptBrowserPage : undefined,
-            refreshCheckoutSession: async () => {
+            protocolOnly: protocolOnlyMode,
+            prewarmedPayment: protocolOnlyMode ? null : prewarmedPayment,
+            ensureBrowserPage: protocolOnlyMode || platform !== 'chatgpt' ? undefined : ensureChatGptBrowserPage,
+            refreshCheckoutSession: protocolOnlyMode ? undefined : async () => {
                 if (platform === 'chatgpt' && (loginInfo?.accessToken || loginInfo?.session?.accessToken || CONFIG.chatgptToken)) {
-                    const consumedSentinel = fallbackSentinelPromise;
-                    fallbackSentinelPromise = null;
                     return await openApiCheckout(loginInfo?.cookieHeader ? null : page, {
                         accessToken: loginInfo?.accessToken || loginInfo?.session?.accessToken || CONFIG.chatgptToken,
                         planType,
@@ -1018,7 +965,6 @@ async function run() {
                         planNameOverride,
                         verifyPage: false,
                         proxy: proxyUrl,
-                        sentinelPromise: consumedSentinel,
                         cookieHeader: loginInfo?.cookieHeader || '',
                         deviceId: loginInfo?.deviceId || ''
                     });
@@ -1122,7 +1068,7 @@ async function run() {
         // 用 exitCode 而非 process.exit()，确保下方 finally 能完整执行（录像需 context 关闭后才落盘）
         process.exitCode = 1;
     } finally {
-        if (prewarmedPayment?.card?.id && !prewarmedPayment.consumed) {
+        if (!protocolOnlyMode && prewarmedPayment?.card?.id && !prewarmedPayment.consumed) {
             try {
                 await store.releaseCard(prewarmedPayment.card.id);
                 console.log(`[协议预热] 任务未进入支付流程，已安全释放预留卡片 #${prewarmedPayment.card.id}`);

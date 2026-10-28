@@ -13,15 +13,7 @@
 const store = require('./mysql-store');
 const { completeStripeCardPayment, readCheckoutDueAmount, waitForCheckoutDueAmount, estimateTaxFreeAmount } = require('./stripe-payment');
 const { ensureChatGptProUsageTier } = require('./pricing-checkout');
-const taxFreeAddress = require('./tax-free-address');
-const pickBillingAddressForCheckout = taxFreeAddress.pickBillingAddressForCheckout;
-const markAddressBound = taxFreeAddress.markAddressBound;
-const resolveCardBillingProfile = typeof taxFreeAddress.resolveCardBillingProfile === 'function'
-    ? taxFreeAddress.resolveCardBillingProfile
-    : (card, fallback) => (fallback || card);
-const isUsTaxFreeState = typeof taxFreeAddress.isUsTaxFreeState === 'function'
-    ? taxFreeAddress.isUsTaxFreeState
-    : (state) => /oregon|or\b|alaska|ak\b|delaware|de\b|montana|mt\b|new hampshire|nh\b/i.test(String(state || ''));
+const { pickBillingAddressForCheckout, markAddressBound } = require('./tax-free-address');
 const { getRegionConfig } = require('./region-config');
 const { classifyPaymentResult, classifyOpenAiCardMethodFailure } = require('./task-safety');
 const { validateCardNumber } = require('./card-validator');
@@ -43,6 +35,26 @@ const PAYMENT_GUARD_ERROR_CODES = new Set([
     'BILLING_TAX_NOT_REMOVED',
     'PRICING_REGION_UNCONFIRMED'
 ]);
+
+function normalizePaymentCorrelationValue(value) {
+    const normalized = String(value || '').trim();
+    return normalized || null;
+}
+
+/**
+ * Keep one protocol attempt's Stripe identifiers together across persistence
+ * and the final task result. The raw confirmation token is intentionally never
+ * copied here; only the protocol module's non-reversible hash is retained.
+ */
+function getPaymentCorrelation(paymentResult, fallbackSessionId = '') {
+    return {
+        protocol_attempt_id: normalizePaymentCorrelationValue(paymentResult?.attemptId),
+        stripe_session_id: normalizePaymentCorrelationValue(paymentResult?.sessionId || fallbackSessionId),
+        stripe_payment_intent_id: normalizePaymentCorrelationValue(paymentResult?.paymentIntentId),
+        stripe_payment_method_id: normalizePaymentCorrelationValue(paymentResult?.paymentMethodId),
+        stripe_confirmation_token_hash: normalizePaymentCorrelationValue(paymentResult?.confirmationTokenHash)
+    };
+}
 
 function getExpectedPlanPriceRule(platform, planType, currency) {
     const plat = String(platform || 'chatgpt').toLowerCase();
@@ -125,6 +137,7 @@ async function resolveBilledAmountForRecord(page, paymentResult, preTaxAmount, c
  */
 async function executePaymentWithRetry(page, options) {
     let { platform = 'chatgpt', planType, cdkCode, email, onProgress, stripeSessionId, onPaymentState } = options || {};
+    const protocolOnly = options?.protocolOnly === true;
     let lastPersistedPaymentState = 'not_started';
     const persistPaymentState = async (state, message = '') => {
         if (typeof onPaymentState === 'function') {
@@ -157,7 +170,7 @@ async function executePaymentWithRetry(page, options) {
     const grokBundle = platform === 'grok' && isGrokBundlePlan(planType);
     let address;
     try {
-        if (options?.prewarmedPayment?.address) {
+        if (!protocolOnly && options?.prewarmedPayment?.address) {
             address = options.prewarmedPayment.address;
         } else {
             if (grokBundle) assertNativeBillingRegion(region, currency);
@@ -198,9 +211,21 @@ async function executePaymentWithRetry(page, options) {
     const canTryProtocol = (platform === 'chatgpt' || !platform) && Boolean(stripeSessionId && (isHostedSession || options?.accessToken));
     const requiresCurrencyPreflight = (platform === 'chatgpt' || !options?.platform) && !canTryProtocol;
 
+    if (protocolOnly && !canTryProtocol) {
+        await persistPaymentState('not_started');
+        return {
+            success: false,
+            error: '纯协议支付缺少可确认的 Checkout session 或 AccessToken，已停止支付 [PROTOCOL_PREREQUISITE_MISSING]',
+            code: 'PROTOCOL_PREREQUISITE_MISSING',
+            manualIntervention: true,
+            paymentState: 'not_started',
+            screenshots: []
+        };
+    }
+
     if (canTryProtocol) {
         billedCurrency = currency;
-        const isTaxFree = (address?.country === 'US' && (isUsTaxFreeState(address?.state) || /oregon|or\b/i.test(address?.state || '')));
+        const isTaxFree = (address?.country === 'US' && /oregon|or\b/i.test(address?.state || ''));
         const expectedRule = getExpectedPlanPriceRule(platform, planType, billedCurrency);
         if (isTaxFree && expectedRule?.netAmount !== undefined) {
             billedAmount = expectedRule.netAmount;
@@ -308,22 +333,18 @@ async function executePaymentWithRetry(page, options) {
 
     progress(`开始支付（最多尝试 ${MAX_CARD_ATTEMPTS} 张卡）...`);
     let uiFallbackActive = false;
+    let lastPaymentCorrelation = getPaymentCorrelation(null, stripeSessionId);
 
     for (let cardAttempt = 1; cardAttempt <= MAX_CARD_ATTEMPTS; cardAttempt += 1) {
         let card = null;
         let prewarmedTokens = null;
-        let cardBilling = null;
 
-        if (cardAttempt === 1 && options?.prewarmedPayment?.card) {
+        if (!protocolOnly && cardAttempt === 1 && options?.prewarmedPayment?.card) {
             card = options.prewarmedPayment.card;
             options.prewarmedPayment.consumed = true;
             prewarmedTokens = options.prewarmedPayment.tokenPromise;
-            cardBilling = options.prewarmedPayment.address || resolveCardBillingProfile(card, address, { email });
         } else {
             card = await store.reserveCard(ownerKey);
-            if (card) {
-                cardBilling = resolveCardBillingProfile(card, address, { email });
-            }
         }
 
         if (!card) {
@@ -336,12 +357,12 @@ async function executePaymentWithRetry(page, options) {
                     plan_type: planType || 'plus',
                     cdk_code: cdkCode,
                     email,
-                    stripe_session_id: stripeSessionId || null,
+                    ...getPaymentCorrelation(null, stripeSessionId),
                     status: 'failed',
                     error_code: 'card_pool_exhausted',
                     error_message: '卡池资产枯竭'
                 });
-                return { success: false, error: '卡池资产枯竭' };
+                return { success: false, error: '卡池资产枯竭', ...getPaymentCorrelation(null, stripeSessionId) };
             }
             break;
         }
@@ -362,17 +383,9 @@ async function executePaymentWithRetry(page, options) {
             number: card.card_number,
             expiry: card.card_expiry,
             cvc: card.card_cvc,
-            holder: card.payment_holder_name || card.card_holder || card.holder,
-            payment_holder_name: card.payment_holder_name || card.card_holder || card.holder,
-            payment_address_line1: card.payment_address_line1 || '',
-            payment_address_city: card.payment_address_city || '',
-            payment_address_state: card.payment_address_state || '',
-            payment_address_postal: card.payment_address_postal || ''
+            holder: card.card_holder
         };
         progress(`已预留卡片 #${cardAttempt}: ...${cardLast4}`);
-        if (cardBilling?.isCardAvs) {
-            progress(`⚡ [AVS账单] 卡片 ...${cardLast4} 优先匹配专属 AVS 账单信息: ${cardBilling.name || '持卡人'} · ${cardBilling.line1}, ${cardBilling.city}, ${cardBilling.state} ${cardBilling.postal_code}`);
-        }
 
         let cardHandled = false;
         let attemptStarted = false;
@@ -383,29 +396,31 @@ async function executePaymentWithRetry(page, options) {
             try {
                 // 2.0 极速协议通道：默认完全固定为纯协议先行，确切拒卡执行 Fail-Fast 毫秒级轮换卡片
                 const fastProtocolEnv = String(process.env.FAST_PROTOCOL_ENABLED ?? '').trim().toLowerCase();
-                const isFastProtocolEnabled = (options.fastProtocol !== false) && (fastProtocolEnv !== 'false' && fastProtocolEnv !== '0');
+                const isFastProtocolEnabled = protocolOnly
+                    || ((options.fastProtocol !== false) && (fastProtocolEnv !== 'false' && fastProtocolEnv !== '0'));
                 // 若首张卡回退唤醒了浏览器 UI 且仍被拒，后续换卡直接在已打开的收银台 UI 内填卡重试，避免重复创建 oaics_ 会话触发 429 限流
                 const canTryProtocol = isFastProtocolEnabled && !uiFallbackActive && (platform === 'chatgpt' || !platform) && stripeSessionId && (isHostedSession || options?.accessToken);
                 let protoRes = null;
-                if (!isFastProtocolEnabled && cardAttempt === 1 && (platform === 'chatgpt' || !platform)) {
+                if (!protocolOnly && !isFastProtocolEnabled && cardAttempt === 1 && (platform === 'chatgpt' || !platform)) {
                     progress('⚡ [极速协议] 协议直充已关闭，直接转入收银台 UI 进行支付...');
                 }
                 if (canTryProtocol) {
                     try {
                         const { executeStripeProtocolPayment } = require('./stripe-protocol-payment');
                         protoRes = await executeStripeProtocolPayment({
-                            page,
+                            page: protocolOnly ? null : page,
                             card: cardInfo,
-                            billing: { ...(cardBilling || address), email: (cardBilling || address)?.email || email || '' },
+                            billing: { ...address, email: address?.email || email || '' },
                             sessionId: stripeSessionId,
                             accessToken: options.accessToken,
                             currency,
                             planType,
                             proxy: options.proxy || '',
-                            prewarmedTokens,
+                            prewarmedTokens: protocolOnly ? null : prewarmedTokens,
                             cookieHeader: options.cookieHeader || '',
                             deviceId: options.deviceId || '',
                             userAgent: options.userAgent || '',
+                            protocolOnly,
                             onPaymentAttemptStarted: async () => {
                                 attemptStarted = true;
                                 await persistPaymentState('started', '正在提交银行卡支付 (Stripe 纯协议直充)');
@@ -443,17 +458,52 @@ async function executePaymentWithRetry(page, options) {
                                     paymentResult.screenshot = filePath;
                                 } catch (_) {}
                             }
+                        } else if (protocolOnly) {
+                            paymentResult = {
+                                ...(protoRes || {}),
+                                success: false,
+                                code: protoRes?.code || 'PAYMENT_RESULT_UNKNOWN',
+                                error: protoRes?.error || '纯协议支付结果未确认，已停止自动换卡',
+                                submitted: Boolean(protoRes?.submitted || attemptStarted),
+                                submissionAttempted: Boolean(protoRes?.submissionAttempted || protoRes?.submitted || attemptStarted),
+                                manualIntervention: true,
+                                protocolDirect: true
+                            };
                         } else if (protoRes.fallbackToUi) {
                             attemptStarted = false;
                             progress(`[协议支付] ${protoRes.error || '银行卡需要 3DS 验证，平滑切入收银台 UI'}...`);
                         }
                     } catch (protoErr) {
-                        attemptStarted = false;
-                        console.warn('⚠️ [协议支付] 协议尝试异常，平滑转入收银台 UI:', protoErr.message);
+                        console.warn(`⚠️ [协议支付] 协议尝试异常${protocolOnly ? '，停止并转人工复核' : '，平滑转入收银台 UI'}: ${protoErr.message}`);
+                        if (protocolOnly) {
+                            paymentResult = {
+                                success: false,
+                                code: 'PAYMENT_RESULT_UNKNOWN',
+                                error: `纯协议支付异常，结果未确认: ${protoErr.message}`,
+                                submitted: attemptStarted,
+                                submissionAttempted: attemptStarted,
+                                manualIntervention: true,
+                                protocolDirect: true
+                            };
+                        } else {
+                            attemptStarted = false;
+                        }
                     }
                 }
 
-                if (!paymentResult) {
+                if (!paymentResult && protocolOnly) {
+                    paymentResult = {
+                        success: false,
+                        code: 'PAYMENT_RESULT_UNKNOWN',
+                        error: '纯协议支付未返回结果，已停止自动换卡并转人工复核',
+                        submitted: attemptStarted,
+                        submissionAttempted: attemptStarted,
+                        manualIntervention: true,
+                        protocolDirect: true
+                    };
+                }
+
+                if (!paymentResult && !protocolOnly) {
                     let checkoutUrl = options.checkoutUrl;
                     const needsCleanSession = Boolean(
                         canTryProtocol && !isHostedSession && (protoRes?.declined || protoRes?.fallbackToUi || !protoRes)
@@ -536,8 +586,8 @@ async function executePaymentWithRetry(page, options) {
                         }
 
                         uiFallbackActive = true;
-                        paymentResult = await completeStripeCardPayment(page, cardInfo, cardBilling || address, {
-                            cardAttempt, holderName: cardBilling?.name || cardInfo.holder || billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
+                        paymentResult = await completeStripeCardPayment(page, cardInfo, address, {
+                            cardAttempt, holderName: cardInfo.holder || address.name || billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
                             paymentRegion: region,
                             paymentCurrency: currency,
                             grokCheckout: options.grokCheckout,
@@ -556,6 +606,8 @@ async function executePaymentWithRetry(page, options) {
                 billedAmount = paymentResult.dueAmount;
                 billedCurrency = paymentResult.dueCurrency || billedCurrency;
             }
+            const paymentCorrelation = getPaymentCorrelation(paymentResult, stripeSessionId);
+            lastPaymentCorrelation = paymentCorrelation;
             // Recognize method/field guard errors before broad decline keywords
             // such as "不完整". Payment activity is still classified separately below.
             const cardMethodFailure = classifyOpenAiCardMethodFailure(paymentResult.error);
@@ -599,11 +651,10 @@ async function executePaymentWithRetry(page, options) {
                 billedCurrency = resolved.currency;
                 progress(`实际扣款金额（免税后）: ${billedCurrency} ${billedAmount}`);
 
-                const holderName = paymentResult.holderName || cardBilling?.name || card.card_holder || billingHolderName || '';
-                const finalAddress = cardBilling || address;
-                await store.bindCardPaymentProfile(card.id, { holderName, address: finalAddress });
-                if (finalAddress.id) {
-                    await markAddressBound(finalAddress.id, card.id);
+                const holderName = paymentResult.holderName || card.card_holder || billingHolderName || '';
+                await store.bindCardPaymentProfile(card.id, { holderName, address });
+                if (address.id) {
+                    await markAddressBound(address.id, card.id);
                 }
                 await store.recordCardUsage(card.id);
                 await store.releaseCard(card.id);
@@ -617,15 +668,22 @@ async function executePaymentWithRetry(page, options) {
                     platform: options.platform,
                     cdk_code: cdkCode,
                     email,
-                    stripe_session_id: stripeSessionId || null,
+                    ...paymentCorrelation,
                     status: 'success'
                 });
-                progress(`支付成功！卡片: ...${cardLast4}，姓名: ${holderName}，地址: ${finalAddress.line1}, ${finalAddress.city}`);
+                progress(`支付成功！卡片: ...${cardLast4}，姓名: ${holderName}，地址: ${address.line1}, ${address.city}`);
                 if (paymentResult.screenshot) {
                     screenshots.push(paymentResult.screenshot);
                     progress(`SUCCESS_SCREENSHOT: ${paymentResult.screenshot}`);
                 }
-                return { success: true, cardLast4, holderName, screenshots, subscriptionId: paymentResult.subscriptionId || null };
+                return {
+                    success: true,
+                    cardLast4,
+                    holderName,
+                    screenshots,
+                    subscriptionId: paymentResult.subscriptionId || null,
+                    ...paymentCorrelation
+                };
             }
 
             lastError = paymentResult.error || '支付失败';
@@ -649,7 +707,7 @@ async function executePaymentWithRetry(page, options) {
                     platform: options.platform,
                     cdk_code: cdkCode,
                     email,
-                    stripe_session_id: stripeSessionId || null,
+                    ...paymentCorrelation,
                     status: 'pending',
                     error_code: 'payment_result_unknown',
                     error_message: '提交后未能确认支付结果；禁止自动重试，需人工核对 Stripe 账单'
@@ -661,7 +719,8 @@ async function executePaymentWithRetry(page, options) {
                     cardLast4,
                     manualIntervention: true,
                     paymentState,
-                    screenshots
+                    screenshots,
+                    ...paymentCorrelation
                 };
             }
 
@@ -685,7 +744,7 @@ async function executePaymentWithRetry(page, options) {
                     platform: options.platform,
                     cdk_code: cdkCode,
                     email,
-                    stripe_session_id: stripeSessionId || null,
+                    ...paymentCorrelation,
                     status: 'failed',
                     error_code: 'card_declined',
                     error_message: lastError
@@ -707,7 +766,8 @@ async function executePaymentWithRetry(page, options) {
                     manualIntervention: true,
                     screenshots,
                     cardsDeclined: declinedLast4s.length,
-                    paymentState
+                    paymentState,
+                    ...paymentCorrelation
                 };
             }
 
@@ -724,7 +784,7 @@ async function executePaymentWithRetry(page, options) {
                 platform: options.platform,
                 cdk_code: cdkCode,
                 email,
-                stripe_session_id: stripeSessionId || null,
+                ...paymentCorrelation,
                 status: 'failed',
                 error_code: isPaymentGuardFailure
                     ? paymentResultCode
@@ -748,7 +808,8 @@ async function executePaymentWithRetry(page, options) {
                 cardLast4,
                 manualIntervention: true,
                 paymentState,
-                screenshots
+                screenshots,
+                ...paymentCorrelation
             };
         } finally {
             if (card?.id && !cardHandled) {
@@ -766,7 +827,8 @@ async function executePaymentWithRetry(page, options) {
         cardLast4: lastCardLast4,
         manualIntervention: true,
         screenshots,
-        cardsDeclined: declinedLast4s.length
+        cardsDeclined: declinedLast4s.length,
+        ...lastPaymentCorrelation
     };
 }
 

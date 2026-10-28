@@ -57,13 +57,7 @@ function harness({ started = true, failRecord = false, failQuarantine = false, t
     const waitForCheckoutDueAmount = vi.fn(readDue);
     const dependencies = {
         './mysql-store': store, './stripe-payment': { completeStripeCardPayment, readCheckoutDueAmount: readDue, waitForCheckoutDueAmount },
-        './pricing-checkout': { ensureChatGptProUsageTier: async () => {} },
-        './tax-free-address': {
-            pickBillingAddressForCheckout,
-            markAddressBound,
-            resolveCardBillingProfile: (c, a) => a || c,
-            isUsTaxFreeState: (s) => /oregon|or\b/i.test(s || '')
-        },
+        './pricing-checkout': { ensureChatGptProUsageTier: async () => {} }, './tax-free-address': { pickBillingAddressForCheckout, markAddressBound },
         './region-config': { getRegionConfig: () => ({ currency }) }, './task-safety': { classifyPaymentResult, classifyOpenAiCardMethodFailure },
         './card-validator': { validateCardNumber: () => ({ valid: true }) }, './public/grok-plan-catalog': catalog,
         './grok-checkout-state': { grokError }, './grok-billing-address': { assertNativeBillingRegion, normalizeNativeBillingAddress }

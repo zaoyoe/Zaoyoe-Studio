@@ -94,6 +94,7 @@ describe('Payment Protocol Decline UI Fallback', () => {
 
         return {
             mockPage,
+            store,
             executeStripeProtocolPayment,
             completeStripeCardPayment,
             onProgress,
@@ -134,6 +135,44 @@ describe('Payment Protocol Decline UI Fallback', () => {
         expect(ensureBrowserPage).not.toHaveBeenCalled();
         expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
         expect(result.success).toBe(true);
+    });
+
+    it('persists one protocol attempt correlation without exposing the raw confirmation token', async () => {
+        const rawConfirmationToken = 'ctoken_raw_must_never_leave_protocol_scope';
+        const fixture = createFixture({
+            protoRes: {
+                success: true,
+                amount: 982.14,
+                currency: 'PHP',
+                attemptId: 'attempt_20261028_0001',
+                sessionId: 'cs_live_protocol_session_0001',
+                paymentIntentId: 'pi_protocol_0001',
+                paymentMethodId: 'pm_protocol_0001',
+                confirmationTokenHash: 'a'.repeat(64),
+                confirmationToken: rawConfirmationToken
+            }
+        });
+
+        const result = await fixture.run({}, null);
+        const record = fixture.store.createBillingRecord.mock.calls[0]?.[0];
+
+        expect(fixture.store.createBillingRecord).toHaveBeenCalledTimes(1);
+        expect(record).toMatchObject({
+            protocol_attempt_id: 'attempt_20261028_0001',
+            stripe_session_id: 'cs_live_protocol_session_0001',
+            stripe_payment_intent_id: 'pi_protocol_0001',
+            stripe_payment_method_id: 'pm_protocol_0001',
+            stripe_confirmation_token_hash: 'a'.repeat(64)
+        });
+        expect(result).toMatchObject({
+            protocol_attempt_id: 'attempt_20261028_0001',
+            stripe_session_id: 'cs_live_protocol_session_0001',
+            stripe_payment_intent_id: 'pi_protocol_0001',
+            stripe_payment_method_id: 'pm_protocol_0001',
+            stripe_confirmation_token_hash: 'a'.repeat(64)
+        });
+        expect(JSON.stringify(record)).not.toContain(rawConfirmationToken);
+        expect(JSON.stringify(result)).not.toContain(rawConfirmationToken);
     });
 
     it('fails fast on card decline without waking up Chromium or falling back to UI', async () => {

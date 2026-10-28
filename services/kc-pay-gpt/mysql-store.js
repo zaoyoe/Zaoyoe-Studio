@@ -490,6 +490,10 @@ async function ensureLegacyColumns() {
     await ensureColumn('billing_records', 'platform', "VARCHAR(32) NOT NULL DEFAULT 'chatgpt'");
     await ensureColumn('billing_records', 'plan_type', "VARCHAR(64) NOT NULL DEFAULT 'plus'");
     await ensureVarcharMinLength('billing_records', 'plan_type', 64, "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+    await ensureColumn('billing_records', 'protocol_attempt_id', 'VARCHAR(64) NULL');
+    await ensureColumn('billing_records', 'stripe_payment_intent_id', 'VARCHAR(128) NULL');
+    await ensureColumn('billing_records', 'stripe_payment_method_id', 'VARCHAR(128) NULL');
+    await ensureColumn('billing_records', 'stripe_confirmation_token_hash', 'VARCHAR(64) NULL');
     await ensureColumn('tax_free_addresses', 'is_bound', 'TINYINT(1) NOT NULL DEFAULT 0 COMMENT \'是否已绑定成功支付\'');
     await ensureColumn('tax_free_addresses', 'bound_card_id', 'BIGINT UNSIGNED NULL DEFAULT NULL COMMENT \'绑定的卡片ID\'');
     await ensureColumn('tax_free_addresses', 'bound_at', 'TIMESTAMP NULL DEFAULT NULL COMMENT \'绑定时间\'');
@@ -2155,9 +2159,7 @@ async function getRuntimeAssets() {
              LIMIT 1`
         ),
         runQuery(
-            `SELECT card_number, card_expiry, card_cvc, card_holder,
-                    payment_holder_name, payment_address_line1, payment_address_city,
-                    payment_address_state, payment_address_postal, payment_address_id, usage_count
+            `SELECT card_number, card_expiry, card_cvc, usage_count
              FROM card_assets
              WHERE is_active = 1
                AND status = '正常'
@@ -2174,19 +2176,7 @@ async function getRuntimeAssets() {
             ? { phone: phoneRow.phone, key: phoneRow.sms_api_key, usage_count: Number(phoneRow.usage_count || 0) }
             : { phone: '未配置', key: '', usage_count: 0 },
         card: cardRow
-            ? {
-                number: cardRow.card_number,
-                expiry: cardRow.card_expiry,
-                cvc: cardRow.card_cvc,
-                holder: cardRow.payment_holder_name || cardRow.card_holder || '',
-                payment_holder_name: cardRow.payment_holder_name || cardRow.card_holder || '',
-                payment_address_line1: cardRow.payment_address_line1 || '',
-                payment_address_city: cardRow.payment_address_city || '',
-                payment_address_state: cardRow.payment_address_state || '',
-                payment_address_postal: cardRow.payment_address_postal || '',
-                payment_address_id: cardRow.payment_address_id || null,
-                usage_count: Number(cardRow.usage_count || 0)
-            }
+            ? { number: cardRow.card_number, expiry: cardRow.card_expiry, cvc: cardRow.card_cvc, usage_count: Number(cardRow.usage_count || 0) }
             : { number: '', expiry: '', cvc: '', usage_count: 0 },
         proxy
     };
@@ -3293,9 +3283,7 @@ async function hasAvailableCard() {
 async function reserveCard(ownerKey) {
     return withTransaction(async (connection) => {
         const [rows] = await connection.query(
-            `SELECT id, card_number, card_expiry, card_cvc, card_holder,
-                    payment_holder_name, payment_address_line1, payment_address_city,
-                    payment_address_state, payment_address_postal, payment_address_id, usage_count
+            `SELECT id, card_number, card_expiry, card_cvc, card_holder, usage_count
              FROM card_assets
              WHERE is_active = 1
                AND in_use = 0
@@ -3326,13 +3314,6 @@ async function reserveCard(ownerKey) {
             card_expiry: row.card_expiry,
             card_cvc: row.card_cvc,
             card_holder: row.card_holder,
-            holder: row.payment_holder_name || row.card_holder || '',
-            payment_holder_name: row.payment_holder_name || row.card_holder || '',
-            payment_address_line1: row.payment_address_line1 || '',
-            payment_address_city: row.payment_address_city || '',
-            payment_address_state: row.payment_address_state || '',
-            payment_address_postal: row.payment_address_postal || '',
-            payment_address_id: row.payment_address_id || null,
             usage_count: Number(row.usage_count || 0)
         };
     });
@@ -3745,8 +3726,9 @@ async function setPaymentRegion(regionCode) {
 async function createBillingRecord(data) {
     const result = await runExecute(
         `INSERT INTO billing_records
-            (payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id, cdk_code, email, status, error_code, error_message)
-         VALUES (COALESCE(?, NOW()), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id, protocol_attempt_id,
+             stripe_payment_intent_id, stripe_payment_method_id, stripe_confirmation_token_hash, cdk_code, email, status, error_code, error_message)
+         VALUES (COALESCE(?, NOW()), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             data.payment_time || null,
             data.card_number ? String(data.card_number) : null,
@@ -3755,6 +3737,10 @@ async function createBillingRecord(data) {
             String(data.currency || 'USD'),
             String(data.plan_type || 'plus'),
             data.stripe_session_id || null,
+            data.protocol_attempt_id || null,
+            data.stripe_payment_intent_id || null,
+            data.stripe_payment_method_id || null,
+            data.stripe_confirmation_token_hash || null,
             data.cdk_code || null,
             data.email || null,
             String(data.status || 'success'),
@@ -3810,7 +3796,9 @@ async function listBillingRecords(filters = {}, page = 1, pageSize = 20) {
 
     const offset = (page - 1) * pageSize;
     const records = await runQuery(
-        `SELECT id, payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id, cdk_code, email, status, error_code, error_message, created_at
+        `SELECT id, payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id,
+                protocol_attempt_id, stripe_payment_intent_id, stripe_payment_method_id, stripe_confirmation_token_hash,
+                cdk_code, email, status, error_code, error_message, created_at
          FROM billing_records
          ${whereClause}
          ORDER BY payment_time DESC
@@ -3854,7 +3842,9 @@ async function exportBillingRecordsCSV(filters = {}) {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const rows = await runQuery(
-        `SELECT payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id, cdk_code, email, status, error_code, error_message
+        `SELECT payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id,
+                protocol_attempt_id, stripe_payment_intent_id, stripe_payment_method_id, stripe_confirmation_token_hash,
+                cdk_code, email, status, error_code, error_message
          FROM billing_records
          ${whereClause}
          ORDER BY payment_time DESC
@@ -3863,7 +3853,7 @@ async function exportBillingRecordsCSV(filters = {}) {
     );
 
     const BOM = '\uFEFF';
-    const headers = '支付时间,卡号,卡片后四位,金额,币种,套餐类型,Stripe Session ID,CDK码,邮箱,状态,错误码,错误信息';
+    const headers = '支付时间,卡号,卡片后四位,金额,币种,套餐类型,Stripe Session ID,协议 Attempt ID,PaymentIntent ID,PaymentMethod ID,ConfirmationToken 哈希,CDK码,邮箱,状态,错误码,错误信息';
 
     const csvRows = rows.map((row) => {
         const paymentTime = row.payment_time
@@ -3877,6 +3867,10 @@ async function exportBillingRecordsCSV(filters = {}) {
             row.currency || '',
             row.plan_type || '',
             row.stripe_session_id || '',
+            row.protocol_attempt_id || '',
+            row.stripe_payment_intent_id || '',
+            row.stripe_payment_method_id || '',
+            row.stripe_confirmation_token_hash || '',
             row.cdk_code || '',
             row.email || '',
             row.status || '',

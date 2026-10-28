@@ -3,23 +3,10 @@
 import { describe, it, expect, vi } from 'vitest';
 const {
     registerStripeDeviceFingerprint,
-    generateLocalFingerprintIds,
     encodeFingerprintPayload
 } = require('../stripe-device-fingerprint');
 
 describe('Stripe Device Fingerprint Module (m.stripe.com/6)', () => {
-    it('generates valid local fallback IDs with proper format', () => {
-        const ids = generateLocalFingerprintIds();
-        expect(ids).toBeDefined();
-        expect(typeof ids.guid).toBe('string');
-        expect(typeof ids.muid).toBe('string');
-        expect(typeof ids.sid).toBe('string');
-        expect(ids.source).toBe('local_fallback');
-        expect(ids.guid.length).toBeGreaterThan(20);
-        expect(ids.muid.length).toBeGreaterThan(20);
-        expect(ids.sid.length).toBeGreaterThan(20);
-    });
-
     it('correctly encodes fingerprint payload into base64 URL-encoded format', () => {
         const payload = { v2: 1, id: 'test_fp', tag: '6' };
         const encoded = encodeFingerprintPayload(payload);
@@ -30,14 +17,63 @@ describe('Stripe Device Fingerprint Module (m.stripe.com/6)', () => {
         expect(parsed.tag).toBe('6');
     });
 
-    it('falls back gracefully to local IDs when network is unreachable or times out', async () => {
-        const ids = await registerStripeDeviceFingerprint({
-            timeoutMs: 1 // Extremely low timeout forcing fallback
+    it('accepts only a complete fingerprint response from the official endpoint', async () => {
+        const request = vi.fn(async ({ url, body, headers }) => {
+            expect(url).toBe('https://m.stripe.com/6');
+            expect(body).toEqual(expect.any(String));
+            expect(headers['Content-Type']).toBe('text/plain;charset=UTF-8');
+            return {
+                status: 200,
+                data: {
+                    guid: 'guid_registered_123',
+                    muid: 'muid_registered_123',
+                    sid: 'sid_registered_123'
+                }
+            };
         });
-        expect(ids).toBeDefined();
-        expect(ids.guid).toBeDefined();
-        expect(ids.muid).toBeDefined();
-        expect(ids.sid).toBeDefined();
-        expect(['stripe_registered', 'local_fallback']).toContain(ids.source);
+
+        const ids = await registerStripeDeviceFingerprint({
+            request,
+            clientSessionId: 'client-session-test'
+        });
+
+        expect(request).toHaveBeenCalledTimes(1);
+        expect(ids).toMatchObject({
+            guid: 'guid_registered_123',
+            muid: 'muid_registered_123',
+            sid: 'sid_registered_123',
+            clientSessionId: 'client-session-test',
+            source: 'stripe_registered'
+        });
+    });
+
+    it('fails closed when the fingerprint request is unavailable', async () => {
+        await expect(registerStripeDeviceFingerprint({
+            request: vi.fn().mockRejectedValue(new Error('offline test'))
+        })).rejects.toMatchObject({
+            code: 'STRIPE_DEVICE_FINGERPRINT_UNAVAILABLE'
+        });
+    });
+
+    it('fails closed when the official response is incomplete', async () => {
+        await expect(registerStripeDeviceFingerprint({
+            request: vi.fn().mockResolvedValue({
+                status: 200,
+                data: { guid: 'guid_registered_123', muid: 'muid_registered_123' }
+            })
+        })).rejects.toMatchObject({
+            code: 'STRIPE_DEVICE_FINGERPRINT_UNAVAILABLE'
+        });
+    });
+
+    it('fails closed when the official response contains only whitespace identifiers', async () => {
+        await expect(registerStripeDeviceFingerprint({
+            request: vi.fn().mockResolvedValue({
+                status: 200,
+                data: { guid: '  ', muid: 'muid_registered_123', sid: 'sid_registered_123' }
+            })
+        })).rejects.toMatchObject({
+            code: 'STRIPE_DEVICE_FINGERPRINT_UNAVAILABLE'
+        });
     });
 });

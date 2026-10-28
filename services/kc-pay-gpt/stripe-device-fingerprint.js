@@ -31,30 +31,21 @@ function encodeFingerprintPayload(payload) {
     return Buffer.from(encoded).toString('base64');
 }
 
-function generateLocalFingerprintIds() {
-    const one = () => crypto.randomUUID().replace(/-/g, '') + crypto.randomBytes(3).toString('hex');
-    return {
-        guid: one(),
-        muid: one(),
-        sid: one(),
-        clientSessionId: crypto.randomUUID(),
-        userAgent: DEFAULT_UA,
-        source: 'local_fallback'
-    };
-}
-
 /**
  * 向 Stripe 官方指纹端点 (https://m.stripe.com/6) 注册设备真实指纹并换取 guid, muid, sid
- * 使得后续 payment_methods / confirm 在 Stripe Radar 风控库中具备真实的设备上下文
+ * 使得后续调用可以明确区分“官方已签发的设备上下文”和“本地伪造值”。
+ *
+ * 重要：官方端点不可用、返回不完整或请求被拦截时必须失败关闭。随机生成的
+ * guid/muid/sid 不是有效的 Stripe 设备凭证，不能继续用于支付请求。
  * @param {object} options
  * @param {string} [options.proxy] 代理地址
  * @param {number} [options.timeoutMs=3500] 超时时间
  * @param {string} [options.userAgent] 浏览器 UA
+ * @param {Function} [options.request] 仅供离线测试注入的请求函数
  * @returns {Promise<{ guid: string, muid: string, sid: string, source: string }>}
  */
 async function registerStripeDeviceFingerprint(options = {}) {
     const timeoutMs = options.timeoutMs ?? 3500;
-    const ids = generateLocalFingerprintIds();
     const fpId = crypto.randomBytes(16).toString('hex');
     const s = [randomSeg(), randomSeg(), randomSeg(), randomSeg(), randomSeg()];
     const ua = options.userAgent || DEFAULT_UA;
@@ -134,11 +125,47 @@ async function registerStripeDeviceFingerprint(options = {}) {
         } catch (_) {}
     }
 
+    const assertRegistered = (status, data) => {
+        const guid = String(data?.guid || '').trim();
+        const muid = String(data?.muid || '').trim();
+        const sid = String(data?.sid || '').trim();
+        if (Number(status) === 200 && data && typeof data === 'object' && guid && muid && sid) {
+            return {
+                guid,
+                muid,
+                sid,
+                clientSessionId: options.clientSessionId || crypto.randomUUID(),
+                userAgent: ua,
+                source: 'stripe_registered'
+            };
+        }
+        throw Object.assign(
+            new Error(`Stripe 官方设备指纹未确认 (HTTP ${status || 'unknown'})`),
+            { code: 'STRIPE_DEVICE_FINGERPRINT_UNAVAILABLE' }
+        );
+    };
+
     try {
         const bodyData = encodeFingerprintPayload(payload);
         const proxyStr = String(options.proxy || '').trim();
         let data = null;
         let status = 0;
+
+        if (typeof options.request === 'function') {
+            const response = await options.request({
+                url: FINGERPRINT_URL,
+                body: bodyData,
+                headers: config.headers,
+                timeoutMs,
+                proxy: proxyStr
+            });
+            status = response?.status;
+            data = response?.data;
+            if (typeof data === 'string') {
+                try { data = JSON.parse(data); } catch (_) {}
+            }
+            return assertRegistered(status, data);
+        }
 
         try {
             const { Impit } = require('impit');
@@ -162,27 +189,17 @@ async function registerStripeDeviceFingerprint(options = {}) {
             data = res.data;
         }
 
-        if (status === 200 && data && typeof data === 'object') {
-            if (data.guid && data.muid && data.sid) {
-                return {
-                    guid: String(data.guid).trim(),
-                    muid: String(data.muid).trim(),
-                    sid: String(data.sid).trim(),
-                    clientSessionId: ids.clientSessionId,
-                    userAgent: ua,
-                    source: 'stripe_registered'
-                };
-            }
-        }
+        return assertRegistered(status, data);
     } catch (err) {
-        // 网络超时或失败时无缝降级到本地 ID，绝不阻断正常充值
+        if (err?.code === 'STRIPE_DEVICE_FINGERPRINT_UNAVAILABLE') throw err;
+        throw Object.assign(
+            new Error(`Stripe 官方设备指纹请求失败: ${err.message || 'unknown error'}`),
+            { code: 'STRIPE_DEVICE_FINGERPRINT_UNAVAILABLE', cause: err }
+        );
     }
-
-    return ids;
 }
 
 module.exports = {
     registerStripeDeviceFingerprint,
-    generateLocalFingerprintIds,
     encodeFingerprintPayload
 };

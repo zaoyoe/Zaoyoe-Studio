@@ -193,75 +193,6 @@ function normalizeUsStateName(state) {
     return raw;
 }
 
-/**
- * 判断是否为美国免税州 (Oregon, Alaska, Delaware, Montana, New Hampshire)
- */
-function isUsTaxFreeState(state) {
-    if (!state) return false;
-    const normalized = normalizeUsStateName(state);
-    return Object.values(US_STATE_LABELS).some(s => s.toLowerCase() === String(normalized || '').trim().toLowerCase())
-        || /oregon|or\b|alaska|ak\b|delaware|de\b|montana|mt\b|new hampshire|nh\b/i.test(String(state || ''));
-}
-
-/**
- * 优先匹配卡片自带 AVS 账单信息（持卡人姓名、街道、城市、州、邮编），缺失部分平滑回退至备选免税地址
- * @param {object} card - 卡片对象（含 card_holder, payment_holder_name, payment_address_* 等字段）
- * @param {object} [fallbackAddress] - 兜底账单地址（如俄勒冈地址池模板）
- * @param {object} [options] - 附加选项（如 email）
- * @returns {object|null} 规范化的账单地址对象
- */
-function resolveCardBillingProfile(card, fallbackAddress = null, options = {}) {
-    if (!card && !fallbackAddress) return null;
-
-    const rawHolder = String(
-        card?.payment_holder_name ||
-        card?.card_holder ||
-        card?.holder ||
-        fallbackAddress?.name ||
-        ''
-    ).trim();
-
-    const line1 = String(card?.payment_address_line1 || '').trim();
-    const postal = String(card?.payment_address_postal || '').trim();
-    const city = String(card?.payment_address_city || '').trim();
-    const stateRaw = String(card?.payment_address_state || '').trim();
-
-    // 只要卡片具备街道或邮编任一核心 AVS 字段，即判定为具备专属 AVS 账单
-    const hasCardAvs = Boolean(line1 || postal);
-
-    if (hasCardAvs) {
-        const state = normalizeUsStateName(stateRaw || fallbackAddress?.state || 'Oregon');
-        const finalPostal = postal || String(fallbackAddress?.postal_code || fallbackAddress?.zip || '').trim();
-        const finalCity = city || String(fallbackAddress?.city || '').trim();
-        const finalLine1 = line1 || String(fallbackAddress?.line1 || '').trim();
-        const country = String(card?.payment_address_country || fallbackAddress?.country || 'US').trim().toUpperCase() || 'US';
-
-        return {
-            id: card?.payment_address_id || fallbackAddress?.id || null,
-            name: rawHolder || fallbackAddress?.name || 'Sarah Smith',
-            line1: finalLine1,
-            city: finalCity,
-            state: state || 'Oregon',
-            postal_code: finalPostal,
-            zip: finalPostal,
-            country,
-            email: options.email || fallbackAddress?.email || '',
-            source: 'card_avs',
-            isCardAvs: true
-        };
-    }
-
-    if (fallbackAddress) {
-        return {
-            ...fallbackAddress,
-            name: rawHolder || fallbackAddress.name || 'Sarah Smith',
-            email: options.email || fallbackAddress.email || '',
-            isCardAvs: false
-        };
-    }
-
-    return null;
-}
 
 /** 美国无销售税州：Oregon, Delaware, Montana, New Hampshire, Alaska */
 const US_TAX_FREE_LOCATIONS = [
@@ -516,8 +447,6 @@ module.exports = {
     batchGenerateUsAddresses,
     pickBillingAddressForCheckout,
     normalizeUsStateName,
-    isUsTaxFreeState,
-    resolveCardBillingProfile,
     markAddressBound,
     clearUnboundAddresses,
     US_STATE_LABELS
