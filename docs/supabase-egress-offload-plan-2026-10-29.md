@@ -146,3 +146,51 @@ ef45b2d93d56f8440a3663b6b5679c0327b1a8b73083ece9bc7c189249e54b84  tests/ai-image
 4. 本地候选完成后，生产发布仍单独按 AGENTS.md 执行 PR、检查、合并及三条部署链验证。本阶段没有推送、PR、合并或部署；三条生产链均 NOT RUN。
 
 实际 Egress 降幅、历史 46.63446 GB 的来源分布、Free 套餐能否承载当前业务均为 **PENDING**。本地通过测试不表示线上账单已停止、网站已恢复或 CDN 迁移已完成。
+
+## 7. 离线备份复核与第二阶段定向读取优化（2026-10-29）
+
+### 7.1 离线备份来源与边界
+
+本阶段复核本地文件 `/Users/wangyongchao/Downloads/db_cluster-26-10-2026@03-53-03.backup.gz`。它是普通 SQL/COPY gzip 备份，不是 PostgreSQL custom dump；压缩大小 `36,789,151` bytes，解压后 `431,326,701` bytes，SHA-256 为：
+
+```text
+7904cc3d5b141ebe0db1cea6b9872c668d77ac1c9252daa002fc7541d031a294
+```
+
+只读工具为 `scripts/audit-image-backup.js`，测试为 `tests/audit-image-backup.test.js`。工具只读取本地备份，不执行 SQL、不访问网络、不上传文件、不接受 `--apply` 写入选项；报告只保留脱敏后的域名、类别、哈希去重数和字节统计，不输出记录 ID、私密 URL、签名 token 或正文。
+
+使用 `/tmp/fatherkey-backup-image-audit-20261029-reviewed.json` 作为最终结果。早期 `/tmp/fatherkey-backup-image-audit-20261029.json` 中的 `15,984/12,528` 不是当前采用的结果：旧扫描使用逐行读取时把字段内 Unicode `U+2028/U+2029` 当作物理行结束，且数组 URL 的解析不完整。复核版改为只按 COPY 的 LF 分行、使用 `StringDecoder`，并解析 PostgreSQL text[] 数组；复核已完成且没有行宽错误。历史初步结果保留在临时文件中，没有覆盖或伪装成最终证据。
+
+### 7.2 备份复核结果
+
+- 选定字段共发现 **18,578 个资源引用**、**11,336 个唯一资源身份**。
+- `cdn.fatherkey.com`：**16,960 引用 / 10,412 个唯一对象**。
+- `cdn.zaoyoe.com`：**1,536 引用 / 857 个唯一对象**。
+- 两个现有 CDN 合计 **18,496 个引用**；这说明大量已保存资源引用已经绕过 Supabase Storage，重复迁移这些 URL 预计不会带来同等规模的新收益。
+- 选定字段没有识别到完整 `*.supabase.co/storage/v1/...` URL，也没有识别到内联 Base64 图像。该结论只针对备份中被扫描的字段；它不能证明线上没有动态拼接 URL，也不能证明 CDN 对象当前可访问、公开授权或仍由哪个源站提供。
+- Storage 元数据快照包含三个桶：`prompt-images` 60 个对象、约 **211,976,625 bytes**；`comment-images` 6 个对象、约 **1,481,233 bytes**；`chat-assets` 2 个对象、约 **1,345,326 bytes**。这些是 `storage.objects.metadata` 中的文件大小合计，不是下载流量，也不代表历史账期 Egress。
+- 选定字段中较大的文本载荷包括：`prompts.images` **799,121 bytes / 5,555 引用**，`prompts.image_assets` **2,063,084 bytes / 9,149 引用**，`prompts.video_assets` **762,689 bytes / 3,380 引用**，`ai_image_tasks.metadata` **2,089,365 bytes / 13 个资源引用**。其中 JSON/数组字段的文本大小不等于实际文件大小或 API 每次响应大小。
+- COPY 文本字节排名最高的是 `engagement_events` 140,738,453 bytes、`ops_alert_jobs` 79,429,865 bytes、`system_notifications` 56,112,534 bytes、`prompts` 46,742,716 bytes。它们只是备份文本大小，不能据此认定是 Egress 热点、数据库磁盘占用或应被清理；本阶段没有执行删除或 SQL。
+
+这些数字来自约 2026-10-26 的离线快照，不能单独解释 2026-09-10 至 2026-10-09 账期的 **46.63446 GB Egress**。历史账单仍需要控制台按服务/请求/响应字节的线上证据。
+
+### 7.3 工作台快速轮询的定向读取优化
+
+本阶段在 `js/ai-image-workbench.js` 和 `server/api-handlers/public/ai-image.js` 加入可选 `task_ids` 过滤：
+
+- 首次加载、包含 usage 的刷新，以及没有可靠服务端 UUID 的恢复路径，继续读取原有最多 40 条完整历史，保留兼容和恢复行为。
+- 已完成初次历史加载后，快速状态刷新只把当前客户端仍可能变化的忙碌任务、等待原图任务的 UUID 去重后传给 `task_ids`。
+- 后端严格验证 UUID、最多 100 个、去重并绑定现有 `user_id` 与 `site` 条件；空值、混入无效值和超长列表返回 `400 invalid_task_ids`，不会退回全表读取。
+- 结果查询、任务恢复、Sub2API 实际费用对账、队列估算和响应字段沿用原实现，没有通过删字段或删权限来换取字节下降。
+
+合成的 40 条历史测试中，完整读取与只查 1 个任务的模拟 SELECT JSON 为 `137,522 -> 3,440 bytes`，模拟 API JSON 为 `531,798 -> 13,332 bytes`。这是隔离测试数据的数量级证据，不能换算成生产整体节省比例，也不能证明历史 46.63 GB 已经下降。
+
+### 7.4 验证、打包可达性与状态
+
+本阶段相关回归命令覆盖备份审计、工作台轮询、API 契约、计费、运行时、worker、视频 schema 和 worker 部署契约，结果为：**356 tests / 356 PASS / 0 FAIL / 0 skipped / 0 cancelled**。同时通过变更文件 `node --check`、`git diff --check`，以及 Vercel 静态构建规则和缓存规则测试（4 PASS）。
+
+打包规则复核结果：`js/ai-image-workbench.js` 会被 Vercel 静态输出复制；`server/api-handlers/public/ai-image.js` 不进入静态站点，但由 `vercel.json` 的 `includeFiles` 和 `.vercelignore` 的函数目录保留规则进入 `api/public.js` 函数包；KVM4 Verify Server 的 Dockerfile 和发布脚本均包含 `js`、`server`、`scripts` 等对应路径。一次工作区 Vercel 构建成功输出 822 个静态文件，但构建器会回写静态资源版本号；这些无关回写已先通过 `stash@{0}` 备份后撤回，未保留为候选改动。该构建运行在工作区，不能作为 Vercel production 或 KVM4 已发布的证据。
+
+当前候选仍未推送、未创建或合并 PR、未执行 SQL、未迁移 Storage/R2、未修改 Supabase 套餐或账单，也未在生产启用定向查询。因此三条生产链（Vercel production、KVM4 Verify Server、KVM4 Sub2API）均为 **NOT RUN**；线上请求排行、PostgREST 响应字节、实际 CDN 命中率、实际 Egress 降幅和 Free 套餐可承载性仍为 **PENDING**。
+
+下一步应先用目标项目的受控线上只读数据确认：工作台 `tasks`/`results`/`usage` 的请求频率和响应字节、公开目录的缓存命中率，以及仍直接指向 Supabase Storage 的实际 URL。当前备份结果支持“优先减少重复 API 读取、继续复用现有 CDN”的方向，不支持把交易、Auth、私聊附件或私有任务数据直接迁入公共缓存。

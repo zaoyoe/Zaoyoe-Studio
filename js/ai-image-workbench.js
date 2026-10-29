@@ -3688,16 +3688,26 @@
         return request.promise;
     }
 
+    function getRemoteRecordsTaskQuery(includeUsage = true) {
+        const query = { site: getRuntimeSite(), limit: MAX_LOCAL_TASKS };
+        // Keep initial and periodic usage refreshes as complete history reads.
+        // Fast status reads only need tasks which can still change on this client.
+        if (includeUsage || !remoteRecordsLoaded) return query;
+        const candidates = [...getRemotePollBusyTasks(), ...getPendingOriginalTasks()];
+        if (!candidates.length || candidates.some((task) => (
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(task.id || ''))
+        ))) return query;
+        query.task_ids = [...new Set(candidates.map((task) => task.id.toLowerCase()))].join(',');
+        return query;
+    }
+
     async function fetchRemoteRecords({ includeUsage = true, generation = remoteRecordsGeneration } = {}) {
         try {
             const beforeActivitySignature = getActivitySummarySignature();
             const beforeBusyCount = getRemotePollBusyTasks().length;
             const [payload, usagePayload] = await Promise.all([
                 requestAiImage('tasks', {
-                    query: {
-                        site: getRuntimeSite(),
-                        limit: MAX_LOCAL_TASKS
-                    },
+                    query: getRemoteRecordsTaskQuery(includeUsage),
                     auth: true
                 }),
                 includeUsage ? requestAiImage('usage', {

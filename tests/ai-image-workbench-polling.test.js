@@ -100,7 +100,7 @@ function createHarness({ tasks = [], hidden = false, deferRequests = false } = {
     const functions = [
         'isBusyTask', 'isImageGenerationMode', 'getBusyImageGenerationTasks', 'shouldPollRemoteRecords',
         'requestFastRemoteRecordsPoll', 'getRemoteRecordsPollDelayMs', 'shouldIncludeUsageForRemotePoll',
-        'resetRemoteRecordsSync', 'loadRemoteRecords', 'fetchRemoteRecords',
+        'resetRemoteRecordsSync', 'loadRemoteRecords', 'getRemoteRecordsTaskQuery', 'fetchRemoteRecords',
         'clearRemoteRecordsPoll', 'handleRemoteRecordsVisibilityChange', 'refreshBusyTasksNow', 'scheduleRemoteRecordsPoll'
     ];
     vm.runInNewContext([
@@ -386,4 +386,42 @@ test('an in-flight poll from the previous account cannot start recovery for the 
     assert.equal(h.state.tasks[0].id, 'new-task');
     assert.equal(h.effects.recoveries, 0);
     assert.equal(h.timers.size, 0);
+});
+
+
+test('fast status reads query only busy tasks and pending originals after the full snapshot', async () => {
+    const busyId = '11111111-1111-4111-8111-111111111111';
+    const originalId = '22222222-2222-4222-8222-222222222222';
+    const tasks = [
+        { id: busyId, status: 'processing', mode: 'text', pendingOriginal: true },
+        { id: originalId, status: 'succeeded', pendingOriginal: true },
+        { id: '33333333-3333-4333-8333-333333333333', status: 'succeeded' }
+    ];
+    const h = createHarness({ tasks });
+    await h.loadRemoteRecords();
+    assert.equal(h.calls[0].options.query.task_ids, undefined, 'initial snapshot includes all history');
+    await h.loadRemoteRecords({ force: true, includeUsage: false });
+    assert.equal(h.calls[2].options.query.task_ids, `${busyId},${originalId}`);
+    assert.equal(h.calls[2].options.query.site, 'cn');
+    assert.equal(h.calls.length, 3, 'status refresh does not query usage');
+    await h.loadRemoteRecords({ force: true });
+    assert.equal(h.calls[3].options.query.task_ids, undefined, 'periodic usage snapshot refreshes full history');
+});
+
+test('local client IDs retain full-list recovery and empty candidates never send an empty filter', async () => {
+    const h = createHarness({ tasks: [{ id: 'local-client-id', status: 'processing' }] });
+    await h.loadRemoteRecords();
+    await h.loadRemoteRecords({ force: true, includeUsage: false });
+    assert.equal(h.calls[2].options.query.task_ids, undefined);
+    h.state.tasks = [{ id: '11111111-1111-4111-8111-111111111111', status: 'succeeded' }];
+    await h.loadRemoteRecords({ force: true, includeUsage: false });
+    assert.equal(h.calls[3].options.query.task_ids, undefined);
+});
+
+test('account reset forces full history before any filtered status query', async () => {
+    const h = createHarness({ tasks: [{ id: '11111111-1111-4111-8111-111111111111', status: 'processing' }] });
+    await h.loadRemoteRecords();
+    h.resetRemoteRecordsSync();
+    await h.loadRemoteRecords({ force: true, includeUsage: false });
+    assert.equal(h.calls[2].options.query.task_ids, undefined);
 });
