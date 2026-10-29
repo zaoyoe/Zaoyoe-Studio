@@ -386,6 +386,9 @@
     let remoteConfigAvailable = false;
     let remoteConfigPromise = null;
     let remoteRecordsLoaded = false;
+    let remoteRecordsRequest = null;
+    let remoteRecordsGeneration = 0;
+    let remoteBusyRefreshPromise = null;
     let remoteHistoryPrefsLoaded = false;
     let modelDiscoveryState = {
         loading: false,
@@ -2312,6 +2315,7 @@
     }
 
     function restoreUserScopedState(session = currentAuthSession || readPersistedSupabaseSession()) {
+        resetRemoteRecordsSync();
         const stored = readUserScopedStorage(session);
         state.historyPrefsRemoteSynced = Boolean(stored.historyPrefsRemoteSynced || stored.history_prefs_remote_synced);
         state.historyPrefs = normalizeHistoryPrefs(stored.historyPrefs || stored.history_prefs);
@@ -2345,7 +2349,7 @@
             apiCalls: 0,
             downloads: 0
         };
-        remoteRecordsLoaded = false;
+        resetRemoteRecordsSync();
         remoteHistoryPrefsLoaded = false;
         loadedImageUrls.clear();
         failedImageUrls.clear();
@@ -3639,17 +3643,71 @@
         }
     }
 
+    function resetRemoteRecordsSync() {
+        remoteRecordsLoaded = false;
+        remoteRecordsGeneration += 1;
+        remoteRecordsRequest = null;
+        remoteBusyRefreshPromise = null;
+        clearRemoteRecordsPoll();
+    }
+
     async function loadRemoteRecords({ force = false, includeUsage = true } = {}) {
+        if (remoteRecordsRequest) {
+            if (force || (includeUsage && !remoteRecordsRequest.includeUsage)) {
+                // Mutations still need a fresh read after the current snapshot finishes.
+                remoteRecordsRequest.refreshQueued = true;
+                remoteRecordsRequest.queuedIncludeUsage ||= includeUsage;
+            }
+            return remoteRecordsRequest.promise;
+        }
         if (remoteRecordsLoaded && !force) return;
+        clearRemoteRecordsPoll();
+        const request = {
+            generation: remoteRecordsGeneration,
+            includeUsage,
+            refreshQueued: false,
+            queuedIncludeUsage: false,
+            promise: null
+        };
+        remoteRecordsRequest = request;
+        request.promise = (async () => {
+            do {
+                request.refreshQueued = false;
+                request.queuedIncludeUsage = false;
+                await fetchRemoteRecords({
+                    includeUsage: request.includeUsage,
+                    generation: request.generation
+                });
+                request.includeUsage = request.queuedIncludeUsage;
+            } while (request.refreshQueued && request.generation === remoteRecordsGeneration);
+        })().finally(() => {
+            if (remoteRecordsRequest !== request) return;
+            remoteRecordsRequest = null;
+            if (shouldPollRemoteRecords()) scheduleRemoteRecordsPoll();
+        });
+        return request.promise;
+    }
+
+    function getRemoteRecordsTaskQuery(includeUsage = true) {
+        const query = { site: getRuntimeSite(), limit: MAX_LOCAL_TASKS };
+        // Keep initial and periodic usage refreshes as complete history reads.
+        // Fast status reads only need tasks which can still change on this client.
+        if (includeUsage || !remoteRecordsLoaded) return query;
+        const candidates = [...getRemotePollBusyTasks(), ...getPendingOriginalTasks()];
+        if (!candidates.length || candidates.some((task) => (
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(task.id || ''))
+        ))) return query;
+        query.task_ids = [...new Set(candidates.map((task) => task.id.toLowerCase()))].join(',');
+        return query;
+    }
+
+    async function fetchRemoteRecords({ includeUsage = true, generation = remoteRecordsGeneration } = {}) {
         try {
             const beforeActivitySignature = getActivitySummarySignature();
             const beforeBusyCount = getRemotePollBusyTasks().length;
             const [payload, usagePayload] = await Promise.all([
                 requestAiImage('tasks', {
-                    query: {
-                        site: getRuntimeSite(),
-                        limit: MAX_LOCAL_TASKS
-                    },
+                    query: getRemoteRecordsTaskQuery(includeUsage),
                     auth: true
                 }),
                 includeUsage ? requestAiImage('usage', {
@@ -3660,6 +3718,7 @@
                     auth: true
                 }).catch(() => null) : Promise.resolve(null)
             ]);
+            if (generation !== remoteRecordsGeneration) return;
             if (usagePayload) {
                 updateActivitySummary(usagePayload);
             }
@@ -3701,10 +3760,8 @@
                     }
                 }
             }
-            if (getPendingOriginalTasks().length) {
-                scheduleRemoteRecordsPoll();
-            }
         } catch (error) {
+            if (generation !== remoteRecordsGeneration) return;
             const message = String(error?.message || error || '');
             const authMissing = /请先登录|unauthorized|auth/i.test(message);
             remoteRecordsLoaded = !authMissing;
@@ -7766,11 +7823,7 @@
         });
         observer.observe(document.documentElement, { childList: true, subtree: true });
         document.addEventListener('click', handleDocumentWorkbenchClick, true);
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                refreshBusyTasksNow();
-            }
-        });
+        document.addEventListener('visibilitychange', handleRemoteRecordsVisibilityChange);
         try {
             global.supabaseClient?.auth?.onAuthStateChange?.((event, session) => {
                 if (event === 'SIGNED_OUT') {
@@ -9156,16 +9209,43 @@
         }
     }
 
+    function clearRemoteRecordsPoll() {
+        if (remotePollTimer !== null) global.clearTimeout(remotePollTimer);
+        remotePollTimer = null;
+        remotePollDueAt = 0;
+    }
+
+    function handleRemoteRecordsVisibilityChange() {
+        if (document.visibilityState === 'hidden') {
+            clearRemoteRecordsPoll();
+            return;
+        }
+        refreshBusyTasksNow();
+    }
+
     function refreshBusyTasksNow() {
-        if (!shouldPollRemoteRecords()) return;
-        loadRemoteRecords({ force: true }).then(() => recoverBusyTasksByClientId()).finally(() => {
-            if (shouldPollRemoteRecords()) {
-                scheduleRemoteRecordsPoll();
-            }
+        if (document.visibilityState === 'hidden' || !shouldPollRemoteRecords()) return;
+        if (remoteBusyRefreshPromise) return remoteBusyRefreshPromise;
+        clearRemoteRecordsPoll();
+        const generation = remoteRecordsGeneration;
+        const refreshPromise = loadRemoteRecords({ force: true }).then(() => {
+            if (generation !== remoteRecordsGeneration || document.visibilityState === 'hidden') return;
+            return recoverBusyTasksByClientId();
+        }).finally(() => {
+            if (remoteBusyRefreshPromise !== refreshPromise) return;
+            remoteBusyRefreshPromise = null;
+            if (shouldPollRemoteRecords()) scheduleRemoteRecordsPoll();
         });
+        remoteBusyRefreshPromise = refreshPromise;
+        return refreshPromise;
     }
 
     function scheduleRemoteRecordsPoll() {
+        if (document.visibilityState === 'hidden') {
+            clearRemoteRecordsPoll();
+            return;
+        }
+        if (remoteRecordsRequest || remoteBusyRefreshPromise) return;
         const pendingOriginals = getPendingOriginalTasks();
         const shouldContinueOriginalPolling = pendingOriginals.some((task) => {
             const count = originalReadyPollCounts.get(task.id) || 0;
@@ -9181,31 +9261,42 @@
         }
         const scheduledDelayMs = getRemoteRecordsPollDelayMs({ consume: true });
         remotePollDueAt = Date.now() + scheduledDelayMs;
-        pendingOriginals.forEach((task) => {
-            originalReadyPollCounts.set(task.id, (originalReadyPollCounts.get(task.id) || 0) + 1);
-        });
-        remotePollTimer = global.setTimeout(async () => {
+        remotePollTimer = global.setTimeout(() => {
             remotePollTimer = null;
             remotePollDueAt = 0;
-            const beforeBusyCount = getRemotePollBusyTasks().length;
-            await loadRemoteRecords({
-                force: true,
-                includeUsage: shouldIncludeUsageForRemotePoll(scheduledDelayMs)
-            });
-            if (getRemotePollBusyTasks().length) {
-                await recoverBusyTasksByClientId();
-            }
-            const afterBusyCount = getRemotePollBusyTasks().length;
-            if (shouldPollRemoteRecords()) {
-                scheduleRemoteRecordsPoll();
-            } else if (beforeBusyCount > 0) {
-                await loadRemoteRecords({ force: true });
-                if (!state.open && getCompletedUnreadTasks().length) {
-                    showDoneNotice();
-                } else {
-                    render();
+            if (document.visibilityState === 'hidden') return;
+            if (remoteBusyRefreshPromise) return remoteBusyRefreshPromise;
+            const generation = remoteRecordsGeneration;
+            const refreshPromise = (async () => {
+                pendingOriginals.forEach((task) => {
+                    originalReadyPollCounts.set(task.id, (originalReadyPollCounts.get(task.id) || 0) + 1);
+                });
+                const beforeBusyCount = getRemotePollBusyTasks().length;
+                await loadRemoteRecords({
+                    force: true,
+                    includeUsage: shouldIncludeUsageForRemotePoll(scheduledDelayMs)
+                });
+                if (generation !== remoteRecordsGeneration || document.visibilityState === 'hidden') return;
+                if (getRemotePollBusyTasks().length) {
+                    await recoverBusyTasksByClientId();
                 }
-            }
+                if (generation !== remoteRecordsGeneration || document.visibilityState === 'hidden') return;
+                if (!shouldPollRemoteRecords() && beforeBusyCount > 0) {
+                    await loadRemoteRecords({ force: true });
+                    if (generation !== remoteRecordsGeneration || document.visibilityState === 'hidden') return;
+                    if (!state.open && getCompletedUnreadTasks().length) {
+                        showDoneNotice();
+                    } else {
+                        render();
+                    }
+                }
+            })().finally(() => {
+                if (remoteBusyRefreshPromise !== refreshPromise) return;
+                remoteBusyRefreshPromise = null;
+                if (shouldPollRemoteRecords()) scheduleRemoteRecordsPoll();
+            });
+            remoteBusyRefreshPromise = refreshPromise;
+            return refreshPromise;
         }, scheduledDelayMs);
     }
 
