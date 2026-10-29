@@ -240,7 +240,7 @@ test('ai image workbench recovers stuck busy cards by client task id', () => {
     assert.match(source, /async function recoverBusyTasksByClientId\(\{ limit = 4 \} = \{\}\)/);
     assert.match(source, /requestAiImage\('task'[\s\S]*clientTaskId/);
     assert.match(source, /await loadRemoteRecords\(\{ force: true \}\);\n\s+if \(getBusyTasks\(\)\.length\) \{\n\s+await recoverBusyTasksByClientId\(\);/);
-    assert.match(source, /loadRemoteRecords\(\{ force: true \}\)\.then\(\(\) => recoverBusyTasksByClientId\(\)\)/);
+    assert.match(source, /loadRemoteRecords\(\{ force: true \}\)\.then\(\(\) => \{[\s\S]*return recoverBusyTasksByClientId\(\);/);
 });
 
 test('ai image workbench renders partial images while a task is still running', () => {
