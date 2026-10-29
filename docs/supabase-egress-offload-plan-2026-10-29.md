@@ -194,3 +194,111 @@ ef45b2d93d56f8440a3663b6b5679c0327b1a8b73083ece9bc7c189249e54b84  tests/ai-image
 当前候选仍未推送、未创建或合并 PR、未执行 SQL、未迁移 Storage/R2、未修改 Supabase 套餐或账单，也未在生产启用定向查询。因此三条生产链（Vercel production、KVM4 Verify Server、KVM4 Sub2API）均为 **NOT RUN**；线上请求排行、PostgREST 响应字节、实际 CDN 命中率、实际 Egress 降幅和 Free 套餐可承载性仍为 **PENDING**。
 
 下一步应先用目标项目的受控线上只读数据确认：工作台 `tasks`/`results`/`usage` 的请求频率和响应字节、公开目录的缓存命中率，以及仍直接指向 Supabase Storage 的实际 URL。当前备份结果支持“优先减少重复 API 读取、继续复用现有 CDN”的方向，不支持把交易、Auth、私聊附件或私有任务数据直接迁入公共缓存。
+
+## 8. 线上账单核对与 Free/Spend Cap 结论（2026-10-29）
+
+### 8.1 只读控制台状态
+
+本次通过用户已登录的 Supabase 控制台只读核对组织 `zaoyoe`，未点击付款、未修改套餐、未修改 Spend Cap，也未执行 SQL。
+
+- Billing 页面当前套餐为 **Free Plan**。
+- **Spend cap 已启用**。页面说明：超出套餐包含额度后不会产生额外用量费用，但项目可能变得无响应或进入只读状态。
+- Credit Balance 为 `$0.00`。
+- 发票 `CVUYCA-00012`（2026-10-10）金额 `$12.90`，状态为 **Outstanding**；本次只下载并读取发票 PDF，没有执行付款。
+- Usage 页面当前账期为 **2026-10-26 至 2026-11-26**，显示 Egress `0.001 / 5 GB`、Cached Egress `0 / 5 GB`，当前页面没有显示超额。该账期属于降级到 Free 后的新账期，不能反推此前账期的流量已经消失。
+
+此前第 6.4 节记录的“浏览器连接不可用”属于早一阶段的历史证据；本节是之后恢复只读读取后追加的控制台证据，两者均保留。
+
+### 8.2 `$12.90` 发票行项目
+
+发票 `CVUYCA-00012` 的用量区间为 **2026-09-10 至 2026-10-09**，套餐项目覆盖 **2026-10-10 至 2026-11-09**。PDF 中的行项目如下：
+
+| 项目 | 账单数量/期间 | 毛额 | 折扣/抵扣 | 净额 |
+| --- | --- | ---: | ---: | ---: |
+| Compute Hours (Micro) | 720；2026-09-10–10-09 | $9.68 | -$9.68 | $0.00 |
+| Egress GB | 46.63446 GB；2026-09-10–10-09 | $4.20 | -$4.20 | $0.00 |
+| Function Invocations | 发票数量 227；2026-09-10–10-09 | $2.00 | -$2.00 | $0.00 |
+| Monthly Active Users | 1；2026-09-10–10-09 | $0.00 | -$0.00 | $0.00 |
+| Realtime Messages | 27,031；2026-09-10–10-09 | $2.50 | -$2.50 | $0.00 |
+| Realtime Peak Connections | 11；2026-09-10–10-09 | $10.00 | -$10.00 | $0.00 |
+| Storage Size GB-Hrs | 154.658292；2026-09-10–10-09 | $0.00 | -$0.00 | $0.00 |
+| Pro Plan | 1；2026-10-10–11-09 | $25.00 | — | $25.00 |
+| Pro Plan credit memo `CVUYCA-00012-CN-1` | 2026-10-26–11-09 | — | -$12.10 | -$12.10 |
+
+发票合计为 Subtotal/Total `$25.00`，Credit total `-$12.10`，Amount due `$12.90`。发票没有另列税额；备注写明非新加坡客户按净价处理，并由客户按适用规则处理 VAT/GST。
+
+### 8.3 账单归因
+
+`$12.90` **不是 46.63446 GB Egress 产生的超额费用**。Egress 行本身的 `$4.20` 已由包含额度折扣完全抵销；Compute、Function、Realtime 和 Storage 行也全部被折扣抵销。
+
+这笔欠款来自 Pro Plan `$25.00`，再减去 2026-10-26 降级时对 2026-10-26–11-09 的 Pro 剩余期间作出的 `-$12.10` credit memo。按发票日期和抵扣区间推断，剩余 `$12.90` 对应降级前约 2026-10-10–10-25 的 Pro 期间费用；这是对发票期间的日期推断，发票没有把 `$12.90` 单独拆成另一条“历史用量”行。
+
+### 8.4 对后续方案的影响
+
+1. 结清这张历史发票后，当前控制台状态已经是 **Free + Spend Cap enabled**。在 Spend Cap 保持开启且不主动重新升级/关闭 Spend Cap 的前提下，新的超出包含额度用量不会按量生成新的付费账单；超额时的风险转为项目无响应、只读或相关功能受限。
+2. 这不等于网站在 Free 配额内一定能稳定运行。历史账期的 46.63446 GB Egress、227 次函数调用计费单位、27,031 Realtime 消息和 11 个峰值连接都说明业务曾经使用过 Pro 包含额度。若同样的真实流量持续发生，Free 更可能先触发配额限制，而不是产生新的高额账单。
+3. 因此后续优先级仍是：保留 Supabase Auth、订单、余额和关键数据库；把公开图片/视频交给现有 CDN/R2；继续减少 AI 工作台重复历史查询和 Realtime 广播；把 PostgREST 响应字节和真实请求排行作为上线后的验收指标。
+4. 付款本身不会自动把组织恢复为 Pro，也不会自动关闭 Spend Cap；但付款只处理历史欠款，不能替代对公开资源和重复 API 读取的减负改造。
+
+本节的发票来源为本地下载的 Supabase PDF `Invoice-CVUYCA-00012.pdf`（SHA-256：`882692be624edfeea3f0240a5be1734fcb80f03f5528cffb7e0cc1ebbfb837ae`）。本节仍未执行付款、套餐变更、Storage/R2 迁移、数据库写入或生产部署。
+
+## 9. 线上 Usage 与日志可见性复核（2026-10-29）
+
+### 9.1 Free 账期当前状态
+
+只读打开组织 Usage 页面后，控制台显示：
+
+- 当前组织套餐：**Free Plan**。
+- 当前账期：**2026-10-26 至 2026-11-26**。
+- Usage Summary：当前账期没有超过 Free Plan 配额。
+- Egress：摘要为 `0.001 / 5 GB`（小于 1%）；明细面板显示 Used in period `0.00 GB`、Overage `0 GB`。
+- Cached Egress：`0 / 5 GB`，Overage `0 GB`。
+- Storage Size：`0 / 1 GB`；Database Size 面板显示当前没有 active projects。
+- Realtime Messages、Realtime Concurrent Peak Connections、Edge Function Invocations 和 MAU 当前均显示为 0。
+- Log Ingestion 为 `0.003 / 1 GB`；Log Query 为 `7.754 / 100 GB`。Log Query 是读取日志时扫描的数据量，不应与 Egress 或业务 API 响应流量混为一谈。
+
+Egress 面板明确说明它合并统计 Database、Storage、Realtime、Auth、API、Edge Functions、Pooler 和 Log Drains 的未缓存出站流量；该组织汇总页没有给出历史账期内各来源的逐请求响应字节拆分。因此它只能确认当前 Free 账期状态，不能单独解释 2026-09-10 至 2026-10-09 的 46.63446 GB。
+
+### 9.2 项目 Edge Logs 可见性
+
+只读打开项目 `mmkugdibsaeoevliebzk` 的 Edge Logs，并将时间范围从 Last hour 调整为 **Last 5 days** 后刷新，页面显示：
+
+- `No results found`。
+- 页面同时显示 `No data It may take up to 24 hours for data to refresh`。
+- 日志来源控件显示 `Read Replica - mmkugdibsaeoevliebzk`，Connect 按钮为 disabled。
+- 日志筛选器虽然支持搜索、状态、产品和方法，但当前没有可用事件行，因此无法从这次控制台读取获得 PostgREST 路径、重复次数、响应字节或状态码排行。
+
+这说明当前日志页面缺少可供查询的事件数据，不能把“没有结果”解释为“没有请求”。可能原因包括日志刷新延迟、项目当前状态限制或控制台连接不可用；本阶段不对具体原因做未经证实的归因。一次随后打开项目概览页时遇到浏览器网络 `ERR_CONNECTION_CLOSED`，因此没有把该次加载失败作为项目运行状态证据。
+
+### 9.3 对 Egress 热点定位的影响
+
+当前线上证据足以确认：Free + Spend Cap 已在工作，当前新账期没有付费超额；但它不足以把历史 46.63446 GB 分配到 PostgREST、Storage、Realtime、Auth 或 Edge Functions。下一步仍需在日志恢复可读后，针对同一时间窗口采集路径、状态、响应大小和调用次数，再与代码中的公开资源 URL、AI 工作台轮询和 Realtime 订阅进行对照。
+
+在日志数据恢复前，已完成的本地定向读取优化可以作为候选改动，但不能宣称已经降低生产 Egress；现有 CDN/R2 引用统计支持“优先继续复用 CDN、减少重复 API 历史读取”的方向。
+
+## 10. 项目暂停状态复核（2026-10-29）
+
+### 10.1 当前项目状态
+
+重新打开项目 `mmkugdibsaeoevliebzk` 的 Project Overview 后，控制台显示 **Project "zaoyoe" is paused**。页面给出的只读信息是：
+
+- All data，包括 backups 和 storage objects，仍然安全保留。
+- 可从控制台恢复项目，恢复期限显示为 **2027-11-30**。
+- 页面明确提示项目暂停期间可通过 `Resume project` 恢复；本次没有点击该按钮。
+- 当前项目导航中的 Table Editor、SQL Editor、Database、Authentication、Storage、Realtime、Advisors、Observability 和 Integrations 均为 disabled；Edge Functions、Logs 和 Project Settings 入口仍可见，但不能据此推断业务 API 已可用。
+
+### 10.2 对 Usage 读数的解释
+
+组织 Usage 页面显示当前账期 Egress `0.001 / 5 GB`、Storage `0 / 1 GB`、Realtime `0` 等低读数，应结合项目已暂停来理解。项目暂停后没有持续提供正常业务流量，因此这些数字不能用来证明 Egress 降载改动已经在生产生效，也不能用来预测项目恢复后会维持在 Free 配额内。
+
+当前 Billing 页面仍显示组织为 **Free Plan**、**Spend cap is enabled**，并明确说明超出 Free 配额不会产生额外用量费用，但项目可能变得无响应或进入只读模式。发票 `CVUYCA-00012` 的 `$12.90` 仍为 **Outstanding**；本次没有点击 `Pay now`，也没有点击 `Resume project`。
+
+### 10.3 恢复前的发布约束
+
+在恢复项目或上线候选改动前，仍应先完成三件事：
+
+1. 由账户持有人决定是否结清历史发票；本次只读审计没有替用户付款。
+2. 先在本地候选和受控环境验证定向 `task_ids` 查询，确认没有把完整历史任务列表重新带回轮询路径。
+3. 项目恢复后重新采集同一时间窗口的 PostgREST/Storage/Realtime 日志和 Usage，才能判断恢复后的真实 Egress 是否回到 Free 配额范围。
+
+项目暂停本身没有删除备份，也没有证明需要迁移数据库；它首先是一个需要账户持有人处理的恢复/账单状态问题。生产部署仍未执行。
