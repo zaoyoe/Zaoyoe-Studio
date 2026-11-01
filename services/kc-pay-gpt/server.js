@@ -50,7 +50,6 @@ const ADMIN_TOKEN_TTL_MS = adminAuth.ADMIN_TOKEN_TTL_MS;
 const ADMIN_REFRESH_AFTER_MS = adminAuth.ADMIN_REFRESH_AFTER_MS;
 const PROCESS_IDLE_TIMEOUT_MS = Number(process.env.PROCESS_IDLE_TIMEOUT_MS) || (3 * 60 * 1000);
 const PROCESS_TOTAL_TIMEOUT_MS = Number(process.env.PROCESS_TOTAL_TIMEOUT_MS) || (15 * 60 * 1000);
-const STALE_TASK_RECOVERY_MS = Number(process.env.STALE_TASK_RECOVERY_MS) || Math.max(PROCESS_TOTAL_TIMEOUT_MS, 15 * 60 * 1000);
 const MAX_PROCESS_ATTEMPTS = Number(process.env.MAX_PROCESS_ATTEMPTS) || 2;
 const WS_HEARTBEAT_PING_TYPE = 'ping';
 const WS_HEARTBEAT_PONG_TYPE = 'pong';
@@ -868,7 +867,9 @@ function analyzeCheckoutDebugOutput(output, timedOut) {
             status: 'success',
             message: checkoutUrl ? `支付链接已生成: ${checkoutUrl}` : '支付链接调试成功',
             checkoutUrl,
-            reachedPayment: Boolean(checkoutUrl),
+            // A generated/opened Checkout URL is still pre-payment. Do not let
+            // diagnostic link creation trigger card rotation or payment recovery.
+            reachedPayment: false,
             shouldRetry: false,
             deletePhone: false,
             deleteCard: false
@@ -920,16 +921,11 @@ function buildRuntimeFailure(message, code, status = 'failed', extra = {}) {
 }
 
 function extractRuntimeErrorMessage(output) {
-    const normalized = String(output || '');
-    const match = normalized.match(/❌ \[运行时错误\]:\s*(.+)/);
-    if (match) {
-        return match[1].trim();
-    }
-    const lines = normalized.split('\n').map((line) => line.trim()).filter(Boolean);
+    const lines = String(output || '').split('\n').map((line) => line.trim()).filter(Boolean);
     for (let i = lines.length - 1; i >= 0; i -= 1) {
-        if (lines[i].startsWith('Error:')) {
-            return lines[i].replace(/^Error:\s*/, '');
-        }
+        const match = lines[i].match(/❌ \[(?:运行时错误|支付失败)\]\s*:?\s*(.+)/);
+        if (match) return match[1].replace(/\s*\(manual_intervention\)\s*$/, '').trim();
+        if (lines[i].startsWith('Error:')) return lines[i].replace(/^Error:\s*/, '');
     }
     return '';
 }
@@ -937,14 +933,15 @@ function extractRuntimeErrorMessage(output) {
 function analyzeProcessOutput(output, timedOut) {
     const normalized = String(output || '');
     const runtimeError = extractRuntimeErrorMessage(normalized);
-    const reachedPayment = normalized.includes('[Stripe] Step')
-        || normalized.includes('正在使用 Stripe 信用卡')
-        || normalized.includes('Checkout 页面已打开')
-        || normalized.includes('chatgpt.com/checkout');
     const paymentStateMatch = normalized.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g);
     const paymentState = paymentStateMatch?.length
         ? paymentStateMatch[paymentStateMatch.length - 1].split(':')[1]
         : (normalized.includes('支付结果未知') ? 'unknown' : null);
+    const legacyPaymentMarker = normalized.includes('[Stripe] Step')
+        || normalized.includes('正在使用 Stripe 信用卡');
+    const reachedPayment = paymentState
+        ? paymentState !== 'not_started'
+        : legacyPaymentMarker;
     const success = normalized.includes('PAYMENT_SUCCESS') || normalized.includes('最终校验：支付成功');
 
     if (paymentState === 'unknown' || (paymentState === 'started' && !success)) {
@@ -1355,26 +1352,48 @@ function analyzeProcessOutput(output, timedOut) {
 function getCheckoutProgress(output, status = 'running') {
     const text = String(output || '');
     const markers = [
-        ['正在检查代理连通性', 2],
-        ['正在通过纯协议检查代理连通性', 5],
-        ['代理连接成功! 代理公网 IP', 5],
-        ['[1] 准备自助充值', 8],
-        ['Session 登录成功', 12],
+        ['正在检查代理连通性', 8],
+        ['正在通过纯协议检查代理连通性', 8],
+        ['代理连接成功! 代理公网 IP', 10],
+        ['[1] 准备自助充值', 10],
+
+        // --- ChatGPT 链路 ---
+        ['Session 登录成功', 15],
         ['Session 与订阅资格纯协议核验通过', 15],
+        ['已打开 ChatGPT 定价页', 15],
         ['正在通过 API 创建 Checkout', 20],
         ['正在通过纯协议创建官方 Checkout', 25],
         ['Checkout 会话创建成功', 35],
         ['Checkout 页面已打开', 35],
+        ['[协议支付] 开始极速协议支付', 55],
+        ['正在使用 Stripe 信用卡卡池支付流程', 40],
+        ['[Stripe] Step 1', 45],
+        ['[Stripe] Step 2', 55],
+        ['[Stripe] Step 6', 65],
+        ['[Stripe] Step 9', 80],
+        ['[协议支付] 正在提交订单最终确认', 85],
+        ['[Stripe] Step 10', 90],
+
+        // --- Claude 链路 ---
+        ['[Claude] 正在直达目标结账/升级页', 15],
+        ['[Claude] 在线账号已确认', 25],
+        ['[Claude] 核验套餐', 35],
+        ['[Claude] ✅ 套餐确认完成', 40],
+        ['正在观察 Claude 支付结果', 90],
+
+        // --- Grok 链路 ---
+        ['[Grok] 直接打开官方套餐页并核验真实登录状态', 15],
+        ['[Grok] 官方接口已确认登录账号', 25],
+        ['[Grok] 已单次选择 The X Subscription', 35],
+        ['[Grok] 原生银行卡字段已完整填写', 55],
+        ['[Grok] 按国家、地址、账号邮箱顺序填写并核验账单字段', 70],
+        ['[Grok] 已核对今日应付', 85],
+        ['[Grok] 单次提交支付并观察本次 Checkout 结果', 85],
+        ['[Grok] 等待本次官方购买状态确认', 90],
+
+        // --- 成功终态 ---
         ['CHECKOUT_DEBUG_SUCCESS', 100],
         ['CHECKOUT_URL:', 95],
-        ['已打开 ChatGPT 定价页', 15],
-        ['[协议支付] 开始极速协议支付', 55],
-        ['[协议支付] 正在提交订单最终确认', 85],
-        ['[Stripe] Step 1', 45],
-        ['[Stripe] Step 6', 60],
-        ['[Stripe] Step 9', 80],
-        ['[Stripe] Step 10', 90],
-        ['正在使用 Stripe 信用卡卡池支付流程', 40],
         ['最终校验：支付成功!', 100],
         ['PAYMENT_SUCCESS', 100]
     ];
@@ -1772,9 +1791,12 @@ app.get('/api/admin/runtime-logs', authenticateAdmin, (req, res) => {
         let limit = parseInt(String(req.query.limit || '500'), 10) || 500;
         limit = Math.min(2000, Math.max(1, limit));
 
-        const entries = wantTail ? runtimeLog.tail(limit) : runtimeLog.after(after, limit);
-        const nextAfter = entries.length ? entries[entries.length - 1].id : after;
-        res.json({ success: true, entries, nextAfter });
+        const stats = runtimeLog.stats();
+        const clientStream = String(req.query.stream || '');
+        const reset = !wantTail && ((clientStream && clientStream !== stats.streamId) || after >= stats.nextSeq);
+        const entries = wantTail || reset ? runtimeLog.tail(limit) : runtimeLog.after(after, limit);
+        const nextAfter = entries.length ? entries[entries.length - 1].id : Math.min(after, stats.nextSeq - 1);
+        res.json({ success: true, entries, nextAfter, streamId: stats.streamId, reset: Boolean(reset) });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -2358,11 +2380,15 @@ app.get('/api/admin/data', async (req, res) => {
         await ensureStoreReady();
         const data = await store.getAdminData();
         const system = await getSystemMetrics();
+        const recordVideoEnabled = typeof store.getRecordVideoEnabled === 'function'
+            ? await store.getRecordVideoEnabled()
+            : false;
         data.runtime = {
             active_activation_jobs: getTotalActiveJobs(),
             active_foreground_jobs: activeForegroundJobs.size,
             system,
-            browser_pool: browserPool.getStats()
+            browser_pool: browserPool.getStats(),
+            record_video_enabled: recordVideoEnabled
         };
         res.json(data);
     } catch (error) {
@@ -2437,6 +2463,39 @@ app.post('/api/admin/browser-pool/reload', async (req, res) => {
             success: true,
             message: `浏览器池已重载，当前 ${result.size} 个槽位`,
             pool: browserPool.getStats()
+        });
+    } catch (error) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/admin/record-video', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const enabled = typeof store.getRecordVideoEnabled === 'function'
+            ? await store.getRecordVideoEnabled()
+            : false;
+        res.json({ success: true, enabled });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.post('/api/admin/record-video', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const enabled = req.body?.enabled === true
+            || req.body?.enabled === 1
+            || String(req.body?.enabled || '').trim() === '1';
+        if (typeof store.setRecordVideoEnabled === 'function') {
+            await store.setRecordVideoEnabled(enabled);
+        }
+        res.json({
+            success: true,
+            enabled,
+            message: enabled
+                ? '已开启自动化录像（适用于问题排查，会额外占用 CPU）'
+                : '已关闭自动化录像（极速省资源，大幅加快页面就绪与填表）'
         });
     } catch (error) {
         res.status(400).json({ success: false, message: error.message });
@@ -3527,7 +3586,10 @@ app.post('/api/admin/cdks/generate', requireSecondaryAuth, async (req, res) => {
         const count = req.body?.count;
         const planType = req.body?.plan_type || 'plus';
         const platform = req.body?.platform || (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(planType) : 'chatgpt');
-        const paymentRegion = req.body?.payment_region || req.body?.region || null;
+        let paymentRegion = req.body?.payment_region || req.body?.region || null;
+        if (platform === 'grok' || platform === 'claude') {
+            paymentRegion = 'US';
+        }
         const newCdks = createCdks(count);
         const result = await store.insertCdks(newCdks, {
             type: '自助',
@@ -3559,7 +3621,10 @@ app.post('/api/admin/cdks/import', requireSecondaryAuth, async (req, res) => {
         await ensureStoreReady();
         const planType = req.body?.plan_type || 'plus';
         const platform = req.body?.platform || (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(planType) : 'chatgpt');
-        const paymentRegion = req.body?.payment_region || req.body?.region || null;
+        let paymentRegion = req.body?.payment_region || req.body?.region || null;
+        if (platform === 'grok' || platform === 'claude') {
+            paymentRegion = 'US';
+        }
         const summary = await store.insertCdks(cdks, {
             type: '自助',
             plan_type: planType,
@@ -3690,12 +3755,17 @@ async function spawnWorkerWithBrowser({ jobKey, runtimeEnv, runScript, signal = 
     throwIfDiagnosticAborted(signal);
     const poolEnabled = browserPool.getRuntimeEnabled();
     if (!poolEnabled) {
-        const isZeroBrowserFast = (!runtimeEnv?.CDK_PLAN_TYPE || /^(?:plus|pro|pro_\d+|pro\d+|pro_\w+|team|team_\d+|go)$/i.test(String(runtimeEnv.CDK_PLAN_TYPE).trim()))
-            && runtimeEnv?.CHECKOUT_DEBUG_ONLY !== '1'
-            && String(runtimeEnv?.CHATGPT_CHECKOUT_MODE || '').toLowerCase() !== 'ui';
+        const checkoutMode = String(runtimeEnv?.CHECKOUT_MODE || runtimeEnv?.CHATGPT_CHECKOUT_MODE || 'auto').trim().toLowerCase();
+        const fastProtocolEnv = String(runtimeEnv?.FAST_PROTOCOL_ENABLED ?? '').trim().toLowerCase();
+        const isChatGpt = String(runtimeEnv?.PLATFORM || 'chatgpt').toLowerCase() === 'chatgpt';
+        const protocolCheckout = isChatGpt && runtimeEnv?.CHECKOUT_DEBUG_ONLY !== '1' && checkoutMode !== 'ui' && checkoutMode !== 'browser' && checkoutMode !== 'spa';
+        const isZeroBrowserFast = protocolCheckout && checkoutMode !== 'hybrid'
+            && fastProtocolEnv !== 'false' && fastProtocolEnv !== '0';
         logTask(jobKey, isZeroBrowserFast
-            ? '浏览器模式: 0 浏览器纯协议先行（异常/3DS按需懒加载 Chromium）'
-            : '浏览器模式: 独立启动（后台已关闭浏览器池）');
+            ? '浏览器模式: 纯协议（需认证或结果未知时停止并转人工复核）'
+            : (protocolCheckout
+                ? '浏览器模式: 协议创建 Checkout + 浏览器付款'
+                : '浏览器模式: 独立启动（后台已关闭浏览器池）'));
         throwIfDiagnosticAborted(signal);
         return runScript(buildWorkerRuntimeEnv(runtimeEnv, null, 'standalone'));
     }
@@ -3705,7 +3775,27 @@ async function spawnWorkerWithBrowser({ jobKey, runtimeEnv, runScript, signal = 
         if (poolSlot) logTask(jobKey, `浏览器模式: 池 slot=${poolSlot.slotId}`);
         else logTask(jobKey, '浏览器模式: 池未就绪，回退独立启动');
         const mode = poolSlot ? 'pool' : 'standalone';
-        return runScript(buildWorkerRuntimeEnv(runtimeEnv, poolSlot, mode));
+        try {
+            const result = await runScript(buildWorkerRuntimeEnv(runtimeEnv, poolSlot, mode));
+            if (poolSlot && typeof browserPool.invalidateSlot === 'function') {
+                const output = String(result?.output || '');
+                const reasons = [];
+                const marker = output.match(/BROWSER_SLOT_INVALIDATE:\s*([^\s]+)/);
+                if (marker?.[1]) reasons.push(marker[1]);
+                if (result?.timedOut) reasons.push('worker_timeout');
+                if (result?.signal === 'SIGKILL') reasons.push('worker_sigkill');
+                if (result?.aborted && result?.signal) reasons.push('worker_aborted');
+                if (reasons.length) {
+                    browserPool.invalidateSlot(poolSlot.slotId, reasons.join('_'));
+                }
+            }
+            return result;
+        } catch (error) {
+            if (poolSlot && typeof browserPool.invalidateSlot === 'function') {
+                browserPool.invalidateSlot(poolSlot.slotId, 'worker_exception');
+            }
+            throw error;
+        }
     }, signal);
     // Await active children so they finish shutting down before their slot is released.
     // The pool receives the signal to remove queued waiters immediately.
@@ -3772,7 +3862,15 @@ async function spawnCheckoutDebugWorker({ task, input, entry }) {
         const hcaptchaCfg = await waitForDiagnosticAbort(store.getHcaptchaConfig(), signal);
         const { env: hcaptchaEnv } = buildHcaptchaEnvFromConfig(hcaptchaCfg);
         throwIfDiagnosticAborted(signal);
-        const runtimeEnv = buildDiagnosticRuntimeEnv(input, { ...process.env, ...hcaptchaEnv, PROXY: proxy }, jobKey);
+        const recordVideoEnabled = typeof store.getRecordVideoEnabled === 'function'
+            ? await store.getRecordVideoEnabled()
+            : false;
+        const runtimeEnv = buildDiagnosticRuntimeEnv(input, {
+            ...process.env,
+            ...hcaptchaEnv,
+            PROXY: proxy,
+            RECORD_VIDEO: recordVideoEnabled ? '1' : '0'
+        }, jobKey);
         logTask(jobKey, `启动 Checkout 诊断 platform=${input.platform} plan=${input.planType} region=${input.region} mode=${input.mode}`);
         const run = await spawnWorkerWithBrowser({
             jobKey, runtimeEnv, signal,
@@ -3896,7 +3994,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
             for (let attempt = 1; attempt <= MAX_PROCESS_ATTEMPTS; attempt += 1) {
                 logTask(task.jobKey, `开始第 ${attempt}/${MAX_PROCESS_ATTEMPTS} 次尝试`);
 
-                const attemptProgress = normalizeTaskProgress(attempt > 1 ? 1 : 3, 'running', lastProgress);
+                const attemptProgress = normalizeTaskProgress(attempt > 1 ? 1 : 8, 'running', lastProgress);
                 broadcastToTask(task.jobKey, {
                     type: 'progress',
                     jobKey: task.jobKey,
@@ -3906,7 +4004,9 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     cdkCode: cdk
                 });
 
-                const targetRegion = String(task.paymentRegion || cdkDetails?.payment_region || '').trim().toUpperCase() || await store.getPaymentRegion();
+                const effectivePlatform = String(task.platform || cdkDetails?.platform || (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(task.planType || cdkDetails?.plan_type) : '')).trim().toLowerCase();
+                const forcedRegion = (effectivePlatform === 'grok' || effectivePlatform === 'claude') ? 'US' : null;
+                const targetRegion = forcedRegion || String(task.paymentRegion || cdkDetails?.payment_region || '').trim().toUpperCase() || await store.getPaymentRegion();
                 let proxy = await store.getActiveProxy(targetRegion);
                 if (proxy) {
                     const { alignProxyRegion } = require('./playwright-proxy');
@@ -3918,6 +4018,9 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 const fastProtocolEnabled = typeof store.getFastProtocolEnabled === 'function'
                     ? await store.getFastProtocolEnabled()
                     : true;
+                const recordVideoEnabled = typeof store.getRecordVideoEnabled === 'function'
+                    ? await store.getRecordVideoEnabled()
+                    : false;
                 const runtimeEnv = {
                     ...process.env,
                     ...hcaptchaEnv,
@@ -3927,7 +4030,8 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     CDK_PLAN_TYPE: cdkDetails.plan_type || 'plus',
                     PAYMENT_REGION_OVERRIDE: targetRegion,
                     PROXY: proxy,
-                    FAST_PROTOCOL_ENABLED: fastProtocolEnabled ? 'true' : 'false'
+                    FAST_PROTOCOL_ENABLED: fastProtocolEnabled ? 'true' : 'false',
+                    RECORD_VIDEO: recordVideoEnabled ? '1' : '0'
                 };
 
                 logTask(task.jobKey, `尝试 ${attempt} 启动自动化 proxy=${proxy ? 'yes' : 'no'} 地区=${targetRegion}`);
@@ -4185,7 +4289,9 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 });
             }
 
-            if (finalStatus !== 'success' && shouldRollbackCdk && finalPaymentState !== 'unknown') {
+            if (finalStatus === 'success') {
+                logTask(task.jobKey, `CDK ${cdk} 已成功核销`);
+            } else if (shouldRollbackCdk && finalPaymentState !== 'unknown') {
                 await store.markCdkUnused(cdk);
                 logTask(task.jobKey, `CDK ${cdk} 已回滚为未使用`);
                 await store.releaseCardsByOwner(task.jobKey).catch(() => {});
@@ -4411,7 +4517,7 @@ async function handleActivationRequest(req, res) {
             phone: null,
             cardLast4: null,
             status: 'running',
-            progress: 3,
+            progress: 8,
             executionMode
         });
         Object.assign(task, { executionMode, tokenPreview, platform, planType });
@@ -4579,9 +4685,11 @@ app.post('/api/verify-cdk', async (req, res) => {
         const cdkData = await store.verifyCdkDetails(cdk);
         const runningTask = cdkData ? await store.getRunningTaskByCdk(cdk) : null;
         if (cdkData && runningTask) {
-            const effectiveRegion = cdkData.payment_region || await store.getPaymentRegion();
-            const regionCfg = getRegionConfig(effectiveRegion) || REGION_CONFIG.PH;
             const platform = (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(cdkData.plan_type || 'plus') : 'chatgpt') || 'chatgpt';
+            const effectiveRegion = (platform === 'grok' || platform === 'claude')
+                ? 'US'
+                : (cdkData.payment_region || await store.getPaymentRegion());
+            const regionCfg = getRegionConfig(effectiveRegion) || REGION_CONFIG.PH;
             return res.json({
                 success: true,
                 data: {
@@ -4619,9 +4727,11 @@ app.post('/api/verify-cdk', async (req, res) => {
                     }
                 }
             }
-            const effectiveRegion = cdkData.payment_region || await store.getPaymentRegion();
-            const regionCfg = getRegionConfig(effectiveRegion) || REGION_CONFIG.PH;
             const platform = (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(cdkData.plan_type || 'plus') : 'chatgpt') || 'chatgpt';
+            const effectiveRegion = (platform === 'grok' || platform === 'claude')
+                ? 'US'
+                : (cdkData.payment_region || await store.getPaymentRegion());
+            const regionCfg = getRegionConfig(effectiveRegion) || REGION_CONFIG.PH;
             return res.json({
                 success: true,
                 data: {
@@ -4708,7 +4818,7 @@ async function start() {
 
     // 启动恢复先收口遗留任务：支付已开始/结果未知的任务一律人工复核，禁止自动补扣或释放 CDK。
     try {
-        const staleTasks = await store.listStaleRunningTasks();
+        const staleTasks = await store.listRunningTasksForRecovery();
         for (const staleTask of staleTasks) {
             if (await recoverInterruptedCheckoutDiagnostic(staleTask)) continue;
             if (staleTask.execution_mode === 'third_party_api' || staleTask.gpt_api_order_id || staleTask.gpt_api_task_id) continue;

@@ -48,13 +48,16 @@ function buildCheckoutPayload(planName, country, currency, options = {}) {
         return payload;
     }
 
-    const uiMode = String(process.env.CHECKOUT_UI_MODE || 'custom').trim() || 'custom';
+    const uiMode = String(options.checkoutUiMode || options.uiMode || process.env.CHECKOUT_UI_MODE || 'custom').trim() || 'custom';
     const payload = {
         entry_point: 'all_plans_pricing_modal',
         plan_name: planName,
         billing_details: { country, currency },
         checkout_ui_mode: uiMode
     };
+    if (uiMode === 'redirect') {
+        payload.cancel_url = 'https://chatgpt.com/';
+    }
     if (options.promoCampaignId || options.promo) {
         const campaignId = String(options.promoCampaignId || 'plus-1-month-free').trim();
         payload.promo_campaign = {
@@ -69,15 +72,28 @@ function isBillingCountryMismatchError(message) {
     return /billing country must match request country|账单地区与请求地区不一致/i.test(String(message || ''));
 }
 
+function isCheckoutRateLimitError(error) {
+    const msg = String(error?.message || error || '').toLowerCase();
+    const code = String(error?.code || '').toLowerCase();
+    return error?.httpStatus === 429
+        || code === 'checkout_creation_rate_limited'
+        || code === 'checkout_rate_limited'
+        || msg.includes('checkout_creation_rate_limited')
+        || msg.includes('too many checkout attempts')
+        || msg.includes('rate_limit')
+        || msg.includes('rate limited');
+}
+
 function shouldFallbackToPricingCheckout(error, { checkoutMode = 'ui', debugOnly = false } = {}) {
     const mode = String(checkoutMode || '').toLowerCase();
-    const isApiVariant = mode === 'api' || mode === 'auto' || mode === 'hybrid';
+    const isApiVariant = mode === 'api' || mode === 'auto' || mode === 'hybrid' || mode === 'browser' || mode === 'spa';
     return isApiVariant && !debugOnly
         && error?.code !== 'CHECKOUT_UNUSUAL_ACTIVITY'
         && !isChatGptAuthFailure(error)
         && error?.code !== 'ACCOUNT_ALREADY_SUBSCRIBED'
         && !String(error?.message || '').includes('ACCOUNT_ALREADY_SUBSCRIBED')
-        && !isBillingCountryMismatchError(error?.message);
+        && !isBillingCountryMismatchError(error?.message)
+        && !isCheckoutRateLimitError(error);
 }
 
 function buildBillingCountryMismatchError({ country = '', currency = '' } = {}) {
@@ -579,14 +595,17 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
             sentinel = await sentinelPromise.catch(() => null);
         }
         if (!sentinel?.sentinelToken) {
-            console.log('⚡ [Sentinel] 正在为 Checkout API 签发风控令牌 (PoW)...');
+            console.log('⚡ [Sentinel] 前置令牌未命中，正在快速补签风控令牌 (≤4s)...');
             sentinel = await mintSentinelToken({
                 flow: 'chatgpt_checkout',
                 deviceId: didCookie,
                 userAgent: userAgent || undefined,
                 proxy: proxy || '',
                 pageUrl: (page && typeof page.url === 'function' && /^https?:/i.test(page.url()) ? page.url() : '') || 'https://chatgpt.com/',
-                timeoutMs: 15000
+                timeoutMs: 4000
+            }).catch((err) => {
+                console.warn(`⚠️ [Sentinel] 快速补签跳过 (尝试原生发包): ${err.message}`);
+                return null;
             });
         } else {
             console.log('⚡ [Sentinel] ⚡ 命中前置异步风控令牌 (耗时 0ms)!');
@@ -688,5 +707,6 @@ module.exports.buildCheckoutPayload = buildCheckoutPayload;
 module.exports.formatApiErrorDetail = formatApiErrorDetail;
 module.exports.isBillingCountryMismatchError = isBillingCountryMismatchError;
 module.exports.buildBillingCountryMismatchError = buildBillingCountryMismatchError;
+module.exports.isCheckoutRateLimitError = isCheckoutRateLimitError;
 
 module.exports.shouldFallbackToPricingCheckout = shouldFallbackToPricingCheckout;

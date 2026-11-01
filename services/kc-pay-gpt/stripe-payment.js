@@ -31,6 +31,7 @@ const { isBundle: isGrokBundle } = require('./public/grok-plan-catalog');
 const { completeGrokCommercePayment } = require('./grok-native-payment');
 const { createOpenAiCardMethodGuard } = require('./openai-payment-method');
 const { isTrustedStripeFrame, isExcludedCardFrame } = require('./stripe-payment-frame');
+const { formatClaudeDeclineReason, formatStripeDeclineReason } = require('./payment-decline-dictionary');
 
 // ==================== Helper Functions ====================
 
@@ -370,7 +371,7 @@ async function fillCardFieldsOpenAiCheckout(page, cardInfo, timeout = 45000) {
                 const remaining = () => Math.max(1, deadline - Date.now());
                 await inputs[i].click({ timeout: remaining() });
                 await inputs[i].fill('', { timeout: remaining() });
-                await inputs[i].pressSequentially(values[i], { delay: 20, timeout: remaining() });
+                await inputs[i].pressSequentially(values[i], { delay: 8, timeout: remaining() });
                 const actual = await inputs[i].inputValue({ timeout: remaining() });
                 if (actual.replace(/\D/g, '') !== values[i].replace(/\D/g, '')) {
                     const code = methodGuard ? 'OPENAI_CARD_FIELDS_INCOMPLETE' : 'CARD_FIELDS_INCOMPLETE';
@@ -716,25 +717,67 @@ async function readCheckoutDueAmount(page) {
 
 async function waitForCheckoutDueAmount(page, {
     timeoutMs = Number(process.env.CHECKOUT_AMOUNT_READY_WAIT_MS || process.env.CHECKOUT_READY_WAIT_MS || 75000),
-    pollIntervalMs = 500
+    pollIntervalMs = 500,
+    throwOnTimeout = false
 } = {}) {
-    const deadline = Date.now() + Math.max(0, timeoutMs);
+    const checkoutReadinessError = (code, message) => Object.assign(
+        new Error(`${message} [${code}]`),
+        { code, submitted: false, submissionAttempted: false, paymentState: 'not_started' }
+    );
+    const inspectPageFailure = async () => {
+        const canReadPage = page && (
+            typeof page.evaluate === 'function'
+            || typeof page.locator === 'function'
+            || typeof page.textContent === 'function'
+        );
+        if (!canReadPage) {
+            throw checkoutReadinessError('CHECKOUT_PAGE_UNAVAILABLE', 'Checkout 浏览器页面不可用，尚未提交支付');
+        }
+        if (page?.isClosed?.()) {
+            throw checkoutReadinessError('CHECKOUT_PAGE_CLOSED', 'Checkout 页面已关闭，尚未提交支付');
+        }
+
+        const url = typeof page?.url === 'function' ? String(page.url() || '') : '';
+        if (/^chrome-error:\/\/chromewebdata\/?/i.test(url)) {
+            throw checkoutReadinessError('CHECKOUT_NAVIGATION_FAILED', 'Checkout 导航进入 Chrome 错误页，尚未提交支付');
+        }
+
+        const pageText = typeof page?.evaluate === 'function'
+            ? String(await page.evaluate(() => document.body?.innerText || '').catch(() => '') || '')
+            : '';
+        const combined = `${url}\n${pageText}`;
+        if (/ERR_CONNECTION_RESET|ERR_CONNECTION_CLOSED|ERR_CONNECTION_REFUSED|This site can(?:not|'t) be reached|无法访问此网站|意外终止了连接/i.test(combined)) {
+            throw checkoutReadinessError('CHECKOUT_NAVIGATION_FAILED', 'Checkout 页面网络连接失败，尚未提交支付');
+        }
+        return pageText;
+    };
+
+    let deadline = Date.now() + Math.max(0, timeoutMs);
     let lastLogAt = Date.now();
     const startWait = Date.now();
     let reloadedOnce = false;
+    let autoRetriedFormCount = 0;
     do {
+        await inspectPageFailure();
         const due = await readCheckoutDueAmount(page);
         if (due?.amount && due.currency) return due;
-        if (page?.isClosed?.() || Date.now() >= deadline) return null;
-
-        // 快速检测页面是否已经进入不可逆的错误/失效状态（例如 "There was an error processing your payment"）
-        const fatalError = await page?.evaluate?.(() => {
-            const body = document.body?.innerText || '';
-            if (/There was an error processing your payment|Payment failed|Unable to process payment|This checkout session has expired/i.test(body)) {
-                return 'There was an error processing your payment';
+        if (Date.now() >= deadline) {
+            if (throwOnTimeout) {
+                throw checkoutReadinessError('CHECKOUT_RENDER_TIMEOUT', 'Checkout 页面在限定时间内未完成渲染，尚未提交支付');
             }
             return null;
-        }).catch(() => null);
+        }
+
+        // 快速检测页面是否已经进入不可逆的错误/失效状态（例如 "There was an error processing your payment"）
+        const fatalError = typeof page?.evaluate === 'function'
+            ? await page.evaluate(() => {
+                const body = document.body?.innerText || '';
+                if (/There was an error processing your payment|Payment failed|Unable to process payment|This checkout session has expired/i.test(body)) {
+                    return 'There was an error processing your payment';
+                }
+                return null;
+            }).catch(() => null)
+            : null;
         if (fatalError) {
             console.warn(`[Checkout] 页面显示支付处理错误/会话已失效: ${fatalError}`);
             throw Object.assign(new Error(`收银台页面报错: ${fatalError} [CHECKOUT_SESSION_FAILED]`), {
@@ -743,31 +786,75 @@ async function waitForCheckoutDueAmount(page, {
             });
         }
 
+        // 自动自愈 OpenAI "The payment form took too long to load. Please try again."
+        if (autoRetriedFormCount < 3 && typeof page?.evaluate === 'function') {
+            const formTimeoutDetected = await page.evaluate(() => {
+                const text = document.body?.innerText || '';
+                if (/The payment form took too long to load/i.test(text) || (/payment form/i.test(text) && /took too long/i.test(text))) {
+                    const buttons = Array.from(document.querySelectorAll('button'));
+                    const retryBtn = buttons.find(b => /^\s*Retry\s*$/i.test(b.innerText || b.textContent || '') || /重试/i.test(b.innerText || b.textContent || ''));
+                    if (retryBtn) {
+                        retryBtn.click();
+                        return 'clicked';
+                    }
+                    return 'visible';
+                }
+                return null;
+            }).catch(() => null);
+
+            if (formTimeoutDetected === 'clicked') {
+                autoRetriedFormCount += 1;
+                console.log(`[Checkout] 🔄 检测到官方收银台超时提示 (The payment form took too long to load)，已自动点击「Retry」按钮自愈恢复 (第 ${autoRetriedFormCount}/3 次)...`);
+                deadline = Math.max(deadline, Date.now() + 30000);
+                if (typeof page?.waitForTimeout === 'function') {
+                    await page.waitForTimeout(1500).catch(() => {});
+                }
+            }
+        }
+
         // 周期性输出加载日志，感知骨架屏加载进度（若超过 20s 仍卡死在初始白屏骨架屏且无任何 Stripe iframe，执行一次安全重载自愈）
         if (Date.now() - lastLogAt >= 10000) {
             lastLogAt = Date.now();
             const elapsed = Math.round((Date.now() - startWait) / 1000);
             const totalSec = Math.round(timeoutMs / 1000);
-            const planState = await page?.evaluate?.(() => {
-                const text = (document.body?.innerText || '');
-                const isPlanReady = /Getting your plan ready|正在准备你的套餐|Making room for even more files|Unlocking access|Warming up/i.test(text);
-                const hasStripeFrame = Array.from(document.querySelectorAll('iframe')).some(f => /stripe\.com/i.test(f.src || ''));
-                return { isPlanReady, hasStripeFrame };
-            }).catch(() => ({ isPlanReady: false, hasStripeFrame: false }));
-            if (planState.isPlanReady) {
-                if (!reloadedOnce && !planState.hasStripeFrame && elapsed >= 20 && timeoutMs >= 30000 && typeof page?.reload === 'function') {
-                    reloadedOnce = true;
-                    console.log(`[Checkout] ⚠️ 骨架屏已滞留 ${elapsed}s（代理连接可能挂死），正在执行一次安全原地刷新自愈...`);
+            const planState = typeof page?.evaluate === 'function'
+                ? await page.evaluate(() => {
+                    const text = (document.body?.innerText || '');
+                    const isPlanReady = /Getting your plan ready|正在准备你的套餐|Making room for even more files|Unlocking access|Warming up/i.test(text);
+                    const hasStripeFrame = Array.from(document.querySelectorAll('iframe')).some(f => /stripe\.com/i.test(f.src || ''));
+                    return { isPlanReady, hasStripeFrame };
+                }).catch(() => ({ isPlanReady: false, hasStripeFrame: false }))
+                : { isPlanReady: false, hasStripeFrame: false };
+            if (!reloadedOnce && !planState.hasStripeFrame && elapsed >= 45 && timeoutMs >= 60000) {
+                reloadedOnce = true;
+                const currentUrl = typeof page?.url === 'function' ? String(page.url() || '') : '';
+                console.log(`[Checkout] ⚠️ 收银台资源已滞留 ${elapsed}s（代理连接可能挂死或断连），正在执行一次安全自愈刷新...`);
+                if (currentUrl.includes('/auth/login') && currentUrl.includes('next=')) {
+                    const nextMatch = currentUrl.match(/next=([^&]+)/);
+                    const target = nextMatch ? decodeURIComponent(nextMatch[1]) : '';
+                    if (target && target.startsWith('/checkout/')) {
+                        console.log(`[Checkout] 🔄 检测到处于登录过渡等待页，尝试重定向回收银台: https://chatgpt.com${target}`);
+                        await page.goto(`https://chatgpt.com${target}`, { waitUntil: 'commit', timeout: 20000 }).catch(() => {});
+                    } else if (typeof page?.reload === 'function') {
+                        await page.reload({ waitUntil: 'commit', timeout: 20000 }).catch(() => {});
+                    }
+                } else if (typeof page?.reload === 'function') {
                     await page.reload({ waitUntil: 'commit', timeout: 20000 }).catch(() => {});
-                } else {
-                    console.log(`[Checkout] 官方收银台骨架屏仍在加载中 (${elapsed}s/${totalSec}s，正在通过代理拉取 Stripe 资源)...`);
                 }
+                deadline = Math.max(deadline, Date.now() + 45000);
+            } else if (planState.isPlanReady) {
+                console.log(`[Checkout] 官方收银台骨架屏仍在加载中 (${elapsed}s/${totalSec}s，正在通过代理拉取 Stripe 资源)...`);
+            } else if (!planState.hasStripeFrame) {
+                console.log(`[Checkout] 官方收银台资源加载中 (${elapsed}s/${totalSec}s，正在通过代理拉取页面资源)...`);
             }
         }
 
         const interval = Math.max(0, Number(pollIntervalMs) || 0);
         await page.waitForTimeout(Math.min(interval, Math.max(0, deadline - Date.now())));
     } while (Date.now() <= deadline);
+    if (throwOnTimeout) {
+        throw checkoutReadinessError('CHECKOUT_RENDER_TIMEOUT', 'Checkout 页面在限定时间内未完成渲染，尚未提交支付');
+    }
     return null;
 }
 
@@ -951,7 +1038,7 @@ async function waitForCheckoutTaxRecalculation(page, options = {}) {
         baselineAmount = null,
         currency = null,
         maxWaitMs = 18000,
-        pollMs = 250,
+        pollMs = 100,
     } = options;
 
     const started = Date.now();
@@ -1431,9 +1518,14 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
                     'label:has-text("terms to complete your transaction")',
                     'label:has-text("charged monthly based on the seats")',
                     '.CheckboxInput:has-text("terms")',
+                    'input[type="checkbox"][name*="agree" i]',
                     'input[type="checkbox"][name*="terms" i]',
+                    'input[type="checkbox"][id*="agree" i]',
                     'input[type="checkbox"][id*="terms" i]',
-                    'input[type="checkbox"][aria-label*="terms" i]'
+                    'input[type="checkbox"][aria-label*="terms" i]',
+                    'input[type="checkbox"][aria-label*="agree" i]',
+                    '[data-testid*="agreement"] input[type="checkbox"]',
+                    '[data-testid*="terms"] input[type="checkbox"]'
                 ];
                 for (const sel of termsSelectors) {
                     const el = page.locator(sel).first();
@@ -1582,9 +1674,10 @@ const PAYMENT_DECLINE_PATTERNS = [
 ];
 
 function buildDeclinedPaymentResult(page, msg, screenshotPath) {
+    const formatted = formatClaudeDeclineReason(msg);
     return {
         success: false,
-        error: `银行卡被拒绝: ${msg}`,
+        error: `银行卡被拒绝: ${formatted}`,
         screenshot: screenshotPath,
         declined: true,
         canRetryCard: true
@@ -1922,6 +2015,28 @@ async function waitForPaymentResult(page, holderName) {
     while (Date.now() < deadline) {
         const url = page.url();
 
+        if (url.includes('redirect_status=succeeded') || /pay\.openai\.com.*(?:\/receipt|\/success|status=success)/i.test(url)) {
+            console.log('[Stripe] ✅ URL 确认支付成功');
+            return buildPaymentSuccessResult(page, holderName);
+        }
+
+        if (/chatgpt\.com/i.test(url) && !/\/checkout\//i.test(url)) {
+            console.log('[Stripe] ✅ 已离开 checkout 页面');
+            return buildPaymentSuccessResult(page, holderName);
+        }
+
+        if (/claude\.ai/i.test(url) && !/\/upgrade/i.test(url)) {
+            console.log(`[Stripe] ✅ Claude 支付成功，已离开 upgrade 页面: ${url}`);
+            return buildPaymentSuccessResult(page, holderName);
+        }
+
+        const preDeclineMsg = await detectPaymentDeclineOnPage(page);
+        if (preDeclineMsg) {
+            console.log(`[Stripe] ❌ 页面已显示拒付/失败: ${preDeclineMsg}`);
+            const screenshotPath = await saveDebugScreenshot(page, 'payment_declined');
+            return buildDeclinedPaymentResult(page, preDeclineMsg, screenshotPath);
+        }
+
         const captchaBlocking = await hasAnyCheckoutCaptchaSignal(page)
             || await isHumanVerificationVisible(page);
 
@@ -1936,6 +2051,12 @@ async function waitForPaymentResult(page, holderName) {
                 useVisualSolver: true,
                 overlayWaitMs: 0
             });
+            if (captchaResult.paymentDeclined) {
+                const declineText = captchaResult.declineMsg || '您的银行卡被拒绝 (card declined)';
+                console.log(`[Stripe] ❌ 人机验证处理中检测到明确拒付: ${declineText}`);
+                const screenshotPath = await saveDebugScreenshot(page, 'payment_declined');
+                return buildDeclinedPaymentResult(page, declineText, screenshotPath);
+            }
             if (captchaResult.cleared) {
                 console.log('[Stripe] ✅ 人机验证已通过，继续等待支付结果');
                 continue;
@@ -1960,16 +2081,6 @@ async function waitForPaymentResult(page, holderName) {
                 captchaRequired: true,
                 submitted: false
             };
-        }
-
-        if (url.includes('redirect_status=succeeded') || /pay\.openai\.com.*(?:\/receipt|\/success|status=success)/i.test(url)) {
-            console.log('[Stripe] ✅ URL 确认支付成功');
-            return buildPaymentSuccessResult(page, holderName);
-        }
-
-        if (/chatgpt\.com/i.test(url) && !/\/checkout\//i.test(url)) {
-            console.log('[Stripe] ✅ 已离开 checkout 页面');
-            return buildPaymentSuccessResult(page, holderName);
         }
 
         if (/claude\.ai/i.test(url) && !/\/upgrade/i.test(url)) {
@@ -2014,6 +2125,12 @@ async function waitForPaymentResult(page, holderName) {
                     useVisualSolver: true,
                     overlayWaitMs: 0
                 });
+                if (captchaResult.paymentDeclined) {
+                    const declineText = captchaResult.declineMsg || '您的银行卡被拒绝 (card declined)';
+                    console.log(`[Claude/Stripe] ❌ 验证处理中检测到明确拒付: ${declineText}`);
+                    const screenshotPath = await saveDebugScreenshot(page, 'payment_declined');
+                    return buildDeclinedPaymentResult(page, declineText, screenshotPath);
+                }
                 if (captchaResult.cleared) {
                     console.log('[Claude/Stripe] ✅ 重新验证已通过，继续等待支付跳转');
                     await page.waitForTimeout(3000);
@@ -2149,8 +2266,28 @@ async function waitForStripeFrame(page, selectors, timeout) {
 
 async function waitForBillingFields(page, timeout = 20000) {
     const deadline = Date.now() + timeout;
+    const fastBillingSelector = [
+        '#billingAddress-countryInput:visible',
+        '#billingAddress-line1Input:visible',
+        'input[autocomplete*="billing address-line1"]:visible',
+        'input[autocomplete*="billing name"]:visible',
+        'select[autocomplete*="billing country"]:visible',
+        'input[data-testid="billing-line1"]:visible',
+        'input[data-testid="billing-country"]:visible'
+    ].join(', ');
+
     while (Date.now() < deadline) {
         if (page.isClosed()) throw new Error('[CHECKOUT_PAGE_CLOSED] 等待账单字段时支付页面已关闭');
+
+        // ⚡ 极速优先路径：直接在各 frame 中并发/快速探测权威账单控件，命中即直接就绪 (0ms)
+        for (const frame of page.frames()) {
+            if (frame.isDetached()) continue;
+            try {
+                const count = await frame.locator(fastBillingSelector).count();
+                if (count > 0) return true;
+            } catch (_) {}
+        }
+
         // Use the same billing scope as value validation, including rendered iframes.
         // A heading, hidden select, or contact/shipping field alone is not ready.
         for (const frame of page.frames()) {
@@ -2158,7 +2295,7 @@ async function waitForBillingFields(page, timeout = 20000) {
             const items = await getBillingInputsBelowHeading(frame);
             if (items.some((item) => billingFieldKey(item))) return true;
         }
-        await page.waitForTimeout(250);
+        await page.waitForTimeout(100);
     }
     console.warn('[Stripe] ⚠️ 账单地址字段未在超时内出现');
     return false;
@@ -2454,9 +2591,8 @@ async function dismissAddressAutocomplete(page) {
     } catch (_) { /* best-effort */ }
 }
 
-async function focusOpenAiBillingSection(page) {
-    const group = await getAuthoritativeBillingGroup(page);
-    const frame = group?.frame || page;
+async function focusOpenAiBillingSection(page, group = null) {
+    const billingGroup = group || await getAuthoritativeBillingGroup(page);
     // 平滑失焦：仅使当前焦点元素失焦，严禁点击 (12,12) 导致页面剧烈上滚跳动
     await page.evaluate(() => {
         try {
@@ -2466,114 +2602,178 @@ async function focusOpenAiBillingSection(page) {
         } catch (_) {}
     }).catch(() => {});
     await page.keyboard.press('Escape').catch(() => { });
-    const heading = await locateOpenAiBillingHeading(page, group);
+    const heading = await locateOpenAiBillingHeading(page, billingGroup);
     if (heading) {
         await heading.click({ timeout: 2000 }).catch(() => { });
     } else {
-        const street = group?.items.find((item) => billingFieldKey(item) === 'line1');
+        const street = billingGroup?.items?.find((item) => billingFieldKey(item) === 'line1');
         await safeScrollIntoView(street?.el);
     }
     await page.waitForTimeout(100);
 }
 
 async function getBillingInputsBelowHeading(page, { includeHiddenSelects = false } = {}) {
-    const controls = page.locator([
-        'input:visible',
-        includeHiddenSelects ? 'select' : 'select:visible',
-        'textarea:visible',
-        '[role="combobox"]:visible',
-        'button:visible[aria-haspopup="listbox"]',
-        'button:visible[aria-expanded]',
-        'button:visible[id*="state" i]',
-        'button:visible[name*="state" i]',
-        'button:visible[aria-label*="state" i]',
-        'button:visible[aria-label*="Country" i]',
-        'button:visible[id*="country" i]'
-    ].join(', '));
-    const items = [];
-    for (let i = 0, count = await controls.count(); i < count; i += 1) {
-        const el = controls.nth(i);
-        let box = await el.boundingBox().catch(() => null);
-        if (includeHiddenSelects && !(await el.isVisible().catch(() => false))) box = null;
-        if (!box && !(includeHiddenSelects && await resolveElementTag(el) === 'select')) continue;
-        const meta = await el.evaluate((node) => {
+    const selector = [
+        'input',
+        'select',
+        'textarea',
+        '[role="combobox"]',
+        'button[aria-haspopup="listbox"]',
+        'button[aria-expanded]',
+        'button[id*="state" i]',
+        'button[name*="state" i]',
+        'button[aria-label*="state" i]',
+        'button[aria-label*="Country" i]',
+        'button[id*="country" i]'
+    ].join(', ');
+
+    let batch = null;
+    try {
+        batch = await page.evaluate(({ selector, includeHiddenSelects }) => {
+            const controls = Array.from(document.querySelectorAll(selector));
             const shown = (el) => Boolean(el.getClientRects().length) && getComputedStyle(el).visibility !== 'hidden';
             const text = (el) => (el.textContent || '').replace(/\s+/g, ' ').trim();
             const isBillingHeading = (el) => shown(el) && /^Billing address$|^账单地址$/i.test(text(el));
             const heading = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],legend')].find(isBillingHeading)
                 || [...document.querySelectorAll('label,p,span,div')].find((el) => isBillingHeading(el)
                     && ![...el.children].some(isBillingHeading));
-            const explicitBilling = /billing/i.test(`${node.id} ${node.name || ''} ${node.getAttribute('autocomplete') || ''}`);
             const follows = (first, second) => Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
-            if (!heading && !explicitBilling) return null;
-            if (heading) {
-                const group = heading.closest('fieldset,section,[role="group"]');
-                if (group && group.querySelector('input,select,textarea,[role="combobox"]') && !group.contains(node) && !explicitBilling) return null;
-                if (!follows(heading, node) && !explicitBilling) return null;
-                const boundaries = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],legend,p,span')]
-                    .filter((el) => shown(el) && el !== heading && !el.contains(heading) && !heading.contains(el) && follows(heading, el)
-                        && (/^(?:Personal information(?: \(optional\))?|Save (?:my|your) (?:info|information).*|Link|Contact information|Shipping address|Payment method)$/i.test(text(el))
-                            || (el.matches('h1,h2,h3,h4,h5,h6,[role="heading"],legend')
-                                && !(group && group.contains(el))
-                                && !/^(?:Name|Full name|Address|Country|Country or region|City|State|Province|Postal code|ZIP code)$/i.test(text(el)))));
-                if (boundaries.some((boundary) => follows(boundary, node) || boundary.contains(node))) return null;
-            }
+            const group = heading ? heading.closest('fieldset,section,[role="group"]') : null;
 
-            const labelFromFor = () => {
-                const id = node.id;
-                if (!id) return '';
-                const lbl = document.querySelector(`label[for="${CSS.escape(id)}"]`);
-                return lbl ? (lbl.textContent || '').trim() : '';
-            };
-            const labelFromWrap = () => {
-                const lbl = node.closest('label');
-                return lbl ? (lbl.textContent || '').trim() : '';
-            };
-            const labelFromAria = () => {
-                const labelledBy = node.getAttribute('aria-labelledby');
-                if (!labelledBy) return '';
-                const parts = labelledBy.split(/\s+/).map((id) => {
-                    const n = document.getElementById(id);
-                    return n ? (n.textContent || '').trim() : '';
-                }).filter(Boolean);
-                return parts.join(' ');
-            };
-            const labelFromParent = () => {
-                let parent = node.parentElement;
-                for (let depth = 0; depth < 4 && parent; depth += 1) {
-                    // A group label must not be inherited by all sibling fields.
-                    const fields = [...parent.querySelectorAll('input:not([type="hidden"]),select,textarea,[role="combobox"]')].filter(shown);
-                    if (fields.length !== 1 || fields[0] !== node) return '';
-                    const lbl = parent.querySelector(':scope > label, :scope > span, :scope > div');
-                    const forId = lbl?.getAttribute('for');
-                    const text = lbl && (!forId || forId === node.id) ? (lbl.textContent || '').trim() : '';
-                    if (text && text.length < 80) return text;
-                    parent = parent.parentElement;
+            const boundaries = heading ? [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],legend,p,span')]
+                .filter((el) => shown(el) && el !== heading && !el.contains(heading) && !heading.contains(el) && follows(heading, el)
+                    && (/^(?:Personal information(?: \(optional\))?|Save (?:my|your) (?:info|information).*|Link|Contact information|Shipping address|Payment method)$/i.test(text(el))
+                        || (el.matches('h1,h2,h3,h4,h5,h6,[role="heading"],legend')
+                            && !(group && group.contains(el))
+                            && !/^(?:Name|Full name|Address|Country|Country or region|City|State|Province|Postal code|ZIP code)$/i.test(text(el))))) : [];
+
+            const results = [];
+            for (let i = 0; i < controls.length; i++) {
+                const node = controls[i];
+                const isSelect = node.tagName.toLowerCase() === 'select';
+                const isVisible = shown(node);
+                if (!isVisible && !(includeHiddenSelects && isSelect)) continue;
+
+                const rect = node.getBoundingClientRect();
+                const box = isVisible ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null;
+                if (!box && !(includeHiddenSelects && isSelect)) continue;
+
+                const explicitBilling = /billing/i.test(`${node.id} ${node.name || ''} ${node.getAttribute('autocomplete') || ''}`);
+                if (!heading && !explicitBilling) continue;
+
+                if (heading) {
+                    if (group && group.querySelector('input,select,textarea,[role="combobox"]') && !group.contains(node) && !explicitBilling) continue;
+                    if (!follows(heading, node) && !explicitBilling) continue;
+                    if (boundaries.some((boundary) => follows(boundary, node) || boundary.contains(node))) continue;
                 }
-                return '';
-            };
-            return {
-                tag: node.tagName.toLowerCase(),
-                type: node.getAttribute('type') || '',
-                autocomplete: node.getAttribute('autocomplete') || '',
-                placeholder: node.getAttribute('placeholder') || '',
-                ariaLabel: node.getAttribute('aria-label') || '',
-                name: node.getAttribute('name') || '',
-                role: node.getAttribute('role') || '',
-                id: node.id || '',
-                className: node.className || '',
-                title: node.getAttribute('title') || '',
-                dataTestId: node.getAttribute('data-testid') || '',
-                text: text(node),
-                labelText: labelFromFor() || labelFromWrap() || labelFromAria() || labelFromParent()
-            };
-        }).catch(() => null);
-        if (!meta) continue;
-        const hay = `${meta.autocomplete} ${meta.placeholder} ${meta.ariaLabel} ${meta.name} ${meta.labelText} ${meta.id} ${meta.className} ${meta.title} ${meta.dataTestId} ${meta.text}`.toLowerCase();
-        if (/^(email|tel|password|checkbox|radio)$/.test(meta.type)) continue;
-        if (/email|phone|mobile|card|cvc|cc-|expir|security code|contact|optional/.test(hay)) continue;
-        items.push({ el, box, meta, hay, y: box?.y ?? Infinity, x: box?.x ?? Infinity });
+
+                const labelFromFor = () => {
+                    const id = node.id;
+                    if (!id) return '';
+                    const lbl = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+                    return lbl ? (lbl.textContent || '').trim() : '';
+                };
+                const labelFromWrap = () => {
+                    const lbl = node.closest('label');
+                    return lbl ? (lbl.textContent || '').trim() : '';
+                };
+                const labelFromAria = () => {
+                    const labelledBy = node.getAttribute('aria-labelledby');
+                    if (!labelledBy) return '';
+                    const parts = labelledBy.split(/\s+/).map((id) => {
+                        const n = document.getElementById(id);
+                        return n ? (n.textContent || '').trim() : '';
+                    }).filter(Boolean);
+                    return parts.join(' ');
+                };
+                const labelFromParent = () => {
+                    let parent = node.parentElement;
+                    for (let depth = 0; depth < 4 && parent; depth += 1) {
+                        const fields = [...parent.querySelectorAll('input:not([type="hidden"]),select,textarea,[role="combobox"]')].filter(shown);
+                        if (fields.length !== 1 || fields[0] !== node) return '';
+                        const lbl = parent.querySelector(':scope > label, :scope > span, :scope > div');
+                        const forId = lbl?.getAttribute('for');
+                        const text = lbl && (!forId || forId === node.id) ? (lbl.textContent || '').trim() : '';
+                        if (text && text.length < 80) return text;
+                        parent = parent.parentElement;
+                    }
+                    return '';
+                };
+
+                const meta = {
+                    tag: node.tagName.toLowerCase(),
+                    type: node.getAttribute('type') || '',
+                    autocomplete: node.getAttribute('autocomplete') || '',
+                    placeholder: node.getAttribute('placeholder') || '',
+                    ariaLabel: node.getAttribute('aria-label') || '',
+                    name: node.getAttribute('name') || '',
+                    role: node.getAttribute('role') || '',
+                    id: node.id || '',
+                    className: node.className || '',
+                    title: node.getAttribute('title') || '',
+                    dataTestId: node.getAttribute('data-testid') || '',
+                    text: text(node),
+                    labelText: labelFromFor() || labelFromWrap() || labelFromAria() || labelFromParent()
+                };
+
+                const hay = `${meta.autocomplete} ${meta.placeholder} ${meta.ariaLabel} ${meta.name} ${meta.labelText} ${meta.id} ${meta.className} ${meta.title} ${meta.dataTestId} ${meta.text}`.toLowerCase();
+                if (/^(email|tel|password|checkbox|radio)$/.test(meta.type)) continue;
+                if (/email|phone|mobile|card|cvc|cc-|expir|security code|contact|optional/.test(hay)) continue;
+
+                let val = '';
+                try {
+                    if (node.tagName === 'SELECT') {
+                        val = node.value ? (node.options?.[node.selectedIndex]?.textContent || node.value || '') : '';
+                    } else if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') {
+                        val = node.value || '';
+                    } else {
+                        const ariaVal = node.getAttribute('aria-valuetext');
+                        if (ariaVal) {
+                            val = ariaVal;
+                        } else {
+                            const texts = [];
+                            const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+                            while (walker.nextNode()) {
+                                const p = walker.currentNode.parentElement;
+                                if (!p || p.closest('select,option,[role="listbox"],[role="option"],[aria-hidden="true"]')) continue;
+                                const lbl = p.closest('label');
+                                if (lbl && node.contains(lbl)) continue;
+                                if (!p.getClientRects().length || getComputedStyle(p).visibility === 'hidden') continue;
+                                texts.push(walker.currentNode.textContent);
+                            }
+                            val = texts.join(' ').replace(/\s+/g, ' ').trim()
+                                .replace(/^(?:country(?: or region)?|国家或地区|国家|地区|state|province|州|省份)\s*[:：]?\s+/i, '');
+                        }
+                    }
+                } catch (_) {}
+
+                results.push({
+                    index: i,
+                    box,
+                    meta,
+                    hay,
+                    value: String(val || '').trim(),
+                    y: box ? box.y : Infinity,
+                    x: box ? box.x : Infinity
+                });
+            }
+            return results;
+        }, { selector, includeHiddenSelects });
+    } catch (_) {
+        batch = null;
     }
+
+    if (!batch) return [];
+    const controls = page.locator(selector);
+    const items = batch.map((item) => ({
+        el: controls.nth(item.index),
+        box: item.box,
+        meta: item.meta,
+        hay: item.hay,
+        value: item.value,
+        y: item.y,
+        x: item.x
+    }));
     items.sort((a, b) => a.y - b.y || a.x - b.x);
     return items;
 }
@@ -3428,8 +3628,7 @@ async function selectBillingState(page, stateFullName, stateRaw, waitMs = 3000) 
 }
 
 async function locateOpenAiBillingHeading(page, group = null) {
-    const billingGroup = group || await getAuthoritativeBillingGroup(page);
-    const frames = billingGroup ? [billingGroup.frame] : (typeof page.frames === 'function' ? page.frames() : [page]);
+    const frames = group?.frame ? [group.frame] : (typeof page.frames === 'function' ? page.frames() : [page]);
     for (const frame of frames) {
         if (frame.isDetached?.()) continue;
         const heading = frame.getByText(/^Billing address$|^账单地址$/i).first();
@@ -3662,8 +3861,10 @@ async function fillOpenAiCheckoutBilling(page, address, fullName, expectedCurren
         });
     }
 
+    let initialGroup = null;
     try {
-        const heading = await locateOpenAiBillingHeading(page);
+        initialGroup = await getAuthoritativeBillingGroup(page);
+        const heading = await locateOpenAiBillingHeading(page, initialGroup);
         console.log(heading
             ? '  [Stripe] ✅ 已定位账单地址区块'
             : '  [Stripe] 账单标题不可见，使用实际账单字段定位');
@@ -3671,15 +3872,25 @@ async function fillOpenAiCheckoutBilling(page, address, fullName, expectedCurren
         console.warn(`  [Stripe] ⚠️ 账单标题不可见: ${e.message}`);
     }
 
-    await focusOpenAiBillingSection(page);
+    await focusOpenAiBillingSection(page, initialGroup);
     filled = await fillOpenAiBillingDirect(page, address, fullName);
-    filled = await syncFilledFlags(page, filled);
+
+    // ⚡ 性能优化：单次读取 liveValues，并发/同步导出 filled 与完整性状态，消除 3 次连续多余的 DOM 全量深搜
+    const liveValues = await readBillingInputValues(page);
+    for (const key of ['name', 'line1', 'city', 'postal', 'state', 'country']) {
+        filled[key] = Boolean(liveValues[key]);
+    }
     await dismissAddressAutocomplete(page);
-    if (!countryLocked && !getBillingFieldStatus(await readBillingInputValues(page), filled, address.country || 'US').country) {
+
+    let status = getBillingFieldStatus(liveValues, filled, address?.country, address, fullName);
+    if (countryLocked) status.country = true;
+
+    if (!countryLocked && !status.country) {
         return billingCountryFailure(page, address, filled);
     }
 
-    if (await isOpenAiBillingFormComplete(page, filled, address, fullName)) {
+    let missing = listBillingMissing(status);
+    if (missing.length === 0) {
         console.log('  [Stripe] ✅ 账单地址校验通过（直连填写）');
         const taxCheck = await ensureCheckoutTaxFreeAmount(page, address, baselineAmount, billingCurrency, expectedCurrency);
         if (!taxCheck.ok) {
@@ -3692,10 +3903,6 @@ async function fillOpenAiCheckoutBilling(page, address, fullName, expectedCurren
             ...(await resolveBillingDueResult(page, taxCheck)),
         });
     }
-
-    let status = getBillingFieldStatus(await readBillingInputValues(page), filled, address?.country, address, fullName);
-    if (countryLocked) status.country = true;
-    let missing = listBillingMissing(status);
 
     if (missing.length > 0) {
         console.log(`  [Stripe] 仍需补填: ${missing.join(', ')}`);
@@ -3775,6 +3982,7 @@ const BILLING_FULL_NAME_SELECTORS = [
 
 async function readControlValue(item) {
     if (!item?.el) return '';
+    if (typeof item.value === 'string' && item.value !== '') return item.value;
     return String(await item.el.evaluate((node) => {
         if (node.tagName === 'SELECT') {
             if (!node.value) return '';
@@ -4380,7 +4588,7 @@ async function clickCheckoutSubmitButton(page, accountEmail = '', onBeforeSubmit
             let isTargetDisabled = await target.isDisabled().catch(() => false);
             if (!isTargetDisabled) {
                 const ariaDisabled = await target.getAttribute('aria-disabled').catch(() => null);
-                const hasSpinner = await target.locator('.Spinner, svg, [role="progressbar"], [data-testid*="spinner"]').isVisible().catch(() => false);
+                const hasSpinner = await target.locator('.Spinner, svg.Spinner-icon, svg[class*="spinner" i], svg[class*="loading" i], [role="progressbar"], [data-testid*="spinner"]').isVisible().catch(() => false);
                 if (ariaDisabled === 'true' || hasSpinner) {
                     isTargetDisabled = true;
                 }
@@ -4412,7 +4620,7 @@ async function clickCheckoutSubmitButton(page, accountEmail = '', onBeforeSubmit
 
                     const disabled = await target.isDisabled().catch(() => false);
                     const ariaDisabled = await target.getAttribute('aria-disabled').catch(() => null);
-                    const hasSpinner = await target.locator('.Spinner, svg, [role="progressbar"], [data-testid*="spinner"]').isVisible().catch(() => false);
+                    const hasSpinner = await target.locator('.Spinner, svg.Spinner-icon, svg[class*="spinner" i], svg[class*="loading" i], [role="progressbar"], [data-testid*="spinner"]').isVisible().catch(() => false);
 
                     if (!disabled && ariaDisabled !== 'true' && !hasSpinner) {
                         isTargetDisabled = false;

@@ -114,6 +114,22 @@ describe('Payment Protocol Decline UI Fallback', () => {
         };
     }
 
+    it.each([
+        { env: { FAST_PROTOCOL_ENABLED: 'false' } },
+        { env: { FAST_PROTOCOL_ENABLED: '0' } },
+        { extraOptions: { fastProtocol: false } }
+    ])('uses the original Checkout once in browser confirmation mode: %j', async options => {
+        const fixture = createFixture(options);
+        const refreshCheckoutSession = vi.fn();
+        const result = await fixture.run({ refreshCheckoutSession, checkoutUrl: 'https://chatgpt.com/checkout/openai_llc/oaics_test123' });
+        expect(result.success).toBe(true);
+        expect(fixture.executeStripeProtocolPayment).not.toHaveBeenCalled();
+        expect(refreshCheckoutSession).not.toHaveBeenCalled();
+        expect(fixture.mockPage.goto).toHaveBeenCalledTimes(1);
+        expect(fixture.mockPage.goto.mock.calls[0][0]).toContain('oaics_test123');
+        expect(fixture.completeStripeCardPayment).toHaveBeenCalledTimes(1);
+    });
+
     it('completes pure protocol payment with 0 browser when page is null and protocol succeeds', async () => {
         const ensureBrowserPage = vi.fn();
         const fixture = createFixture({

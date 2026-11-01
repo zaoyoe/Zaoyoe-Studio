@@ -17,6 +17,7 @@ const {
     buildSessionNotLoggedInError
 } = require('./auth-page-detect');
 const { assertLocalSessionFresh, verifyChatGptAccessToken, assertChatGptAccountEligible, buildChatGptAuthError } = require('./chatgpt-auth-state');
+const { handleStaticAssetCache } = require('./static-asset-cache');
 
 function decodeJwtPayload(token) {
     const parts = String(token || '').split('.');
@@ -296,7 +297,7 @@ async function injectChatGptCookies(context, cookieSpecs) {
     };
 }
 
-function collectCookieSpecs(sessionData, sessionJson) {
+function collectCookieSpecs(sessionData, sessionJson, extraOptions = {}) {
     const specs = [];
     const seen = new Set();
     const seenNames = new Set();
@@ -331,7 +332,7 @@ function collectCookieSpecs(sessionData, sessionJson) {
         }
     }
 
-    for (const header of [sessionData?.cookieHeader, sessionData?.cookie_header, sessionJson?.cookieHeader, sessionJson?.cookie_header]) {
+    for (const header of [sessionData?.cookieHeader, sessionData?.cookie_header, sessionJson?.cookieHeader, sessionJson?.cookie_header, extraOptions?.cookieHeader]) {
         for (const pair of parseCookieHeader(header)) {
             push(pair.name, pair.value);
         }
@@ -368,7 +369,7 @@ function collectCookieSpecs(sessionData, sessionJson) {
         push('__Host-next-auth.csrf-token', csrfToken);
     }
 
-    const deviceId = String(sessionData?.deviceId || sessionData?.device_id || sessionData?.['oai-did'] || '').trim();
+    const deviceId = String(extraOptions?.deviceId || sessionData?.deviceId || sessionData?.device_id || sessionData?.['oai-did'] || '').trim();
     if (deviceId && !seenNames.has('oai-did')) {
         push('oai-did', deviceId);
     }
@@ -503,7 +504,7 @@ async function installChatGptSession(context, sessionRaw, options = {}) {
     const { accessToken: token, sessionJson } = resolved;
     let accessToken = token;
     let sessionData = resolved.sessionData;
-    const cookieSpecs = collectCookieSpecs(sessionData, sessionJson);
+    const cookieSpecs = collectCookieSpecs(sessionData, sessionJson, options);
 
     if (!hasStoredSessionToken(cookieSpecs)) {
         assertLocalSessionFresh(token, sessionJson);
@@ -615,7 +616,14 @@ async function installChatGptSession(context, sessionRaw, options = {}) {
         const url = route.request().url();
         const resourceType = route.request().resourceType();
 
-        // 核心保护：Stripe 收银台、hCaptcha 人机验证及其 CDN 资源绝对直通，严禁拦截或篡改 Header，
+        // ⚡ 超级智能离线资源包：不可变公共前端静态资产由本地镜像 0ms 瞬间提供 (读穿写入，零代理流量)
+        // 优先拦截不可变静态资源（含 ChatGPT/Claude/Grok 静态包及 js.stripe.com/v3 静态 SDK）
+        const handledByCache = await handleStaticAssetCache(route).catch(() => false);
+        if (handledByCache) {
+            return;
+        }
+
+        // 核心保护：Stripe 收银台 API、m.stripe.network 遥测、hCaptcha 人机验证及其 CDN 资源绝对直通，严禁拦截或篡改 Header，
         // 彻底杜绝 hCaptcha 出现 "Oops, something went wrong. If you're using an adblocker..."
         if (
             url.includes('hcaptcha.com') ||
@@ -926,7 +934,7 @@ async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
         throw new Error('Session 无效：JSON 中缺少 user 信息，请从 chatgpt.com/api/auth/session 复制完整内容');
     }
 
-    const cookieSpecs = collectCookieSpecs(sessionData, sessionJson);
+    const cookieSpecs = collectCookieSpecs(sessionData, sessionJson, options);
     const sessionTokenValue = String(
         process.env.CHATGPT_SESSION_COOKIE
         || process.env.CHATGPT_SESSION_TOKEN
@@ -1027,6 +1035,27 @@ async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
 
     try {
         console.log('🔐 [步骤] 正在通过纯协议 (Chrome TLS 指纹) 快速核验 ChatGPT Session 与订阅状态...');
+
+        // ⚡ 性能优化：先在本地 0ms 解析 JWT 载荷的过期时间 (exp)
+        // 若 AccessToken 明确已过期且拥有 Session Cookie，直接请求刷新接口，无需发起明知会 401 的慢速网络往返！
+        const tokenJwtPayload = decodeJwtPayload(activeToken);
+        const isExpiringSoon = Boolean(tokenJwtPayload?.exp && (Date.now() / 1000) >= (tokenJwtPayload.exp - 60));
+        if (isExpiringSoon && hasSessionCookie) {
+            console.log('🔄 [Session] 本地检测到 AccessToken 已到期，直接通过 Cookie 刷新最新 Token...');
+            const sessionRes = await fetchJson('https://chatgpt.com/api/auth/session', {
+                'Accept': 'application/json',
+                'User-Agent': userAgent,
+                'Referer': 'https://chatgpt.com/',
+                'Cookie': cookieHeader
+            });
+            if (sessionRes.status === 200 && sessionRes.data?.accessToken && (sessionRes.data?.user?.email || sessionRes.data?.user?.id)) {
+                assertSameSessionAccount(sessionJson, accessToken, sessionRes.data);
+                activeSessionData = mergeVerifiedSessionPayload(sessionData, sessionRes.data);
+                activeToken = activeSessionData.accessToken;
+                console.log('✅ [Session] 已预先无感刷新最新 AccessToken');
+            }
+        }
+
         let [meRes, accRes] = await Promise.all([
             fetchJson('https://chatgpt.com/backend-api/me', buildHeaders(activeToken)),
             options.skipSubscriptionCheck

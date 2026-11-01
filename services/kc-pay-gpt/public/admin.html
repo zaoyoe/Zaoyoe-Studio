@@ -35,6 +35,7 @@
             --surface-soft: #f1f5f9;
             --surface-hover: #e2e8f0;
             --sidebar-bg: #ffffff;
+            --sidebar-scrollbar-thumb: rgba(100, 116, 139, 0.48);
             --topbar-bg: rgba(255, 255, 255, 0.85);
 
             --border: #e2e8f0;
@@ -77,6 +78,7 @@
             --surface-soft: #141e33;
             --surface-hover: #1e293b;
             --sidebar-bg: #0b1120;
+            --sidebar-scrollbar-thumb: rgba(148, 163, 184, 0.46);
             --topbar-bg: rgba(11, 17, 32, 0.85);
 
             --border: #1e293b;
@@ -219,6 +221,34 @@
             display: flex;
             flex-direction: column;
             gap: 2px;
+            scrollbar-width: thin;
+            scrollbar-color: transparent transparent;
+        }
+
+        .nav-menu::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .nav-menu::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .nav-menu::-webkit-scrollbar-thumb {
+            border: 1px solid transparent;
+            border-radius: 999px;
+            background: transparent;
+            background-clip: content-box;
+            transition: background-color 0.2s ease;
+        }
+
+        .sidebar.scrollbar-visible .nav-menu,
+        .sidebar:focus-within .nav-menu {
+            scrollbar-color: var(--sidebar-scrollbar-thumb) transparent;
+        }
+
+        .sidebar.scrollbar-visible .nav-menu::-webkit-scrollbar-thumb,
+        .sidebar:focus-within .nav-menu::-webkit-scrollbar-thumb {
+            background-color: var(--sidebar-scrollbar-thumb);
         }
 
         .nav-section-title {
@@ -2368,6 +2398,15 @@
 
 
 
+        .heartbeat-pill[data-connected="false"] {
+            color: var(--danger, #ef4444);
+        }
+        .heartbeat-pill[data-connected="false"] .status-dot-pulse,
+        .heartbeat-pill[data-connected="pending"] .status-dot-pulse {
+            background: currentColor;
+            animation: none;
+            box-shadow: none;
+        }
     </style>
     <link rel="stylesheet" href="/checkout-diagnostic.css">
     <script src="/checkout-diagnostic.js"></script>
@@ -2537,9 +2576,9 @@
             </div>
 
             <div class="topbar-right">
-                <div class="heartbeat-pill">
+                <div class="heartbeat-pill" id="admin_connection_status" data-connected="pending" role="status" aria-live="polite">
                     <span class="status-dot-pulse"></span>
-                    <span>已连接</span>
+                    <span id="admin_connection_label">连接中</span>
                 </div>
 
                 <button type="button" class="icon-btn" onclick="toggleTheme()" title="切换明暗主题" aria-label="切换主题">
@@ -3330,6 +3369,23 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 <p style="font-size:12px; color:var(--text-dim); margin-top:12px; line-height:1.65;">
                     <strong>关闭</strong>：每任务独立冷启动 Chromium（与 Session 登录路径分离，调试更稳）。<br>
                     <strong>开启</strong>：复用预热槽位，省去约 5–10s 启动时间。切换立即生效，写入 MySQL 持久化。
+                </p>
+            </div>
+
+            <div class="panel" style="margin-bottom: 24px;">
+                <div class="panel-header">
+                    <h2 class="panel-title">自动化录像开关 (RECORD_VIDEO)</h2>
+                </div>
+                <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
+                    <label style="display:flex; align-items:center; gap:10px; font-size:14px; cursor:pointer;">
+                        <input id="record_video_enabled_input" type="checkbox" onchange="setRecordVideoMode(this.checked)" />
+                        开启任务全流程视频录像 (.webm)
+                    </label>
+                    <span id="record_video_hint" style="font-size:13px; color:var(--text-dim);"></span>
+                </div>
+                <p style="font-size:12px; color:var(--text-dim); margin-top:12px; line-height:1.65;">
+                    <strong>关闭（强烈推荐，默认）</strong>：节省服务器 30%~50% CPU 算力（免去实时软编码），大幅加快 Next.js 页面水合与表单填写速度，<strong>立省 8~12 秒</strong>。<br>
+                    <strong>开启</strong>：在 <code>debug_screenshots/videos/</code> 保存完整运行视频，仅用于复杂交互排错。切换立即生效，写入持久化配置。
                 </p>
             </div>
 
@@ -4401,6 +4457,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
 
         const RUNTIME_LOG_TEXT_CAP = 1_200_000;
         let runtimeLogPollTimer = null;
+        let runtimeLogStreamId = '';
+        let runtimeLogPollInFlight = false;
         let runtimeLogAfter = 0;
         let runtimeLogText = '';
 
@@ -4490,46 +4548,44 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             }
         }
 
+        function replaceRuntimeLogEntries(entries) {
+            runtimeLogText = '';
+            const pre = document.getElementById('runtime_log_pre');
+            if (pre) pre.textContent = '';
+            appendRuntimeLogEntries(entries);
+        }
+
         async function fetchRuntimeLogsTail() {
             const res = await authFetch('/api/admin/runtime-logs?tail=1&limit=1500');
             const data = await res.json();
             if (!data.success) {
                 throw new Error(data.message || '加载失败');
             }
-            runtimeLogText = (data.entries || []).map(formatRuntimeLogLine).join('\n');
-            if (runtimeLogText) {
-                runtimeLogText += '\n';
-            }
+            replaceRuntimeLogEntries(data.entries || []);
             runtimeLogAfter = Number(data.nextAfter || 0);
-            const pre = document.getElementById('runtime_log_pre');
-            if (pre) {
-                pre.textContent = runtimeLogText;
-                const wrap = pre.parentElement;
-                const autoscroll = document.getElementById('runtime_log_autoscroll');
-                if (autoscroll && autoscroll.checked && wrap) {
-                    wrap.scrollTop = wrap.scrollHeight;
-                }
-            }
+            runtimeLogStreamId = String(data.streamId || '');
         }
 
         async function fetchRuntimeLogsIncremental() {
             const pause = document.getElementById('runtime_log_pause');
-            if (pause && pause.checked) {
-                return;
-            }
+            if ((pause && pause.checked) || runtimeLogPollInFlight) return;
+            runtimeLogPollInFlight = true;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10000);
             try {
-                const res = await authFetch(`/api/admin/runtime-logs?after=${runtimeLogAfter}&limit=1000`);
+                const stream = runtimeLogStreamId ? `&stream=${encodeURIComponent(runtimeLogStreamId)}` : '';
+                const res = await authFetch(`/api/admin/runtime-logs?after=${runtimeLogAfter}&limit=1000${stream}`, { signal: controller.signal });
                 const data = await res.json();
-                if (!data.success || !data.entries || data.entries.length === 0) {
-                    if (data.success && data.nextAfter != null) {
-                        runtimeLogAfter = Number(data.nextAfter);
-                    }
-                    return;
-                }
-                appendRuntimeLogEntries(data.entries);
-                runtimeLogAfter = Number(data.nextAfter || runtimeLogAfter);
+                if (!data.success) throw new Error(data.message || '加载失败');
+                if (data.reset) replaceRuntimeLogEntries(data.entries || []);
+                else appendRuntimeLogEntries(data.entries || []);
+                if (data.nextAfter != null) runtimeLogAfter = Number(data.nextAfter);
+                runtimeLogStreamId = String(data.streamId || runtimeLogStreamId);
             } catch (_) {
-                /* 静默失败，下一轮再试 */
+                setAdminConnectionState(false);
+            } finally {
+                clearTimeout(timeout);
+                runtimeLogPollInFlight = false;
             }
         }
 
@@ -4743,6 +4799,13 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             redirectToLogin();
         }
 
+        function setAdminConnectionState(connected) {
+            const pill = document.getElementById('admin_connection_status');
+            const label = document.getElementById('admin_connection_label');
+            if (pill) pill.dataset.connected = String(Boolean(connected));
+            if (label) label.textContent = connected ? '已连接' : '连接已断开';
+        }
+
         async function authFetch(url, options = {}) {
             const token = getAdminToken();
             if (!token) {
@@ -4751,7 +4814,14 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             }
 
             const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` };
-            const response = await fetch(url, { ...options, headers });
+            let response;
+            try {
+                response = await fetch(url, { ...options, headers });
+                setAdminConnectionState(response.status < 500);
+            } catch (error) {
+                setAdminConnectionState(false);
+                throw error;
+            }
             if (response.status === 401) {
                 // 仅当后端明确标识为后台管理系统凭证失效 (X-Admin-Auth-Error 或 authError: true) 时才踢回登录页，
                 // 绝不可将业务内测试/管理的第三方 Token 401（如 ChatGPT Session 过期）误判为管理员登出！
@@ -7016,10 +7086,44 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 queueEl.innerHTML = queue.map((q, i) => `<div style="padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06);">#${i + 1} 等待槽位 · 任务 <code>${escapeHtml(q.jobKey || '—')}</code></div>`).join('');
             }
 
+            try {
+                const rvRes = await authFetch('/api/admin/record-video');
+                const rvData = await rvRes.json();
+                if (rvRes.ok && rvData.success) {
+                    const rvInput = document.getElementById('record_video_enabled_input');
+                    const rvHint = document.getElementById('record_video_hint');
+                    if (rvInput) rvInput.checked = Boolean(rvData.enabled);
+                    if (rvHint) rvHint.textContent = rvData.enabled ? '已开启（占用 CPU 软编码视频）' : '已关闭（极速省资源，推荐）';
+                }
+            } catch (_) {}
+
             if (showToast) {
                 showMessage('浏览器池状态已刷新', 'success');
             }
             lucide.createIcons();
+        }
+
+        async function setRecordVideoMode(enabled) {
+            const hint = document.getElementById('record_video_hint');
+            if (hint) hint.textContent = '正在保存…';
+            try {
+                const res = await authFetch('/api/admin/record-video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: Boolean(enabled) })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.message || '切换失败');
+                }
+                if (hint) hint.textContent = data.enabled ? '已开启（占用 CPU 软编码视频）' : '已关闭（极速省资源，推荐）';
+                showMessage(data.message || '录像设置已更新', 'success');
+            } catch (error) {
+                if (hint) hint.textContent = error.message || '切换失败';
+                const toggle = document.getElementById('record_video_enabled_input');
+                if (toggle) toggle.checked = !enabled;
+                showMessage(error.message || '切换失败', 'error');
+            }
         }
 
         async function setBrowserPoolMode(enabled) {

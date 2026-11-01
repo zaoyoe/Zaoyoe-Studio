@@ -32,8 +32,13 @@ function taxAddress(address) {
         locality: address.city || '' };
 }
 function addressMatches(a, b) {
-    return !!a && !!b && ['regionCode', 'postalCode', 'administrativeAreaCode', 'locality'].every(key => clean(a[key]) === clean(b[key]))
-        && (a.addressLines || []).filter(Boolean).map(clean).join('\n') === (b.addressLines || []).filter(Boolean).map(clean).join('\n');
+    if (!a || !b) return false;
+    const sameLines = (a.addressLines || []).filter(Boolean).map(clean).join('\n') === (b.addressLines || []).filter(Boolean).map(clean).join('\n');
+    if (!sameLines) return false;
+    const stateA = clean(a.administrativeAreaCode), stateB = clean(b.administrativeAreaCode);
+    const sameState = stateA === stateB || (stateA === 'or' && stateB === 'oregon') || (stateA === 'oregon' && stateB === 'or');
+    if (!sameState) return false;
+    return clean(a.regionCode) === clean(b.regionCode) && clean(a.postalCode) === clean(b.postalCode) && clean(a.locality) === clean(b.locality);
 }
 function rpcError(data) { return !!(data?.error?.code || data?.error?.message); }
 // Official isAddressRefusal/refusedAddressPart semantics, with a strict output
@@ -189,8 +194,9 @@ function observeGrokCommerce(page, planType) {
         ? entry.seq === sessionSeq : entry.name === 'GetCartForSession' ? entry.seq === cartSeq && entry.sessionSeq === sessionSeq
             : entry.name === 'EstimateTax' ? entry.seq === taxSeq && entry.cartSeq === cartSeq && entry.sessionSeq === sessionSeq
                 : entry.submission === submission);
-    function setError(code = 'GROK_COMMERCE_UNCONFIRMED') {
-        error = grokError(code, '本次官方 Commerce 状态无法确认，已停止自动操作');
+    function setError(code = 'GROK_COMMERCE_UNCONFIRMED', detail = '') {
+        console.warn(`[Grok/commerce] 安全状态拦截: code=${code}${detail ? `, 原因=${detail}` : ''}`);
+        error = grokError(code, `本次官方 Commerce 状态无法确认: ${detail || code}，已停止自动操作`);
         if (submission) outcome = { success: false, code: 'PAYMENT_RESULT_UNKNOWN', submitted: true,
             error: '支付结果未知，请人工核对，系统不会再次提交' };
     }
@@ -203,10 +209,21 @@ function observeGrokCommerce(page, planType) {
         if (outcome?.success || outcome?.declined) return;
         if (data.status === 'ACQUISITION_STATUS_SUCCEEDED' && data.subscriptionId && !rpcError(data)) {
             outcome = { success: true, submitted: true, canRetryCard: false, subscriptionId: data.subscriptionId };
-        } else if (data.status === 'ACQUISITION_STATUS_FAILED' && rpcError(data)
-            && /^DECLINE_REASON_/.test(data.declineReason || '') && data.declineReason !== 'DECLINE_REASON_UNSPECIFIED') {
+        } else if (data.status === 'ACQUISITION_STATUS_FAILED' && (rpcError(data) || /^DECLINE_REASON_/.test(data.declineReason || ''))
+            && data.declineReason !== 'DECLINE_REASON_UNSPECIFIED') {
+            const declineMap = {
+                'DECLINE_REASON_INSUFFICIENT_FUNDS': '余额不足 (insufficient funds)',
+                'DECLINE_REASON_LIMIT_EXCEEDED': '交易限额超限 (limit exceeded)',
+                'DECLINE_REASON_EXPIRED_CARD': '卡片已过期 (expired card)',
+                'DECLINE_REASON_INCORRECT_NUMBER': '卡号不正确 (incorrect card number)',
+                'DECLINE_REASON_INCORRECT_CVC': '安全码不正确 (incorrect cvc)',
+                'DECLINE_REASON_CARD_NOT_SUPPORTED': '不支持该卡片类型 (card not supported)',
+                'DECLINE_REASON_AUTHENTICATION_FAILED': '3DS验证失败 (authentication failed)',
+            };
+            const detail = declineMap[data.declineReason] || (data.declineReason ? data.declineReason.replace('DECLINE_REASON_', '').toLowerCase() : '官方拒付');
+            console.log(`[Grok] ❌ 官方收银台提示拒付: ${detail}`);
             outcome = { success: false, submitted: true, declined: true, canRetryCard: true,
-                error: '支付卡被官方系统拒付' };
+                error: `支付卡被官方系统拒付: ${detail}` };
         }
         if (!requestedPurchase) for (const [pending, id] of pendingStatus.splice(0)) consumeOutcome(pending, id);
     }
@@ -240,7 +257,15 @@ function observeGrokCommerce(page, planType) {
                     || data.store || !addressMatches(data.billingAddress, submission.address)
                     || clean(data.billingEmail) !== clean(submission.email)
                     || submission.idempotencyKey && submission.idempotencyKey !== data.idempotencyKey) {
-                    setError(); return;
+                    const detail = !submission ? '未初始化提交会话'
+                        : data.cartId !== submission.cartId ? `cartId不匹配 (${data.cartId} vs ${submission.cartId})`
+                        : !data.idempotencyKey ? '缺少幂等键'
+                        : !data.native?.paymentMethodId ? '缺少支付方式ID'
+                        : data.store ? '触发了保存卡片选项'
+                        : !addressMatches(data.billingAddress, submission.address) ? '账单地址与预估不匹配'
+                        : clean(data.billingEmail) !== clean(submission.email) ? '邮箱与会话不匹配'
+                        : '幂等键冲突';
+                    setError('GROK_ACQUIRE_MISMATCH', detail); return;
                 }
                 acquisitionInFlight = true;
                 submission.idempotencyKey = data.idempotencyKey; entry.submission = submission;
@@ -249,14 +274,14 @@ function observeGrokCommerce(page, planType) {
                 entry.submission = submission;
             }
             requests.set(request, entry);
-        } catch (_) { setError('GROK_COMMERCE_PROTOCOL_UNSUPPORTED'); }
+        } catch (err) { setError('GROK_COMMERCE_PROTOCOL_UNSUPPORTED', `解码异常: ${err?.message || err}`); }
     };
     const onResponse = async response => {
         const entry = requests.get(response.request());
         if (!entry) return;
         if (!current(entry)) { requests.delete(response.request()); return; }
         try {
-            if (!response.ok()) throw new Error('RPC HTTP failure');
+            if (!response.ok()) throw new Error(`RPC HTTP failure ${response.status()}`);
             const data = decodeRpc(entry.method, 'output', await response.body(), response.headers());
             if (!current(entry)) return;
             if (['CreateCheckoutSession', 'GetCheckoutSession', 'AdoptCheckoutSession'].includes(entry.name)) {
@@ -273,7 +298,7 @@ function observeGrokCommerce(page, planType) {
                         origin = { request: entry.data, token };
                         sessionOrigins.set(token, origin);
                     } else if ((origin.request?.teamId || '') !== (entry.data.teamId || '')) {
-                        setError('GROK_CHECKOUT_SCOPE_UNCONFIRMED');
+                        setError('GROK_CHECKOUT_SCOPE_UNCONFIRMED', 'teamId不匹配');
                     }
                     // Retain the first proven scope even when overlapping
                     // creation requests return the same previously seen token.
@@ -281,7 +306,7 @@ function observeGrokCommerce(page, planType) {
                 session = { request: entry.name === 'AdoptCheckoutSession' ? entry.priorSession?.request : entry.data,
                     origin, data: { ...data, skuPricings: entry.name === 'AdoptCheckoutSession' ? prior?.skuPricings : data.skuPricings } };
                 if (entry.name !== 'CreateCheckoutSession' && (entry.data.sessionToken !== data.checkoutSession.token
-                    || prior && prior.checkoutSession.token !== data.checkoutSession.token)) setError();
+                    || prior && prior.checkoutSession.token !== data.checkoutSession.token)) setError('GROK_SESSION_TOKEN_MISMATCH', '会话Token前后不一致');
             } else if (entry.name === 'GetCartForSession') {
                 cart = { request: entry.data, data };
                 // Bind the response's opaque subject metadata once per proven
@@ -292,7 +317,7 @@ function observeGrokCommerce(page, planType) {
             else if (entry.name === 'EstimateTax') { tax = { request: entry.data, data }; ++taxCounts.completed; }
             else if (entry.name === 'Acquire') { acquisitionInFlight = false; consumeOutcome(data); }
             else if (entry.name === 'GetAcquisitionStatus') consumeOutcome(data, entry.data.purchaseId);
-        } catch (_) { if (current(entry)) setError('GROK_COMMERCE_PROTOCOL_UNSUPPORTED'); }
+        } catch (err) { if (current(entry)) setError('GROK_COMMERCE_PROTOCOL_UNSUPPORTED', `响应异常: ${err?.message || err}`); }
         finally { requests.delete(response.request()); }
     };
     const onFailed = request => {
@@ -300,7 +325,7 @@ function observeGrokCommerce(page, planType) {
         requests.delete(request);
         if (!entry) return;
         if (entry.name === 'Acquire') acquisitionInFlight = false;
-        if (current(entry)) setError('GROK_CHECKOUT_NETWORK_ERROR');
+        if (current(entry)) setError('GROK_CHECKOUT_NETWORK_ERROR', `网络请求失败: ${entry.name}`);
     };
     page.on('request', onRequest); page.on('response', onResponse); page.on('requestfailed', onFailed);
     return {

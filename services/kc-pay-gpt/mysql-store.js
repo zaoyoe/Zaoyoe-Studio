@@ -2273,6 +2273,21 @@ async function setFastProtocolEnabled(enabled) {
     return Boolean(enabled);
 }
 
+const RECORD_VIDEO_CONFIG_KEY = 'record_video_enabled';
+
+async function getRecordVideoEnabled() {
+    const fromDb = await getAppConfigValue(RECORD_VIDEO_CONFIG_KEY, '');
+    if (fromDb !== '') {
+        return parseBooleanConfig(fromDb, false);
+    }
+    return parseBooleanConfig(process.env.RECORD_VIDEO, false);
+}
+
+async function setRecordVideoEnabled(enabled) {
+    await setAppConfigValue(RECORD_VIDEO_CONFIG_KEY, enabled ? '1' : '0');
+    return Boolean(enabled);
+}
+
 async function getTelegramConfig() {
     const keys = [
         'telegram_bot_token',
@@ -2996,6 +3011,19 @@ async function listStaleRunningTasks(maxAgeMs = 15 * 60 * 1000) {
            AND COALESCE(last_heartbeat_at, updated_at) < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL ? SECOND)
          ORDER BY updated_at ASC, id ASC`,
         [Math.ceil(age / 1000)]
+    );
+}
+
+// Startup runs before this singleton service accepts new tasks. Recover its
+// interrupted tasks even when the last recorded heartbeat was recent.
+async function listRunningTasksForRecovery() {
+    return runQuery(
+        `SELECT job_key, cdk_code, status, message, progress, raw_output,
+                execution_mode,
+                gpt_api_order_id, gpt_api_task_id, payment_state, updated_at
+         FROM task_logs
+         WHERE status = 'running'
+         ORDER BY updated_at ASC, id ASC`
     );
 }
 
@@ -4283,6 +4311,8 @@ module.exports = {
     setBrowserPoolEnabled,
     getFastProtocolEnabled,
     setFastProtocolEnabled,
+    getRecordVideoEnabled,
+    setRecordVideoEnabled,
     getTelegramConfig,
     saveTelegramConfig,
     getGptApiConfig,
@@ -4345,6 +4375,7 @@ module.exports = {
     getSessionByJobKey,
     clearSessionPayload,
     listStaleRunningTasks,
+    listRunningTasksForRecovery,
     PLAN_NAME_MAP,
     resolvePlanName,
     connectionInfo: {

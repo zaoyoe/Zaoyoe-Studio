@@ -74,6 +74,15 @@ describe('hCaptcha challenge prompt translation and guidance', () => {
             .toBe('请选出所有【有开关状态的物品】');
         expect(translateHcaptchaPrompt('things with on and off states'))
             .toBe('有开关状态的物品');
+
+        expect(translateHcaptchaPrompt('Click on all cells where two lines overlap'))
+            .toBe('请点击【两条线重叠的所有格子】');
+        expect(translateHcaptchaPrompt('Click on each cell where two lines overlap'))
+            .toBe('请点击【两条线重叠的每个格子】');
+        expect(translateHcaptchaPrompt('all cells where two lines overlap'))
+            .toBe('两条线重叠的所有格子');
+        expect(translateHcaptchaPrompt('cells where two lines overlap'))
+            .toBe('两条线重叠的格子');
     });
 
     it('translates difference and drag/matching challenge prompts', () => {

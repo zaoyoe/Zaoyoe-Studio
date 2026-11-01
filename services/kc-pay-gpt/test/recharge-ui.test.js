@@ -11,7 +11,12 @@ beforeAll(async () => { browser = await chromium.launch({ headless: true, args: 
 afterAll(async () => { await browser?.close(); });
 
 async function fixture(options = {}) {
-    const context = await browser.newContext({ viewport: options.viewport || { width: 1280, height: 900 }, reducedMotion: options.reducedMotion || 'no-preference' });
+    const context = await browser.newContext({
+        viewport: options.viewport || { width: 1280, height: 900 },
+        isMobile: Boolean(options.isMobile),
+        hasTouch: Boolean(options.isMobile),
+        reducedMotion: options.reducedMotion || 'no-preference'
+    });
     const page = await context.newPage();
     const errors = [];
     const requests = [];
@@ -69,12 +74,295 @@ async function verify(page) {
     await page.waitForFunction(() => !document.querySelector('.recharge-card').classList.contains('is-morphing'));
 }
 
-function session() {
+function session({ includeSessionToken = false } = {}) {
     const encode = data => Buffer.from(JSON.stringify(data)).toString('base64url');
-    return JSON.stringify({ user: { email: 'offline@example.test' }, accessToken: `${encode({ typ: 'JWT', alg: 'RS256' })}.${encode({ iss: 'https://auth.openai.com', aud: 'https://api.openai.com/v1', exp: Math.floor(Date.now() / 1000) + 3600, scp: ['model.request'], 'https://api.openai.com/auth': { chatgpt_account_id: 'offline-account', chatgpt_user_id: 'offline-user' } })}.offline-signature` });
+    return JSON.stringify({
+        user: { email: 'offline@example.test' },
+        accessToken: `${encode({ typ: 'JWT', alg: 'RS256' })}.${encode({ iss: 'https://auth.openai.com', aud: 'https://api.openai.com/v1', exp: Math.floor(Date.now() / 1000) + 3600, scp: ['model.request'], 'https://api.openai.com/auth': { chatgpt_account_id: 'offline-account', chatgpt_user_id: 'offline-user' } })}.offline-signature`,
+        ...(includeSessionToken ? { sessionToken: 'offline-session-token' } : {})
+    });
 }
 
 describe('restored recharge user interactions with all external effects mocked', () => {
+    it('keeps mobile inputs at a non-zooming size and disables page scaling', async () => {
+        const f = await fixture({ viewport: { width: 390, height: 844 }, isMobile: true });
+        try {
+            const viewport = await f.page.locator('meta[name="viewport"]').getAttribute('content');
+            expect(viewport).toContain('maximum-scale=1');
+            expect(viewport).toContain('user-scalable=no');
+            expect(viewport).toContain('viewport-fit=cover');
+
+            await verify(f.page);
+            const fontSizes = await f.page.evaluate(() => ['#cdkInput', '#tokenInput', '#queryInput']
+                .map(selector => Number.parseFloat(getComputedStyle(document.querySelector(selector)).fontSize)));
+            expect(fontSizes.every(size => size >= 16)).toBe(true);
+            const touchActions = await f.page.evaluate(() => ({
+                body: getComputedStyle(document.body).touchAction,
+                card: getComputedStyle(document.querySelector('.recharge-card')).touchAction
+            }));
+            expect(touchActions.body).toContain('pan-x');
+            expect(touchActions.body).toContain('pan-y');
+            expect(touchActions.card).toBe('pan-y');
+            expect(f.errors).toEqual([]);
+        } finally { await f.context.close(); }
+    });
+
+    it('keeps the AI recharge action visible when the mobile keyboard reduces the viewport', async () => {
+        const f = await fixture({ viewport: { width: 390, height: 844 }, isMobile: true });
+        try {
+            await f.page.locator('.page-shell').evaluate(shell => Promise.all(
+                shell.getAnimations().map(animation => animation.finished)
+            ));
+            await f.page.locator('#cdkInput').focus();
+            await f.page.setViewportSize({ width: 390, height: 420 });
+            await f.page.waitForFunction(() => document.body.classList.contains('keyboard-open')
+                && getComputedStyle(document.documentElement).getPropertyValue('--kc-keyboard-shell-top').trim());
+
+            const layout = await f.page.evaluate(() => {
+                const card = document.querySelector('.recharge-card').getBoundingClientRect();
+                const button = document.querySelector('#redeemBtn').getBoundingClientRect();
+                return {
+                    viewportHeight: window.visualViewport?.height || window.innerHeight,
+                    cardTop: card.top,
+                    cardBottom: card.bottom,
+                    buttonTop: button.top,
+                    buttonBottom: button.bottom
+                };
+            });
+            expect(layout.cardTop).toBeGreaterThanOrEqual(0);
+            expect(Math.abs(layout.cardBottom - layout.viewportHeight + 8)).toBeLessThanOrEqual(16);
+            expect(layout.cardBottom).toBeLessThanOrEqual(layout.viewportHeight + 1);
+            expect(layout.buttonTop).toBeGreaterThanOrEqual(0);
+            expect(layout.buttonBottom).toBeLessThanOrEqual(layout.viewportHeight + 1);
+            expect(f.errors).toEqual([]);
+        } finally { await f.context.close(); }
+    });
+
+    it('keeps the native-height mobile card bottom-aligned and smoothly recenters after the keyboard closes', async () => {
+        const f = await fixture({ viewport: { width: 390, height: 844 }, isMobile: true });
+        try {
+            await f.page.locator('#cdkInput').focus();
+            await f.page.setViewportSize({ width: 390, height: 420 });
+            await f.page.waitForFunction(() => document.body.classList.contains('keyboard-open')
+                && getComputedStyle(document.documentElement).getPropertyValue('--kc-keyboard-shell-top').trim());
+
+            const openCard = await f.page.locator('.recharge-card').boundingBox();
+            const nativeCard = await f.page.evaluate(() => {
+                const card = document.querySelector('.recharge-card');
+                const previousHeight = card.style.height;
+                card.style.height = 'auto';
+                const height = card.getBoundingClientRect().height;
+                card.style.height = previousHeight;
+                return height;
+            });
+            const viewportHeight = await f.page.evaluate(() => window.visualViewport?.height || window.innerHeight);
+            expect(Math.abs(openCard.height - nativeCard)).toBeLessThanOrEqual(1);
+            expect(openCard.y).toBeGreaterThanOrEqual(0);
+            expect(Math.abs(openCard.y + openCard.height - viewportHeight + 8)).toBeLessThanOrEqual(16);
+
+            await f.page.evaluate(() => {
+                window.__keyboardCloseTopSamples = [];
+                const shell = document.querySelector('.page-shell');
+                const sample = () => {
+                    window.__keyboardCloseTopSamples.push(shell.getBoundingClientRect().top);
+                    if (window.__keyboardCloseTopSamples.length < 28) requestAnimationFrame(sample);
+                };
+                requestAnimationFrame(sample);
+            });
+            await f.page.setViewportSize({ width: 390, height: 844 });
+            await f.page.waitForFunction(() => !document.body.classList.contains('keyboard-open'), { timeout: 2000 });
+            await f.page.waitForTimeout(240);
+
+            const tops = await f.page.evaluate(() => window.__keyboardCloseTopSamples);
+            const largestFrameMove = Math.max(...tops.slice(1).map((top, index) => Math.abs(top - tops[index])));
+            const restoredTop = await f.page.locator('.page-shell').evaluate(shell => shell.getBoundingClientRect().top);
+            const restoreDirection = Math.sign(tops.at(-1) - tops[0]);
+            const reverseFrames = tops.slice(1).filter((top, index) => {
+                const previous = tops[index];
+                return restoreDirection > 0 ? top < previous - 1 : top > previous + 1;
+            });
+            expect(largestFrameMove).toBeLessThan(50);
+            expect(reverseFrames).toHaveLength(0);
+            expect(restoredTop).toBeGreaterThan(100);
+            expect(f.errors).toEqual([]);
+        } finally { await f.context.close(); }
+    });
+
+    it('freezes the card while the mobile keyboard retracts through intermediate viewport heights', async () => {
+        const f = await fixture({ viewport: { width: 390, height: 844 }, isMobile: true });
+        try {
+            await f.page.locator('#cdkInput').focus();
+            await f.page.setViewportSize({ width: 390, height: 420 });
+            await f.page.waitForFunction(() => document.body.classList.contains('keyboard-open')
+                && getComputedStyle(document.documentElement).getPropertyValue('--kc-keyboard-shell-top').trim());
+
+            await f.page.evaluate(() => {
+                window.__keyboardCloseTopSamples = [];
+                const shell = document.querySelector('.page-shell');
+                const sample = () => {
+                    window.__keyboardCloseTopSamples.push(shell.getBoundingClientRect().top);
+                    if (window.__keyboardCloseTopSamples.length < 42) requestAnimationFrame(sample);
+                };
+                requestAnimationFrame(sample);
+            });
+            await f.page.setViewportSize({ width: 390, height: 500 });
+            await f.page.waitForTimeout(55);
+            await f.page.setViewportSize({ width: 390, height: 650 });
+            await f.page.waitForTimeout(55);
+            await f.page.setViewportSize({ width: 390, height: 844 });
+            await f.page.waitForTimeout(500);
+
+            const tops = await f.page.evaluate(() => window.__keyboardCloseTopSamples);
+            const first = tops[0];
+            const final = tops.at(-1);
+            const direction = Math.sign(final - first);
+            const reverseFrames = tops.slice(1).filter((top, index) => {
+                const previous = tops[index];
+                return direction > 0 ? top < previous - 1 : top > previous + 1;
+            });
+            expect(reverseFrames).toHaveLength(0);
+            expect(Math.max(...tops.slice(1).map((top, index) => Math.abs(top - tops[index])))).toBeLessThan(50);
+            expect(await f.page.locator('.page-shell').evaluate(shell => shell.getBoundingClientRect().top)).toBeGreaterThan(100);
+            expect(f.errors).toEqual([]);
+        } finally { await f.context.close(); }
+    });
+
+    it('does not force the mobile page back to scroll position zero during focus handling', async () => {
+        const f = await fixture({ viewport: { width: 390, height: 844 }, isMobile: true });
+        try {
+            await f.page.evaluate(() => {
+                window.__scrollToCalls = [];
+                window.scrollTo = (...args) => window.__scrollToCalls.push(args);
+                Object.defineProperty(window, 'scrollY', { configurable: true, value: 40 });
+                window.dispatchEvent(new Event('scroll'));
+            });
+            expect(await f.page.evaluate(() => window.__scrollToCalls)).toEqual([]);
+            expect(f.errors).toEqual([]);
+        } finally { await f.context.close(); }
+    });
+
+    it.each([
+        ['desktop', { width: 1280, height: 900 }],
+        ['compact desktop', { width: 700, height: 900 }],
+        ['mobile', { width: 390, height: 844 }]
+    ])('collapses the Session status and card together on %s', async (_label, viewport) => {
+        const f = await fixture({ viewport });
+        try {
+            await verify(f.page);
+            await f.page.locator('#tokenInput').fill(session({ includeSessionToken: true }));
+            await f.page.waitForFunction(() => {
+                const status = document.querySelector('#statusMessage');
+                const card = document.querySelector('.recharge-card');
+                return status.textContent.includes('Session 完整有效')
+                    && getComputedStyle(status).display !== 'none'
+                    && !card.classList.contains('is-morphing');
+            });
+
+            const before = await f.page.evaluate(() => {
+                const rect = document.querySelector('.recharge-card').getBoundingClientRect();
+                return { width: rect.width, height: rect.height };
+            });
+            await f.page.evaluate(() => {
+                window.__collapseSamples = [];
+                document.querySelector('#startBtn').addEventListener('click', () => {
+                    const startedAt = performance.now();
+                    const sample = () => {
+                        const card = document.querySelector('.recharge-card');
+                        const status = document.querySelector('#statusMessage');
+                        const cardRect = card.getBoundingClientRect();
+                        const statusRect = status.getBoundingClientRect();
+                        const style = getComputedStyle(status);
+                        const px = property => parseFloat(style.getPropertyValue(property)) || 0;
+                        window.__collapseSamples.push({
+                            t: performance.now() - startedAt,
+                            cardHeight: cardRect.height,
+                            cardWidth: cardRect.width,
+                            statusHeight: statusRect.height,
+                            statusContentHeight: statusRect.height - px('padding-top') - px('padding-bottom')
+                                - px('border-top-width') - px('border-bottom-width'),
+                            statusOpacity: Number.parseFloat(style.opacity),
+                            statusDisplay: style.display
+                        });
+                        if (card.classList.contains('is-morphing')) requestAnimationFrame(sample);
+                    };
+                    requestAnimationFrame(sample);
+                }, { capture: true, once: true });
+            });
+
+            await f.page.locator('#startBtn').click();
+            await f.page.waitForFunction(() => {
+                const card = document.querySelector('.recharge-card');
+                const status = document.querySelector('#statusMessage');
+                return card.classList.contains('is-morphing')
+                    && status.classList.contains('is-collapsing')
+                    && getComputedStyle(status).display !== 'none';
+            });
+            await f.page.waitForFunction(() => !document.querySelector('.recharge-card').classList.contains('is-morphing'));
+
+            const samples = await f.page.evaluate(() => window.__collapseSamples);
+            const final = samples.at(-1);
+            const firstCardShrink = samples.find(sample => sample.cardHeight < before.height - 1);
+            const firstFade = samples.find(sample => sample.statusOpacity < 0.99);
+            const fullyFaded = samples.find(sample => sample.statusOpacity <= 0.05);
+            const visibleTextSamples = samples.filter(sample => sample.statusDisplay !== 'none' && sample.statusOpacity > 0.05);
+            const fadingSamples = samples.filter(sample => sample.statusOpacity > 0.05 && sample.statusOpacity < 0.95);
+            expect(firstCardShrink).toBeDefined();
+            expect(firstFade).toBeDefined();
+            expect(firstCardShrink.t).toBeLessThan(firstFade.t);
+            expect(fullyFaded).toBeDefined();
+            expect(fadingSamples.length).toBeGreaterThan(1);
+            expect(fadingSamples.at(-1).cardHeight).toBeLessThan(fadingSamples[0].cardHeight - 1);
+            expect(final.t - fullyFaded.t).toBeGreaterThan(100);
+            expect(final.t - fullyFaded.t).toBeLessThanOrEqual(240);
+            expect(fullyFaded.cardHeight).toBeGreaterThan(final.cardHeight + 5);
+            expect(visibleTextSamples.length).toBeGreaterThan(0);
+            expect(Math.min(...visibleTextSamples.map(sample => sample.statusContentHeight)))
+                .toBeGreaterThanOrEqual(visibleTextSamples[0].statusContentHeight - 2);
+            expect(Math.max(...samples.map(sample => Math.abs(sample.cardWidth - before.width))))
+                .toBeLessThan(0.5);
+            expect(final.cardHeight).toBeLessThan(before.height - 20);
+            expect(await f.page.locator('#statusMessage').evaluate(status => getComputedStyle(status).display)).toBe('none');
+            expect(f.errors).toEqual([]);
+        } finally { await f.context.close(); }
+    });
+
+    it('honors reduced motion when dismissing the Session status', async () => {
+        const f = await fixture({ reducedMotion: 'reduce' });
+        try {
+            await verify(f.page);
+            await f.page.locator('#tokenInput').fill(session({ includeSessionToken: true }));
+            await f.page.waitForFunction(() => document.querySelector('#statusMessage').textContent.includes('Session 完整有效'));
+            await f.page.locator('#startBtn').click();
+            await f.page.waitForFunction(() => window.__sent.some(data => data.type === 'subscribe'));
+
+            expect(await f.page.locator('#statusMessage').evaluate(status => getComputedStyle(status).display)).toBe('none');
+            expect(await f.page.locator('.recharge-card').evaluate(card => card.classList.contains('is-morphing'))).toBe(false);
+            expect(f.errors).toEqual([]);
+        } finally { await f.context.close(); }
+    });
+
+    it('cancels the status entrance morph when recharge starts immediately', async () => {
+        const f = await fixture();
+        try {
+            await verify(f.page);
+            await f.page.locator('#tokenInput').fill(session({ includeSessionToken: true }));
+            await f.page.waitForFunction(() => {
+                const status = document.querySelector('#statusMessage');
+                return status.textContent.includes('Session 完整有效')
+                    && getComputedStyle(status).display !== 'none'
+                    && document.querySelector('.recharge-card').classList.contains('is-morphing');
+            });
+
+            await f.page.locator('#startBtn').click();
+            await f.page.waitForFunction(() => window.__sent.some(data => data.type === 'subscribe'));
+            await f.page.waitForFunction(() => !document.querySelector('.recharge-card').classList.contains('is-morphing'));
+
+            expect(await f.page.locator('#statusMessage').evaluate(status => getComputedStyle(status).display)).toBe('none');
+            expect(await f.page.locator('.recharge-card').evaluate(card => card.style.height)).toBe('');
+            expect(f.errors).toEqual([]);
+        } finally { await f.context.close(); }
+    });
+
     it('plays the circular check, morphs the card, animates both tabs and resets cleanly', async () => {
         const f = await fixture();
         try {
@@ -82,6 +370,7 @@ describe('restored recharge user interactions with all external effects mocked',
             await f.page.locator('#redeemBtn').click();
             await f.page.waitForFunction(() => document.querySelector('#redeemBtn').classList.contains('is-circle-success'));
             expect(await f.page.locator('#step2').isVisible()).toBe(false);
+            expect(await f.page.locator('#step2').evaluate(el => getComputedStyle(el).transitionProperty)).not.toContain('filter');
             await f.page.waitForFunction(() => document.querySelector('.recharge-card').classList.contains('is-morphing'));
             await f.page.waitForFunction(() => !document.querySelector('.recharge-card').classList.contains('is-morphing'));
             expect(await f.page.locator('#cardSubtitle').textContent()).toBe('ChatGPT Plus');
@@ -157,6 +446,111 @@ describe('restored recharge user interactions with all external effects mocked',
             await f.page.waitForFunction(() => document.querySelector('#startBtn').classList.contains('is-success'));
             await f.page.waitForFunction(() => document.querySelector('#statusMessage').textContent.includes('成功开通'));
             expect(await f.page.locator('#startBtn').isDisabled()).toBe(true);
+            expect(f.errors).toEqual([]);
+        } finally { await f.context.close(); }
+    });
+
+    it('prevents progress from shrinking backwards when an initial snapshot is received', async () => {
+        const f = await fixture();
+        try {
+            await verify(f.page);
+            // Simulate start button dispatched to 8%
+            await f.page.evaluate(() => setProgress(8, '', 'running'));
+            const initialWidth = await f.page.evaluate(() => document.querySelector('#startBtnProgress').style.width);
+            expect(initialWidth).toBe('8%');
+
+            // Snapshot from server with smaller initial progress (e.g. 3%)
+            await f.page.evaluate(() => applyTaskState({ type: 'snapshot', status: 'running', progress: 3 }));
+            const postSnapshotWidth = await f.page.evaluate(() => document.querySelector('#startBtnProgress').style.width);
+            expect(postSnapshotWidth).toBe('8%');
+
+            // When real higher progress arrives, it moves forward normally
+            await f.page.evaluate(() => applyTaskState({ type: 'progress', status: 'running', progress: 15 }));
+            const higherWidth = await f.page.evaluate(() => document.querySelector('#startBtnProgress').style.width);
+            expect(higherWidth).toBe('15%');
+            expect(f.errors).toEqual([]);
+        } finally { await f.context.close(); }
+    });
+
+    it('centers step 1 cleanly after reset and does not push card into dynamic island when reopening keyboard', async () => {
+        const f = await fixture({ viewport: { width: 390, height: 844 }, isMobile: true });
+        try {
+            await verify(f.page);
+            expect(await f.page.locator('#step2').isVisible()).toBe(true);
+
+            // Click reset (backToStep1) on mobile
+            await f.page.locator('#backToStep1').click();
+            await f.page.waitForFunction(() => document.querySelector('#step1').offsetHeight > 0);
+            expect(await f.page.locator('#step2').isVisible()).toBe(false);
+
+            // Verify clean mobile reset: no lingering keyboard classes, no active input focus
+            expect(await f.page.evaluate(() => document.body.classList.contains('keyboard-open'))).toBe(false);
+            const activeTag = await f.page.evaluate(() => document.activeElement?.tagName?.toLowerCase());
+            expect(activeTag).not.toBe('input');
+
+            // Resting card should be vertically centered (y well above 150px)
+            const restingBox = await f.page.locator('.recharge-card').boundingBox();
+            expect(restingBox.y).toBeGreaterThan(150);
+
+            // Tap CDK input to open mobile keyboard
+            await f.page.locator('#cdkInput').focus();
+            await f.page.setViewportSize({ width: 390, height: 464 });
+            await f.page.waitForFunction(() => document.body.classList.contains('keyboard-open'));
+
+            const keyboardBox = await f.page.locator('.recharge-card').boundingBox();
+            // Card must never be shoved under the dynamic island (topInset >= 48)
+            expect(keyboardBox.y).toBeGreaterThanOrEqual(48);
+            // Card must fit cleanly above keyboard (viewport height 464)
+            expect(keyboardBox.y + keyboardBox.height).toBeLessThanOrEqual(464);
+            expect(f.errors).toEqual([]);
+        } finally { await f.context.close(); }
+    });
+
+    it('keeps step 2 card stable, un-squished, and comfortably above keyboard even when visualViewport pans', async () => {
+        const f = await fixture({ viewport: { width: 390, height: 844 }, isMobile: true });
+        try {
+            await verify(f.page);
+            expect(await f.page.locator('#step2').isVisible()).toBe(true);
+            await f.page.waitForTimeout(250);
+
+            // Entering step 2 on mobile must not silently auto-focus tokenInput
+            const activeAfterEnter = await f.page.evaluate(() => document.activeElement?.id || '');
+            expect(activeAfterEnter).not.toBe('tokenInput');
+
+            const restingCardBox = await f.page.locator('.recharge-card').boundingBox();
+            const restingTokenBox = await f.page.locator('#tokenInput').boundingBox();
+            expect(restingTokenBox.height).toBeGreaterThanOrEqual(112);
+
+            // Focus session input (tokenInput) on mobile
+            await f.page.locator('#tokenInput').focus();
+            await f.page.setViewportSize({ width: 390, height: 430 });
+            await f.page.waitForFunction(() => document.body.classList.contains('keyboard-open'));
+
+            const cardBox = await f.page.locator('.recharge-card').boundingBox();
+            const tokenBox = await f.page.locator('#tokenInput').boundingBox();
+            const btnRowBox = await f.page.locator('.action-btn-row').boundingBox();
+            const titleBox = await f.page.locator('#cardTitle').boundingBox();
+
+            // Internal card layout must not squish when keyboard opens
+            expect(Math.abs(cardBox.height - restingCardBox.height)).toBeLessThanOrEqual(2);
+            expect(Math.abs(tokenBox.height - restingTokenBox.height)).toBeLessThanOrEqual(1);
+
+            // Card must respect topInset >= 14 and leave bottomInset >= 16 above address bar
+            expect(cardBox.y).toBeGreaterThanOrEqual(14);
+            expect(titleBox.y).toBeGreaterThanOrEqual(14);
+            expect(btnRowBox.y + btnRowBox.height).toBeLessThanOrEqual(414);
+            expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(415);
+
+            // Simulate iOS Safari panning visualViewport.offsetTop = 220px
+            const panMetrics = await f.page.evaluate(() => {
+                document.documentElement.style.setProperty('--kc-visual-viewport-offset-top', '220px');
+                updateKeyboardCardPositionSync();
+                const shellTopVar = parseFloat(document.documentElement.style.getPropertyValue('--kc-keyboard-shell-top'));
+                const computedTop = parseFloat(window.getComputedStyle(document.querySelector('.page-shell')).top);
+                return { shellTopVar, computedTop };
+            });
+            expect(panMetrics.shellTopVar).toBeGreaterThanOrEqual(14);
+            expect(panMetrics.computedTop).toBeGreaterThanOrEqual(234);
             expect(f.errors).toEqual([]);
         } finally { await f.context.close(); }
     });

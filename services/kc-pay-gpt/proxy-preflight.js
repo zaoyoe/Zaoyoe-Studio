@@ -48,6 +48,7 @@ async function checkProxyAndRegionProtocol(proxyUrl, expectedRegion, options = {
         for (const url of urls) {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), timeoutMs);
+            const probeStart = Date.now();
             try {
                 const resp = await undiciFetch(url, {
                     method: 'GET',
@@ -58,6 +59,7 @@ async function checkProxyAndRegionProtocol(proxyUrl, expectedRegion, options = {
                         'Accept': 'text/plain,*/*'
                     }
                 });
+                const probeRttMs = Date.now() - probeStart;
                 if ([407, 597].includes(resp.status)) {
                     throw preflightError('proxy_auth');
                 }
@@ -69,8 +71,16 @@ async function checkProxyAndRegionProtocol(proxyUrl, expectedRegion, options = {
                             throw networkRegionError('PAYMENT_REGION_NETWORK_MISMATCH',
                                 `当前网络出口地区 ${loc} 与卡密支付地区 ${expected} 不一致，已停止支付`);
                         }
-                        (options.log || console.log)(`[Network/region] 协议出口地区核验通过: ${loc}`);
-                        return { ip, actualRegion: loc, expectedRegion: expected, transport: 'protocol', fastPath: true };
+                        const maxLatencyMs = options.maxLatencyMs ?? (process.env.PROXY_MAX_LATENCY_MS ? Number(process.env.PROXY_MAX_LATENCY_MS) : 1500);
+                        if (probeRttMs > maxLatencyMs && !options.skipLatencyGate && process.env.NODE_ENV !== 'test') {
+                            (options.log || console.warn)(`⚠️ [Network/region] 代理出口 RTT 延迟过高 (${probeRttMs}ms > ${maxLatencyMs}ms)，自动判定节点劣化并换新 [PROXY_PREFLIGHT_HIGH_LATENCY]`);
+                            throw Object.assign(
+                                new Error(`代理出口 RTT 延迟过高 (${probeRttMs}ms) [PROXY_PREFLIGHT_NETWORK]`),
+                                { code: 'PROXY_PREFLIGHT_NETWORK', latencyMs: probeRttMs }
+                            );
+                        }
+                        (options.log || console.log)(`[Network/region] 协议出口地区核验通过: ${loc} (RTT: ${probeRttMs}ms)`);
+                        return { ip, actualRegion: loc, expectedRegion: expected, transport: 'protocol', fastPath: true, rttMs: probeRttMs };
                     }
                 }
             } catch (err) {

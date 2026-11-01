@@ -20,12 +20,76 @@ const MAX_POOL_SIZE = Math.min(48, Math.max(1, Number(process.env.BROWSER_POOL_M
 let runtimePoolSizeOverride = null;
 let runtimeEnabledOverride = null;
 
-/** @type {Array<{ slotId: number, port: number, cdpUrl: string, persistentContext: import('playwright').BrowserContext, inUse: boolean, jobKey: string|null, uses: number }>} */
+/** @type {Array<{ slotId: number, port: number, cdpUrl: string, persistentContext: import('playwright').BrowserContext, inUse: boolean, jobKey: string|null, uses: number, healthy: boolean, invalidated: boolean, invalidationReason: string|null }>} */
 let slots = [];
 let initialized = false;
 let initPromise = null;
 /** @type {Array<{ jobKey: string, resolve: Function, reject: Function, timer: NodeJS.Timeout }>} */
 let waitQueue = [];
+
+function isSlotHealthy(slot) {
+    // Older test fixtures and persisted in-memory state may not have the new
+    // fields yet; only explicit unhealthy/invalidated values block reuse.
+    return Boolean(slot) && slot.healthy !== false && slot.invalidated !== true;
+}
+
+function isSlotAvailable(slot) {
+    return isSlotHealthy(slot) && !slot.inUse;
+}
+
+function sanitizeInvalidationReason(reason) {
+    const normalized = String(reason || 'unspecified')
+        .replace(/[^a-zA-Z0-9_.:-]/g, '_')
+        .slice(0, 160);
+    return normalized || 'unspecified';
+}
+
+function noHealthySlotsError() {
+    return Object.assign(new Error('浏览器池没有健康槽位，已停止分配新任务'), {
+        code: 'BROWSER_POOL_NO_HEALTHY_SLOTS'
+    });
+}
+
+function slotLease(slot) {
+    return {
+        slotId: slot.slotId,
+        cdpUrl: slot.cdpUrl,
+        port: slot.port
+    };
+}
+
+function assignSlot(slot, jobKey) {
+    slot.inUse = true;
+    slot.jobKey = jobKey || '';
+    slot.uses += 1;
+    return slotLease(slot);
+}
+
+function dispatchWaitingTask() {
+    while (waitQueue.length) {
+        const free = slots.find(isSlotAvailable);
+        if (!free) {
+            break;
+        }
+        const next = waitQueue.shift();
+        clearTimeout(next.timer);
+        next.cleanup?.();
+        next.resolve(assignSlot(free, next.jobKey));
+    }
+}
+
+function rejectWaitingTasksIfNoHealthySlots() {
+    if (!slots.length || slots.some(isSlotHealthy) || !waitQueue.length) {
+        return;
+    }
+    const pending = waitQueue;
+    waitQueue = [];
+    for (const entry of pending) {
+        clearTimeout(entry.timer);
+        entry.cleanup?.();
+        entry.reject(noHealthySlotsError());
+    }
+}
 
 function isEnabled() {
     if (runtimeEnabledOverride != null) {
@@ -112,6 +176,9 @@ async function collectSlotDetail(slot) {
         inUse: slot.inUse,
         jobKey: slot.jobKey,
         uses: slot.uses,
+        healthy: isSlotHealthy(slot),
+        invalidated: slot.invalidated === true,
+        invalidationReason: slot.invalidationReason || null,
         cdpUrl: slot.cdpUrl,
         profileDir,
         profileSizeBytes,
@@ -122,13 +189,49 @@ async function collectSlotDetail(slot) {
     };
 }
 
+const PREWARM_HTML = `<!DOCTYPE html><html><head>
+<link rel="dns-prefetch" href="https://chatgpt.com">
+<link rel="dns-prefetch" href="https://cdn.oaistatic.com">
+<link rel="dns-prefetch" href="https://js.stripe.com">
+<link rel="dns-prefetch" href="https://api.stripe.com">
+<link rel="dns-prefetch" href="https://b.stripecdn.com">
+<link rel="dns-prefetch" href="https://m.stripe.network">
+<link rel="preconnect" href="https://chatgpt.com" crossorigin>
+<link rel="preconnect" href="https://cdn.oaistatic.com" crossorigin>
+<link rel="preconnect" href="https://js.stripe.com" crossorigin>
+<link rel="preconnect" href="https://api.stripe.com" crossorigin>
+<link rel="preconnect" href="https://b.stripecdn.com" crossorigin>
+<link rel="preconnect" href="https://m.stripe.network" crossorigin>
+<script src="https://js.stripe.com/v3/" async></script>
+</head><body></body></html>`;
+
+async function prewarmSlotContext(persistentContext) {
+    if (!persistentContext) return;
+    try {
+        const pages = persistentContext.pages();
+        const page = pages[0] || await persistentContext.newPage().catch(() => null);
+        if (page && !page.isClosed()) {
+            await page.setContent(PREWARM_HTML, { timeout: 8000 }).catch(() => {});
+        }
+    } catch (_) {}
+}
+
 function buildLaunchArgs(port) {
     const args = [
         '--disable-blink-features=AutomationControlled',
         `--remote-debugging-port=${port}`
     ];
     if (process.env.HEADFUL !== '1') {
-        args.push('--no-sandbox', '--disable-setuid-sandbox');
+        args.push(
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-renderer-backgrounding',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-ipc-flooding-protection',
+            '--force-color-profile=srgb'
+        );
     }
     return args;
 }
@@ -152,6 +255,7 @@ async function warmSlot(slotId) {
     }
 
     const persistentContext = await chromium.launchPersistentContext(profileDir, launchOptions);
+    prewarmSlotContext(persistentContext).catch(() => {});
     return {
         slotId,
         port,
@@ -160,6 +264,9 @@ async function warmSlot(slotId) {
         inUse: false,
         jobKey: null,
         uses: 0,
+        healthy: true,
+        invalidated: false,
+        invalidationReason: null,
         createdAt: Date.now()
     };
 }
@@ -207,6 +314,8 @@ async function initBrowserPool() {
 }
 
 function getStats() {
+    const healthy = slots.filter(isSlotHealthy).length;
+    const invalidated = slots.filter((s) => s.invalidated === true).length;
     return {
         enabled: isEnabled(),
         initialized,
@@ -215,7 +324,9 @@ function getStats() {
         basePort: BASE_PORT,
         acquireTimeoutMs: ACQUIRE_TIMEOUT_MS,
         size: slots.length,
-        idle: slots.filter((s) => !s.inUse).length,
+        healthy,
+        invalidated,
+        idle: slots.filter(isSlotAvailable).length,
         busy: slots.filter((s) => s.inUse).length,
         waiting: waitQueue.length,
         totalUses: slots.reduce((sum, s) => sum + Number(s.uses || 0), 0),
@@ -225,6 +336,9 @@ function getStats() {
             inUse: s.inUse,
             jobKey: s.jobKey,
             uses: s.uses,
+            healthy: isSlotHealthy(s),
+            invalidated: s.invalidated === true,
+            invalidationReason: s.invalidationReason || null,
             cdpUrl: s.cdpUrl
         }))
     };
@@ -284,6 +398,21 @@ function setRuntimePoolSize(size) {
     return n;
 }
 
+function invalidateSlot(slotId, reason = 'unspecified') {
+    const slot = slots.find((s) => s.slotId === slotId);
+    if (!slot) {
+        return false;
+    }
+    const safeReason = sanitizeInvalidationReason(reason);
+    slot.healthy = false;
+    slot.invalidated = true;
+    slot.invalidationReason = slot.invalidationReason || safeReason;
+    console.warn(`[BrowserPool] slot-${slot.slotId} 已标记失效: ${slot.invalidationReason}`);
+    dispatchWaitingTask();
+    rejectWaitingTasksIfNoHealthySlots();
+    return true;
+}
+
 function releaseSlot(slotId) {
     const slot = slots.find((s) => s.slotId === slotId);
     if (!slot) {
@@ -291,25 +420,11 @@ function releaseSlot(slotId) {
     }
     slot.inUse = false;
     slot.jobKey = null;
-
-    if (!waitQueue.length) {
-        return;
+    if (slot.persistentContext) {
+        prewarmSlotContext(slot.persistentContext).catch(() => {});
     }
-    const free = slots.find((s) => !s.inUse);
-    if (!free) {
-        return;
-    }
-    const next = waitQueue.shift();
-    clearTimeout(next.timer);
-    next.cleanup?.();
-    free.inUse = true;
-    free.jobKey = next.jobKey;
-    free.uses += 1;
-    next.resolve({
-        slotId: free.slotId,
-        cdpUrl: free.cdpUrl,
-        port: free.port
-    });
+    dispatchWaitingTask();
+    rejectWaitingTasksIfNoHealthySlots();
 }
 
 function abortError() {
@@ -323,16 +438,13 @@ function acquireSlot(jobKey, signal) {
             resolve(null);
             return;
         }
-        const free = slots.find((s) => !s.inUse);
+        if (!slots.some(isSlotHealthy)) {
+            reject(noHealthySlotsError());
+            return;
+        }
+        const free = slots.find(isSlotAvailable);
         if (free) {
-            free.inUse = true;
-            free.jobKey = jobKey || '';
-            free.uses += 1;
-            resolve({
-                slotId: free.slotId,
-                cdpUrl: free.cdpUrl,
-                port: free.port
-            });
+            resolve(assignSlot(free, jobKey));
             return;
         }
 
@@ -425,8 +537,11 @@ module.exports = {
     getStats,
     getDetailedStats,
     isEnabled,
+    isSlotHealthy,
+    isSlotAvailable,
     acquireSlot,
     releaseSlot,
+    invalidateSlot,
     formatBytes,
     MAX_POOL_SIZE
 };

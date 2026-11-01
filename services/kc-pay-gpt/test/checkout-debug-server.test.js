@@ -79,6 +79,7 @@ function harness({ pool = false, queued = false, overrides = {} } = {}) {
     let queueCallback = null;
     const browserPool = {
         getRuntimeEnabled: () => pool,
+        invalidateSlot: vi.fn(),
         withBrowserSlot: vi.fn((key, fn, signal) => {
             if (!queued) return fn({ slotId: 1, cdpUrl: 'http://offline.test:19222' });
             queueCallback = () => fn({ slotId: 1, cdpUrl: 'http://offline.test:19222' });
@@ -234,6 +235,14 @@ describe('authenticated checkout diagnostics routes with isolated storage and ch
         expect(response.value.stages).toHaveLength(6); expect(response.value.checks).toHaveLength(6);
         expect(response.value.raw_output).not.toContain('CHECKOUT_DIAGNOSTIC:'); expect(response.value.raw_output).not.toContain('checkout-secret');
         expect(h.context.activeProcesses.size).toBe(0); expect(h.context.activeForegroundJobs.size).toBe(0);
+    });
+
+    it('retires a pooled browser slot when the worker reports incomplete cleanup', async () => {
+        const h = harness({ pool: true });
+        await h.generate();
+        const report = reportFor();
+        await h.finish(report, { output: outputFor(report) + 'BROWSER_SLOT_INVALIDATE: cleanup_timeout_browser_context\n' });
+        expect(h.browserPool.invalidateSlot).toHaveBeenCalledWith(1, 'cleanup_timeout_browser_context');
     });
 
     it('saves useful running output and redacts full lines without leaking credentials split across chunks', async () => {

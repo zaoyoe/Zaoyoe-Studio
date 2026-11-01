@@ -111,7 +111,7 @@ function resetActiveProxyTunnels() {
     return closed;
 }
 
-function attachTunnelWatchdog(sourceSocket, targetSocket, handshakeTimeoutMs = 12000) {
+function attachTunnelWatchdog(sourceSocket, targetSocket, handshakeTimeoutMs = 25000) {
     const pair = { sourceSocket, targetSocket };
     activeTunnelSockets.add(pair);
     try { targetSocket.setKeepAlive(true, 5000); } catch (_) {}
@@ -161,7 +161,7 @@ function attachTunnelWatchdog(sourceSocket, targetSocket, handshakeTimeoutMs = 1
 
 function connectUpstreamWithRetry(parsedProxy, targetHostPort, options = {}) {
     const maxAttempts = options.maxAttempts ?? 3;
-    const connectTimeoutMs = options.connectTimeoutMs ?? 6500;
+    const connectTimeoutMs = options.connectTimeoutMs ?? 10000;
     const authHeader = (parsedProxy.username || parsedProxy.password)
         ? `Basic ${Buffer.from(`${decodeURIComponent(parsedProxy.username)}:${decodeURIComponent(parsedProxy.password)}`).toString('base64')}`
         : '';
@@ -286,7 +286,7 @@ async function createResilientHttpProxyRelay(parsedProxy, stdUrl) {
             if (targetHead && targetHead.length > 0) {
                 sourceSocket.write(targetHead);
             }
-            attachTunnelWatchdog(sourceSocket, targetSocket, 12000);
+            attachTunnelWatchdog(sourceSocket, targetSocket, 25000);
             sourceSocket.pipe(targetSocket);
             targetSocket.pipe(sourceSocket);
         } catch (_) {

@@ -35,7 +35,8 @@ function isLoginRedirectUrl(url) {
 }
 
 function isCheckoutPageUrl(url) {
-    return /chatgpt\.com\/checkout\/|pay\.openai\.com|checkout\.stripe\.com|stripe\.com/i.test(String(url || ''));
+    const value = String(url || '');
+    return /chatgpt\.com\/checkout\/|pay\.openai\.com|checkout\.stripe\.com|stripe\.com|(?:\/|%2f)checkout(?:\/|%2f)/i.test(value);
 }
 
 const TELEMETRY_HOSTS = [
@@ -51,7 +52,13 @@ const TELEMETRY_HOSTS = [
     'launchdarkly.com',
     'clarity.ms',
     'google-analytics.com',
-    'googletagmanager.com'
+    'googletagmanager.com',
+    'doubleclick.net',
+    'googleadservices.com',
+    'bat.bing.com',
+    'analytics.twitter.com',
+    'scribe.twitter.com',
+    'p.twitter.com'
 ];
 
 function isTelemetryUrl(url) {
@@ -77,6 +84,9 @@ function shouldBlockLoginNavigation(url, resourceType = '') {
         return true;
     }
     if (resourceType === 'document' && isHardLoginRedirectUrl(url) && !isCheckoutPageUrl(url)) {
+        if (value.includes('chatgpt.com')) {
+            return false;
+        }
         return true;
     }
     return false;

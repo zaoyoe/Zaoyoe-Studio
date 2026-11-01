@@ -8,24 +8,16 @@ const { substituteProxySession, resetActiveProxyTunnels } = require('./playwrigh
 const { registerStripeDeviceFingerprint } = require('./stripe-device-fingerprint');
 
 const RUNTIME_HASH = '5412f474d5';
+const {
+    ALL_EXPLICIT_STRIPE_DECLINE_CODES,
+    formatStripeDeclineReason
+} = require('./payment-decline-dictionary');
+
 const V_HOSTED = '2020-08-27;custom_checkout_beta=v1';
 const DEFAULT_OPENAI_PK = 'pk_live_51HOrSwC6h1nxGoI3lTAgRjYVrz4dU3fVOabyCcKR3pbEJguCVAlqCxdxCUvoRh1XWwRacViovU3kLKvpkjh7IqkW00iXQsjo3n';
 const DEFAULT_STRIPE_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 const DEFAULT_STRIPE_SEC_CH_UA = '"Not.A/Brand";v="99", "Chromium";v="136", "Google Chrome";v="136"';
-const EXPLICIT_STRIPE_DECLINE_CODES = new Set([
-    'card_declined',
-    'generic_decline',
-    'do_not_honor',
-    'insufficient_funds',
-    'incorrect_number',
-    'incorrect_cvc',
-    'expired_card',
-    'lost_card',
-    'stolen_card',
-    'processing_error',
-    'pickup_card',
-    'restricted_card'
-]);
+const EXPLICIT_STRIPE_DECLINE_CODES = ALL_EXPLICIT_STRIPE_DECLINE_CODES;
 
 function isSuccessfulHttp(response) {
     return Boolean(
@@ -1451,14 +1443,19 @@ async function executeStripeProtocolPayment({
 
     const explicitDecline = ({ data = {}, status = 0, error = '', paymentMethodId = '', intentId = '', amount = null, currencyCode = '', confirmationTokenHash = '' }) => {
         const declineError = data?.error || data?.last_payment_error || data?.payment_intent?.last_payment_error || {};
-        const message = error || declineError.message || `Stripe 拒卡 (HTTP ${status || 'unknown'})`;
+        const code = declineError.code || data?.code || 'card_declined';
+        const declineCode = declineError.decline_code || data?.decline_code || '';
+        const rawMessage = error || declineError.message || `Stripe 拒卡 (HTTP ${status || 'unknown'})`;
+        const formatted = formatStripeDeclineReason({ code, declineCode, rawMessage });
+        const message = formatted.formatted;
+        console.warn(`⚡ [协议支付] ❌ 银行卡明确被拒: ${message} (attempt=${attemptId}, code=${code}, decline_code=${declineCode})`);
         return {
             success: false,
             declined: true,
             canRetryCard: true,
             error: message,
-            code: declineError.code || data?.code || 'card_declined',
-            decline_code: declineError.decline_code || data?.decline_code || '',
+            code: formatted.code || code,
+            decline_code: formatted.declineCode || declineCode,
             submitted: true,
             submissionAttempted: true,
             protocolDirect: true,

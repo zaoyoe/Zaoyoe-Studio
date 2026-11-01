@@ -101,6 +101,17 @@ describe('checkout failures before payment submission', () => {
         expect(classifyCheckoutFailure(message, null)).toMatchObject({ paymentState: 'not_started' });
     });
 
+    it.each([
+        'PAYMENT_REGION_NETWORK_MISMATCH', 'PAYMENT_REGION_UNCONFIRMED', 'NETWORK_REGION_UNCONFIRMED',
+        'CDK_PAYMENT_REGION_MISMATCH', 'PAYMENT_CURRENCY_MISMATCH', 'CHECKOUT_CURRENCY_UNCONFIRMED',
+        'CHECKOUT_AMOUNT_UNCONFIRMED', 'CHECKOUT_AMOUNT_MISMATCH', 'BILLING_TAX_NOT_REMOVED', 'PRICING_REGION_UNCONFIRMED'
+    ])('stops billing guard %s and preserves pending payments', code => {
+        const message = `Checkout guard failed [${code}]`;
+        expect(classifyCheckoutFailure(message, 'not_started')).toMatchObject({ status: 'failed', shouldRetry: false,
+            deleteCard: false, paymentState: 'not_started' });
+        for (const state of ['started', 'unknown', 'succeeded']) expect(classifyCheckoutFailure(message, state)).toBeNull();
+    });
+
     it.each(['started', 'unknown', 'succeeded', 'STARTED', 'legacy_invalid'])('never overrides payment state %s', state => {
         expect(classifyCheckoutFailure('HTTP 400 [CHECKOUT_HTTP_ERROR]', state)).toBeNull();
     });
@@ -113,6 +124,16 @@ describe('checkout failures before payment submission', () => {
 describe('ChatGPT navigation timeout failures trigger proxy retry', () => {
     it('classifies CHATGPT_NAV_TIMEOUT as retryable', () => {
         const message = 'ChatGPT 页面加载超时（未能在时限内呈现有效界面）[CHATGPT_NAV_TIMEOUT]';
+        expect(classifyChatGptNavigationFailure(message, 'not_started')).toMatchObject({
+            status: 'retry',
+            shouldRetry: true,
+            reachedPayment: false,
+            paymentState: 'not_started'
+        });
+    });
+
+    it('classifies CHECKOUT_RENDER_TIMEOUT as retryable before payment submission', () => {
+        const message = 'Checkout 页面在限定时间内未完成渲染，尚未提交支付 [CHECKOUT_RENDER_TIMEOUT]';
         expect(classifyChatGptNavigationFailure(message, 'not_started')).toMatchObject({
             status: 'retry',
             shouldRetry: true,

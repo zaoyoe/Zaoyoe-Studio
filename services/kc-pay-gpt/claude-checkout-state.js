@@ -277,6 +277,21 @@ async function selectClaudePlan(page, planType = 'claude_pro', options = {}) {
         snapshot = await waitSnapshot(page, rule, 'recovered_controls', remaining());
     }
     if (!snapshot.target) throw new Error('Claude 目标套餐控件尚未就绪');
+
+    // ⚡ Fast-path: 若当前已无占位骨架、且目标套餐/摘要/应付金额已经完全一致，跳过冗余的可点击性等待与重复点击
+    const isAlreadyConfirmed = snapshot.selected.length === 1 && snapshot.selected[0] === rule.key
+        && !snapshot.summaryConflict && (!snapshot.summaryPlan || snapshot.summaryPlan === rule.key)
+        && snapshot.due && snapshot.due.currency === rule.currency
+        && Math.abs(snapshot.due.amount - rule.amount) < 0.005
+        && !snapshot.loadingSkeleton;
+
+    if (isAlreadyConfirmed) {
+        assertClaudeRoute(page, rule);
+        const due = assertClaudeSnapshot(snapshot, rule);
+        console.log(`[Claude] ⚡ [FastPath] 目标套餐已确认就绪: ${rule.label}, ${due.currency} ${due.amount}（${Math.round(performance.now() - started)}ms）`);
+        return due;
+    }
+
     try {
         await planLocator(page, snapshot).scrollIntoViewIfNeeded({ timeout: Math.min(3000, actionBudget()) });
     } catch (error) {

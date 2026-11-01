@@ -61,18 +61,12 @@ const CAPTCHA_FAILURE_TEXT_PATTERNS = [
     /人机验证未完成/i,
     /您的购买未成功/i,
     /购买未成功.*您可以重试/i,
-    /无法完成结账/i,
-    /请检查您的信息后重试/i,
     /无法验证.*浏览器/i,
     /未能验证.*浏览器/i,
     /我们无法验证您的浏览器/i,
     /unable to verify (your )?browser/i,
     /failed to verify (your )?browser/i,
     /could not verify (your )?browser/i,
-    /联系支持团队/i,
-    /contact (our )?support team/i,
-    /unable to complete checkout/i,
-    /your card was declined/i,
     /verification (was )?(not completed|failed|incomplete)/i,
     /unable to verify/i,
     /failed human verification/i
@@ -1347,10 +1341,22 @@ const HCAPTCHA_PROMPT_EXACT_DICT = {
     'things with on and off states': '有开关状态的物品',
     'items with on and off states': '有开关状态的物品',
     'objects with on and off states': '有开关状态的物品',
-    'devices with on and off states': '有开关状态的设备'
+    'devices with on and off states': '有开关状态的设备',
+
+    'click on all cells where two lines overlap': '请点击【两条线重叠的所有格子】',
+    'click on each cell where two lines overlap': '请点击【两条线重叠的每个格子】',
+    'click on the cells where two lines overlap': '请点击【两条线重叠的格子】',
+    'click all cells where two lines overlap': '请点击【两条线重叠的所有格子】',
+    'select all cells where two lines overlap': '请选择【两条线重叠的所有格子】',
+    'all cells where two lines overlap': '两条线重叠的所有格子',
+    'cells where two lines overlap': '两条线重叠的格子',
+    'cells where lines overlap': '线条重叠的格子'
 };
 
 const HCAPTCHA_NOUN_DICT = {
+    'cell': '格子', 'cells': '格子',
+    'all cells where two lines overlap': '两条线重叠的所有格子',
+    'cells where two lines overlap': '两条线重叠的格子',
     'letter': '字母', 'letters': '字母',
     'puzzle piece': '拼图碎片', 'puzzle pieces': '拼图碎片',
     'slider': '滑块', 'shape': '形状', 'shapes': '形状',
@@ -1636,6 +1642,14 @@ function translateHcaptchaPrompt(prompt) {
         return '请选出所有【有开关状态的物品】';
     }
 
+    // 线条相交/重叠格子题型（如 "Click on all cells where two lines overlap"）
+    if (/cells?\s+where\s+(?:two\s+)?lines?\s+overlap/i.test(lower)) {
+        if (/^(?:please\s+)?(?:click|tap|select)/i.test(lower)) {
+            return '请点击【两条线重叠的所有格子】';
+        }
+        return '两条线重叠的所有格子';
+    }
+
     // 2. 句式模式匹配
     // 匹配: Click all the animals that match the example and count shown
     let m = lower.match(/^(?:please\s+)?(?:click|select)\s+(?:on\s+)?(?:all\s+)?(?:\b(?:an?|the)\b\s*)?(.+?)\s+(?:that\s+)?match\s+(?:the\s+)?example(?:\s+and\s+count\s+shown)?$/i);
@@ -1843,6 +1857,12 @@ function formatCaptchaGuideMessage(promptZh, promptEn) {
         parts.push(
             `<div class="captcha-prompt-guide">` +
             `操作指引：请仔细观察图中的几何图形，找出其中形状外形完全相同的目标点击选定。选好后务必点击右下角按钮继续（若有「Next」请点击下一步，最后一页点击「Verify / 提交」）。` +
+            `</div>`
+        );
+    } else if (fullText.includes('lines overlap') || fullText.includes('lines overlapping') || fullText.includes('两线重叠') || fullText.includes('两条线重叠') || fullText.includes('线重叠')) {
+        parts.push(
+            `<div class="captcha-prompt-guide">` +
+            `操作指引：请观察网格中穿过的彩色线条，点击所有【两条线条在同一个格点/圆圈上相交重叠】的格子。选好后务必点击右下角「Verify / 提交」按钮！` +
             `</div>`
         );
     } else if (fullText.includes('meet your eye') || fullText.includes('目光') || fullText.includes('对视')) {

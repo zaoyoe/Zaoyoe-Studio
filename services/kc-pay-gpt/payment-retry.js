@@ -32,6 +32,12 @@ const PAYMENT_GUARD_ERROR_CODES = new Set([
     'CHECKOUT_CURRENCY_UNCONFIRMED',
     'CHECKOUT_AMOUNT_UNCONFIRMED',
     'CHECKOUT_AMOUNT_MISMATCH',
+    'CHECKOUT_NAVIGATION_FAILED',
+    'CHECKOUT_PAGE_CLOSED',
+    'CHECKOUT_PAGE_UNAVAILABLE',
+    'CHECKOUT_RENDER_TIMEOUT',
+    'CHECKOUT_RESOURCE_TIMEOUT',
+    'CHECKOUT_SESSION_FAILED',
     'BILLING_TAX_NOT_REMOVED',
     'PRICING_REGION_UNCONFIRMED'
 ]);
@@ -96,6 +102,8 @@ function isPaymentDeclined(errorMsg) {
         'payment was not successful', 'payment was not approved',
         'not approved',
         'invalid', 'card number is invalid', 'card_invalid', 'invalid_card',
+        'incorrect', 'card number is incorrect', 'the card number is incorrect', 'your card number is incorrect',
+        'enter your card again', '卡号不正确',
         '卡号无效', '卡片格式', '不被支持', 'incomplete', '不完整', '未通过 luhn',
         '账单地址未显示', '账单地址未展示',
         '无法完成此次购买', '无法完成此购买', 'unable to complete this purchase', '未能完成购买'
@@ -256,7 +264,7 @@ async function executePaymentWithRetry(page, options) {
                 progress('等待 Checkout 应付金额和币种加载确认...');
             }
             const due = requiresCurrencyPreflight
-                ? await waitForCheckoutDueAmount(page)
+                ? await waitForCheckoutDueAmount(page, { throwOnTimeout: true })
                 : await readCheckoutDueAmount(page);
             if (requiresCurrencyPreflight && (!due?.amount || !due.currency)) {
                 await persistPaymentState('not_started');
@@ -324,9 +332,14 @@ async function executePaymentWithRetry(page, options) {
             progress(`无法预读取 Checkout 金额: ${error.message}`);
         } else {
             await persistPaymentState('not_started');
-            const message = `Checkout 应付金额或币种无法确认，已停止支付 [CHECKOUT_CURRENCY_UNCONFIRMED]: ${error.message}`;
+            const code = /^CHECKOUT_(?:NAVIGATION_FAILED|PAGE_CLOSED|PAGE_UNAVAILABLE|RENDER_TIMEOUT|RESOURCE_TIMEOUT|SESSION_FAILED)$/.test(String(error?.code || ''))
+                ? error.code
+                : 'CHECKOUT_CURRENCY_UNCONFIRMED';
+            const message = code === 'CHECKOUT_CURRENCY_UNCONFIRMED'
+                ? `Checkout 应付金额或币种无法确认，已停止支付 [${code}]: ${error.message}`
+                : `${error.message || 'Checkout 页面不可用'} [${code}]`;
             progress(message);
-            return { success: false, error: message, code: 'CHECKOUT_CURRENCY_UNCONFIRMED',
+            return { success: false, error: message, code,
                 manualIntervention: true, paymentState: 'not_started', screenshots: [] };
         }
     }
@@ -401,12 +414,14 @@ async function executePaymentWithRetry(page, options) {
                 // 若首张卡回退唤醒了浏览器 UI 且仍被拒，后续换卡直接在已打开的收银台 UI 内填卡重试，避免重复创建 oaics_ 会话触发 429 限流
                 const canTryProtocol = isFastProtocolEnabled && !uiFallbackActive && (platform === 'chatgpt' || !platform) && stripeSessionId && (isHostedSession || options?.accessToken);
                 let protoRes = null;
+                let protocolAttempted = false;
                 if (!protocolOnly && !isFastProtocolEnabled && cardAttempt === 1 && (platform === 'chatgpt' || !platform)) {
                     progress('⚡ [极速协议] 协议直充已关闭，直接转入收银台 UI 进行支付...');
                 }
                 if (canTryProtocol) {
                     try {
                         const { executeStripeProtocolPayment } = require('./stripe-protocol-payment');
+                        protocolAttempted = true;
                         protoRes = await executeStripeProtocolPayment({
                             page: protocolOnly ? null : page,
                             card: cardInfo,
@@ -432,7 +447,7 @@ async function executePaymentWithRetry(page, options) {
                                 ...protoRes,
                                 dueAmount: protoRes.amount != null ? protoRes.amount : billedAmount,
                                 dueCurrency: protoRes.currency || billedCurrency,
-                                holderName: cardBilling?.name || cardInfo.holder || address.name || billingHolderName || ''
+                                holderName: cardInfo.holder || address.name || billingHolderName || ''
                             };
                         } else if (protoRes.declined) {
                             // 协议支付已明确收到上游拒卡终态，重置前置 started 状态
@@ -506,7 +521,7 @@ async function executePaymentWithRetry(page, options) {
                 if (!paymentResult && !protocolOnly) {
                     let checkoutUrl = options.checkoutUrl;
                     const needsCleanSession = Boolean(
-                        canTryProtocol && !isHostedSession && (protoRes?.declined || protoRes?.fallbackToUi || !protoRes)
+                        protocolAttempted && !isHostedSession && (protoRes?.declined || protoRes?.fallbackToUi || !protoRes)
                         && typeof options.refreshCheckoutSession === 'function'
                     );
                     const needsLazyBrowser = Boolean(
@@ -561,7 +576,7 @@ async function executePaymentWithRetry(page, options) {
                             canRetryCard: false,
                             dueAmount: protoRes.amount != null ? protoRes.amount : billedAmount,
                             dueCurrency: protoRes.currency || billedCurrency,
-                            holderName: cardBilling?.name || cardInfo.holder || address.name || billingHolderName || ''
+                            holderName: cardInfo.holder || address.name || billingHolderName || ''
                         };
                     } else {
                         const defaultCheckoutUrl = isHostedSession
@@ -571,31 +586,69 @@ async function executePaymentWithRetry(page, options) {
 
                         const currentUrl = (page && typeof page.url === 'function' ? page.url() : '') || '';
                         const isAlreadyOnTarget = Boolean(targetUrl && currentUrl.includes(stripeSessionId));
+                        let checkoutFailure = null;
 
                         if (targetUrl && (!isAlreadyOnTarget || protoRes?.declined || protoRes?.fallbackToUi)) {
                             const navMsg = canTryProtocol ? '⚡ [协议回退] 唤醒浏览器收银台' : '🧭 [收银台] 浏览器加载收银台';
                             progress(`${navMsg}: ${targetUrl}`);
-                            if (page && typeof page.goto === 'function') {
-                                await page.goto(targetUrl, { waitUntil: 'commit', timeout: 30000 }).catch(() => {});
+                            if (!page || typeof page.goto !== 'function') {
+                                checkoutFailure = {
+                                    code: 'CHECKOUT_PAGE_UNAVAILABLE',
+                                    message: 'Checkout 浏览器页面不可用，尚未提交支付'
+                                };
+                            } else {
+                                try {
+                                    await page.goto(targetUrl, { waitUntil: 'commit', timeout: 30000 });
+                                } catch (error) {
+                                    checkoutFailure = {
+                                        code: 'CHECKOUT_NAVIGATION_FAILED',
+                                        message: `Checkout 页面导航失败，尚未提交支付: ${error.message}`
+                                    };
+                                }
                             }
                         }
-                        const due = await waitForCheckoutDueAmount(page).catch(() => null);
-                        if (due?.amount) {
-                            billedAmount = due.amount;
-                            billedCurrency = due.currency || billedCurrency;
+                        if (!checkoutFailure) {
+                            try {
+                                const due = await waitForCheckoutDueAmount(page, { throwOnTimeout: true });
+                                if (due?.amount) {
+                                    billedAmount = due.amount;
+                                    billedCurrency = due.currency || billedCurrency;
+                                }
+                            } catch (error) {
+                                const code = /^CHECKOUT_(?:NAVIGATION_FAILED|PAGE_CLOSED|RENDER_TIMEOUT|RESOURCE_TIMEOUT|SESSION_FAILED)$/.test(String(error?.code || ''))
+                                    ? error.code
+                                    : 'CHECKOUT_CURRENCY_UNCONFIRMED';
+                                checkoutFailure = {
+                                    code,
+                                    message: error.message || `Checkout 应付金额或币种无法确认，已停止支付 [${code}]`
+                                };
+                            }
                         }
 
-                        uiFallbackActive = true;
-                        paymentResult = await completeStripeCardPayment(page, cardInfo, address, {
-                            cardAttempt, holderName: cardInfo.holder || address.name || billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
-                            paymentRegion: region,
-                            paymentCurrency: currency,
-                            grokCheckout: options.grokCheckout,
-                            onPaymentAttemptStarted: async () => {
-                                attemptStarted = true;
-                                await persistPaymentState('started', '正在提交银行卡支付');
-                            }
-                        });
+                        if (checkoutFailure) {
+                            paymentResult = {
+                                success: false,
+                                error: `${checkoutFailure.message} [${checkoutFailure.code}]`,
+                                code: checkoutFailure.code,
+                                submitted: false,
+                                submissionAttempted: false,
+                                canRetryCard: false,
+                                manualIntervention: true,
+                                paymentState: 'not_started'
+                            };
+                        } else {
+                            uiFallbackActive = true;
+                            paymentResult = await completeStripeCardPayment(page, cardInfo, address, {
+                                cardAttempt, holderName: cardInfo.holder || address.name || billingHolderName, email, platform, planType, grokAccount: options.grokAccount,
+                                paymentRegion: region,
+                                paymentCurrency: currency,
+                                grokCheckout: options.grokCheckout,
+                                onPaymentAttemptStarted: async () => {
+                                    attemptStarted = true;
+                                    await persistPaymentState('started', '正在提交银行卡支付');
+                                }
+                            });
+                        }
                     }
                 }
             } catch (error) {
@@ -728,7 +781,7 @@ async function executePaymentWithRetry(page, options) {
                 // Protect the card before bookkeeping so a database error cannot
                 // send an explicitly declined card through finally's release path.
                 cardHandled = true;
-                progress(`Stripe 拒绝支付，将卡片置入 30 分钟智能冷却避让 (ID: ${card.id}, ...${cardLast4})`);
+                progress(`Stripe 拒绝支付 [${lastError}]，将卡片置入 30 分钟智能冷却避让 (ID: ${card.id}, ...${cardLast4})`);
                 try {
                     await store.cooldownCard(card.id, 30, 'Stripe拒付');
                 } catch (error) {
@@ -752,12 +805,12 @@ async function executePaymentWithRetry(page, options) {
                 declinedLast4s.push(cardLast4);
 
                 if (cardAttempt < MAX_CARD_ATTEMPTS && paymentResult.canRetryCard !== false) {
-                    progress(`卡 ...${cardLast4} 被拒，换上下一张卡 (${cardAttempt}/${MAX_CARD_ATTEMPTS})`);
+                    progress(`卡 ...${cardLast4} 被拒 [${lastError}]，换上下一张卡 (${cardAttempt}/${MAX_CARD_ATTEMPTS})`);
                     continue;
                 }
 
                 const summary = declinedLast4s.length > 1
-                    ? `${declinedLast4s.length} 张卡均被拒 (...${declinedLast4s.join(', ...')})`
+                    ? `${declinedLast4s.length} 张卡均被拒 (...${declinedLast4s.join(', ...')}): ${lastError}`
                     : `银行卡被拒绝: ${lastError}`;
                 return {
                     success: false,
@@ -805,8 +858,10 @@ async function executePaymentWithRetry(page, options) {
             return {
                 success: false,
                 error: `需要人工操作：${lastError}`,
+                code: paymentResult.code || null,
                 cardLast4,
                 manualIntervention: true,
+                canRetryCard: paymentResult.canRetryCard === true,
                 paymentState,
                 screenshots,
                 ...paymentCorrelation
@@ -819,7 +874,7 @@ async function executePaymentWithRetry(page, options) {
     }
 
     const summary = declinedLast4s.length
-        ? `${declinedLast4s.length} 张卡均被拒 (...${declinedLast4s.join(', ...')})`
+        ? `${declinedLast4s.length} 张卡均被拒 (...${declinedLast4s.join(', ...')})${lastError ? `: ${lastError}` : ''}`
         : (lastError || '支付失败');
     return {
         success: false,

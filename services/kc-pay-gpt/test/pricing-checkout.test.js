@@ -398,6 +398,58 @@ describe('latest upgrade modal compatibility', () => {
         expect(await page.locator('#upgrade-pro-btn').textContent()).toBe('Opening pro checkout...');
         await page.close();
     });
+
+    it('handles 4-card modal with Free as current plan, skips free trial offer, and calls openApiCheckout for standard paid plan', async () => {
+        const page = await newPage(`
+            <div role="dialog" id="pricing-modal">
+                <h2>Try Plus free for 1 month</h2>
+                <div class="card" id="free-card">
+                    <div>Free</div>
+                    <button disabled>Your current plan</button>
+                    <div>₱0 / month</div>
+                </div>
+                <div class="card" id="go-card">
+                    <div>Go</div>
+                    <button>Buy now</button>
+                    <div>₱300 / month</div>
+                </div>
+                <div class="card" id="plus-card">
+                    <div>Plus</div>
+                    <div>LIMITED TIME</div>
+                    <div>₱1,100 ₱0 / month</div>
+                    <button id="claim-btn">✦ Claim free offer</button>
+                </div>
+                <div class="card" id="pro-card">
+                    <div>Pro</div>
+                    <button>Buy now</button>
+                    <div>₱6,490 / month</div>
+                </div>
+            </div>
+            <script>
+                document.getElementById('claim-btn').onclick = () => {
+                    window.claimClicked = true;
+                };
+            </script>
+        `);
+
+        const chatgpt = require('../chatgpt');
+        const openApiSpy = vi.spyOn(chatgpt, 'openApiCheckout').mockResolvedValue({
+            checkoutUrl: 'https://chatgpt.com/checkout/openai_llc/oaics_standard_paid_123',
+            sessionId: 'oaics_standard_paid_123'
+        });
+        const gotoSpy = vi.spyOn(page, 'goto').mockResolvedValue(null);
+
+        const res = await clickPlanUpgrade(page, 'plus', { region: 'PH', skipPreflight: true });
+        expect(res?.skippedPromo).toBe(true);
+        expect(res?.checkoutUrl).toBe('https://chatgpt.com/checkout/openai_llc/oaics_standard_paid_123');
+        expect(openApiSpy).toHaveBeenCalledWith(page, expect.objectContaining({ planType: 'plus', country: 'PH' }));
+        // Ensure the 0-dollar free offer was NOT clicked
+        expect(await page.evaluate(() => window.claimClicked)).toBeFalsy();
+
+        openApiSpy.mockRestore();
+        gotoSpy.mockRestore();
+        await page.close();
+    });
 });
 
 describe('ChatGPT Pro usage tier mapping and checkout card selection', () => {

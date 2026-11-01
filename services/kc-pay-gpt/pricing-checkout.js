@@ -345,9 +345,11 @@ async function pricingSurfaceState(surface) {
                 && (root.matches('[role="dialog"]') || !node.closest('[role="dialog"]')));
         const labels = nodes.map((node) => (node.textContent || '').replace(/\s+/g, ' ').trim());
         const planTitle = nodes.some((node, i) => node.matches('h1,h2,h3,h4,[role="heading"]')
-            && /^(?:ChatGPT\s+)?(?:Free|Go|Plus|Pro|Business)$/i.test(labels[i]));
+            && /^(?:ChatGPT\s+)?(?:Free|Go|Plus|Pro|Business)$/i.test(labels[i]))
+            || [...root.querySelectorAll('*')].some((el) => shown(el) && el.children.length === 0
+                && /^(?:ChatGPT\s+)?(?:Free|Go|Plus|Pro|Business)$/i.test((el.textContent || '').trim()));
         const pricingTitle = nodes.some((node, i) => node.matches('h1,h2,h3,h4,[role="heading"]')
-            && /^(?:Upgrade your plan|Choose your plan|See all plans|All plans|升级套餐|选择套餐)$/i.test(labels[i]));
+            && /^(?:Upgrade your plan|Choose your plan|Choose a plan|See all plans|All plans|Plans & pricing|Try Plus free.*|Try [A-Za-z]+ free.*|升级套餐|选择套餐)$/i.test(labels[i]));
         const controls = nodes.some((node) => node.matches('button,[role="button"],[role="tab"],[role="radio"],select'));
         const loading = [...root.querySelectorAll('*')].some((node) => shown(node) && node.children.length === 0
             && /Getting your plan ready|Giving your chat a little turbo boost|正在准备你的套餐|正在准备/i.test(node.textContent || ''));
@@ -1235,8 +1237,8 @@ async function waitForStableTargetPlanCardText(button, target, stableMs, timeout
         const titlePattern = /^(?:ChatGPT\s+)?(Free|Go|Plus|Pro|Business)$/i;
         let card = null;
         for (let current = node, depth = 0; current && depth < 10; current = current.parentElement, depth += 1) {
-            const titles = [...current.querySelectorAll('h1,h2,h3,h4,[role="heading"]')]
-                .filter(visible)
+            const titles = [...current.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],div,span')]
+                .filter((el) => visible(el) && (el.matches('h1,h2,h3,h4,h5,h6,[role="heading"]') || el.children.length === 0))
                 .map((element) => (element.textContent || '').trim().replace(/^ChatGPT\s+/i, ''))
                 .filter((text) => titlePattern.test(text));
             const uniqueTitles = [...new Set(titles.map((text) => text.toLowerCase()))];
@@ -1390,9 +1392,48 @@ async function clickPlanUpgrade(page, planType, options = {}) {
                     return !conflictingActions && [...titles, ...leafTitles].every((text) => text.toLowerCase() === wanted.toLowerCase());
                 }, target, { timeout: 1500 });
                 if (!cardSafe) continue;
-                const generic = card.getByRole('button', { name: /^(?:[✦★]\s*)?(?:Start(?: now)?|Get started|Upgrade|Subscribe|Rejoin(?: now)?|Buy now|立即购买|Get\s*(?:ChatGPT\s*)?(?:Pro|Plus|Go)|Rejoin\s*(?:ChatGPT\s*)?(?:Pro|Plus|Go)|升级|订阅|重新加入|重新订阅)$/i });
+                // 检查该目标卡片是否为官方限时免费试用（如 "✦ Claim free offer"、"Try Plus free for 1 month"、"0 / month"）
+                const hasFreeTrialOffer = await card.evaluate((node) => {
+                    const text = (node.textContent || '').replace(/\s+/g, ' ');
+                    return /(?:Claim free offer|Try(?: [A-Za-z]+)? free|0\s*\/\s*month|免费试用|领取免费优惠)/i.test(text);
+                }).catch(() => false);
+
+                if (hasFreeTrialOffer && target.toLowerCase() === 'plus') {
+                    console.log(`⚡ [定价弹窗] 检测到 ${target} 套餐带有官方首月免费试用资格 (Try Plus free / Claim free offer)`);
+                    console.log(`⚡ [业务规则] 平台充值必须跳过 0 元免费试用，转为协议 API 直发标准全额订单，与未回退前保持一致...`);
+                    const { openApiCheckout } = require('./chatgpt');
+                    const apiRes = await openApiCheckout(page, {
+                        planType: plan,
+                        country: options.region || 'PH',
+                        verifyPage: false
+                    });
+                    if (apiRes?.checkoutUrl) {
+                        console.log(`✅ [定价弹窗] 已成功跳过免费试用，开出标准全价 Checkout: ${apiRes.checkoutUrl.slice(0, 80)}...`);
+                        await page.goto(apiRes.checkoutUrl, { waitUntil: 'commit', timeout: 30000 });
+                        return { handled: true, checkoutUrl: apiRes.checkoutUrl, skippedPromo: true };
+                    }
+                }
+
+                const generic = card.getByRole('button', {
+                    name: /^(?:[✦★]\s*)?(?:Start(?: now)?|Get started|Upgrade|Subscribe|Rejoin(?: now)?|Buy now|立即购买|Get\s*(?:ChatGPT\s*)?(?:Pro|Plus|Go)|Rejoin\s*(?:ChatGPT\s*)?(?:Pro|Plus|Go)|体验|升级|订阅|重新加入|重新订阅)$/i
+                });
                 for (let j = 0, n = await generic.count(); j < n; j += 1) {
                     if (await visible(generic.nth(j)) && await generic.nth(j).isEnabled()) { chosen = generic.nth(j); break; }
+                }
+
+                // 兜底：若按钮文案变化，直接提取该卡片内唯一的可用按钮（排除“当前套餐”等状态）
+                if (!chosen) {
+                    const cardButtons = card.getByRole('button');
+                    for (let k = 0, kn = await cardButtons.count(); k < kn; k += 1) {
+                        const btn = cardButtons.nth(k);
+                        if (!await visible(btn) || !await btn.isEnabled()) continue;
+                        const btnText = normalizeOptionText(await btn.innerText());
+                        if (!/Your current plan|Current plan|当前套餐|当前计划|Manage subscription|管理我的订阅|Claim free|Try.*free|免费试用|领取免费优惠/i.test(btnText)) {
+                            chosen = btn;
+                            console.log(`🔍 [步骤] 自动匹配 ${target} 套餐卡片唯一操作按钮: "${btnText}"`);
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -1434,10 +1475,33 @@ async function clickPlanUpgrade(page, planType, options = {}) {
     }
 
     const scopeCheck = await getPricingSurface(page).catch(() => null);
-    const alreadySubscribedCard = scopeCheck
-        ? await scopeCheck.getByText(/Your current plan|Current plan|当前套餐|当前计划|Manage subscription|Manage my subscription|管理我的订阅/i).first().isVisible().catch(() => false)
-        : false;
-    if (alreadySubscribedCard) {
+    let targetCardHasSubscribed = false;
+    if (scopeCheck) {
+        targetCardHasSubscribed = await scopeCheck.evaluate((node, wanted) => {
+            const text = (el) => (el.textContent || '').replace(/\s+/g, ' ').trim();
+            // 严禁误判 Free 卡片上的 "Your current plan"：仅在明确属于 wanted 目标套餐的容器内检测订阅标记
+            const planTitles = [...node.querySelectorAll('*')]
+                .filter((el) => el.children.length === 0 && Boolean(el.getClientRects().length))
+                .filter((el) => new RegExp(`^(?:ChatGPT\\s+)?${wanted}$`, 'i').test(text(el)));
+
+            for (const title of planTitles) {
+                let card = title.parentElement;
+                while (card && card !== node) {
+                    if (card.querySelector('button') && card.getClientRects().length) {
+                        const cardText = text(card);
+                        if (/Your current plan|Current plan|当前套餐|当前计划|Manage subscription|Manage my subscription|管理我的订阅/i.test(cardText)) {
+                            return true;
+                        }
+                        break;
+                    }
+                    card = card.parentElement;
+                }
+            }
+            return false;
+        }, target).catch(() => false);
+    }
+
+    if (targetCardHasSubscribed) {
         const err = new Error(`该账号已有有效 ${target} 订阅，无需重复充值，请更换其他未订阅账号 [ACCOUNT_ALREADY_SUBSCRIBED]`);
         err.code = 'ACCOUNT_ALREADY_SUBSCRIBED';
         throw err;
@@ -1920,7 +1984,14 @@ async function openPricingCheckout(page, { region, planType, onCheckoutPage, ski
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         const observer = observeCheckout(page);
         try {
-            await clickPlanUpgrade(page, planType, { skipPreflight: true, region });
+            const upgradeResult = await clickPlanUpgrade(page, planType, { skipPreflight: true, region });
+            if (upgradeResult?.checkoutUrl) {
+                observer.dispose();
+                if (typeof onCheckoutPage === 'function') {
+                    onCheckoutPage(page);
+                }
+                return upgradeResult.checkoutUrl;
+            }
             const checkoutUrl = await waitForCheckoutPage(page, timeout, { observer, onCheckoutPage });
             await ensureChatGptProUsageTier(page, planType).catch((err) => {
                 console.warn('⚠️ [Checkout] Pro 档位选择异常 (非阻塞):', err.message);
