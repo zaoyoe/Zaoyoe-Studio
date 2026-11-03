@@ -61,6 +61,15 @@ test('vercel static asset filter does not treat real image assets as preview har
     assert.equal(shouldCopyStaticAsset('js/preview-icons-page.js'), false);
 });
 
+test('vercel static asset filter excludes heavy raw prompt images and intermediate optimization folders', () => {
+    assert.equal(shouldCopyStaticAsset('assets/prompts'), false);
+    assert.equal(shouldCopyStaticAsset('assets/prompts/3D_chibi_style______1_1.png'), false);
+    assert.equal(shouldCopyStaticAsset('assets/prompts-optimized'), false);
+    assert.equal(shouldCopyStaticAsset('assets/prompts-optimized/banner.webp'), false);
+    assert.equal(shouldCopyStaticAsset('assets/prompts-home/example.webp'), true);
+    assert.equal(shouldCopyStaticAsset('assets/prompts-card/example.webp'), true);
+});
+
 test('vercel production builds are only allowed from main', () => {
     assert.deepEqual(
         assertSafeProductionSource({

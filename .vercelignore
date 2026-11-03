@@ -28,6 +28,10 @@ node_modules/
 /cloud-functions/
 /functions/
 
+# Heavy prompt raw source assets and intermediate optimizations (use responsive WebP variants / R2 instead).
+/assets/prompts/
+/assets/prompts-optimized/
+
 # Database, docs, backups, and generated internals.
 **/*.sql
 **/*.bak
