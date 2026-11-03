@@ -22,6 +22,9 @@ const {
     loadFreshShopApiHandler,
     loadFreshSupportApiHandler,
     loadFreshWalletApiHandler,
+    parseMacosHttpsProxyOutput,
+    resolveLocalPreviewSupabaseProxy,
+    resolveMacosHttpsProxy,
     resolveLocalPreviewListenHost,
     resolveLocalPreviewSourceState,
     resolveLocalPreviewStandaloneApiRoute,
@@ -30,6 +33,27 @@ const {
     shouldDisableLocalPreviewCache,
     withLocalPreviewEnvDefaults
 } = require('../scripts/local-preview-server');
+
+test('local preview resolves an enabled macOS secure web proxy without exposing credentials', () => {
+    assert.equal(parseMacosHttpsProxyOutput('Enabled: Yes\nServer: 127.0.0.1\nPort: 7897\n'), 'http://127.0.0.1:7897');
+    assert.equal(parseMacosHttpsProxyOutput('Enabled: No\nServer: 127.0.0.1\nPort: 7897\n'), '');
+    assert.equal(parseMacosHttpsProxyOutput('Enabled: Yes\nServer: \nPort: 0\n'), '');
+
+    const proxy = resolveMacosHttpsProxy({
+        platform: 'darwin',
+        execFileSync(command, args) {
+            if (args[0] === '-listallnetworkservices') return 'Wi-Fi\nUSB 10/100/1000 LAN\n';
+            if (args[1] === 'Wi-Fi') return 'Enabled: No\nServer: 127.0.0.1\nPort: 7897\n';
+            return 'Enabled: Yes\nServer: 127.0.0.1\nPort: 7897\n';
+        }
+    });
+    assert.equal(proxy, 'http://127.0.0.1:7897');
+});
+
+test('local preview proxy resolution prefers explicit environment and ignores macOS settings elsewhere', () => {
+    assert.equal(resolveLocalPreviewSupabaseProxy({ HTTPS_PROXY: 'http://proxy.example:8080' }, { platform: 'linux' }), 'http://proxy.example:8080');
+    assert.equal(resolveLocalPreviewSupabaseProxy({}, { platform: 'linux' }), '');
+});
 
 test('preview diagnostics distinguish the current working tree from a clean commit without exposing filenames', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-source-'));
@@ -138,10 +162,26 @@ test('local preview server gives pulled vercel env precedence over generic local
     assert.deepEqual(envFiles, [
         path.join(tempRoot, 'server/.env.staging'),
         path.join(tempRoot, 'server/.env'),
+        path.join(tempRoot, 'server/.env.local'),
         path.join(tempRoot, '.env'),
         path.join(tempRoot, '.env.local'),
         path.join(tempRoot, '.vercel/.env.production.local')
     ]);
+});
+
+test('local preview server loads supplier credentials from the server-local env file', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-supplier-env-'));
+    fs.mkdirSync(path.join(tempRoot, 'server'), { recursive: true });
+    fs.writeFileSync(path.join(tempRoot, 'server/.env'), 'SUPPLIER_XIARENG_APP_ID=stale\n');
+    fs.writeFileSync(path.join(tempRoot, 'server/.env.local'), [
+        'SUPPLIER_XIARENG_APP_ID=local-app-id',
+        'SUPPLIER_XIARENG_APP_KEY=local-app-key'
+    ].join('\n'));
+
+    const env = loadPreviewEnv(getDefaultEnvFiles(tempRoot), {});
+
+    assert.equal(env.SUPPLIER_XIARENG_APP_ID, 'local-app-id');
+    assert.equal(env.SUPPLIER_XIARENG_APP_KEY, 'local-app-key');
 });
 
 test('local preview server lets pulled vercel env override stale server env values', () => {

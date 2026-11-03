@@ -40,6 +40,35 @@ test('homepage shop carousel styles animate by measured cycle width', () => {
     assert.match(styles, /will-change:\s*transform/);
 });
 
+test('homepage shop carousel supports drag interaction, cursor prompt, and disables image dragging', () => {
+    const script = fs.readFileSync(framerHomeScriptPath, 'utf8');
+    const styles = fs.readFileSync(framerHomeStylesPath, 'utf8');
+
+    // 1. Image drag prevention
+    assert.match(script, /draggable="false"/);
+    assert.match(styles, /user-drag:\s*none;/);
+    assert.match(styles, /\.shop-card-image img\s*\{[\s\S]*pointer-events:\s*none;/);
+
+    // 2. Custom bilingual cursor prompt with warm sunset coral dragging palette
+    assert.match(styles, /cursor:\s*url\("data:image\/svg\+xml,[^"]*%E2%80%B9(?:\s|%20)*%E6%8B%96%E6%8B%BD(?:\s|%20)*%E2%80%BA[^"]*"\)\s*35\s*13,\s*grab;/);
+    assert.match(styles, /cursor:\s*url\("data:image\/svg\+xml,[^"]*%E2%80%B9(?:\s|%20)*Drag(?:\s|%20)*%E2%80%BA[^"]*"\)\s*35\s*13,\s*grab;/);
+    assert.match(styles, /\.shop-carousel-wrapper\.is-dragging/);
+    assert.match(styles, /cursor:\s*url\("data:image\/svg\+xml,[^"]*%23ea580c[^"]*%E6%8B%96%E6%8B%BD%E4%B8%AD[^"]*"\)\s*35\s*13,\s*grabbing/);
+    assert.match(styles, /cursor:\s*url\("data:image\/svg\+xml,[^"]*%23ea580c[^"]*Dragging[^"]*"\)\s*35\s*13,\s*grabbing/);
+
+    // 3. Bidirectional drag controller and continuous auto-scroll resume
+    assert.match(script, /initShopCarouselInteractive\(section\)/);
+    assert.match(script, /this\.initShopCarouselInteractive\(section\);/);
+    assert.match(script, /pointerdown/);
+    assert.match(script, /pointermove/);
+    assert.match(script, /pointerup/);
+    assert.match(script, /normalizeOffset/);
+
+    // 4. Click opens shop page and spotlight product detail modal
+    assert.match(script, /targetUrl = productId\s*\?\s*`\/shop\.html\?productId=\$\{encodeURIComponent\(productId\)\}`\s*:\s*'\/shop\.html'/);
+    assert.match(script, /href="\$\{escapeHomeHtml\(targetUrl\)\}"/);
+});
+
 test('homepage ticker script uses product categories and measured loop groups', () => {
     const script = fs.readFileSync(framerHomeScriptPath, 'utf8');
 

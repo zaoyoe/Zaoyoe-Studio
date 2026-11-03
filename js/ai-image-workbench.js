@@ -1969,14 +1969,50 @@
             if (!storage) return null;
             for (let index = 0; index < storage.length; index += 1) {
                 const key = storage.key(index);
-                if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) continue;
-                const session = normalizeSessionCandidate(JSON.parse(storage.getItem(key) || '{}'));
-                if (getSessionAccessToken(session)) return session;
+                if (!key) continue;
+                if (!key.startsWith('sb-') && !key.includes('-auth-token') && !key.includes('supabase.auth')) continue;
+                try {
+                    const raw = storage.getItem(key);
+                    if (!raw) continue;
+                    const session = normalizeSessionCandidate(JSON.parse(raw));
+                    if (getSessionAccessToken(session)) return session;
+                } catch (_) {}
             }
         } catch (_) {
             // Auth fallback is best effort.
         }
         return null;
+    }
+
+    function isUserLoggedIn() {
+        if (currentAuthSession && getSessionAccessToken(currentAuthSession)) return true;
+        const persisted = readPersistedSupabaseSession();
+        if (persisted && getSessionAccessToken(persisted)) {
+            currentAuthSession = persisted;
+            return true;
+        }
+        if (global.currentUser || global.supabaseClient?.auth?.user?.() || global.__ZAOYOE_PENDING_AUTH_USER__?.user) return true;
+        try {
+            const profileRaw = global.localStorage?.getItem('cached_user_profile');
+            if (profileRaw) {
+                const parsed = JSON.parse(profileRaw);
+                if (parsed && (parsed.id || parsed.objectId || parsed.user_id || parsed.email)) return true;
+            }
+        } catch (_) {}
+        try {
+            if (typeof document !== 'undefined' && document.querySelector) {
+                if (document.querySelector('#navAvatar.show, #navUserAvatar.show, .login-trigger-btn.logged-in, #userDropdown.is-authenticated')) {
+                    return true;
+                }
+            }
+        } catch (_) {}
+        return false;
+    }
+
+    function isWorkbenchAuthOrBillingBlocked() {
+        if (isUserLoggedIn()) return false;
+        if (state.billingMode === 'api' && hasUsableApiKey()) return false;
+        return true;
     }
 
     function withTimeout(promise, timeoutMs = API_REQUEST_TIMEOUT_MS) {
@@ -2436,6 +2472,7 @@
         state.chatAttachments = [];
         state.continuationImage = normalizeReferenceItem(stored.continuationImage || stored.continuation_image);
         state.composerError = '';
+        state.open = isStandaloneMode();
         if (shouldRestoreUserScopedData) {
             restoreUserScopedState(persistedSession);
         } else {
@@ -4915,6 +4952,12 @@
     function canSubmitWorkbench(mode = inferWorkbenchMode()) {
         if (referenceUploadBusy) return false;
         if (!state.billingMode) return false;
+        if (isWorkbenchAuthOrBillingBlocked()) return false;
+        const hasPrompt = Boolean(String(state.prompt || '').trim());
+        const draftChatAttachments = mode === 'chat' ? normalizeChatAttachmentList(state.chatAttachments) : [];
+        if (!hasPrompt && !(mode === 'chat' && draftChatAttachments.length) && mode !== 'reverse') {
+            return false;
+        }
         if (state.billingMode === 'api') return Boolean(getActiveModelValue() && isConfiguredApiBaseUrl() && hasUsableApiKey());
         return Boolean(remoteConfigLoaded && remoteConfigAvailable && MODE_META[mode] && getActiveModelValue(mode)
             && (mode !== 'reverse' || getRuntimePointPricingRule(mode)));
@@ -6096,6 +6139,45 @@
         scheduleMobilePromptProxyViewportSync();
     }
 
+    function syncComposerSubmitButtonState() {
+        const submitBtn = overlay?.querySelector?.('.ai-image-main-submit[data-aiw-action="generate"]')
+            || root?.querySelector?.('.ai-image-main-submit[data-aiw-action="generate"]');
+        const submitAction = overlay?.querySelector?.('.ai-image-main-submit-action')
+            || root?.querySelector?.('.ai-image-main-submit-action');
+        if (!submitBtn) return;
+
+        const busyTask = getActiveDisplayTask();
+        const canCancel = Boolean(busyTask && isBusyTask(busyTask));
+        if (canCancel) return;
+
+        const inferredMode = inferWorkbenchMode();
+        const hasPrompt = Boolean(String(state.prompt || '').trim());
+        const isBlocked = isWorkbenchAuthOrBillingBlocked();
+        const canSubmit = !isBlocked && canSubmitWorkbench(inferredMode) && hasPrompt;
+        const modeLabel = getModeLabel(inferredMode);
+        const submitLabel = inferredMode === 'chat' ? '发送消息' : modeLabel;
+        const blockedTooltip = isBlocked ? '请登录后使用' : '';
+
+        submitBtn.classList.toggle('has-prompt', hasPrompt);
+        submitBtn.classList.toggle('is-blocked', isBlocked);
+        submitBtn.disabled = !canSubmit;
+
+        // Clear native browser title from both button and action container to prevent duplicate built-in system tooltips
+        submitBtn.removeAttribute('title');
+        if (submitAction) {
+            submitAction.removeAttribute('title');
+            submitAction.removeAttribute('data-tooltip');
+        }
+
+        if (isBlocked && blockedTooltip) {
+            submitBtn.setAttribute('data-tooltip', blockedTooltip);
+            submitBtn.setAttribute('aria-label', blockedTooltip);
+        } else {
+            submitBtn.removeAttribute('data-tooltip');
+            submitBtn.setAttribute('aria-label', submitLabel);
+        }
+    }
+
     function syncMobilePromptProxySource(value, selectionStart, selectionEnd) {
         state.prompt = value;
         clearComposerError();
@@ -6115,6 +6197,7 @@
         if (submitButton instanceof HTMLButtonElement) {
             submitButton.disabled = !canSubmitWorkbench(inferWorkbenchMode());
         }
+        syncComposerSubmitButtonState();
         persistState();
     }
 
@@ -6286,6 +6369,118 @@
         syncMobileComposerMenuAnchor();
     }
 
+    const STANDALONE_DRAFT_STORAGE_KEY = 'zaoyoe_aiw_pending_draft';
+
+    function isStandaloneMode() {
+        return Boolean(
+            document.body?.classList?.contains('ai-image-workbench-standalone')
+            || document.documentElement?.classList?.contains('ai-image-workbench-standalone')
+            || /\/workbench(?:\.html)?$/i.test(global.location?.pathname || '')
+        );
+    }
+
+    function buildStandaloneWorkbenchUrl(payload = {}) {
+        const origin = global.location?.origin || 'https://www.fatherkey.com';
+        const url = new URL('/workbench.html', origin);
+        // Only keep lightweight query params to prevent HTTP 431 (Request Header Fields Too Large)
+        if (payload?.mode) url.searchParams.set('mode', payload.mode);
+        if (payload?.taskId) url.searchParams.set('taskId', payload.taskId);
+        if (payload?.prompt || payload?.referenceImage || payload?.referenceTitle) {
+            url.searchParams.set('draft', '1');
+        }
+        return url.pathname + url.search;
+    }
+
+    function openStandaloneWorkbenchWindow(payload = {}) {
+        try {
+            if (payload && Object.keys(payload).length > 0) {
+                const serialized = JSON.stringify(payload);
+                global.localStorage?.setItem(STANDALONE_DRAFT_STORAGE_KEY, serialized);
+                global.sessionStorage?.setItem('aiw_initial_payload', serialized);
+            }
+        } catch (_) {}
+        const targetUrl = buildStandaloneWorkbenchUrl(payload);
+        const win = global.open?.(targetUrl, '_blank');
+        if (win && win.focus) {
+            try { win.focus(); } catch (_) {}
+        }
+        return win;
+    }
+
+    function consumeInitialStandalonePayload() {
+        try {
+            let initialPayload = null;
+            // 1. Try reading from localStorage (most reliable across tabs on same origin)
+            const localStored = global.localStorage?.getItem(STANDALONE_DRAFT_STORAGE_KEY);
+            if (localStored) {
+                try {
+                    initialPayload = JSON.parse(localStored);
+                    global.localStorage?.removeItem(STANDALONE_DRAFT_STORAGE_KEY);
+                } catch (_) {}
+            }
+            // 2. Fallback to sessionStorage
+            if (!initialPayload) {
+                const sessionStored = global.sessionStorage?.getItem('aiw_initial_payload');
+                if (sessionStored) {
+                    try {
+                        initialPayload = JSON.parse(sessionStored);
+                        global.sessionStorage?.removeItem('aiw_initial_payload');
+                    } catch (_) {}
+                }
+            }
+            // 3. Fallback to URLSearchParams (if lightweight params were provided)
+            const params = new URLSearchParams(global.location?.search || '');
+            const mode = initialPayload?.mode || params.get('mode');
+            const prompt = initialPayload?.prompt !== undefined ? initialPayload.prompt : (params.get('prompt') || undefined);
+            const referenceImage = initialPayload?.referenceImage || params.get('referenceImage') || params.get('ref');
+            const referenceTitle = initialPayload?.referenceTitle || params.get('referenceTitle') || params.get('title');
+            const referenceIntent = initialPayload?.referenceIntent || params.get('referenceIntent') || params.get('intent');
+            const ratio = initialPayload?.ratio || params.get('ratio');
+            const taskId = initialPayload?.taskId || params.get('taskId');
+
+            if (taskId) {
+                state.activeTaskId = taskId;
+                markTaskThreadSeen(taskId);
+            }
+
+            const hasDraft = Boolean(mode || prompt !== undefined || referenceImage || referenceTitle || referenceIntent || ratio);
+            if (hasDraft) {
+                resetConversationDraft();
+                state.apiImageTool = true;
+                const requestedMode = String(mode || '').trim();
+                const generationMode = ['text', 'image', 'reverse'].includes(requestedMode) ? requestedMode : 'text';
+                applyPayload({
+                    mode: generationMode,
+                    prompt: prompt || '',
+                    referenceImage: referenceImage || '',
+                    referenceTitle: referenceTitle || '',
+                    referenceIntent: referenceIntent || '',
+                    ratio: ratio || state.ratio
+                });
+            }
+
+            if (global.location?.search && global.history?.replaceState) {
+                const cleanUrl = global.location.pathname + (global.location.hash || '');
+                global.history.replaceState({}, '', cleanUrl);
+            }
+        } catch (_) {}
+    }
+
+    function returnToPromptGallery() {
+        if (global.opener && !global.opener.closed) {
+            try {
+                global.opener.focus();
+                global.close();
+                return;
+            } catch (_) {}
+        }
+        if (global.history && global.history.length > 1 && document.referrer && document.referrer.includes('prompts')) {
+            global.history.back();
+            return;
+        }
+        global.location.href = '/prompts.html';
+    }
+
     function handleWorkbenchOrientationChange() {
         closeMobilePromptProxy({ blur: true, animate: false });
         resetMobileWorkbenchLayout();
@@ -6293,6 +6488,10 @@
     }
 
     function openWorkbench(payload = {}) {
+        if (!isStandaloneMode()) {
+            openStandaloneWorkbenchWindow(payload);
+            return;
+        }
         const wasOpen = state.open;
         applyPayload(payload);
         openSelect = '';
@@ -6338,10 +6537,15 @@
         state.apiImageTool = true;
         const requestedMode = String(payload.mode || '').trim();
         const generationMode = ['text', 'image', 'reverse'].includes(requestedMode) ? requestedMode : 'text';
-        openWorkbench({
+        const nextPayload = {
             ...payload,
             mode: generationMode
-        });
+        };
+        if (!isStandaloneMode()) {
+            openStandaloneWorkbenchWindow(nextPayload);
+            return;
+        }
+        openWorkbench(nextPayload);
     }
 
     function closeWorkbench() {
@@ -6495,6 +6699,7 @@
         root.addEventListener('pointerup', handleRootPointerUp);
         root.addEventListener('pointercancel', handleRootPointerUp);
         root.addEventListener('input', handleRootInput);
+        root.addEventListener('scroll', handleRootScroll, { passive: true, capture: true });
         root.addEventListener('change', handleRootChange);
         root.addEventListener('focusin', handleRootFocusIn);
         root.addEventListener('focusout', handleRootFocusOut);
@@ -6560,6 +6765,22 @@
     function handleRootClick(event) {
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
+
+        const blockedSubmit = target.closest?.('.ai-image-main-submit.is-blocked')
+            || target.closest?.('.ai-image-main-submit-action.is-blocked');
+        if (blockedSubmit) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!isUserLoggedIn()) {
+                setComposerError('请登录后使用');
+                window.requestLoginModalOpen?.('login');
+            } else {
+                setComposerError('请切换至我的 API 模式后使用');
+                setSidebarView('billing');
+            }
+            render();
+            return;
+        }
 
         const mainPrompt = target.closest?.('.ai-image-main-prompt[data-aiw-prompt]');
         if (mainPrompt instanceof HTMLTextAreaElement && isMobileKeyboardDevice()) {
@@ -7310,8 +7531,27 @@
         if (action === 'toggle') toggleWorkbench();
         if (action === 'open') openWorkbench();
         if (action === 'minimize') closeWorkbench();
-        if (action === 'close') closeWorkbench();
-        if (action === 'generate') submitWorkbenchTask();
+        if (action === 'close') {
+            if (isStandaloneMode()) {
+                returnToPromptGallery();
+                return;
+            }
+            closeWorkbench();
+            return;
+        }
+        if (action === 'generate') {
+            if (isWorkbenchAuthOrBillingBlocked()) {
+                if (!isUserLoggedIn()) {
+                    window.requestLoginModalOpen?.('login');
+                } else if (state.billingMode !== 'api') {
+                    setSidebarView('billing');
+                    render();
+                }
+                return;
+            }
+            submitWorkbenchTask();
+            return;
+        }
         if (action === 'cancel-task') {
             cancelTask(element?.dataset?.taskId || state.activeTaskId);
             return;
@@ -7592,6 +7832,19 @@
         });
     }
 
+    function handleRootScroll(event) {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        target.setAttribute('data-aiw-scrolling', 'true');
+        if (target.__aiwScrollHideTimer) {
+            clearTimeout(target.__aiwScrollHideTimer);
+        }
+        target.__aiwScrollHideTimer = setTimeout(() => {
+            target.removeAttribute('data-aiw-scrolling');
+            target.__aiwScrollHideTimer = null;
+        }, 800);
+    }
+
     function handleRootInput(event) {
         const target = event.target;
         if (target instanceof HTMLTextAreaElement && target.matches('[data-aiw-prompt]')) {
@@ -7599,6 +7852,7 @@
             clearComposerError();
             syncPromptTextareaHeight(target);
             syncMobileComposerMenuAnchor();
+            syncComposerSubmitButtonState();
             persistState();
             return;
         }
@@ -7753,6 +8007,11 @@
                     event.preventDefault();
                     openSelect = '';
                     render();
+                    return;
+                }
+                if (isStandaloneMode()) {
+                    event.preventDefault();
+                    returnToPromptGallery();
                     return;
                 }
                 closeWorkbench();
@@ -8818,6 +9077,18 @@
         const chatParentTask = inferredMode === 'chat' ? getLastChatThreadTask(threadRoot) : null;
         state.mode = inferredMode;
         clearComposerError();
+        if (isWorkbenchAuthOrBillingBlocked()) {
+            if (!isUserLoggedIn()) {
+                window.requestLoginModalOpen?.('login');
+                setComposerError('请登录后使用');
+                render();
+            } else if (state.billingMode !== 'api') {
+                setSidebarView('billing');
+                setComposerError('当前仅支持 API 计费模式，请切换或配置 API 模式。');
+                render();
+            }
+            return;
+        }
         if (!state.billingMode) {
             setSidebarView('billing');
             render();
@@ -10246,6 +10517,10 @@
 
     function openDockTask(taskId = '') {
         const task = state.tasks.find((item) => item.id === taskId);
+        if (!isStandaloneMode()) {
+            openStandaloneWorkbenchWindow({ taskId: task?.id || taskId });
+            return;
+        }
         if (!task) {
             openWorkbench();
             return;
@@ -10321,9 +10596,27 @@
         if (!nativeHit || nativeHit.dataset.aiwNativeBound === '1') return;
         nativeHit.dataset.aiwNativeBound = '1';
         nativeHit.addEventListener('change', (event) => {
+            if (!isStandaloneMode()) {
+                event.preventDefault();
+                event.target.checked = false;
+                openStandaloneWorkbenchWindow();
+                return;
+            }
             state.open = Boolean(event.target.checked);
             setBodyOpenState(state.open);
             render();
+        });
+    }
+
+    function bindDockFabClick(fab) {
+        if (!fab || fab.dataset.aiwFabClickBound === '1') return;
+        fab.dataset.aiwFabClickBound = '1';
+        fab.addEventListener('click', (event) => {
+            if (!isStandaloneMode()) {
+                if (event.target.closest('[data-aiw-dock-task-id]') || event.target.closest('[data-aiw-dock-dismiss-task-id]')) return;
+                event.preventDefault();
+                openStandaloneWorkbenchWindow();
+            }
         });
     }
 
@@ -10494,6 +10787,7 @@
         bindDockAnimationHover(fab);
         bindDockPopoverEnter();
         bindDockNativeHit(fab);
+        bindDockFabClick(fab);
         bindDockTaskButtons();
         syncLiveElapsedTimer();
     }
@@ -10509,10 +10803,15 @@
             return;
         }
 
+        const isStandalone = isStandaloneMode();
+        const returnTooltip = '返回灵感库';
+        const closeTitle = modelPricingView.open ? '关闭模型价格' : (isStandalone ? returnTooltip : '关闭 AI 工作台');
+        const closeIcon = modelPricingView.open ? 'fa-times' : (isStandalone ? 'fa-arrow-left' : 'fa-times');
+
         overlay.innerHTML = `
-            <section class="ai-image-shell ${modelPricingView.open ? 'is-model-pricing' : ''}" role="dialog" aria-modal="true" aria-label="AI 图片工作台">
-                <button class="ai-image-shell-close" type="button" data-aiw-action="${modelPricingView.open ? 'close-model-pricing' : 'close'}" aria-label="${modelPricingView.open ? '关闭模型价格' : '关闭 AI 工作台'}" title="${modelPricingView.open ? '关闭模型价格' : '关闭'}">
-                    <i class="fas fa-times" aria-hidden="true"></i>
+            <section class="ai-image-shell ${modelPricingView.open ? 'is-model-pricing' : ''}" role="dialog" aria-modal="true" aria-label="${isStandalone ? 'AI 工作台' : 'AI 图片工作台'}">
+                <button class="ai-image-shell-close" type="button" data-aiw-action="${modelPricingView.open ? 'close-model-pricing' : 'close'}" aria-label="${escapeHtml(closeTitle)}" title="${escapeHtml(closeTitle)}" data-tooltip="${escapeHtml(closeTitle)}">
+                    <i class="fas ${escapeHtml(closeIcon)}" aria-hidden="true"></i>
                 </button>
                 <div class="${getLayoutClasses()}">
                     ${renderHistoryPanel()}
@@ -11203,6 +11502,11 @@
         const submitLabel = inferredMode === 'chat' ? '发送消息' : modeLabel;
         const busyTask = getActiveDisplayTask();
         const canCancel = Boolean(busyTask && isBusyTask(busyTask));
+        const hasPrompt = Boolean(String(state.prompt || '').trim());
+        const isBlocked = !canCancel && isWorkbenchAuthOrBillingBlocked();
+        const blockedTooltip = isBlocked ? '请登录后使用' : '';
+        const finalTitle = canCancel ? '取消生成' : '';
+        const finalAriaLabel = canCancel ? '取消生成' : (isBlocked ? blockedTooltip : submitLabel);
         const promptPlaceholder = hasVisibleImage
             ? (inferredMode === 'chat'
                 ? '围绕已上传图片提问，或继续输入你的问题'
@@ -11257,7 +11561,7 @@
                     </div>
                     <textarea class="ai-image-main-prompt" data-aiw-prompt rows="1" placeholder="${escapeHtml(promptPlaceholder)}"${isMobileKeyboardDevice() ? ' readonly inputmode="none" tabindex="-1" role="button" aria-haspopup="dialog"' : ''}>${escapeHtml(state.prompt)}</textarea>
                     <div class="ai-image-main-submit-action">
-                        <button class="ai-image-main-submit ${canCancel ? 'is-cancel' : ''}" type="button" data-aiw-action="${canCancel ? 'cancel-task' : 'generate'}" data-task-id="${escapeHtml(busyTask?.id || '')}" aria-label="${escapeHtml(canCancel ? '取消生成' : submitLabel)}" ${canCancel || canSubmit ? '' : 'disabled'}>
+                        <button class="ai-image-main-submit ${canCancel ? 'is-cancel' : ''} ${hasPrompt ? 'has-prompt' : ''} ${isBlocked ? 'is-blocked' : ''}" type="button" data-aiw-action="${canCancel ? 'cancel-task' : 'generate'}" data-task-id="${escapeHtml(busyTask?.id || '')}" aria-label="${escapeHtml(finalAriaLabel)}"${finalTitle ? ` title="${escapeHtml(finalTitle)}"` : ''}${isBlocked && blockedTooltip ? ` data-tooltip="${escapeHtml(blockedTooltip)}"` : ''} ${canCancel || canSubmit ? '' : 'disabled'}>
                             <i class="fas ${canCancel ? 'fa-stop' : 'fa-arrow-up'}"></i>
                         </button>
                     </div>
@@ -12443,8 +12747,8 @@
                         <button class="ai-image-rail-btn ai-image-rail-wallet ${isBillingView ? 'is-active' : ''}" type="button" data-aiw-action="toggle-billing" aria-label="${isBillingView ? '收起计费方式' : '展开计费方式'}" aria-expanded="${isBillingView ? 'true' : 'false'}" title="计费方式" data-rail-label="计费">
                             <i class="fas fa-gem"></i>
                         </button>
-                        <button class="ai-image-rail-btn ai-image-rail-close" type="button" data-aiw-action="close" aria-label="关闭 AI 工作台" title="关闭" data-rail-label="关闭">
-                            <i class="fas fa-xmark"></i>
+                        <button class="ai-image-rail-btn ai-image-rail-close" type="button" data-aiw-action="close" aria-label="关闭 AI 工作台" title="${escapeHtml(isStandaloneMode() ? '返回灵感库' : '关闭')}" data-rail-label="${escapeHtml(isStandaloneMode() ? '返回' : '关闭')}">
+                            <i class="fas ${escapeHtml(isStandaloneMode() ? 'fa-arrow-left' : 'fa-xmark')}"></i>
                         </button>
                     </div>
                 </div>
@@ -12793,10 +13097,17 @@
     function init() {
         if (root || !document.body) return;
         restoreState();
+        if (isStandaloneMode()) {
+            state.open = true;
+            consumeInitialStandalonePayload();
+        }
         exposeWorkbenchOpenHandlers();
         createRoot();
         bindGlobalEvents();
         render();
+        if (isStandaloneMode()) {
+            setBodyOpenState(true);
+        }
         loadRemoteConfig();
         loadRemoteHistoryPrefs();
         loadRemoteRecords();

@@ -312,7 +312,16 @@
     }
 
     function initNavDropdowns() {
-        // Delayed dropdown closures must not override the cursor of unrelated controls.
+        const forceInteractiveCursor = () => {
+            document.documentElement.style.setProperty('cursor', 'pointer', 'important');
+            document.body.style.setProperty('cursor', 'pointer', 'important');
+        };
+
+        const clearInteractiveCursor = () => {
+            document.documentElement.style.removeProperty('cursor');
+            document.body.style.removeProperty('cursor');
+        };
+
         const forceDropdownCursor = (dropdown) => {
             dropdown.style.setProperty('cursor', 'pointer', 'important');
             dropdown.querySelectorAll('*').forEach((node) => {
@@ -442,6 +451,7 @@
                 dropdown.style.top = `${navRect.bottom - navOverlap}px`;
                 dropdown.classList.add('visible');
                 trigger.classList.add('active');
+                forceInteractiveCursor();
             };
 
             let isHoveringTrigger = false;
@@ -454,6 +464,7 @@
 
                     dropdown.classList.remove('visible');
                     trigger.classList.remove('active');
+                    clearInteractiveCursor();
                 }, 200);
             };
 
@@ -477,6 +488,7 @@
                         if (!isHoveringTrigger && !isHoveringDropdown) {
                             dropdown.classList.remove('visible');
                             trigger.classList.remove('active');
+                            clearInteractiveCursor();
                         }
                     }, 400);
                     return;
@@ -495,6 +507,7 @@
             dropdown.addEventListener('mouseenter', () => {
                 isHoveringDropdown = true;
                 keepDropdownOpen();
+                forceInteractiveCursor();
             });
 
             dropdown.addEventListener('mouseleave', () => {
@@ -524,10 +537,112 @@
         }
 
         if (!nav.dataset.scrollBound) {
-            global.addEventListener('scroll', () => {
-                nav.classList.toggle('scrolled', global.scrollY > 50);
-            }, { passive: true });
+            let lastScrollY = Math.max(0, global.scrollY || global.pageYOffset || 0);
+            let scrollDownStartY = lastScrollY;
+            let scrollTicking = false;
+
+            const SCROLL_CAPSULE_THRESHOLD = 24;
+            const SCROLL_HIDE_BUFFER = 480;
+            const SCROLL_DELTA_UP_THRESHOLD = 8;
+
+            const updateRuntimeNavScroll = () => {
+                const scrollY = Math.max(0, global.scrollY || global.pageYOffset || 0);
+
+                if (scrollY > 0 && !nav.classList.contains('nav-ready')) {
+                    nav.classList.add('nav-ready');
+                }
+
+                const isMobileMenuOpen = document.body.classList.contains('mobile-menu-open') ||
+                    nav.classList.contains('mobile-menu-open') ||
+                    Boolean(nav.querySelector('.nav-hamburger.active'));
+
+                if (isMobileMenuOpen) {
+                    nav.classList.remove('nav-hidden');
+                    scrollDownStartY = scrollY;
+                    lastScrollY = scrollY;
+                    return;
+                }
+
+                if (scrollY <= SCROLL_CAPSULE_THRESHOLD) {
+                    // Stage 1: At top (unscrolled stretched state)
+                    nav.classList.remove('scrolled');
+                    nav.classList.remove('nav-hidden');
+                    scrollDownStartY = scrollY;
+                    lastScrollY = scrollY;
+                } else {
+                    // In capsule mode (> 24px)
+                    nav.classList.add('scrolled');
+                    const delta = scrollY - lastScrollY;
+
+                    if (delta <= -SCROLL_DELTA_UP_THRESHOLD) {
+                        // Scrolling up -> reveal capsule downwards immediately and reset downward buffer anchor
+                        nav.classList.remove('nav-hidden');
+                        scrollDownStartY = scrollY;
+                        lastScrollY = scrollY;
+                    } else if (delta > 0) {
+                        // Scrolling down -> apply identical buffer distance (480px) from start of downward scroll
+                        if (scrollDownStartY === null || scrollDownStartY === undefined) {
+                            scrollDownStartY = scrollY;
+                        }
+                        const downwardTravel = scrollY - scrollDownStartY;
+                        const isNearBottom = (global.innerHeight + scrollY) >= (document.documentElement.scrollHeight - 16);
+
+                        if (downwardTravel >= SCROLL_HIDE_BUFFER && !isNearBottom) {
+                            nav.classList.add('nav-hidden');
+                        } else {
+                            nav.classList.remove('nav-hidden');
+                        }
+                        lastScrollY = scrollY;
+                    }
+                }
+
+                // Close open dropdowns on scroll so they don't detach from the nav
+                const userDropdown = document.getElementById('userDropdown');
+                if (userDropdown && userDropdown.classList.contains('active')) {
+                    if (typeof global.closeUserDropdown === 'function') {
+                        global.closeUserDropdown();
+                    } else {
+                        userDropdown.classList.remove('active');
+                        userDropdown.setAttribute('aria-hidden', 'true');
+                        document.getElementById('dropdownOverlay')?.classList.remove('active');
+                        document.getElementById('authBtn')?.setAttribute('aria-expanded', 'false');
+                    }
+                }
+                document.querySelectorAll('.nav-dropdown-portal.visible, .nav-dropdown.visible').forEach((portal) => {
+                    portal.classList.remove('visible');
+                });
+                document.querySelectorAll('.nav-menu a.active, .nav-trigger.active').forEach((trigger) => {
+                    trigger.classList.remove('active');
+                });
+            };
+
+            const onScroll = () => {
+                if (!scrollTicking) {
+                    scrollTicking = true;
+                    if (typeof global.requestAnimationFrame === 'function') {
+                        global.requestAnimationFrame(() => {
+                            scrollTicking = false;
+                            updateRuntimeNavScroll();
+                        });
+                    } else {
+                        scrollTicking = false;
+                        updateRuntimeNavScroll();
+                    }
+                }
+            };
+
+            global.addEventListener('scroll', onScroll, { passive: true });
             nav.dataset.scrollBound = '1';
+            updateRuntimeNavScroll();
+            if (typeof global.requestAnimationFrame === 'function') {
+                global.requestAnimationFrame(() => {
+                    global.requestAnimationFrame(() => {
+                        nav.classList.add('nav-ready');
+                    });
+                });
+            } else {
+                nav.classList.add('nav-ready');
+            }
         }
 
         if (mobileMenu && !mobileMenu._submenuInitialized) {

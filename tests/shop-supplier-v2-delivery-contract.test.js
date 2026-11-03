@@ -148,3 +148,59 @@ test('operator record keeps user-reported SQL separate from actual acceptance an
     assert.match(plan, /## 21\. 2026-10-19 P2D-1/);
     for (const section of ['## 18.', '## 19.', '## 20.']) assert.ok(plan.includes(section), section);
 });
+test('Xiareng P1B remains gated on sanitized category semantics and an isolated schema baseline', () => {
+    const plan = read('docs/shop-supplier-platform-2.0-plan.md');
+    const gate = plan.slice(plan.indexOf('### 38.7 下一阶段证据包与放行门'));
+    for (const anchor of ['至少两次不同时间的脱敏', '唯一范围及改名、重排、删除重建后的稳定性确认',
+        '应用源码 commit SHA', 'schema-only 导出 SHA-256', '应用迁移账本中的已应用版本清单',
+        '只做离线完整性与依赖比对', '不连接数据库、不执行 SQL', 'NOT RECEIVED']) {
+        assert.ok(gate.includes(anchor), anchor);
+    }
+    assert.match(gate, /本节不是 SQL 执行或真实商户调用授权/);
+});
+test('production migration-ledger evidence stays read-only and does not satisfy the isolated G0 baseline', () => {
+    const plan = read('docs/shop-supplier-platform-2.0-plan.md');
+    const section = plan.slice(plan.indexOf('## 38.9 2026-11-01 zaoyoe 生产迁移账本只读结果更正'));
+    const ledgerSql = read('supabase/acceptance/20261101_supplier_remote_migration_ledger_readonly.sql');
+    const executable = ledgerSql.replace(/--[^\n]*/g, '');
+    assert.ok(section.length > 0, 'missing appended evidence correction');
+    assert.match(section, /main PRODUCTION/);
+    assert.match(section, /G0 仍未通过/);
+    assert.match(section, /不能排除有人曾在 SQL Editor 手动执行/);
+    assert.match(section, /分类身份继续 `unverified`/);
+    assert.match(section, /321 个 SQL 文件/);
+    assert.match(section, /不能组成可证明从空库重建当前商城的基线/);
+    for (const [version, name] of [
+        ['202606171905', 'prompt_free_unlock_daily_limit_hotfix'],
+        ['202606171922', 'unlock_prompt_v2_drop_varchar_overload'],
+        ['20260628', 'ai_image_video_constraints'],
+        ['20260712', 'prompt_gallery_video_assets'],
+        ['20260727', 'prompt_gallery_import_dedupe_timeout_fix'],
+        ['20260731', 'ai_workbench_fast_admission'],
+    ]) {
+        assert.ok(section.includes('`' + version + '`'), version);
+        assert.ok(section.includes('`' + name + '`'), name);
+    }
+    assert.match(ledgerSql, /BEGIN TRANSACTION READ ONLY;/);
+    assert.match(ledgerSql, /FROM supabase_migrations\.schema_migrations/);
+    assert.match(ledgerSql, /ROLLBACK;/);
+    assert.doesNotMatch(executable, /\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)\b/i);
+});
+
+test('observed 8000 Xiareng catalog evidence updates P1A without opening P1B', () => {
+    const plan = read('docs/shop-supplier-platform-2.0-plan.md');
+    const evidence = read('supabase/acceptance/20261101_supplier_baseline_evidence.md');
+    const correction = plan.slice(plan.indexOf('## 38.12 2026-11-02 8000 目录只读观察更正'));
+    assert.ok(correction.length > 0, 'missing 8000 catalog correction');
+    for (const anchor of ['2026-11-02 08:25:26', '2026-11-02 08:33:01', '181', '3665',
+        'OBSERVED / READ-ONLY', 'P1B 持久分类树、分类映射和按分类持久化导入：**BLOCKED ON UPSTREAM EVIDENCE**',
+        'G0 supplier-focused 本地隔离基线：**PASS（范围受限）**']) assert.ok(correction.includes(anchor), anchor);
+    for (const anchor of ['categoryCount=181', 'itemCount=3665', 'stable=true',
+        'identityStatus=unverified', 'categoryIdentityStatus=unverified',
+        'b7ee5175ea9fcddd50898f46f2286cc9dc2d1628a48152b82b624c538091752c',
+        'b74029f46ff8a2a38ea40d0aeea673728fbb97449bd922ef91e3be6220b0490e']) {
+        assert.ok(evidence.includes(anchor), anchor);
+    }
+    assert.match(correction, /不执行生产写 SQL/);
+    assert.match(correction, /不建立持久分类映射/);
+});

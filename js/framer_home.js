@@ -3359,6 +3359,8 @@ const FramerHome = {
         zh: '创意 · 效率 · 无限可能',
         en: 'Creativity · Efficiency · Endless Possibilities'
       }),
+      stream_color: Number(config.stream_color || config.palette || 3) || 3,
+      palette: Number(config.stream_color || config.palette || 3) || 3,
       customImage: config.custom_image || null,
       entries: normalizedEntries
         .filter((item) => item?.enabled !== false)
@@ -4657,18 +4659,6 @@ const FramerHome = {
 
   buildHeroStaticMarkup(data, visibleEntries) {
     return `
-      <div class="hero-prism-preview-bg" aria-hidden="true">
-        <div class="hero-prism-preview-effect-layer"></div>
-      </div>
-      <div class="hero-prismchrono-scene" aria-hidden="true">
-        <div class="hero-prismchrono-field">
-          <i></i><i></i><i></i>
-          <span><b></b><b></b><b></b><b></b></span>
-          <span><b></b><b></b><b></b><b></b></span>
-          <span><b></b><b></b><b></b><b></b></span>
-          <em></em><em></em><em></em><em></em>
-        </div>
-      </div>
       <canvas class="hero-fx-liquid" id="heroLiquidCanvas" aria-hidden="true"></canvas>
       <div class="hero-noise-overlay" aria-hidden="true"></div>
       <h1 class="hero-title fade-in-up">${escapeHomeHtml(data.title || '')}</h1>
@@ -4687,9 +4677,24 @@ const FramerHome = {
     `;
   },
 
-  initHeroLiquidMatrix(section) {
-    if (window.__homeHeroLiquidBootstrap && typeof window.__homeHeroLiquidBootstrap.stop === 'function') {
-      window.__homeHeroLiquidBootstrap.stop();
+  initHeroLiquidMatrix(section, heroData) {
+    const rawPalette = Number(heroData?.stream_color || heroData?.palette || section?.dataset?.streamColor || section?.dataset?.palette);
+    const desiredPalette = (rawPalette >= 1 && rawPalette <= 3) ? rawPalette : 3;
+
+    if (window.__homeHeroLiquidBootstrap) {
+      if (typeof window.__homeHeroLiquidBootstrap.selectPalette === 'function') {
+        window.__homeHeroLiquidBootstrap.selectPalette(desiredPalette);
+      }
+      if (typeof window.__homeHeroLiquidBootstrap.isRunning === 'function' && window.__homeHeroLiquidBootstrap.isRunning()) {
+        if (typeof window.__homeHeroLiquidBootstrap.bindPaletteButtons === 'function') {
+          window.__homeHeroLiquidBootstrap.bindPaletteButtons();
+        }
+        return;
+      }
+      if (typeof window.__homeHeroLiquidBootstrap.start === 'function') {
+        window.__homeHeroLiquidBootstrap.start();
+        return;
+      }
     }
 
     if (this.heroLiquidRuntime) {
@@ -4697,108 +4702,214 @@ const FramerHome = {
     }
 
     const canvas = section?.querySelector('#heroLiquidCanvas');
-    if (!section || !canvas) {
+    if (!section || !canvas || typeof canvas.getContext !== 'function') {
       return;
     }
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      return;
+    let gl = null;
+    try {
+      gl = canvas.getContext('webgl', { alpha: false, antialias: false, powerPreference: 'low-power' })
+        || canvas.getContext('experimental-webgl');
+    } catch (_) {
+      gl = null;
     }
+
+    const vertexSource = [
+      'attribute vec2 a_position;',
+      'void main() { gl_Position = vec4(a_position, 0.0, 1.0); }'
+    ].join('\n');
+
+    const fragmentSource = [
+      'precision highp float;',
+      'uniform vec2 u_resolution;',
+      'uniform float u_time;',
+      'uniform float u_palette;',
+      'float hash(vec2 p) {',
+      '  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);',
+      '}',
+      'float noise(vec2 p) {',
+      '  vec2 i = floor(p);',
+      '  vec2 f = fract(p);',
+      '  f = f * f * (3.0 - 2.0 * f);',
+      '  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),',
+      '             mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);',
+      '}',
+      'float fbm(vec2 p) {',
+      '  float value = 0.0;',
+      '  float amplitude = 0.5;',
+      '  for (int i = 0; i < 4; i++) {',
+      '    value += amplitude * noise(p);',
+      '    p = p * 2.03 + vec2(11.7, 8.3);',
+      '    amplitude *= 0.5;',
+      '  }',
+      '  return value;',
+      '}',
+      'void main() {',
+      '  vec2 uv = gl_FragCoord.xy / u_resolution.xy;',
+      '  vec2 p = (gl_FragCoord.xy - .5 * u_resolution.xy) / min(u_resolution.x, u_resolution.y);',
+      '  float t = u_time * .045;',
+      '  float warp = fbm(p * 1.75 + vec2(t, -t * .7));',
+      '  float field = fbm(p * 2.15 + warp * 1.8 + vec2(-t * .48, t * .3));',
+      '  float ribbons = sin((p.x * 1.8 + p.y * 1.25 + field * 3.7) * 3.5 + t * 2.0);',
+      '  float liquid = field + ribbons * .08;',
+      '  vec3 graphite = vec3(.004, .006, .012);',
+      '  vec3 deepIndigo = vec3(.018, .036, .092);',
+      '  vec3 midnightBlue = vec3(.035, .085, .22);',
+      '  vec3 electricBlue = vec3(.075, .21, .50);',
+      '  vec3 iceCyan = vec3(.19, .44, .58);',
+      '  vec3 deepEmerald = vec3(.012, .045, .032);',
+      '  vec3 jade = vec3(.024, .12, .08);',
+      '  vec3 ionGreen = vec3(.10, .30, .20);',
+      '  vec3 mint = vec3(.40, .62, .49);',
+      '  vec3 deepOxide = vec3(.055, .018, .014);',
+      '  vec3 darkCopper = vec3(.15, .045, .024);',
+      '  vec3 copper = vec3(.35, .11, .045);',
+      '  vec3 amber = vec3(.66, .30, .12);',
+      '  float blueToGreen = clamp(u_palette, 0.0, 1.0);',
+      '  float greenToCopper = clamp(u_palette - 1.0, 0.0, 1.0);',
+      '  deepIndigo = mix(mix(deepIndigo, deepEmerald, blueToGreen), deepOxide, greenToCopper);',
+      '  midnightBlue = mix(mix(midnightBlue, jade, blueToGreen), darkCopper, greenToCopper);',
+      '  electricBlue = mix(mix(electricBlue, ionGreen, blueToGreen), copper, greenToCopper);',
+      '  iceCyan = mix(mix(iceCyan, mint, blueToGreen), amber, greenToCopper);',
+      '  vec3 color = mix(graphite, deepIndigo, smoothstep(.22, .49, field));',
+      '  color = mix(color, midnightBlue, smoothstep(.40, .62, field));',
+      '  color = mix(color, electricBlue, smoothstep(.56, .78, field));',
+      '  color = mix(color, iceCyan, smoothstep(.76, .94, field));',
+      '  float volumeLight = smoothstep(.28, .76, warp);',
+      '  color *= 1.01 + volumeLight * .33;',
+      '  float sheen = pow(max(0.0, 1.0 - abs(sin(liquid * 18.0 + warp * 5.0))), 20.0) * smoothstep(.50, .64, field);',
+      '  float violetGlimmer = sheen * smoothstep(.36, .52, field) * (1.0 - smoothstep(.62, .76, field));',
+      '  vec3 coolSheen = mix(vec3(.58, .76, .94), vec3(.72, .92, .72), blueToGreen);',
+      '  vec3 warmSheen = vec3(1.0, .72, .46);',
+      '  vec3 coolGlimmer = mix(vec3(.43, .39, .74), vec3(.84, .38, .52), blueToGreen);',
+      '  vec3 warmGlimmer = vec3(.95, .42, .31);',
+      '  color += mix(coolSheen, warmSheen, greenToCopper) * sheen * .085;',
+      '  color += mix(coolGlimmer, warmGlimmer, greenToCopper) * violetGlimmer * .045;',
+      '  float vignette = 1.0 - smoothstep(.15, 1.18, length(p * vec2(.78, 1.0)));',
+      '  color *= mix(.64, 1.0, vignette);',
+      '  color += (hash(gl_FragCoord.xy + u_time) - .5) * .001;',
+      '  gl_FragColor = vec4(color, 1.0);',
+      '}'
+    ].join('\n');
+
+    const compileShader = (glCtx, type, source) => {
+      const shader = glCtx.createShader(type);
+      glCtx.shaderSource(shader, source);
+      glCtx.compileShader(shader);
+      if (!glCtx.getShaderParameter(shader, glCtx.COMPILE_STATUS)) {
+        glCtx.deleteShader(shader);
+        return null;
+      }
+      return shader;
+    };
+
+    let program = null;
+    let resolutionLoc = null;
+    let timeLoc = null;
+    let paletteLoc = null;
+    let positionBuffer = null;
+
+    if (gl) {
+      const vShader = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
+      const fShader = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+      if (vShader && fShader) {
+        program = gl.createProgram();
+        gl.attachShader(program, vShader);
+        gl.attachShader(program, fShader);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+          program = null;
+        }
+      }
+      if (program) {
+        positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+        gl.useProgram(program);
+        const posLoc = gl.getAttribLocation(program, 'a_position');
+        gl.enableVertexAttribArray(posLoc);
+        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+        resolutionLoc = gl.getUniformLocation(program, 'u_resolution');
+        timeLoc = gl.getUniformLocation(program, 'u_time');
+        paletteLoc = gl.getUniformLocation(program, 'u_palette');
+      }
+    }
+
+    const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let selectedPalette = desiredPalette;
+    let paletteMix = desiredPalette - 1.0;
+    let paletteTarget = desiredPalette - 1.0;
+    const INITIAL_TIME_OFFSET = 30.0;
 
     const runtime = {
       section,
       canvas,
-      ctx,
+      active: true,
+      frame: 0,
       width: 0,
       height: 0,
-      time: 0,
-      frame: 0,
       resizeObserver: null
     };
 
-    const fit = () => {
-      if (!this.heroLiquidRuntime || this.heroLiquidRuntime !== runtime) {
-        return;
+    const selectPalette = (p) => {
+      selectedPalette = p;
+      paletteTarget = p - 1;
+      if (reducedMotion) {
+        paletteMix = paletteTarget;
       }
-      const dpr = window.devicePixelRatio || 1;
-      const width = Math.max(1, Math.floor(section.clientWidth));
-      const height = Math.max(1, Math.floor(section.clientHeight));
-      canvas.width = Math.max(1, Math.floor(width * dpr));
-      canvas.height = Math.max(1, Math.floor(height * dpr));
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      section.querySelectorAll('[data-palette]').forEach((btn) => {
+        btn.setAttribute('aria-pressed', String(Number(btn.dataset.palette) === p));
+      });
+    };
+
+    const bindButtons = () => {
+      section.querySelectorAll('[data-palette]').forEach((btn) => {
+        if (btn.__paletteBound) return;
+        btn.__paletteBound = true;
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const p = Number(btn.dataset.palette);
+          if (p >= 1 && p <= 3) selectPalette(p);
+        });
+      });
+    };
+
+    const fit = () => {
+      if (!this.heroLiquidRuntime || this.heroLiquidRuntime !== runtime) return;
+      const rect = section.getBoundingClientRect ? section.getBoundingClientRect() : { width: section.clientWidth, height: section.clientHeight };
+      const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+      const width = Math.max(1, Math.floor((rect.width || section.clientWidth || 1) * pixelRatio));
+      const height = Math.max(1, Math.floor((rect.height || section.clientHeight || 1) * pixelRatio));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        if (gl) gl.viewport(0, 0, width, height);
+      }
       runtime.width = width;
       runtime.height = height;
     };
 
-    const draw = (dt) => {
-      if (!this.heroLiquidRuntime || this.heroLiquidRuntime !== runtime) {
-        return;
+    const draw = (timestamp = performance.now()) => {
+      if (!this.heroLiquidRuntime || this.heroLiquidRuntime !== runtime || !runtime.active) return;
+      fit();
+      if (program && gl) {
+        gl.uniform2f(resolutionLoc, runtime.width, runtime.height);
+        gl.uniform1f(timeLoc, INITIAL_TIME_OFFSET + (reducedMotion ? 0 : timestamp * 0.001));
+        if (!reducedMotion) paletteMix += (paletteTarget - paletteMix) * 0.045;
+        gl.uniform1f(paletteLoc, paletteMix);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
       }
-
-      const { width: lw, height: lh } = runtime;
-      if (!lw || !lh) {
-        return;
+      if (!reducedMotion) {
+        runtime.frame = window.requestAnimationFrame(draw);
       }
-
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(0, 0, lw, lh);
-
-      const cols = 60;
-      const rows = 38;
-      const spacing = 42;
-      const cx = lw / 2;
-      const cy = lh * 0.30;
-      const fov = 400;
-      const hueVal = 150;
-
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
-      for (let y = 0; y < rows; y += 1) {
-        for (let x = 0; x < cols; x += 1) {
-          const wx = (x - (cols / 2)) * spacing;
-          const zOff = (runtime.time * 1.0) % spacing;
-          const wz = ((rows - y) * spacing) - zOff;
-          const wy = 150
-            + Math.sin((wx * 0.02) + (runtime.time * 0.02)) * 40
-            + Math.cos((wz * 0.015) - (runtime.time * 0.03)) * 60
-            + Math.sin(((wx + wz) * 0.01) + (runtime.time * 0.04)) * 30;
-          const scale = fov / (fov + wz);
-          const px = cx + (wx * scale);
-          const py = cy + (wy * scale);
-
-          if (wz > 0 && scale > 0) {
-            const alpha = Math.max(0.2, 1 - (wz / (rows * spacing)));
-            let ch = '0';
-            if (wy < 140) ch = '1';
-            if (wy < 100) ch = HOMEPAGE_HERO_MATRIX_CHARSET[Math.floor((x + y + (runtime.time * 0.1)) % HOMEPAGE_HERO_MATRIX_CHARSET.length)];
-            const fs = Math.max(3, 14 * scale);
-            ctx.font = `${fs}px ${HOMEPAGE_HERO_MATRIX_FONT}`;
-            const light = Math.max(20, 90 - (wy - 50));
-            ctx.fillStyle = `hsla(${hueVal}, 100%, ${light}%, ${alpha})`;
-            ctx.fillText(ch, px, py);
-          }
-        }
-      }
-
-      runtime.time += dt * HOMEPAGE_HERO_MATRIX_SCROLL_SPEED;
-      runtime.frame = window.requestAnimationFrame((now) => {
-        const nextDt = Math.min(2, (now - (runtime.lastNow || now)) / 16.6667);
-        runtime.lastNow = now;
-        draw(nextDt);
-      });
     };
 
-    runtime.resizeObserver = typeof window.ResizeObserver === 'function'
-      ? new ResizeObserver(fit)
-      : null;
-
+    bindButtons();
+    runtime.resizeObserver = typeof window.ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
     this.heroLiquidRuntime = runtime;
     fit();
     runtime.resizeObserver?.observe(section);
-    runtime.lastNow = performance.now();
-    draw(1);
+    runtime.frame = window.requestAnimationFrame(draw);
   },
 
   destroyHeroLiquidMatrix() {
@@ -4811,6 +4922,7 @@ const FramerHome = {
       return;
     }
 
+    runtime.active = false;
     if (runtime.resizeObserver) {
       runtime.resizeObserver.disconnect();
     }
@@ -4896,12 +5008,12 @@ const FramerHome = {
     });
 
     section.dataset.homeHeroCentering = '1';
-    this.initHeroLiquidMatrix(section);
+    this.initHeroLiquidMatrix(section, data);
     section.dataset.renderSignature = heroSignature;
     section.dataset.homeHeroHydrated = '1';
     this.writeHeroTextCache(data);
 
-    // Keep the seeded prism scene intact so its intro scale animation does not replay.
+    // Keep the seeded hero scene intact so its intro animation does not replay.
     section.querySelectorAll('.fade-in-up').forEach((el) => {
       el.classList.add('visible');
     });
@@ -4930,6 +5042,7 @@ const FramerHome = {
     const heroSignature = JSON.stringify({
       title: data.title || '',
       subtitle: data.subtitle || '',
+      streamColor: data.stream_color || data.palette || 3,
       customImage: data.customImage || '',
       cta: {
         primary: data.cta?.primary?.text || '',
@@ -4970,7 +5083,7 @@ const FramerHome = {
     section.innerHTML = `${this.buildHeroStaticMarkup(data, visibleEntries)}`;
     section.dataset.renderSignature = heroSignature;
     this.writeHeroTextCache(data);
-    this.initHeroLiquidMatrix(section);
+    this.initHeroLiquidMatrix(section, data);
 
     // Hero is above-the-fold; reveal immediately instead of waiting for observer.
     section.querySelectorAll('.fade-in-up').forEach(el => {
@@ -5252,16 +5365,20 @@ const FramerHome = {
         : (Number(product?.stock_count || 0) > 0
         ? `${getHomepageLanguageFallback('shop.stock', { zh: '库存', en: 'Stock' })} ${Number(product.stock_count || 0)}`
         : getHomepageLanguageFallback('shop.outOfStock', { zh: '售罄', en: 'Sold Out' }));
+      const targetUrl = productId
+        ? `/shop.html?productId=${encodeURIComponent(productId)}`
+        : '/shop.html';
       return `
       <a
-        href="/shop.html"
+        href="${escapeHomeHtml(targetUrl)}"
         class="shop-carousel-card"
+        draggable="false"
         data-home-shop-id="${escapeHomeHtml(productId)}"
         data-home-shop-title="${escapeHomeHtml(productName || '')}">
         ${product.homepage_badge ? `<span class="shop-card-badge">${escapeHomeHtml(product.homepage_badge)}</span>` : ''}
         <div class="shop-card-image">
           ${hasProductImage
-      ? `<img class="shop-card-home-image" alt="${escapeHomeHtml(productName)}" loading="lazy" decoding="async" data-home-shop-image="1" data-home-shop-original-src="${escapeHomeHtml(productImageOriginalUrl)}" data-home-shop-card-src="${escapeHomeHtml(productImageCardUrl)}" data-home-shop-image-version="${escapeHomeHtml(productImageCacheVersion)}">`
+      ? `<img class="shop-card-home-image" draggable="false" alt="${escapeHomeHtml(productName)}" loading="lazy" decoding="async" data-home-shop-image="1" data-home-shop-original-src="${escapeHomeHtml(productImageOriginalUrl)}" data-home-shop-card-src="${escapeHomeHtml(productImageCardUrl)}" data-home-shop-image-version="${escapeHomeHtml(productImageCacheVersion)}">`
       : (product.icon_url && product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url} shop-card-icon"></i>` : `<i class="fas fa-box-open shop-card-icon shop-card-icon--fallback"></i>`)}
         </div>
         <div class="shop-card-info">
@@ -5293,6 +5410,12 @@ const FramerHome = {
       <div class="shop-carousel-wrapper" data-home-shop-staged="pending">
         <div class="shop-carousel-track" data-home-animation-duration="" data-home-speed-value="${shopSpeed}">
           <div class="shop-carousel-group" data-home-shop-cycle="1">
+            ${cycleProducts.map(renderShopCard).join('')}
+          </div>
+          <div class="shop-carousel-group" aria-hidden="true">
+            ${cycleProducts.map(renderShopCard).join('')}
+          </div>
+          <div class="shop-carousel-group" aria-hidden="true">
             ${cycleProducts.map(renderShopCard).join('')}
           </div>
           <div class="shop-carousel-group" aria-hidden="true">
@@ -5343,9 +5466,15 @@ const FramerHome = {
         '--home-shop-cycle-width': cycleWidth ? `${cycleWidth}px` : ''
       });
     });
+    this.initShopCarouselInteractive(section);
     this.scheduleHomeShopCarouselReveal(section);
     section.querySelectorAll('[data-home-shop-id]').forEach((card) => {
-      card.addEventListener('click', () => {
+      card.addEventListener('click', (event) => {
+        if (this.shopCarouselHasMoved) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         trackHomepageAnalyticsEvent('homepage_shop_click', {
           entityType: 'shop_product',
           entityId: card.dataset.homeShopId || null,
@@ -5354,9 +5483,203 @@ const FramerHome = {
             title: card.dataset.homeShopTitle || ''
           }
         });
+        const targetHref = card.getAttribute('href');
+        if (targetHref && !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+          window.location.href = targetHref;
+        }
       });
     });
     observeHomepageSectionImpression(section, 'shop');
+  },
+
+  initShopCarouselInteractive(section) {
+    if (!section) return;
+    if (typeof this.shopCarouselCleanup === 'function') {
+      try {
+        this.shopCarouselCleanup();
+      } catch (err) {
+        // Ignore
+      }
+      this.shopCarouselCleanup = null;
+    }
+
+    const wrapper = section.querySelector('.shop-carousel-wrapper');
+    const track = section.querySelector('.shop-carousel-track');
+    if (!wrapper || !track) return;
+
+    // Prevent native drag-and-drop on any element inside the carousel
+    const preventDragStart = (e) => {
+      e.preventDefault();
+    };
+    wrapper.addEventListener('dragstart', preventDragStart);
+
+    const primaryCycle = track.querySelector('[data-home-shop-cycle="1"]');
+    const measureCycleWidth = () => {
+      if (!primaryCycle) return 0;
+      const rect = primaryCycle.getBoundingClientRect();
+      return Math.ceil(rect.width + HOME_SHOP_CAROUSEL_GAP);
+    };
+
+    let cycleWidth = measureCycleWidth();
+    const speedValue = track.dataset.homeSpeedValue || this.config.ticker?.shop_scroll_speed || 30;
+    const pixelsPerSecond = getHomeLoopPixelsPerSecond(speedValue);
+
+    const normalizeOffset = (val, width) => {
+      if (width <= 0) return 0;
+      const mod = ((val % width) + width) % width;
+      return mod - (2 * width);
+    };
+
+    let currentOffset = cycleWidth > 0 ? normalizeOffset(-cycleWidth, cycleWidth) : 0;
+    let isPointerDown = false;
+    let isDragging = false;
+    let hasMoved = false;
+    let activePointerId = null;
+    let startX = 0;
+    let dragStartOffset = 0;
+    let lastRafTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    let rafId = null;
+
+    this.shopCarouselHasMoved = false;
+
+    // Switch from CSS keyframe animation to JS RAF animation
+    track.classList.add('is-js-animated');
+    track.style.animation = 'none';
+    if (cycleWidth > 0) {
+      track.style.transform = `translate3d(${currentOffset.toFixed(2)}px, 0, 0)`;
+    }
+
+    const tick = (now) => {
+      const currentTime = now || ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
+      const dt = Math.min(0.1, Math.max(0, (currentTime - lastRafTime) / 1000));
+      lastRafTime = currentTime;
+
+      if (!isDragging) {
+        if (cycleWidth <= 0) {
+          cycleWidth = measureCycleWidth();
+          if (cycleWidth > 0 && currentOffset === 0) {
+            currentOffset = normalizeOffset(-cycleWidth, cycleWidth);
+          }
+        }
+        if (cycleWidth > 0) {
+          currentOffset -= pixelsPerSecond * dt;
+          currentOffset = normalizeOffset(currentOffset, cycleWidth);
+          track.style.transform = `translate3d(${currentOffset.toFixed(2)}px, 0, 0)`;
+        }
+      }
+      if (typeof requestAnimationFrame === 'function') {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+
+    if (typeof requestAnimationFrame === 'function') {
+      rafId = requestAnimationFrame(tick);
+    }
+
+    const onPointerDown = (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      if (cycleWidth <= 0) {
+        cycleWidth = measureCycleWidth();
+      }
+      isPointerDown = true;
+      isDragging = false;
+      hasMoved = false;
+      this.shopCarouselHasMoved = false;
+      startX = e.clientX;
+      dragStartOffset = currentOffset;
+      activePointerId = e.pointerId;
+    };
+
+    const onPointerMove = (e) => {
+      if (!isPointerDown) return;
+      const deltaX = e.clientX - startX;
+      if (!hasMoved && Math.abs(deltaX) > 6) {
+        hasMoved = true;
+        this.shopCarouselHasMoved = true;
+        isDragging = true;
+        wrapper.classList.add('is-dragging');
+        if (typeof track.setPointerCapture === 'function' && activePointerId !== undefined && activePointerId !== null) {
+          try {
+            track.setPointerCapture(activePointerId);
+          } catch (captureErr) {
+            // Handled by window events fallback
+          }
+        }
+      }
+      if (isDragging && cycleWidth > 0) {
+        const rawOffset = dragStartOffset + deltaX;
+        currentOffset = normalizeOffset(rawOffset, cycleWidth);
+        track.style.transform = `translate3d(${currentOffset.toFixed(2)}px, 0, 0)`;
+      }
+    };
+
+    const onPointerUp = (e) => {
+      if (!isPointerDown) return;
+      const wasDragging = isDragging || hasMoved;
+      isPointerDown = false;
+      isDragging = false;
+      wrapper.classList.remove('is-dragging');
+
+      if (typeof track.releasePointerCapture === 'function' && activePointerId !== undefined && activePointerId !== null) {
+        try {
+          track.releasePointerCapture(activePointerId);
+        } catch (releaseErr) {
+          // Ignore
+        }
+      }
+
+      lastRafTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+
+      if (wasDragging) {
+        const suppressClick = (clickEvent) => {
+          clickEvent.preventDefault();
+          clickEvent.stopPropagation();
+          clickEvent.stopImmediatePropagation();
+        };
+        track.addEventListener('click', suppressClick, { capture: true, once: true });
+        setTimeout(() => {
+          track.removeEventListener('click', suppressClick, { capture: true });
+          hasMoved = false;
+          this.shopCarouselHasMoved = false;
+        }, 120);
+      } else {
+        hasMoved = false;
+        this.shopCarouselHasMoved = false;
+      }
+    };
+
+    const onPointerCancel = (e) => {
+      onPointerUp(e);
+    };
+
+    track.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerCancel);
+
+    const onResize = () => {
+      const nextCycleWidth = measureCycleWidth();
+      if (nextCycleWidth > 0 && nextCycleWidth !== cycleWidth) {
+        cycleWidth = nextCycleWidth;
+        currentOffset = normalizeOffset(currentOffset, cycleWidth);
+        track.style.transform = `translate3d(${currentOffset.toFixed(2)}px, 0, 0)`;
+      }
+    };
+    window.addEventListener('resize', onResize, { passive: true });
+
+    this.shopCarouselCleanup = () => {
+      if (rafId && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      wrapper.removeEventListener('dragstart', preventDragStart);
+      track.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
+      window.removeEventListener('resize', onResize);
+      wrapper.classList.remove('is-dragging');
+    };
   },
 
   scheduleHomeShopCarouselReveal(section) {
@@ -7230,15 +7553,112 @@ const FramerHome = {
    * Initialize interactions (nav, mobile menu)
    */
   initInteractions() {
-    // Scroll effect on navbar
-    window.addEventListener('scroll', () => {
-      const nav = document.querySelector('.framer-nav');
-      if (window.scrollY > 50) {
-        nav.classList.add('scrolled');
-      } else {
-        nav.classList.remove('scrolled');
+    // Scroll effect on navbar (3-stage: top stretched -> capsule -> hide on downward scroll after buffer distance)
+    const nav = document.querySelector('.framer-nav');
+    let lastScrollY = Math.max(0, window.scrollY || window.pageYOffset || 0);
+    let scrollDownStartY = lastScrollY;
+    let scrollTicking = false;
+
+    const SCROLL_CAPSULE_THRESHOLD = 24;
+    const SCROLL_HIDE_BUFFER = 480;
+    const SCROLL_DELTA_UP_THRESHOLD = 8;
+
+    const updateNavScrollState = () => {
+      if (!nav) return;
+      const scrollY = Math.max(0, window.scrollY || window.pageYOffset || 0);
+
+      if (scrollY > 0 && !nav.classList.contains('nav-ready')) {
+        nav.classList.add('nav-ready');
       }
-    });
+
+      const isMobileMenuOpen = document.body.classList.contains('mobile-menu-open') ||
+        nav.classList.contains('mobile-menu-open') ||
+        Boolean(nav.querySelector('.nav-hamburger.active'));
+
+      if (isMobileMenuOpen) {
+        nav.classList.remove('nav-hidden');
+        scrollDownStartY = scrollY;
+        lastScrollY = scrollY;
+        return;
+      }
+
+      if (scrollY <= SCROLL_CAPSULE_THRESHOLD) {
+        // Stage 1: At top (unscrolled stretched state)
+        nav.classList.remove('scrolled');
+        nav.classList.remove('nav-hidden');
+        scrollDownStartY = scrollY;
+        lastScrollY = scrollY;
+      } else {
+        // In capsule mode (> 24px)
+        nav.classList.add('scrolled');
+        const delta = scrollY - lastScrollY;
+
+        if (delta <= -SCROLL_DELTA_UP_THRESHOLD) {
+          // Scrolling up -> reveal capsule downwards immediately and reset downward buffer anchor
+          nav.classList.remove('nav-hidden');
+          scrollDownStartY = scrollY;
+          lastScrollY = scrollY;
+        } else if (delta > 0) {
+          // Scrolling down -> apply identical buffer distance (480px) from start of downward scroll
+          if (scrollDownStartY === null || scrollDownStartY === undefined) {
+            scrollDownStartY = scrollY;
+          }
+          const downwardTravel = scrollY - scrollDownStartY;
+          const isNearBottom = (window.innerHeight + scrollY) >= (document.documentElement.scrollHeight - 16);
+
+          if (downwardTravel >= SCROLL_HIDE_BUFFER && !isNearBottom) {
+            nav.classList.add('nav-hidden');
+          } else {
+            nav.classList.remove('nav-hidden');
+          }
+          lastScrollY = scrollY;
+        }
+      }
+
+      // Close open dropdowns on scroll so they don't detach from the nav
+      const userDropdown = document.getElementById('userDropdown');
+      if (userDropdown && userDropdown.classList.contains('active')) {
+        if (typeof window.closeUserDropdown === 'function') {
+          window.closeUserDropdown();
+        } else {
+          userDropdown.classList.remove('active');
+          userDropdown.setAttribute('aria-hidden', 'true');
+          document.getElementById('dropdownOverlay')?.classList.remove('active');
+          document.getElementById('authBtn')?.setAttribute('aria-expanded', 'false');
+        }
+      }
+      document.querySelectorAll('.nav-dropdown-portal.visible, .nav-dropdown.visible').forEach((portal) => {
+        portal.classList.remove('visible');
+      });
+      document.querySelectorAll('.nav-menu a.active, .nav-trigger.active').forEach((trigger) => {
+        trigger.classList.remove('active');
+      });
+    };
+
+    const onScroll = () => {
+      if (!scrollTicking) {
+        scrollTicking = true;
+        window.requestAnimationFrame(() => {
+          scrollTicking = false;
+          updateNavScrollState();
+        });
+      }
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    updateNavScrollState();
+
+    if (nav) {
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            nav.classList.add('nav-ready');
+          });
+        });
+      } else {
+        nav.classList.add('nav-ready');
+      }
+    }
 
     // Mobile menu toggle
     const hamburger = document.querySelector('.nav-hamburger');

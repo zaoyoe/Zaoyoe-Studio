@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const {
     parseJsonBody,
     requireAdmin,
@@ -10,10 +11,25 @@ const { createConfiguredSupplierAdapterRegistry, PROVIDERS, getSupplierAccountCo
 
 const { loadOperations } = require('../../../integrations/suppliers/operations');
 
-const DEFAULT_PROVIDER_ID = '16688';
+const DEFAULT_PROVIDER_ID = 'xiareng';
 const DEFAULT_ACCOUNT_KEY = 'default';
 const MAX_IMPORT_COUNT = 20;
+const XIARRENG_CATALOG_CACHE_TTL_MS = 60_000;
+const XIARRENG_CATALOG_CACHE_MAX_ENTRIES = 8;
+const XIARRENG_CATALOG_SNAPSHOT_STORE_KEY = Symbol.for('zaoyoe.shop-supplier.xiareng-catalog-snapshots-v2');
 const SUPPLIER_ORDER_NO = /^[\p{L}\p{N}._:-]{6,160}$/u;
+
+function getXiarengCatalogSnapshotStore() {
+    const existing = globalThis[XIARRENG_CATALOG_SNAPSHOT_STORE_KEY];
+    if (existing?.snapshots instanceof Map && existing?.pending instanceof Map) return existing;
+
+    const store = { snapshots: new Map(), latestSnapshots: new Map(), pending: new Map() };
+    Object.defineProperty(globalThis, XIARRENG_CATALOG_SNAPSHOT_STORE_KEY, {
+        configurable: true,
+        value: store
+    });
+    return store;
+}
 
 function normalizeText(value, maxLength = 200) {
     return String(value ?? '').trim().slice(0, Math.max(0, maxLength));
@@ -31,6 +47,30 @@ function normalizePage(value, fallback, maximum) {
     const parsed = Number.parseInt(String(value || ''), 10);
     if (!Number.isFinite(parsed) || parsed < 1) return fallback;
     return Math.min(parsed, maximum);
+}
+
+function parseBoundedPositiveInteger(value, fallback, maximum) {
+    if (value == null || value === '') return fallback;
+    if (!/^\d+$/.test(String(value))) return null;
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= maximum ? parsed : null;
+}
+
+function normalizeDraftCardPage(result, page, limit) {
+    if (!result || result.page !== page || result.limit !== limit || !Array.isArray(result.cards)
+        || result.cards.length > limit || !Number.isSafeInteger(result.total) || result.total < result.cards.length) return null;
+    const cards = [];
+    for (const card of result.cards) {
+        if (!card || typeof card !== 'object' || Array.isArray(card)) return null;
+        const id = typeof card.id === 'string' ? card.id : '';
+        const normalizeCardText = (value) => typeof value === 'string' && value.length <= 8_000
+            && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value) ? value : null;
+        const draft = normalizeCardText(card.draft);
+        const draftPremium = normalizeCardText(card.draftPremium);
+        if (!id || id !== id.trim() || id.length > 160 || /[\u0000-\u001f\u007f]/.test(id) || draft === null || draftPremium === null) return null;
+        cards.push({ id, draft, draftPremium });
+    }
+    return { page, limit, total: result.total, cards, importable: false, procurementReady: false };
 }
 
 function normalizeCatalogItem(adapter, source = {}) {
@@ -60,6 +100,25 @@ function normalizeCatalogItem(adapter, source = {}) {
             : null,
         minimumQuantity: Number.isInteger(Number(source.minimumQuantity)) ? Number(source.minimumQuantity) : null,
         deliveryMethod: Number.isInteger(Number(source.deliveryMethod)) ? Number(source.deliveryMethod) : null
+    };
+}
+
+function normalizeCatalogCategory(source = {}, index = 0) {
+    const categoryKey = normalizeText(source.categoryKey, 32);
+    if (!/^cat-\d{1,5}$/.test(categoryKey)) return null;
+    const rawId = source.upstreamIdCandidate;
+    const upstreamIdCandidate = ['string', 'number'].includes(typeof rawId) ? String(rawId) : '';
+    const validCandidate = upstreamIdCandidate && upstreamIdCandidate === upstreamIdCandidate.trim()
+        && upstreamIdCandidate.length <= 160 && !/[\u0000-\u001f\u007f]/.test(upstreamIdCandidate)
+        ? upstreamIdCandidate
+        : null;
+    const countValue = Number(source.itemCount);
+    return {
+        categoryKey,
+        name: normalizeText(source.name, 160) || `未命名分类 ${index + 1}`,
+        upstreamIdCandidate: validCandidate,
+        identityStatus: 'unverified',
+        itemCount: Number.isSafeInteger(countValue) && countValue >= 0 ? countValue : 0
     };
 }
 
@@ -93,6 +152,13 @@ function getSafeSupplierError(error) {
             message: '该供应商接口尚未配置，请联系管理员。'
         };
     }
+    if (code === 'supplier_draft_cards_preview_only') {
+        return {
+            statusCode: 409,
+            code,
+            message: '预选卡商品仅开放只读分页预览，不能读取库存或报价。'
+        };
+    }
     return {
         statusCode: 502,
         code,
@@ -107,6 +173,93 @@ function createSupplierCatalogHandler(dependencies = {}) {
     const writeAuditImpl = dependencies.writeAdminAuditLog || writeAdminAuditLog;
     const registryFactory = dependencies.registryFactory || createConfiguredSupplierAdapterRegistry;
     const env = dependencies.env || process.env;
+    const now = dependencies.now || Date.now;
+    // Local preview reloads Admin API modules per request; keep its short-lived snapshots outside this closure.
+    const {
+        snapshots: xiarengCatalogSnapshots,
+        latestSnapshots: latestXiarengCatalogSnapshots,
+        pending: pendingXiarengCatalogSnapshots
+    } = getXiarengCatalogSnapshotStore();
+
+    async function loadXiarengCatalogSnapshot({ adapter, account, site, refresh = false }) {
+        const cacheKey = `${account.id}:${site}`;
+        const latestSnapshotKey = latestXiarengCatalogSnapshots.get(cacheKey);
+        const cached = latestSnapshotKey ? xiarengCatalogSnapshots.get(latestSnapshotKey) : null;
+        if (!refresh && cached && cached.expiresAtMs > now()) {
+            xiarengCatalogSnapshots.delete(latestSnapshotKey);
+            xiarengCatalogSnapshots.set(latestSnapshotKey, cached);
+            return cached;
+        }
+        const pending = pendingXiarengCatalogSnapshots.get(cacheKey);
+        if (pending) return pending;
+
+        const loading = (async () => {
+            const result = await adapter.listAllGoods();
+            if (!Array.isArray(result?.categories) || !Array.isArray(result?.items)) {
+                throw new Error('Invalid supplier catalog snapshot');
+            }
+            const categories = result.categories.map(normalizeCatalogCategory);
+            if (categories.some((category) => !category)
+                || new Set(categories.map((category) => category.categoryKey)).size !== categories.length) {
+                throw new Error('Invalid supplier category snapshot');
+            }
+            const categoryKeys = new Set(categories.map((category) => category.categoryKey));
+            const itemsByGoodsId = new Map();
+            for (const source of result.items) {
+                const normalized = normalizeCatalogItem(adapter, source);
+                if (!normalized) continue;
+                const categoryKeyList = [...new Set((Array.isArray(normalized.catalogCategoryKeys) ? normalized.catalogCategoryKeys : [])
+                    .filter((key) => categoryKeys.has(key)))];
+                const existing = itemsByGoodsId.get(normalized.providerGoodsId);
+                if (existing) {
+                    existing.catalogCategoryKeys = [...new Set([...existing.catalogCategoryKeys, ...categoryKeyList])];
+                } else {
+                    itemsByGoodsId.set(normalized.providerGoodsId, { ...normalized, catalogCategoryKeys: categoryKeyList });
+                }
+            }
+            const items = [...itemsByGoodsId.values()];
+            const counts = new Map(categories.map((category) => [category.categoryKey, new Set()]));
+            for (const item of items) {
+                for (const key of item.catalogCategoryKeys) counts.get(key)?.add(item.providerGoodsId);
+            }
+            const safeCategories = categories.map((category) => ({ ...category, itemCount: counts.get(category.categoryKey)?.size || 0 }));
+            const syncedAtMs = now();
+            const snapshot = {
+                snapshotId: crypto.randomUUID(),
+                categories: safeCategories,
+                items,
+                syncedAt: new Date(syncedAtMs).toISOString(),
+                expiresAt: new Date(syncedAtMs + XIARRENG_CATALOG_CACHE_TTL_MS).toISOString(),
+                expiresAtMs: syncedAtMs + XIARRENG_CATALOG_CACHE_TTL_MS
+            };
+            for (const [snapshotKey, cachedSnapshot] of xiarengCatalogSnapshots) {
+                if (cachedSnapshot.expiresAtMs > now()) continue;
+                xiarengCatalogSnapshots.delete(snapshotKey);
+                const scopeKey = snapshotKey.slice(0, snapshotKey.lastIndexOf(':'));
+                if (latestXiarengCatalogSnapshots.get(scopeKey) === snapshotKey) {
+                    latestXiarengCatalogSnapshots.delete(scopeKey);
+                }
+            }
+            const snapshotKey = `${cacheKey}:${snapshot.snapshotId}`;
+            xiarengCatalogSnapshots.set(snapshotKey, snapshot);
+            latestXiarengCatalogSnapshots.set(cacheKey, snapshotKey);
+            while (xiarengCatalogSnapshots.size > XIARRENG_CATALOG_CACHE_MAX_ENTRIES) {
+                const oldestKey = xiarengCatalogSnapshots.keys().next().value;
+                xiarengCatalogSnapshots.delete(oldestKey);
+                const scopeKey = oldestKey.slice(0, oldestKey.lastIndexOf(':'));
+                if (latestXiarengCatalogSnapshots.get(scopeKey) === oldestKey) {
+                    latestXiarengCatalogSnapshots.delete(scopeKey);
+                }
+            }
+            return snapshot;
+        })();
+        pendingXiarengCatalogSnapshots.set(cacheKey, loading);
+        try {
+            return await loading;
+        } finally {
+            if (pendingXiarengCatalogSnapshots.get(cacheKey) === loading) pendingXiarengCatalogSnapshots.delete(cacheKey);
+        }
+    }
 
     async function resolveAccount(supabase, providerId, selectedAccountKey = '') {
         const accountKey = selectedAccountKey || (providerId === '16688'
@@ -164,6 +317,11 @@ function createSupplierCatalogHandler(dependencies = {}) {
         if (!catalogItem || catalogItem.providerGoodsId !== goodsNo || !isUpstreamCatalogItem(catalogItem)) {
             const error = new Error('Supplier returned incomplete or non-upstream goods details');
             error.code = 'supplier_invalid_goods';
+            throw error;
+        }
+        if (catalogItem.draftStatus === 1) {
+            const error = new Error('预选卡商品仅开放只读分页预览，不能导入。');
+            error.code = 'supplier_draft_cards_preview_only';
             throw error;
         }
 
@@ -248,6 +406,11 @@ function createSupplierCatalogHandler(dependencies = {}) {
         if (!item || item.providerGoodsId !== goodsNo || !isUpstreamCatalogItem(item)) {
             const error = new Error('Invalid supplier goods');
             error.code = 'supplier_invalid_goods';
+            throw error;
+        }
+        if (item.draftStatus === 1) {
+            const error = new Error('预选卡商品仅开放只读分页预览，不能导入。');
+            error.code = 'supplier_draft_cards_preview_only';
             throw error;
         }
         let selected;
@@ -364,11 +527,24 @@ function createSupplierCatalogHandler(dependencies = {}) {
                     contractVersion: mapping.contract_version, procurementReady: false
                 })) });
             }
-            if (!(method === 'GET' && ['list', 'detail', 'preview', 'reconcile'].includes(action)) && !(method === 'POST' && action === 'import')) {
+            if (!(method === 'GET' && ['list', 'detail', 'preview', 'reconcile', 'draft-cards'].includes(action)) && !(method === 'POST' && action === 'import')) {
                 return sendJsonImpl(res, 400, { success: false, message: 'Unsupported supplier catalog action' });
             }
             let orderLookupSite = '';
             let orderNo = '';
+            let draftGoodsNo = '';
+            let draftPage = 1;
+            let draftLimit = 20;
+            if (method === 'GET' && action === 'draft-cards') {
+                if (providerId !== 'xiareng') return sendJsonImpl(res, 400, { success: false, message: '预选卡只读预览仅支持虾仁。' });
+                const rawGoodsNo = String(url.searchParams.get('goodsNo') ?? '');
+                draftGoodsNo = normalizeGoodsNo(rawGoodsNo);
+                draftPage = parseBoundedPositiveInteger(url.searchParams.get('page'), 1, 10_000);
+                draftLimit = parseBoundedPositiveInteger(url.searchParams.get('limit'), 20, 50);
+                if (!draftGoodsNo || draftGoodsNo !== rawGoodsNo || draftPage === null || draftLimit === null) {
+                    return sendJsonImpl(res, 400, { success: false, code: 'supplier_draft_cards_invalid_request', message: '商品编码或分页参数无效。' });
+                }
+            }
             if (method === 'GET' && action === 'reconcile') {
                 orderLookupSite = normalizeText(url.searchParams.get('site') || 'cn', 16).toLowerCase();
                 const rawOrderNo = String(url.searchParams.get('orderNo') ?? '');
@@ -422,9 +598,89 @@ function createSupplierCatalogHandler(dependencies = {}) {
                 });
             }
 
+            if (method === 'GET' && action === 'draft-cards') {
+                if (typeof adapter.getDraftCards !== 'function') {
+                    return sendJsonImpl(res, 409, { success: false, code: 'supplier_draft_cards_unavailable', message: '虾仁预选卡只读预览暂不可用。' });
+                }
+                const result = await adapter.getDraftCards({ goodsNo: draftGoodsNo, page: draftPage, limit: draftLimit });
+                const preview = normalizeDraftCardPage(result, draftPage, draftLimit);
+                if (!preview) return sendJsonImpl(res, 502, { success: false, code: 'supplier_invalid_response', message: '预选卡分页数据无法安全核验。' });
+                return sendJsonImpl(res, 200, {
+                    success: true,
+                    providerId,
+                    accountKey: account.account_key,
+                    ...preview,
+                    note: '只读预览不代表库存锁定、可采购或可交付；卡片内容不会保存到本地商品或供应商目录。'
+                });
+            }
+
             if (method === 'GET' && action === 'list') {
                 const pageNo = normalizePage(url.searchParams.get('pageNo'), 1, 1_000_000);
                 const pageSize = normalizePage(url.searchParams.get('pageSize'), 20, 100);
+                if (providerId === 'xiareng' && typeof adapter.listAllGoods === 'function') {
+                    const requestedSnapshotId = String(url.searchParams.get('snapshotId') || '');
+                    const categoryKey = String(url.searchParams.get('categoryKey') || '');
+                    const refresh = url.searchParams.get('refresh') === '1';
+                    const site = normalizeText(url.searchParams.get('site') || 'cn', 16).toLowerCase();
+                    if ((requestedSnapshotId && !/^[a-f\d-]{36}$/i.test(requestedSnapshotId))
+                        || (requestedSnapshotId && refresh)
+                        || (categoryKey && !/^cat-\d{1,5}$/.test(categoryKey))
+                        || (categoryKey && !requestedSnapshotId)
+                        || (refresh && categoryKey)
+                        || !['cn', 'intl'].includes(site)) {
+                        return sendJsonImpl(res, 400, { success: false, code: 'supplier_catalog_filter_invalid', message: '目录筛选参数无效。' });
+                    }
+                    const cacheKey = `${account.id}:${site}`;
+                    let snapshot;
+                    if (requestedSnapshotId) {
+                        const snapshotKey = `${cacheKey}:${requestedSnapshotId}`;
+                        snapshot = xiarengCatalogSnapshots.get(snapshotKey);
+                        if (!snapshot || snapshot.expiresAtMs <= now()) {
+                            if (snapshot) xiarengCatalogSnapshots.delete(snapshotKey);
+                            if (latestXiarengCatalogSnapshots.get(cacheKey) === snapshotKey) {
+                                latestXiarengCatalogSnapshots.delete(cacheKey);
+                            }
+                            return sendJsonImpl(res, 409, {
+                                success: false,
+                                code: 'supplier_catalog_snapshot_expired',
+                                message: '虾仁目录快照已过期或已更新，请重新查询目录。'
+                            });
+                        }
+                        xiarengCatalogSnapshots.delete(snapshotKey);
+                        xiarengCatalogSnapshots.set(snapshotKey, snapshot);
+                    } else {
+                        snapshot = await loadXiarengCatalogSnapshot({
+                            adapter,
+                            account,
+                            site,
+                            refresh
+                        });
+                    }
+                    if (categoryKey && !snapshot.categories.some((category) => category.categoryKey === categoryKey)) {
+                        return sendJsonImpl(res, 400, { success: false, code: 'supplier_catalog_category_invalid', message: '所选分类不属于当前目录快照。' });
+                    }
+                    const keywords = normalizeText(url.searchParams.get('keywords'), 100).toLowerCase();
+                    const filteredItems = snapshot.items.filter((item) => {
+                        if (categoryKey && !item.catalogCategoryKeys.includes(categoryKey)) return false;
+                        return !keywords || `${item.name} ${item.providerGoodsId}`.toLowerCase().includes(keywords);
+                    });
+                    return sendJsonImpl(res, 200, {
+                        success: true,
+                        providerId,
+                        accountKey: account.account_key,
+                        pageNo,
+                        pageSize,
+                        total: filteredItems.length,
+                        items: filteredItems.slice((pageNo - 1) * pageSize, pageNo * pageSize),
+                        categories: snapshot.categories,
+                        snapshotItemCount: snapshot.items.length,
+                        snapshotId: snapshot.snapshotId,
+                        syncedAt: snapshot.syncedAt,
+                        expiresAt: snapshot.expiresAt,
+                        categoryIdentityStatus: 'unverified',
+                        note: '目录分类仅用于当前快照内筛选；上游分类 ID 与层级语义尚未核验，不会保存为本地分类映射。'
+                    });
+                }
                 const result = await adapter.listGoods({
                     pageNo,
                     pageSize,
@@ -517,7 +773,7 @@ function createSupplierCatalogHandler(dependencies = {}) {
                         status: 'failed',
                         code: normalizeText(error?.code, 80) || 'supplier_import_failed',
                         message: isMissingSupplierSchemaError(error) ? '只读铺货迁移尚未应用，未创建草稿。'
-                            : ['supplier_variant_review_required', 'supplier_site_unsupported'].includes(error?.code) ? error.message
+                            : ['supplier_variant_review_required', 'supplier_site_unsupported', 'supplier_draft_cards_preview_only'].includes(error?.code) ? error.message
                             : error?.code === 'supplier_invalid_goods'
                             ? '上游商品资料不完整，未创建铺货草稿。'
                             : '导入失败，请检查上游商品并重试。'

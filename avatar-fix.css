@@ -7,7 +7,8 @@
     align-items: center !important;
     justify-content: center !important;
     cursor: pointer !important;
-    color: rgba(255, 255, 255, 0.72) !important;
+    color: rgba(255, 255, 255, 0.88) !important;
+    transition: color 0.4s ease-out, filter 0.4s ease-out, transform 0.3s ease !important;
 }
 
 #defaultAuthIcon svg {
@@ -55,11 +56,11 @@
 
 /* Keep the auth slot size stable so logout does not reflow the nav */
 #auth-container {
-    width: var(--nav-auth-slot-size, 44px) !important;
-    min-width: var(--nav-auth-slot-size, 44px) !important;
-    height: var(--nav-auth-slot-size, 44px) !important;
-    min-height: var(--nav-auth-slot-size, 44px) !important;
-    flex: 0 0 var(--nav-auth-slot-size, 44px) !important;
+    width: var(--nav-auth-slot-size, 38px) !important;
+    min-width: var(--nav-auth-slot-size, 38px) !important;
+    height: var(--nav-auth-slot-size, 38px) !important;
+    min-height: var(--nav-auth-slot-size, 38px) !important;
+    flex: 0 0 var(--nav-auth-slot-size, 38px) !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -67,16 +68,16 @@
 
 #auth-container>.login-trigger-btn,
 #auth-container>#authBtn {
-    width: var(--nav-auth-slot-size, 44px) !important;
-    min-width: var(--nav-auth-slot-size, 44px) !important;
-    height: var(--nav-auth-slot-size, 44px) !important;
-    min-height: var(--nav-auth-slot-size, 44px) !important;
+    width: var(--nav-auth-slot-size, 38px) !important;
+    min-width: var(--nav-auth-slot-size, 38px) !important;
+    height: var(--nav-auth-slot-size, 38px) !important;
+    min-height: var(--nav-auth-slot-size, 38px) !important;
     padding: 0 !important;
     gap: 0 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    flex: 0 0 var(--nav-auth-slot-size, 44px) !important;
+    flex: 0 0 var(--nav-auth-slot-size, 38px) !important;
     border-radius: 50% !important;
 }
 
@@ -112,8 +113,8 @@ button.login-trigger-btn.logged-in {
     /* Remove border that might show through */
     box-shadow: none !important;
     /* Remove any box shadow */
-    width: var(--nav-auth-slot-size, 44px) !important;
-    height: var(--nav-auth-slot-size, 44px) !important;
+    width: var(--nav-auth-slot-size, 38px) !important;
+    height: var(--nav-auth-slot-size, 38px) !important;
     border-radius: 50% !important;
 }
 
@@ -196,6 +197,23 @@ html[data-theme="light"] #authBtn {
 html[data-theme="light"] #defaultAuthIcon {
     color: rgba(15, 23, 42, 0.68) !important;
     filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.16)) !important;
+}
+
+/* Homepage top state (not scrolled) has a dark navbar even in light theme, so keep auth trigger light */
+html[data-theme="light"] body.home-page .framer-nav:not(.scrolled):not(.mobile-menu-open):not(:has(.nav-hamburger.active)) .login-trigger-btn,
+html[data-theme="light"] body.home-page .framer-nav:not(.scrolled):not(.mobile-menu-open):not(:has(.nav-hamburger.active)) button.login-trigger-btn,
+html[data-theme="light"] body.home-page .framer-nav:not(.scrolled):not(.mobile-menu-open):not(:has(.nav-hamburger.active)) #authBtn {
+    color: rgba(255, 255, 255, 0.92) !important;
+}
+
+html[data-theme="light"] body.home-page .framer-nav:not(.scrolled):not(.mobile-menu-open):not(:has(.nav-hamburger.active)) #defaultAuthIcon {
+    color: rgba(255, 255, 255, 0.88) !important;
+    filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.4)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3)) !important;
+}
+
+html[data-theme="light"] body.home-page .framer-nav:not(.scrolled):not(.mobile-menu-open):not(:has(.nav-hamburger.active)) #defaultAuthIcon:hover,
+html[data-theme="light"] body.home-page .framer-nav:not(.scrolled):not(.mobile-menu-open):not(:has(.nav-hamburger.active)) .login-trigger-btn:hover #defaultAuthIcon {
+    filter: drop-shadow(0 0 0 3px rgba(255, 255, 255, 0.9)) drop-shadow(0 0 15px rgba(255, 255, 255, 0.7)) brightness(1.3) !important;
 }
 
 html[data-theme="light"] #defaultAuthIcon:hover,

@@ -91,7 +91,7 @@ function createSupabase(state) {
     };
 }
 
-function makeHandler({ adapter = createAdapter(), state = {}, adminError = null, env = { SUPPLIER_16688_APP_ID: 'app', SUPPLIER_16688_SECRET: 'secret' } } = {}) {
+function makeHandler({ adapter = createAdapter(), state = {}, adminError = null, now = Date.now, handlerModuleImpl = handlerModule, env = { SUPPLIER_16688_APP_ID: 'app', SUPPLIER_16688_SECRET: 'secret' } } = {}) {
     const calls = {
         auth: [],
         audits: [],
@@ -111,8 +111,9 @@ function makeHandler({ adapter = createAdapter(), state = {}, adminError = null,
         ],
         ...state
     };
-    const handler = handlerModule.createSupplierCatalogHandler({
+    const handler = handlerModuleImpl.createSupplierCatalogHandler({
         env,
+        now,
         registryFactory(config) {
             calls.registries.push(config.account);
             const instrumented = {
@@ -121,10 +122,20 @@ function makeHandler({ adapter = createAdapter(), state = {}, adminError = null,
                     calls.supplierCalls.push({ method: 'listGoods', input });
                     return adapter.listGoods(input);
                 },
+                async listAllGoods() {
+                    calls.supplierCalls.push({ method: 'listAllGoods' });
+                    return adapter.listAllGoods();
+                },
                 async getGoodsDetail(goodsNo) {
                     calls.supplierCalls.push({ method: 'getGoodsDetail', goodsNo });
                     return adapter.getGoodsDetail(goodsNo);
-                }
+                },
+                ...(typeof adapter.getDraftCards === 'function' ? {
+                    async getDraftCards(input) {
+                        calls.supplierCalls.push({ method: 'getDraftCards', input });
+                        return adapter.getDraftCards(input);
+                    }
+                } : {})
             };
             return createSupplierAdapterRegistry([instrumented]);
         },
@@ -146,7 +157,7 @@ test('supplier catalog list requires admin and returns only normalized upstream 
     const { handler, calls } = makeHandler();
     const res = createResponse();
 
-    await handler({ method: 'GET', headers: {}, url: '/api/admin/shop/supplier-catalog?pageNo=2&pageSize=500&keywords=abc' }, res);
+    await handler({ method: 'GET', headers: {}, url: '/api/admin/shop/supplier-catalog?providerId=16688&pageNo=2&pageSize=500&keywords=abc' }, res);
 
     const payload = res.json();
     assert.equal(res.statusCode, 200);
@@ -169,7 +180,7 @@ test('single and bulk supplier imports create only inactive local drafts and dis
         method: 'POST',
         headers: {},
         url: '/api/admin/shop/supplier-catalog',
-        body: { action: 'import', site: 'cn', goodsNos: ['G-1', 'G-1'] }
+        body: { action: 'import', providerId: '16688', site: 'cn', goodsNos: ['G-1', 'G-1'] }
     }, res);
 
     const payload = res.json();
@@ -238,7 +249,7 @@ test('supplier catalog import fails closed with a clear migration-not-ready resp
         method: 'POST',
         headers: {},
         url: '/api/admin/shop/supplier-catalog',
-        body: { action: 'import', goodsNo: 'G-1' }
+        body: { action: 'import', providerId: '16688', goodsNo: 'G-1' }
     }, res);
 
     assert.equal(res.statusCode, 503);
@@ -263,7 +274,7 @@ test('re-importing an existing source listing returns its mapping without overwr
         method: 'POST',
         headers: {},
         url: '/api/admin/shop/supplier-catalog',
-        body: { action: 'import', goodsNo: 'G-1', site: 'cn' }
+        body: { action: 'import', providerId: '16688', goodsNo: 'G-1', site: 'cn' }
     }, res);
 
     assert.equal(res.statusCode, 200);
@@ -291,7 +302,7 @@ test('failed mapping creation compensates by removing the newly created inactive
         method: 'POST',
         headers: {},
         url: '/api/admin/shop/supplier-catalog',
-        body: { action: 'import', goodsNo: 'G-1' }
+        body: { action: 'import', providerId: '16688', goodsNo: 'G-1' }
     }, res);
 
     assert.equal(res.statusCode, 200);
@@ -317,7 +328,7 @@ test('supplier catalog route rejects unsupported methods and invalid bulk size',
         method: 'POST',
         headers: {},
         url: '/api/admin/shop/supplier-catalog',
-        body: { action: 'import', goodsNos: Array.from({ length: 21 }, (_, index) => `G-${index}`) }
+        body: { action: 'import', providerId: '16688', goodsNos: Array.from({ length: 21 }, (_, index) => `G-${index}`) }
     }, bulkRes);
     assert.equal(bulkRes.statusCode, 400);
     assert.deepEqual(bulkRes.json().code, undefined);
@@ -332,12 +343,208 @@ test('supplier catalog API handler is registered on the admin gateway', () => {
 
 const { createXiarengAdapter } = require('../server/integrations/suppliers/xiareng/client');
 const xrAccount = { id: 'xr-account', provider_id: 'xiareng', account_key: 'second', display_name: '第二账号', credential_ref: 'env:SUPPLIER_XIARENG_SECOND', is_enabled: true };
+let xiarengTestAccountNumber = 0;
 function makeXiareng(payload = {}, state = {}) {
     const adapter = createXiarengAdapter({ appId: 'a', appKey: 'k', async fetchImpl() {
         return new Response(JSON.stringify({ code: 200, data: { code: 'XR-1', name: '只读商品', user_price: '1.25', stock: 5, config: {}, ...payload } }));
     } });
     return makeHandler({ adapter, state: { results: [{ data: xrAccount, error: null }, { data: { status: 'imported_as_draft', productId: 'p1', mappingId: 'm1', site: 'cn' }, error: null }], ...state } });
 }
+
+function makeXiarengCatalog({ items = [], categories = [
+    { categoryKey: 'cat-1', name: '分类甲', upstreamIdCandidate: 'upstream-1' },
+    { categoryKey: 'cat-2', name: '分类乙', upstreamIdCandidate: 'upstream-2' }
+], now = Date.now, account = { ...xrAccount, id: `xr-account-${++xiarengTestAccountNumber}` }, handlerModuleImpl = handlerModule } = {}) {
+    const base = createAdapter();
+    const adapter = {
+        ...base,
+        providerId: 'xiareng',
+        displayName: '虾仁',
+        async listAllGoods() { return { categories, items }; },
+        normalizeCatalogItem(source) {
+            return { ...base.normalizeCatalogItem(source), catalogCategoryKeys: source.catalogCategoryKeys };
+        }
+    };
+    return makeHandler({
+        adapter,
+        now,
+        handlerModuleImpl,
+        state: { results: Array.from({ length: 20 }, () => ({ data: account, error: null })) }
+    });
+}
+
+test('Xiareng catalog snapshots merge duplicate goods across categories and reuse one snapshot for filters and pages', async () => {
+    const { handler, calls } = makeXiarengCatalog({ items: [
+        { goods_no: 'XR-DUP', goods_name: '重复商品', catalogCategoryKeys: ['cat-1'] },
+        { goods_no: 'XR-DUP', goods_name: '重复商品', catalogCategoryKeys: ['cat-2'] },
+        { goods_no: 'XR-1', goods_name: '另一个商品', catalogCategoryKeys: ['cat-1'] }
+    ] });
+    const first = createResponse();
+    await handler({ method: 'GET', url: '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&pageNo=1&pageSize=1' }, first);
+
+    const firstPayload = first.json();
+    assert.equal(first.statusCode, 200);
+    assert.equal(firstPayload.total, 2);
+    assert.equal(firstPayload.snapshotItemCount, 2);
+    assert.deepEqual(firstPayload.categories.map(({ categoryKey, itemCount }) => [categoryKey, itemCount]), [
+        ['cat-1', 2],
+        ['cat-2', 1]
+    ]);
+    assert.equal(calls.supplierCalls.filter(({ method }) => method === 'listAllGoods').length, 1);
+
+    const category = createResponse();
+    await handler({ method: 'GET', url: `/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&snapshotId=${firstPayload.snapshotId}&categoryKey=cat-2&keywords=%E9%87%8D%E5%A4%8D` }, category);
+    assert.equal(category.statusCode, 200);
+    assert.equal(category.json().total, 1);
+    assert.equal(category.json().items[0].providerGoodsId, 'XR-DUP');
+    assert.deepEqual(category.json().items[0].catalogCategoryKeys, ['cat-1', 'cat-2']);
+
+    const page = createResponse();
+    await handler({ method: 'GET', url: `/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&snapshotId=${firstPayload.snapshotId}&pageNo=2&pageSize=1` }, page);
+    assert.equal(page.statusCode, 200);
+    assert.equal(page.json().items[0].providerGoodsId, 'XR-1');
+    assert.equal(calls.supplierCalls.filter(({ method }) => method === 'listAllGoods').length, 1);
+
+    const refresh = createResponse();
+    await handler({ method: 'GET', url: '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&refresh=1' }, refresh);
+    assert.equal(refresh.statusCode, 200);
+    assert.notEqual(refresh.json().snapshotId, firstPayload.snapshotId);
+    assert.equal(calls.supplierCalls.filter(({ method }) => method === 'listAllGoods').length, 2);
+});
+
+test('Xiareng catalog snapshots survive admin handler recreation between category and page requests', async () => {
+    const account = { ...xrAccount, id: 'xr-account-handler-recreation-test' };
+    const firstHandler = makeXiarengCatalog({
+        account,
+        items: [
+            { goods_no: 'XR-1', goods_name: '分类内商品一', catalogCategoryKeys: ['cat-1'] },
+            { goods_no: 'XR-2', goods_name: '分类内商品二', catalogCategoryKeys: ['cat-1'] },
+            { goods_no: 'XR-3', goods_name: '其他分类商品', catalogCategoryKeys: ['cat-2'] }
+        ]
+    });
+    const initial = createResponse();
+    await firstHandler.handler({
+        method: 'GET',
+        url: '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&pageNo=1&pageSize=1'
+    }, initial);
+    assert.equal(initial.statusCode, 200);
+
+    const recreatedModule = {
+        ...handlerModule,
+        createSupplierCatalogHandler: handlerModule.createSupplierCatalogHandler
+    };
+    const secondHandler = makeXiarengCatalog({
+        account,
+        items: [],
+        handlerModuleImpl: recreatedModule
+    });
+    const filteredPage = createResponse();
+    await secondHandler.handler({
+        method: 'GET',
+        url: `/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&snapshotId=${initial.json().snapshotId}&categoryKey=cat-1&pageNo=2&pageSize=1`
+    }, filteredPage);
+
+    assert.equal(filteredPage.statusCode, 200);
+    assert.equal(filteredPage.json().total, 2);
+    assert.equal(filteredPage.json().items[0].providerGoodsId, 'XR-2');
+    assert.equal(firstHandler.calls.supplierCalls.filter(({ method }) => method === 'listAllGoods').length, 1);
+    assert.equal(secondHandler.calls.supplierCalls.filter(({ method }) => method === 'listAllGoods').length, 0);
+});
+
+test('refreshing a Xiareng snapshot in another tab does not invalidate an unexpired snapshot', async () => {
+    const account = { ...xrAccount, id: 'xr-account-parallel-snapshot-test' };
+    let currentTime = 1_000_000;
+    const firstTab = makeXiarengCatalog({
+        account,
+        now: () => currentTime,
+        items: [
+            { goods_no: 'XR-OLD-1', goods_name: '旧快照商品一', catalogCategoryKeys: ['cat-1'] },
+            { goods_no: 'XR-OLD-2', goods_name: '旧快照商品二', catalogCategoryKeys: ['cat-1'] }
+        ]
+    });
+    const initial = createResponse();
+    await firstTab.handler({
+        method: 'GET',
+        url: '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&pageSize=1'
+    }, initial);
+    assert.equal(initial.statusCode, 200);
+
+    const secondTab = makeXiarengCatalog({
+        account,
+        now: () => currentTime,
+        items: [
+            { goods_no: 'XR-NEW-1', goods_name: '新快照商品一', catalogCategoryKeys: ['cat-1'] },
+            { goods_no: 'XR-NEW-2', goods_name: '新快照商品二', catalogCategoryKeys: ['cat-1'] }
+        ]
+    });
+    const refreshed = createResponse();
+    await secondTab.handler({
+        method: 'GET',
+        url: '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&refresh=1&pageSize=1'
+    }, refreshed);
+    assert.equal(refreshed.statusCode, 200);
+    assert.notEqual(refreshed.json().snapshotId, initial.json().snapshotId);
+
+    const firstTabPageTwo = createResponse();
+    await firstTab.handler({
+        method: 'GET',
+        url: `/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&snapshotId=${initial.json().snapshotId}&pageNo=2&pageSize=1`
+    }, firstTabPageTwo);
+    assert.equal(firstTabPageTwo.statusCode, 200);
+    assert.equal(firstTabPageTwo.json().items[0].providerGoodsId, 'XR-OLD-2');
+    assert.equal(firstTabPageTwo.json().snapshotId, initial.json().snapshotId);
+});
+
+test('Xiareng catalog snapshots expire after the cache TTL and cannot cross site scope', async () => {
+    let currentTime = 1_000_000;
+    const fixture = makeXiarengCatalog({
+        items: [{ goods_no: 'XR-1', goods_name: '只读商品', catalogCategoryKeys: ['cat-1'] }],
+        now: () => currentTime
+    });
+
+    const first = createResponse();
+    await fixture.handler({ method: 'GET', url: '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&site=cn' }, first);
+    assert.equal(first.statusCode, 200);
+    const snapshotId = first.json().snapshotId;
+
+    currentTime += 60_001;
+    const expired = createResponse();
+    await fixture.handler({ method: 'GET', url: `/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&site=cn&snapshotId=${snapshotId}` }, expired);
+    assert.equal(expired.statusCode, 409);
+    assert.equal(expired.json().code, 'supplier_catalog_snapshot_expired');
+
+    const fresh = createResponse();
+    await fixture.handler({ method: 'GET', url: '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&site=cn' }, fresh);
+    assert.equal(fresh.statusCode, 200);
+    assert.notEqual(fresh.json().snapshotId, snapshotId);
+
+    const otherSite = createResponse();
+    await fixture.handler({ method: 'GET', url: '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&site=intl' }, otherSite);
+    assert.equal(otherSite.statusCode, 200);
+    assert.notEqual(otherSite.json().snapshotId, fresh.json().snapshotId);
+
+    const crossSite = createResponse();
+    await fixture.handler({ method: 'GET', url: `/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&site=intl&snapshotId=${fresh.json().snapshotId}` }, crossSite);
+    assert.equal(crossSite.statusCode, 409);
+    assert.equal(crossSite.json().code, 'supplier_catalog_snapshot_expired');
+});
+
+test('Xiareng catalog rejects malformed or unscoped snapshot filters before reading upstream', async () => {
+    const { handler, calls } = makeXiarengCatalog({ items: [] });
+    const urls = [
+        '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&categoryKey=cat-1',
+        '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&snapshotId=00000000-0000-4000-8000-000000000001&categoryKey=bad',
+        '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&snapshotId=00000000-0000-4000-8000-000000000001&refresh=1'
+    ];
+
+    for (const url of urls) {
+        const response = createResponse();
+        await handler({ method: 'GET', url }, response);
+        assert.equal(response.statusCode, 400);
+        assert.equal(response.json().code, 'supplier_catalog_filter_invalid');
+    }
+    assert.equal(calls.supplierCalls.filter(({ method }) => method === 'listAllGoods').length, 0);
+});
 
 test('account discovery returns safe configuration metadata without adapter construction or upstream calls', async () => {
     const { handler, calls } = makeHandler({ state: { results: [{ data: [xrAccount], error: null }] }, env: { SUPPLIER_XIARENG_SECOND_APP_ID: 'private-id', SUPPLIER_XIARENG_SECOND_APP_KEY: 'private-key' } });
@@ -430,6 +637,86 @@ test('read-only preview requires stock/quote capabilities and never writes local
     assert.equal(res.json().stock.availableQuantity, 4);
     assert.equal(res.json().quote.amount, '1.250000');
     assert.equal(res.json().procurementReady, false);
+    assert.deepEqual(state.writes, []);
+});
+
+test('preview returns a specific conflict when a supplier refuses draft-card inventory reads', async () => {
+    const draftError = Object.assign(new Error('draft-card preview only'), { code: 'supplier_draft_cards_preview_only' });
+    const adapter = createAdapter({
+        providerId: 'xiareng',
+        capabilities: { catalog: true, quote: true, stock: true },
+        async getStock() { throw draftError; },
+        async quotePrice() { return { amount: '1.00', currency: 'CNY' }; }
+    });
+    const { handler, state } = makeHandler({ adapter, state: {
+        results: [{ data: xrAccount, error: null }]
+    } });
+    const res = createResponse();
+
+    await handler({ method: 'GET', url: '/api/admin/shop/supplier-catalog?action=preview&providerId=xiareng&goodsNo=XR-1' }, res);
+
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.json().success, false);
+    assert.equal(res.json().code, 'supplier_draft_cards_preview_only');
+    assert.match(res.json().message, /开放只读分页预览/);
+    assert.deepEqual(state.writes, []);
+    assert.deepEqual(state.rpcCalls, []);
+});
+
+test('draft-card GET is admin-only, strictly paged, normalized and never writes local data', async () => {
+    const adapter = createAdapter({
+        providerId: 'xiareng',
+        capabilities: { catalog: true },
+        async getDraftCards(input) {
+            assert.deepEqual(input, { goodsNo: 'XR-1', page: 2, limit: 10 });
+            return {
+                page: 2, limit: 10, total: 11,
+                cards: [{ id: 'card-2', draft: '<img src=x onerror=alert(1)>', draftPremium: 'premium' }],
+                importable: false, procurementReady: false,
+                secret: 'must-not-return'
+            };
+        }
+    });
+    const { handler, calls, state } = makeHandler({ adapter, state: {
+        results: [{ data: { id: 'account-xr', provider_id: 'xiareng', account_key: 'default', is_enabled: true }, error: null }]
+    } });
+    const res = createResponse();
+    await handler({ method: 'GET', url: '/api/admin/shop/supplier-catalog?action=draft-cards&providerId=xiareng&goodsNo=XR-1&page=2&limit=10' }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers['Cache-Control'], 'no-store');
+    assert.deepEqual(res.json().cards, [{ id: 'card-2', draft: '<img src=x onerror=alert(1)>', draftPremium: 'premium' }]);
+    assert.equal(res.json().importable, false);
+    assert.equal(res.json().procurementReady, false);
+    assert.equal(JSON.stringify(res.json()).includes('must-not-return'), false);
+    assert.deepEqual(calls.supplierCalls, [{ method: 'getDraftCards', input: { goodsNo: 'XR-1', page: 2, limit: 10 } }]);
+    assert.deepEqual(state.writes, []);
+    assert.deepEqual(state.rpcCalls, []);
+    assert.deepEqual(calls.audits, []);
+});
+
+test('draft-card request validation fails before account lookup or supplier calls', async () => {
+    const { handler, calls, state } = makeHandler();
+    const res = createResponse();
+    await handler({ method: 'GET', url: '/api/admin/shop/supplier-catalog?action=draft-cards&providerId=xiareng&goodsNo=XR-1&page=1abc&limit=20' }, res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.json().code, 'supplier_draft_cards_invalid_request');
+    assert.deepEqual(state.queries, []);
+    assert.deepEqual(calls.supplierCalls, []);
+});
+
+test('Xiareng preselected-card goods are rejected before any import RPC or write', async () => {
+    const { handler, state } = makeXiareng({ draft_status: 1 });
+    const res = createResponse();
+    await handler({
+        method: 'POST', url: '/api/admin/shop/supplier-catalog',
+        body: { action: 'import', providerId: 'xiareng', site: 'cn', goodsNo: 'XR-1' }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().results[0].status, 'failed');
+    assert.equal(res.json().results[0].code, 'supplier_draft_cards_preview_only');
+    assert.match(res.json().results[0].message, /开放只读分页预览/);
+    assert.deepEqual(state.rpcCalls, []);
     assert.deepEqual(state.writes, []);
 });
 

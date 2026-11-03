@@ -1008,6 +1008,8 @@
                 zh: '创意 · 效率 · 无限可能',
                 en: 'Creativity · Efficiency · Endless Possibilities'
             }),
+            stream_color: Number(config.stream_color || config.palette || 3) || 3,
+            palette: Number(config.stream_color || config.palette || 3) || 3,
             customImage: config.custom_image || null,
             entries: configuredEntries
                 .filter((item) => item?.enabled !== false && (!window.SectionVisibility || !item?.section || window.SectionVisibility.isVisible(item.section)))

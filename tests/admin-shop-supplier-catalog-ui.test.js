@@ -25,6 +25,11 @@ test('admin shop exposes a safe 16688 supplier catalog import workspace', () => 
     assert.match(adminHtml, /id="shop-view-supplier-catalog" class="shop-view/);
     assert.match(adminHtml, /id="supplierCatalogProvider"/);
     assert.match(adminHtml, /<option value="16688">16688<\/option>/);
+    assert.match(adminHtml, /<option value="xiareng" selected>虾仁（只读）<\/option>/);
+    assert.match(adminHtml, /id="supplierCatalogCategory"[^>]+data-shop-change="supplier-catalog-category"[^>]+disabled/);
+    assert.match(adminHtml, /id="supplierCatalogRefreshButton"[^>]+data-shop-action="supplier-catalog-refresh"/);
+    assert.match(adminHtml, /id="supplierCatalogSnapshot"[^>]+aria-live="polite"/);
+    assert.match(adminHtml, /分类 ID 与层级语义尚未核验/);
     assert.match(adminHtml, /<option value="cn">国内站<\/option>/);
     assert.match(adminHtml, /<option value="intl">国际站<\/option>/);
     assert.match(adminHtml, /未上架草稿/);
@@ -45,8 +50,26 @@ test('admin shop exposes a safe 16688 supplier catalog import workspace', () => 
     assert.match(shopSource, /providerId.*16688/);
     assert.match(shopSource, /\['cn', 'intl'\]\.includes\(siteValue\)/);
     assert.match(shopSource, /buildAdminShopUrl\('shop\/supplier-catalog', params\)/);
+    assert.match(shopSource, /params\.snapshotId = this\.supplierCatalogSnapshot\.snapshotId/);
+    assert.match(shopSource, /params\.categoryKey = categoryKey/);
+    assert.match(shopSource, /supplier_catalog_snapshot_expired/);
+    assert.match(shopSource, /supplierCatalogCategoryNeedsReselect/);
+    assert.match(shopSource, /requireSupplierCatalogCategoryReselection/);
+    assert.match(shopSource, /请重新选择分类或显式选择“全部分类”/);
+    const categorySelectionBlock = extractFunctionBlock(shopSource, 'selectSupplierCatalogCategory: function');
+    assert.match(categorySelectionBlock, /const wasReselectRequired = this\.supplierCatalogCategoryNeedsReselect/);
+    assert.match(categorySelectionBlock, /if \(wasReselectRequired\) this\.renderSupplierCatalogFeedback\('', 'info'\)/);
+    assert.doesNotMatch(shopSource, /categoryRetryPending/);
+    const syncBlock = extractFunctionBlock(shopSource, 'syncSupplierCatalogControls: function');
+    assert.match(syncBlock, /supplierCatalogLoading/);
+    assert.match(syncBlock, /renderSupplierCatalogSnapshotStatus/);
     assert.match(shopSource, /action: 'list'/);
     assert.match(shopSource, /action: 'detail'/);
+    const previewBlock = extractFunctionBlock(shopSource, 'previewSupplierCatalogDetail: async function');
+    assert.match(previewBlock, /payload\.quote\?\.amountBasis === 'total_cny'/);
+    assert.match(previewBlock, /报价为所选数量总价/);
+    assert.match(previewBlock, /库存与报价均未锁定/);
+    assert.doesNotMatch(previewBlock, /单价\/总额口径待核验/);
     assert.match(shopSource, /method: 'POST'/);
     assert.match(shopSource, /goodsNos: selectedGoodsNos/);
     assert.match(shopSource, /selectedGoodsNos\.length > 20/);
@@ -80,6 +103,15 @@ test('admin shop exposes a safe 16688 supplier catalog import workspace', () => 
     assert.match(stylesSource, /@media \(max-width: 640px\)/);
 });
 
+test('admin command dock leaves supplier catalog controls clickable outside its buttons', () => {
+    const commandCenterStyles = readRepoFile('css/admin-command-center.css');
+    const dockRule = commandCenterStyles.match(/\.admin-command-center__dock\s*\{([\s\S]*?)\n\}/)?.[1] || '';
+    const dockButtonRule = commandCenterStyles.match(/\.admin-command-center__dock-btn\s*\{([\s\S]*?)\n\}/)?.[1] || '';
+
+    assert.match(dockRule, /pointer-events:\s*none;/);
+    assert.match(dockButtonRule, /pointer-events:\s*auto;/);
+});
+
 test('supplier catalog import is visibly fail-closed instead of auto-publishing products', () => {
     const adminHtml = readRepoFile('admin-studio.html');
     const shopSource = readRepoFile('js/admin-shop.js');
@@ -94,4 +126,31 @@ test('supplier catalog import is visibly fail-closed instead of auto-publishing 
     assert.match(supplierCatalogHtml, /导入后不会自动上架/);
     assert.doesNotMatch(supplierImportBlock, /publish|auto.?publish|enable.*mapping|guest.*purchase/i);
     assert.match(supplierImportBlock, /导入后不会自动上架/);
+});
+
+test('draft-card inspection stays read-only, uncached, text-rendered and invalidated on close', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const detailBlock = extractFunctionBlock(shopSource, 'renderSupplierCatalogDetail: function');
+    const controlBlock = extractFunctionBlock(shopSource, 'syncSupplierCatalogDetailControls: function');
+    const previewBlock = extractFunctionBlock(shopSource, 'previewSupplierCatalogDetail: async function');
+    const draftLoadBlock = extractFunctionBlock(shopSource, 'loadSupplierCatalogDraftCards: async function');
+    const draftRenderBlock = extractFunctionBlock(shopSource, 'renderSupplierCatalogDraftCards: function');
+    const importBlock = extractFunctionBlock(shopSource, 'importSupplierCatalogDetail: async function');
+    const closeBlock = extractFunctionBlock(shopSource, 'closeSupplierCatalogDetail: function');
+
+    assert.match(detailBlock, /isDraftCardItem\s*\?\s*`[^`]*supplier-catalog-draft-cards/s);
+    assert.match(detailBlock, /draft_status=1[\s\S]*仅供分页核对/);
+    assert.match(controlBlock, /importButton\.hidden = isDraftCardItem/);
+    assert.match(controlBlock, /previewButton\.hidden = isDraftCardItem/);
+    assert.match(previewBlock, /if \(!this\.isSupplierCatalogDetailImportable\(false\)\) return null/);
+    assert.match(importBlock, /if \(item\?\.draftStatus === 1\)/);
+    assert.match(draftLoadBlock, /action: 'draft-cards'/);
+    assert.match(draftLoadBlock, /cache: 'no-store'/);
+    assert.match(draftLoadBlock, /detailToken !== this\.supplierCatalogDetailRequestToken/);
+    assert.match(draftRenderBlock, /draftText\.textContent = card\.draft/);
+    assert.match(draftRenderBlock, /premiumText\.textContent = card\.draftPremium/);
+    assert.doesNotMatch(draftRenderBlock, /innerHTML/);
+    assert.match(closeBlock, /\+\+this\.supplierCatalogDraftCardsRequestToken/);
+    assert.match(closeBlock, /this\.supplierCatalogDetailItem = null/);
+    assert.match(closeBlock, /body\.replaceChildren\(\)/);
 });

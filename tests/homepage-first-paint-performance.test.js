@@ -132,8 +132,8 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
     );
     assert.match(
         framerSource,
-        /hydrateStaticHeroSection\(section, data, visibleEntries, heroSignature\)[\s\S]*Keep the seeded prism scene intact so its intro scale animation does not replay\./,
-        'homepage runtime should hydrate the static hero in place so seeded prism cubes do not replay their intro animation'
+        /hydrateStaticHeroSection\(section, data, visibleEntries, heroSignature\)[\s\S]*Keep the seeded hero scene intact so its intro animation does not replay\./,
+        'homepage runtime should hydrate the static hero in place so seeded hero elements do not replay their intro animation'
     );
     const renderHeroStart = framerSource.indexOf('renderHero() {');
     const renderPromptsStart = framerSource.indexOf('renderPrompts()', renderHeroStart);
@@ -229,15 +229,15 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         /@media \(max-width: 767px\)[\s\S]*:root\s*\{[\s\S]*--spacing-xl:\s*60px;[\s\S]*--spacing-2xl:\s*80px;/,
         'full mobile stylesheet should keep the same spacing variables that critical CSS mirrors'
     );
-    assert.match(
-        criticalStyles,
-        /20260502_HOME_CRITICAL_PRISM_MOBILE_PARITY_1[\s\S]*\.hero-prismchrono-field\s*\{transform:\s*translateY\(16%\);[\s\S]*\.hero-prismchrono-field span:nth-of-type\(1\)\s*\{[\s\S]*--hero-prism-cube-size:\s*132px;[\s\S]*--hero-prism-cube-y:\s*-70px;/,
-        'mobile critical prism field should match the final deferred position before the full stylesheet activates'
+    assert.equal(
+        criticalStyles.includes('hero-prismchrono'),
+        false,
+        'mobile critical styles should not contain deprecated prism chrono animations'
     );
-    assert.match(
-        criticalStyles,
-        /20260502_HOME_CRITICAL_PRISM_MOBILE_PARITY_1[\s\S]*\.hero-prismchrono-field span:nth-of-type\(2\)\s*\{[\s\S]*--hero-prism-cube-x:\s*-232px;[\s\S]*--hero-prism-cube-y:\s*-178px;[\s\S]*\.hero-prismchrono-field span:nth-of-type\(3\)\s*\{[\s\S]*--hero-prism-cube-x:\s*224px;[\s\S]*--hero-prism-cube-y:\s*144px;/,
-        'mobile critical side prism cubes should use the final mobile offsets during refresh'
+    assert.equal(
+        framerStyles.includes('hero-prismchrono'),
+        false,
+        'full homepage styles should not contain deprecated prism chrono animations'
     );
     assert.equal(
         criticalStyles.includes('font-size: 56px;'),
@@ -279,91 +279,80 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         /\.hero-title\s*\{[\s\S]*font-size:\s*clamp\(48px, 10vw, 110px\);[\s\S]*letter-spacing:\s*0;[\s\S]*padding-top:\s*max\(0px, calc\(60px - 5vw\)\);/,
         'full homepage CSS should keep the same hero title typography as critical CSS'
     );
-    assert.match(
-        framerStyles,
-        /will-change:\s*transform, scale;[\s\S]*20260501_HOME_PRISM_CUBE_INTRO_2[\s\S]*animation:[\s\S]*hero-prismchrono-spin var\(--hero-prism-cube-speed, 8\.8s\) linear infinite,[\s\S]*hero-prismchrono-cube-intro 720ms cubic-bezier\(0\.22, 1, 0\.36, 1\) var\(--hero-prism-cube-intro-delay, 0ms\) both;/,
-        'full homepage CSS should ease prism cubes in instead of snapping them into the hero scene'
-    );
-    const prismCubeSpanRule = framerStyles.match(/\.hero-prismchrono-field span\s*\{[\s\S]*?\n\}/)?.[0] || '';
     assert.equal(
-        prismCubeSpanRule.includes('opacity:'),
+        framerStyles.includes('hero-prismchrono-cube-intro'),
         false,
-        'prism cube container must not animate opacity because that flattens preserve-3d into thin planes'
+        'full homepage CSS should not contain deprecated prism cube intro keyframes'
     );
-    assert.match(
-        framerStyles,
-        /\.hero-prismchrono-field span b\s*\{[\s\S]*20260502_HOME_PRISM_FACE_NO_SHADOW_1[\s\S]*box-shadow:\s*none;/,
-        'full homepage CSS should not add cube-face shadows that veil the hero ruler after the intro animation'
+    assert.equal(
+        indexSource.includes('hero-prismchrono-scene'),
+        false,
+        'index.html should not render deprecated prismchrono scene element'
     );
-    assert.match(
-        framerStyles,
-        /\.hero-prismchrono-field i\s*\{[\s\S]*20260502_HOME_PRISM_FACE_NO_SHADOW_1[\s\S]*box-shadow:\s*none;/,
-        'full homepage CSS should not add prism ring glows that look like gray shadows near the hero ruler'
-    );
-    assert.match(
-        framerStyles,
-        /\.hero-prismchrono-field em\s*\{[\s\S]*box-shadow:\s*none;/,
-        'full homepage CSS should keep prism nodes shadowless like the critical first-paint scene'
-    );
-    assert.match(
-        framerStyles,
-        /\.hero-prismchrono-field span:nth-of-type\(2\)\s*\{[\s\S]*animation-direction:\s*reverse, normal;/,
-        'prism cube intro should preserve the middle cube reverse spin while keeping the intro animation forward'
-    );
-    assert.match(
-        framerStyles,
-        /@keyframes hero-prismchrono-cube-intro\s*\{[\s\S]*from\s*\{[\s\S]*scale:\s*0\.58;[\s\S]*to\s*\{[\s\S]*scale:\s*1;/,
-        'prism cube intro keyframes should scale cubes in one smooth non-overshooting ease-out segment'
+    assert.equal(
+        indexSource.includes('hero-prism-preview-bg'),
+        false,
+        'index.html should not render deprecated hero prism preview element'
     );
     assert.match(
         criticalStyles,
         /20260501_HOME_CRITICAL_FOOTER_GUARD_1[\s\S]*body\.home-page \.framer-footer\s*\{[\s\S]*display:\s*none;/,
         'critical homepage CSS should keep the deferred footer from flashing unstyled inside the hero viewport'
     );
+    assert.equal(
+        criticalStyles.includes('radial-gradient(circle at 50% 34%'),
+        false,
+        'critical homepage CSS should not contain light theme hero radial background gradient'
+    );
+    assert.equal(
+        framerStyles.includes('radial-gradient(circle at 50% 34%'),
+        false,
+        'full homepage CSS should not contain light theme hero radial background gradient'
+    );
     assert.match(
         criticalStyles,
-        /html\[data-theme="light"\] body\.home-page \.hero-section\s*\{[\s\S]*20260501_HOME_LIGHT_HERO_CRITICAL_BG_1[\s\S]*radial-gradient\(circle at 50% 34%, rgba\(14, 165, 233, 0\.11\), transparent 32%\)/,
-        'critical homepage CSS should give the light hero a nonblank visual background before the full stylesheet loads'
+        /html\[data-theme="light"\] body\.home-page \.hero-section\s*\{[\s\S]*background:\s*#000000;/,
+        'critical homepage CSS should give the light hero black background matching dark theme'
     );
     assert.match(
         framerStyles,
-        /html\[data-theme="light"\] body\.home-page \.hero-section\s*\{[\s\S]*20260502_HOME_LIGHT_HERO_BG_PARITY_1[\s\S]*radial-gradient\(circle at 50% 34%, rgba\(14, 165, 233, 0\.11\), transparent 32%\)/,
-        'full homepage CSS should keep the same light hero background as critical CSS'
+        /html\[data-theme="light"\] body\.home-page \.hero-section\s*\{[\s\S]*background:\s*#000000;/,
+        'full homepage CSS should give the light hero black background matching dark theme'
     );
     assert.match(
         criticalStyles,
-        /html\[data-theme="light"\] body\.home-page \.hero-section::after\s*\{[\s\S]*height:\s*220px;[\s\S]*background:\s*linear-gradient\(to bottom, transparent, #f8fafc 74%\);/,
-        'critical homepage CSS should match the final light hero fade height'
+        /html\[data-theme="light"\] body\.home-page \.hero-section::after\s*\{[\s\S]*display:\s*none;/,
+        'critical homepage CSS should disable the light hero bottom white gradient'
     );
     assert.match(
         framerStyles,
-        /html\[data-theme="light"\] body\.home-page \.hero-prism-preview-effect-layer\s*\{[\s\S]*mix-blend-mode:\s*normal;[\s\S]*animation:\s*none;[\s\S]*transform:\s*none;/,
-        'full homepage CSS should not brighten the light hero preview layer after deferred styles activate'
+        /html\[data-theme="light"\] body\.home-page \.hero-section::after\s*\{[\s\S]*display:\s*none;/,
+        'full homepage CSS should disable the light hero bottom white gradient'
     );
     assert.match(
         criticalStyles,
-        /html\[data-theme="light"\] body\.home-page \.hero-prism-preview-bg\s*\{[\s\S]*display:\s*block;[\s\S]*position:\s*absolute;[\s\S]*pointer-events:\s*none;/,
-        'critical homepage CSS should show the lightweight light-theme prism preview layer during first paint'
+        /html\[data-theme="light"\] body\.home-page \.hero-title\s*\{[\s\S]*color:\s*#ffffff;/,
+        'critical homepage CSS should keep the hero title white on the dark liquid background in light theme'
     );
     assert.match(
-        criticalStyles,
-        /20260501_HOME_CRITICAL_PRISM_SCENE_1[\s\S]*\.hero-prismchrono-field\s*\{[\s\S]*perspective:\s*1220px;[\s\S]*\.hero-prismchrono-field span\s*\{[\s\S]*transform-style:\s*preserve-3d;[\s\S]*hero-prismchrono-spin var\(--hero-prism-cube-speed, 8\.8s\) linear infinite,[\s\S]*hero-prismchrono-cube-intro 720ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/,
-        'critical homepage CSS should render the prism cube scene without waiting for deferred full CSS'
+        framerStyles,
+        /html\[data-theme="light"\] body\.home-page \.hero-title\s*\{[\s\S]*color:\s*#ffffff;/,
+        'full homepage CSS should keep the hero title white on the dark liquid background in light theme'
     );
-    assert.match(
-        criticalStyles,
-        /html\[data-theme="light"\] body\.home-page \.hero-prismchrono-scene\s*\{[\s\S]*display:\s*block;/,
-        'light theme should enable the prism scene during critical first paint'
+    assert.equal(
+        framerStyles.includes('hero-prism-preview'),
+        false,
+        'full homepage CSS should not contain deprecated hero prism preview layer'
     );
-    assert.match(
-        criticalStyles,
-        /\.hero-prismchrono-field span b:nth-child\(1\)\s*\{[\s\S]*rotateY\(0deg\) translateZ\(calc\(var\(--hero-prism-cube-size, 160px\) \/ 2\)\);/,
-        'critical prism scene should include 3D cube faces, not flat placeholder panes'
+    assert.equal(
+        criticalStyles.includes('hero-prism-preview'),
+        false,
+        'critical homepage CSS should not contain deprecated hero prism preview layer'
     );
-    assert.match(
-        criticalStyles,
-        /html\[data-theme="light"\] body\.home-page \.hero-prism-preview-effect-layer\s*\{[\s\S]*filter:\s*blur\(42px\);[\s\S]*opacity:\s*0\.8;/,
-        'critical homepage CSS should style the first-paint prism preview effect without waiting for deferred CSS'
+    assert.equal(
+        criticalStyles.includes('hero-prismchrono-scene'),
+        false,
+        'critical homepage CSS should not enable the prism scene during critical first paint'
     );
     assert.equal(
         indexSource.includes('fa-solid-900.woff2'),

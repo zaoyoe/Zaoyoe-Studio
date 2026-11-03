@@ -19,6 +19,10 @@
     --aiw-composer-width: min(1040px, calc(100% - 32px));
     --aiw-stage-track-width: min(980px, 100%);
     --aiw-font: "Outfit", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --aiw-scrollbar-track: transparent;
+    --aiw-scrollbar-thumb: rgba(15, 23, 42, 0.20);
+    --aiw-scrollbar-thumb-hover: rgba(15, 23, 42, 0.36);
+    --aiw-scrollbar-thumb-active: rgba(15, 23, 42, 0.48);
 }
 
 @property --aiw-flow-angle {
@@ -39,6 +43,10 @@ html[data-theme="dark"] {
     --aiw-blue: #b8b8b8;
     --aiw-green: #58bea7;
     --aiw-shadow: 0 30px 90px rgba(0, 0, 0, 0.58), 0 8px 24px rgba(0, 0, 0, 0.38);
+    --aiw-scrollbar-track: transparent;
+    --aiw-scrollbar-thumb: rgba(255, 255, 255, 0.20);
+    --aiw-scrollbar-thumb-hover: rgba(255, 255, 255, 0.36);
+    --aiw-scrollbar-thumb-active: rgba(255, 255, 255, 0.50);
 }
 
 html[data-theme="dark"] .ai-image-dock-popover,
@@ -189,6 +197,24 @@ html[data-theme="dark"].ai-image-workbench-open,
 html[data-theme="dark"] body.ai-image-workbench-open {
     background: var(--aiw-surface-strong) !important;
     color-scheme: dark;
+}
+
+html[data-theme="dark"].ai-image-workbench-standalone,
+html[data-theme="dark"] body.ai-image-workbench-standalone,
+html[data-theme="dark"] .ai-image-shell {
+    color-scheme: dark;
+}
+
+html[data-theme="light"].ai-image-workbench-open,
+html[data-theme="light"] body.ai-image-workbench-open,
+html:not([data-theme="dark"]).ai-image-workbench-open,
+html:not([data-theme="dark"]) body.ai-image-workbench-open,
+html[data-theme="light"].ai-image-workbench-standalone,
+html[data-theme="light"] body.ai-image-workbench-standalone,
+html:not([data-theme="dark"]).ai-image-workbench-standalone,
+html:not([data-theme="dark"]) body.ai-image-workbench-standalone,
+html:not([data-theme="dark"]) .ai-image-shell {
+    color-scheme: light;
 }
 
 body.ai-image-workbench-open .chat-widget-fab {
@@ -5954,6 +5980,7 @@ html[data-theme="dark"] .ai-image-composer-settings-section {
 }
 
 .ai-image-main-submit-action {
+    position: relative;
     justify-content: flex-end;
 }
 
@@ -6135,34 +6162,115 @@ html[data-theme="dark"] .ai-image-composer-settings-section {
 }
 
 .ai-image-main-submit {
+    position: relative;
     width: 30px;
     height: 30px;
+    color: var(--aiw-faint);
+    background: rgba(102, 112, 133, 0.16);
+    font-size: 12px;
+    box-shadow: none;
+    cursor: not-allowed;
+    transition: color 0.22s ease, background 0.22s ease, box-shadow 0.24s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease, filter 0.22s ease;
+}
+
+html[data-theme="dark"] .ai-image-main-submit {
+    color: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: none;
+}
+
+.ai-image-main-submit.has-prompt {
     color: #ffffff;
     background: linear-gradient(135deg, var(--aiw-blue), var(--aiw-green));
-    font-size: 12px;
+    box-shadow: 0 7px 16px rgba(47, 159, 117, 0.18);
+    cursor: pointer;
+}
+
+html[data-theme="dark"] .ai-image-main-submit.has-prompt {
+    color: #ffffff;
+    background: linear-gradient(135deg, var(--aiw-blue), var(--aiw-green));
     box-shadow: 0 7px 16px rgba(47, 159, 117, 0.18);
 }
 
-.ai-image-main-submit:not(:disabled):hover,
-.ai-image-main-submit:not(:disabled):focus-visible {
+.ai-image-main-submit.has-prompt:not(:disabled):hover,
+.ai-image-main-submit.has-prompt:not(:disabled):focus-visible {
     box-shadow: 0 10px 22px rgba(47, 159, 117, 0.24), 0 0 0 4px rgba(95, 143, 188, 0.10);
     filter: saturate(1.05) brightness(1.03);
     outline: none;
     transform: translateY(-1px) scale(1.05);
 }
 
-.ai-image-main-submit:not(:disabled):active {
+.ai-image-main-submit.has-prompt:not(:disabled):active {
     filter: saturate(1) brightness(0.98);
     transform: translateY(0) scale(0.96);
 }
 
+.ai-image-main-submit.is-blocked,
+.ai-image-main-submit:disabled {
+    cursor: not-allowed !important;
+    pointer-events: auto !important;
+}
+
+.ai-image-main-submit.has-prompt.is-blocked {
+    opacity: 0.72;
+    filter: saturate(0.85);
+    box-shadow: 0 4px 12px rgba(47, 159, 117, 0.10);
+}
+
 .ai-image-main-submit.is-cancel {
-    background: rgba(244, 63, 94, 0.88);
+    color: #ffffff !important;
+    background: rgba(244, 63, 94, 0.88) !important;
+    box-shadow: 0 7px 16px rgba(244, 63, 94, 0.20) !important;
+    cursor: pointer !important;
 }
 
 .ai-image-main-submit.is-cancel:not(:disabled):hover,
 .ai-image-main-submit.is-cancel:not(:disabled):focus-visible {
-    box-shadow: 0 10px 22px rgba(244, 63, 94, 0.22), 0 0 0 4px rgba(244, 63, 94, 0.10);
+    box-shadow: 0 10px 22px rgba(244, 63, 94, 0.22), 0 0 0 4px rgba(244, 63, 94, 0.10) !important;
+}
+
+.ai-image-main-submit[data-tooltip]::before,
+.ai-image-main-submit-action[data-tooltip]::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 9px);
+    right: 0;
+    transform: translateY(4px);
+    padding: 6px 11px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    z-index: 120;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.32);
+}
+
+.ai-image-main-submit:not([data-tooltip])::before,
+.ai-image-main-submit[data-tooltip=""]::before,
+.ai-image-main-submit-action:not([data-tooltip])::before,
+.ai-image-main-submit-action[data-tooltip=""]::before {
+    display: none !important;
+    content: none !important;
+}
+
+.ai-image-main-submit[data-tooltip]:hover::before,
+.ai-image-main-submit[data-tooltip]:focus-visible::before,
+.ai-image-main-submit-action[data-tooltip]:hover::before {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+html[data-theme="dark"] .ai-image-main-submit[data-tooltip]::before,
+html[data-theme="dark"] .ai-image-main-submit-action[data-tooltip]::before {
+    background: rgba(28, 28, 28, 0.96);
+    border-color: rgba(255, 255, 255, 0.16);
 }
 
 html[data-theme="dark"] .ai-image-main-plus {
@@ -6217,11 +6325,153 @@ html[data-theme="dark"] .ai-image-upload-help[data-support="pending"] .ai-image-
     text-size-adjust: 100%;
     outline: none;
     touch-action: pan-y;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    padding-right: 4px;
 }
 
 .ai-image-main-prompt::placeholder {
     color: color-mix(in srgb, var(--aiw-muted) 56%, transparent);
     font: inherit;
+}
+
+.ai-image-main-prompt:focus,
+.ai-image-main-prompt:not(:placeholder-shown) {
+    color: var(--aiw-text);
+}
+
+/* AI Workbench Auto-Hide & Theme-Adaptive Scrollbars */
+.ai-image-main-prompt,
+.ai-image-stage,
+.ai-image-history-scroll,
+.ai-image-history,
+.ai-image-panel,
+.ai-image-select-menu,
+.ai-image-model-submenu,
+.ai-image-composer-settings-menu,
+.ai-image-scrollbar-auto-hide {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.24s ease;
+}
+
+.ai-image-main-prompt:hover,
+.ai-image-main-prompt[data-aiw-scrolling="true"],
+.ai-image-main-composer:hover .ai-image-main-prompt,
+.ai-image-main-composer:focus-within .ai-image-main-prompt[data-aiw-scrolling="true"],
+.ai-image-stage:hover,
+.ai-image-stage[data-aiw-scrolling="true"],
+.ai-image-history-scroll:hover,
+.ai-image-history-scroll[data-aiw-scrolling="true"],
+.ai-image-history:hover,
+.ai-image-history[data-aiw-scrolling="true"],
+.ai-image-panel:hover,
+.ai-image-panel[data-aiw-scrolling="true"],
+.ai-image-select-menu:hover,
+.ai-image-select-menu[data-aiw-scrolling="true"],
+.ai-image-model-submenu:hover,
+.ai-image-model-submenu[data-aiw-scrolling="true"],
+.ai-image-composer-settings-menu:hover,
+.ai-image-composer-settings-menu[data-aiw-scrolling="true"],
+.ai-image-scrollbar-auto-hide:hover,
+.ai-image-scrollbar-auto-hide[data-aiw-scrolling="true"] {
+    scrollbar-color: var(--aiw-scrollbar-thumb) transparent;
+}
+
+.ai-image-main-prompt::-webkit-scrollbar,
+.ai-image-stage::-webkit-scrollbar,
+.ai-image-history-scroll::-webkit-scrollbar,
+.ai-image-history::-webkit-scrollbar,
+.ai-image-panel::-webkit-scrollbar,
+.ai-image-select-menu::-webkit-scrollbar,
+.ai-image-model-submenu::-webkit-scrollbar,
+.ai-image-composer-settings-menu::-webkit-scrollbar,
+.ai-image-scrollbar-auto-hide::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+    background: transparent !important;
+}
+
+.ai-image-main-prompt::-webkit-scrollbar-track,
+.ai-image-stage::-webkit-scrollbar-track,
+.ai-image-history-scroll::-webkit-scrollbar-track,
+.ai-image-history::-webkit-scrollbar-track,
+.ai-image-panel::-webkit-scrollbar-track,
+.ai-image-select-menu::-webkit-scrollbar-track,
+.ai-image-model-submenu::-webkit-scrollbar-track,
+.ai-image-composer-settings-menu::-webkit-scrollbar-track,
+.ai-image-scrollbar-auto-hide::-webkit-scrollbar-track,
+.ai-image-main-prompt::-webkit-scrollbar-corner,
+.ai-image-stage::-webkit-scrollbar-corner,
+.ai-image-history-scroll::-webkit-scrollbar-corner,
+.ai-image-history::-webkit-scrollbar-corner,
+.ai-image-panel::-webkit-scrollbar-corner,
+.ai-image-select-menu::-webkit-scrollbar-corner,
+.ai-image-model-submenu::-webkit-scrollbar-corner,
+.ai-image-composer-settings-menu::-webkit-scrollbar-corner,
+.ai-image-scrollbar-auto-hide::-webkit-scrollbar-corner {
+    background: transparent !important;
+}
+
+.ai-image-main-prompt::-webkit-scrollbar-thumb,
+.ai-image-stage::-webkit-scrollbar-thumb,
+.ai-image-history-scroll::-webkit-scrollbar-thumb,
+.ai-image-history::-webkit-scrollbar-thumb,
+.ai-image-panel::-webkit-scrollbar-thumb,
+.ai-image-select-menu::-webkit-scrollbar-thumb,
+.ai-image-model-submenu::-webkit-scrollbar-thumb,
+.ai-image-composer-settings-menu::-webkit-scrollbar-thumb,
+.ai-image-scrollbar-auto-hide::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 999px;
+    transition: background-color 0.24s ease;
+}
+
+.ai-image-main-prompt:hover::-webkit-scrollbar-thumb,
+.ai-image-main-prompt[data-aiw-scrolling="true"]::-webkit-scrollbar-thumb,
+.ai-image-main-composer:hover .ai-image-main-prompt::-webkit-scrollbar-thumb,
+.ai-image-main-composer:focus-within .ai-image-main-prompt[data-aiw-scrolling="true"]::-webkit-scrollbar-thumb,
+.ai-image-stage:hover::-webkit-scrollbar-thumb,
+.ai-image-stage[data-aiw-scrolling="true"]::-webkit-scrollbar-thumb,
+.ai-image-history-scroll:hover::-webkit-scrollbar-thumb,
+.ai-image-history-scroll[data-aiw-scrolling="true"]::-webkit-scrollbar-thumb,
+.ai-image-history:hover::-webkit-scrollbar-thumb,
+.ai-image-history[data-aiw-scrolling="true"]::-webkit-scrollbar-thumb,
+.ai-image-panel:hover::-webkit-scrollbar-thumb,
+.ai-image-panel[data-aiw-scrolling="true"]::-webkit-scrollbar-thumb,
+.ai-image-select-menu:hover::-webkit-scrollbar-thumb,
+.ai-image-select-menu[data-aiw-scrolling="true"]::-webkit-scrollbar-thumb,
+.ai-image-model-submenu:hover::-webkit-scrollbar-thumb,
+.ai-image-model-submenu[data-aiw-scrolling="true"]::-webkit-scrollbar-thumb,
+.ai-image-composer-settings-menu:hover::-webkit-scrollbar-thumb,
+.ai-image-composer-settings-menu[data-aiw-scrolling="true"]::-webkit-scrollbar-thumb,
+.ai-image-scrollbar-auto-hide:hover::-webkit-scrollbar-thumb,
+.ai-image-scrollbar-auto-hide[data-aiw-scrolling="true"]::-webkit-scrollbar-thumb {
+    background: var(--aiw-scrollbar-thumb);
+}
+
+.ai-image-main-prompt::-webkit-scrollbar-thumb:hover,
+.ai-image-stage::-webkit-scrollbar-thumb:hover,
+.ai-image-history-scroll::-webkit-scrollbar-thumb:hover,
+.ai-image-history::-webkit-scrollbar-thumb:hover,
+.ai-image-panel::-webkit-scrollbar-thumb:hover,
+.ai-image-select-menu::-webkit-scrollbar-thumb:hover,
+.ai-image-model-submenu::-webkit-scrollbar-thumb:hover,
+.ai-image-composer-settings-menu::-webkit-scrollbar-thumb:hover,
+.ai-image-scrollbar-auto-hide::-webkit-scrollbar-thumb:hover {
+    background: var(--aiw-scrollbar-thumb-hover);
+}
+
+.ai-image-main-prompt::-webkit-scrollbar-thumb:active,
+.ai-image-stage::-webkit-scrollbar-thumb:active,
+.ai-image-history-scroll::-webkit-scrollbar-thumb:active,
+.ai-image-history::-webkit-scrollbar-thumb:active,
+.ai-image-panel::-webkit-scrollbar-thumb:active,
+.ai-image-select-menu::-webkit-scrollbar-thumb:active,
+.ai-image-model-submenu::-webkit-scrollbar-thumb:active,
+.ai-image-composer-settings-menu::-webkit-scrollbar-thumb:active,
+.ai-image-scrollbar-auto-hide::-webkit-scrollbar-thumb:active {
+    background: var(--aiw-scrollbar-thumb-active);
 }
 
 .ai-image-main-tools {
@@ -8419,7 +8669,7 @@ html[data-theme="dark"] .ai-image-task-select {
         line-height: 1.55;
     }
 
-    .ai-image-main-submit:disabled {
+    .ai-image-main-submit:disabled:not(.has-prompt):not(.is-cancel) {
         color: var(--aiw-faint);
         background: rgba(102, 112, 133, 0.14);
         cursor: not-allowed;
@@ -9001,3 +9251,98 @@ html[data-theme="dark"] .ai-image-rail-mode-btn.is-active:focus-visible {
         box-shadow: none;
     }
 }
+
+/* Standalone Full-Window Workbench Mode */
+body.ai-image-workbench-standalone,
+html.ai-image-workbench-standalone {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: hidden;
+    background: var(--aiw-surface-strong) !important;
+}
+
+body.ai-image-workbench-standalone .ai-image-dock {
+    display: none !important;
+}
+
+body.ai-image-workbench-standalone .ai-image-overlay {
+    display: flex !important;
+    position: fixed !important;
+    inset: 0 !important;
+    padding: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    background: var(--aiw-surface-strong) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    animation: none !important;
+}
+
+body.ai-image-workbench-standalone .ai-image-shell {
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    max-height: 100dvh !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: var(--aiw-surface-strong) !important;
+}
+
+body.ai-image-workbench-standalone .ai-image-shell-close {
+    display: inline-flex !important;
+}
+
+.ai-image-shell-close[data-tooltip]::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    transform: translateY(-4px);
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    z-index: 100;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.36);
+}
+
+.ai-image-shell-close[data-tooltip]:hover::before,
+.ai-image-shell-close[data-tooltip]:focus-visible::before {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.ai-image-shell-close:hover i.fa-arrow-left,
+.ai-image-rail-close:hover i.fa-arrow-left {
+    transform: translateX(-2px);
+}
+
+@media (max-width: 1120px) {
+    body.ai-image-workbench-standalone .ai-image-shell-close {
+        display: inline-flex !important;
+        top: max(14px, env(safe-area-inset-top, 0px)) !important;
+        right: max(14px, env(safe-area-inset-right, 0px)) !important;
+        width: 40px !important;
+        height: 40px !important;
+        z-index: 95 !important;
+    }
+}
+

@@ -52,6 +52,141 @@ test('catalog is flattened, filtered and paginated locally without invented upst
     assert.equal(calls[0].body.includes('key-do-not-output'), false);
 });
 
+test('documented category identifiers remain unverified candidates and goods retain session category membership', async () => {
+    const { adapter } = setup([[
+        { id: 37, name: '类别甲', children: [fixture()] },
+        { id: '38', name: '类别乙', children: [fixture({ code: 'XR-1' })] }
+    ]]);
+
+    const result = await adapter.listAllGoods();
+
+    assert.deepEqual(result.categories.map(({ categoryKey, name, upstreamIdCandidate, identityStatus, itemCount }) => ({
+        categoryKey, name, upstreamIdCandidate, identityStatus, itemCount
+    })), [
+        { categoryKey: 'cat-1', name: '类别甲', upstreamIdCandidate: '37', identityStatus: 'unverified', itemCount: 1 },
+        { categoryKey: 'cat-2', name: '类别乙', upstreamIdCandidate: '38', identityStatus: 'unverified', itemCount: 1 }
+    ]);
+    assert.equal(result.items.length, 1);
+    assert.deepEqual(result.items[0].catalogCategoryKeys, ['cat-1', 'cat-2']);
+});
+
+test('draft-card preview rechecks draft status, pages the documented endpoint and returns only bounded fields', async () => {
+    const { adapter, calls } = setup([
+        fixture({ draft_status: 1 }),
+        { total: '151', list: [{ id: 42, draft: 'CODE-ONE', draft_premium: 'PREMIUM-ONE', secret: 'must-not-return' }] }
+    ]);
+    const result = await adapter.getDraftCards({ goodsNo: 'XR-1', page: 3, limit: 20 });
+
+    assert.deepEqual(result, {
+        page: 3, limit: 20, total: 151,
+        cards: [{ id: '42', draft: 'CODE-ONE', draftPremium: 'PREMIUM-ONE' }],
+        importable: false, procurementReady: false
+    });
+    assert.equal(calls.length, 2);
+    assert.match(calls[0].url, /\/item$/);
+    assert.equal(calls[1].url, 'https://xiareng.cc/shared/commodity/draftCard');
+    const sent = new URLSearchParams(calls[1].body);
+    assert.equal(sent.get('code'), 'XR-1');
+    assert.equal(sent.get('page'), '3');
+    assert.equal(sent.get('limit'), '20');
+    assert.equal(JSON.stringify(result).includes('must-not-return'), false);
+    assert.equal(calls.some((call) => /\/shared\/commodity\/draft(?:\?|$)/.test(call.url)), false);
+});
+
+test('draft-card reads reject non-draft goods and malformed paging or response without unsafe calls', async () => {
+    const nonDraft = setup([fixture({ draft_status: 0 })]);
+    await assert.rejects(() => nonDraft.adapter.getDraftCards({ goodsNo: 'XR-1' }),
+        (error) => error.code === 'supplier_draft_cards_unavailable');
+    assert.equal(nonDraft.calls.length, 1);
+
+    const invalidPage = setup([]);
+    await assert.rejects(() => invalidPage.adapter.getDraftCards({ goodsNo: 'XR-1', page: 1.5 }), TypeError);
+    assert.equal(invalidPage.calls.length, 0);
+
+    const malformed = setup([fixture({ draft_status: 1 }), { total: 1, list: [{ id: '1', draft: { html: '<script>' } }] }]);
+    await assert.rejects(() => malformed.adapter.getDraftCards({ goodsNo: 'XR-1' }),
+        (error) => error.code === 'supplier_invalid_response');
+    assert.equal(malformed.calls.length, 2);
+});
+
+test('inventory uses the documented sharedCode/count contract without treating its prices as locked cost', async () => {
+    const { adapter, calls } = setup([fixture(), {
+        count: '12', price: '19.99', user_price: '12.34', delivery_way: 0,
+        draft_status: 0, config: 'category[月卡]=1', is_category: true
+    }]);
+    const result = await adapter.getInventory({ goodsNo: 'XR-1' });
+    const request = new URLSearchParams(calls[1].body);
+    assert.equal(request.get('sharedCode'), 'XR-1');
+    assert.equal(request.get('code'), null);
+    assert.equal(result.availableQuantity, 12);
+    assert.equal(result.supplierUnitPrice, '12.34');
+    assert.equal(result.basePrice, '19.99');
+    assert.equal(result.configText, 'category[月卡]=1');
+    assert.equal(result.isCategory, true);
+    assert.equal(result.locked, false);
+    assert.match(calls[1].url, /\/inventory$/);
+});
+
+test('inventoryState performs the documented preflight with shared_code, quantity and race', async () => {
+    const { adapter, calls } = setup([fixture({ config: { category: { 月卡: 1 } } }), []]);
+    const result = await adapter.checkInventoryState({ goodsNo: 'XR-1', quantity: 2, variant: { race: '月卡' } });
+    const request = new URLSearchParams(calls[1].body);
+    assert.equal(request.get('shared_code'), 'XR-1');
+    assert.equal(request.get('num'), '2');
+    assert.equal(request.get('race'), '月卡');
+    assert.equal(result.ready, true);
+    assert.equal(result.locked, false);
+    assert.match(calls[1].url, /\/inventoryState$/);
+});
+
+test('draft-status goods allow paged card reads but refuse every inventory and quote endpoint', async () => {
+    const operations = [
+        ['getInventory', { goodsNo: 'XR-1' }, 'inventory'],
+        ['checkInventoryState', { goodsNo: 'XR-1', quantity: 1 }, 'inventoryState'],
+        ['getStock', { goodsNo: 'XR-1' }, 'stock'],
+        ['quotePrice', { goodsNo: 'XR-1', quantity: 1 }, 'quote']
+    ];
+
+    for (const [method, input, operation] of operations) {
+        const { adapter, calls } = setup([fixture({ draft_status: 1 })]);
+        await assert.rejects(() => adapter[method](input), (caught) => {
+            assert.equal(caught.code, 'supplier_draft_cards_preview_only');
+            assert.equal(caught.operation, operation);
+            return true;
+        });
+        assert.equal(calls.length, 1, `${method} must stop after the detail recheck`);
+        assert.match(calls[0].url, /\/item$/);
+    }
+});
+
+test('inventory response that changes to draft status is not returned as usable inventory', async () => {
+    const { adapter, calls } = setup([
+        fixture({ draft_status: 0 }),
+        { count: '12', price: '19.99', user_price: '12.34', draft_status: 1 }
+    ]);
+    await assert.rejects(() => adapter.getInventory({ goodsNo: 'XR-1' }),
+        (caught) => caught.code === 'supplier_draft_cards_preview_only' && caught.operation === 'inventory');
+    assert.equal(calls.length, 2);
+    assert.match(calls[1].url, /\/inventory$/);
+});
+
+test('stock and valuation pass only bounded read-only SKU selections while card/widget inputs remain refused', async () => {
+    const sku = { 机身颜色: '黑色', 存储容量: '256GB' };
+    const { adapter, calls } = setup([fixture(), { stock: '5' }, fixture(), { price: '0.20' }]);
+    await adapter.getStock({ goodsNo: 'XR-1', variant: { sku } });
+    await adapter.quotePrice({ goodsNo: 'XR-1', quantity: 1, variant: { sku } });
+    const stockRequest = new URLSearchParams(calls[1].body);
+    const quoteRequest = new URLSearchParams(calls[3].body);
+    assert.equal(stockRequest.get('sku[机身颜色]'), '黑色');
+    assert.equal(stockRequest.get('sku[存储容量]'), '256GB');
+    assert.equal(quoteRequest.get('sku[机身颜色]'), '黑色');
+    assert.equal(quoteRequest.get('sku[存储容量]'), '256GB');
+
+    const { adapter: refused, calls: refusedCalls } = setup([fixture()]);
+    await assert.rejects(() => refused.getStock({ goodsNo: 'XR-1', variant: { card_id: 1 } }), TypeError);
+    assert.equal(refusedCalls.length, 1);
+});
+
 test('untrusted upstream normalized-looking fields cannot bypass sanitization', async () => {
     const { adapter } = setup([fixture({ providerGoodsId: 'injected', raw: { app_key: 'leak' }, secret: 'card data', supplierUnitPrice: '0' })]);
     const item = await adapter.getGoodsDetail('XR-1');
@@ -119,7 +254,12 @@ test('procurement stays undeclared and the registry rejects it before any fetch'
     // matching the live API is approved in the database, procurement is refused.
     const { adapter, calls } = setup([]);
     assert.equal(adapter.capabilities.procurement, false);
+    assert.equal(adapter.capabilities.idempotency, false);
+    assert.equal(adapter.procurementProfile.requestKey.name, 'request_no');
+    assert.equal(adapter.procurementProfile.requestKey.maxLength, 64);
+    assert.equal(adapter.procurementProfile.requestKey.semantics, 'advisory_only');
     assert.equal(adapter.procurementProfile.requestLookup, 'none');
+    assert.equal(adapter.procurementProfile.replay, 'documented_advisory_only');
     assert.equal(adapter.procurementProfile.costCeiling, 'preflight_quote_then_verify');
     const registry = createConfiguredSupplierAdapterRegistry({ env: { SUPPLIER_XIARENG_APP_ID: 'a', SUPPLIER_XIARENG_APP_KEY: 'k' } });
     assert.throws(() => registry.require('xiareng', 'procurement'), (error) => error.code === 'supplier_capability_unsupported');
@@ -127,7 +267,7 @@ test('procurement stays undeclared and the registry rejects it before any fetch'
 });
 
 function purchaseFixture(extra = {}) {
-    return [fixture(), fixture(), { price: '0.16' }, fixture(), { stock: '100' }, { tradeNo: '778217796203351836', amount: '0.16', secret: 'CARD-SECRET', stock: '16382', ...extra }];
+    return [fixture(), fixture(), { price: '0.16' }, fixture(), { stock: '100' }, [], { tradeNo: '778217796203351836', amount: '0.16', secret: 'CARD-SECRET', stock: '16382', ...extra }];
 }
 const PURCHASE = { requestId: '2db86646-3d58-4549-a25b-9ca910aed939', goodsNo: 'XR-1', quantity: 1,
     variant: {}, maxCost: { currency: 'CNY', amount: '1.00' } };
@@ -160,7 +300,7 @@ test('createPurchase refuses an over-ceiling quote before any trade request', as
 });
 
 test('a replayed request key is ambiguous, never a rejection and never a second trade', async () => {
-    const { adapter, calls } = setup([...purchaseFixture().slice(0, 5),
+    const { adapter, calls } = setup([...purchaseFixture().slice(0, 6),
         { __raw: true, value: { code: 0, msg: 'The request ID already exists' } }]);
     const result = await adapter.createPurchase(PURCHASE);
     // The order exists upstream but its tradeNo is unrecoverable, so this must
@@ -171,7 +311,7 @@ test('a replayed request key is ambiguous, never a rejection and never a second 
 });
 
 test('a genuine business rejection is definitive and never becomes an unknown outcome', async () => {
-    const { adapter } = setup([...purchaseFixture().slice(0, 5),
+    const { adapter } = setup([...purchaseFixture().slice(0, 6),
         { __raw: true, value: { code: 0, msg: '商品库存不足' } }]);
     const result = await adapter.createPurchase(PURCHASE);
     assert.equal(result.outcome, 'rejected');
@@ -180,7 +320,17 @@ test('a genuine business rejection is definitive and never becomes an unknown ou
 
 test('a debit above the authorised ceiling is never reported as accepted', async () => {
     const { adapter } = setup(purchaseFixture({ amount: '9.99' }));
-    await assert.rejects(() => adapter.createPurchase(PURCHASE), (error) => error.code === 'supplier_cost_ceiling_exceeded');
+    await assert.rejects(() => adapter.createPurchase(PURCHASE), (error) => error.code === 'supplier_cost_ceiling_exceeded' && error.outcomeUnknown === true);
+});
+
+test('a trade transport failure is outcome-unknown and must not be retried automatically', async () => {
+    const { adapter } = setup([...purchaseFixture().slice(0, 6), new Error('upstream connection lost')]);
+    await assert.rejects(() => adapter.createPurchase(PURCHASE), (error) => {
+        assert.equal(error.code, 'supplier_network_error');
+        assert.equal(error.retryable, true);
+        assert.equal(error.outcomeUnknown, true);
+        return true;
+    });
 });
 
 test('createPurchase reports the debited amount so the caller can verify the ceiling after the fact', async () => {
@@ -292,7 +442,7 @@ test('protocol, HTTP and network failures never expose raw upstream error text o
 test('catalog responses above the old limit remain readable while oversized responses still fail closed', async () => {
     const largePayload = JSON.stringify({ code: 200, data: [], padding: 'x'.repeat(3 * 1024 * 1024) });
     const { adapter: largeAdapter } = setup([new Response(largePayload)]);
-    assert.deepEqual(await largeAdapter.listGoods(), { total: 0, items: [] });
+    assert.deepEqual(await largeAdapter.listGoods(), { total: 0, items: [], categories: [] });
 
     const oversized = setup([new Response(' '.repeat(8 * 1024 * 1024 + 1))]);
     await assert.rejects(oversized.adapter.listGoods(), (error) => error.code === 'supplier_response_too_large');

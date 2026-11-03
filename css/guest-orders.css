@@ -67,7 +67,7 @@ body.guest-orders-page {
     min-height: 100vh;
     background: var(--go-bg);
     color: var(--go-text);
-    font-family: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    font-family: "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
     -webkit-text-size-adjust: 100%;
 }
 
@@ -102,7 +102,7 @@ body.guest-orders-page {
     font-size: 19px;
 }
 
-.guest-orders-heading h1 { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: .2px; color: #1c2024 !important; }
+.guest-orders-heading h1 { margin: 0; font-size: 21px; font-weight: 400; letter-spacing: -0.01em; color: #1c2024 !important; }
 .guest-orders-heading p { margin: 4px 0 0; font-size: 13px; color: var(--go-muted); }
 
 .guest-orders-back {
@@ -190,7 +190,7 @@ body.guest-orders-page .guest-orders-header .guest-orders-back-shop-btn:active {
 .guest-orders-gate p { margin: 5px 0 0; font-size: 13px; line-height: 1.6; color: var(--go-muted); }
 .guest-orders-gate .guest-orders-secondary-btn { margin-top: 11px; }
 
-.guest-orders-card-title { margin: 0 0 14px; font-size: 15px; font-weight: 650; }
+.guest-orders-card-title { margin: 0 0 14px; font-size: 15px; font-weight: 500; }
 .guest-orders-result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .guest-orders-result-head .guest-orders-card-title { margin-bottom: 0; }
 .guest-orders-result-head { margin-bottom: 14px; }

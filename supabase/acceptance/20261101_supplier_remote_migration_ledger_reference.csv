@@ -1,0 +1,37 @@
+remote_migration_ledger
+"{
+    ""capture"": {
+        ""ledger"": ""supabase_migrations.schema_migrations"",
+        ""database"": ""postgres"",
+        ""server_version"": ""17.6""
+    },
+    ""last_version"": ""20260731"",
+    ""first_version"": ""202606171905"",
+    ""applied_migrations"": [
+        {
+            ""name"": ""prompt_free_unlock_daily_limit_hotfix"",
+            ""version"": ""202606171905""
+        },
+        {
+            ""name"": ""unlock_prompt_v2_drop_varchar_overload"",
+            ""version"": ""202606171922""
+        },
+        {
+            ""name"": ""ai_image_video_constraints"",
+            ""version"": ""20260628""
+        },
+        {
+            ""name"": ""prompt_gallery_video_assets"",
+            ""version"": ""20260712""
+        },
+        {
+            ""name"": ""prompt_gallery_import_dedupe_timeout_fix"",
+            ""version"": ""20260727""
+        },
+        {
+            ""name"": ""ai_workbench_fast_admission"",
+            ""version"": ""20260731""
+        }
+    ],
+    ""applied_migration_count"": 6
+}"
