@@ -963,7 +963,7 @@ for smoke_candidate in "${smoke_candidate_rows[@]}"; do
     echo "Provider chat smoke candidate $candidate_channel_id failed with a connection error; trying the next candidate" >&2
     continue
   fi
-  if [[ "$smoke_chat_status" =~ ^(429|500|502|503|504)$ ]]; then
+  if [[ "$smoke_chat_status" =~ ^(429|500|502|503|504)$ ]] || [[ "$smoke_chat_status" =~ ^(400|401|402|403)$ ]]; then
     smoke_last_error="channel $candidate_channel_id returned HTTP $smoke_chat_status"
     echo "Provider chat smoke candidate $candidate_channel_id returned HTTP $smoke_chat_status; trying the next candidate" >&2
     continue
