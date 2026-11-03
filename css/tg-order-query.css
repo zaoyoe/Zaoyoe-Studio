@@ -66,7 +66,7 @@
     cursor: pointer;
 }
 .tg-select-option.is-active { background: rgba(142, 162, 182, .12); }
-.tg-select-option[aria-selected="true"] { color: var(--tg-accent); background: rgba(88, 214, 177, .1); }
+.tg-select-option[aria-selected="true"] { color: var(--tg-accent); background: rgba(var(--tg-accent-rgb), .1); }
 .tg-select-option[aria-disabled="true"] { opacity: .4; cursor: not-allowed; }
 .tg-select-check { color: var(--tg-accent); opacity: 0; }
 [aria-selected="true"] > .tg-select-check { opacity: 1; }

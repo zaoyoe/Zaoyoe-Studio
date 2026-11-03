@@ -124,8 +124,10 @@
                 if (!response.ok || data.success !== true) return renderGiftPreview('error', text(data.message) || '兑换码暂不可用', '请检查兑换码，或稍后重新输入。');
                 const product = data.product;
                 if (product?.product_family === 'telegram_premium' && [3, 6, 12].includes(product.term_months) && product.stars_quantity == null) {
+                    syncHeroTheme('telegram_premium');
                     renderGiftPreview('ready', `Telegram Premium · ${product.term_months} 个月`, '兑换后将为上方收件人开通会员，请核对接收账号。');
                 } else if (product?.product_family === 'telegram_stars' && product.term_months == null && Number.isSafeInteger(product.stars_quantity) && product.stars_quantity >= 50 && product.stars_quantity <= 1000000) {
+                    syncHeroTheme('telegram_stars');
                     renderGiftPreview('ready', `Telegram Stars · ${product.stars_quantity.toLocaleString()} 颗`, '兑换后将充值到上方收件人，请核对接收账号。');
                 } else throw new Error('Invalid gift preview');
             } catch (_) {
@@ -631,6 +633,11 @@
         }
         return null;
     }
+    function syncHeroTheme(family) {
+        const normalized = family === 'telegram_stars' ? 'telegram_stars' : 'telegram_premium';
+        $('tgHeroType')?.setAttribute?.('data-product-family', normalized);
+        document.body?.setAttribute?.('data-tg-product', normalized);
+    }
     function previewProduct(family) {
         const changed = family !== selectedFamily;
         if (changed) resetPurchaseQuote();
@@ -638,6 +645,7 @@
         const stars = family === 'telegram_stars';
         $('tgPremiumPreview').setAttribute('aria-pressed', String(!stars));
         $('tgStarsPreview').setAttribute('aria-pressed', String(stars));
+        syncHeroTheme(family);
         updatePurchaseProduct();
         if (changed) {
             const slideCls = stars ? 'tg-product-slide-right' : 'tg-product-slide-left';
@@ -1895,6 +1903,22 @@
     });
     $('tgPremiumPreview')?.addEventListener('click', () => previewProduct('telegram_premium'));
     $('tgStarsPreview')?.addEventListener('click', () => previewProduct('telegram_stars'));
+    syncHeroTheme(selectedFamily);
+    if (!globalScope.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+        globalScope.addEventListener?.('mousemove', (event) => {
+            const width = Number(globalScope.innerWidth);
+            const height = Number(globalScope.innerHeight);
+            if (!(width > 0 && height > 0)) return;
+            const x = ((Number(event.clientX) / width) - 0.5) * 36;
+            const y = ((Number(event.clientY) / height) - 0.5) * 24;
+            document.documentElement?.style?.setProperty?.('--pointer-x', `${x.toFixed(1)}px`);
+            document.documentElement?.style?.setProperty?.('--pointer-y', `${y.toFixed(1)}px`);
+        }, { passive: true });
+        globalScope.addEventListener?.('mouseleave', () => {
+            document.documentElement?.style?.setProperty?.('--pointer-x', '0px');
+            document.documentElement?.style?.setProperty?.('--pointer-y', '0px');
+        }, { passive: true });
+    }
     orderQuery = globalScope.TgOrderQuery?.create({
         request,
         async onOpen(order, queryCredential, kind) {
