@@ -3,10 +3,15 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual">
+    <meta name="theme-color" content="#000000">
+    <meta name="color-scheme" content="light dark">
+    <script src="theme-preload.js?v=20261101_safari_chrome_3"></script>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>AI 订阅自动开通 | KC ChatGPT · Claude · Grok</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="stylesheet" href="style.css?v=20261101_spacious_balanced_21">
+    <link rel="apple-touch-icon" href="/favicon.svg">
+    <link rel="stylesheet" href="style.css?v=20261101_session_font_size_28">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -17,6 +22,7 @@
                 var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
                 var theme = (saved === 'light' || saved === 'dark') ? saved : (prefersLight ? 'light' : 'dark');
                 document.documentElement.setAttribute('data-theme', theme);
+                document.documentElement.style.colorScheme = theme;
             } catch (e) {}
         })();
     </script>
@@ -3394,7 +3400,19 @@
             function applyTheme(theme) {
                 document.documentElement.setAttribute('data-theme', theme);
                 document.body.setAttribute('data-theme', theme);
+                document.documentElement.style.colorScheme = theme;
+                document.body.style.colorScheme = theme;
                 localStorage.setItem(THEME_KEY, theme);
+                try { localStorage.setItem('theme', theme); } catch (e) {}
+
+                const themeColor = theme === 'light' ? '#ffffff' : '#000000';
+                document.documentElement.style.backgroundColor = themeColor;
+                document.body.style.backgroundColor = themeColor;
+
+                if (typeof window.applySiteThemeChrome === 'function') {
+                    window.applySiteThemeChrome(theme, { forceRepaint: true });
+                }
+
                 if (window.lucide && typeof window.lucide.createIcons === 'function') {
                     window.lucide.createIcons();
                 }
