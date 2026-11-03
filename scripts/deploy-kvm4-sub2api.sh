@@ -938,13 +938,15 @@ for smoke_candidate in "${smoke_candidate_rows[@]}"; do
   fi
 
   smoke_key="sk-$smoke_token_secret-$candidate_channel_id"
-  if ! models_payload="$(curl -fsS --max-time 30 -H "Authorization: Bearer $smoke_key" http://127.0.0.1:8080/v1/models)"; then
-    rollback
-    die "isolated smoke-test key could not authenticate against NewAPI channel $candidate_channel_id"
+  if ! models_payload="$(curl -fsS --max-time 30 -H "Authorization: Bearer $smoke_key" http://127.0.0.1:8080/v1/models 2>/dev/null)"; then
+    smoke_last_error="channel $candidate_channel_id models authentication failed"
+    echo "Provider chat smoke candidate $candidate_channel_id models lookup failed; trying the next candidate" >&2
+    continue
   fi
   if ! jq -e --arg model "$candidate_model" '.data | type == "array" and any(.id == $model)' >/dev/null <<<"$models_payload"; then
-    rollback
-    die "smoke-test model $candidate_model is not visible through NewAPI channel $candidate_channel_id"
+    smoke_last_error="model $candidate_model is not visible through channel $candidate_channel_id"
+    echo "Provider chat smoke candidate $candidate_channel_id does not expose $candidate_model; trying the next candidate" >&2
+    continue
   fi
 
   smoke_request="$(jq -cn --arg model "$candidate_model" '{model: $model, messages: [{role: "user", content: "Reply with OK."}], max_tokens: 1, stream: false}')"
