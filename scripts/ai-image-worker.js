@@ -13,6 +13,7 @@ const {
 
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
 const DEFAULT_INTERVAL_MS = 1000;
+const DEFAULT_IDLE_INTERVAL_MS = 15000;
 const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_BATCH_RETRY_ATTEMPTS = 2;
 
@@ -24,6 +25,7 @@ function parseArgs(argv = []) {
         concurrency: DEFAULT_CONCURRENCY,
         concurrencyFromCli: false,
         intervalMs: DEFAULT_INTERVAL_MS,
+        idleIntervalMs: DEFAULT_IDLE_INTERVAL_MS,
         once: false,
         json: false
     };
@@ -68,6 +70,15 @@ function parseArgs(argv = []) {
             const parsed = Number.parseInt(String(argv[index + 1] || '').trim(), 10);
             if (Number.isFinite(parsed)) {
                 options.intervalMs = Math.min(60000, Math.max(1000, parsed));
+            }
+            index += 1;
+            continue;
+        }
+
+        if (value === '--idle-interval-ms') {
+            const parsed = Number.parseInt(String(argv[index + 1] || '').trim(), 10);
+            if (Number.isFinite(parsed)) {
+                options.idleIntervalMs = Math.min(60000, Math.max(1000, parsed));
             }
             index += 1;
             continue;
@@ -190,12 +201,13 @@ function logStartup(options = {}) {
             limit: options.limit,
             concurrency: options.concurrency,
             intervalMs: options.intervalMs,
+            idleIntervalMs: options.idleIntervalMs,
             once: options.once === true
         }));
         return;
     }
 
-    console.log(`[${new Date().toISOString()}] ai-image-worker start envFile=${options.envFile} site=${options.site || 'all'} limit=${options.limit} concurrency=${options.concurrency} intervalMs=${options.intervalMs} once=${options.once === true}`);
+    console.log(`[${new Date().toISOString()}] ai-image-worker start envFile=${options.envFile} site=${options.site || 'all'} limit=${options.limit} concurrency=${options.concurrency} intervalMs=${options.intervalMs} idleIntervalMs=${options.idleIntervalMs} once=${options.once === true}`);
 }
 
 function sleep(ms) {
@@ -260,9 +272,19 @@ async function runWorkerLoop(options = {}) {
             min: 1,
             max: 8
         });
+    const intervalMs = readPositiveIntEnv(envValues, ['AI_IMAGE_WORKER_INTERVAL_MS'], options.intervalMs || DEFAULT_INTERVAL_MS, {
+        min: 1000,
+        max: 60000
+    });
+    const idleIntervalMs = readPositiveIntEnv(envValues, ['AI_IMAGE_WORKER_IDLE_INTERVAL_MS'], options.idleIntervalMs || DEFAULT_IDLE_INTERVAL_MS, {
+        min: 1000,
+        max: 60000
+    });
     const workerOptions = {
         ...options,
-        concurrency
+        concurrency,
+        intervalMs,
+        idleIntervalMs
     };
     const supabase = buildSupabaseClient(envValues);
     const executor = createOpenAiCompatibleImageExecutor({
@@ -282,6 +304,7 @@ async function runWorkerLoop(options = {}) {
     logStartup(workerOptions);
 
     do {
+        let processedCount = 0;
         try {
             const result = await runBatchWithRetry(() => runAiImageTaskBatch({
                 supabase,
@@ -319,7 +342,9 @@ async function runWorkerLoop(options = {}) {
                     }
                 }
             });
-            logResult(serializeBatchResult(result), workerOptions);
+            const serialized = serializeBatchResult(result);
+            processedCount = Number(serialized.processed || 0);
+            logResult(serialized, workerOptions);
         } catch (error) {
             const normalized = normalizeWorkerError(error);
             if (workerOptions.json) {
@@ -343,7 +368,8 @@ async function runWorkerLoop(options = {}) {
             break;
         }
 
-        await sleep(workerOptions.intervalMs);
+        const sleepMs = processedCount > 0 ? workerOptions.intervalMs : workerOptions.idleIntervalMs;
+        await sleep(sleepMs);
     } while (!stopping);
 }
 
@@ -358,6 +384,7 @@ if (require.main === module) {
 module.exports = {
     DEFAULT_CONCURRENCY,
     DEFAULT_INTERVAL_MS,
+    DEFAULT_IDLE_INTERVAL_MS,
     applyEnvValues,
     buildSupabaseClient,
     logStartup,
