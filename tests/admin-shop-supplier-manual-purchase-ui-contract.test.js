@@ -55,8 +55,8 @@ test('admin studio loads the drawer CSS and JS with a fresh cache-bust token', (
     const html = read('admin-studio.html');
     const occurrences = html.split(CACHE_TOKEN).length - 1;
     assert.equal(occurrences, 2, 'both the stylesheet and the admin-shop script must carry the new token');
-    // The previous supplier catalog token must survive: dropping it would let a stale CSS/JS pair win.
-    assert.equal(html.split('supplierCatalog=20261019_SUPPLIER_PLATFORM_V2_READONLY_1').length - 1, 2);
+    // The supplier catalog token must be present on both resources to avoid a stale CSS/JS pair.
+    assert.equal(html.split('supplierCatalog=20261101_SUPPLIER_CATALOG_SESSION_SNAPSHOT_1').length - 1, 2);
     assert.match(html, /css\/admin-studio-page\.css\?[^"]*supplierManualPurchase=/);
     assert.match(html, /js\/admin-shop\.js\?[^"]*supplierManualPurchase=/);
 });

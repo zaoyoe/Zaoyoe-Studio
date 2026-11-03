@@ -1170,9 +1170,14 @@ const HomepageAdmin = (() => {
 
         switch (section) {
             case 'hero':
+                const streamColorVal = Number(content.stream_color || content.palette || 3);
+                const streamColorLabel = streamColorVal === 1
+                    ? '蓝色'
+                    : (streamColorVal === 2 ? '翠绿色' : '橙色');
                 return [
                     { label: '标题', value: formatHomepageSummaryValue(content.title) },
-                    { label: '副标题', value: formatHomepageSummaryValue(content.subtitle) }
+                    { label: '副标题', value: formatHomepageSummaryValue(content.subtitle) },
+                    { label: '流光颜色', value: streamColorLabel }
                 ];
             case 'prompts':
                 return [
@@ -2303,9 +2308,13 @@ const HomepageAdmin = (() => {
 
         switch (section) {
             case 'hero':
+                const previewColorVal = Number(content.stream_color || content.palette || 3);
+                const previewColorLabel = previewColorVal === 1
+                    ? '蓝色'
+                    : (previewColorVal === 2 ? '翠绿色' : '橙色');
                 summary = `
                     <strong>${escapeHomepageHtml(getLocalizedHomepageField(content, 'title') || '未配置标题')}</strong>
-                    <span>${escapeHomepageHtml(getLocalizedHomepageField(content, 'subtitle') || '未配置副标题')}</span>
+                    <span>${escapeHomepageHtml(getLocalizedHomepageField(content, 'subtitle') || '未配置副标题')} · 流光: ${previewColorLabel}</span>
                 `;
                 break;
             case 'prompts':
@@ -4384,6 +4393,7 @@ const HomepageAdmin = (() => {
                 setInputValue('hp-hero-title', content.title);
                 setInputValue('hp-hero-subtitle', content.subtitle);
                 setInputValue('hp-hero-custom-image', content.custom_image);
+                setSelectValue('hp-hero-stream-color', String(content.stream_color || content.palette || '3'));
                 renderHomepageHeroEntriesList();
                 break;
 
@@ -4903,6 +4913,7 @@ const HomepageAdmin = (() => {
                 content.subtitle = getInputValue('hp-hero-subtitle');
                 delete content.cta;
                 content.custom_image = getInputValue('hp-hero-custom-image');
+                content.stream_color = parseInt(getSelectValue('hp-hero-stream-color'), 10) || 3;
                 break;
 
             case 'prompts':

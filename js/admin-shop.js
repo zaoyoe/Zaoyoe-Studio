@@ -405,7 +405,7 @@ const ShopAdmin = {
     currentProductDeliveryFilter: 'all',
     supplierCatalogPage: 1,
     supplierCatalogPageSize: 20,
-    supplierCatalogProviderId: '16688',
+    supplierCatalogProviderId: 'xiareng',
     supplierCatalogAccountKey: '',
     supplierCatalogAccountsProviderId: '',
     supplierCatalogAccounts: [],
@@ -416,6 +416,11 @@ const ShopAdmin = {
     supplierCatalogKeywords: '',
     supplierCatalogItems: [],
     supplierCatalogTotal: 0,
+    supplierCatalogCategoryKey: '',
+    supplierCatalogCategoryNeedsReselect: false,
+    supplierCatalogPreviousCategoryLabel: '',
+    supplierCatalogSnapshot: null,
+    supplierCatalogLoading: false,
     supplierCatalogSelectedGoodsNos: new Set(),
     supplierCatalogRequestToken: 0,
     supplierOrderLookupRequestToken: 0,
@@ -423,6 +428,9 @@ const ShopAdmin = {
     supplierOrderLookupResult: null,
     supplierOperationsRequestToken: 0,
     supplierCatalogDetailRequestToken: 0,
+    supplierCatalogDraftCardsRequestToken: 0,
+    supplierCatalogDraftCardsPage: 1,
+    supplierCatalogDraftCardsLoading: false,
     supplierCatalogDetailItem: null,
     supplierCatalogImportInFlight: false,
     currentImportCategory: 'all', // State for import filter
@@ -6029,11 +6037,20 @@ Example output format:
                 case 'supplier-catalog-preview':
                     void this.previewSupplierCatalogDetail();
                     break;
+                case 'supplier-catalog-draft-cards':
+                    void this.loadSupplierCatalogDraftCards(1);
+                    break;
+                case 'supplier-catalog-draft-cards-page':
+                    void this.loadSupplierCatalogDraftCards(Number(actionEl.dataset.page));
+                    break;
                 case 'supplier-catalog-edit-product':
                     void this.editSupplierCatalogProduct(actionEl.dataset.productId, actionEl.dataset.site || 'cn');
                     break;
                 case 'supplier-catalog-search':
-                    this.loadSupplierCatalog({ force: true, page: 1 });
+                    this.loadSupplierCatalog({ page: 1 });
+                    break;
+                case 'supplier-catalog-refresh':
+                    this.loadSupplierCatalog({ refresh: true, page: 1 });
                     break;
                 case 'supplier-order-lookup':
                     void this.lookupSupplierOrderByNumber();
@@ -6625,7 +6642,7 @@ Example output format:
                     void this.loadSupplierCatalog({ page: 1 });
                     break;
                 case 'supplier-catalog-provider':
-                    this.supplierCatalogProviderId = String(actionEl.value || '16688').trim().toLowerCase() || '16688';
+                    this.supplierCatalogProviderId = String(actionEl.value || 'xiareng').trim().toLowerCase() || 'xiareng';
                     this.resetSupplierCatalogContext({ providerChanged: true });
                     void this.loadSupplierCatalog({ force: true, page: 1 });
                     break;
@@ -6638,6 +6655,10 @@ Example output format:
                     break;
                 case 'supplier-catalog-select-all':
                     this.selectAllSupplierCatalogPage(actionEl.checked);
+                    break;
+                case 'supplier-catalog-category':
+                    this.selectSupplierCatalogCategory(actionEl.value);
+                    void this.loadSupplierCatalog({ page: 1 });
                     break;
                 case 'supplier-catalog-item':
                     this.toggleSupplierCatalogItem(actionEl.dataset.goodsNo, actionEl.checked);
@@ -6813,7 +6834,7 @@ Example output format:
                 case 'supplier-catalog-search-enter':
                     if (event.key === 'Enter') {
                         event.preventDefault();
-                        this.loadSupplierCatalog({ force: true, page: 1 });
+                        this.loadSupplierCatalog({ page: 1 });
                     }
                     break;
                 case 'supplier-order-lookup-enter':
@@ -10115,7 +10136,7 @@ Example output format:
         const providerSelect = document.getElementById('supplierCatalogProvider');
         const siteSelect = document.getElementById('supplierCatalogSite');
         const searchInput = document.getElementById('supplierCatalogSearchInput');
-        const providerId = String(providerSelect?.value || this.supplierCatalogProviderId || '16688').trim().toLowerCase() || '16688';
+        const providerId = String(providerSelect?.value || this.supplierCatalogProviderId || 'xiareng').trim().toLowerCase() || 'xiareng';
         const siteValue = String(siteSelect?.value || this.supplierCatalogSite || 'cn').trim().toLowerCase();
         const site = ['cn', 'intl'].includes(siteValue) ? siteValue : 'cn';
         const keywords = String(searchInput?.value ?? this.supplierCatalogKeywords ?? '').trim().slice(0, 100);
@@ -10125,7 +10146,134 @@ Example output format:
         this.supplierCatalogKeywords = keywords;
         const accountKey = String(document.getElementById('supplierCatalogAccount')?.value || this.supplierCatalogAccountKey || '').trim();
         this.supplierCatalogAccountKey = accountKey;
-        return { providerId, accountKey, site, keywords };
+        const categorySelect = document.getElementById('supplierCatalogCategory');
+        const categoryKey = this.supplierCatalogCategoryNeedsReselect
+            ? ''
+            : String(categorySelect ? categorySelect.value : (this.supplierCatalogCategoryKey || '')).trim();
+        this.supplierCatalogCategoryKey = categoryKey;
+        return { providerId, accountKey, site, keywords, categoryKey };
+    },
+
+    selectSupplierCatalogCategory: function (value) {
+        const categoryKey = String(value || '').trim();
+        const wasReselectRequired = this.supplierCatalogCategoryNeedsReselect;
+        this.supplierCatalogCategoryNeedsReselect = false;
+        this.supplierCatalogPreviousCategoryLabel = '';
+        this.supplierCatalogCategoryKey = categoryKey === '__reselect__' ? '' : categoryKey;
+        if (wasReselectRequired) this.renderSupplierCatalogFeedback('', 'info');
+    },
+
+    requireSupplierCatalogCategoryReselection: function (categoryKey, label = '') {
+        const previousCategory = this.supplierCatalogSnapshot?.categories?.find(
+            (category) => category.categoryKey === categoryKey
+        );
+        this.supplierCatalogCategoryNeedsReselect = Boolean(categoryKey);
+        this.supplierCatalogPreviousCategoryLabel = this.supplierCatalogCategoryNeedsReselect
+            ? String(previousCategory?.name || label || categoryKey).trim()
+            : '';
+        this.supplierCatalogCategoryKey = '';
+    },
+
+    clearSupplierCatalogSnapshot: function () {
+        this.supplierCatalogSnapshot = null;
+        this.supplierCatalogCategoryKey = '';
+        this.supplierCatalogCategoryNeedsReselect = false;
+        this.supplierCatalogPreviousCategoryLabel = '';
+        const select = document.getElementById('supplierCatalogCategory');
+        if (select) {
+            select.innerHTML = '<option value="">全部分类</option>';
+            select.value = '';
+            select.disabled = true;
+        }
+        this.renderSupplierCatalogSnapshotStatus();
+    },
+
+    isSupplierCatalogSnapshotFor: function (query) {
+        const snapshot = this.supplierCatalogSnapshot;
+        return Boolean(snapshot?.snapshotId
+            && snapshot.providerId === query.providerId
+            && snapshot.accountKey === query.accountKey
+            && snapshot.site === query.site);
+    },
+
+    renderSupplierCatalogSnapshotStatus: function () {
+        const container = document.getElementById('supplierCatalogSnapshot');
+        const status = document.getElementById('supplierCatalogSnapshotStatus');
+        const categoryField = document.getElementById('supplierCatalogCategoryField');
+        const refreshButton = document.getElementById('supplierCatalogRefreshButton');
+        const categorySelect = document.getElementById('supplierCatalogCategory');
+        const isXiareng = this.supplierCatalogProviderId === 'xiareng';
+        const query = this.getSupplierCatalogQuery();
+        if (container) container.hidden = !isXiareng;
+        if (categoryField) categoryField.hidden = !isXiareng;
+        if (refreshButton) refreshButton.hidden = !isXiareng;
+        if (!isXiareng || !status) return;
+
+        const snapshot = this.supplierCatalogSnapshot;
+        if (!this.isSupplierCatalogSnapshotFor(query)) {
+            status.textContent = '虾仁分类仅用于当前只读目录快照筛选；分类 ID 与层级语义尚未核验。目录尚未同步。';
+            if (categorySelect) categorySelect.disabled = true;
+            return;
+        }
+        const expiresAt = Date.parse(snapshot.expiresAt || '');
+        const syncedLabel = Number.isFinite(Date.parse(snapshot.syncedAt || ''))
+            ? new Date(snapshot.syncedAt).toLocaleString('zh-CN')
+            : '时间未知';
+        const expiresLabel = Number.isFinite(expiresAt)
+            ? new Date(expiresAt).toLocaleTimeString('zh-CN')
+            : '时间未知';
+        const expired = Number.isFinite(expiresAt) && expiresAt <= Date.now();
+        const categoryCount = Array.isArray(snapshot.categories) ? snapshot.categories.length : 0;
+        const itemCount = Number.isSafeInteger(snapshot.itemCount) ? snapshot.itemCount : 0;
+        status.textContent = this.supplierCatalogCategoryNeedsReselect
+            ? `只读目录快照已更新：${categoryCount} 个分类、${itemCount} 件去重商品。上次筛选“${this.supplierCatalogPreviousCategoryLabel || '已选分类'}”只在旧快照内有效；请重新选择分类，或显式选择“全部分类”。重新选择前不显示商品。`
+            : `${expired ? '目录快照已过期' : '只读目录快照有效'}：${categoryCount} 个分类、${itemCount} 件去重商品；同步于 ${syncedLabel}，有效期至 ${expiresLabel}。分类身份/层级仍未核验，不用于持久映射。`;
+        if (categorySelect) {
+            categorySelect.disabled = expired || categoryCount === 0 || this.supplierCatalogLoading || this.supplierCatalogImportInFlight;
+        }
+    },
+
+    applySupplierCatalogSnapshot: function (payload, query) {
+        if (!/^[a-f\d-]{36}$/i.test(String(payload.snapshotId || ''))
+            || !Array.isArray(payload.categories)
+            || !Number.isFinite(Date.parse(payload.syncedAt || ''))
+            || !Number.isFinite(Date.parse(payload.expiresAt || ''))) {
+            throw new Error('虾仁目录快照信息不完整，请刷新目录后重试。');
+        }
+        const categories = payload.categories.filter((category) => /^cat-\d{1,5}$/.test(String(category?.categoryKey || '')));
+        this.supplierCatalogSnapshot = {
+            providerId: query.providerId,
+            accountKey: query.accountKey,
+            site: query.site,
+            snapshotId: payload.snapshotId,
+            syncedAt: payload.syncedAt,
+            expiresAt: payload.expiresAt,
+            categories,
+            itemCount: Number.isSafeInteger(payload.snapshotItemCount) ? payload.snapshotItemCount : 0
+        };
+        const select = document.getElementById('supplierCatalogCategory');
+        if (select) {
+            const options = [];
+            if (this.supplierCatalogCategoryNeedsReselect) {
+                options.push('<option value="__reselect__" disabled>请重新选择分类</option>');
+            }
+            options.push('<option value="">全部分类</option>');
+            categories.forEach((category) => {
+                const count = Number.isSafeInteger(category.itemCount) ? category.itemCount : 0;
+                options.push(`<option value="${this.escapeForAttr(category.categoryKey)}">${this.escapeHtml(category.name || '未命名分类')}（${count}）</option>`);
+            });
+            select.innerHTML = options.join('');
+            if (this.supplierCatalogCategoryNeedsReselect) {
+                this.supplierCatalogCategoryKey = '';
+                select.value = '__reselect__';
+            } else if (!categories.some((category) => category.categoryKey === this.supplierCatalogCategoryKey)) {
+                this.supplierCatalogCategoryKey = '';
+                select.value = '';
+            } else {
+                select.value = this.supplierCatalogCategoryKey;
+            }
+        }
+        this.renderSupplierCatalogSnapshotStatus();
     },
 
     resetSupplierCatalogContext: function ({ providerChanged = false } = {}) {
@@ -10141,10 +10289,12 @@ Example output format:
         const operationsStatus = document.getElementById('supplierOperationsStatus');
         if (operationsStatus) operationsStatus.textContent = '展开后读取采购记录。';
         this.closeSupplierCatalogDetail();
+        this.supplierCatalogLoading = false;
         this.supplierCatalogSelectedGoodsNos.clear();
         this.supplierCatalogItems = [];
         this.supplierCatalogTotal = 0;
         this.supplierCatalogPage = 1;
+        this.clearSupplierCatalogSnapshot();
         if (providerChanged) {
             this.supplierCatalogAccountKey = '';
             this.supplierCatalogAccountsProviderId = '';
@@ -10157,6 +10307,7 @@ Example output format:
         }
         this.renderSupplierCatalogRows();
         this.renderSupplierOrderLookupResult(null, '切换供应商、账号或站点后，请重新核对上游订单号。');
+        this.renderSupplierCatalogSnapshotStatus();
         this.syncSupplierCatalogControls();
     },
 
@@ -10829,13 +10980,37 @@ Example output format:
         return true;
     },
 
-    loadSupplierCatalog: async function ({ force = false, page = this.supplierCatalogPage || 1 } = {}) {
+    loadSupplierCatalog: async function ({ force = false, refresh = false, page = this.supplierCatalogPage || 1 } = {}) {
         const tableBody = document.getElementById('supplierCatalogTableBody');
         if (!tableBody) return null;
 
         const query = this.getSupplierCatalogQuery();
+        if (refresh) {
+            const oldCategoryLabel = this.supplierCatalogSnapshot?.categories?.find(
+                (category) => category.categoryKey === query.categoryKey
+            )?.name || '';
+            const oldCategoryKey = query.categoryKey;
+            this.clearSupplierCatalogSnapshot();
+            if (query.providerId === 'xiareng' && oldCategoryKey) {
+                this.requireSupplierCatalogCategoryReselection(oldCategoryKey, oldCategoryLabel);
+            }
+            query.categoryKey = '';
+        }
+        if (query.providerId === 'xiareng' && this.supplierCatalogCategoryNeedsReselect && !refresh) {
+            this.supplierCatalogItems = [];
+            this.supplierCatalogTotal = 0;
+            this.supplierCatalogPage = 1;
+            this.renderSupplierCatalogRows();
+            this.renderSupplierCatalogFeedback(
+                `目录快照已更新。上次筛选“${this.escapeHtml(this.supplierCatalogPreviousCategoryLabel || '已选分类')}”无法按临时分类键安全恢复，请重新选择分类或显式选择“全部分类”；当前未显示商品。`,
+                'warning'
+            );
+            this.syncSupplierCatalogControls();
+            return null;
+        }
         const nextPage = Math.max(1, Number.parseInt(String(page || 1), 10) || 1);
         this.supplierCatalogPage = nextPage;
+        this.supplierCatalogLoading = true;
         this.syncSupplierCatalogControls();
 
         const requestToken = ++this.supplierCatalogRequestToken;
@@ -10843,15 +11018,6 @@ Example output format:
         if (force) {
             this.renderSupplierCatalogFeedback('', 'info');
         }
-
-        const params = {
-            providerId: query.providerId,
-            accountKey: query.accountKey,
-            action: 'list',
-            pageNo: nextPage,
-            pageSize: this.supplierCatalogPageSize,
-            keywords: query.keywords
-        };
 
         try {
             if (force || this.supplierCatalogAccountsProviderId !== query.providerId) {
@@ -10861,22 +11027,81 @@ Example output format:
             const account = this.supplierCatalogAccounts.find((entry) => entry.accountKey === query.accountKey);
             if (!account?.enabled) throw new Error('该供应商账号已停用，未调用上游接口。');
             if (!account.configured) throw new Error('该供应商账号尚未配置服务端凭据。');
-            params.accountKey = query.accountKey;
-            const response = await (window.AdminApi?.fetch || fetch)(
-                this.buildAdminShopUrl('shop/supplier-catalog', params),
-                { credentials: 'include' }
-            );
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || !payload.success) {
-                const error = new Error(payload.message || '供应商目录暂不可用，请稍后重试。');
-                error.code = payload.code || '';
-                throw error;
+            let payload = null;
+            let retriedExpiredSnapshot = false;
+            let pageToLoad = nextPage;
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                const params = {
+                    providerId: query.providerId,
+                    accountKey: query.accountKey,
+                    action: 'list',
+                    pageNo: pageToLoad,
+                    pageSize: this.supplierCatalogPageSize,
+                    keywords: query.keywords
+                };
+                if (query.providerId === 'xiareng') {
+                    params.site = query.site;
+                    if (refresh && attempt === 0) {
+                        params.refresh = '1';
+                    } else if (this.isSupplierCatalogSnapshotFor(query)) {
+                        params.snapshotId = this.supplierCatalogSnapshot.snapshotId;
+                        const categoryKey = this.supplierCatalogCategoryKey;
+                        if (categoryKey && this.supplierCatalogSnapshot.categories.some((category) => category.categoryKey === categoryKey)) {
+                            params.categoryKey = categoryKey;
+                        }
+                    }
+                }
+                const response = await (window.AdminApi?.fetch || fetch)(
+                    this.buildAdminShopUrl('shop/supplier-catalog', params),
+                    { credentials: 'include', cache: 'no-store' }
+                );
+                const responsePayload = await response.json().catch(() => ({}));
+                if (!response.ok || !responsePayload.success) {
+                    if (query.providerId === 'xiareng'
+                        && responsePayload.code === 'supplier_catalog_snapshot_expired'
+                        && attempt === 0) {
+                        retriedExpiredSnapshot = true;
+                        this.requireSupplierCatalogCategoryReselection(query.categoryKey);
+                        this.supplierCatalogSnapshot = null;
+                        this.renderSupplierCatalogSnapshotStatus();
+                        this.supplierCatalogPage = 1;
+                        pageToLoad = 1;
+                        this.renderSupplierCatalogFeedback(
+                            this.supplierCatalogCategoryNeedsReselect
+                                ? '目录快照已过期，正在更新。完成后请重新选择分类，避免将临时分类键用于新快照。'
+                                : '目录快照已过期，正在重新读取目录。',
+                            'info'
+                        );
+                        continue;
+                    }
+                    const error = new Error(responsePayload.message || '供应商目录暂不可用，请稍后重试。');
+                    error.code = responsePayload.code || '';
+                    throw error;
+                }
+                payload = responsePayload;
+                break;
             }
+            if (!payload) throw new Error('供应商目录暂不可用，请刷新后重试。');
             if (requestToken !== this.supplierCatalogRequestToken) return payload;
 
+            if (query.providerId === 'xiareng') this.applySupplierCatalogSnapshot(payload, query);
+            else this.clearSupplierCatalogSnapshot();
+            if (retriedExpiredSnapshot) this.renderSupplierCatalogFeedback('', 'info');
+            if (query.providerId === 'xiareng' && this.supplierCatalogCategoryNeedsReselect) {
+                this.supplierCatalogItems = [];
+                this.supplierCatalogTotal = 0;
+                this.supplierCatalogPage = 1;
+                this.renderSupplierCatalogRows();
+                this.renderSupplierCatalogFeedback(
+                    `目录快照已更新。上次筛选“${this.escapeHtml(this.supplierCatalogPreviousCategoryLabel || '已选分类')}”无法按临时分类键安全恢复，请重新选择分类或显式选择“全部分类”；当前未显示商品。`,
+                    'warning'
+                );
+                this.syncSupplierCatalogControls();
+                return payload;
+            }
             this.supplierCatalogItems = Array.isArray(payload.items) ? payload.items : [];
             this.supplierCatalogTotal = Math.max(0, Number(payload.total) || 0);
-            this.supplierCatalogPage = Math.max(1, Number(payload.pageNo) || nextPage);
+            this.supplierCatalogPage = Math.max(1, Number(payload.pageNo) || pageToLoad);
             this.renderSupplierCatalogRows();
             this.syncSupplierCatalogControls();
             return payload;
@@ -10888,6 +11113,11 @@ Example output format:
             this.syncSupplierCatalogControls();
             this.renderSupplierCatalogFeedback(this.escapeHtml(error.message || '供应商目录读取失败。'), 'error');
             return null;
+        } finally {
+            if (requestToken === this.supplierCatalogRequestToken) {
+                this.supplierCatalogLoading = false;
+                this.syncSupplierCatalogControls();
+            }
         }
     },
 
@@ -10912,7 +11142,10 @@ Example output format:
 
         const items = Array.isArray(this.supplierCatalogItems) ? this.supplierCatalogItems : [];
         if (!items.length) {
-            tableBody.innerHTML = '<tr><td colspan="7" class="shop-supplier-catalog__empty"><i class="fas fa-box-open"></i> 当前目录没有匹配商品。</td></tr>';
+            const message = this.supplierCatalogCategoryNeedsReselect
+                ? '分类快照已更新，请重新选择分类后查看商品。'
+                : '当前目录没有匹配商品。';
+            tableBody.innerHTML = `<tr><td colspan="7" class="shop-supplier-catalog__empty"><i class="fas fa-box-open"></i> ${message}</td></tr>`;
             return;
         }
 
@@ -10961,6 +11194,8 @@ Example output format:
         const prevButton = document.getElementById('supplierCatalogPrevButton');
         const nextButton = document.getElementById('supplierCatalogNextButton');
         const orderLookupButton = document.getElementById('supplierOrderLookupButton');
+        const searchButton = document.querySelector('[data-shop-action="supplier-catalog-search"]');
+        const refreshButton = document.getElementById('supplierCatalogRefreshButton');
         const query = this.getSupplierCatalogQuery();
         const selectedAccount = this.supplierCatalogAccountsProviderId === query.providerId
             ? this.supplierCatalogAccounts.find((entry) => entry.accountKey === query.accountKey)
@@ -10988,6 +11223,9 @@ Example output format:
                 || !selectedAccount?.enabled
                 || !selectedAccount?.configured;
         }
+        if (searchButton) searchButton.disabled = this.supplierCatalogLoading || this.supplierCatalogImportInFlight;
+        if (refreshButton) refreshButton.disabled = this.supplierCatalogLoading || this.supplierCatalogImportInFlight;
+        this.renderSupplierCatalogSnapshotStatus();
     },
 
     toggleSupplierCatalogItem: function (goodsNo, checked) {
@@ -11197,6 +11435,9 @@ Example output format:
         const body = document.getElementById('supplierCatalogDetailBody');
         if (!modal || !body) return null;
         const requestToken = ++this.supplierCatalogDetailRequestToken;
+        ++this.supplierCatalogDraftCardsRequestToken;
+        this.supplierCatalogDraftCardsPage = 1;
+        this.supplierCatalogDraftCardsLoading = false;
         this.supplierCatalogDetailItem = null;
         const query = { ...this.getSupplierCatalogQuery() };
         this.supplierCatalogDetailContext = query;
@@ -11219,7 +11460,7 @@ Example output format:
                     action: 'detail',
                     goodsNo: normalizedGoodsNo
                 }),
-                { credentials: 'include' }
+                { credentials: 'include', cache: 'no-store' }
             );
             const payload = await response.json().catch(() => ({}));
             if (!response.ok || !payload.success || !payload.item) {
@@ -11245,6 +11486,7 @@ Example output format:
         if (title) title.textContent = String(item.name || '商品详情');
         const safeImageUrl = /^https:\/\//i.test(String(item.imageUrl || '').trim()) ? String(item.imageUrl).trim() : '';
         const requirements = item.variantRequirements;
+        const isDraftCardItem = item.draftStatus === 1;
         body.innerHTML = `
             ${safeImageUrl ? `<img class="shop-supplier-catalog-detail-modal__image" src="${this.escapeForAttr(safeImageUrl)}" alt="">` : ''}
             <div class="shop-supplier-catalog-detail-modal__meta-grid">
@@ -11253,7 +11495,12 @@ Example output format:
                 <div><span>起购数量</span><strong>${item.minimumQuantity ? this.escapeHtml(String(item.minimumQuantity)) : '—'}</strong></div>
                 <div><span>发货方式</span><strong>${this.escapeHtml(item.deliveryLabel || this.formatSupplierCatalogDeliveryMethod(item.deliveryMethod))}</strong></div>
             </div>
-            ${requirements ? `<section class="shop-supplier-catalog-detail-modal__variant">
+            ${isDraftCardItem ? `<section class="shop-supplier-catalog-detail-modal__variant supplier-draft-card-preview">
+                <span>预选卡商品 · 只读</span>
+                <p>draft_status=1。卡片内容仅供分页核对，不会保存到本地商品，也不代表库存锁定、可采购或可交付。</p>
+                <button type="button" class="btn btn-secondary" data-shop-action="supplier-catalog-draft-cards">读取预选卡</button>
+                <div id="supplierCatalogDraftCards" role="status" aria-live="polite"></div>
+            </section>` : requirements ? `<section class="shop-supplier-catalog-detail-modal__variant">
                 <span>规格与交付核验</span>
                 ${requirements.requiresRace ? `<label>商品种类<select id="supplierCatalogRace" data-shop-change="supplier-catalog-race"><option value="">请选择商品种类</option>${requirements.races.map((race) => `<option value="${this.escapeForAttr(race)}">${this.escapeHtml(race)}</option>`).join('')}</select></label>` : '<p>默认规格</p>'}
                 <p>${this.escapeHtml(requirements.reasons?.join('；') || '可保存为下架草稿；采购与交付能力尚未启用。')}</p>
@@ -11271,6 +11518,7 @@ Example output format:
     isSupplierCatalogDetailImportable: function (forImport = true) {
         const item = this.supplierCatalogDetailItem;
         if (!item || this.supplierCatalogImportInFlight) return false;
+        if (item.draftStatus === 1) return false;
         const requirements = item.variantRequirements;
         if (!requirements) return true; // Existing provider's default variant.
         if (forImport && this.supplierCatalogDetailContext?.site !== 'cn') return false;
@@ -11281,9 +11529,18 @@ Example output format:
 
     syncSupplierCatalogDetailControls: function () {
         const importButton = document.querySelector('[data-shop-action="supplier-catalog-import-detail"]');
-        if (importButton) importButton.disabled = !this.isSupplierCatalogDetailImportable();
+        const isDraftCardItem = this.supplierCatalogDetailItem?.draftStatus === 1;
+        if (importButton) {
+            importButton.hidden = isDraftCardItem;
+            importButton.disabled = isDraftCardItem || !this.isSupplierCatalogDetailImportable();
+        }
         const previewButton = document.querySelector('[data-shop-action="supplier-catalog-preview"]');
-        if (previewButton) previewButton.disabled = !this.isSupplierCatalogDetailImportable(false);
+        if (previewButton) {
+            previewButton.hidden = isDraftCardItem;
+            previewButton.disabled = isDraftCardItem || !this.isSupplierCatalogDetailImportable(false);
+        }
+        const draftCardsButton = document.querySelector('[data-shop-action="supplier-catalog-draft-cards"]');
+        if (draftCardsButton) draftCardsButton.disabled = this.supplierCatalogDraftCardsLoading;
         const race = document.getElementById('supplierCatalogRace');
         if (race) race.disabled = this.supplierCatalogImportInFlight;
     },
@@ -11306,13 +11563,107 @@ Example output format:
             const payload = await response.json().catch(() => ({}));
             if (detailToken !== this.supplierCatalogDetailRequestToken || requestToken !== this.supplierCatalogPreviewRequestToken) return null;
             if (!response.ok || !payload.success) throw new Error(payload.message || '库存与询价读取失败。');
-            if (output) output.textContent = `当前库存 ${payload.stock?.availableQuantity ?? '待确认'} · 上游报价 ${payload.quote?.amount ?? '待确认'} ${payload.quote?.currency || '（币种待核验）'}。按数量 1 询价，单价/总额口径待核验；未锁定库存。`;
+            if (output) {
+                const quoteBasis = payload.quote?.amountBasis === 'total_cny'
+                    ? '报价为所选数量总价'
+                    : '报价口径待核验';
+                output.textContent = `当前库存 ${payload.stock?.availableQuantity ?? '待确认'} · 数量 ${payload.quote?.quantity ?? 1} 报价 ${payload.quote?.amount ?? '待确认'} ${payload.quote?.currency || '（币种待核验）'}。${quoteBasis}；库存与报价均未锁定，不代表最终扣款或供货承诺。`;
+            }
             return payload;
         } catch (error) {
             if (detailToken === this.supplierCatalogDetailRequestToken && requestToken === this.supplierCatalogPreviewRequestToken && output) output.textContent = error.message || '库存与询价读取失败。';
             return null;
         } finally {
             if (detailToken === this.supplierCatalogDetailRequestToken && requestToken === this.supplierCatalogPreviewRequestToken) this.syncSupplierCatalogDetailControls();
+        }
+    },
+
+    loadSupplierCatalogDraftCards: async function (page = 1) {
+        const item = this.supplierCatalogDetailItem;
+        const context = this.supplierCatalogDetailContext;
+        const output = document.getElementById('supplierCatalogDraftCards');
+        if (item?.draftStatus !== 1 || !context || !output || !Number.isSafeInteger(page) || page < 1 || page > 10_000) return null;
+        const detailToken = this.supplierCatalogDetailRequestToken;
+        const requestToken = ++this.supplierCatalogDraftCardsRequestToken;
+        this.supplierCatalogDraftCardsPage = page;
+        this.supplierCatalogDraftCardsLoading = true;
+        output.replaceChildren();
+        output.textContent = `正在读取第 ${page} 页预选卡…`;
+        this.syncSupplierCatalogDetailControls();
+        try {
+            const response = await (window.AdminApi?.fetch || fetch)(this.buildAdminShopUrl('shop/supplier-catalog', {
+                action: 'draft-cards', providerId: context.providerId, accountKey: context.accountKey,
+                goodsNo: item.providerGoodsId, page, limit: 20
+            }), { credentials: 'include', cache: 'no-store' });
+            const payload = await response.json().catch(() => ({}));
+            if (detailToken !== this.supplierCatalogDetailRequestToken || requestToken !== this.supplierCatalogDraftCardsRequestToken) return null;
+            if (!response.ok || !payload.success || payload.importable !== false || payload.procurementReady !== false
+                || payload.page !== page || payload.limit !== 20 || !Number.isSafeInteger(payload.total)
+                || !Array.isArray(payload.cards) || payload.cards.length > 20) {
+                throw new Error(payload.message || '预选卡分页数据无法安全核验。');
+            }
+            this.renderSupplierCatalogDraftCards(payload);
+            return payload;
+        } catch (error) {
+            if (detailToken === this.supplierCatalogDetailRequestToken && requestToken === this.supplierCatalogDraftCardsRequestToken) {
+                output.replaceChildren();
+                output.textContent = error.message || '预选卡读取失败。';
+            }
+            return null;
+        } finally {
+            if (detailToken === this.supplierCatalogDetailRequestToken && requestToken === this.supplierCatalogDraftCardsRequestToken) {
+                this.supplierCatalogDraftCardsLoading = false;
+                this.syncSupplierCatalogDetailControls();
+            }
+        }
+    },
+
+    renderSupplierCatalogDraftCards: function (payload) {
+        const output = document.getElementById('supplierCatalogDraftCards');
+        if (!output) return;
+        output.replaceChildren();
+        const pageCount = Math.ceil(payload.total / payload.limit);
+        const summary = document.createElement('p');
+        summary.textContent = `第 ${payload.page} 页，共 ${pageCount} 页；上游报告 ${payload.total} 条。${payload.note || ''}`;
+        output.append(summary);
+        const list = document.createElement('div');
+        list.className = 'supplier-draft-card-preview__list';
+        for (const card of payload.cards) {
+            if (!card || typeof card.id !== 'string' || typeof card.draft !== 'string' || typeof card.draftPremium !== 'string') continue;
+            const article = document.createElement('article');
+            article.className = 'supplier-draft-card-preview__item';
+            const heading = document.createElement('strong');
+            heading.textContent = `预选卡 ${card.id}`;
+            article.append(heading);
+            const draftLabel = document.createElement('span');
+            draftLabel.textContent = 'draft';
+            const draftText = document.createElement('pre');
+            draftText.textContent = card.draft || '（空）';
+            const premiumLabel = document.createElement('span');
+            premiumLabel.textContent = 'draft_premium';
+            const premiumText = document.createElement('pre');
+            premiumText.textContent = card.draftPremium || '（空）';
+            article.append(draftLabel, draftText, premiumLabel, premiumText);
+            list.append(article);
+        }
+        output.append(list);
+        if (pageCount > 1) {
+            const pagination = document.createElement('div');
+            pagination.className = 'supplier-draft-card-preview__pagination';
+            for (const [label, targetPage, disabled] of [
+                ['上一页', payload.page - 1, payload.page <= 1],
+                ['下一页', payload.page + 1, payload.page >= pageCount]
+            ]) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn btn-secondary';
+                button.dataset.shopAction = 'supplier-catalog-draft-cards-page';
+                button.dataset.page = String(targetPage);
+                button.disabled = disabled;
+                button.textContent = label;
+                pagination.append(button);
+            }
+            output.append(pagination);
         }
     },
 
@@ -11351,6 +11702,10 @@ Example output format:
 
     importSupplierCatalogDetail: async function () {
         const item = this.supplierCatalogDetailItem;
+        if (item?.draftStatus === 1) {
+            this.renderSupplierCatalogFeedback('预选卡商品只开放只读分页预览，不能导入。', 'warning');
+            return null;
+        }
         const goodsNo = String(item?.providerGoodsId || '').trim();
         if (!goodsNo) {
             this.renderSupplierCatalogFeedback('当前详情缺少上游货号，无法导入。', 'warning');
@@ -11373,8 +11728,13 @@ Example output format:
         if (!modal) return;
         ++this.supplierCatalogDetailRequestToken;
         ++this.supplierCatalogPreviewRequestToken;
+        ++this.supplierCatalogDraftCardsRequestToken;
+        this.supplierCatalogDraftCardsPage = 1;
+        this.supplierCatalogDraftCardsLoading = false;
         this.supplierCatalogDetailItem = null;
         this.supplierCatalogDetailContext = null;
+        const body = document.getElementById('supplierCatalogDetailBody');
+        if (body) body.replaceChildren();
         modal.classList.remove('active');
         modal.setAttribute('aria-hidden', 'true');
     },

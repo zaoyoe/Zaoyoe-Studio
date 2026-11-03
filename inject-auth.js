@@ -2458,6 +2458,13 @@
             }
         });
 
+        window.addEventListener('scroll', () => {
+            const dropdown = document.getElementById('userDropdown');
+            if (dropdown?.classList.contains('active')) {
+                closeDropdown();
+            }
+        }, { passive: true });
+
         bindDropdownEvents();
         bindAuthSheetEvents();
     }

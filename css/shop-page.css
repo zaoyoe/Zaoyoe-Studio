@@ -10,8 +10,9 @@
             --card-bg: #f8fafc;
             --card-border: #e2e8f0;
             --accent-purple: #9b5de5;
-            --font-serif: 'Playfair Display', serif;
-            --font-sans: 'Outfit', sans-serif;
+            --font-serif: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            --font-sans: 'Helvetica Neue', Helvetica, Arial, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            --font-display: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
             --accent-color: #3b82f6;
             --shop-category-active-blue: #6b9ece;
             --shop-category-active-blue-rgb: 107, 158, 206;
@@ -1901,6 +1902,17 @@
             transition: background 0.24s ease, opacity 0.24s ease;
         }
 
+        .shop-cart-anchor:hover {
+            transform: none;
+            border-color: rgba(255, 255, 255, 0.12);
+            background: rgba(12, 17, 24, 0.5);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
+        }
+
+        .shop-cart-anchor:hover::before {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+        }
+
         .shop-cart-anchor:focus-visible {
             outline: none;
             transform: none;
@@ -1990,7 +2002,6 @@
         .shop-cart-anchor__hint {
             margin-left: auto;
             white-space: nowrap;
-            transition: color 0.24s ease;
         }
 
         .shop-cart-anchor:hover .shop-cart-anchor__icon,
@@ -2191,14 +2202,14 @@
             letter-spacing: 0.24em;
             text-transform: uppercase;
             color: rgba(148, 163, 184, 0.78);
-            font-family: 'Outfit', sans-serif;
+            font-family: var(--font-sans);
         }
 
         .shop-cart-drawer__label {
             margin: 0;
             color: rgba(244, 247, 252, 0.96);
             font-size: 17px;
-            font-weight: 700;
+            font-weight: 500;
             line-height: 1.1;
             letter-spacing: -0.02em;
         }
@@ -2381,66 +2392,50 @@
         }
 
         .shop-cart-item__remove {
-            --cart-remove-hover-color: #fda4af;
-            --cart-remove-hover-bg: rgba(251, 113, 133, 0.1);
-            --cart-remove-hover-border: rgba(251, 113, 133, 0.18);
-            width: 32px;
-            height: 32px;
-            min-width: 32px;
-            min-height: 32px;
-            flex: 0 0 32px;
+            width: 30px;
+            height: 30px;
+            min-width: 30px;
+            min-height: 30px;
+            flex: 0 0 30px;
             align-self: flex-start;
             display: grid;
             place-items: center;
             padding: 0;
             border: 1px solid transparent;
-            border-radius: 10px;
             background: transparent;
-            color: rgba(203, 213, 225, 0.72);
+            color: rgba(226, 232, 240, 0.72);
             cursor: pointer;
+            font-size: 24px;
             line-height: 1;
-            box-shadow: none;
-            transform: translateY(0);
-            transition: color 160ms ease, background-color 160ms ease,
-                border-color 160ms ease, transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+            font-weight: 700;
+            border-radius: 10px;
+            transition: color 0.18s ease, background 0.18s ease, transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
         }
 
         .shop-cart-item__remove-icon {
-            width: 17px;
-            height: 17px;
+            position: relative;
+            width: 14px;
+            height: 14px;
             display: block;
+            overflow: visible;
             flex: 0 0 auto;
             background: currentColor;
-            -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns=%22http%3A//www.w3.org/2000/svg%22%20viewBox=%220%200%2024%2024%22%20fill=%22none%22%20stroke=%22black%22%20stroke-width=%221.7%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%3E%3Cpath%20d=%22M4.5%206.5h15M9%206.5V4.75A1.25%201.25%200%200%201%2010.25%203.5h3.5A1.25%201.25%200%200%201%2015%204.75V6.5M6.25%206.5l.8%2012.1a2%202%200%200%200%202%201.9h5.9a2%202%200%200%200%202-1.9l.8-12.1M10%2010v6.5M14%2010v6.5%22/%3E%3C/svg%3E") center / contain no-repeat;
-            mask: url("data:image/svg+xml,%3Csvg%20xmlns=%22http%3A//www.w3.org/2000/svg%22%20viewBox=%220%200%2024%2024%22%20fill=%22none%22%20stroke=%22black%22%20stroke-width=%221.7%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%3E%3Cpath%20d=%22M4.5%206.5h15M9%206.5V4.75A1.25%201.25%200%200%201%2010.25%203.5h3.5A1.25%201.25%200%200%201%2015%204.75V6.5M6.25%206.5l.8%2012.1a2%202%200%200%200%202%201.9h5.9a2%202%200%200%200%202-1.9l.8-12.1M10%2010v6.5M14%2010v6.5%22/%3E%3C/svg%3E") center / contain no-repeat;
+            -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M9.2 3.25c.2-.72.86-1.25 1.62-1.25h2.36c.76 0 1.42.53 1.62 1.25L15.05 4H19a1 1 0 1 1 0 2h-.38l-.92 11.48A3.2 3.2 0 0 1 14.52 20.5H9.48a3.2 3.2 0 0 1-3.18-3.02L5.38 6H5a1 1 0 1 1 0-2h3.95l.25-.75z'/%3E%3C/svg%3E") center / 14px 14px no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M9.2 3.25c.2-.72.86-1.25 1.62-1.25h2.36c.76 0 1.42.53 1.62 1.25L15.05 4H19a1 1 0 1 1 0 2h-.38l-.92 11.48A3.2 3.2 0 0 1 14.52 20.5H9.48a3.2 3.2 0 0 1-3.18-3.02L5.38 6H5a1 1 0 1 1 0-2h3.95l.25-.75z'/%3E%3C/svg%3E") center / 14px 14px no-repeat;
         }
 
-        @media (hover: hover) and (pointer: fine) {
-            html body.shop-page .shop-cart-item__remove:not(:disabled):hover {
-                color: var(--cart-remove-hover-color);
-                background-color: var(--cart-remove-hover-bg);
-                border-color: var(--cart-remove-hover-border);
-                transform: translateY(0.65px);
-            }
-        }
-
-        html body.shop-page .shop-cart-item__remove:not(:disabled):active {
-            color: var(--cart-remove-hover-color);
-            background-color: var(--cart-remove-hover-bg);
-            border-color: var(--cart-remove-hover-border);
-            transform: translateY(1.3px);
+        .shop-cart-item__remove:hover {
+            color: #f8fbff;
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.08);
+            box-shadow: none;
+            transform: none;
         }
 
         .shop-cart-item__remove:focus-visible {
-            outline: 2px solid var(--cart-remove-hover-color);
-            outline-offset: 2px;
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .shop-cart-item__remove {
-                transition: none;
-                transform: none !important;
-            }
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.18);
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12);
         }
 
         .shop-cart-item__remove:disabled,
@@ -2699,9 +2694,10 @@
 
         .shop-cart-item__price strong {
             display: block;
-            font-family: 'Outfit', sans-serif;
+            font-family: var(--font-sans);
+            font-weight: 500;
             font-size: 1.25rem;
-            letter-spacing: -0.03em;
+            letter-spacing: -0.01em;
         }
 
         .shop-cart-item__price span,
@@ -4373,8 +4369,8 @@
             background: transparent;
             border: none;
             color: #fff;
-            font-weight: 700;
-            font-family: 'Outfit', sans-serif;
+            font-weight: 500;
+            font-family: var(--font-sans);
             font-size: 1.2rem;
             -moz-appearance: textfield;
             appearance: textfield;
@@ -4979,6 +4975,7 @@
         #shopPurchaseModal #purchaseNotesCard.shop-success-usage-card:hover,
         #shopPurchaseModal #purchaseUsageCard.shop-success-usage-card,
         #shopPurchaseModal #purchaseUsageCard.shop-success-usage-card:hover {
+            border-radius: 12px !important;
             transform: none !important;
             box-shadow: none !important;
         }
@@ -5855,7 +5852,7 @@
             align-items: center;
             gap: 6px;
             color: #f87171;
-            font-family: 'Outfit', 'Monaco', monospace;
+            font-family: var(--font-sans), 'Monaco', monospace;
             /* Tech vibe for numbers */
             overflow: hidden;
         }
@@ -6248,7 +6245,7 @@
 .shop-inline-style-attr-13 { font-size: 12px; margin-top: 6px; }
 .shop-inline-style-attr-14 { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 25px; padding: 0 10px; }
 .shop-inline-style-attr-15 { text-align: left; }
-.shop-inline-style-attr-17 { font-family: 'Outfit'; color: #fbbf24; }
+.shop-inline-style-attr-17 { font-family: var(--font-sans); color: #fbbf24; }
 .shop-inline-style-attr-17.is-flash-sale,
 #modalUnitPrice.is-flash-sale { color: #ef4444 !important; }
 
@@ -6304,9 +6301,9 @@
 }
 
 .shop-purchase-flash-countdown-inline .countdown-timer {
-    font-family: 'Outfit', var(--font-sans);
+    font-family: var(--font-sans);
     font-variant-numeric: tabular-nums;
-    font-weight: 700;
+    font-weight: 500;
     color: #ef4444;
 }
 
@@ -6317,7 +6314,7 @@
 .shop-purchase-price-note__tier { color: rgba(56,189,248,0.95); font-weight: 800; }
 .shop-purchase-price-note--tier .shop-purchase-price-note__original span { text-decoration-color: #0ea5e9; }
 .shop-tier-rules-popover-wrap { position: relative; display: inline-flex; align-items: center; }
-.shop-tier-rules-help { width: 18px; height: 18px; display: inline-grid; place-items: center; border-radius: 999px; border: 1px solid rgba(56,189,248,0.42); background: rgba(14,165,233,0.12); color: #38bdf8; font-family: 'Outfit'; font-size: 0.75rem; font-weight: 800; line-height: 1; cursor: help; padding: 0; }
+.shop-tier-rules-help { width: 18px; height: 18px; display: inline-grid; place-items: center; border-radius: 999px; border: 1px solid rgba(56,189,248,0.42); background: rgba(14,165,233,0.12); color: #38bdf8; font-family: var(--font-sans); font-size: 0.75rem; font-weight: 500; line-height: 1; cursor: help; padding: 0; }
 .shop-tier-rules-help:focus-visible { outline: 2px solid rgba(56,189,248,0.45); outline-offset: 2px; }
 .shop-tier-rules-popover { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 50; min-width: 168px; max-width: min(260px, 68vw); padding: 9px 10px; border-radius: 10px; border: 1px solid rgba(125,211,252,0.24); background: rgba(15,23,42,0.94); box-shadow: 0 16px 34px rgba(15,23,42,0.26); color: rgba(226,232,240,0.92); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(4px); transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease; }
 .shop-tier-rules-popover::after { content: ''; position: absolute; left: 8px; top: 100%; border-width: 6px 6px 0 6px; border-style: solid; border-color: rgba(15,23,42,0.94) transparent transparent transparent; }
@@ -6327,7 +6324,7 @@
 .shop-tier-rules-popover__title { display: block; margin-bottom: 5px; color: #7dd3fc; font-weight: 800; white-space: nowrap; }
 .shop-tier-rules-popover__rule { display: block; white-space: nowrap; color: rgba(226,232,240,0.88); }
 .shop-inline-style-attr-18 { text-align: right; }
-.shop-inline-style-attr-19 { font-family: 'Outfit'; font-size: 1.4rem; color: #4ade80; font-weight: 700; }
+.shop-inline-style-attr-19 { font-family: var(--font-sans); font-size: 1.4rem; color: #4ade80; font-weight: 500; }
 .shop-inline-style-attr-20 { font-size: 0.9rem; font-weight: 500; }
 .shop-inline-style-attr-21 { margin: 0 10px 20px; }
 .shop-inline-style-attr-22 { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; color: rgba(255,255,255,0.68); font-size: 0.96rem; text-align: left; }
@@ -7169,6 +7166,7 @@ html:not([data-theme="dark"]) body.shop-page .shop-cart-anchor::before {
     background: linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(241, 245, 249, 0.18));
 }
 
+html:not([data-theme="dark"]) body.shop-page .shop-cart-anchor:hover,
 html:not([data-theme="dark"]) body.shop-page .shop-cart-anchor.is-feedback {
     background: #ffffff;
     border-color: var(--shop-light-border);
@@ -7381,53 +7379,6 @@ html:not([data-theme="dark"]) body.shop-page .shop-cart-anchor__hint {
     }
 }
 
-/* Keep the cart hit area steady; hover uses the basket's warm accent in both themes. */
-@media (hover: hover) and (pointer: fine) {
-    body.shop-page .shop-cart-anchor:hover {
-        --shop-mobile-floating-glass-bg: rgba(26, 31, 39, 0.82);
-        --shop-mobile-floating-glass-border: rgba(255, 211, 154, 0.3);
-        border-color: rgba(255, 211, 154, 0.3);
-        background: rgba(26, 31, 39, 0.82);
-    }
-
-    body.shop-page .shop-cart-anchor:hover .shop-cart-anchor__icon {
-        background: rgba(255, 211, 154, 0.12);
-        border-color: rgba(255, 211, 154, 0.24);
-        color: #ffd39a;
-    }
-
-    body.shop-page .shop-cart-anchor:hover .shop-cart-anchor__hint {
-        color: #ffdbad;
-    }
-
-    html:not([data-theme="dark"]) body.shop-page .shop-cart-anchor:hover {
-        --shop-mobile-floating-glass-bg: rgba(255, 248, 239, 0.94);
-        --shop-mobile-floating-glass-border: rgba(217, 119, 6, 0.3);
-        background: #fffaf5;
-        border-color: rgba(217, 119, 6, 0.3);
-    }
-
-    html:not([data-theme="dark"]) body.shop-page .shop-cart-anchor:hover::before {
-        opacity: 0.35;
-    }
-
-    html:not([data-theme="dark"]) body.shop-page .shop-cart-anchor:hover .shop-cart-anchor__icon {
-        background: #ffedd5;
-        border-color: rgba(217, 119, 6, 0.3);
-        color: #b45309;
-    }
-
-    html:not([data-theme="dark"]) body.shop-page .shop-cart-anchor:hover .shop-cart-anchor__hint {
-        color: #a16207;
-    }
-}
-
-@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-    body.shop-page .shop-cart-anchor:hover .shop-cart-anchor__icon i {
-        transform: translateY(1px);
-    }
-}
-
 html:not([data-theme="dark"]) body.shop-page[data-shop-cart-open="true"] .shop-cart-backdrop {
     background: rgba(248, 250, 252, 0.62);
     backdrop-filter: blur(12px) saturate(1.04);
@@ -7501,11 +7452,22 @@ html:not([data-theme="dark"]) body.shop-page .shop-cart-item__title-btn:focus-vi
 }
 
 html:not([data-theme="dark"]) body.shop-page .shop-cart-item__remove {
-    --cart-remove-hover-color: #be4b5a;
-    --cart-remove-hover-bg: rgba(190, 75, 90, 0.06);
-    --cart-remove-hover-border: rgba(190, 75, 90, 0.13);
     background: transparent;
-    color: #7b8798;
+    border-color: transparent;
+    color: #64748b;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-cart-item__remove:hover {
+    background: rgba(15, 23, 42, 0.06);
+    border-color: transparent;
+    color: #0f172a;
+    box-shadow: none;
+    transform: none;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-cart-item__remove:focus-visible {
+    border-color: rgba(15, 23, 42, 0.12);
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08);
 }
 
 html:not([data-theme="dark"]) body.shop-page .shop-cart-item__pill,
@@ -7544,7 +7506,7 @@ html:not([data-theme="dark"]) body.shop-page .shop-cart-item__pill--toggle.is-ac
 }
 
 html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel {
-    font-family: var(--font-sans, 'Outfit'), 'Inter', sans-serif;
+    font-family: var(--font-sans);
     font-size: 14px;
     font-weight: 500;
     line-height: 1.78;
@@ -7808,9 +7770,9 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseQuantit
     -webkit-text-fill-color: #172033 !important;
     caret-color: #172033 !important;
     opacity: 1 !important;
-    font-family: 'Outfit', sans-serif;
+    font-family: var(--font-sans);
     font-size: 1.28rem;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 54px;
     box-shadow:
         0 4px 10px rgba(15, 23, 42, 0.035),
@@ -7955,9 +7917,9 @@ html:not([data-theme="dark"]) body.shop-page .shop-purchase-flash-countdown-inli
 }
 
 html:not([data-theme="dark"]) body.shop-page .shop-purchase-flash-countdown-inline .countdown-timer {
-    font-family: 'Outfit', var(--font-sans) !important;
+    font-family: var(--font-sans) !important;
     font-variant-numeric: tabular-nums;
-    font-weight: 700;
+    font-weight: 500;
     color: #dc2626 !important;
 }
 
@@ -8066,7 +8028,6 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageCa
     justify-content: flex-start;
     text-align: left;
     padding: 14px 16px;
-    border-radius: 18px;
     background: var(--shop-light-soft) !important;
     border: 1px solid var(--shop-light-border) !important;
     border-top-color: var(--shop-light-border) !important;
@@ -8736,8 +8697,135 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
    is-done / is-current / is-upcoming plus aria-current="step" on the live step.
    Dujiao's keys are cart/checkout/payment; a guest single-product flow has no
    cart, so the rail is 确认订单 -> 支付 -> 发货. */
-/* Shared checkout presentation: css/cash-payment-dialog.css. */
+.guest-shop-modal__steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border: 1px solid rgba(255,255,255,.09);
+    border-radius: 12px;
+    background: rgba(255,255,255,.045);
+    list-style: none;
+}
+.guest-shop-modal__step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; text-align: center; }
+.guest-shop-modal__step + .guest-shop-modal__step::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    right: 50%;
+    width: 100%;
+    height: 2px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.14);
+    transition: background-color .2s ease;
+    z-index: 0;
+}
+.guest-shop-modal__step.is-done::before,
+.guest-shop-modal__step.is-current::before { background: #53c7df; }
+.guest-shop-modal__step-index {
+    flex: 0 0 auto;
+    display: block;
+    width: 14px;
+    height: 14px;
+    border: 0;
+    border-radius: 50%;
+    background: #94a3b8;
+    position: relative;
+    z-index: 1;
+    transition: background-color .2s ease;
+}
+.guest-shop-modal__step.is-done .guest-shop-modal__step-index,
+.guest-shop-modal__step.is-current .guest-shop-modal__step-index {
+    background: rgb(var(--guest-step-rgb));
+    box-shadow: none;
+}
+.guest-shop-modal__step-label { color: rgba(226,232,240,.58); font-size: 12px; font-weight: 600; line-height: 1.25; white-space: nowrap; }
+.guest-shop-modal__step.is-done .guest-shop-modal__step-label,
+.guest-shop-modal__step.is-current .guest-shop-modal__step-label { color: rgba(248,250,252,.94); font-weight: 600; }
+/* Each checkout phase has its own accent. */
+.guest-shop-modal__step[data-step-key="configure"] .guest-shop-modal__step-index { --guest-step-rgb: 83,199,223; }
+.guest-shop-modal__step[data-step-key="payment"] .guest-shop-modal__step-index { --guest-step-rgb: 169,151,231; }
+.guest-shop-modal__step[data-step-key="delivery"] .guest-shop-modal__step-index { --guest-step-rgb: 101,207,172; }
+.guest-shop-modal__step[data-step-key="payment"].is-done::before,
+.guest-shop-modal__step[data-step-key="payment"].is-current::before { background: #a997e7; }
+.guest-shop-modal__step[data-step-key="delivery"].is-done::before,
+.guest-shop-modal__step[data-step-key="delivery"].is-current::before { background: #65cfac; }
+.guest-shop-modal__eyebrow { margin: 0 0 4px; color: #93c5fd; font-size: 12px; letter-spacing: .02em; }
+.guest-shop-modal__state { margin-bottom: 16px; padding: 10px 12px; border: 1px solid rgba(147,197,253,.16); border-radius: 10px; color: rgba(226,232,240,.78); font-size: 13px; }
+.guest-shop-modal__state-countdown { display: inline; white-space: nowrap; }
+.guest-shop-modal__state-countdown[hidden] { display: none !important; }
+.guest-shop-modal__state-countdown strong { color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 13px; font-weight: 800; letter-spacing: 0; }
+.guest-shop-modal__state-countdown.is-warning strong { color: #fde68a; }
+.guest-shop-modal__state-countdown.is-expired strong { color: #fecaca; }
+.guest-shop-modal__state[data-state="error"], .guest-shop-modal__state[data-state="manual_review"] { color: #fecaca; border-color: rgba(248,113,113,.35); }
+.guest-shop-modal__summary, .guest-shop-modal__panel { margin-top: 14px; padding: 14px; border: 1px solid rgba(255,255,255,.09); border-radius: 12px; background: rgba(255,255,255,.045); }
+.guest-shop-modal__summary { min-height: 124px; box-sizing: border-box; }
+.guest-shop-modal__order-overview { display: grid; gap: 14px; margin-top: 14px; }
+.guest-shop-modal__order-overview > .guest-shop-modal__summary,
+.guest-shop-modal__order-overview > .guest-shop-modal__amount { margin-top: 0; }
+@media (min-width: 769px) {
+    .guest-shop-modal__order-overview {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        align-items: stretch;
+        min-height: 124px;
+    }
+}
+.guest-shop-modal__summary-row + .guest-shop-modal__summary-row { margin-top: 9px; }
+.guest-shop-modal__summary-row[hidden] { display: none !important; }
+.guest-shop-modal__summary-row span { color: rgba(226,232,240,.58); font-size: 13px; }
+.guest-shop-modal__summary-row strong { max-width: 72%; overflow-wrap: anywhere; text-align: right; font-size: 12px; font-weight: 600; letter-spacing: .015em; line-height: 1.35; font-variant-numeric: tabular-nums; }
 #guestCashOrderNo { font-size: 12px; font-weight: 600; letter-spacing: .015em; line-height: 1.35; font-variant-numeric: tabular-nums; }
+
+/* Dujiao alignment (PaymentAmountBreakdown.vue): the payable figure is promoted
+   to a hero number under an uppercase muted label, the line items sit below it
+   as a compact 12px list, discounts read destructive, and the polling hint
+   stays in the phase status line so the payment deadline is visible without
+   competing with the QR code. */
+.guest-shop-modal__amount {
+    margin-top: 14px;
+    padding: 14px;
+    border: 1px solid rgba(255,255,255,.09);
+    border-radius: 12px;
+    background: rgba(255,255,255,.045);
+    min-height: 124px;
+    box-sizing: border-box;
+}
+.guest-shop-modal__amount-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+}
+.guest-shop-modal__amount-label { color: rgba(226,232,240,.58); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.guest-shop-modal__amount-value {
+    margin: 0;
+    max-width: 70%;
+    color: #f8fafc;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -.01em;
+    overflow-wrap: anywhere;
+    text-align: right;
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: flex-end;
+}
+.guest-shop-modal__amount-value,
+.guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong {
+    font-variant-numeric: tabular-nums;
+}
+.guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: flex-end;
+}
+.guest-amount-currency {
+    display: inline-block;
+    flex: 0 0 auto;
+    margin-right: 0.12em;
+}
 .guest-shop-modal__amount-value.is-amount-placeholder,
 .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong.is-amount-placeholder {
     color: rgba(226,232,240,.46);
@@ -8839,6 +8927,12 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
         display: none;
     }
 }
+.guest-shop-modal__amount-rows { display: grid; gap: 8px; margin-top: 14px; min-height: 42px; }
+/* Rows keep the modal's shared __summary-row idiom, but inside the breakdown
+   card the stack is driven by grid gap, not by the sibling margin. */
+.guest-shop-modal__amount-rows .guest-shop-modal__summary-row + .guest-shop-modal__summary-row { margin-top: 0; }
+.guest-shop-modal__amount-rows .guest-shop-modal__summary-row span { font-size: 12px; }
+.guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong { font-size: 12px; font-weight: 600; }
 .guest-shop-modal__row--discount strong { color: #f87171; }
 .guest-shop-modal__amount-footer { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.09); }
 .guest-shop-modal__amount-footer .guest-shop-modal__hint { margin-top: 0; }
@@ -8966,39 +9060,6 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 }
 .guest-shop-modal__state:empty,
 .guest-shop-modal__state[hidden] { display: none !important; }
-#guestCashState:has(> .guest-shop-modal__quote-retry:not([hidden])) {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 14px;
-}
-#guestCashState:has(> .guest-shop-modal__quote-retry:not([hidden])) #guestCashStateMessage {
-    flex: 1 1 260px;
-    min-width: 0;
-}
-#guestCashPurchaseModal .guest-shop-modal__quote-retry {
-    display: inline-flex;
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: center;
-    min-height: 32px;
-    margin: 0;
-    padding: 5px 10px;
-    border: 1px solid currentColor;
-    border-radius: 8px;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-weight: 600;
-    line-height: 1.4;
-    box-shadow: none;
-    transform: none;
-    cursor: pointer;
-    transition: opacity .16s ease;
-}
-#guestCashPurchaseModal .guest-shop-modal__quote-retry[hidden] { display: none; }
-#guestCashPurchaseModal .guest-shop-modal__quote-retry:hover { opacity: .78; }
-#guestCashPurchaseModal .guest-shop-modal__quote-retry:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 .guest-shop-modal__hint { margin: 10px 0 0; color: rgba(226,232,240,.58); font-size: 12px; line-height: 1.6; }
 .guest-shop-modal__checkout-link { display: inline-flex; margin-top: 10px; color: #93c5fd; overflow-wrap: anywhere; }
 .guest-shop-modal__address-row { gap: 8px; margin-top: 10px; }
@@ -9131,16 +9192,7 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     position: absolute; inset: 0 7px 0 auto; display: inline-flex; align-items: center; gap: 5px;
 }
 .guest-shop-modal__pw-btn { flex: 0 0 auto; width: auto; min-width: 36px; height: 30px; padding: 0 9px; font-size: 12px; line-height: 1; }
-.guest-shop-modal__pw-eye-btn,
-.guest-shop-modal__pw-info-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    min-width: 30px;
-    padding: 0;
-    transition: border-color 160ms ease;
-}
+.guest-shop-modal__pw-eye-btn { width: 30px; min-width: 30px; padding: 0; }
 .guest-shop-modal__password-inline-actions .guest-shop-modal__pw-btn {
     border-color: rgba(148,163,184,.3); background: rgba(148,163,184,.08);
 }
@@ -9148,41 +9200,9 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     border-color: rgba(96,165,250,.65);
 }
 
-.guest-shop-modal__password-info { display: inline-flex; align-items: center; }
-.guest-shop-modal__pw-eye-btn:focus-visible,
-.guest-shop-modal__pw-info-btn:focus-visible { outline: 1px solid #60a5fa; outline-offset: 1px; }
-.guest-shop-modal__pw-info-btn > svg { display: block; pointer-events: none; }
-.guest-shop-modal__pw-help {
-    position: absolute;
-    right: -7px;
-    bottom: calc(100% + 10px);
-    z-index: 12;
-    box-sizing: border-box;
-    width: 250px;
-    max-width: calc(100vw - 64px);
-    padding: 12px 14px;
-    border: 1px solid rgba(148,163,184,.24);
-    border-radius: 12px;
-    background: #1e293b;
-    color: #e2e8f0;
-    box-shadow: 0 8px 24px rgba(0,0,0,.18);
-    font-size: 12px;
-    line-height: 1.5;
-    white-space: normal;
-    animation: guestPasswordHelpIn 140ms ease-out;
-}
-.guest-shop-modal__pw-help[hidden] { display: none !important; }
-/* The transparent bridge keeps the help open while moving into the panel. */
-.guest-shop-modal__pw-help::after { content: ""; position: absolute; inset: 100% 0 auto; height: 18px; }
-.guest-shop-modal__pw-help > strong { display: block; font-size: 12px; font-weight: 600; }
-@keyframes guestPasswordHelpIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
-@media (prefers-reduced-motion: reduce) {
-    .guest-shop-modal__pw-eye-btn,
-    .guest-shop-modal__pw-info-btn { transition: none; }
-    .guest-shop-modal__pw-help { animation: none; }
-}
-/* §11.3: retain live feedback inside the password-format help panel. */
-.guest-shop-modal__pw-checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 12px; margin: 7px 0 0; padding: 0; list-style: none; font-size: 11px; color: rgba(226,232,240,.68); }
+/* §11.3 live checklist: the four-class rule is only usable if the buyer can see
+   which class is still missing, so each item flips to a tick as it is met. */
+.guest-shop-modal__pw-checks { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 0; padding: 0; list-style: none; font-size: 11px; color: rgba(226,232,240,.6); }
 .guest-shop-modal__pw-checks li::before { content: "\25CB"; margin-right: 4px; }
 .guest-shop-modal__pw-checks li.is-pass { color: #86efac; }
 .guest-shop-modal__pw-checks li.is-pass::before { content: "\2713"; }
@@ -9590,7 +9610,6 @@ html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__state[data-state
     color: #b91c1c;
 }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__password-actions .guest-shop-modal__copy-btn { border-color: rgba(148,163,184,.35); background: #fff; }
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__pw-help { border-color: #dce4ee; background: #fff; color: #334155; box-shadow: 0 8px 24px rgba(30,41,59,.1); }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__pw-checks { color: rgba(51,65,85,.66); }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__pw-checks li.is-pass { color: #15803d; }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__pw-note { color: #b45309; }
@@ -10850,7 +10869,6 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-purchase-d
             inset 0 1px 0 rgba(255, 255, 255, 0.24) !important;
     }
 
-    /* Keep the gradient and text paint stable while the scoped filter eases in and out. */
     html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-purchase-dock #nextPurchaseStepBtn:hover:not(.shop-purchase-sold-out-btn) {
         border-color: rgba(49, 80, 111, 0.22);
         box-shadow: none !important;
@@ -11019,10 +11037,47 @@ body.shop-page #shopPurchaseModal #nextPurchaseStepBtn.shop-purchase-sold-out-bt
     }
 }
 
-/* Let confirmation fit its fields and submit button. Loading reservations
-   remain on the individual panels so they do not leave empty footer space. */
+/* Guest checkout stability and delivery interaction polish. Keep the
+   confirmation shell from resizing while its preview/payment controls settle,
+   then let the established modal scroll once the viewport is shorter. */
 #guestCashPurchaseModal #guestCashPurchaseDialog[data-phase="configure"] {
-    min-height: 0;
+    min-height: 560px;
+}
+
+@media (max-width: 600px) {
+    #guestCashPurchaseModal #guestCashPurchaseDialog[data-phase="configure"] {
+        min-height: min(560px, calc(100dvh - 112px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+    }
+}
+
+/* Selecting a payment method is an in-place request. Preserve the pill's
+   footprint, but replace its copy and logo with the animated progress dots. */
+#guestCashPurchaseModal .guest-shop-modal__payment-option {
+    min-width: 0;
+}
+#guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading {
+    justify-content: flex-start;
+}
+#guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading .guest-shop-modal__payment-icon,
+#guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading .guest-shop-modal__payment-name {
+    visibility: hidden;
+}
+#guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading .guest-shop-modal__payment-loading {
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: auto;
+    margin: 0;
+    color: #f8fafc;
+}
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading .guest-shop-modal__payment-loading {
+    color: #1e293b;
+}
+#guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading:disabled {
+    opacity: 1;
 }
 
 /* The guest delivery list is deliberately flat: no card shadow, lift, inset
@@ -11242,9 +11297,9 @@ html:not([data-theme="dark"]) body.shop-page .shop-purchase-flash-banner__timer-
 }
 
 .shop-purchase-flash-banner__timer {
-    font-family: 'Outfit', 'Monaco', monospace, sans-serif;
+    font-family: var(--font-sans), 'Monaco', monospace, sans-serif;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 500;
     color: #fca5a5;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.04em;
@@ -11264,6 +11319,7 @@ html:not([data-theme="dark"]) body.shop-page .shop-purchase-flash-banner__timer 
         display: none !important;
     }
 }
+
 
 
 /* The method row stays compact; network selection is a separate disclosure. */

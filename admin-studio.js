@@ -13789,22 +13789,31 @@ function setupCustomDropdown(dropdown, onChange) {
         dropdown.classList.toggle('open');
     });
 
-    // Handle option selection
-    options.forEach(option => {
-        option.addEventListener('click', () => {
-            const value = option.dataset.value;
-            const text = option.textContent;
+    // Handle option selection via delegation on options container if present
+    const optionsContainer = dropdown.querySelector('.select-options');
+    if (optionsContainer && optionsContainer.dataset.adminOptionsBound !== '1') {
+        optionsContainer.dataset.adminOptionsBound = '1';
+        optionsContainer.addEventListener('click', (e) => {
+            const option = e.target.closest('.select-option');
+            if (!option) return;
+            const value = option.dataset.value ?? '';
+            const text = option.dataset.label || option.textContent.trim();
             const oldValue = hiddenInput.value;
 
             // Update hidden input
             hiddenInput.value = value;
 
             // Update display text
-            displayText.textContent = text;
+            if (displayText) {
+                displayText.textContent = text;
+            }
 
             // Update selected state
-            options.forEach(o => o.classList.remove('selected'));
-            option.classList.add('selected');
+            dropdown.querySelectorAll('.select-option').forEach(o => {
+                const isSelected = o === option;
+                o.classList.toggle('selected', isSelected);
+                o.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+            });
 
             // Close dropdown
             dropdown.classList.remove('open');
@@ -13814,8 +13823,42 @@ function setupCustomDropdown(dropdown, onChange) {
                 hiddenInput.dataset.adminDropdownDirty = '1';
                 hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
+            if (typeof onChange === 'function') {
+                onChange(value, option);
+            }
         });
-    });
+    } else {
+        // Fallback for options without .select-options container
+        options.forEach(option => {
+            option.addEventListener('click', () => {
+                const value = option.dataset.value ?? '';
+                const text = option.dataset.label || option.textContent.trim();
+                const oldValue = hiddenInput.value;
+
+                // Update hidden input
+                hiddenInput.value = value;
+
+                // Update display text
+                if (displayText) displayText.textContent = text;
+
+                // Update selected state
+                options.forEach(o => o.classList.remove('selected'));
+                option.classList.add('selected');
+
+                // Close dropdown
+                dropdown.classList.remove('open');
+
+                // Trigger change event for filters
+                if (oldValue !== value) {
+                    hiddenInput.dataset.adminDropdownDirty = '1';
+                    hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                if (typeof onChange === 'function') {
+                    onChange(value, option);
+                }
+            });
+        });
+    }
 
     // Keyboard navigation
     display.addEventListener('keydown', (e) => {
@@ -13839,13 +13882,17 @@ function setCustomDropdownValue(dropdownId, value) {
     const displayText = dropdown.querySelector('.select-text');
     const options = dropdown.querySelectorAll('.select-option');
 
-    hiddenInput.value = value;
-    delete hiddenInput.dataset.adminDropdownDirty;
+    if (hiddenInput) {
+        hiddenInput.value = value;
+        delete hiddenInput.dataset.adminDropdownDirty;
+    }
 
     options.forEach(option => {
         option.classList.remove('selected');
         if (option.dataset.value === value) {
-            displayText.textContent = option.textContent;
+            if (displayText) {
+                displayText.textContent = option.dataset.label || option.textContent.trim();
+            }
             option.classList.add('selected');
         }
     });
@@ -18732,6 +18779,18 @@ function getGalleryImportBatchStatusLabel(batch = {}) {
     return '等待处理';
 }
 
+function getGalleryImportBatchStatusKey(batch = {}) {
+    const stats = getGalleryImportBatchStats(batch);
+    if (!stats.total && stats.attempted > 0 && stats.skippedDuplicates >= stats.attempted) return 'duplicate';
+    if (!stats.total && stats.rejected > 0) return 'rejected';
+    if (!stats.total) return 'empty';
+    if (stats.pending) return 'pending';
+    if (stats.attention) return 'attention';
+    if (stats.retryPending) return 'retry';
+    if (String(batch?.status || '') === 'completed') return 'completed';
+    return 'waiting';
+}
+
 function formatGalleryImportBatchTime(value = '') {
     const date = new Date(value);
     if (!value || Number.isNaN(date.getTime())) return '--';
@@ -18761,17 +18820,66 @@ function selectGalleryImportBatch(batches = [], options = {}) {
 
 function renderGalleryImportBatchTracker() {
     const select = document.getElementById('galleryImportBatchSelect');
+    const dropdown = document.getElementById('galleryImportBatchDropdown');
     const summary = document.getElementById('galleryImportBatchSummary');
     const batches = Array.isArray(galleryImportState.batches) ? galleryImportState.batches : [];
+
+    const activeBatch = batches.find((batch) => String(batch?.id || '') === String(galleryImportState.selectedBatchId || ''))
+        || batches[0]
+        || null;
+    const activeBatchId = activeBatch ? String(activeBatch.id || '') : '';
+
     if (select) {
-        select.innerHTML = batches.length
-            ? batches.map((batch) => {
-                const stats = getGalleryImportBatchStats(batch);
-                const selected = String(batch.id || '') === String(galleryImportState.selectedBatchId || '');
-                const label = `${String(batch.id || '').slice(0, 8)} · ${getGalleryImportBatchStatusLabel(batch)} · ${stats.total} 条 · ${formatGalleryImportBatchTime(batch.updated_at)}`;
-                return `<option value="${escapeGalleryImportHtml(batch.id || '')}"${selected ? ' selected' : ''}>${escapeGalleryImportHtml(label)}</option>`;
-            }).join('')
-            : '<option value="">暂无批次</option>';
+        if (select.tagName === 'SELECT') {
+            select.innerHTML = batches.length
+                ? batches.map((batch) => {
+                    const stats = getGalleryImportBatchStats(batch);
+                    const selected = String(batch.id || '') === activeBatchId;
+                    const label = `${String(batch.id || '').slice(0, 8)} · ${getGalleryImportBatchStatusLabel(batch)} · ${stats.total} 条 · ${formatGalleryImportBatchTime(batch.updated_at)}`;
+                    return `<option value="${escapeGalleryImportHtml(batch.id || '')}"${selected ? ' selected' : ''}>${escapeGalleryImportHtml(label)}</option>`;
+                }).join('')
+                : '<option value="">暂无批次</option>';
+            select.value = activeBatchId;
+        } else {
+            select.value = activeBatchId;
+        }
+    }
+
+    if (dropdown) {
+        const displayText = dropdown.querySelector('.select-text');
+        const optionsContainer = dropdown.querySelector('.select-options');
+
+        if (displayText) {
+            if (activeBatch) {
+                const activeStats = getGalleryImportBatchStats(activeBatch);
+                displayText.textContent = `${String(activeBatch.id || '').slice(0, 8)} · ${getGalleryImportBatchStatusLabel(activeBatch)} · ${activeStats.total} 条 · ${formatGalleryImportBatchTime(activeBatch.updated_at)}`;
+            } else {
+                displayText.textContent = '暂无批次';
+            }
+        }
+
+        if (optionsContainer) {
+            optionsContainer.innerHTML = batches.length
+                ? batches.map((batch) => {
+                    const stats = getGalleryImportBatchStats(batch);
+                    const selected = String(batch.id || '') === activeBatchId;
+                    const statusLabel = getGalleryImportBatchStatusLabel(batch);
+                    const statusKey = getGalleryImportBatchStatusKey(batch);
+                    const label = `${String(batch.id || '').slice(0, 8)} · ${statusLabel} · ${stats.total} 条 · ${formatGalleryImportBatchTime(batch.updated_at)}`;
+                    return `<div class="select-option gallery-import-batch-option${selected ? ' selected' : ''}" data-value="${escapeGalleryImportHtml(batch.id || '')}" data-label="${escapeGalleryImportHtml(label)}" role="option" aria-selected="${selected ? 'true' : 'false'}">
+                        <div class="gallery-import-batch-option__leading">
+                            <span class="gallery-import-batch-option__id">${escapeGalleryImportHtml(String(batch.id || '').slice(0, 8))}</span>
+                            <span class="gallery-import-batch-option__badge is-${escapeGalleryImportHtml(statusKey)}">${escapeGalleryImportHtml(statusLabel)}</span>
+                        </div>
+                        <div class="gallery-import-batch-option__meta">
+                            <span class="gallery-import-batch-option__count">${stats.total} 条</span>
+                            <span class="gallery-import-batch-option__dot">·</span>
+                            <span class="gallery-import-batch-option__time">${escapeGalleryImportHtml(formatGalleryImportBatchTime(batch.updated_at))}</span>
+                        </div>
+                    </div>`;
+                }).join('')
+                : '<div class="select-option gallery-import-batch-option selected" data-value="" data-label="暂无批次" role="option" aria-selected="true"><span class="gallery-import-batch-option__empty">暂无批次</span></div>';
+        }
     }
     if (!summary) return;
     const batch = galleryImportState.batch;

@@ -1623,6 +1623,14 @@ document.addEventListener('click', (e) => {
     }
 });
 
+window.addEventListener('scroll', () => {
+    const { dropdown, overlay } = getAvatarMenuElements();
+    if (dropdown?.classList.contains('active')) {
+        dropdown.classList.remove('active');
+        overlay?.classList.remove('active');
+    }
+}, { passive: true });
+
 // Check auth state and update UI
 async function checkAuthState() {
     if (!window.supabaseClient) {

@@ -4247,6 +4247,13 @@ async function initializeAuthPageBoot() {
             closeUserDropdown();
         }, true);
 
+        window.addEventListener('scroll', () => {
+            const dropdown = document.getElementById('userDropdown');
+            if (dropdown?.classList.contains('active')) {
+                closeUserDropdown();
+            }
+        }, { passive: true });
+
         window.__userDropdownDismissBound = true;
     }
 

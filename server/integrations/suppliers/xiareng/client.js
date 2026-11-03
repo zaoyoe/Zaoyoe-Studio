@@ -5,10 +5,14 @@ const { SupplierAdapterError } = require('../contract');
 
 const PROVIDER_ID = 'xiareng';
 const GATEWAY = 'https://xiareng.cc';
-// Deliberately no trade/query/draft endpoint in this read-only implementation.
+// Trade/query are retained for the quarantined manual-purchase contract below;
+// procurement remains disabled by the capability declaration.
 const READ_ENDPOINTS = Object.freeze({
     list: '/shared/commodity/items',
     detail: '/shared/commodity/item',
+    draftCards: '/shared/commodity/draftCard',
+    inventoryState: '/shared/commodity/inventoryState',
+    inventory: '/shared/commodity/inventory',
     stock: '/shared/commodity/stock',
     quote: '/shared/commodity/valuation'
 });
@@ -133,12 +137,76 @@ function variantRequirements(source) {
     if (config && Object.keys(config).some((key) => !['category', 'sku', 'wholesale'].includes(key))) reasons.push('含未识别商品配置，暂仅预览');
     if (config?.sku != null && ((!record(config.sku) && !Array.isArray(config.sku)) || Object.keys(config.sku).length)) reasons.push('SKU 组合需核验，暂仅预览');
     if (source.widget != null && !isEmptyContainer(source.widget) && (!Array.isArray(source.widget) || source.widget.length)) reasons.push('含自定义填写项，暂仅预览');
-    if (Number(source.draft_status) === 1) reasons.push('含预选卡配置，暂仅预览');
+    const draftStatus = source.draft_status == null ? null : count(source.draft_status);
+    if (source.draft_status != null && draftStatus === null) reasons.push('预选卡状态待核验');
+    if (draftStatus === 1) reasons.push('含预选卡配置，暂仅预览');
     if (Number(source.seckill_status) === 1) reasons.push('含限时配置，暂仅预览');
     return { races, requiresRace: races.length > 0, importable: reasons.length === 0, reasons };
 }
 
-function normalizeCatalogItem(source = {}, { currency = null, detail = false } = {}) {
+function normalizeCategoryId(value) {
+    if (!['string', 'number'].includes(typeof value)) return null;
+    const candidate = String(value);
+    if (!candidate || candidate !== candidate.trim() || candidate.length > 160 || /[\u0000-\u001f\u007f]/.test(candidate)) return null;
+    return candidate;
+}
+
+function normalizeSupplierCode(value) {
+    if (!['string', 'number'].includes(typeof value)) throw new TypeError('商品编码无效');
+    const code = String(value);
+    if (!code || code !== code.trim() || code.length > 160 || /[\u0000-\u001f\u007f]/.test(code)) {
+        throw new TypeError('商品编码无效');
+    }
+    return code;
+}
+
+// The public API describes sku as a PHP array, but does not define its value
+// schema. For read-only stock/valuation checks, pass only a bounded associative
+// object of scalar values. Procurement/import still refuses SKU selections.
+function normalizeSkuSelection(value) {
+    if (!record(value) || Array.isArray(value)) throw new TypeError('SKU 组合结构待核验');
+    const entries = Object.entries(value);
+    if (entries.length > 32) throw new TypeError('SKU 组合超出当前预览范围');
+    const normalized = {};
+    for (const [key, raw] of entries) {
+        if (!key || key !== key.trim() || key.length > 160 || /[\u0000-\u001f\u007f]/.test(key)) {
+            throw new TypeError('SKU 组合键名无效');
+        }
+        if (!['string', 'number', 'boolean'].includes(typeof raw)) throw new TypeError('SKU 组合值无效');
+        const valueText = typeof raw === 'boolean' ? (raw ? '1' : '0') : String(raw);
+        if (valueText.length > 160 || valueText !== valueText.trim() || /[\u0000-\u001f\u007f]/.test(valueText)) {
+            throw new TypeError('SKU 组合值无效');
+        }
+        normalized[key] = valueText;
+    }
+    return normalized;
+}
+
+function normalizeReadSelection(item, input = {}, { allowSku = false } = {}) {
+    if (!record(input) || Object.keys(input).some((key) => !['race', 'sku'].includes(key))) {
+        throw new TypeError(allowSku ? '当前只支持商品种类和已约定的 SKU 组合' : '当前只支持已核验的商品种类');
+    }
+    const requirements = item?.variantRequirements || {};
+    const selected = {};
+    if (input.race !== undefined && (typeof input.race !== 'string' || input.race.length > 160 || input.race !== input.race.trim())) {
+        throw new TypeError('商品种类必须与上游标识一致');
+    }
+    const race = input.race || '';
+    if (requirements.requiresRace && !requirements.races.includes(race)) throw new TypeError('请选择详情中列出的商品种类');
+    if (race) selected.race = race;
+    if (input.sku !== undefined) {
+        if (!allowSku) throw new TypeError('当前接口不接受未核验的 SKU 组合');
+        selected.sku = normalizeSkuSelection(input.sku);
+    }
+    return selected;
+}
+
+function optionalMoney(value) {
+    if (value === null || value === undefined || value === '') return null;
+    return money(value);
+}
+
+function normalizeCatalogItem(source = {}, { currency = null, detail = false, catalogCategoryKeys = [] } = {}) {
     if (!record(source)) return null;
     if (normalizedItems.has(source)) return source;
     const providerGoodsId = ['string', 'number'].includes(typeof source.code) ? String(source.code) : '';
@@ -161,6 +229,10 @@ function normalizeCatalogItem(source = {}, { currency = null, detail = false } =
         salesCount: null,
         minimumQuantity: count(source.minimum) === 0 ? 1 : count(source.minimum),
         maximumQuantity: count(source.maximum),
+        draftStatus: source.draft_status == null ? null : count(source.draft_status),
+        catalogCategoryKeys: Array.isArray(catalogCategoryKeys)
+            ? [...new Set(catalogCategoryKeys.filter((key) => /^cat-\d{1,5}$/.test(String(key))))]
+            : [],
         deliveryMethod: null,
         deliveryLabel,
         variantRequirements: detail ? variantRequirements(source) : { importable: false, reasons: ['请先读取详情并核对规格'], races: [], requiresRace: false },
@@ -185,7 +257,16 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
     if (!text(appId) || !appKey) throw new TypeError('Xiareng credentials are required');
     const confirmedCurrency = /^[A-Z]{3}$/.test(String(currency)) ? String(currency) : QUOTE_CURRENCY;
     const deadline = Math.min(30_000, Math.max(500, Number(timeoutMs) || 10_000));
-    const error = (operation, code, retryable = false) => new SupplierAdapterError('虾仁只读接口暂不可用，请检查账号配置或稍后重试。', { providerId: PROVIDER_ID, operation, code, retryable });
+    const error = (operation, code, retryable = false) => new SupplierAdapterError('虾仁接口暂不可用，请检查账号配置或稍后重试。', {
+        providerId: PROVIDER_ID,
+        operation,
+        code,
+        retryable,
+        // A trade response can be lost after the supplier has accepted and
+        // debited the request. Every transport/protocol failure on that path
+        // therefore requires reconciliation instead of an automatic retry.
+        outcomeUnknown: operation === 'trade'
+    });
     async function send(operation, business = {}) {
         const endpoint = ENDPOINTS[operation];
         if (!endpoint) throw error(operation, 'supplier_capability_unsupported');
@@ -232,6 +313,27 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
         if (payload.data == null) throw error(operation, 'supplier_invalid_response');
         return payload.data;
     }
+    function rejectDraftCardRead(operation) {
+        throw new SupplierAdapterError('预选卡商品仅开放只读分页预览，不能读取库存或报价。', {
+            providerId: PROVIDER_ID,
+            operation,
+            code: 'supplier_draft_cards_preview_only'
+        });
+    }
+    function assertNotDraftCard(item, operation) {
+        if (item?.draftStatus === 1) rejectDraftCardRead(operation);
+    }
+    async function checkInventoryStateForItem(item, quantity, variant = {}) {
+        assertNotDraftCard(item, 'inventoryState');
+        const selected = normalizeReadSelection(item, variant);
+        const data = await request('inventoryState', {
+            shared_code: item.providerGoodsId,
+            num: quantity,
+            ...selected
+        });
+        if (!Array.isArray(data) && !record(data)) throw error('inventoryState', 'supplier_invalid_response');
+        return { ready: true, checkedAt: new Date().toISOString(), locked: false };
+    }
     return Object.freeze({
         providerId: PROVIDER_ID,
         contractVersion: 2,
@@ -239,16 +341,17 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
         // live supplier API is approved and recorded in the database. The
         // verified facts below are what such a profile has to be built on.
         capabilities: Object.freeze({ catalog: true, quote: true, stock: true, orderLookup: true, procurement: false, purchaseHistory: false, accountBalance: false,
-            // request_no is an immutable request key: replaying it is refused
-            // with "The request ID already exists" and never debits twice.
-            idempotency: true }),
+            // The official document only recommends a unique request_no. It
+            // does not define scope, retention, or a recovery lookup contract.
+            idempotency: false }),
         procurementProfile: Object.freeze({
             create: 'shared_commodity_trade',
             query: 'shared_commodity_query_by_trade_no',
-            // Replaying request_no proves an order exists but never returns its
-            // tradeNo, and no list-by-request endpoint exists.
+            requestKey: Object.freeze({ name: 'request_no', maxLength: 64, semantics: 'advisory_only' }),
+            // Replaying request_no is not a recovery mechanism: the supplier
+            // does not return its tradeNo and has no list-by-request endpoint.
             requestLookup: 'none',
-            replay: 'immutable_request_key_rejected',
+            replay: 'documented_advisory_only',
             // trade has no max-amount parameter, so the ceiling can only be a
             // pre-flight quote comparison plus a post-debit verification.
             costCeiling: 'preflight_quote_then_verify',
@@ -258,28 +361,136 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
         }),
         normalizeCatalogItem(source) { return normalizeCatalogItem(source, { currency: confirmedCurrency }); },
         normalizeVariant,
-        async listGoods({ pageNo = 1, pageSize = 20, keywords = '' } = {}) {
+        async listAllGoods() {
             const data = await request('list');
             if (!Array.isArray(data) || data.some((category) => !record(category) || !Array.isArray(category.children))) throw error('list', 'supplier_invalid_response');
-            const seen = new Set();
-            const items = data.flatMap((category) => Array.isArray(category?.children) ? category.children : [])
-                .map((source) => normalizeCatalogItem(source, { currency: confirmedCurrency }))
-                .filter((item) => {
-                    if (!item || seen.has(item.providerGoodsId)) return false;
-                    seen.add(item.providerGoodsId);
-                    return `${item.name} ${item.providerGoodsId}`.toLowerCase().includes(String(keywords).toLowerCase());
-                });
-            return { total: items.length, items: items.slice((pageNo - 1) * pageSize, pageNo * pageSize) };
+            const categories = data.map((source, index) => ({
+                categoryKey: `cat-${index + 1}`,
+                name: text(source.name, 160) || `未命名分类 ${index + 1}`,
+                upstreamIdCandidate: normalizeCategoryId(source.id),
+                identityStatus: 'unverified',
+                itemCount: 0
+            }));
+            const categoryGoods = categories.map(() => new Set());
+            const itemsByGoodsId = new Map();
+
+            data.forEach((category, index) => {
+                const categoryKey = categories[index].categoryKey;
+                for (const source of category.children) {
+                    const item = normalizeCatalogItem(source, { currency: confirmedCurrency, catalogCategoryKeys: [categoryKey] });
+                    if (!item) continue;
+                    categoryGoods[index].add(item.providerGoodsId);
+                    const existing = itemsByGoodsId.get(item.providerGoodsId);
+                    if (existing) {
+                        if (!existing.catalogCategoryKeys.includes(categoryKey)) existing.catalogCategoryKeys.push(categoryKey);
+                    } else {
+                        itemsByGoodsId.set(item.providerGoodsId, item);
+                    }
+                }
+            });
+
+            categories.forEach((category, index) => { category.itemCount = categoryGoods[index].size; });
+            return { categories, items: [...itemsByGoodsId.values()] };
+        },
+        async listGoods({ pageNo = 1, pageSize = 20, keywords = '', categoryKey = '' } = {}) {
+            const snapshot = await this.listAllGoods();
+            if (categoryKey && !snapshot.categories.some((category) => category.categoryKey === categoryKey)) {
+                throw error('list', 'supplier_invalid_category');
+            }
+            const normalizedKeywords = String(keywords).toLowerCase();
+            const items = snapshot.items.filter((item) => {
+                if (categoryKey && !item.catalogCategoryKeys.includes(categoryKey)) return false;
+                return `${item.name} ${item.providerGoodsId}`.toLowerCase().includes(normalizedKeywords);
+            });
+            return {
+                total: items.length,
+                items: items.slice((pageNo - 1) * pageSize, pageNo * pageSize),
+                categories: snapshot.categories
+            };
         },
         async getGoodsDetail(goodsNo) {
-            const data = await request('detail', { code: text(goodsNo) });
+            const normalizedGoodsNo = normalizeSupplierCode(goodsNo);
+            const data = await request('detail', { code: normalizedGoodsNo });
             const item = record(data) && normalizeCatalogItem(data, { currency: confirmedCurrency, detail: true });
-            if (!item || item.providerGoodsId !== String(goodsNo)) throw error('detail', 'supplier_invalid_response');
+            if (!item || item.providerGoodsId !== normalizedGoodsNo) throw error('detail', 'supplier_invalid_response');
             return item;
+        },
+        async getDraftCards({ goodsNo, page = 1, limit = 20 } = {}) {
+            if (!Number.isSafeInteger(page) || page < 1 || page > 10_000) throw new TypeError('Invalid draft-card page');
+            if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new TypeError('Invalid draft-card page size');
+            const normalizedGoodsNo = normalizeSupplierCode(goodsNo);
+            const item = await this.getGoodsDetail(normalizedGoodsNo);
+            if (item.draftStatus !== 1) {
+                throw error('draftCards', 'supplier_draft_cards_unavailable');
+            }
+            const data = await request('draftCards', { code: item.providerGoodsId, page, limit });
+            if (!record(data) || !Array.isArray(data.list) || data.list.length > limit) {
+                throw error('draftCards', 'supplier_invalid_response');
+            }
+            const total = count(data.total);
+            if (total === null || data.list.length > total) throw error('draftCards', 'supplier_invalid_response');
+            const cards = data.list.map((card) => {
+                if (!record(card) || !['string', 'number'].includes(typeof card.id)) {
+                    throw error('draftCards', 'supplier_invalid_response');
+                }
+                const id = String(card.id);
+                if (!id || id !== id.trim() || id.length > 160 || /[\u0000-\u001f\u007f]/.test(id)) {
+                    throw error('draftCards', 'supplier_invalid_response');
+                }
+                const normalizeCardText = (value) => {
+                    if (value == null) return '';
+                    if (typeof value !== 'string' && typeof value !== 'number') throw error('draftCards', 'supplier_invalid_response');
+                    const content = String(value);
+                    if (content.length > 8_000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(content)) {
+                        throw error('draftCards', 'supplier_invalid_response');
+                    }
+                    return content;
+                };
+                return { id, draft: normalizeCardText(card.draft), draftPremium: normalizeCardText(card.draft_premium) };
+            });
+            return { page, limit, total, cards, importable: false, procurementReady: false };
+        },
+        async getInventory({ goodsNo, variant = {} } = {}) {
+            const normalizedGoodsNo = normalizeSupplierCode(goodsNo);
+            const item = await this.getGoodsDetail(normalizedGoodsNo);
+            assertNotDraftCard(item, 'inventory');
+            const selected = normalizeReadSelection(item, variant);
+            const data = await request('inventory', { sharedCode: item.providerGoodsId, ...selected });
+            if (!record(data)) throw error('inventory', 'supplier_invalid_response');
+            if (count(data.draft_status) === 1) rejectDraftCardRead('inventory');
+            const availableQuantity = count(data.count);
+            if (availableQuantity === null) throw error('inventory', 'supplier_invalid_response');
+            const basePrice = optionalMoney(data.price);
+            const memberPrice = optionalMoney(data.user_price);
+            if ((data.price != null && data.price !== '' && basePrice === null)
+                || (data.user_price != null && data.user_price !== '' && memberPrice === null)) {
+                throw error('inventory', 'supplier_invalid_response');
+            }
+            if (data.config != null && typeof data.config !== 'string') throw error('inventory', 'supplier_invalid_response');
+            if (data.is_category != null && typeof data.is_category !== 'boolean') throw error('inventory', 'supplier_invalid_response');
+            return {
+                availableQuantity,
+                basePrice,
+                supplierUnitPrice: memberPrice,
+                currency: confirmedCurrency,
+                currencyStatus: 'operator_confirmed',
+                deliveryWay: data.delivery_way == null ? null : count(data.delivery_way),
+                draftStatus: data.draft_status == null ? null : count(data.draft_status),
+                isCategory: data.is_category == null ? null : data.is_category,
+                configText: data.config == null ? '' : data.config,
+                checkedAt: new Date().toISOString(),
+                locked: false
+            };
+        },
+        async checkInventoryState({ goodsNo, quantity = 1, variant = {} } = {}) {
+            if (!Number.isSafeInteger(quantity) || quantity < 1) throw new TypeError('Invalid inventory quantity');
+            const item = await this.getGoodsDetail(goodsNo);
+            return checkInventoryStateForItem(item, quantity, variant);
         },
         async getStock({ goodsNo, variant = {} } = {}) {
             const item = await this.getGoodsDetail(goodsNo);
-            const selected = normalizeVariant(item, variant);
+            assertNotDraftCard(item, 'stock');
+            const selected = normalizeReadSelection(item, variant, { allowSku: true });
             const data = await request('stock', { code: item.providerGoodsId, ...selected });
             const availableQuantity = count(data?.stock);
             if (availableQuantity === null) throw error('stock', 'supplier_invalid_response');
@@ -288,7 +499,8 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
         async quotePrice({ goodsNo, quantity = 1, variant = {} } = {}) {
             if (!Number.isSafeInteger(quantity) || quantity < 1) throw new TypeError('Invalid quote quantity');
             const item = await this.getGoodsDetail(goodsNo);
-            const selected = normalizeVariant(item, variant);
+            assertNotDraftCard(item, 'quote');
+            const selected = normalizeReadSelection(item, variant, { allowSku: true });
             const data = await request('quote', { code: item.providerGoodsId, num: quantity, ...selected });
             const amount = money(data?.price);
             if (amount === null) throw error('quote', 'supplier_invalid_response');
@@ -297,9 +509,10 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
             return { amount, currency: confirmedCurrency, amountBasis: 'total_cny', quantity, locked: false, procurementReady: false };
         },
         // One create call per intent. The caller persists a unique request id
-        // before this runs and never re-sends it; the supplier refuses replays.
+        // before this runs. The supplier's request_no is advisory only, so a
+        // lost response remains unknown and must never be replayed automatically.
         async createPurchase(input = {}) {
-            const requestId = text(input.requestId, 40);
+            const requestId = text(input.requestId, 64);
             if (!UUID.test(requestId)) throw new TypeError('Invalid supplier request id');
             if (input.quantity !== 1) throw new TypeError('当前仅支持数量为 1 的受控采购');
             const ceiling = money(input.maxCost?.amount);
@@ -321,6 +534,7 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
                 return { outcome: 'rejected', definitivelyNotAccepted: true, requestId,
                     code: 'supplier_out_of_stock', evidenceHash: evidenceHash({ requestId, code: 'supplier_out_of_stock' }) };
             }
+            await checkInventoryStateForItem(item, 1, input.variant);
             const payload = await send('trade', { shared_code: item.providerGoodsId, num: 1, request_no: requestId, device: 0, ...selected });
             if (Number(payload.code) !== 200) {
                 // A business rejection is definitive: no order, no debit. An
@@ -398,4 +612,4 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
     });
 }
 
-module.exports = { PROVIDER_ID, READ_ENDPOINTS, buildXiarengForm, signXiarengParams, normalizeCatalogItem, normalizeVariant, createXiarengAdapter };
+module.exports = { PROVIDER_ID, READ_ENDPOINTS, buildXiarengForm, signXiarengParams, normalizeCatalogItem, normalizeVariant, normalizeSkuSelection, createXiarengAdapter };

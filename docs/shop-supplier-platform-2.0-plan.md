@@ -662,3 +662,256 @@ P2E runtime、worker、手动验收入口、并发入口及 migration 契约专�
 供应商 P2A–P2G 相关离线 Node 测试本轮执行结果为 **375 PASS、0 FAIL、0 CANCELLED、0 SKIPPED、0 TODO**。本地 Supabase Auth health 与 PostgREST 入口返回 HTTP 200；这仅证明隔离平台服务在线。由于其 `public` schema 仍只有 `guestbook`、`profiles`、`prompts`，且没有与源码 commit 绑定的应用迁移账本，不能连接数据库运行真实 worker。
 
 本轮未执行 SQL、未导入或应用迁移、未启动数据库 worker、未连接真实供应商或生产项目，也未启用采购/商品。P2E 双会话并发继续为 `PASS`；P2G 数据库 worker 集成、供应商真实采购/交付、浏览器业务验收与生产发布继续为 `NOT RUN`。下一步需要从明确隔离且与源码 commit 对应的测试数据库取得 schema-only 导出及应用迁移版本清单；收到后先进行离线依赖对照，再决定是否具备进入数据库 worker 验收的条件。旧历史 SQL 不作为替代基线。
+
+## 38. 2026-11-01 虾仁接入计划 2.0 复核与升级
+
+### 38.1 结论与审查基线
+
+原方案“分类映射、先草稿、采购未验收前不开售”的安全方向正确，但阶段顺序和若干数据假设不成立，不能直接按原 P1/P2 发布路径推进。这里追加升级版，不覆盖 §1–§37 的历史计划、用户报告和验收结果。
+
+本轮代码基线为 `9748be9c8373edd617ec15b7b5c0d52865554f14`；本轮已成功执行 `git fetch origin main`，`origin/main` 与 HEAD 相同，`HEAD..origin/main=0`。审查对象为虾仁适配器、Admin 目录 handler/UI、导入契约、本地分类重命名逻辑、采购 dispatch runbook 与 P2G schema 记录。没有修改运行代码，没有执行 SQL、真实采购、销售启用或部署。
+
+### 38.2 纠正后的现状
+
+1. **目录分类并未接入管理链路。** `/shared/commodity/items` 返回完整目录；适配器将分类的 `children` 拍平后在本地筛选和分页，商品响应没有保留分类身份。现有测试只用 `{id,name,children}` 夹具验证这种形状，不能单独证明虾仁承诺分类 ID 永久稳定。当前没有可用的供应商分类树或分类映射工作区，也没有分类同步记录。
+2. **“懒加载”只能先是界面行为。** 当前上游接口没有分页参数；点击分类不能假定只请求该分类商品。首期需一次受控拉取/缓存完整响应，再在本地按分类筛选，并显示抓取时间、过期/失败状态和目录体积限制。未经实测不能宣称上游分页或增量同步。
+3. **目录参考价不是采购成本。** 适配器把 `user_price` 标记为 `priceKind=member_reference`。该字段不得直接用于利润、定价或成本上限。已有实测确认 `/valuation` 的 `price` 是所选数量的 CNY 总报价；它仍未锁价。成功采购响应的 `amount` 才是当次实际扣费证据，查单不返回金额。
+4. **导入不是批量上架。** 当前 API 单次最多接收 20 个货号，逐项写入禁用映射和下架草稿；虾仁规格商品走 `import_shop_supplier_draft_v2`，当前快照未包含分类身份或商品介绍。它不提供分类批次、可恢复任务、价格规则或发布流程。目录详情不得覆盖管理员维护的商品说明。
+5. **报价/库存检查不构成供货承诺。** 当前库存查询返回 `locked=false`，报价也没有锁定；检查后库存和价格仍可能变化。不得把“付款前查询成功”描述为库存预留或最终价格保证，必须定义过期报价、缺货、涨价和用户资金的失败/退款处理。
+6. **利润参数需要改口径。** 成本加价率与毛利率不同。目录参考价不能充当成本；首期定价应以经确认的实时采购报价为基准，采用精确十进制金额，写明费用、舍入单位、最低毛利额/率、价格版本和异常暂停条件。
+7. **自动采购目前是契约阻断。** 虾仁同 `request_no` 重放只返回已存在、不返回原单；没有按原请求号查单，也没有上游原子成本上限参数。自动 dispatch/worker 不能靠内部开关或重试补齐这两个缺口。适配器 `capabilities.procurement=false` 必须继续保持。已有受控人工采购代码和历史小额上游探针，不等于用户下单至卡密交付的端到端业务已通过；该 E2E 及未知结果恢复仍为 `NOT RUN`。
+8. **数据库环境是独立前置门。** §33–§37 的隔离 Supabase 只证明平台 health 可访问，导出不含商城 schema，也没有与应用源码 SHA 绑定的应用迁移账本。该状态不能支撑分类映射/批次表的实际集成测试，也不能用历史零散 SQL 拼成基线。
+9. **本地分类的 ID 与商品关联字段不一致。** `shop_categories` 有分类 ID，但 `shop_products.category` 保存的是分类名称，不是外键。现有重命名 RPC 按分类 ID 改分类名称后，再按旧名称更新商品。映射和导入不能假设商品表已有稳定的 `category_id`，也不能只保存目标名称而忽略分类重命名、删除和并发导入。
+10. **商品/规格幂等身份也需验证。** 当前适配器只允许明确支持的规格进入导入，其余 SKU/config 保持预览；这证明本地有 fail-closed 检查，不证明上游商品 ID、规格 ID 在改名/重排后稳定。批量导入不能以商品名称或规格展示文案作为唯一键；必须先确认上游稳定身份与变体语义，否则该变体留在预览/人工核验状态。
+
+### 38.3 2.0 实施顺序与放行条件
+
+| 阶段 | 交付与放行条件 | 明确不包含 |
+| --- | --- | --- |
+| G0：数据库/契约基线 | 取得明确隔离目标的 schema-only 导出、已应用迁移版本清单和对应应用 SHA；离线核对商城/SKU/订单/供应商前置对象与迁移依赖。基线不闭合则只做不依赖数据库的适配器/界面工作。 | Codex 擅自执行 SQL；把 health 200 当 schema 就绪 |
+| P1A：只读分类目录 | 先用脱敏真实响应或商户确认核实分类字段、ID 稳定性、父子关系及商品多分类语义；适配器保留 allowlist 化的上游分类身份。Admin 支持本地筛选/树浏览、数量和同步时间，完整目录拉取有大小/超时/缓存及过期提示。 | 假设上游分页；仅凭名称持久化身份；改本地分类或启用商品 |
+| P1B：分类映射 | G0 通过后，设计按 provider/account/site/上游分类 ID 唯一识别的映射；映射目标保存本地 `shop_categories.id`，导入时在事务内校验分类仍存在并解析当前名称写入 `shop_products.category`，不假设商品已有 `category_id`。覆盖重命名（现有 RPC 会按旧名称迁移商品）、删除/重建、名称冲突和并发导入契约；支持多对一、重复商品归属、孤儿分类及映射版本审计。批量对子树操作须预览影响并可撤销/重做。是否需要为商品增加 ID 外键，须在 G0 基线评估后单独设计迁移。 | 按名称自动绑定；覆盖现有商城分类；未经确认的整树复制；未验证 schema 就假定/添加 `category_id` |
+| P2A：可恢复草稿导入 | 仅导入映射范围内、身份可核验的商品/规格；逐商品幂等键以 provider/account/site、稳定商品 ID 和经验证的稳定规格 ID 组成，不使用名称/展示文案。后台任务记录游标、成功/跳过/失败及重试状态，支持中断恢复与部分失败重跑。保存供应商身份、规格和独立的上游快照；管理员说明/图片/售价不被同步覆盖。无法确认稳定规格身份的项目只预览、不批量导入。默认仍是零售价、禁用映射、下架草稿。 | 一次性全量导入；将参考价当成本；以易变文本作幂等键；导入即上架 |
+| P2B：人工审核定价与商品内容 | 以实时 CNY 报价而非 `user_price` 计算；配置加价或毛利时明确区分，固定舍入、费用、最低毛利、上限和版本。价格变化需预览差异和审批，精确记录估算成本与最终实付成本。上游描述作为独立快照供对比，不能写入/覆盖“使用说明”。 | 自动发布；没有最终报价/成本边界的 SKU 定价 |
+| P3A：单 SKU 可售资格 | 先完成登录积分与游客现金两条适用路径的服务端检查、明确报价/库存的最大有效期与过期策略、库存非锁定提示、支付后价格异常、缺货、退款/人工结案和资金恢复契约测试。报价/库存超龄或查询失败时 fail closed，暂停新单但保留已付款订单处理。可售资格按单 SKU、站点、账号明确审批。 | 整类开放；把库存查询当预留；使用过期报价/库存；把付款当作采购成功 |
+| P3B：受控人工采购 E2E | 先在隔离数据库、模拟上游和测试账本完成下单、资金状态、人工看价确认、上游单号持久化、卡密加密封存、用户取货及超时/崩溃/未知结果故障注入。真实虾仁账户、真实用户资金或生产 SKU 验收属于单独的 live probe，须逐次明确授权并预先限定账号、SKU、金额上限和失败补偿方案；若无虾仁沙箱，不得把模拟结果称为真实上游验收。证据通过后仍须逐 SKU 独立审批生产开放。 | worker 自动采购；未验收时开商品/销售开关；把模拟/隔离测试冒充真实资金 E2E |
+| P4：自动采购重新评估 | 仅当虾仁提供可验证的原请求结果恢复、供应端成本上限/锁价、供货状态终局语义和安全交付契约，或经正式商户文档及故障演练证明等价保障时重新评审；随后独立实现并验收 worker。 | 仅改 `procurement=true` 或内部 flag 绕过契约阻断 |
+| P5：多供应商/代理 API | 单供应商、单 SKU 交易闭环稳定后再评估；代理身份、资金隔离、API 幂等、签名、回调和权限作为独立版本，不直接暴露供应商凭据或后台接口。 | 作为虾仁目录/上架的前置；直连供应商 API |
+
+### 38.4 当前可推进项与停止条件
+
+当前可安全推进的下一片是 **P1A 只读分类身份保留与目录浏览**：先补适配器夹具/契约测试，再以真实脱敏响应核验字段，不依赖新数据库表；如果无法确认稳定分类 ID，先只提供会话级筛选，不落持久映射。之后再进入 P1B/P2A，必须先解开 G0 的隔离 schema 基线阻塞。
+
+当前继续保持：商品默认草稿且不活跃、供应商映射默认禁用、人工采购开关默认关闭、虾仁自动采购能力关闭、无定时采购 worker、无生产商品启用。目录功能、分类映射或批量草稿导入完成均不代表具备销售资格。P3B 未通过前不得把该计划表述为虾仁自动交付闭环完成。
+
+本节是方案复核与排程更新，不是运行实现或验收报告。P1A 代码实现、真实分类字段核验、G0 schema 基线恢复、人工采购 E2E、销售开放和生产发布在本次均为 **NOT RUN**。
+
+### 38.5 2026-11-01 P1A 只读目录浏览实现进度
+
+本节记录 §38.4 方案复核后的后续实现；§38.4 的 `NOT RUN` 是方案审查撰写时的状态。当前候选源码基线仍为 `9748be9c8373edd617ec15b7b5c0d52865554f14`，本地 `HEAD` 与 `origin/main` 一致，`HEAD..origin/main=0`。本轮只修改当前工作树中的 Admin 供应商目录、虾仁目录适配器、对应契约测试和本文档；未执行 SQL、真实供应商请求、采购、商品发布、销售启用或部署。
+
+P1A 已完成一版**只读、会话快照级**实现：Admin 目录默认选虾仁；支持显式刷新、关键词/分类筛选和分页复用同一目录快照，显示分类数、去重商品数、同步时间及过期状态。目录仍由现有完整列表接口一次读取，不假设上游分页；商品跨分类重复时按货号合并，分类计数按去重货号计算。服务端快照按供应商账号和站点隔离，内存保留 60 秒、最多 8 份；筛选参数和过期快照 fail closed，客户端对过期快照最多重新读取一次。上游响应继续受适配器现有 8 MiB 上限和超时保护。
+
+这不是持久分类树或分类映射：当前 `cat-N` 仅是单份响应内的临时键；上游分类 ID 只作为候选字段返回且 `identityStatus=unverified`，不会写入数据库。父子层级、真实分类 ID 稳定性、商品多分类语义仍未通过脱敏真实响应或商户材料核验，因此界面明确提示不用于持久映射。没有新增或放宽导入/采购/销售逻辑；现有商品导入仍为未上架草稿，虾仁目录商品不会因此获得销售资格。
+
+本轮离线聚焦测试最终为 **83 PASS、0 FAIL、0 CANCELLED、0 SKIPPED**；相关 JavaScript `node --check` 和 `git diff --check` 均通过。真实分类语义验证、登录后的浏览器业务验收、G0 隔离 schema/迁移基线、P1B 持久映射、P2 可恢复批量导入、采购 E2E、销售开放和生产发布均仍为 **NOT RUN**。本机 `8000` 当前由另一目录树提供，不作为本轮代码的浏览器验收证据；未停止或改写该服务。
+
+### 38.6 2026-11-01 虾仁官方目录文档核对
+
+本轮只读核对了[虾仁 API 对接文档](https://xiareng.cc/user/index/api)。文档说明 `POST /shared/commodity/items` 不需要额外业务参数，响应 `data` 是分类数组，每个分类包含 `children` 商品列表；分类记录列出 `id`、`name`，商品列出 `code`、`user_price`、`stock` 等字段。该契约支持当前“单次读取完整目录、在本地快照筛选和分页”的实现；没有依据改用文档未列出的分类分页接口，也没有把目录会员价当作锁定采购成本。
+
+文档没有承诺分类 ID 在改名、重排或商户配置变更后仍稳定/唯一，也没有定义嵌套分类、父分类关系或同一商品跨分类归属规则。因此它补足了目录响应的公开结构证据，但不替代真实脱敏响应或商户对身份语义的确认。适配器契约测试新增覆盖分类 ID 候选值、`identityStatus=unverified`、临时 `cat-N` 键及重复商品多分类快照归属；这些值仍不会持久化。
+
+本轮仅增加离线契约测试和本节记录；虾仁适配器专项测试为 **32 PASS、0 FAIL、0 SKIPPED**，供应商目录/工作区/手动采购相关测试合计 **84 PASS、0 FAIL、0 CANCELLED、0 SKIPPED**，计划文档关联契约测试另为 **12 PASS、0 FAIL、0 SKIPPED**。相关运行时 JavaScript `node --check` 与 `git diff --check` 通过。没有调用真实商户接口、执行 SQL、改变商品/采购开关、操作 8000 预览或部署。G0 仍需与隔离目标及应用源码 SHA 绑定的完整 schema-only 导出和应用迁移版本清单；P1B 仍须等 G0 通过并确认上游分类身份语义。
+
+### 38.7 下一阶段证据包与放行门
+
+截至本轮，P1A 的离线实现和契约覆盖已完成一版，但真实分类语义与登录后浏览器验收仍未完成；P1B/P2A 不因目录浏览可用而自动开始。继续工作前需取得以下两份相互独立的证据包，原始材料保存在仓库外的受控位置，不提交未脱敏响应或数据库导出：
+
+1. **虾仁分类语义包**：至少两次不同时间的脱敏 `/shared/commodity/items` 响应，保留分类 `id`、`name`、实际父子路径（如有）、商品 `code` 与所属分类关系；另附商户对分类 ID 的唯一范围及改名、重排、删除重建后的稳定性确认，并说明嵌套分类和同一商品多分类的语义。剔除签名、凭据、用户/订单/卡密信息及无关商品字段。两份快照只能发现观测到的变更，不能单独证明未来稳定性；缺少商户确认时，分类仍只允许会话级筛选。
+2. **G0 隔离 schema 包**：记录隔离目标的非敏感标识、导出时间、对应应用源码 commit SHA、schema-only 导出 SHA-256，以及应用迁移账本中的已应用版本清单。导出不得含业务行、Auth 用户、密钥或可复用凭据；Supabase 平台内部迁移表不能代替应用迁移账本。仅有 health 200、基础 `public` schema 导出、仓库历史 SQL 或未绑定源码 SHA 的导出均不满足 G0。
+
+收到证据后，第一步只做离线完整性与依赖比对：核对目标隔离属性、文件哈希和源码 SHA，比较商城/订单/SKU/积分/游客支付/供应商对象与函数，并产出缺项、冲突及迁移版本差异清单；此步不连接数据库、不执行 SQL。只有 G0 依赖闭合且分类身份语义有足够证据后，才设计 P1B 持久映射的 schema 与并发/重命名测试；缺任一条件则继续限定为只读目录或其他不依赖持久化的工作。任何后续 SQL 应用仍需另行确认具体隔离目标、语句范围与执行授权。
+
+当前证据状态：分类语义包 **NOT RECEIVED**，G0 隔离 schema 包 **NOT RECEIVED**，P1A 登录态浏览器验收 **NOT RUN**。商品、供应商映射、人工采购、自动采购和销售开关继续关闭；本节不是 SQL 执行或真实商户调用授权。
+
+本轮供应商目录、Admin 工作区/手动采购及计划文档契约测试为 **97 PASS、0 FAIL、0 CANCELLED、0 SKIPPED、0 TODO**；运行时 JavaScript 语法检查与 `git diff --check` 通过。没有调用真实商户接口、执行 SQL、操作 8000 预览、启用采购/商品或部署。
+
+## 38.8 2026-11-01 隔离基线与分类身份语义补查
+
+本轮继续补查 §38.7 的两项证据门。源码提交基线为 `9748be9c8373edd617ec15b7b5c0d52865554f14`，工作树包含未提交的 P1A 目录浏览改动；没有切换、重置或覆盖这些改动。
+
+### 隔离数据库基线
+
+- `server/.env` 的 Supabase 项目 ref 与当前 Supabase CLI 唯一列出的 `zaoyoe` 项目相同，按线上/非隔离目标处理，本轮没有连接它、导出它或查询其数据。
+- 已通过 `colima-p2g` Docker context 确认独立容器 `supabase_db_shop-supplier-p2g-empty-20261030` 为健康状态，镜像为 Supabase PostgreSQL `17.6.1.075`，数据卷与默认 `supabase` 项目分开。P2E 的 `127.0.0.1:55432` 仍是另一套最小 PostgreSQL 夹具；共享 `5432` 未连接。
+- 使用 [隔离基线身份只读探针](../supabase/acceptance/20261101_supplier_p2g_baseline_identity_readonly.sql) 在该空库容器内执行 `BEGIN TRANSACTION READ ONLY ... ROLLBACK`。返回数据库 `postgres`、PostgreSQL `17.6`、服务启动时间 `2026-10-30 05:54:48 UTC`；探针列出的 `public` 基础表为零。可见迁移表名位于 `_realtime`、`auth`、`realtime`、`storage`、`supabase_functions`、`supabase_migrations` 等平台 schema；未发现应用迁移账本。探针只读取数据库身份和表名，没有读取业务行、Auth 用户记录或密钥；它没有导出/审计完整 DDL，不能据此断言视图、函数或类型也不存在。探针文件 SHA-256：`03cf8a65afbe8d29e815d4591799c232b740ebf60eb9603506f5f7c47c80a672`。
+- 该实例可作为隔离的空数据库目标，但**不构成匹配应用版本的数据库基线**。本仓库仍有 321 个分散迁移文件，商城/订单/SKU/积分/游客支付及供应商迁移依赖未包含在空库中的先存对象；不能把空库、平台迁移账本或旧历史 SQL 改称为完整应用基线。没有应用版本标记也不能证明空库对应当前 `9748be9` 或当前未提交工作树。
+- 因此 G0 **仍未通过**。下一步必须取得不含业务行/凭据的隔离 schema-only 导出和同一目标的应用迁移版本清单，并由来源清楚的应用 SHA/工作树指纹绑定；若没有这样的源环境，则先在另一个明确隔离项目中建立受版本控制的完整应用基线。不得在本次空库中尝试顺序套用增量供应商迁移，不得把 `server/.env` 指向的 `zaoyoe` 项目用作替代。
+
+### 虾仁分类身份语义
+
+- 官方目录文档（见 §38.6）只支持当前可证实的响应结构：`/shared/commodity/items` 返回分类记录，记录含 `id`、`name` 和 `children` 商品列表；商品以 `code` 标识。商品与分类的观测归属来自商品出现在相应分类的 `children` 数组中。该文档结构是一层“分类 -> 商品列表”，没有定义递归分类节点或 `parent_id`。
+- 文档没有承诺分类 ID 的唯一范围、跨改名/重排/删除重建的稳定性，也没有规定同一 `code` 出现在多个分类时是多重归属还是重复目录记录。因此它补足了字段/归属表示证据，**没有补足持久身份语义证据**。
+- 本地 `server/.env` 未配置虾仁凭据；本轮未从线上 Supabase 取回供应商密钥，也未发送真实商户目录请求。未收到两份脱敏真实响应或商户书面语义确认。真实分类快照仍为 **NOT RECEIVED**，分类身份状态继续 `unverified`；`cat-N` 继续只作为单次目录快照中的会话键，不持久化、不用于映射。
+- P1A 的结构/筛选浏览可以在离线契约范围内继续；P1B 持久分类映射、分类树持久化与按供应商分类批量导入仍被 G0 和身份语义两道门阻断。下一步材料仅需提供脱敏的两次目录结构快照，以及商户对 ID 唯一范围、改名/重排/删除重建、重复商品归属规则的明确答复；无需提供签名、密钥、用户、订单或卡密数据。
+
+本轮只增加只读验收探针并记录现场证据；供应商目录/适配器/导入相关 Node 测试为 **122 PASS、0 FAIL、0 CANCELLED、0 SKIPPED、0 TODO**，运行时 JavaScript `node --check` 与 `git diff --check` 通过。没有导入 schema、应用迁移、启动 worker、调用虾仁、采购、发布商品、启用销售、改动 8000 预览或部署。G0、真实分类身份语义、P1B、P2A、真实采购/交付与生产发布均保持 **NOT RUN**。当前后续动作是等隔离的、应用版本绑定的 schema 基线和商户语义证据，而不是继续编写可能永久化错误分类身份的映射代码。
+
+## 38.9 2026-11-01 zaoyoe 生产迁移账本只读结果更正
+
+本节追加更正 §38.1 与 §38.8，不删除或改写当时的检查记录。两节中“没有执行 SQL”及“未连接/查询 `zaoyoe`”均限定为原审查阶段；本节记录随后经用户授权在 Supabase SQL Editor 进行的只读核验。
+
+### 生产项目与查询结果
+
+- 用户确认 Supabase 只有一个项目 `zaoyoe`。当前 SQL Editor 页面明确显示项目分支为 `main PRODUCTION`，因此该目标按生产数据库处理，不作为隔离环境。
+- 用户提供的表名查询结果为 `auth.schema_migrations`、`realtime.schema_migrations`、`storage.migrations`、`supabase_migrations.schema_migrations`。该结果只能说明查询命中的迁移相关表名，不能当作完整 schema/DDL 清单。
+- 在 `supabase_migrations.schema_migrations` 上执行的查询只读取 `version`、`name`，结果共 6 条，最新版本为 `20260731`：
+
+| version | name | 本地仓库迁移文件 |
+| --- | --- | --- |
+| `202606171905` | `prompt_free_unlock_daily_limit_hotfix` | `supabase/migrations/202606171905_prompt_free_unlock_daily_limit_hotfix.sql` |
+| `202606171922` | `unlock_prompt_v2_drop_varchar_overload` | `supabase/migrations/202606171922_unlock_prompt_v2_drop_varchar_overload.sql` |
+| `20260628` | `ai_image_video_constraints` | `supabase/migrations/20260628_ai_image_video_constraints.sql` |
+| `20260712` | `prompt_gallery_video_assets` | `supabase/migrations/20260712_prompt_gallery_video_assets.sql` |
+| `20260727` | `prompt_gallery_import_dedupe_timeout_fix` | `supabase/migrations/20260727_prompt_gallery_import_dedupe_timeout_fix.sql` |
+| `20260731` | `ai_workbench_fast_admission` | `supabase/migrations/20260731_ai_workbench_fast_admission.sql` |
+
+- 可复核的只读查询保存在 [生产迁移账本只读查询](../supabase/acceptance/20261101_supplier_remote_migration_ledger_readonly.sql)，文件 SHA-256 为 `c1d3bf762a4d39604c361da9bd922f60e6eef7cd83ea51f4effbcd0cd2db207b`。它以 `BEGIN TRANSACTION READ ONLY` 开始、只执行 `SELECT`，最后 `ROLLBACK`；未读取业务表行、Auth 用户、密钥，也未应用迁移或修改数据库。
+- 六个账本条目都能对应到当前仓库的迁移文件，但这不绑定 schema 到 `9748be9c8373edd617ec15b7b5c0d52865554f14` 或当前未提交工作树。账本未列出供应商迁移只能说明这些版本没有出现在本次 CLI 迁移账本结果中；不能排除有人曾在 SQL Editor 手动执行，因此也不能据此断言供应商 schema 一定不存在或一定未应用。
+- 生产项目上的该次读取是迁移元数据观察，不是隔离 schema-only 导出，也没有导出或核验完整 DDL。**G0 仍未通过**：缺少明确隔离目标、完整 schema-only 导出及其 SHA-256、同一目标的应用迁移版本清单，以及与这些材料绑定的应用源码 SHA/工作树指纹。不得在 `zaoyoe` 上补跑迁移或用其结果替代隔离基线。
+- 本次继续核对当前 checkout 的重建来源：`supabase/migrations` 有 321 个 SQL 文件，但没有 `supabase/config.toml`；`supabase/schema.sql` 只有 116 行基础站点初始化内容，且开头包含删除旧触发器、函数和 `profiles`、`guestbook`、`prompts` 表的语句。结合 §33–§35 的商城依赖审计，这些文件不能组成可证明从空库重建当前商城的基线；不能按文件名排序后直接执行来补齐 G0。
+
+### 分类身份证据状态与下一步
+
+该次数据库查询不包含虾仁目录数据，不能补足分类身份语义。仍没有两次脱敏 `/shared/commodity/items` 快照或商户对分类 ID 唯一范围、改名/重排/删除重建稳定性及重复商品多分类语义的确认；分类身份继续 `unverified`，临时 `cat-N` 仍仅用于单次快照会话。**P1B 持久分类映射和分类树持久化继续阻塞**。
+
+因此当前不是继续对 `zaoyoe` 执行 SQL。可推进的下一步是取得/建立真正隔离且可绑定源码版本的数据库基线，并从虾仁商户取得脱敏快照和身份语义答复；材料到位后先离线比对，不直接应用迁移。供应商浏览、导入、采购和销售的现有安全关闭状态不变。
+
+## 38.10 2026-11-01 隔离基线复核与证据更正
+
+本节追加更正 §38.9 的查询文件哈希，并记录后续本地复核结果；不覆盖之前的 SQL Editor 查询记录。
+
+### 当前源码与数据库版本指纹
+
+- 当前 `HEAD` 与 `origin/main` 均为 `9748be9c8373edd617ec15b7b5c0d52865554f14`；工作树有既存未提交改动。`supabase/migrations` 相对该 commit 没有改动，迁移目录共 321 个 SQL 文件，其按相对路径与文件内容计算的 manifest SHA-256 为 `8322f1d3581da13e8eb89626cec957ec2773e44961b071436121ff92d2612e83`。因此该指纹绑定的是当前 checkout 的迁移文件集合，不代表生产数据库已应用同一集合。
+- §38.9 所记迁移账本 SQL 文件的旧 SHA-256 `c1d3bf...` 有误。当前文件 `20261101_supplier_remote_migration_ledger_readonly.sql` 的 SHA-256 是 `e4fd608135dc2533bd0d1fce0679c10072e0551b6ab10c50f3ac2ebfa814b969`；查询结果 CSV 的 SHA-256 为 `a5de7449174edc2f2054194d634b62b2fa332bbf8f17d317e8773366d437c3e2`。该账本仍只有 6 条非商城应用版本，最新 `20260731`，不能证明供应商迁移是否通过其他渠道应用。
+- 生产结构参考 SQL `20261101_supplier_production_schema_readonly.sql` 的 SHA-256 为 `7b4693c6932d9917046acf2c9c923159ce14bbb4ff31013c23eaa9e4b76021a0`；结果 CSV SHA-256 为 `3c8e7e7514ac460fcaf00261f1312ddbb0ffdae6fd15afef8ad6567cfca2715a`。离线解析确认结果覆盖 56 个选定关系（其中 21 个 `shop_supplier_*`）、38 个供应商函数签名和 42 个相关类型。
+- 对 321 个仓库迁移 SQL 做了仅名称级的静态盘点：迁移中 `CREATE TABLE` 出现的 21 个供应商表名，全部能在生产结构参考中找到；迁移中 `CREATE FUNCTION` 出现的 38 个供应商函数名，也全部能在快照的函数签名中找到。排序后的名称清单 JSON SHA-256 为 `f33cb5bbbdeca1a83e95719decdb6056fca351d2422379fbb415aa913bf4590b`。这是 catalog-to-source 的**名称存在性**检查，不校验列/约束/函数体/ACL，也不证明迁移是按仓库链实际应用；不能替代 schema diff 或迁移账本。
+- 此 CSV 是所选商城/供应商对象的目录结构参考：包含列、约束、索引、RLS policy、触发器、视图定义及函数签名/属性；不含表数据或函数体，也不是全 `public` schema、角色/扩展清单或可恢复 `pg_dump`。它表明生产 catalog 中存在供应商对象，但不提供它们由哪个源码 commit 或哪条迁移创建的证据。不得将其标为隔离验收基线。
+- Supabase CLI 的项目列表能识别 `zaoyoe`，但当前 checkout 未 `supabase link`，仓库也没有 `supabase/config.toml`；未提供 PostgreSQL 连接 URL/密码，因此无法从 CLI 执行 `pg_dump --schema-only`。没有尝试连接生产 PostgreSQL。生产 SQL Editor 中已捕获的目录查询是当前可用的只读参考，不能替代完整 schema-only dump。
+
+### 本地隔离目标与迁移重建
+
+- Colima profile `p2g` 当前运行。既有 `supabase_db_shop-supplier-p2g-empty-20261030` 与 `supabase_db_supabase` 均保持原状；本轮只核验容器健康/挂载，没有导入 schema、套用迁移或改写卷。还没有创建新的验收目标，因为目前没有可恢复且来源绑定的 schema 基线。
+- 321 个分散迁移文件、缺失项目配置及先前发现的重复版本/依赖来源不确定性，使“按文件名排序重放”不能成为可接受的重建方案。现阶段不在任何空库上试跑全量迁移，不依据生产账本补跑迁移，也不把生产结构参考 CSV 伪装成 schema 导出。
+- 本轮供应商目录、管理页工作区、人工采购契约和交付契约聚焦测试：**98 PASS、0 FAIL、0 CANCELLED、0 SKIPPED、0 TODO**。这是离线软件契约结果，不是数据库或真实供应商验收结果。
+- G0 仍为 **NOT RUN / BLOCKED ON BASELINE SOURCE**。最快可验证路线是：通过经授权的只读 PostgreSQL 连接取得并保存在本机的 `pg_dump --schema-only`（只导出明确需要的 schema，不导出业务数据），随后校验版本、对象范围与哈希；或者先从当前源码中整理出有明确顺序、依赖闭合、逐项可验证的基线迁移链。二选一完成后，使用新的唯一容器名和新卷恢复/重建，再运行隔离迁移及对象验收。不得复用或清空两个已有卷。
+
+### 虾仁分类身份语义复核
+
+- 截至 2026-11-01，官方 API 文档 `https://xiareng.cc/user/index/api` 描述 `/shared/commodity/items` 的目录项由分类记录及其 `children` 商品组成，商品接口使用 `code`；`id` 在文档示例中按对象上下文表示分类或商品 ID。文档没有说明分类 ID 的租户/供应商唯一范围，也没有对改名、重排、删除重建、跨时点稳定性或相同商品出现在多分类时的语义作保证。该结论是对文档已声明字段范围的核对，不是对上游未公开行为的断言。
+- 本地仍无虾仁凭据，本轮未读取 Supabase 中的凭据，也未调用真实目录接口；没有收到两份脱敏目录快照或商户书面答复。因此持久分类映射、分类树落库与按分类批量导入仍为 **BLOCKED**。临时 `cat-N` 仅供单次快照筛选。
+- P1A 只读目录浏览、筛选和安全关闭契约已有离线测试覆盖；最快解除分类阻塞所需的外部材料是两份不同时点的脱敏 `/shared/commodity/items` 响应，以及商户对 ID 作用域、改名/重建稳定性、嵌套/多分类归属的明确答复。无需提供密钥、签名、用户、订单或卡密内容。
+
+本轮未执行 SQL、未应用迁移、未创建验收数据库、未调用虾仁、未采购/交付、未发布商品、未开启销售、未启动 worker、未部署。供应商购买和自动交付继续安全关闭。
+
+## 38.11 2026-11-02 本地隔离基线补齐与目录继续推进
+
+本轮在 `origin/main` 与 checkout 同为 `9748be9c8373edd617ec15b7b5c0d52865554f14` 的基础上继续；工作树原有未提交修改均保留。对数据库的操作仅限新建的本机 Colima `p2g` 隔离容器/卷 `supabase_db_shop-supplier-p2g-baseline-20261102`（PostgreSQL 17.6，端口 55453），未改动既有 `55452` 空库、默认 Supabase 本地栈或生产 `zaoyoe`。
+
+已为该隔离库执行 supplier-focused bootstrap，以及 SKU、采购来源、供应商目录核心和虾仁只读草稿导入迁移；随后成功执行只读 structural verifier。供应商表 RLS、默认 SKU trigger、service-role-only 草稿导入 RPC 均通过；`16688/default` 与 `xiareng/default` 为 disabled，商品/库存/订单/映射/availability 均无业务行。基线不是完整生产 schema-only dump，不证明生产迁移来源，也不等价于完整商城或真实数据库业务验收。容器指纹、对象计数、执行文件顺序及每份 SQL 的 SHA-256 见 [Supplier Acceptance Baseline Evidence](../supabase/acceptance/20261101_supplier_baseline_evidence.md) 和同目录 `20261102_supplier_p2g_baseline_reference.csv`。
+
+供应商目录、Admin handler/UI、工作区、人工采购 UI 契约、delivery/schema/migration 契约聚焦测试为 **109 PASS、0 FAIL、0 CANCELLED、0 SKIPPED、0 TODO**；相关 JavaScript 语法检查和 `git diff --check` 通过。此结果只说明离线代码契约和隔离结构 verifier 通过。
+
+分类工作继续按证据边界分层：P1A 当前实现整份目录的一次拉取/短时快照、快照内筛选分页、重复商品的多分类关联、分类计数与明确的 `unverified` 提示；分类 `cat-N` 是快照 session key，保留的上游 ID 只是候选值，均不落库、不作为生产映射。虾仁 API 尚无已核验的稳定分类身份/层级/重建规则和两次脱敏实测响应，因此 P1B 持久分类树、分类映射、按分类任务导入仍为 **BLOCKED ON UPSTREAM EVIDENCE**。无需等待这部分即可在保持商品禁用的前提下继续验证 P1A UI 和草稿导入。
+
+### 下一步（按最快安全路径）
+
+1. 在实际本地 Admin Studio 中验证虾仁目录账户、快照刷新、分类筛选/分页、详情和草稿导入；导入仅创建下架草稿与 disabled mapping。若目标 Admin Studio 使用 localhost:8000，先核对 `/healthz` 的 `sourceRoot`、`serverSourceCommit` 和工作树状态；不得把其它工作树服务误报为当前候选预览。
+2. 取得两次不同时点的脱敏 `/shared/commodity/items` 样本或只读拉取并归档字段级差异，同时补齐 ID 作用域、改名/重排、删除重建、嵌套和商品多分类语义。未核验前继续只用临时 `cat-N`。
+3. 仅当分类语义有证据后，再设计持久分类表/唯一键和幂等同步；按一个分类做导入预览与草稿批处理，验证重复运行、更新冲突、局部失败恢复。不开自动上架。
+4. 之后再进入实时报价/可售状态门禁与单个小额 SKU 采购验收；在 `request_no` 超时恢复、最终扣费/币种、交付终态和资金失败处置得到实证前，不启用采购或商城销售。
+
+本轮隔离 SQL、哈希和结构结果属本机 supplier-focused 验收；生产 SQL、真实虾仁调用、浏览器业务验收、并发验收、采购/交付、商品启用、worker 和部署均未执行。供应商采购、交付与销售继续安全关闭。
+
+## 38.12 2026-11-02 8000 目录只读观察更正
+
+本节追加对 §38.7、§38.8、§38.11 的状态更正，不删除历史记录，也不把观察证据升级为上游语义承诺。
+
+### 当前已取得的目录证据
+
+- 已在 `localhost:8000` 的 Admin Studio 重新登录会话中读取虾仁默认账号、国内站目录，并记录两次不同时间的只读快照：`2026-11-02 08:25:26` 与 `2026-11-02 08:33:01`。
+- 两次响应均为 `181` 个分类、`3665` 件去重商品；分类计数总和为 `3665`，候选分类 ID 在本次响应内唯一，未观察到重复分类名称、缺失候选 ID 或同一商品多分类归属。分类顺序、名称顺序、候选 ID、商品归属和分类计数的脱敏摘要及 SHA-256 见 [Supplier Acceptance Baseline Evidence](../supabase/acceptance/20261101_supplier_baseline_evidence.md)。
+- 这已经足够证明当前账号/站点/读取窗口内的响应可重复性，可以继续做 P1A 的快照内浏览、筛选、分页、详情核对和安全关闭测试；它不能证明分类 ID 的租户/供应商/站点作用域，也不能证明改名、重排、删除重建或 ID 重用语义。
+
+### 放行状态更正
+
+- P1A 真实登录态目录观察：**OBSERVED / READ-ONLY**；页面仍显示分类身份/层级未核验，导入复选框继续禁用。
+- 虾仁分类持久身份语义：**UNVERIFIED**；`cat-N` 仍是快照级临时键，`upstreamIdCandidate` 仍只是候选观察值。
+- P1B 持久分类树、分类映射和按分类持久化导入：**BLOCKED ON UPSTREAM EVIDENCE**。仍需商户或供应商确认 ID 唯一范围、改名/重排稳定性、删除重建行为、嵌套分类语义及重复商品归属规则。
+- G0 supplier-focused 本地隔离基线：**PASS（范围受限）**；完整生产 schema-only 基线：**NOT AVAILABLE**；生产迁移来源：**UNVERIFIED**。这些状态不因两次目录响应稳定而改变。
+
+下一步按最快安全路径执行：继续在 `8000` 验证 P1A 的刷新、筛选、分页和详情；待上游身份语义确认后，再设计持久分类唯一键和幂等同步。期间不执行生产写 SQL，不建立持久分类映射，不启动采购/交付，不发布或启用商品。
+
+### 追加验收记录（2026-11-02）
+
+在不改写本节先前记录的前提下，继续对隔离基线执行了回滚式导入 RPC 集成冒烟。脚本先校验数据库名及由精确 Colima 容器会话提供的 target marker，再创建固定测试身份并调用 `import_shop_supplier_draft_v2`。首轮导入确认为下架草稿、默认 SKU、disabled mapping；重放返回 `already_imported`，映射和对应审计各只有一条。脚本正常以 `ROLLBACK` 结束。
+
+回滚后复核测试 Auth 用户、商品、映射、审计及基线中的商品、库存、订单、availability 均为 0，`xiareng/default` 仍 disabled。隔离 SQL SHA-256 为 `eb26c0d86c269c3a2c78268bd05f226082d0c401d66ebbc98fda6374bda07afa`；新增安全契约测试 **2 PASS、0 FAIL**，详见 [基线证据](../supabase/acceptance/20261101_supplier_baseline_evidence.md)。此结果只覆盖 supplier-focused 本地隔离库中的 RPC 事务行为，不扩大为真实虾仁 API、并发、采购、交付或生产验收。
+
+本轮也只读确认 `localhost:8000` 的 `/healthz` 指向本工作树和 `9748be9c8373edd617ec15b7b5c0d52865554f14`，但工作树 dirty、启动后源状态已变化，因此不是干净候选快照。预览运行时 Supabase URL 的 project ref 与用户请求中 JWT issuer 的 project ref 相同。访问会话处理器会先调用 Supabase `auth.getUser(token)`，只有认证成功后才检查管理员角色；所以观测到的 `401` 表示身份验证阶段未取得用户，不是管理员角色缺失（后者返回 `403`）。由于原请求响应体和 Supabase Auth 错误体未保存，且原 bearer token 现已过期，根因仍待用重新登录后的新请求确定；未重放旧 token，也未重复调用可能写管理员审计的 POST。
+
+### 追加验收记录（2026-11-02，分页与过期提示）
+
+在重新登录的 `localhost:8000` Admin Studio 会话中从第 2 页返回第 1 页。页码变为 `1 / 183`，首屏商品行与第 2 页不同，分页请求有效；旧快照已于 `12:14:04` 过期，页面自动重新读取后得到新快照：`181` 个分类、`3654` 件去重商品，同步于 `12:15:50`、有效至 `12:16:50`。此前记录的 `3665` 是更早读取窗口的结果，数量变化仅说明不同时间点的目录响应不同，不据此判定数据错误。
+
+现场同时复现 UI 状态缺陷：新快照已显示有效、商品行已加载，反馈区仍残留“目录快照已过期，正在重新读取目录”。原因是成功重试路径没有清除只属于过期重试过程的临时反馈。已在成功重试后清除此提示；若重试后仍需重新选择临时分类键，则随后写入的分类重选警告继续保留。新增回归测试先复现旧行为，再验证反馈隐藏且新快照/商品行已应用。导入复选框仍禁用，未导入、未下单、未执行 SQL 或部署。上游分类 ID/层级语义仍未核验；持久分类映射与销售/采购继续关闭。
+
+### 追加验收记录（2026-11-02 12:46 CST，探针商品只读复核与健康状态口径更正）
+
+在 `localhost:8000` 的已登录 Admin Studio 中切到“全部分类”，按历史探针货号 `2E4ED4E08F9B9210` 搜索并打开详情。当前目录仍有该 Outlook 斯洛伐克账号商品，目录参考价为 `0.17 CNY`、起购量为 1；详情显示默认规格、上游类型 0（交付方式/语义待核验）。调用详情页“读取库存与询价”只读接口后，返回库存 `15625`、数量 1 报价 `0.17 CNY`；两者均未锁定。该观察不是库存预留、最终扣款或可供货承诺。它与 2026-10-21 同货号真实采购探针相符，但新报价较当时记录的 `0.16 CNY` 有变化；本轮没有调用采购接口。
+
+预览报价提示先前把“单价/总额口径待核验”写死，与当前适配器已由历史多数量探针验证并返回的 `amountBasis=total_cny` 契约不一致。现改为依据报价 `amountBasis` 显示所选数量总价；未知口径仍显示待核验，并持续声明报价与库存未锁定。对应 UI 契约测试已补充。
+
+另更正对 `/healthz` 的解释：本次实际返回 `sourceRoot=/Users/wangyongchao/.codex/worktrees/2bf1/xianyu_profit_calculator`，`sourceCommit` 与 `serverSourceCommit` 均为 `9748be9c8373edd617ec15b7b5c0d52865554f14`，`workingTreeDirty=true`、`changedFileCount=82`、`sourceMatchesStartup=false`、`restartRequired=true`、`productionEvidence=false`。按 `scripts/local-preview-server.js` 的计算逻辑，只要启动或当前工作树为 dirty，前两个状态就会保守地变为 false/true；故这两个字段本身不能证明启动后文件发生变化，也不能证明预览已加载干净候选提交。该服务确实指向当前工作树，但仍不是干净发布证据。本次未重启服务。
+
+本轮未执行 SQL、未导入商品、未下单、未启用销售/采购、未部署。`git fetch origin main` 后 HEAD 与 `origin/main` 同为 `9748be9c8373edd617ec15b7b5c0d52865554f14`，落后数为 0；既存 dirty worktree 保持原状。
+
+### 追加验收记录（2026-11-02 13:01 CST，8000 复核与隔离基线验证）
+
+- 在重新登录的 `localhost:8000` Admin Studio 中再次搜索探针货号 `2E4ED4E08F9B9210`，打开详情并执行“读取库存与询价”。页面实际显示库存 `15625`、数量 1 报价 `0.17 CNY`，并明确提示“报价为所选数量总价；库存与报价均未锁定，不代表最终扣款或供货承诺”。本次仍为只读，没有导入、采购或销售写入。
+- `GET /healthz` 返回 `sourceRoot=/Users/wangyongchao/.codex/worktrees/2bf1/xianyu_profit_calculator`、`sourceCommit=9748be9c8373edd617ec15b7b5c0d52865554f14`、`supabaseProxyEnabled=true`。服务处于 dirty working-tree 模式（82 个改动文件），所以 `sourceMatchesStartup=false`、`restartRequired=true` 继续按本地预览的保守规则解释；这不是生产发布证据。
+- `scripts/verify-supplier-p2g-baseline.js` 实际通过：Colima `p2g` 上的 `supabase_db_shop-supplier-p2g-baseline-20261102` 为 PostgreSQL 17.6 healthy，端口 `55453`，供应商表 RLS、默认 SKU trigger、service-role-only `import_shop_supplier_draft_v2`、空业务表和两个 disabled 默认供应商账号均符合预期。该验证是 supplier-focused 隔离基线，不升级为完整生产 schema-only 基线。
+- 供应商聚焦 Node 契约测试为 **85 PASS、0 FAIL、0 CANCELLED、0 SKIPPED、0 TODO**；`node --check` 通过。`git diff --check` 仅报告两份既有 CSS 文件末尾多空行（`css/shop-list-layout.css`、`css/shop-page.css`），未修改这些无关工作树内容。
+
+当前放行状态不变：P1A 目录只读浏览与询价提示 **PASS**；匹配应用版本的 supplier-focused 本地隔离基线 **PASS**；G0 完整生产 schema-only 基线仍 **NOT AVAILABLE**；虾仁分类持久身份语义和 P1B 持久映射仍 **BLOCKED ON UPSTREAM EVIDENCE**；采购、交付、商品启用和部署均未执行。
+
+### 追加验收记录（2026-11-02 13:13 CST，本机隔离 RPC 回滚烟测）
+
+- 在执行前再次运行 `npm run verify:supplier-p2g`，结果为 `ok: true`。目标仍是 Colima context `colima-p2g` 上的 `supabase_db_shop-supplier-p2g-baseline-20261102`，PostgreSQL `17.6`、healthy、端口 `55453`；工作树 `HEAD` 与 `origin/main` 均为 `9748be9c8373edd617ec15b7b5c0d52865554f14`，落后数为 `0`。
+- 仅对上述本机隔离容器执行 `/Users/wangyongchao/.codex/worktrees/2bf1/xianyu_profit_calculator/supabase/acceptance/20261102_supplier_p2g_import_rpc_rollback_smoke.sql`。脚本通过 target marker 拒绝其他数据库，在一个事务中验证虾仁草稿 RPC：首轮生成 inactive 草稿、默认 SKU、disabled mapping；重放返回 `already_imported`，且映射和审计各只有一条；最终输出 `ROLLBACK`。该脚本 SHA-256 为 `eb26c0d86c269c3a2c78268bd05f226082d0c401d66ebbc98fda6374bda07afa`。
+- 回滚后再次运行 verifier，`auth.users`、商品、SKU、库存、订单、订单项、映射、availability、审计均为 `0`；`xiareng/default` 和 `16688/default` 仍为 disabled，service-role-only RPC、RLS 和迁移哈希仍通过。供应商相关测试集合结果为 **514 PASS、0 FAIL、0 CANCELLED、0 SKIPPED、0 TODO**。
+
+本次实际推进的是 **G0 supplier-focused 隔离基线中的 RPC 事务/幂等/回滚验收**，不是完整生产 schema-only 基线，也不是虾仁 API 业务验收。G0 完整生产 schema-only 基线仍 **NOT AVAILABLE**；分类身份语义与 P1B 持久映射仍 **BLOCKED ON UPSTREAM EVIDENCE**；采购、交付、商品发布、销售、worker 和部署继续关闭。未执行生产 SQL，未调用采购接口，未创建真实订单。
+
+## 38.13 2026-11-02 虾仁官方 API 字段核对与最快推进边界
+
+本轮根据虾仁官方 API 文档 `https://xiareng.cc/user/index/api` 重新核对适配器所需字段，并把“可读目录/库存预检/询价”和“真实采购”明确分开。文档核对没有触发交易请求，也没有读取、保存或输出任何供应商凭据。
+
+- `/shared/commodity/inventory` 的业务字段是 `sharedCode`，库存字段是 `count`，响应还包含 `price`、`user_price`、`config` 等信息；当前客户端已使用精确字段名。这里的价格仍只是当前上游参考，不能解释成锁定成本或最终扣款；没有依据把未定义的 `factory_price` 写进本地模型。
+- `/shared/commodity/inventoryState` 使用 `shared_code` 和 `num`，可选 `race`、`card_id`、`card_ids`；当前实现把它限定为只读交易前预检，仅透传已经由详情响应核验的 `race`。`card_id`、`card_ids` 和未知 SKU 结构继续拒绝，避免把未理解的卡片参数误当作可采购规格。
+- `/shared/commodity/stock` 使用 `code`，`/shared/commodity/valuation` 使用 `code`、`num`；二者支持受限的只读 SKU 组合。库存和询价结果都不锁定供货、价格或扣款，不能单独打开商品销售。
+- `/shared/commodity/trade` 的请求号字段是 `request_no`，文档建议唯一传入且最长 64 字符；文档没有提供按 `request_no` 找回原始订单的接口或重复请求恢复保证。因此当前 `capabilities.idempotency=false`、`procurement=false` 是正确的 fail-closed 状态。网络、HTTP、协议异常或扣款保护线异常只能进入人工复核，不能自动重试。
+- `/shared/commodity/query` 的查询字段是 `tradeNo`；当前实现已修正为大小写精确的 `tradeNo`，没有使用未文档化的 `trade_no`。这只能查询已经记录的上游订单号，不能由 `request_no` 恢复订单。
+
+本轮实现与验证结果：虾仁适配器 **36/36 PASS**；供应商聚焦测试集合 **528/528 PASS**；`npm run verify:supplier-p2g` 返回 `ok: true`；`8000/healthz` 确认服务仍指向当前 worktree，`supabaseProxyEnabled=true`。这些结果只证明客户端字段对齐、只读边界和本地隔离基线契约通过，不证明真实采购、扣款、上游订单恢复或卡密交付通过。
+
+### 重新排序后的最快路径
+
+1. 继续在 `8000` 完成目录、库存预检和询价的只读现场验收；保持 `xiareng/default` disabled，不导入到可售商品，不执行 `/shared/commodity/trade`。
+2. 补齐虾仁分类身份的外部证据：两次不同时点的脱敏目录响应，以及分类 ID 的账号/站点作用域、改名、删除重建、ID 重用、嵌套和多分类归属说明。在证据到位前，`cat-N` 只能是快照级临时键，不能建立持久映射。
+3. 分类证据通过后，先做单分类的本地草稿导入、重复导入和局部失败恢复；继续保持 inactive 草稿和 disabled mapping，不自动上架。
+4. 只有在供应商能够提供可核验的原始订单恢复语义，或我们建立人工复核且禁止重复采购的完整订单流程后，才进入一个小额 SKU 的采购验收。真实测试必须由用户在明确的测试商品、金额上限和时间窗口下单独批准；当前不执行。
+
+本轮没有执行生产 SQL、没有真实虾仁下单、没有部署、没有启用采购/交付/销售。官方文档字段已完成核对，但分类长期身份、采购幂等恢复和真实交付仍是后续放行门槛。

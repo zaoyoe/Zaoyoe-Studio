@@ -78,6 +78,7 @@ function getDefaultEnvFiles(repoRoot) {
     return [
         path.join(repoRoot, 'server/.env.staging'),
         path.join(repoRoot, 'server/.env'),
+        path.join(repoRoot, 'server/.env.local'),
         path.join(repoRoot, '.env'),
         path.join(repoRoot, '.env.local'),
         path.join(repoRoot, '.vercel/.env.production.local')
@@ -100,6 +101,66 @@ function loadPreviewEnv(envFiles, baseEnv = process.env) {
         ...merged,
         ...baseEnv
     };
+}
+
+function parseMacosHttpsProxyOutput(output = '') {
+    const values = {};
+    String(output || '').split(/\r?\n/u).forEach((line) => {
+        const separator = line.indexOf(':');
+        if (separator <= 0) return;
+        values[line.slice(0, separator).trim().toLowerCase()] = line.slice(separator + 1).trim();
+    });
+
+    if (String(values.enabled || '').toLowerCase() !== 'yes') return '';
+    const server = String(values.server || '').trim();
+    const port = Number(values.port || 0);
+    if (!server || !Number.isInteger(port) || port < 1 || port > 65535) return '';
+    return `http://${server}:${port}`;
+}
+
+function resolveMacosHttpsProxy(options = {}) {
+    if (options.platform && options.platform !== 'darwin') return '';
+
+    const exec = options.execFileSync || execFileSync;
+    let services = [];
+    try {
+        services = String(exec('networksetup', ['-listallnetworkservices'], {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore']
+        }) || '')
+            .split(/\r?\n/u)
+            .map((service) => service.trim())
+            .filter((service) => service && !service.startsWith('*') && service !== 'An asterisk (*) denotes that a network service is disabled.');
+    } catch (_) {
+        return '';
+    }
+
+    for (const service of services) {
+        try {
+            const proxy = parseMacosHttpsProxyOutput(exec('networksetup', ['-getsecurewebproxy', service], {
+                encoding: 'utf8',
+                stdio: ['ignore', 'pipe', 'ignore']
+            }));
+            if (proxy) return proxy;
+        } catch (_) {
+            // Continue through network services that do not expose proxy settings.
+        }
+    }
+
+    return '';
+}
+
+function resolveLocalPreviewSupabaseProxy(env = process.env, options = {}) {
+    const explicit = String(
+        env?.LOCAL_PREVIEW_SUPABASE_PROXY
+        || env?.HTTPS_PROXY
+        || env?.https_proxy
+        || ''
+    ).trim();
+    return explicit || resolveMacosHttpsProxy({
+        ...options,
+        platform: options.platform || process.platform
+    });
 }
 
 function resolveLocalPreviewRuntimeScript(envFiles, baseEnv = process.env, options = {}) {
@@ -531,6 +592,12 @@ function createLocalPreviewApp(options = {}) {
     const guestShopApi = resolveGuestShopPreviewConfig(previewEnv);
 
     applyPreviewEnvToProcess(previewEnv);
+    const supabaseProxy = String(
+        previewEnv.LOCAL_PREVIEW_SUPABASE_PROXY
+        || previewEnv.HTTPS_PROXY
+        || previewEnv.https_proxy
+        || ''
+    ).trim();
 
     app.set('etag', false);
     app.use((_req, res, next) => {
@@ -588,6 +655,7 @@ function createLocalPreviewApp(options = {}) {
                 || currentSource.workingTreeDirty !== false
                 || sourceState.workingTreeDirty !== false,
             productionEvidence: false,
+            supabaseProxyEnabled: Boolean(supabaseProxy),
             guestShopApi
         });
     });
@@ -870,16 +938,18 @@ function createLocalPreviewApp(options = {}) {
         port,
         sourceCommit,
         sourceState,
+        supabaseProxy,
         guestShopApi
     };
 }
 
 if (require.main === module) {
-    const { app, port, sourceCommit, sourceState, guestShopApi } = createLocalPreviewApp();
+    const { app, port, sourceCommit, sourceState, supabaseProxy, guestShopApi } = createLocalPreviewApp();
     const listenHost = resolveLocalPreviewListenHost();
     const onListening = () => {
         console.log(`[local-preview] source-commit=${sourceCommit}`);
         console.log(`[local-preview] source-mode=${sourceState.sourceMode} branch=${sourceState.sourceBranch || 'unknown'} dirty=${sourceState.workingTreeDirty} changed-files=${sourceState.changedFileCount}`);
+        console.log(`[local-preview] supabase-proxy=${supabaseProxy ? 'enabled' : 'disabled'}`);
         console.log(`[local-preview] guest-shop-api=${guestShopApi.mode}${guestShopApi.origin ? ` origin=${guestShopApi.origin} order-writes=${guestShopApi.orderWritesEnabled} cancellation=${guestShopApi.cancellationMode}` : ''}`);
         if (listenHost) {
             console.log(`[local-preview] http://${listenHost}:${port}`);
@@ -915,6 +985,9 @@ module.exports = {
     loadFreshSupportApiHandler,
     loadFreshWalletApiHandler,
     loadPreviewEnv,
+    parseMacosHttpsProxyOutput,
+    resolveLocalPreviewSupabaseProxy,
+    resolveMacosHttpsProxy,
     neutralizeLocalPreviewProductionRuntime,
     resolveLocalPreviewListenHost,
     resolveLocalPreviewStandaloneApiRoute,

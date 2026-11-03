@@ -652,6 +652,9 @@
                 next.enable_auto = sanitizeBoolean(source.enable_auto, false);
                 next.title = sanitizeText(source.title, '', 120);
                 next.subtitle = sanitizeText(source.subtitle, '', 240);
+                if (source.stream_color != null || source.palette != null) {
+                    next.stream_color = sanitizeInteger(source.stream_color ?? source.palette, { fallback: 3, min: 1, max: 3 });
+                }
                 next.custom_image = sanitizeUrl(source.custom_image, '', 2048);
                 next.cta = normalizeHeroCtaConfig(source.cta) || next.cta;
                 next.experiments = normalizeSectionExperiments(normalizedSection, source.experiments);

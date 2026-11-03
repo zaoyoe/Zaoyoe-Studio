@@ -516,6 +516,15 @@ document.addEventListener('click', (e) => {
     }
 });
 
+window.addEventListener('scroll', () => {
+    const dropdown = document.getElementById('userDropdown');
+    const overlay = document.getElementById('dropdownOverlay');
+    if (dropdown && dropdown.classList.contains('active')) {
+        dropdown.classList.remove('active');
+        if (overlay) overlay.classList.remove('active');
+    }
+}, { passive: true });
+
 
 // Close dropdown when clicking outside
 document.addEventListener('click', (event) => {

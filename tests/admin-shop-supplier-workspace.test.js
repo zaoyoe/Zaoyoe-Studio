@@ -28,8 +28,45 @@ function element(value = '') {
         },
         setAttribute(name, value) { attributes.set(name, value); },
         getAttribute(name) { return attributes.get(name); },
-        removeAttribute(name) { attributes.delete(name); }
+        removeAttribute(name) { attributes.delete(name); },
+        replaceChildren() {
+            this.innerHTML = '';
+            this.textContent = '';
+        }
     };
+}
+
+function nativeSelectElement() {
+    const select = element('');
+    let markup = '';
+    let options = [];
+    let selectedValue = '';
+    Object.defineProperties(select, {
+        innerHTML: {
+            get() { return markup; },
+            set(value) {
+                markup = String(value || '');
+                options = [...markup.matchAll(/<option\b([^>]*)>([\s\S]*?)<\/option>/gi)].map((match) => {
+                    const valueAttribute = match[1].match(/\bvalue="([^"]*)"/i);
+                    return {
+                        value: valueAttribute ? valueAttribute[1] : '',
+                        disabled: /\bdisabled(?:\s|$)/i.test(match[1]),
+                        selected: /\bselected(?:\s|$)/i.test(match[1])
+                    };
+                });
+                selectedValue = options.find((option) => option.selected)?.value ?? options[0]?.value ?? '';
+            }
+        },
+        value: {
+            get() { return selectedValue; },
+            set(value) {
+                const candidate = String(value ?? '');
+                selectedValue = options.some((option) => option.value === candidate) ? candidate : '';
+            }
+        }
+    });
+    select.tagName = 'SELECT';
+    return select;
 }
 
 function response(payload, status = 200) {
@@ -39,6 +76,7 @@ function response(payload, status = 200) {
 function workspace() {
     const ids = [
         'supplierCatalogProvider', 'supplierCatalogAccount', 'supplierCatalogSite', 'supplierCatalogSearchInput',
+        'supplierCatalogCategory',
         'supplierCatalogTableBody', 'supplierCatalogProviderBadge', 'supplierCatalogSelectAll',
         'supplierCatalogImportButton', 'supplierCatalogSelectionCount', 'supplierCatalogPageInfo',
         'supplierCatalogPrevButton', 'supplierCatalogNextButton', 'supplierCatalogFeedback',
@@ -46,7 +84,7 @@ function workspace() {
         'supplierCatalogRace', 'supplierCatalogPreview', 'productSupplierSummary',
         'supplierOperationsPanel', 'supplierOperationsTableBody', 'supplierOperationsStatus'
     ];
-    const elements = new Map(ids.map((id) => [id, element()]));
+    const elements = new Map(ids.map((id) => [id, id === 'supplierCatalogCategory' ? nativeSelectElement() : element()]));
     const actions = new Map(['supplier-catalog-import-detail', 'supplier-catalog-preview'].map((action) => [action, element()]));
     elements.get('supplierCatalogProvider').value = 'xiareng';
     elements.get('supplierCatalogAccount').value = 'first';
@@ -91,7 +129,16 @@ test('late catalog responses cannot overwrite the newly selected account', async
     h.elements.get('supplierCatalogAccount').value = 'second';
     h.shop.resetSupplierCatalogContext();
     const second = h.shop.loadSupplierCatalog();
-    h.pending[1].resolve(response({ success: true, total: 1, items: [item('SECOND')] }));
+    h.pending[1].resolve(response({
+        success: true,
+        total: 1,
+        items: [item('SECOND')],
+        categories: [],
+        snapshotId: '00000000-0000-4000-8000-000000000001',
+        syncedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        snapshotItemCount: 1
+    }));
     await second;
     h.pending[0].resolve(response({ success: true, total: 1, items: [item('FIRST')] }));
     await first;
@@ -99,6 +146,171 @@ test('late catalog responses cannot overwrite the newly selected account', async
     assert.equal(new URL(h.pending[1].url, 'http://localhost').searchParams.get('accountKey'), 'second');
     assert.equal(h.shop.supplierCatalogItems[0].providerGoodsId, 'SECOND');
     assert.doesNotMatch(h.elements.get('supplierCatalogTableBody').innerHTML, /FIRST/);
+});
+
+test('a successful retry clears the transient expired-snapshot notice', async () => {
+    const h = workspace();
+    const staleSnapshotId = '00000000-0000-4000-8000-000000000021';
+    const freshSnapshotId = '00000000-0000-4000-8000-000000000022';
+    h.shop.supplierCatalogSnapshot = {
+        providerId: 'xiareng',
+        accountKey: 'first',
+        site: 'cn',
+        snapshotId: staleSnapshotId,
+        syncedAt: new Date(Date.now() - 61_000).toISOString(),
+        expiresAt: new Date(Date.now() - 1_000).toISOString(),
+        categories: [{ categoryKey: 'cat-1', name: '分类一', itemCount: 1 }],
+        itemCount: 1
+    };
+
+    const loading = h.shop.loadSupplierCatalog({ page: 1 });
+    h.pending[0].resolve(response({
+        success: false,
+        code: 'supplier_catalog_snapshot_expired',
+        message: '虾仁目录快照已过期或已更新，请重新查询目录。'
+    }, 409));
+    await new Promise(setImmediate);
+    assert.equal(h.pending.length, 2);
+
+    h.pending[1].resolve(response({
+        success: true,
+        total: 1,
+        items: [item('XR-FRESH')],
+        categories: [{ categoryKey: 'cat-1', name: '分类一', itemCount: 1 }],
+        snapshotId: freshSnapshotId,
+        syncedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        snapshotItemCount: 1
+    }));
+    await loading;
+
+    assert.equal(h.shop.supplierCatalogSnapshot.snapshotId, freshSnapshotId);
+    assert.equal(h.shop.supplierCatalogItems[0].providerGoodsId, 'XR-FRESH');
+    assert.equal(h.elements.get('supplierCatalogFeedback').hidden, true);
+    assert.equal(h.elements.get('supplierCatalogFeedback').innerHTML, '');
+});
+
+test('expired Xiareng snapshots require category reselection instead of trusting a temporary key', async () => {
+    const h = workspace();
+    const staleSnapshotId = '00000000-0000-4000-8000-000000000001';
+    const freshSnapshotId = '00000000-0000-4000-8000-000000000002';
+    const staleExpiry = new Date(Date.now() - 1_000).toISOString();
+    const freshSync = new Date().toISOString();
+    const freshExpiry = new Date(Date.now() + 60_000).toISOString();
+
+    h.elements.get('supplierCatalogCategory').innerHTML = '<option value="">全部分类</option><option value="cat-1">旧分类（1）</option>';
+    h.elements.get('supplierCatalogCategory').value = 'cat-1';
+    h.shop.supplierCatalogCategoryKey = 'cat-1';
+    h.shop.supplierCatalogSnapshot = {
+        providerId: 'xiareng',
+        accountKey: 'first',
+        site: 'cn',
+        snapshotId: staleSnapshotId,
+        syncedAt: new Date(Date.now() - 61_000).toISOString(),
+        expiresAt: staleExpiry,
+        categories: [{ categoryKey: 'cat-1', name: '分类一', itemCount: 1 }],
+        itemCount: 1
+    };
+
+    const loading = h.shop.loadSupplierCatalog({ page: 1 });
+    assert.equal(h.pending.length, 1);
+    const staleRequest = new URL(h.pending[0].url, 'http://localhost');
+    assert.equal(staleRequest.searchParams.get('snapshotId'), staleSnapshotId);
+    assert.equal(staleRequest.searchParams.get('categoryKey'), 'cat-1');
+
+    h.pending[0].resolve(response({
+        success: false,
+        code: 'supplier_catalog_snapshot_expired',
+        message: '虾仁目录快照已过期或已更新，请重新查询目录。'
+    }, 409));
+    await new Promise(setImmediate);
+    assert.equal(h.pending.length, 2);
+
+    const bootstrapRequest = new URL(h.pending[1].url, 'http://localhost');
+    assert.equal(bootstrapRequest.searchParams.get('snapshotId'), null);
+    assert.equal(bootstrapRequest.searchParams.get('categoryKey'), null);
+    h.pending[1].resolve(response({
+        success: true,
+        total: 2,
+        items: [item('XR-ALL'), item('XR-CATEGORY')],
+        categories: [{ categoryKey: 'cat-1', name: '快照更新后的其他分类', itemCount: 1 }],
+        snapshotId: freshSnapshotId,
+        syncedAt: freshSync,
+        expiresAt: freshExpiry,
+        snapshotItemCount: 2
+    }));
+    await loading;
+
+    assert.equal(h.pending.length, 2, 'an expired cat-N key must not be retried automatically');
+    assert.equal(h.shop.supplierCatalogCategoryNeedsReselect, true);
+    assert.equal(h.shop.supplierCatalogCategoryKey, '');
+    assert.equal(h.elements.get('supplierCatalogCategory').value, '__reselect__');
+    assert.equal(h.shop.supplierCatalogItems.length, 0);
+    assert.equal(h.shop.supplierCatalogTotal, 0);
+    assert.match(h.elements.get('supplierCatalogFeedback').innerHTML, /请重新选择分类/);
+    assert.match(h.elements.get('supplierCatalogTableBody').innerHTML, /分类快照已更新/);
+
+    h.elements.get('supplierCatalogCategory').value = 'cat-1';
+    h.shop.selectSupplierCatalogCategory('cat-1');
+    const filtered = h.shop.loadSupplierCatalog({ page: 1 });
+    assert.equal(h.pending.length, 3);
+    const filteredRequest = new URL(h.pending[2].url, 'http://localhost');
+    assert.equal(filteredRequest.searchParams.get('snapshotId'), freshSnapshotId);
+    assert.equal(filteredRequest.searchParams.get('categoryKey'), 'cat-1');
+    h.pending[2].resolve(response({
+        success: true,
+        total: 1,
+        items: [item('XR-CATEGORY')],
+        categories: [{ categoryKey: 'cat-1', name: '分类一', itemCount: 1 }],
+        snapshotId: freshSnapshotId,
+        syncedAt: freshSync,
+        expiresAt: freshExpiry,
+        snapshotItemCount: 2
+    }));
+    await filtered;
+
+    assert.equal(h.shop.supplierCatalogCategoryKey, 'cat-1');
+    assert.equal(h.elements.get('supplierCatalogCategory').value, 'cat-1');
+    assert.equal(h.shop.supplierCatalogItems[0].providerGoodsId, 'XR-CATEGORY');
+    assert.equal(h.shop.supplierCatalogTotal, 1);
+});
+
+test('manual Xiareng refresh keeps the catalog closed until a category is explicitly reselected', async () => {
+    const h = workspace();
+    const snapshotId = '00000000-0000-4000-8000-000000000011';
+    const refreshedSnapshotId = '00000000-0000-4000-8000-000000000012';
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    h.elements.get('supplierCatalogCategory').innerHTML = '<option value="">全部分类</option><option value="cat-2">待刷新分类（1）</option>';
+    h.elements.get('supplierCatalogCategory').value = 'cat-2';
+    h.shop.supplierCatalogCategoryKey = 'cat-2';
+    h.shop.supplierCatalogSnapshot = {
+        providerId: 'xiareng', accountKey: 'first', site: 'cn', snapshotId,
+        syncedAt: new Date().toISOString(), expiresAt,
+        categories: [{ categoryKey: 'cat-2', name: '待刷新分类', itemCount: 1 }], itemCount: 1
+    };
+
+    const loading = h.shop.loadSupplierCatalog({ refresh: true, page: 1 });
+    const refreshRequest = new URL(h.pending[0].url, 'http://localhost');
+    assert.equal(refreshRequest.searchParams.get('refresh'), '1');
+    assert.equal(refreshRequest.searchParams.get('snapshotId'), null);
+    assert.equal(refreshRequest.searchParams.get('categoryKey'), null);
+    h.pending[0].resolve(response({
+        success: true,
+        total: 2,
+        items: [item('XR-ALL-1'), item('XR-ALL-2')],
+        categories: [{ categoryKey: 'cat-2', name: '刷新后的分类', itemCount: 2 }],
+        snapshotId: refreshedSnapshotId,
+        syncedAt: new Date().toISOString(),
+        expiresAt,
+        snapshotItemCount: 2
+    }));
+    await loading;
+
+    assert.equal(h.shop.supplierCatalogCategoryNeedsReselect, true);
+    assert.equal(h.elements.get('supplierCatalogCategory').value, '__reselect__');
+    assert.equal(h.shop.supplierCatalogItems.length, 0);
+    assert.equal(h.shop.supplierCatalogTotal, 0);
+    assert.doesNotMatch(h.elements.get('supplierCatalogTableBody').innerHTML, /XR-ALL/);
 });
 
 test('provider reset clears selections/detail and ignores late account discovery', async () => {
@@ -240,11 +452,11 @@ test('runtime script and stylesheet carry the cache version inside their actual 
     const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"[^>]*>([\s\S]*?)<\/script>/g)];
     const script = scripts.find((entry) => entry[1].startsWith('js/admin-shop.js?'));
     assert.ok(script);
-    assert.equal(new URL(script[1], 'http://localhost').searchParams.get('supplierCatalog'), '20261019_SUPPLIER_PLATFORM_V2_READONLY_1');
+    assert.equal(new URL(script[1], 'http://localhost').searchParams.get('supplierCatalog'), '20261101_SUPPLIER_CATALOG_SESSION_SNAPSHOT_1');
     assert.equal(script[2].trim(), '', 'cache version must not become inline script text');
     const stylesheet = [...html.matchAll(/<link\b[^>]*\bhref="([^"]+)"[^>]*>/g)].find((entry) => entry[1].startsWith('css/admin-studio-page.css?'));
     assert.ok(stylesheet);
-    assert.equal(new URL(stylesheet[1], 'http://localhost').searchParams.get('supplierCatalog'), '20261019_SUPPLIER_PLATFORM_V2_READONLY_1');
+    assert.equal(new URL(stylesheet[1], 'http://localhost').searchParams.get('supplierCatalog'), '20261101_SUPPLIER_CATALOG_SESSION_SNAPSHOT_1');
 });
 
 test('an import completed after a context switch invalidates product cache without leaking old feedback', async () => {

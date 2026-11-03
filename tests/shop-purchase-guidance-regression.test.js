@@ -9,6 +9,22 @@ function readRepoFile(relativePath) {
     return fs.readFileSync(path.join(REPO_ROOT, relativePath), 'utf8');
 }
 
+test('purchase notes and usage cards keep compact corners in normal and hover states', () => {
+    const shopCssSource = readRepoFile(path.join('css', 'shop-page.css'));
+    const shopHtmlSource = readRepoFile('shop.html');
+
+    assert.match(
+        shopCssSource,
+        /#shopPurchaseModal #purchaseNotesCard\.shop-success-usage-card,\s*#shopPurchaseModal #purchaseNotesCard\.shop-success-usage-card:hover,\s*#shopPurchaseModal #purchaseUsageCard\.shop-success-usage-card,\s*#shopPurchaseModal #purchaseUsageCard\.shop-success-usage-card:hover\s*\{[^}]*border-radius:\s*12px !important;/s,
+        'both expanded guidance cards should override shared glass-box corners on desktop and mobile in either theme'
+    );
+    assert.match(
+        shopHtmlSource,
+        /css\/shop-page\.css\?[^"]*guidanceRadius=20261102_1/,
+        'the storefront should invalidate cached guidance card styles'
+    );
+});
+
 test('shop purchase guidance flow refreshes latest notes and versions prefetched product snapshots', () => {
     const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
     const homeBootstrapSource = readRepoFile(path.join('js', 'index-home-bootstrap.js'));
