@@ -110,3 +110,47 @@ test('ai image workbench send button defaults to gray, becomes colorful with pro
     // Prompt textarea input listener synchronizes submit button colors and blocked state in real-time
     assert.match(js, /function handleRootInput\(event\)\s*\{[\s\S]*syncComposerSubmitButtonState\(\);/);
 });
+
+test('ai image workbench sidebar rail features top toggle button, compose icon, shifted mode switcher, and pill tooltips', () => {
+    const css = fs.readFileSync(workbenchCssPath, 'utf8');
+    const js = fs.readFileSync(workbenchJsPath, 'utf8');
+
+    // 1. Top sidebar toggle button with panel-left-open / panel-left-close SVG
+    assert.match(js, /class="ai-image-rail-brand \$\{sidebarView \? 'is-sidebar-open' : ''\}"/);
+    assert.match(js, /data-aiw-action="toggle-sidebar"/);
+    assert.match(js, /ai-image-rail-icon-panel/);
+    assert.match(js, /data-rail-tooltip="\$\{sidebarView \? '收起侧栏' : '展开侧栏'\}"/);
+
+    // 2. New chat button redrawn with compose pencil in loop SVG
+    assert.match(js, /class="ai-image-rail-btn ai-image-rail-btn--new"/);
+    assert.match(js, /ai-image-rail-compose-icon/);
+    assert.match(js, /data-rail-tooltip="新建对话"/);
+
+    // 3. Mode switcher shifted up right below History
+    assert.match(css, /\.ai-image-history-rail \.ai-image-rail-mode-switcher\s*\{[\s\S]*margin:\s*8px 0 auto 0;/);
+
+    // 4. Hover no longer expands collapsed sidebar width (stays 58px)
+    assert.match(css, /\.ai-image-history-sidebar\.is-collapsed:hover\s*\{[\s\S]*grid-template-columns:\s*58px 0;[\s\S]*flex-basis:\s*58px;[\s\S]*width:\s*58px;/);
+    assert.match(css, /\.ai-image-history-sidebar\.is-collapsed:hover \.ai-image-rail-btn\s*\{[\s\S]*width:\s*42px;[\s\S]*justify-content:\s*center;/);
+
+    // 5. Capsule pill floating tooltips with high contrast
+    assert.match(css, /\.ai-image-history-rail \[data-rail-tooltip\]::before\s*\{[\s\S]*border-radius:\s*9999px;[\s\S]*background:\s*#ececec;[\s\S]*color:\s*#171717;/);
+    assert.match(css, /html\[data-theme="light"\] \.ai-image-history-rail \[data-rail-tooltip\]::before[\s\S]*background:\s*#1f1f1f;[\s\S]*color:\s*#f5f5f5;/);
+    assert.match(css, /\.ai-image-history-rail \[data-rail-tooltip\]:hover::before/);
+
+    // 6. New chat and history buttons default transparent and match text button hover (transparent bg + blue text)
+    assert.match(css, /\.ai-image-rail-btn--new\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*color:\s*var\(--aiw-muted\);[\s\S]*background:\s*transparent;/);
+    assert.match(css, /\.ai-image-rail-btn--new:hover,[\s\S]*\.ai-image-rail-btn--new:focus-visible\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*color:\s*var\(--aiw-blue\);[\s\S]*background:\s*transparent;/);
+    assert.match(css, /\.ai-image-rail-btn:hover,[\s\S]*\.ai-image-rail-btn:focus-visible,[\s\S]*\.ai-image-rail-btn\.is-active\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*color:\s*var\(--aiw-blue\);[\s\S]*background:\s*transparent;/);
+
+    // 7. Text, Image, and Video buttons rendered with matching outline stroke SVGs instead of solid filled icons
+    assert.match(js, /function renderWorkbenchRailModeIcon\(id\)/);
+    assert.match(js, /ai-image-rail-mode-icon--chat/);
+    assert.match(js, /ai-image-rail-mode-icon--image/);
+    assert.match(js, /ai-image-rail-mode-icon--video/);
+    assert.match(css, /\.ai-image-rail-mode-icon\s*\{[\s\S]*stroke:\s*currentColor;[\s\S]*stroke-width:\s*2;/);
+
+    // 8. Re-entering workbench starts with an empty prompt textarea (no persisted draft restoration)
+    assert.match(js, /function restoreState\(\)\s*\{[\s\S]*state\.prompt = '';/);
+    assert.match(js, /function openWorkbench\(payload = \{\}\)\s*\{[\s\S]*if \(!wasOpen && !payload\?\.prompt\) \{\s*state\.prompt = '';\s*\}/);
+});

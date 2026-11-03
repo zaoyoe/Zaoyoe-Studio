@@ -2314,7 +2314,7 @@
                 videoCameraFixed: state.videoCameraFixed,
                 model: state.model,
                 quantity: state.quantity,
-                prompt: state.prompt,
+                prompt: '',
                 referenceImage: state.referenceImage,
                 referenceTitle: state.referenceTitle,
                 referenceIntent: state.referenceIntent,
@@ -2464,7 +2464,7 @@
             : (getActiveModelOptions('text')[0]?.id || DEFAULT_STATE.model);
         state.quantity = clampNumber(stored.quantity, 1, 4, DEFAULT_STATE.quantity);
         state.agent = '';
-        state.prompt = String(stored.prompt || '').slice(0, 4000);
+        state.prompt = '';
         state.referenceImage = String(stored.referenceImage || '');
         state.referenceTitle = String(stored.referenceTitle || '').slice(0, 160);
         state.referenceIntent = ['variation'].includes(stored.referenceIntent) ? stored.referenceIntent : '';
@@ -6493,6 +6493,9 @@
             return;
         }
         const wasOpen = state.open;
+        if (!wasOpen && !payload?.prompt) {
+            state.prompt = '';
+        }
         applyPayload(payload);
         openSelect = '';
         state.open = true;
@@ -6549,6 +6552,7 @@
     }
 
     function closeWorkbench() {
+        state.prompt = '';
         openSelect = '';
         modelPricingView.open = false;
         clearDeferredImageLoadTimer();
@@ -12694,6 +12698,36 @@
         `;
     }
 
+    function renderWorkbenchRailModeIcon(id) {
+        if (id === 'chat') {
+            return `
+                <svg class="ai-image-rail-mode-icon ai-image-rail-mode-icon--chat" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    <path d="M8 10h8"></path>
+                    <path d="M8 14h4"></path>
+                </svg>
+            `;
+        }
+        if (id === 'image') {
+            return `
+                <svg class="ai-image-rail-mode-icon ai-image-rail-mode-icon--image" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect>
+                    <circle cx="9" cy="9" r="2"></circle>
+                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+                </svg>
+            `;
+        }
+        if (id === 'video') {
+            return `
+                <svg class="ai-image-rail-mode-icon ai-image-rail-mode-icon--video" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m22 8-6 4 6 4V8Z"></path>
+                    <rect width="14" height="12" x="2" y="6" rx="2" ry="2"></rect>
+                </svg>
+            `;
+        }
+        return '';
+    }
+
     function renderHistoryPanel() {
         const busyCount = getBusyTasks().length;
         const statusIcon = busyCount ? 'fa-spinner' : 'fa-clock-rotate-left';
@@ -12712,17 +12746,22 @@
         return `
             <aside class="ai-image-history-sidebar ${sidebarView ? 'is-expanded' : 'is-collapsed'}" aria-label="${isBillingView ? '计费方式' : '生成记录'}">
                 <div class="ai-image-history-rail">
-                    ${sidebarView ? `
-                        <button class="ai-image-rail-brand is-sidebar-open" type="button" data-aiw-action="toggle-sidebar" aria-label="收起生成记录" title="收起">
-                            <i class="fas fa-chevron-left ai-image-sidebar-toggle-chevron ai-image-sidebar-toggle-chevron--wide" aria-hidden="true"></i>
-                            <i class="fas fa-chevron-up ai-image-sidebar-toggle-chevron ai-image-sidebar-toggle-chevron--narrow" aria-hidden="true"></i>
-                            <span class="ai-image-sidebar-toggle-tip" aria-hidden="true">收起</span>
-                        </button>
-                    ` : ''}
-                    <button class="ai-image-rail-btn ai-image-rail-btn--new" type="button" data-aiw-action="new-chat" aria-label="新建对话" title="新建对话" data-rail-label="新建">
-                        <i class="fas fa-plus"></i>
+                    <button class="ai-image-rail-brand ${sidebarView ? 'is-sidebar-open' : ''}" type="button" data-aiw-action="toggle-sidebar" aria-label="${sidebarView ? '收起侧栏' : '展开侧栏'}" data-rail-tooltip="${sidebarView ? '收起侧栏' : '展开侧栏'}" data-rail-label="侧栏">
+                        <svg class="ai-image-rail-icon-panel" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+                            <path d="M9 3v18"></path>
+                            ${sidebarView ? '<path d="m16 15-3-3 3-3"></path>' : '<path d="m14 9 3 3-3 3"></path>'}
+                        </svg>
+                        <i class="fas fa-chevron-left ai-image-sidebar-toggle-chevron ai-image-sidebar-toggle-chevron--wide" aria-hidden="true"></i>
+                        <i class="fas fa-chevron-up ai-image-sidebar-toggle-chevron ai-image-sidebar-toggle-chevron--narrow" aria-hidden="true"></i>
                     </button>
-                    <button class="ai-image-rail-btn is-primary ${busyCount ? 'is-busy' : ''} ${isHistoryView ? 'is-active' : ''}" type="button" data-aiw-action="toggle-history" aria-label="${isHistoryView ? '收起生成记录' : '展开生成记录'}" aria-expanded="${isHistoryView ? 'true' : 'false'}" title="${isHistoryView ? '收起生成记录' : '生成记录'}" data-rail-label="记录">
+                    <button class="ai-image-rail-btn ai-image-rail-btn--new" type="button" data-aiw-action="new-chat" aria-label="新建对话" data-rail-tooltip="新建对话" data-rail-label="新建">
+                        <svg class="ai-image-rail-compose-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M8.5 4.5A9 9 0 1 0 19.5 13"></path>
+                            <rect x="13.2" y="1.2" width="3.6" height="11.6" rx="1.8" transform="rotate(45 15 7)"></rect>
+                        </svg>
+                    </button>
+                    <button class="ai-image-rail-btn is-primary ${busyCount ? 'is-busy' : ''} ${isHistoryView ? 'is-active' : ''}" type="button" data-aiw-action="toggle-history" aria-label="${isHistoryView ? '收起生成记录' : '展开生成记录'}" aria-expanded="${isHistoryView ? 'true' : 'false'}" data-rail-tooltip="${isHistoryView ? '收起生成记录' : '生成记录'}" data-rail-label="记录">
                         <i class="fas ${escapeHtml(statusIcon)}"></i>
                         ${badgeValue ? `<span>${escapeHtml(badgeValue)}</span>` : ''}
                     </button>
@@ -12730,24 +12769,25 @@
                         ${railModeOptions.map((item) => {
                             const available = item.available !== false;
                             const active = currentToolMode === item.id;
-                            const title = available ? `切换到${item.label}` : '暂未配置视频模型';
+                            const tooltip = available ? item.label : ('暂未配置' + item.label + '模型');
                             return `
-                                <button class="ai-image-rail-btn ai-image-rail-mode-btn ${active ? 'is-active' : ''} ${available ? '' : 'is-disabled'}" type="button" data-aiw-action="set-workbench-tool-mode" data-aiw-tool-mode="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.label)}" aria-pressed="${active ? 'true' : 'false'}" title="${escapeHtml(title)}" data-rail-label="${escapeHtml(item.label)}" ${available ? '' : 'disabled'}>
-                                    <i class="fas ${escapeHtml(item.icon)}" aria-hidden="true"></i>
+                                <button class="ai-image-rail-btn ai-image-rail-mode-btn ${active ? 'is-active' : ''} ${available ? '' : 'is-disabled'}" type="button" data-aiw-action="set-workbench-tool-mode" data-aiw-tool-mode="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.label)}" aria-pressed="${active ? 'true' : 'false'}" data-rail-tooltip="${escapeHtml(tooltip)}" data-rail-label="${escapeHtml(item.label)}" ${available ? '' : 'disabled'}>
+                                    ${renderWorkbenchRailModeIcon(item.id)}
+                                    <i class="fas ${escapeHtml(item.icon)}" aria-hidden="true" style="display:none;"></i>
                                 </button>
                             `;
                         }).join('')}
                     </div>
                     <div class="ai-image-rail-footer">
                         <nav class="ai-image-rail-legal ai-image-rail-legal--desktop" aria-label="平台政策">
-                            <a class="ai-image-rail-legal-link" href="/terms.html" target="_blank" rel="noopener noreferrer" aria-label="查看服务条款" title="服务条款" data-rail-label="条款">
+                            <a class="ai-image-rail-legal-link" href="/terms.html" target="_blank" rel="noopener noreferrer" aria-label="查看服务条款" data-rail-tooltip="服务条款" data-rail-label="条款">
                                 <i class="fas fa-file-contract" aria-hidden="true"></i>
                             </a>
                         </nav>
-                        <button class="ai-image-rail-btn ai-image-rail-wallet ${isBillingView ? 'is-active' : ''}" type="button" data-aiw-action="toggle-billing" aria-label="${isBillingView ? '收起计费方式' : '展开计费方式'}" aria-expanded="${isBillingView ? 'true' : 'false'}" title="计费方式" data-rail-label="计费">
+                        <button class="ai-image-rail-btn ai-image-rail-wallet ${isBillingView ? 'is-active' : ''}" type="button" data-aiw-action="toggle-billing" aria-label="${isBillingView ? '收起计费方式' : '展开计费方式'}" aria-expanded="${isBillingView ? 'true' : 'false'}" data-rail-tooltip="${isBillingView ? '收起计费方式' : '计费方式'}" data-rail-label="计费">
                             <i class="fas fa-gem"></i>
                         </button>
-                        <button class="ai-image-rail-btn ai-image-rail-close" type="button" data-aiw-action="close" aria-label="关闭 AI 工作台" title="${escapeHtml(isStandaloneMode() ? '返回灵感库' : '关闭')}" data-rail-label="${escapeHtml(isStandaloneMode() ? '返回' : '关闭')}">
+                        <button class="ai-image-rail-btn ai-image-rail-close" type="button" data-aiw-action="close" aria-label="关闭 AI 工作台" data-rail-tooltip="${escapeHtml(isStandaloneMode() ? '返回灵感库' : '关闭')}" data-rail-label="${escapeHtml(isStandaloneMode() ? '返回' : '关闭')}">
                             <i class="fas ${escapeHtml(isStandaloneMode() ? 'fa-arrow-left' : 'fa-xmark')}"></i>
                         </button>
                     </div>
@@ -12755,7 +12795,7 @@
 
                 <div class="ai-image-history-expanded">
                     <nav class="ai-image-rail-legal ai-image-rail-legal--mobile" aria-label="平台政策">
-                        <a class="ai-image-rail-legal-link" href="/terms.html" target="_blank" rel="noopener noreferrer" aria-label="查看服务条款" title="服务条款" data-rail-label="条款">
+                        <a class="ai-image-rail-legal-link" href="/terms.html" target="_blank" rel="noopener noreferrer" aria-label="查看服务条款" data-rail-tooltip="服务条款" data-rail-label="条款">
                             <i class="fas fa-file-contract" aria-hidden="true"></i>
                         </a>
                     </nav>

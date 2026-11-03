@@ -28,6 +28,10 @@ const PRIVATE_SOURCE_DIRS = new Set([
     'tests',
     'tools'
 ]);
+const PRIVATE_ASSET_DIRECTORIES = new Set([
+    'assets/prompts',
+    'assets/prompts-optimized'
+]);
 const PRIVATE_ROOT_FILES = new Set([
     '.gitignore',
     '.vercelignore',
@@ -90,6 +94,10 @@ function shouldCopyStaticAsset(relativePath = '') {
     }
 
     if (PRIVATE_SOURCE_DIRS.has(parts[0])) {
+        return false;
+    }
+
+    if (parts.length >= 2 && PRIVATE_ASSET_DIRECTORIES.has(`${parts[0]}/${parts[1]}`)) {
         return false;
     }
 
