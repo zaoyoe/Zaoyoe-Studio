@@ -1,12 +1,17 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="recharge-html">
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual">
+    <meta name="theme-color" content="#000000">
+    <meta name="color-scheme" content="light dark">
+    <script src="theme-preload.js?v=20261101_safari_chrome_3"></script>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>AI 订阅自动开通 | KC ChatGPT · Claude · Grok</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="stylesheet" href="style.css?v=20261014_user_ui_restored_1">
+    <link rel="apple-touch-icon" href="/favicon.svg">
+    <link rel="stylesheet" href="style.css?v=20261101_session_font_size_28">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -17,6 +22,7 @@
                 var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
                 var theme = (saved === 'light' || saved === 'dark') ? saved : (prefersLight ? 'light' : 'dark');
                 document.documentElement.setAttribute('data-theme', theme);
+                document.documentElement.style.colorScheme = theme;
             } catch (e) {}
         })();
     </script>
@@ -257,43 +263,345 @@
         let successTransitionTimer = null;
         let successNoticeTimer = null;
         const pageShell = document.querySelector('.page-shell');
+        const mobileViewportQuery = window.matchMedia('(max-width: 640px)');
+        const visualViewport = window.visualViewport;
+        let keyboardBaselineHeight = null;
+        let keyboardLayoutOpen = false;
+        let keyboardCloseTimer = null;
+        let keyboardSyncFrame = null;
+        let keyboardPositionFrame = null;
+        let keyboardClosingTimer = null;
+        let keyboardClosingPending = false;
+        let lastKeyboardViewportHeight = null;
+        let minKeyboardViewportHeight = null;
+        let currentKeyboardShellTop = null;
+
+        function getMobileFullHeight() {
+            const screenHeight = window.screen?.height ? Math.min(window.screen.height, 960) : 0;
+            return Math.max(keyboardBaselineHeight || 0, window.innerHeight || 0, screenHeight > 0 ? Math.min(screenHeight, window.innerHeight || screenHeight) : 0);
+        }
+
+        function getMobileTopInset() {
+            return 14;
+        }
+
+        function cancelKeyboardRestoreAnimation() {
+            clearTimeout(keyboardClosingTimer);
+            keyboardClosingTimer = null;
+            keyboardClosingPending = false;
+            currentKeyboardShellTop = null;
+            document.body.classList.remove('keyboard-closing');
+            if (pageShell) {
+                pageShell.style.removeProperty('transition');
+                pageShell.style.removeProperty('transform');
+            }
+        }
+
+        function finishKeyboardRestore() {
+            cancelKeyboardRestoreAnimation();
+        }
+
+        function updateMobileRestingShellTop(explicitCardHeight) {
+            if (!mobileViewportQuery.matches || !pageShell) return null;
+            const card = pageShell.querySelector('.recharge-card');
+            const cardHeight = Number.isFinite(explicitCardHeight)
+                ? explicitCardHeight
+                : (card ? card.getBoundingClientRect().height : 292);
+            const fullHeight = keyboardBaselineHeight || window.innerHeight;
+            const topInset = getMobileTopInset();
+            const restingTop = Math.max(topInset, Math.round((fullHeight - cardHeight) / 2));
+            document.documentElement.style.setProperty('--kc-keyboard-shell-top', `${restingTop}px`);
+            return restingTop;
+        }
+
+        function updateKeyboardCardPositionSync() {
+            if (keyboardClosingPending
+                || !pageShell) return;
+
+            const card = pageShell.querySelector('.recharge-card');
+            if (!card) return;
+
+            const viewportHeight = Math.min(visualViewport?.height || window.innerHeight, window.innerHeight);
+            const cardHeight = card.getBoundingClientRect().height;
+            // 顶部预留安全区域，避免在灵动岛/刘海屏机型被推至状态栏内部
+            // 始终在 Visual Viewport 坐标系内计算，再由 CSS 叠加 --kc-visual-viewport-offset-top
+            const topInset = getMobileTopInset();
+            // 底部预留 16px 间距，避开 iOS Safari 键盘上方的悬浮地址胶囊栏，与图 1 保持一致的底部间距
+            const bottomInset = 16;
+            const fullHeight = keyboardBaselineHeight || window.innerHeight;
+            const visualRestingTop = Math.max(topInset, Math.round((fullHeight - cardHeight) / 2));
+            const visualBottomAlignedTop = viewportHeight - cardHeight - bottomInset;
+
+            const visualTargetTop = Math.min(
+                visualRestingTop,
+                Math.max(
+                    topInset,
+                    visualBottomAlignedTop
+                )
+            );
+
+            currentKeyboardShellTop = Math.round(visualTargetTop);
+            document.documentElement.style.setProperty('--kc-keyboard-shell-top', `${currentKeyboardShellTop}px`);
+        }
+
+        function scheduleKeyboardCardPosition() {
+            if (keyboardPositionFrame !== null) return;
+            keyboardPositionFrame = requestAnimationFrame(() => {
+                keyboardPositionFrame = null;
+                if (keyboardClosingPending
+                    || !keyboardLayoutOpen
+                    || !document.body.classList.contains('keyboard-open')
+                    || !pageShell) return;
+                updateKeyboardCardPositionSync();
+            });
+        }
+
+        function clearMobileKeyboardLayout({ animateRestore = false } = {}) {
+            if (keyboardPositionFrame !== null) {
+                cancelAnimationFrame(keyboardPositionFrame);
+                keyboardPositionFrame = null;
+            }
+            const shouldAnimateRestore = animateRestore
+                && pageShell
+                && (document.body.classList.contains('keyboard-open') || keyboardClosingPending);
+            const shellTopBeforeRestore = animateRestore && pageShell
+                ? pageShell.getBoundingClientRect().top
+                : null;
+            if (shouldAnimateRestore) {
+                clearTimeout(keyboardClosingTimer);
+                keyboardClosingTimer = null;
+                document.body.classList.add('keyboard-closing');
+            }
+            document.body.classList.remove('keyboard-open');
+            document.documentElement.style.removeProperty('--kc-keyboard-viewport-height');
+            const currentVisualOffsetTop = Math.max(0, Math.round(visualViewport?.offsetTop || 0));
+            document.documentElement.style.setProperty('--kc-visual-viewport-offset-top', `${currentVisualOffsetTop}px`);
+            const restingTop = updateMobileRestingShellTop();
+            keyboardLayoutOpen = false;
+            keyboardClosingPending = false;
+            lastKeyboardViewportHeight = null;
+            minKeyboardViewportHeight = null;
+            currentKeyboardShellTop = null;
+            if (!document.activeElement?.matches('input, textarea, select')) {
+                keyboardBaselineHeight = null;
+            }
+
+            if (shellTopBeforeRestore !== null) {
+                const shellTopAfterRestore = restingTop !== null ? restingTop : pageShell.getBoundingClientRect().top;
+                const restoreOffset = shellTopBeforeRestore - shellTopAfterRestore;
+                if (Math.abs(restoreOffset) > 1) {
+                    pageShell.style.transition = 'none';
+                    pageShell.style.transform = `translateY(${restoreOffset}px)`;
+                    void pageShell.offsetHeight;
+                    requestAnimationFrame(() => {
+                        pageShell.style.transition = 'transform 180ms cubic-bezier(0.2, 0.75, 0.25, 1)';
+                        pageShell.style.transform = 'translateY(0)';
+                        keyboardClosingTimer = setTimeout(finishKeyboardRestore, 220);
+                    });
+                } else {
+                    finishKeyboardRestore();
+                }
+            }
+        }
+
+        function syncMobileKeyboardLayout() {
+            if (!mobileViewportQuery.matches) {
+                clearMobileKeyboardLayout();
+                return;
+            }
+
+            const currentVisualOffsetTop = Math.max(0, Math.round(visualViewport?.offsetTop || 0));
+            document.documentElement.style.setProperty('--kc-visual-viewport-offset-top', `${currentVisualOffsetTop}px`);
+
+            const viewportHeight = Math.min(visualViewport?.height || window.innerHeight, window.innerHeight);
+            const focusedField = document.activeElement?.matches('input, textarea, select');
+            if (focusedField && keyboardBaselineHeight === null) {
+                keyboardBaselineHeight = viewportHeight;
+            }
+
+            if (keyboardLayoutOpen) {
+                if (minKeyboardViewportHeight === null || viewportHeight < minKeyboardViewportHeight) {
+                    minKeyboardViewportHeight = viewportHeight;
+                }
+            }
+
+            const viewportIsDismissing = keyboardLayoutOpen
+                && minKeyboardViewportHeight !== null
+                && viewportHeight > minKeyboardViewportHeight + 48;
+            lastKeyboardViewportHeight = viewportHeight;
+
+            // During a real mobile keyboard dismissal, visualViewport grows
+            // significantly back toward baseline. Freeze the card at its
+            // current top until the viewport settles; ignore minor IME bar
+            // height fluctuations so the open state never latches frozen.
+            if (viewportIsDismissing) {
+                keyboardClosingPending = true;
+            } else if (keyboardLayoutOpen && minKeyboardViewportHeight !== null && viewportHeight <= minKeyboardViewportHeight + 16) {
+                keyboardClosingPending = false;
+            }
+
+            const keyboardOpen = Boolean(
+                focusedField
+                && keyboardBaselineHeight !== null
+                && keyboardBaselineHeight - viewportHeight > 120
+            );
+
+            if (keyboardOpen) {
+                clearTimeout(keyboardCloseTimer);
+                keyboardCloseTimer = null;
+                if (!keyboardLayoutOpen) {
+                    keyboardClosingPending = false;
+                    minKeyboardViewportHeight = viewportHeight;
+                }
+                keyboardLayoutOpen = true;
+                document.documentElement.style.setProperty('--kc-keyboard-viewport-height', `${Math.round(viewportHeight)}px`);
+                document.body.classList.add('keyboard-open');
+                if (!keyboardClosingPending) {
+                    updateKeyboardCardPositionSync();
+                }
+                scheduleKeyboardCardPosition();
+                return;
+            }
+
+            if (!keyboardLayoutOpen) {
+                clearMobileKeyboardLayout();
+                return;
+            }
+
+            // iOS emits several visualViewport resize/scroll events while the
+            // keyboard is retracting. Keep the top layout until the viewport
+            // has settled so the card does not flash back and forth.
+            clearTimeout(keyboardCloseTimer);
+            keyboardCloseTimer = setTimeout(() => {
+                keyboardCloseTimer = null;
+                const latestViewportHeight = Math.min(visualViewport?.height || window.innerHeight, window.innerHeight);
+                const latestFocusedField = document.activeElement?.matches('input, textarea, select');
+                const stillOpen = Boolean(
+                    latestFocusedField
+                    && keyboardBaselineHeight !== null
+                    && keyboardBaselineHeight - latestViewportHeight > 120
+                );
+                if (stillOpen) {
+                    // A mid-dismissal viewport can pause between animation
+                    // frames for longer than the debounce interval. Keep the
+                    // freeze latched until the viewport returns to its
+                    // baseline; sync still refreshes viewport sizing, but the
+                    // keyboard-open branch will not reposition the card.
+                    syncMobileKeyboardLayout();
+                    return;
+                }
+                clearMobileKeyboardLayout({ animateRestore: true });
+            }, 180);
+        }
+
+        function scheduleMobileKeyboardLayout() {
+            if (keyboardSyncFrame !== null) return;
+            keyboardSyncFrame = requestAnimationFrame(() => {
+                keyboardSyncFrame = null;
+                syncMobileKeyboardLayout();
+            });
+        }
+
+        function cancelMobileKeyboardLayoutTimer() {
+            clearTimeout(keyboardCloseTimer);
+            keyboardCloseTimer = null;
+            cancelKeyboardRestoreAnimation();
+            if (keyboardSyncFrame !== null) {
+                cancelAnimationFrame(keyboardSyncFrame);
+                keyboardSyncFrame = null;
+            }
+        }
 
         function lockShellTopPosition() {
-            if (!pageShell) return;
-            if (pageShell.dataset.topLocked) return;
-            let statusOffset = 0;
-            if (statusMsg && statusMsg.style.display !== 'none') {
-                const style = window.getComputedStyle(statusMsg);
-                const marginTop = parseFloat(style.marginTop) || 18;
-                const marginBottom = parseFloat(style.marginBottom) || 0;
-                statusOffset = (statusMsg.offsetHeight || 0) + marginTop + marginBottom;
+            if (pageShell) {
+                pageShell.style.marginTop = '';
+                pageShell.style.marginBottom = '';
+                pageShell.dataset.topLocked = 'true';
             }
-            const shellHeight = Math.max(100, pageShell.offsetHeight - statusOffset);
-            const computedTop = Math.max(16, Math.round((window.innerHeight - shellHeight) / 2));
-            pageShell.style.marginTop = `${computedTop}px`;
-            pageShell.style.marginBottom = 'auto';
-            pageShell.dataset.topLocked = 'true';
+            const editingField = document.activeElement?.matches('input, textarea, select');
+            if (!editingField && window.scrollY !== 0) {
+                window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+            }
         }
 
         function unlockShellTopPosition() {
             if (!pageShell) return;
-            delete pageShell.dataset.topLocked;
             pageShell.style.marginTop = '';
             pageShell.style.marginBottom = '';
+            delete pageShell.dataset.topLocked;
         }
 
-        window.addEventListener('resize', () => {
-            if (pageShell && pageShell.dataset.topLocked) {
-                unlockShellTopPosition();
-                if (step2 && step2.style.display !== 'none') {
-                    lockShellTopPosition();
+        const handleMobileFieldFocusTrigger = (e) => {
+            if (!mobileViewportQuery.matches) return;
+            const target = e.target;
+            if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+                cancelMorph();
+                cancelMobileKeyboardLayoutTimer();
+                keyboardClosingPending = false;
+                lastKeyboardViewportHeight = null;
+                minKeyboardViewportHeight = null;
+                currentKeyboardShellTop = null;
+                if (document.activeElement === target) {
+                    scheduleMobileKeyboardLayout();
+                    return;
+                }
+                try {
+                    target.focus({ preventScroll: true });
+                } catch (_) {
+                    target.focus();
                 }
             }
+        };
+        document.addEventListener('pointerdown', handleMobileFieldFocusTrigger, { passive: true });
+        document.addEventListener('focusin', () => {
+            cancelMobileKeyboardLayoutTimer();
+            keyboardClosingPending = false;
+            lastKeyboardViewportHeight = null;
+            minKeyboardViewportHeight = null;
+            currentKeyboardShellTop = null;
+            if (mobileViewportQuery.matches) {
+                cancelMorph();
+                if (keyboardBaselineHeight === null || keyboardBaselineHeight < window.innerHeight * 0.75) {
+                    keyboardBaselineHeight = Math.min(visualViewport?.height || window.innerHeight, window.innerHeight);
+                }
+            }
+            scheduleMobileKeyboardLayout();
         });
+        document.addEventListener('focusout', () => {
+            currentKeyboardShellTop = null;
+            if (keyboardLayoutOpen) {
+                keyboardClosingPending = true;
+            }
+            scheduleMobileKeyboardLayout();
+        });
+        window.addEventListener('resize', () => {
+            if (!document.activeElement?.matches('input, textarea, select')) {
+                keyboardBaselineHeight = Math.min(visualViewport?.height || window.innerHeight, window.innerHeight);
+                updateMobileRestingShellTop();
+            }
+            const currentVisualOffsetTop = Math.max(0, Math.round(visualViewport?.offsetTop || 0));
+            document.documentElement.style.setProperty('--kc-visual-viewport-offset-top', `${currentVisualOffsetTop}px`);
+            scheduleMobileKeyboardLayout();
+        });
+        visualViewport?.addEventListener('resize', scheduleMobileKeyboardLayout, { passive: true });
+        visualViewport?.addEventListener('scroll', scheduleMobileKeyboardLayout, { passive: true });
+        if (mobileViewportQuery.matches) {
+            keyboardBaselineHeight = Math.min(visualViewport?.height || window.innerHeight, window.innerHeight);
+            const initialVisualOffsetTop = Math.max(0, Math.round(visualViewport?.offsetTop || 0));
+            document.documentElement.style.setProperty('--kc-visual-viewport-offset-top', `${initialVisualOffsetTop}px`);
+            updateMobileRestingShellTop();
+        }
+        syncMobileKeyboardLayout();
 
         const PLAN_LABELS = {
             go: 'ChatGPT Go',
             plus: 'ChatGPT Plus',
+            team: 'ChatGPT Team',
+            chatgpt_team: 'ChatGPT Team',
+            team_2: 'ChatGPT Team (2席)',
+            team_5: 'ChatGPT Team (5席)',
+            team_10: 'ChatGPT Team (10席)',
+            team_20: 'ChatGPT Team (20席)',
             pro_100: 'ChatGPT PRO 100',
             pro_200: 'ChatGPT PRO 200',
             pro_500: 'ChatGPT PRO 500',
@@ -311,6 +619,14 @@
             claude_team: 'Claude Team',
             ...GrokPlanCatalog.labels,
         };
+
+        function resolveClientPlanLabel(planType) {
+            if (!planType) return PLAN_LABELS.plus;
+            if (PLAN_LABELS[planType]) return PLAN_LABELS[planType];
+            const m = String(planType).match(/^team_?(\d+)$/i);
+            if (m) return `ChatGPT Team (${m[1]}席)`;
+            return planType;
+        }
 
         let currentPlatform = 'chatgpt';
         const platformNav = document.getElementById('platformNav');
@@ -530,10 +846,28 @@
         }
 
         let morphTimer = null;
-        function cancelMorph() {
+        let morphAnimations = [];
+
+        function clearStatusCollapseStyles() {
+            if (!statusMsg) return;
+            statusMsg.classList.remove('is-collapsing');
+            statusMsg.style.removeProperty('height');
+        }
+
+        function cancelMorph({ preserveCurrentHeight = false } = {}) {
             const card = document.querySelector('.recharge-card');
             if (card) {
-                card.style.height = '';
+                const hasActiveMorph = Boolean(morphTimer) || card.classList.contains('is-morphing');
+                if (preserveCurrentHeight && hasActiveMorph) {
+                    card.style.height = `${card.getBoundingClientRect().height}px`;
+                } else {
+                    card.style.height = '';
+                }
+                morphAnimations.forEach((animation) => animation.cancel());
+                morphAnimations = [];
+                if (statusMsg && (statusMsg.classList.contains('is-collapsing') || statusMsg.style.height)) {
+                    clearStatusCollapseStyles();
+                }
                 card.classList.remove('is-morphing');
             }
             if (morphTimer) {
@@ -542,7 +876,7 @@
             }
         }
 
-        function morphCardHeight(actionCallback, onComplete) {
+        function morphCardHeight(actionCallback, onComplete, beforeAnimate) {
             const card = document.querySelector('.recharge-card');
             if (!card) {
                 if (actionCallback) actionCallback();
@@ -550,7 +884,8 @@
                 return;
             }
 
-            cancelMorph();
+            // Keep the rendered height when a new morph interrupts an existing one.
+            cancelMorph({ preserveCurrentHeight: true });
 
             const startHeight = card.offsetHeight;
             card.classList.add('is-morphing');
@@ -568,15 +903,159 @@
             card.classList.add('is-morphing');
             void card.offsetHeight;
 
+            if (beforeAnimate) beforeAnimate();
+
             // 平滑变形到目标高度
             card.style.height = `${targetHeight}px`;
+            if (mobileViewportQuery.matches && !keyboardLayoutOpen) {
+                updateMobileRestingShellTop(targetHeight);
+            }
 
             morphTimer = setTimeout(() => {
                 card.style.height = '';
                 card.classList.remove('is-morphing');
                 morphTimer = null;
+                if (mobileViewportQuery.matches && !keyboardLayoutOpen) {
+                    updateMobileRestingShellTop();
+                }
                 if (onComplete) onComplete();
             }, 420);
+        }
+
+        function hideStatusMessageSmoothly() {
+            if (!statusMsg || window.getComputedStyle(statusMsg).display === 'none') {
+                if (statusMsg) statusMsg.style.display = 'none';
+                if (mobileViewportQuery.matches && !keyboardLayoutOpen) {
+                    updateMobileRestingShellTop();
+                }
+                return;
+            }
+
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                statusMsg.style.display = 'none';
+                cancelMorph();
+                return;
+            }
+
+            const card = document.querySelector('.recharge-card');
+            if (!card || typeof card.animate !== 'function' || typeof statusMsg.animate !== 'function') {
+                statusMsg.style.display = 'none';
+                cancelMorph();
+                return;
+            }
+
+            cancelMorph({ preserveCurrentHeight: true });
+
+            const cardStartHeight = card.getBoundingClientRect().height;
+            const statusRect = statusMsg.getBoundingClientRect();
+            const statusStyle = window.getComputedStyle(statusMsg);
+            const readPx = (property) => parseFloat(statusStyle.getPropertyValue(property)) || 0;
+            const statusMetrics = {
+                paddingTop: statusStyle.paddingTop,
+                paddingBottom: statusStyle.paddingBottom,
+                paddingLeft: statusStyle.paddingLeft,
+                paddingRight: statusStyle.paddingRight,
+                marginTop: statusStyle.marginTop,
+                marginBottom: statusStyle.marginBottom,
+                borderTopWidth: statusStyle.borderTopWidth,
+                borderRightWidth: statusStyle.borderRightWidth,
+                borderBottomWidth: statusStyle.borderBottomWidth,
+                borderLeftWidth: statusStyle.borderLeftWidth,
+                opacity: statusStyle.opacity
+            };
+            const statusContentHeight = Math.max(
+                0,
+                statusRect.height - readPx('padding-top') - readPx('padding-bottom')
+                    - readPx('border-top-width') - readPx('border-bottom-width')
+            );
+            const statusDisplay = statusMsg.style.display;
+
+            card.style.height = '';
+            statusMsg.style.display = 'none';
+            const cardTargetHeight = card.getBoundingClientRect().height;
+            statusMsg.style.display = statusDisplay;
+            card.style.height = `${cardStartHeight}px`;
+            void card.offsetHeight;
+
+            const cardContentHeight = Math.min(cardStartHeight, cardTargetHeight + statusContentHeight);
+            const statusOpacity = Number.parseFloat(statusMetrics.opacity) || 0;
+            const duration = 360;
+            const fadeDelay = 48;
+            const fadeDuration = 132;
+            const contentPackedAt = 0.6;
+            const easing = 'cubic-bezier(0.4, 0, 0.2, 1)';
+
+            card.classList.add('is-morphing');
+            statusMsg.classList.add('is-collapsing');
+            statusMsg.style.height = `${statusRect.height}px`;
+
+            morphAnimations = [
+                card.animate([
+                    { height: `${cardStartHeight}px`, offset: 0, easing },
+                    { height: `${cardContentHeight}px`, offset: contentPackedAt, easing: 'linear' },
+                    { height: `${cardTargetHeight}px`, offset: 1 }
+                ], { duration, fill: 'forwards' }),
+                statusMsg.animate([
+                    {
+                        height: `${statusRect.height}px`,
+                        paddingTop: statusMetrics.paddingTop,
+                        paddingBottom: statusMetrics.paddingBottom,
+                        paddingLeft: statusMetrics.paddingLeft,
+                        paddingRight: statusMetrics.paddingRight,
+                        marginTop: statusMetrics.marginTop,
+                        marginBottom: statusMetrics.marginBottom,
+                        borderTopWidth: statusMetrics.borderTopWidth,
+                        borderRightWidth: statusMetrics.borderRightWidth,
+                        borderBottomWidth: statusMetrics.borderBottomWidth,
+                        borderLeftWidth: statusMetrics.borderLeftWidth,
+                        offset: 0,
+                        easing
+                    },
+                    {
+                        height: `${statusContentHeight}px`,
+                        paddingTop: '0px',
+                        paddingBottom: '0px',
+                        paddingLeft: statusMetrics.paddingLeft,
+                        paddingRight: statusMetrics.paddingRight,
+                        marginTop: '0px',
+                        marginBottom: '0px',
+                        borderTopWidth: '0px',
+                        borderRightWidth: '0px',
+                        borderBottomWidth: '0px',
+                        borderLeftWidth: '0px',
+                        offset: contentPackedAt,
+                        easing: 'linear'
+                    },
+                    {
+                        height: '0px',
+                        paddingTop: '0px',
+                        paddingRight: '0px',
+                        paddingBottom: '0px',
+                        paddingLeft: '0px',
+                        marginTop: '0px',
+                        marginBottom: '0px',
+                        borderTopWidth: '0px',
+                        borderRightWidth: '0px',
+                        borderBottomWidth: '0px',
+                        borderLeftWidth: '0px',
+                        offset: 1
+                    }
+                ], { duration, fill: 'forwards' }),
+                statusMsg.animate([
+                    { opacity: statusOpacity },
+                    { opacity: 0 }
+                ], { duration: fadeDuration, delay: fadeDelay, easing, fill: 'forwards' })
+            ];
+
+            morphTimer = setTimeout(() => {
+                statusMsg.style.display = 'none';
+                morphAnimations.forEach((animation) => animation.cancel());
+                morphAnimations = [];
+                card.style.height = '';
+                card.classList.remove('is-morphing');
+                morphTimer = null;
+                clearStatusCollapseStyles();
+            }, duration);
         }
 
 
@@ -716,6 +1195,9 @@
                 if (querySection) querySection.style.display = 'none';
                 if (redeemSection) redeemSection.style.display = 'block';
                 if (statusMsg) statusMsg.style.display = 'none';
+                if (mobileViewportQuery.matches && !keyboardLayoutOpen) {
+                    updateMobileRestingShellTop();
+                }
                 return;
             }
 
@@ -897,7 +1379,7 @@
                     const platformIcons = { chatgpt: '⚡ ChatGPT', claude: '🤖 Claude', grok: '🚀 Grok' };
                     const platformKey = String(data.data.platform || currentPlatform).toLowerCase();
                     const platformName = platformIcons[platformKey] || (data.data.platform ? data.data.platform.toUpperCase() : 'ChatGPT');
-                    const planLabel = data.data.plan_label || PLAN_LABELS[data.data.plan_type] || currentPlanLabel || '标准版';
+                    const planLabel = data.data.plan_label || resolveClientPlanLabel(data.data.plan_type) || currentPlanLabel || '标准版';
                     const boundAccount = String(data.data.boundAccount || '').trim();
 
                     if (['chatgpt', 'claude', 'grok'].includes(platformKey)) {
@@ -1269,6 +1751,16 @@
             setTimeout(() => applyTokenInput(tokenInput.value.trim()), 0);
         });
 
+        tokenInput.addEventListener('wheel', (e) => {
+            const el = tokenInput;
+            const isScrollingDown = e.deltaY > 0;
+            const isAtBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 1;
+            const isAtTop = el.scrollTop <= 0;
+            if ((isScrollingDown && isAtBottom) || (!isScrollingDown && isAtTop)) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+
         cdkInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1279,9 +1771,15 @@
         redeemBtn.addEventListener('click', async () => {
             const cdk = cdkInput.value.trim();
             if (!cdk) {
-                cdkInput.focus();
+                if (!mobileViewportQuery.matches) {
+                    cdkInput.focus();
+                }
                 if (statusMsg) statusMsg.style.display = 'none';
                 return showCapsule('请输入卡密', 'error');
+            }
+
+            if (mobileViewportQuery.matches && document.activeElement?.matches('input, textarea, select')) {
+                document.activeElement.blur();
             }
 
             toggleLoading(redeemBtn, true);
@@ -1314,7 +1812,7 @@
                                 setButtonText(redeemBtn, '验证卡密');
 
                                 const planType = data.data?.plan_type || 'plus';
-                                const planLabel = data.data?.plan_label || PLAN_LABELS[planType] || PLAN_LABELS.plus;
+                                const planLabel = data.data?.plan_label || resolveClientPlanLabel(planType);
                                 currentPlanLabel = planLabel;
                                 const cdkPlatform = data.data?.platform || 'chatgpt';
                                 setPlatform(cdkPlatform);
@@ -1353,7 +1851,11 @@
                                     infoDiv.innerHTML = `<span>待使用</span><code>${cdk}</code>`;
                                 }
                                 statusMsg.style.display = 'none';
-                                setTimeout(() => tokenInput.focus(), 150);
+                                if (!mobileViewportQuery.matches) {
+                                    setTimeout(() => tokenInput.focus(), 150);
+                                } else if (document.activeElement?.matches('input, textarea, select')) {
+                                    document.activeElement.blur();
+                                }
                             }, () => {
                                 void pageShell?.offsetHeight;
                                 lockShellTopPosition();
@@ -1377,6 +1879,29 @@
             if (activationLocked) {
                 return;
             }
+            if (document.activeElement?.matches('input, textarea, select')) {
+                document.activeElement.blur();
+            }
+            cancelMobileKeyboardLayoutTimer();
+            if (mobileViewportQuery.matches) {
+                cancelMorph();
+                [step2, tabNav].forEach((el) => {
+                    if (el) el.classList.remove('step-leaving', 'cascade-enter');
+                });
+                resetRedeemFlow();
+                if (cardHead) {
+                    cardHead.classList.remove('head-crossfade');
+                    cardHead.classList.add('head-entering');
+                    setTimeout(() => cardHead.classList.remove('head-entering'), 300);
+                }
+                if (step1) {
+                    step1.classList.remove('step-leaving');
+                    step1.classList.add('step-entering');
+                    setTimeout(() => step1.classList.remove('step-entering'), 300);
+                }
+                return;
+            }
+
             if (step2) step2.classList.add('step-leaving');
             if (tabNav) tabNav.classList.add('step-leaving');
             if (cardHead) cardHead.classList.add('head-crossfade');
@@ -1406,6 +1931,7 @@
         let socketHeartbeatInterval = null;
         let socketHeartbeatTimeout = null;
         let activeJobKey = '';
+        let taskConnectionWarningVisible = false;
         let taskCompleted = false;
         const WS_HEARTBEAT_INTERVAL_MS = 15000;
         const WS_HEARTBEAT_TIMEOUT_MS = 45000;
@@ -1435,22 +1961,34 @@
                 }
                 try {
                     socket.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
-                    scheduleSocketHeartbeatTimeout();
                 } catch (error) {
                     console.error('Task WS ping failed:', error);
                 }
             }, WS_HEARTBEAT_INTERVAL_MS);
         }
 
+        function showTaskConnectionWarning() {
+            taskConnectionWarningVisible = true;
+            showStatus('与充值服务的连接已中断，正在重新连接并查询原任务状态，请勿重复提交。', 'warning');
+        }
+
+        function clearTaskConnectionWarning() {
+            if (!taskConnectionWarningVisible) return;
+            taskConnectionWarningVisible = false;
+            statusMsg.style.display = 'none';
+        }
+
         function closeTaskSocket() {
+            clearTaskConnectionWarning();
             clearTimeout(reconnectTimer);
             reconnectTimer = null;
             clearSocketHeartbeat();
-            if (socket) {
-                try { socket.close(); } catch (_) { }
-            }
+            const connection = socket;
             socket = null;
             activeJobKey = '';
+            if (connection) {
+                try { connection.close(); } catch (_) { }
+            }
         }
 
         function resetRedeemFlow(options = {}) {
@@ -1502,6 +2040,8 @@
             const rechargeCard = document.querySelector('.recharge-card');
             if (rechargeCard) {
                 rechargeCard.removeAttribute('data-platform');
+                rechargeCard.style.height = '';
+                rechargeCard.classList.remove('is-morphing');
             }
             const tokenModal = document.getElementById('tokenHelperModal');
             if (tokenModal) {
@@ -1531,7 +2071,26 @@
                 capsuleToast.style.display = 'none';
                 capsuleToast.classList.remove('is-hiding', 'shake');
             }
-            cdkInput.focus();
+
+            // 清理移动端软键盘布局状态，重置居中参考位置
+            currentKeyboardShellTop = null;
+            keyboardLayoutOpen = false;
+            keyboardClosingPending = false;
+            lastKeyboardViewportHeight = null;
+            keyboardBaselineHeight = null;
+            if (mobileViewportQuery.matches) {
+                clearMobileKeyboardLayout();
+                updateMobileRestingShellTop();
+            }
+
+            // 移动端不自动触发焦点，避免软键盘闪弹或抖动；桌面端保持自动聚焦体验
+            if (!mobileViewportQuery.matches) {
+                cdkInput.focus();
+            } else {
+                if (document.activeElement?.matches('input, textarea, select')) {
+                    document.activeElement.blur();
+                }
+            }
         }
 
         function formatTaskErrorMessage(status, rawMessage, options = {}) {
@@ -1542,7 +2101,8 @@
             const progress = Number(data.progress);
             const status = String(data.status || 'running');
             const message = String(data.message || '');
-            const forceProgress = data.type === 'snapshot';
+            // 运行态严格保持单调递增，避免快照由于异步时序将已前进的进度拉回；仅终态或显式换卡才允许强制覆盖
+            const forceProgress = (status === 'success' || status === 'failed' || status === 'maintenance' || status === 'manual' || Boolean(data.attemptChanged));
 
             if (status === 'success') {
                 taskCompleted = true;
@@ -1753,6 +2313,19 @@
                     heading = '【找出异类】请点击与其他项不同的【形状/物体】';
                 }
                 guide = '操作指引：请仔细观察图中的几何图形，找出其中形状、凹凸特征或纹理与其他项明显不同的目标点击选定，确认选好后点击右下角按钮完成验证。';
+            }
+            // 3.5. 形状相同 / 相同形式 (same form / same shape)
+            else if (combined.includes('same form') || combined.includes('same shape') || combined.includes('相同图形') || combined.includes('形状相同')) {
+                if (combined.includes('three') || combined.includes('3')) {
+                    heading = '请找出 3 个形状相同的图形';
+                } else if (combined.includes('two') || combined.includes('2')) {
+                    heading = '请找出 2 个形状相同的图形';
+                } else if (combined.includes('four') || combined.includes('4')) {
+                    heading = '请找出 4 个形状相同的图形';
+                } else {
+                    heading = '请找出形状相同的图形';
+                }
+                guide = '操作指引：请仔细观察图中的几何图形，找出其中形状外形完全相同的目标点击选定。选好后点击右下角按钮完成验证（多页请先点「Next / 下一步」）。';
             }
             // 4. 动物眼神对视 / 避开目光 (meet your eye / looking away)
             else if (combined.includes('meet your eye') || combined.includes('meet your eyes') || combined.includes('looking at you') || combined.includes('looking directly')) {
@@ -2477,15 +3050,18 @@
             if (socket && socket.readyState === WebSocket.CONNECTING) return;
 
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            socket = new WebSocket(`${protocol}//${window.location.host}`);
+            const connection = new WebSocket(`${protocol}//${window.location.host}`);
+            socket = connection;
 
-            socket.onopen = () => {
+            connection.onopen = () => {
+                if (socket !== connection) return;
                 clearTimeout(reconnectTimer);
-                socket.send(JSON.stringify({ type: 'subscribe', jobKey: activeJobKey }));
+                connection.send(JSON.stringify({ type: 'subscribe', jobKey: activeJobKey }));
                 startSocketHeartbeat();
             };
 
-            socket.onmessage = (event) => {
+            connection.onmessage = (event) => {
+                if (socket !== connection) return;
                 try {
                     const data = JSON.parse(event.data);
                     if (data.type === 'pong') {
@@ -2497,6 +3073,7 @@
                     }
                     scheduleSocketHeartbeatTimeout();
                     if (data.type === 'snapshot' || data.type === 'progress' || data.type === 'status') {
+                        clearTaskConnectionWarning();
                         applyTaskState(data);
                     } else if (data.type === 'captcha_interactive_required') {
                         handleCaptchaInteractiveRequired(data);
@@ -2510,16 +3087,19 @@
                 }
             };
 
-            socket.onclose = () => {
+            connection.onclose = () => {
+                if (socket !== connection) return;
                 clearSocketHeartbeat();
                 socket = null;
                 if (activeJobKey && !taskCompleted) {
+                    showTaskConnectionWarning();
                     clearTimeout(reconnectTimer);
                     reconnectTimer = setTimeout(() => initWebSocket(activeJobKey), 3000);
                 }
             };
 
-            socket.onerror = (error) => {
+            connection.onerror = (error) => {
+                if (socket !== connection) return;
                 console.error('WebSocket Error:', error);
             };
         }
@@ -2544,7 +3124,6 @@
             if (!pageShell?.dataset?.topLocked) {
                 lockShellTopPosition();
             }
-            statusMsg.style.display = 'none';
             resetProgressState();
             showProgress();
             if (sessionCheck.email) {
@@ -2555,6 +3134,7 @@
                 : '';
             setProgress(3, initLabel, 'running', { force: true });
             updateFlowUI(2, 'running');
+            hideStatusMessageSmoothly();
 
             try {
                 const response = await fetch('/api/run-process', {
@@ -2792,7 +3372,7 @@
 
         // 核心秘钥同款：鼠标移动视差浮动交互 (Mouse Parallax Interaction)
         window.addEventListener('mousemove', (event) => {
-            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            if (mobileViewportQuery.matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
             const x = ((event.clientX / window.innerWidth) - 0.5) * 36;
             const y = ((event.clientY / window.innerHeight) - 0.5) * 24;
             document.documentElement.style.setProperty('--pointer-x', `${x.toFixed(1)}px`);
@@ -2820,7 +3400,19 @@
             function applyTheme(theme) {
                 document.documentElement.setAttribute('data-theme', theme);
                 document.body.setAttribute('data-theme', theme);
+                document.documentElement.style.colorScheme = theme;
+                document.body.style.colorScheme = theme;
                 localStorage.setItem(THEME_KEY, theme);
+                try { localStorage.setItem('theme', theme); } catch (e) {}
+
+                const themeColor = theme === 'light' ? '#ffffff' : '#000000';
+                document.documentElement.style.backgroundColor = themeColor;
+                document.body.style.backgroundColor = themeColor;
+
+                if (typeof window.applySiteThemeChrome === 'function') {
+                    window.applySiteThemeChrome(theme, { forceRepaint: true });
+                }
+
                 if (window.lucide && typeof window.lucide.createIcons === 'function') {
                     window.lucide.createIcons();
                 }

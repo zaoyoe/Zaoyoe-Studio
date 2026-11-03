@@ -43,7 +43,16 @@ async function connectStandaloneBrowser(options = {}) {
         `--remote-debugging-port=${cdpPort}`
     ];
     if (!headful) {
-        launchArgs.push('--no-sandbox', '--disable-setuid-sandbox');
+        launchArgs.push(
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-renderer-backgrounding',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-ipc-flooding-protection',
+            '--force-color-profile=srgb'
+        );
     }
 
     const launchOptions = {

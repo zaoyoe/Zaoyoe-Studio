@@ -6,15 +6,18 @@ const {
     isLoginRedirectUrl,
     isHardLoginRedirectUrl,
     isCheckoutPageUrl,
+    isTelemetryUrl,
     shouldBlockLoginNavigation,
     isLoginPageContent,
     hasVisibleLoginChrome,
     hasLoggedInChatUi,
     waitForLoggedInChatUi,
+    hasVisibleExpiredSession,
     assertNoExpiredSession,
     buildSessionNotLoggedInError
 } = require('./auth-page-detect');
-const { assertLocalSessionFresh, verifyChatGptAccessToken, buildChatGptAuthError } = require('./chatgpt-auth-state');
+const { assertLocalSessionFresh, verifyChatGptAccessToken, assertChatGptAccountEligible, buildChatGptAuthError } = require('./chatgpt-auth-state');
+const { handleStaticAssetCache } = require('./static-asset-cache');
 
 function decodeJwtPayload(token) {
     const parts = String(token || '').split('.');
@@ -294,7 +297,7 @@ async function injectChatGptCookies(context, cookieSpecs) {
     };
 }
 
-function collectCookieSpecs(sessionData, sessionJson) {
+function collectCookieSpecs(sessionData, sessionJson, extraOptions = {}) {
     const specs = [];
     const seen = new Set();
     const seenNames = new Set();
@@ -329,7 +332,7 @@ function collectCookieSpecs(sessionData, sessionJson) {
         }
     }
 
-    for (const header of [sessionData?.cookieHeader, sessionData?.cookie_header, sessionJson?.cookieHeader, sessionJson?.cookie_header]) {
+    for (const header of [sessionData?.cookieHeader, sessionData?.cookie_header, sessionJson?.cookieHeader, sessionJson?.cookie_header, extraOptions?.cookieHeader]) {
         for (const pair of parseCookieHeader(header)) {
             push(pair.name, pair.value);
         }
@@ -366,7 +369,7 @@ function collectCookieSpecs(sessionData, sessionJson) {
         push('__Host-next-auth.csrf-token', csrfToken);
     }
 
-    const deviceId = String(sessionData?.deviceId || sessionData?.device_id || sessionData?.['oai-did'] || '').trim();
+    const deviceId = String(extraOptions?.deviceId || sessionData?.deviceId || sessionData?.device_id || sessionData?.['oai-did'] || '').trim();
     if (deviceId && !seenNames.has('oai-did')) {
         push('oai-did', deviceId);
     }
@@ -492,7 +495,7 @@ async function assertChatGptLoggedIn(page, label = '页面') {
  * 在浏览器上下文安装 Session：拦截 auth API + 注入 fetch 补丁
  * 注意：__Secure-next-auth.session-token 是加密 cookie，不能用 accessToken 冒充
  */
-async function installChatGptSession(context, sessionRaw) {
+async function installChatGptSession(context, sessionRaw, options = {}) {
     const resolved = resolveSessionInput(sessionRaw);
     if (!resolved?.accessToken) {
         throw new Error('缺少 Session：请粘贴完整 Session JSON（来自 chatgpt.com/api/auth/session）');
@@ -501,7 +504,7 @@ async function installChatGptSession(context, sessionRaw) {
     const { accessToken: token, sessionJson } = resolved;
     let accessToken = token;
     let sessionData = resolved.sessionData;
-    const cookieSpecs = collectCookieSpecs(sessionData, sessionJson);
+    const cookieSpecs = collectCookieSpecs(sessionData, sessionJson, options);
 
     if (!hasStoredSessionToken(cookieSpecs)) {
         assertLocalSessionFresh(token, sessionJson);
@@ -543,8 +546,8 @@ async function installChatGptSession(context, sessionRaw) {
         );
     }
 
-    let cookieVerified = false;
-    if (injectResult.hasSessionToken) {
+    let cookieVerified = Boolean(options.cookieVerified);
+    if (injectResult.hasSessionToken && !options.skipOnlineProbe) {
         const apiCheck = await verifyRealSessionApi(context);
         if (apiCheck.expired) throw buildChatGptAuthError();
         if (apiCheck.ok) {
@@ -612,6 +615,35 @@ async function installChatGptSession(context, sessionRaw) {
     await context.route('**/*', async (route) => {
         const url = route.request().url();
         const resourceType = route.request().resourceType();
+
+        // ⚡ 超级智能离线资源包：不可变公共前端静态资产由本地镜像 0ms 瞬间提供 (读穿写入，零代理流量)
+        // 优先拦截不可变静态资源（含 ChatGPT/Claude/Grok 静态包及 js.stripe.com/v3 静态 SDK）
+        const handledByCache = await handleStaticAssetCache(route).catch(() => false);
+        if (handledByCache) {
+            return;
+        }
+
+        // 核心保护：Stripe 收银台 API、m.stripe.network 遥测、hCaptcha 人机验证及其 CDN 资源绝对直通，严禁拦截或篡改 Header，
+        // 彻底杜绝 hCaptcha 出现 "Oops, something went wrong. If you're using an adblocker..."
+        if (
+            url.includes('hcaptcha.com') ||
+            url.includes('stripe.com') ||
+            url.includes('stripecdn.com') ||
+            url.includes('pay.openai.com') ||
+            url.includes('stripethirdparty')
+        ) {
+            await route.continue();
+            return;
+        }
+
+        if (isTelemetryUrl(url)) {
+            await route.fulfill({
+                status: 200,
+                contentType: resourceType === 'script' ? 'application/javascript' : 'application/json',
+                body: resourceType === 'script' ? '' : '{}'
+            });
+            return;
+        }
         if (shouldBlockLoginNavigation(url, resourceType)) {
             await route.abort();
             return;
@@ -620,7 +652,7 @@ async function installChatGptSession(context, sessionRaw) {
             await route.continue();
             return;
         }
-        if (url.includes('auth.openai.com') || url.includes('chatgpt.com') || url.includes('openai.com') || url.includes('pay.openai.com')) {
+        if (url.includes('auth.openai.com') || url.includes('chatgpt.com')) {
             await route.continue({
                 headers: {
                     ...route.request().headers(),
@@ -640,6 +672,83 @@ async function installChatGptSession(context, sessionRaw) {
  */
 function setupChatGptSessionAuth(context, accessToken) {
     return installChatGptSession(context, accessToken);
+}
+
+/**
+ * 稳健导航到 ChatGPT 页面：优先等待 commit（响应头到达），并竞态轮询核心 UI 状态，
+ * 避免在动态住宅代理环境下因后台挂起的遥测长连接而死等 domcontentloaded 导致 90s 超时
+ */
+async function navigateChatGptSessionPage(page, targetUrl, options = {}) {
+    const isPricingTarget = options.isPricingTarget || targetUrl.includes('#pricing');
+    const navTimeout = Number(process.env.CHATGPT_NAV_TIMEOUT_MS || (process.env.NODE_ENV === 'test' ? 10000 : 45000));
+    const deadline = Date.now() + navTimeout;
+    const remaining = () => Math.max(1000, deadline - Date.now());
+
+    try {
+        await page.goto(targetUrl, {
+            waitUntil: 'commit',
+            timeout: Math.min(30000, remaining())
+        });
+    } catch (gotoErr) {
+        if (await hasLoggedInChatUi(page).catch(() => false)) {
+            console.log('[Session] 页面导航事件异常，但检测到已登录 UI 存在，继续执行流程');
+            return;
+        }
+        throw Object.assign(
+            new Error(`ChatGPT 页面连接超时（${gotoErr.message}）[CHATGPT_NAV_TIMEOUT]`),
+            { code: 'CHATGPT_NAV_TIMEOUT', cause: gotoErr }
+        );
+    }
+
+    if (isPricingTarget) {
+        await page.evaluate(() => {
+            try {
+                if (window.location.hash !== '#pricing') {
+                    window.location.hash = '#pricing';
+                }
+                window.dispatchEvent(new HashChangeEvent('hashchange'));
+                window.dispatchEvent(new PopStateEvent('popstate'));
+            } catch (_) {}
+        }).catch(() => {});
+    }
+
+    while (Date.now() < deadline) {
+        if (page.isClosed()) {
+            throw new Error('页面在加载过程中被意外关闭 [CHATGPT_NAV_TIMEOUT]');
+        }
+        if (await hasLoggedInChatUi(page).catch(() => false)) {
+            return;
+        }
+        if (await hasVisibleLoginChrome(page).catch(() => false) || await isLoginPageContent(page).catch(() => false)) {
+            return;
+        }
+        if (await hasVisibleExpiredSession(page).catch(() => false)) {
+            return;
+        }
+        const isCf = await page.evaluate(() => {
+            const text = document.body ? document.body.innerText : '';
+            return /Verify you are human|Just a moment|Cloudflare/i.test(text);
+        }).catch(() => false);
+        if (isCf) {
+            return;
+        }
+        const domReady = await page.evaluate(() => {
+            return Boolean(document.body && (document.readyState === 'interactive' || document.readyState === 'complete') && document.body.childElementCount > 0);
+        }).catch(() => false);
+        if (domReady) {
+            await page.waitForTimeout(options.cookieVerified ? 200 : 500);
+            return;
+        }
+        await page.waitForTimeout(300);
+    }
+
+    if (await hasLoggedInChatUi(page).catch(() => false)) {
+        return;
+    }
+    throw Object.assign(
+        new Error('ChatGPT 页面加载超时（未能在时限内呈现有效界面）[CHATGPT_NAV_TIMEOUT]'),
+        { code: 'CHATGPT_NAV_TIMEOUT' }
+    );
 }
 
 /**
@@ -668,22 +777,10 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
     const isPricingTarget = targetUrl.includes('#pricing');
     const pageLabel = isPricingTarget ? '定价页' : '首页';
 
-    await page.goto(targetUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: 90000
+    await navigateChatGptSessionPage(page, targetUrl, {
+        isPricingTarget,
+        cookieVerified: options.cookieVerified
     });
-    if (isPricingTarget) {
-        // 定价页快速唤起：通知 Next.js SPA 挂载 #pricing 弹窗，不再停留聊天首页
-        await page.evaluate(() => {
-            try {
-                if (window.location.hash !== '#pricing') {
-                    window.location.hash = '#pricing';
-                }
-                window.dispatchEvent(new HashChangeEvent('hashchange'));
-                window.dispatchEvent(new PopStateEvent('popstate'));
-            } catch (_) {}
-        }).catch(() => {});
-    }
     await page.waitForTimeout(options.cookieVerified ? 400 : 800);
     await assertNoExpiredSession(page);
 
@@ -698,7 +795,7 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
     }
 
     if (await hasVisibleLoginChrome(page)) {
-        await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+        await page.reload({ waitUntil: 'commit', timeout: 25000 }).catch(() => {});
         await page.waitForTimeout(1500);
     }
 
@@ -710,6 +807,13 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
         uiReady = await waitForLoggedInChatUi(page, cookieVerified ? 4000 : 8000);
         await assertNoExpiredSession(page);
     }
+
+    const eligibilityPromise = !options.skipSubscriptionCheck
+        ? assertChatGptAccountEligible(page, accessToken, { deadlineMs: 15000 }).then(
+            (res) => ({ ok: true, res }),
+            (err) => ({ ok: false, err })
+        )
+        : null;
 
     let officialAccount;
     try {
@@ -727,6 +831,11 @@ async function bootstrapChatGptSession(page, sessionRaw, options = {}) {
 
     if (email && officialAccount.email && email.toLowerCase() !== officialAccount.email.toLowerCase()) {
         throw buildChatGptAuthError('CHATGPT_ACCOUNT_MISMATCH');
+    }
+
+    if (eligibilityPromise) {
+        const elig = await eligibilityPromise;
+        if (!elig.ok) throw elig.err;
     }
 
     const hasSessionToken = options.hasSessionToken ?? (Array.isArray(sessionData?.cookies) || Boolean(sessionData?.sessionToken || sessionData?.session_token || sessionData?.['__Secure-next-auth.session-token']));
@@ -806,12 +915,258 @@ function extractEmailFromSession(raw) {
     ).trim();
 }
 
+/**
+ * 0 浏览器纯协议模式：并发核验 ChatGPT 官方账号身份 (/backend-api/me) 与订阅资格 (/backend-api/accounts/check)
+ * 若遇到 403 Cloudflare 挑战或网络异常，返回 { ok: false, challenge: true } 供外层按需懒加载浏览器。
+ * 若遇到 401 过期、账号不匹配或已订阅，直接抛出对应强安全拦截异常。
+ */
+async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
+    const resolved = resolveSessionInput(sessionRaw);
+    if (!resolved?.accessToken) {
+        throw new Error('缺少 Session：请粘贴完整 Session JSON');
+    }
+
+    const { accessToken, sessionJson, sessionData } = resolved;
+    assertLocalSessionFresh(accessToken, sessionJson);
+
+    const email = sessionData?.user?.email || extractProfileFromToken(accessToken).email || '';
+    if (!email && !sessionData?.user?.id) {
+        throw new Error('Session 无效：JSON 中缺少 user 信息，请从 chatgpt.com/api/auth/session 复制完整内容');
+    }
+
+    const cookieSpecs = collectCookieSpecs(sessionData, sessionJson, options);
+    const sessionTokenValue = String(
+        process.env.CHATGPT_SESSION_COOKIE
+        || process.env.CHATGPT_SESSION_TOKEN
+        || sessionData?.sessionToken
+        || sessionData?.session_token
+        || sessionData?.['__Secure-next-auth.session-token']
+        || cookieSpecs.find((c) => c.name === SESSION_TOKEN_BASE)?.value
+        || ''
+    ).trim();
+
+    if (sessionTokenValue && sessionTokenValue === accessToken) {
+        throw new Error(
+            'sessionToken 与 accessToken 相同：请从浏览器 DevTools → Application → Cookies 复制 '
+            + '__Secure-next-auth.session-token（不是 /api/auth/session JSON 里的 accessToken）'
+        );
+    }
+
+    const cookieHeader = cookieSpecs.map((c) => `${c.name}=${c.value}`).join('; ');
+    const deviceId = String(
+        cookieSpecs.find((c) => c.name === 'oai-did')?.value
+        || sessionData?.deviceId
+        || sessionData?.device_id
+        || sessionData?.['oai-did']
+        || ''
+    ).trim();
+    const hasSessionCookie = hasStoredSessionToken(cookieSpecs);
+
+    const proxyStr = String(options.proxy || '').trim();
+    const timeoutMs = Number(options.timeoutMs || 10000);
+    const userAgent = options.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36';
+
+    let impitClient = null;
+    try {
+        const { Impit } = require('impit');
+        impitClient = new Impit({
+            browser: 'chrome',
+            proxyUrl: proxyStr || undefined,
+            ignoreTlsErrors: true,
+            timeout: timeoutMs
+        });
+    } catch (_) {}
+
+    let undiciFetch = null;
+    let dispatcher = undefined;
+    if (!impitClient) {
+        const undici = require('undici');
+        undiciFetch = undici.fetch;
+        dispatcher = proxyStr ? new undici.ProxyAgent(proxyStr) : undefined;
+    }
+
+    const buildHeaders = (tokenVal) => ({
+        'Authorization': `Bearer ${tokenVal}`,
+        'Accept': 'application/json',
+        'User-Agent': userAgent,
+        'Referer': 'https://chatgpt.com/',
+        'Origin': 'https://chatgpt.com',
+        'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="147", "Google Chrome";v="147"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
+        ...(deviceId ? { 'oai-device-id': deviceId } : {})
+    });
+
+    const fetchJson = async (url, customHeaders = null) => {
+        const reqHeaders = customHeaders || buildHeaders(accessToken);
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const resp = impitClient
+                    ? await impitClient.fetch(url, { method: 'GET', headers: reqHeaders })
+                    : await undiciFetch(url, {
+                        method: 'GET',
+                        headers: reqHeaders,
+                        dispatcher,
+                        signal: controller.signal
+                    });
+                const text = await resp.text();
+                let data = null;
+                try {
+                    if (text.length <= 65536) data = JSON.parse(text);
+                } catch (_) {}
+                return { status: resp.status, text, data };
+            } catch (err) {
+                if (attempt < 2) {
+                    await new Promise((r) => setTimeout(r, 300));
+                    continue;
+                }
+                return { status: 0, text: '', data: null, error: err.message };
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+    };
+
+    let activeToken = accessToken;
+    let activeSessionData = sessionData;
+
+    try {
+        console.log('🔐 [步骤] 正在通过纯协议 (Chrome TLS 指纹) 快速核验 ChatGPT Session 与订阅状态...');
+
+        // ⚡ 性能优化：先在本地 0ms 解析 JWT 载荷的过期时间 (exp)
+        // 若 AccessToken 明确已过期且拥有 Session Cookie，直接请求刷新接口，无需发起明知会 401 的慢速网络往返！
+        const tokenJwtPayload = decodeJwtPayload(activeToken);
+        const isExpiringSoon = Boolean(tokenJwtPayload?.exp && (Date.now() / 1000) >= (tokenJwtPayload.exp - 60));
+        if (isExpiringSoon && hasSessionCookie) {
+            console.log('🔄 [Session] 本地检测到 AccessToken 已到期，直接通过 Cookie 刷新最新 Token...');
+            const sessionRes = await fetchJson('https://chatgpt.com/api/auth/session', {
+                'Accept': 'application/json',
+                'User-Agent': userAgent,
+                'Referer': 'https://chatgpt.com/',
+                'Cookie': cookieHeader
+            });
+            if (sessionRes.status === 200 && sessionRes.data?.accessToken && (sessionRes.data?.user?.email || sessionRes.data?.user?.id)) {
+                assertSameSessionAccount(sessionJson, accessToken, sessionRes.data);
+                activeSessionData = mergeVerifiedSessionPayload(sessionData, sessionRes.data);
+                activeToken = activeSessionData.accessToken;
+                console.log('✅ [Session] 已预先无感刷新最新 AccessToken');
+            }
+        }
+
+        let [meRes, accRes] = await Promise.all([
+            fetchJson('https://chatgpt.com/backend-api/me', buildHeaders(activeToken)),
+            options.skipSubscriptionCheck
+                ? Promise.resolve({ status: 200, data: { skipped: true } })
+                : fetchJson('https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0', buildHeaders(activeToken))
+        ]);
+
+        const isExpiredText = (txt) => /\b(?:token_expired|invalid_token|expired_token|session_expired)\b|authentication token has expired/i.test(String(txt || ''));
+
+        if ((meRes.status === 401 || accRes.status === 401 || isExpiredText(meRes.text) || isExpiredText(accRes.text)) && hasSessionCookie) {
+            const sessionRes = await fetchJson('https://chatgpt.com/api/auth/session', {
+                'Accept': 'application/json',
+                'User-Agent': userAgent,
+                'Referer': 'https://chatgpt.com/',
+                'Cookie': cookieHeader
+            });
+            if (sessionRes.status === 200 && sessionRes.data?.accessToken && (sessionRes.data?.user?.email || sessionRes.data?.user?.id)) {
+                assertSameSessionAccount(sessionJson, accessToken, sessionRes.data);
+                activeSessionData = mergeVerifiedSessionPayload(sessionData, sessionRes.data);
+                activeToken = activeSessionData.accessToken;
+                assertLocalSessionFresh(activeToken, { expires: activeSessionData.expires });
+                [meRes, accRes] = await Promise.all([
+                    fetchJson('https://chatgpt.com/backend-api/me', buildHeaders(activeToken)),
+                    options.skipSubscriptionCheck
+                        ? Promise.resolve({ status: 200, data: { skipped: true } })
+                        : fetchJson('https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0', buildHeaders(activeToken))
+                ]);
+            }
+        }
+
+        if (meRes.status === 401 || accRes.status === 401 || isExpiredText(meRes.text) || isExpiredText(accRes.text)) {
+            throw buildChatGptAuthError('CHATGPT_SESSION_EXPIRED');
+        }
+
+        if (meRes.status === 200 && meRes.data?.id) {
+            const officialEmail = typeof meRes.data.email === 'string' ? meRes.data.email : '';
+            if (email && officialEmail && email.toLowerCase() !== officialEmail.toLowerCase()) {
+                throw buildChatGptAuthError('CHATGPT_ACCOUNT_MISMATCH');
+            }
+        }
+
+        let resolvedAccountId = '';
+        if (accRes.status === 200 && accRes.data?.accounts) {
+            const accounts = accRes.data.accounts || {};
+            const entry = accounts.default || Object.values(accounts)[0] || {};
+            const account = entry.account || {};
+            resolvedAccountId = String(
+                account.account_id
+                || accRes.data.account_ordering?.[0]
+                || Object.keys(accounts).find((k) => k !== 'default')
+                || ''
+            ).trim();
+            if (!options.skipSubscriptionCheck) {
+                const entitlement = entry.entitlement || {};
+                const lastActive = entry.last_active_subscription || {};
+                const hasActive = Boolean(entitlement.has_active_subscription);
+                const planType = String(account.plan_type || '').toLowerCase();
+                const expiresAt = entitlement.expires_at || lastActive.expires_at || null;
+                const isExpired = expiresAt ? (Date.parse(expiresAt) <= Date.now()) : false;
+                const isActivelySubscribed = hasActive && planType !== 'free' && !isExpired;
+
+                if (isActivelySubscribed) {
+                    const planName = (planType && planType !== 'free') ? planType.toUpperCase() : 'Plus';
+                    const error = new Error(`该账号已有有效 ${planName} 订阅，无需重复充值，请更换其他未订阅账号 [ACCOUNT_ALREADY_SUBSCRIBED]`);
+                    error.code = 'ACCOUNT_ALREADY_SUBSCRIBED';
+                    throw error;
+                }
+            }
+        }
+
+        if (meRes.status === 200 && meRes.data?.id && (options.skipSubscriptionCheck || (accRes.status === 200 && accRes.data?.accounts))) {
+            const resolvedEmail = (typeof meRes.data.email === 'string' && meRes.data.email) || email;
+            console.log(`✅ [步骤] Session 协议鉴权成功（官方接口已确认账号有效且未订阅）: ${resolvedEmail}`);
+            return {
+                ok: true,
+                email: resolvedEmail,
+                accountId: resolvedAccountId,
+                accessToken: activeToken,
+                session: activeSessionData,
+                cookieHeader,
+                deviceId,
+                hasSessionCookie
+            };
+        }
+
+        const status = meRes.status !== 200 ? meRes.status : accRes.status;
+        const isChallenge = status === 403 || /just a moment|cloudflare|challenge/i.test(`${meRes.text} ${accRes.text}`);
+        return {
+            ok: false,
+            challenge: isChallenge,
+            status,
+            error: meRes.error || accRes.error || `HTTP ${status}`,
+            email,
+            accessToken: activeToken,
+            session: activeSessionData,
+            cookieHeader,
+            deviceId,
+            hasSessionCookie
+        };
+    } finally {
+        await dispatcher?.close?.().catch(() => {});
+    }
+}
+
 module.exports = {
     CHATGPT_ORIGIN,
     PRICING_URL,
     installChatGptSession,
     setupChatGptSessionAuth,
     bootstrapChatGptSession,
+    verifyChatGptSessionProtocol,
     assertChatGptLoggedIn,
     parseSessionJson,
     resolveSessionInput,

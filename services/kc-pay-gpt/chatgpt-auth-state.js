@@ -78,4 +78,93 @@ async function verifyChatGptAccessToken(page, accessToken, options = {}) {
     return result;
 }
 
-module.exports = { isChatGptAuthFailure, buildChatGptAuthError, assertLocalSessionFresh, verifyChatGptAccessToken };
+async function checkChatGptSubscriptionStatus(page, accessToken, options = {}) {
+    let result;
+    let timeout;
+    let evalError = null;
+    const deadlineMs = Number(options.deadlineMs || 15000);
+    const fetchTimeoutMs = Math.max(5000, deadlineMs - 2000);
+    try {
+        result = await Promise.race([page.evaluate(async ({ token, timeoutMs }) => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs || 10000);
+            try {
+                const response = await fetch('/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0', {
+                    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+                    credentials: 'include', cache: 'no-store', signal: controller.signal
+                });
+                const status = response.status;
+                const text = await response.text();
+                let data;
+                try { if (text.length <= 65536) data = JSON.parse(text); } catch (_) {}
+                if (status === 401) {
+                    return { status: 401, expired: true };
+                }
+                if (status !== 200 || !data?.accounts) {
+                    return { status, data: null };
+                }
+                const accounts = data.accounts || {};
+                const entry = accounts.default || Object.values(accounts)[0] || {};
+                const account = entry.account || {};
+                const entitlement = entry.entitlement || {};
+                const lastActive = entry.last_active_subscription || {};
+                const hasActive = Boolean(entitlement.has_active_subscription);
+                const rawPlan = String(entitlement.subscription_plan || '').toLowerCase();
+                const planType = String(account.plan_type || '').toLowerCase();
+                const expiresAt = entitlement.expires_at || lastActive.expires_at || null;
+                const isExpired = expiresAt ? (Date.parse(expiresAt) <= Date.now()) : false;
+
+                // 仅当官方明确 has_active_subscription 为 true、套餐不是 free 且未过期时，才认定为存在有效订阅
+                const isActivelySubscribed = hasActive && planType !== 'free' && !isExpired;
+
+                return {
+                    status: 200,
+                    isActivelySubscribed,
+                    hasActive,
+                    planType,
+                    rawPlan,
+                    expiresAt,
+                    isExpired,
+                    accountId: account.account_id || ''
+                };
+            } catch (err) {
+                return { fetchError: err?.name || 'Error', message: err?.message };
+            } finally { clearTimeout(timer); }
+        }, { token: accessToken, timeoutMs: fetchTimeoutMs }), new Promise((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('Subscription check deadline')), deadlineMs);
+        })]);
+    } catch (err) {
+        evalError = err;
+    } finally { clearTimeout(timeout); }
+
+    if (evalError) {
+        console.warn(`[Session] 官方账号订阅核验接口评估异常: ${evalError.message}`);
+        return { isActivelySubscribed: false, unconfirmed: true };
+    }
+    if (result?.expired) {
+        throw buildChatGptAuthError();
+    }
+    return result || { isActivelySubscribed: false };
+}
+
+async function assertChatGptAccountEligible(page, accessToken, options = {}) {
+    const sub = await checkChatGptSubscriptionStatus(page, accessToken, options);
+    if (sub?.status === 200 && sub?.isActivelySubscribed === true) {
+        const planName = (sub.planType && sub.planType !== 'free')
+            ? sub.planType.toUpperCase()
+            : 'Plus';
+        const error = new Error(`该账号已有有效 ${planName} 订阅，无需重复充值，请更换其他未订阅账号 [ACCOUNT_ALREADY_SUBSCRIBED]`);
+        error.code = 'ACCOUNT_ALREADY_SUBSCRIBED';
+        throw error;
+    }
+    return sub;
+}
+
+module.exports = {
+    isChatGptAuthFailure,
+    buildChatGptAuthError,
+    assertLocalSessionFresh,
+    verifyChatGptAccessToken,
+    checkChatGptSubscriptionStatus,
+    assertChatGptAccountEligible
+};

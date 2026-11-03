@@ -2,6 +2,8 @@
  * 进程内环形运行日志（供管理后台「运行日志」页展示）。
  * 重启后清空；与 task_logs 表独立。
  */
+const { randomUUID } = require('crypto');
+const STREAM_ID = randomUUID();
 const MAX_ENTRIES = 15000;
 const MAX_LINE = 8192;
 
@@ -53,7 +55,7 @@ function clear() {
 }
 
 function stats() {
-    return { count: buffer.length, nextSeq: seq };
+    return { count: buffer.length, nextSeq: seq, streamId: STREAM_ID };
 }
 
 module.exports = { push, tail, after, clear, stats };

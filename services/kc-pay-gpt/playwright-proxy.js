@@ -51,6 +51,31 @@ function formatToStandardProxyUrl(raw) {
     return `http://${line}`;
 }
 
+function alignProxyRegion(rawProxy, targetRegion) {
+    if (!rawProxy || !targetRegion) return rawProxy;
+    const regionUpper = String(targetRegion).trim().toUpperCase();
+    const regionLower = regionUpper.toLowerCase();
+    if (!/^[A-Z]{2}$/.test(regionUpper)) return rawProxy;
+
+    let aligned = rawProxy;
+    aligned = aligned.replace(/\{region\}/gi, regionLower);
+    aligned = aligned.replace(/\{country\}/gi, regionLower);
+
+    if (/-region-[a-zA-Z]{2}-/i.test(aligned)) {
+        aligned = aligned.replace(/-region-[a-zA-Z]{2}-/i, `-region-${regionUpper}-`);
+    }
+    if (/-country-[a-zA-Z]{2}-/i.test(aligned)) {
+        aligned = aligned.replace(/-country-[a-zA-Z]{2}-/i, `-country-${regionUpper}-`);
+    } else if (/_country-[a-zA-Z]{2}(?=[-:@/]|$)/i.test(aligned)) {
+        aligned = aligned.replace(/_country-[a-zA-Z]{2}(?=[-:@/]|$)/i, `_country-${regionLower}`);
+    }
+    if (/-res_sc-[a-zA-Z]{2}(?:_[a-zA-Z0-9]+)?(?=[-:@/]|$)/i.test(aligned)) {
+        aligned = aligned.replace(/-res_sc-[a-zA-Z]{2}(?:_[a-zA-Z0-9]+)?(?=[-:@/]|$)/i, `-res_sc-${regionUpper}`);
+    }
+
+    return aligned;
+}
+
 function substituteProxySession(rawProxy) {
     if (!rawProxy) return rawProxy;
     const sid = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
@@ -61,8 +86,11 @@ function substituteProxySession(rawProxy) {
     } else if (/-session-[a-zA-Z0-9_]+(?=[-:@/]|$)/i.test(replaced)) {
         // 自动兼容形如 -session-29028475- 的固定动态住宅 session，替换为全新 8 位随机 session，避免重复使用相同节点
         replaced = replaced.replace(/-session-[a-zA-Z0-9_]+(?=[-:@/]|$)/i, `-session-${numSid}`);
+    } else if (/([-_](?:sid|sessid|sessionid)[-_])([A-Za-z0-9]+)(?=[-_:@/]|$)/i.test(replaced)) {
+        // 自动兼容形如 -sid-abc123- 或 -sessid-abc123- 的住宅代理格式，原地轮换 SID
+        replaced = replaced.replace(/([-_](?:sid|sessid|sessionid)[-_])([A-Za-z0-9]+)(?=[-_:@/]|$)/i, `$1${sid}`);
     }
-    // 自动兼容形如 -sid-xxxx- 的固定 session，将其转换为新随机 session 避免 5 分钟超时
+    // 自动兼容形如 -sid-xxxx-t- 的固定 session，将其转换为新随机 session 避免 5 分钟超时
     if (/-sid-[a-zA-Z0-9_-]+-t-/i.test(replaced)) {
         replaced = replaced.replace(/-sid-[a-zA-Z0-9_-]+-t-/i, `-sid-${sid}-t-`);
     }
@@ -83,7 +111,7 @@ function resetActiveProxyTunnels() {
     return closed;
 }
 
-function attachTunnelWatchdog(sourceSocket, targetSocket, handshakeTimeoutMs = 12000) {
+function attachTunnelWatchdog(sourceSocket, targetSocket, handshakeTimeoutMs = 25000) {
     const pair = { sourceSocket, targetSocket };
     activeTunnelSockets.add(pair);
     try { targetSocket.setKeepAlive(true, 5000); } catch (_) {}
@@ -133,7 +161,7 @@ function attachTunnelWatchdog(sourceSocket, targetSocket, handshakeTimeoutMs = 1
 
 function connectUpstreamWithRetry(parsedProxy, targetHostPort, options = {}) {
     const maxAttempts = options.maxAttempts ?? 3;
-    const connectTimeoutMs = options.connectTimeoutMs ?? 6500;
+    const connectTimeoutMs = options.connectTimeoutMs ?? 10000;
     const authHeader = (parsedProxy.username || parsedProxy.password)
         ? `Basic ${Buffer.from(`${decodeURIComponent(parsedProxy.username)}:${decodeURIComponent(parsedProxy.password)}`).toString('base64')}`
         : '';
@@ -258,7 +286,7 @@ async function createResilientHttpProxyRelay(parsedProxy, stdUrl) {
             if (targetHead && targetHead.length > 0) {
                 sourceSocket.write(targetHead);
             }
-            attachTunnelWatchdog(sourceSocket, targetSocket, 12000);
+            attachTunnelWatchdog(sourceSocket, targetSocket, 25000);
             sourceSocket.pipe(targetSocket);
             targetSocket.pipe(sourceSocket);
         } catch (_) {
@@ -299,13 +327,16 @@ async function createResilientHttpProxyRelay(parsedProxy, stdUrl) {
  * @param {string} proxyValue
  * @returns {Promise<{ proxyConfig: object|null, cleanup: () => Promise<void>, relayed?: boolean }>}
  */
-async function preparePlaywrightProxy(proxyValue) {
+async function preparePlaywrightProxy(proxyValue, options = {}) {
     const raw = String(proxyValue || '').trim();
     if (!raw) {
         return { proxyConfig: null, cleanup: async () => { } };
     }
 
-    const stdUrl = substituteProxySession(formatToStandardProxyUrl(raw));
+    const targetRegion = options.region || process.env.PAYMENT_REGION_OVERRIDE || '';
+    const formatted = formatToStandardProxyUrl(raw);
+    const aligned = targetRegion ? alignProxyRegion(formatted, targetRegion) : formatted;
+    const stdUrl = substituteProxySession(aligned);
 
     let parsed;
     try {
@@ -360,6 +391,7 @@ async function preparePlaywrightProxy(proxyValue) {
 module.exports = {
     preparePlaywrightProxy,
     isSocksProtocol,
+    alignProxyRegion,
     substituteProxySession,
     formatToStandardProxyUrl,
     resetActiveProxyTunnels,

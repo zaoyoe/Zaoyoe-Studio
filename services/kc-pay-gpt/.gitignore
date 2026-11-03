@@ -46,3 +46,4 @@ plus_gopay/
 server.log
 *.log
 __pycache__/
+.cache/

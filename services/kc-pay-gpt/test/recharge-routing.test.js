@@ -193,15 +193,19 @@ describe('actual activation request platform routing with a mock store', () => {
     });
 });
 
-async function workerHarness(fixture, { mismatch = false, apiError = null, bootstrapError = null, checkoutMode = 'auto', contextCloseError = null } = {}) {
+async function workerHarness(fixture, { mismatch = false, apiError = null, bootstrapError = null, checkoutMode = 'auto', fastProtocol = 'false', protocolCapabilities = true, protocolSessionOk = true, protocolRegionOk = true, contextCloseError = null } = {}) {
     const page = { on() {}, url: () => 'https://fixture.test/checkout', isClosed: () => false };
     const context = { newPage: async () => page, addInitScript: async () => {}, close: vi.fn(async () => { if (contextCloseError) throw contextCloseError; }) };
     const closeTaskBrowser = vi.fn(async () => {});
     const proxyCleanup = vi.fn(async () => {});
     const login = { ok: true, email: 'fixture@example.test', session: { accessToken: jwt } };
-    const methods = Object.fromEntries(['installChatGptSession', 'bootstrapChatGptSession', 'cancelChatGptAutoRenew', 'injectClaudeSession', 'bootstrapClaudeSession',
+    const methods = Object.fromEntries(['verifyChatGptSessionProtocol', 'installChatGptSession', 'bootstrapChatGptSession', 'cancelChatGptAutoRenew', 'injectClaudeSession', 'bootstrapClaudeSession',
         'openClaudeCheckout', 'cancelClaudeAutoRenew', 'injectGrokSession', 'bootstrapGrokSession', 'openGrokCheckout', 'cancelGrokAutoRenew', 'openApiCheckout',
         'openPricingCheckout', 'executePaymentWithRetry', 'observeGrokCommerce'].map(name => [name, vi.fn(async () => login)]));
+    methods.verifyChatGptSessionProtocol.mockResolvedValue({ ...login, ok: protocolSessionOk });
+    if (!protocolCapabilities) delete methods.verifyChatGptSessionProtocol;
+    methods.openApiCheckout.mockResolvedValue({ sessionId: 'oaics_offline', checkoutUrl: 'https://chatgpt.com/checkout/openai_llc/oaics_offline' });
+    methods.openPricingCheckout.mockResolvedValue('https://chatgpt.com/checkout/openai_llc/oaics_offline_ui');
     methods.installChatGptSession.mockResolvedValue({ sessionData: login, hasSessionToken: true, cookieVerified: true });
     methods.openGrokCheckout.mockResolvedValue({ native: true, observedCart: 'offline-cart' });
     methods.observeGrokCommerce.mockImplementation(() => ({ dispose: vi.fn() }));
@@ -217,7 +221,7 @@ async function workerHarness(fixture, { mismatch = false, apiError = null, boots
         './mysql-store': { getPaymentRegion: async () => 'PH', verifyCdkDetails: async () => ({ payment_region: 'US', plan_type: mismatch ? 'plus' : fixture.planType, platform: mismatch ? 'chatgpt' : fixture.platform }) },
         './browser-runtime': { connectTaskBrowser: async () => ({ browser: { newContext: async () => context }, realUserAgent: 'Chrome/147.0' }), applyCdpEnv() {}, closeTaskBrowser },
         './playwright-proxy': { preparePlaywrightProxy: async () => ({ cleanup: proxyCleanup, proxyConfig: null }) },
-        './proxy-preflight': { checkProxyConnectivity: vi.fn(), checkProxyAndRegionFast: vi.fn(async () => null), checkEgressRegion: vi.fn(async (_context, expectedRegion) => ({
+        './proxy-preflight': { checkProxyAndRegionProtocol: vi.fn(async (_proxy, region) => protocolRegionOk ? { ip: '192.0.2.1', actualRegion: region } : null), checkProxyConnectivity: vi.fn(), checkProxyAndRegionFast: vi.fn(async () => null), checkEgressRegion: vi.fn(async (_context, expectedRegion) => ({
             expectedRegion, actualRegion: expectedRegion
         })) }, './task-diagnostics': { captureDiagnosticScreenshot: async () => null },
         fs: { mkdirSync() {} }, path
@@ -225,7 +229,7 @@ async function workerHarness(fixture, { mismatch = false, apiError = null, boots
     // Methods must replace real checkout functions: every external action remains a mock.
     dependencies['./chatgpt'].openApiCheckout = methods.openApiCheckout;
     const module = { exports: {} }, process = { env: { ...buildActivationCredentialEnv({ platform: fixture.platform, token: jwt, sessionRaw: fixture.credential }),
-        CDK_CODE: 'OFFLINE-CDK', CDK_PLAN_TYPE: fixture.planType, RECORD_VIDEO: '0', CHECKOUT_MODE: checkoutMode }, exitCode: 0 };
+        CDK_CODE: 'OFFLINE-CDK', CDK_PLAN_TYPE: fixture.planType, RECORD_VIDEO: '0', CHECKOUT_MODE: checkoutMode, FAST_PROTOCOL_ENABLED: fastProtocol }, exitCode: 0 };
     vm.runInNewContext(worker.slice(0, worker.indexOf('run().finally(')) + '\nmodule.exports = { run };', {
         module, process, __dirname: root, console: { log() {}, warn() {}, error() {} },
         require: key => { if (!(key in dependencies)) throw new Error(`Unexpected dependency: ${key}`); return dependencies[key]; }
@@ -247,15 +251,67 @@ describe('real worker entry uses restored platform modules without network or pa
             expect(h.methods.bootstrapClaudeSession).toHaveBeenCalledWith(expect.anything(), fixture.credential, { planType: fixture.planType });
             expect(h.methods.installChatGptSession).not.toHaveBeenCalled(); expect(h.methods.openGrokCheckout).not.toHaveBeenCalled();
         } else {
-            expect(h.methods.openApiCheckout).not.toHaveBeenCalled();
-            expect(h.methods.openPricingCheckout).toHaveBeenCalledOnce();
+            expect(h.methods.openApiCheckout).toHaveBeenCalledOnce();
             expect(h.methods.bootstrapGrokSession).not.toHaveBeenCalled();
             expect(h.methods.installChatGptSession.mock.calls[0][1]).toBe(fixture.credential);
         }
     });
-    it.each(['api', 'auto', 'hybrid'])('keeps real recharge on UI Checkout when CHECKOUT_MODE=%s', async checkoutMode => {
+    it.each(['api', 'auto', 'hybrid'])('falls back to UI Checkout when API checkout fails in CHECKOUT_MODE=%s', async checkoutMode => {
         const h = await workerHarness(fixtures[2], { checkoutMode,
-            apiError: Object.assign(new Error('fixture API should not be called'), { code: 'CHECKOUT_HTTP_ERROR' }) });
+            apiError: Object.assign(new Error('fixture API error for fallback'), { code: 'CHECKOUT_HTTP_ERROR' }) });
+        expect(h.methods.openApiCheckout).toHaveBeenCalledOnce();
+        expect(h.methods.openPricingCheckout).toHaveBeenCalledOnce();
+        expect(h.methods.executePaymentWithRetry).toHaveBeenCalledOnce();
+    });
+    it.each(['false', '0'])('uses protocol preparation and browser confirmation when FAST_PROTOCOL_ENABLED=%s', async fastProtocol => {
+        const h = await workerHarness(fixtures[2], { fastProtocol });
+        expect(h.methods.verifyChatGptSessionProtocol).toHaveBeenCalledOnce();
+        expect(h.methods.bootstrapChatGptSession).not.toHaveBeenCalled();
+        expect(h.methods.openApiCheckout).toHaveBeenCalledOnce();
+        expect(h.methods.openApiCheckout.mock.calls[0][0]).toBeNull();
+        expect(h.methods.openPricingCheckout).not.toHaveBeenCalled();
+        expect(h.methods.executePaymentWithRetry).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ protocolOnly: false, fastProtocol: false }));
+    });
+    it('keeps explicit hybrid confirmation in the browser even when fast protocol is enabled', async () => {
+        const h = await workerHarness(fixtures[2], { checkoutMode: 'hybrid', fastProtocol: 'true' });
+        expect(h.methods.executePaymentWithRetry).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ protocolOnly: false, fastProtocol: false }));
+    });
+    it('keeps successful protocol preparation free of browser work in pure protocol mode', async () => {
+        const h = await workerHarness(fixtures[2], { fastProtocol: 'true' });
+        expect(h.methods.openApiCheckout).toHaveBeenCalledOnce();
+        expect(h.methods.installChatGptSession).not.toHaveBeenCalled();
+        expect(h.methods.executePaymentWithRetry).toHaveBeenCalledWith(null, expect.objectContaining({ protocolOnly: true, fastProtocol: true }));
+        expect(h.context.close).not.toHaveBeenCalled();
+    });
+    it('stops pure protocol API failure before browser or payment', async () => {
+        const h = await workerHarness(fixtures[2], { fastProtocol: 'true', apiError: Object.assign(new Error('offline API failure'), { code: 'CHECKOUT_HTTP_ERROR' }) });
+        expect(h.methods.openApiCheckout).toHaveBeenCalledOnce();
+        expect(h.methods.installChatGptSession).not.toHaveBeenCalled();
+        expect(h.methods.openPricingCheckout).not.toHaveBeenCalled();
+        expect(h.methods.executePaymentWithRetry).not.toHaveBeenCalled();
+    });
+    it('stops when required pure protocol capabilities are unavailable', async () => {
+        const h = await workerHarness(fixtures[2], { fastProtocol: 'true', protocolCapabilities: false });
+        expect(h.methods.openApiCheckout).not.toHaveBeenCalled();
+        expect(h.methods.installChatGptSession).not.toHaveBeenCalled();
+        expect(h.methods.executePaymentWithRetry).not.toHaveBeenCalled();
+    });
+    it.each([
+        { protocolSessionOk: false }, { protocolRegionOk: false }
+    ])('stops hybrid preparation failure without payment or browser fallback: %j', async options => {
+        const h = await workerHarness(fixtures[2], options);
+        expect(h.methods.openApiCheckout).not.toHaveBeenCalled();
+        expect(h.methods.installChatGptSession).not.toHaveBeenCalled();
+        expect(h.methods.executePaymentWithRetry).not.toHaveBeenCalled();
+    });
+    it.each(['CHECKOUT_UNUSUAL_ACTIVITY', 'ACCOUNT_ALREADY_SUBSCRIBED', 'CHECKOUT_AUTH_ERROR'])('stops hybrid API %s without UI fallback', async code => {
+        const h = await workerHarness(fixtures[2], { apiError: Object.assign(new Error(`offline ${code}`), { code }) });
+        expect(h.methods.openApiCheckout).toHaveBeenCalledOnce();
+        expect(h.methods.openPricingCheckout).not.toHaveBeenCalled();
+        expect(h.methods.executePaymentWithRetry).not.toHaveBeenCalled();
+    });
+    it('keeps real recharge directly on UI Checkout when CHECKOUT_MODE=ui', async () => {
+        const h = await workerHarness(fixtures[2], { checkoutMode: 'ui' });
         expect(h.methods.openApiCheckout).not.toHaveBeenCalled();
         expect(h.methods.openPricingCheckout).toHaveBeenCalledOnce();
         expect(h.methods.executePaymentWithRetry).toHaveBeenCalledOnce();

@@ -1,7 +1,9 @@
 'use strict';
 
+const { formatClaudeDeclineReason } = require('./payment-decline-dictionary');
+
 const SUCCESS_COPY = /thank you for subscribing|subscription (?:is )?active|订阅成功|支付成功|已成功订阅/ig;
-const DECLINE_COPY = /your card (?:was|has been) declined|card (?:was|has been) declined|payment (?:was )?(?:declined|not approved)|insufficient funds|do not honor|expired card|incorrect.*cvc|无法完成此(?:次)?购买|未能完成购买|unable to complete this purchase|this purchase cannot be completed|银行卡被拒绝|拒付/i;
+const DECLINE_COPY = /(?:your |the )?card number is (?:incorrect|invalid)|enter your card again|your card (?:was|has been) declined|card (?:was|has been) declined|payment (?:was )?(?:declined|not approved)|payment (?:failed|could not be processed)|payment (?:method )?(?:was )?declined|insufficient funds|do not honor|expired card|incorrect.*cvc|无法完成此(?:次)?购买|未能完成购买|unable to complete this purchase|this purchase cannot be completed|payment details may be incorrect|your bank may have declined|try a different (?:card|payment)|try another (?:payment )?method|银行卡被拒绝|拒付|被拒绝|未获批准|支付未(?:通过|成功|获批)|卡号不正确|卡号无效|请重新输入卡号/i;
 const VERIFY_FAILED = /无法验证.*浏览器|未能验证.*浏览器|安全验证未完成|安全检查未完成|人机验证未完成|unable to verify (?:your )?browser|failed to verify (?:your )?browser|verification.*not completed/i;
 
 function successEvidence(text = '') {
@@ -110,10 +112,14 @@ async function waitForClaudePaymentOutcome(page, options) {
         const state = classifyClaudePaymentSnapshot(snapshot, previousSuccess, previousDecline, beforeSubmit?.url);
         if (!snapshot.text.match(DECLINE_COPY)) previousDecline = '';
         if (state.state === 'succeeded') return { success: true, submitted: true, screenshot: await screenshot('payment_success') };
-        if (state.state === 'declined') return {
-            success: false, submitted: true, declined: true, canRetryCard: true,
-            error: `银行卡被拒绝: ${state.message}`, screenshot: await screenshot('payment_declined')
-        };
+        if (state.state === 'declined') {
+            const formatted = formatClaudeDeclineReason(state.message);
+            console.log(`[Stripe] ❌ 官方收银台提示拒付: ${formatted}`);
+            return {
+                success: false, submitted: true, declined: true, canRetryCard: true,
+                error: `银行卡被拒绝: ${formatted}`, screenshot: await screenshot('payment_declined')
+            };
+        }
         if (state.state === 'unknown') return unknown(state.message);
         if (state.state === 'verification_failed') return unknown(state.message, true);
         if (new URL(snapshot.url).hostname === 'claude.ai' && !/^\/upgrade(?:\/|$)/.test(new URL(snapshot.url).pathname)
@@ -131,11 +137,15 @@ async function waitForClaudePaymentOutcome(page, options) {
             // Human interaction has its own existing deadline and is excluded from
             // the active payment-result wait budget. Never resubmit on verification copy.
             deadline += Date.now() - pauseStarted;
-            if (result.paymentDeclined) return {
-                success: false, submitted: true, declined: true, canRetryCard: true,
-                error: `银行卡被拒绝: ${result.declineMsg || '官方确认购买失败'}`,
-                screenshot: await screenshot('payment_declined')
-            };
+            if (result.paymentDeclined) {
+                const formatted = formatClaudeDeclineReason(result.declineMsg || '官方确认购买失败');
+                console.log(`[Stripe] ❌ 人机验证后官方收银台提示拒付: ${formatted}`);
+                return {
+                    success: false, submitted: true, declined: true, canRetryCard: true,
+                    error: `银行卡被拒绝: ${formatted}`,
+                    screenshot: await screenshot('payment_declined')
+                };
+            }
             if (!result.cleared) return unknown(result.message || '人机验证未完成，支付结果需要复核', true);
             console.log('[Stripe] ✅ 提交后人机验证已通过，继续观察支付结果');
             continue;

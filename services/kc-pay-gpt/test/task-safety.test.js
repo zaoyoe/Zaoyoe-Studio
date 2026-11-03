@@ -7,7 +7,9 @@ import {
     mergePaymentState,
     classifyCheckoutFailure,
     classifyOpenAiCardMethodFailure,
-    classifyGrokFailure
+    classifyGrokFailure,
+    classifyChatGptNavigationFailure,
+    classifyAccountAlreadySubscribed
 } from '../task-safety.js';
 
 describe('payment and recovery safety decisions', () => {
@@ -99,11 +101,82 @@ describe('checkout failures before payment submission', () => {
         expect(classifyCheckoutFailure(message, null)).toMatchObject({ paymentState: 'not_started' });
     });
 
+    it.each([
+        'PAYMENT_REGION_NETWORK_MISMATCH', 'PAYMENT_REGION_UNCONFIRMED', 'NETWORK_REGION_UNCONFIRMED',
+        'CDK_PAYMENT_REGION_MISMATCH', 'PAYMENT_CURRENCY_MISMATCH', 'CHECKOUT_CURRENCY_UNCONFIRMED',
+        'CHECKOUT_AMOUNT_UNCONFIRMED', 'CHECKOUT_AMOUNT_MISMATCH', 'BILLING_TAX_NOT_REMOVED', 'PRICING_REGION_UNCONFIRMED'
+    ])('stops billing guard %s and preserves pending payments', code => {
+        const message = `Checkout guard failed [${code}]`;
+        expect(classifyCheckoutFailure(message, 'not_started')).toMatchObject({ status: 'failed', shouldRetry: false,
+            deleteCard: false, paymentState: 'not_started' });
+        for (const state of ['started', 'unknown', 'succeeded']) expect(classifyCheckoutFailure(message, state)).toBeNull();
+    });
+
     it.each(['started', 'unknown', 'succeeded', 'STARTED', 'legacy_invalid'])('never overrides payment state %s', state => {
         expect(classifyCheckoutFailure('HTTP 400 [CHECKOUT_HTTP_ERROR]', state)).toBeNull();
     });
 
     it.each(['普通错误', 'card declined [STRIPE_CARD_DECLINED]', '[CHECKOUT_HTTP_ERROR] extra text', '[CHECKOUT_INVALID_CODE]'])('requires a recognized trailing creation-error code', message => {
         expect(classifyCheckoutFailure(message, 'not_started')).toBeNull();
+    });
+});
+
+describe('ChatGPT navigation timeout failures trigger proxy retry', () => {
+    it('classifies CHATGPT_NAV_TIMEOUT as retryable', () => {
+        const message = 'ChatGPT 页面加载超时（未能在时限内呈现有效界面）[CHATGPT_NAV_TIMEOUT]';
+        expect(classifyChatGptNavigationFailure(message, 'not_started')).toMatchObject({
+            status: 'retry',
+            shouldRetry: true,
+            reachedPayment: false,
+            paymentState: 'not_started'
+        });
+    });
+
+    it('classifies CHECKOUT_RENDER_TIMEOUT as retryable before payment submission', () => {
+        const message = 'Checkout 页面在限定时间内未完成渲染，尚未提交支付 [CHECKOUT_RENDER_TIMEOUT]';
+        expect(classifyChatGptNavigationFailure(message, 'not_started')).toMatchObject({
+            status: 'retry',
+            shouldRetry: true,
+            reachedPayment: false,
+            paymentState: 'not_started'
+        });
+    });
+
+    it('classifies page.goto Timeout 90000ms exceeded as retryable', () => {
+        const message = 'page.goto: Timeout 90000ms exceeded.';
+        const fullOutput = 'navigating to "https://chatgpt.com/", waiting until "domcontentloaded"';
+        expect(classifyChatGptNavigationFailure(message, 'not_started', fullOutput)).toMatchObject({
+            status: 'retry',
+            shouldRetry: true,
+            reachedPayment: false,
+            paymentState: 'not_started'
+        });
+    });
+
+    it('never overrides payment states that have already started', () => {
+        for (const paymentState of ['started', 'unknown', 'succeeded', 'declined']) {
+            expect(classifyChatGptNavigationFailure('page.goto: Timeout 90000ms exceeded.', paymentState)).toBeNull();
+        }
+    });
+});
+
+describe('already subscribed account failure safety', () => {
+    it('classifies ACCOUNT_ALREADY_SUBSCRIBED as non-retryable failure that releases CDK', () => {
+        const message = '该账号已有有效 Plus 订阅，无需重复充值，请更换其他未订阅账号 [ACCOUNT_ALREADY_SUBSCRIBED]';
+        const result = classifyAccountAlreadySubscribed(message, 'not_started');
+        expect(result).toMatchObject({
+            status: 'failed',
+            shouldRetry: false,
+            reachedPayment: false,
+            paymentState: 'not_started',
+            message: '该账号已有有效 Plus 订阅，无需重复充值，请更换其他未订阅账号'
+        });
+        expect(shouldRetainCdk({ executionMode: 'local_card_pool', paymentState: result.paymentState })).toBe(false);
+    });
+
+    it('never overrides in-flight or succeeded payment states', () => {
+        for (const paymentState of ['started', 'unknown', 'succeeded']) {
+            expect(classifyAccountAlreadySubscribed('ACCOUNT_ALREADY_SUBSCRIBED', paymentState)).toBeNull();
+        }
     });
 });

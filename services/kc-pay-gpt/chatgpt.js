@@ -7,27 +7,93 @@ const { executePaymentWithRetry } = require('./payment-retry');
 const { summarizeCheckoutErrorBody, buildCheckoutHttpFailure, isCheckoutUnusualActivityError } = require('./checkout-diagnostics');
 const { isChatGptAuthFailure } = require('./chatgpt-auth-state');
 
-function buildCheckoutPayload(planName, country, currency) {
-    const uiMode = String(process.env.CHECKOUT_UI_MODE || 'custom').trim() || 'custom';
-    return {
+function isTeamPlan(planName, planType) {
+    const raw = String(planName || planType || '').toLowerCase();
+    return raw.includes('team');
+}
+
+function parseTeamSeatsFromPlan(planType, explicitSeats) {
+    if (explicitSeats != null && !isNaN(parseInt(explicitSeats, 10))) {
+        return Math.max(2, Math.min(999, parseInt(explicitSeats, 10)));
+    }
+    const raw = String(planType || '').trim().toLowerCase();
+    const m = raw.match(/^team_?(\d+)$/i);
+    if (m && m[1]) {
+        return Math.max(2, Math.min(999, parseInt(m[1], 10) || 2));
+    }
+    return 2;
+}
+
+function buildCheckoutPayload(planName, country, currency, options = {}) {
+    if (isTeamPlan(planName, options.planType)) {
+        const seats = parseTeamSeatsFromPlan(options.planType, options.seatQuantity ?? options.seats);
+        const interval = String(options.priceInterval || 'month').toLowerCase() === 'year' ? 'year' : 'month';
+        const workspaceName = String(options.workspaceName || 'Team Workspace').slice(0, 80);
+        const payload = {
+            entry_point: 'team_workspace_purchase_modal',
+            plan_name: 'chatgptteamplan',
+            billing_details: { country, currency },
+            cancel_url: 'https://chatgpt.com/',
+            checkout_ui_mode: 'redirect',
+            check_card_proxy: true,
+            team_plan_data: {
+                workspace_name: workspaceName,
+                price_interval: interval,
+                seat_quantity: seats
+            }
+        };
+        if (options.promoCode) {
+            payload.promo_code = String(options.promoCode).trim();
+        }
+        return payload;
+    }
+
+    const uiMode = String(options.checkoutUiMode || options.uiMode || process.env.CHECKOUT_UI_MODE || 'custom').trim() || 'custom';
+    const payload = {
         entry_point: 'all_plans_pricing_modal',
         plan_name: planName,
         billing_details: { country, currency },
         checkout_ui_mode: uiMode
     };
+    if (uiMode === 'redirect') {
+        payload.cancel_url = 'https://chatgpt.com/';
+    }
+    if (options.promoCampaignId || options.promo) {
+        const campaignId = String(options.promoCampaignId || 'plus-1-month-free').trim();
+        payload.promo_campaign = {
+            promo_campaign_id: campaignId,
+            is_coupon_from_query_param: false
+        };
+    }
+    return payload;
 }
 
 function isBillingCountryMismatchError(message) {
     return /billing country must match request country|账单地区与请求地区不一致/i.test(String(message || ''));
 }
 
+function isCheckoutRateLimitError(error) {
+    const msg = String(error?.message || error || '').toLowerCase();
+    const code = String(error?.code || '').toLowerCase();
+    return error?.httpStatus === 429
+        || code === 'checkout_creation_rate_limited'
+        || code === 'checkout_rate_limited'
+        || msg.includes('checkout_creation_rate_limited')
+        || msg.includes('too many checkout attempts')
+        || msg.includes('rate_limit')
+        || msg.includes('rate limited');
+}
+
 function shouldFallbackToPricingCheckout(error, { checkoutMode = 'ui', debugOnly = false } = {}) {
     const mode = String(checkoutMode || '').toLowerCase();
-    const isApiVariant = mode === 'api' || mode === 'auto' || mode === 'hybrid';
+    const isApiVariant = mode === 'api' || mode === 'auto' || mode === 'hybrid' || mode === 'browser' || mode === 'spa';
     return isApiVariant && !debugOnly
         && error?.code !== 'CHECKOUT_UNUSUAL_ACTIVITY'
         && !isChatGptAuthFailure(error)
-        && !isBillingCountryMismatchError(error?.message);
+        && error?.code !== 'ACCOUNT_ALREADY_SUBSCRIBED'
+        && !String(error?.message || '').includes('ACCOUNT_ALREADY_SUBSCRIBED')
+        && !isBillingCountryMismatchError(error?.message)
+        && !isCheckoutRateLimitError(error);
 }
 
 function buildBillingCountryMismatchError({ country = '', currency = '' } = {}) {
@@ -83,7 +149,7 @@ function parseCheckoutApiResponse(status, bodyText) {
 /**
  * 使用 axios 直接调用 Checkout API（供后台调试 / 无 Playwright 场景）
  */
-async function createHostedCheckoutLink({ accessToken, planType = 'plus', planName, country, currency }) {
+async function createHostedCheckoutLink({ accessToken, planType = 'plus', planName, country, currency, ...options }) {
     const token = String(accessToken || '').trim();
     if (!token) {
         return { success: false, error: '缺少 AccessToken' };
@@ -92,7 +158,7 @@ async function createHostedCheckoutLink({ accessToken, planType = 'plus', planNa
     const region = String(country || 'PH').toUpperCase();
     const billingCurrency = String(currency || getRegionConfig(region)?.currency || 'PHP').toUpperCase();
     const planNameResolved = String(planName || store.resolvePlanName(planType)).trim();
-    const payload = buildCheckoutPayload(planNameResolved, region, billingCurrency);
+    const payload = buildCheckoutPayload(planNameResolved, region, billingCurrency, { ...options, planType });
 
     const response = await axios.post(
         'https://chatgpt.com/backend-api/payments/checkout',
@@ -195,19 +261,99 @@ class ChatGPTService {
      * @param {string} [planNameOverride] - 可选，覆盖默认 plan_name
      * @returns {Promise<{ sessionId: string|null, checkoutUrl: string|null, error?: string }>}
      */
-    async createCheckoutSession(planType, country, currency, planNameOverride) {
+    async createCheckoutSession(planType, country, currency, planNameOverride, options = {}) {
         try {
             const planName = String(planNameOverride || store.resolvePlanName(planType)).trim();
-            const payload = buildCheckoutPayload(planName, country, currency);
+            const payload = buildCheckoutPayload(planName, country, currency, { ...options, planType });
             console.log(`[ChatGPT] 创建 Checkout Session: plan_name=${planName}, country=${country}, currency=${currency}, checkout_ui_mode=${payload.checkout_ui_mode}`);
 
-            const response = await this.request.post("https://chatgpt.com/backend-api/payments/checkout", {
-                headers: this.headers,
-                data: payload
-            });
+            const requestHeaders = {
+                ...this.headers,
+                'Referer': 'https://chatgpt.com/',
+                'Origin': 'https://chatgpt.com',
+                'x-openai-target-path': '/backend-api/payments/checkout',
+                'x-openai-target-route': '/backend-api/payments/checkout',
+                ...(options.headers || {})
+            };
+            if (options.userAgent) {
+                requestHeaders['User-Agent'] = options.userAgent;
+            }
 
-            const bodyText = await response.text().catch(() => "");
-            const parsed = parseCheckoutApiResponse(response.status(), bodyText);
+            let status = 0;
+            let bodyText = "";
+            if (this.request && typeof this.request.post === 'function') {
+                const response = await this.request.post("https://chatgpt.com/backend-api/payments/checkout", {
+                    headers: requestHeaders,
+                    data: payload
+                });
+                status = response.status();
+                bodyText = await response.text().catch(() => "");
+            } else {
+                const proxyStr = String(options.proxy || '').trim();
+                const timeoutMs = Number(options.timeoutMs || 25000);
+                const fullHeaders = {
+                    'User-Agent': options.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+                    'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="147", "Google Chrome";v="147"',
+                    'sec-ch-ua-mobile': '?0',
+                    'sec-ch-ua-platform': '"Windows"',
+                    ...requestHeaders
+                };
+                const bodyStr = JSON.stringify(payload);
+                let impitClient = null;
+                try {
+                    const { Impit } = require('impit');
+                    impitClient = new Impit({
+                        browser: 'chrome',
+                        proxyUrl: proxyStr || undefined,
+                        ignoreTlsErrors: true,
+                        timeout: timeoutMs
+                    });
+                } catch (_) {}
+
+                if (impitClient) {
+                    let lastErr = null;
+                    for (let attempt = 1; attempt <= 2; attempt += 1) {
+                        try {
+                            const response = await impitClient.fetch("https://chatgpt.com/backend-api/payments/checkout", {
+                                method: 'POST',
+                                headers: fullHeaders,
+                                body: bodyStr
+                            });
+                            status = response.status;
+                            bodyText = await response.text().catch(() => "");
+                            lastErr = null;
+                            break;
+                        } catch (err) {
+                            lastErr = err;
+                            if (attempt < 2) {
+                                await new Promise((r) => setTimeout(r, 350));
+                            }
+                        }
+                    }
+                    if (lastErr) throw lastErr;
+                } else {
+                    const { fetch: undiciFetch, ProxyAgent } = require('undici');
+                    const dispatcher = proxyStr ? new ProxyAgent(proxyStr) : undefined;
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), timeoutMs);
+                    try {
+                        const response = await undiciFetch("https://chatgpt.com/backend-api/payments/checkout", {
+                            method: 'POST',
+                            headers: fullHeaders,
+                            body: bodyStr,
+                            dispatcher,
+                            signal: controller.signal
+                        });
+                        status = response.status;
+                        bodyText = await response.text().catch(() => "");
+                    } finally {
+                        clearTimeout(timer);
+                        await dispatcher?.close?.().catch(() => {});
+                    }
+                }
+            }
+
+            const parsed = parseCheckoutApiResponse(status, bodyText);
 
             if (!parsed.ok) {
                 const detail = parsed.error;
@@ -412,7 +558,7 @@ async function assertCheckoutPageReady(page) {
 /**
  * 通过 API 注入 billing_details 创建 Checkout，并打开 chatgpt.com/checkout
  */
-async function openApiCheckout(page, { accessToken, planType, country, currency, planNameOverride, verifyPage = true }) {
+async function openApiCheckout(page, { accessToken, planType, country, currency, planNameOverride, verifyPage = true, proxy, sentinelPromise = null, cookieHeader = '', deviceId = '', userAgent: initialUserAgent = '' } = {}) {
     const { assertChatGptLoggedIn } = require('./session-auth');
     const token = String(accessToken || '').trim();
     if (!token) {
@@ -423,13 +569,75 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
     const billingCurrency = String(currency || getRegionConfig(region)?.currency || 'PHP').toUpperCase();
     console.log(`🧭 [步骤] 正在通过 API 创建 Checkout (country=${region}, currency=${billingCurrency}, plan=${planType})...`);
 
-    const gpt = new ChatGPTService(page.context().request, token);
-    const checkout = await gpt.createCheckoutSession(planType, region, billingCurrency, planNameOverride);
+    // 1. 尝试从浏览器上下文或传入参数中提取 UA 和 oai-did
+    let userAgent = initialUserAgent || '';
+    let didCookie = deviceId || '';
+    try {
+        if (page && typeof page.evaluate === 'function') {
+            userAgent = (await page.evaluate(() => navigator.userAgent).catch(() => '')) || userAgent;
+            const cookies = await page.context().cookies('https://chatgpt.com').catch(() => []);
+            didCookie = cookies.find((c) => c.name === 'oai-did')?.value || didCookie;
+        }
+    } catch (_) {}
+
+    // 2. 铸造 OpenAI-Sentinel 风控挑战令牌 (PoW + SO 传感器指纹)
+    const extraHeaders = {};
+    if (cookieHeader && (!page || typeof page.context !== 'function')) {
+        extraHeaders['Cookie'] = cookieHeader;
+    }
+    if (didCookie) {
+        extraHeaders['oai-device-id'] = didCookie;
+    }
+    const { mintSentinelToken } = require('./sentinel/sentinel-client');
+    try {
+        let sentinel = null;
+        if (sentinelPromise) {
+            sentinel = await sentinelPromise.catch(() => null);
+        }
+        if (!sentinel?.sentinelToken) {
+            console.log('⚡ [Sentinel] 前置令牌未命中，正在快速补签风控令牌 (≤4s)...');
+            sentinel = await mintSentinelToken({
+                flow: 'chatgpt_checkout',
+                deviceId: didCookie,
+                userAgent: userAgent || undefined,
+                proxy: proxy || '',
+                pageUrl: (page && typeof page.url === 'function' && /^https?:/i.test(page.url()) ? page.url() : '') || 'https://chatgpt.com/',
+                timeoutMs: 4000
+            }).catch((err) => {
+                console.warn(`⚠️ [Sentinel] 快速补签跳过 (尝试原生发包): ${err.message}`);
+                return null;
+            });
+        } else {
+            console.log('⚡ [Sentinel] ⚡ 命中前置异步风控令牌 (耗时 0ms)!');
+        }
+        if (sentinel?.sentinelToken) {
+            extraHeaders['openai-sentinel-token'] = sentinel.sentinelToken;
+        }
+        if (sentinel?.sentinelSoToken) {
+            extraHeaders['openai-sentinel-so-token'] = sentinel.sentinelSoToken;
+        }
+        console.log('⚡ [Sentinel] ✅ 风控令牌签发成功，已注入 Checkout 请求头');
+    } catch (sentinelErr) {
+        console.warn('⚠️ [Sentinel] 风控令牌签发跳过/异常 (尝试原生发包):', sentinelErr.message);
+    }
+
+    const requestCtx = (page && typeof page.context === 'function') ? page.context()?.request : null;
+    const gpt = new ChatGPTService(requestCtx, token);
+    const checkout = await gpt.createCheckoutSession(planType, region, billingCurrency, planNameOverride, {
+        headers: extraHeaders,
+        userAgent,
+        proxy
+    });
     if (!checkout.checkoutUrl) {
         if (isBillingCountryMismatchError(checkout.error)) {
             throw new Error(buildBillingCountryMismatchError({ country: region, currency: billingCurrency }));
         }
         if (checkout.httpStatus != null && checkout.httpStatus !== 200) {
+            if (/already_subscribed|has active subscription|已有有效/i.test(String(checkout.error || ''))) {
+                const error = new Error('该账号已有有效 Plus 订阅，无需重复充值，请更换其他未订阅账号 [ACCOUNT_ALREADY_SUBSCRIBED]');
+                error.code = 'ACCOUNT_ALREADY_SUBSCRIBED';
+                throw error;
+            }
             const failure = buildCheckoutHttpFailure(checkout.httpStatus, checkout.error);
             const error = new Error(`${failure.message} [${failure.code}]`);
             error.code = failure.code;
@@ -442,12 +650,12 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
     const url = checkout.checkoutUrl;
     console.log(`🔗 [步骤] 正在打开支付链接: ${url.slice(0, 120)}...`);
 
-    if (!verifyPage) {
+    if (!verifyPage || !page) {
         console.log('✅ [步骤] Checkout Session 已创建（跳过页面打开验证）');
         return { checkoutUrl: url, sessionId: checkout.sessionId };
     }
 
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.goto(url, { waitUntil: 'commit', timeout: 30000 });
     // 快速等待页面主要元素加载或短暂网络平稳，最多等待 2.5 秒，绝不硬卡 30 秒 networkidle 超时
     await Promise.race([
         page.waitForSelector('iframe, input, button', { timeout: 8000 }),
@@ -499,5 +707,6 @@ module.exports.buildCheckoutPayload = buildCheckoutPayload;
 module.exports.formatApiErrorDetail = formatApiErrorDetail;
 module.exports.isBillingCountryMismatchError = isBillingCountryMismatchError;
 module.exports.buildBillingCountryMismatchError = buildBillingCountryMismatchError;
+module.exports.isCheckoutRateLimitError = isCheckoutRateLimitError;
 
 module.exports.shouldFallbackToPricingCheckout = shouldFallbackToPricingCheckout;

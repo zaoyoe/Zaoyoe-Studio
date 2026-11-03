@@ -223,11 +223,59 @@ function validateSessionTokenForQuery(token) {
     };
 }
 
+function parsePromoCampaigns(eligiblePromoCampaignsRaw) {
+    if (!eligiblePromoCampaignsRaw || typeof eligiblePromoCampaignsRaw !== 'object') {
+        return [];
+    }
+    const campaigns = [];
+    for (const [key, raw] of Object.entries(eligiblePromoCampaignsRaw)) {
+        if (!raw || typeof raw !== 'object') continue;
+        const metadata = raw.metadata || {};
+        const discount = metadata.discount || {};
+        const duration = metadata.duration || {};
+        campaigns.push({
+            key: String(key),
+            id: String(raw.id || ''),
+            title: metadata.title || null,
+            summary: metadata.summary || null,
+            promotionType: metadata.promotion_type_label || null,
+            discountPercentage: discount.percentage ?? null,
+            durationNumPeriods: duration.num_periods ?? null,
+            durationPeriod: duration.period ?? null
+        });
+    }
+    return campaigns;
+}
+
+function pickActiveAccount(data) {
+    const accounts = (data && typeof data === 'object' ? data.accounts : null) || {};
+    const defaultAccount = accounts.default || {};
+    if (defaultAccount?.entitlement?.has_active_subscription) {
+        return defaultAccount;
+    }
+    // If another account (such as a Team workspace) has active subscription, prefer it
+    for (const [key, acc] of Object.entries(accounts)) {
+        if (key === 'default' || !acc || typeof acc !== 'object') continue;
+        if (acc.entitlement?.has_active_subscription) {
+            return acc;
+        }
+    }
+    const ordering = Array.isArray(data?.account_ordering) ? data.account_ordering : [];
+    for (const id of ordering) {
+        const acc = accounts[id];
+        if (acc?.entitlement?.has_active_subscription) {
+            return acc;
+        }
+    }
+    return defaultAccount;
+}
+
 function parseAccountCheckResponse(data, profile = {}) {
+    const activeAccount = pickActiveAccount(data);
     const defaultAccount = (data?.accounts || {}).default || {};
-    const account = defaultAccount.account || {};
-    const entitlement = defaultAccount.entitlement || {};
-    const lastActive = defaultAccount.last_active_subscription || {};
+    const account = activeAccount.account || defaultAccount.account || {};
+    const entitlement = activeAccount.entitlement || defaultAccount.entitlement || {};
+    const lastActive = activeAccount.last_active_subscription || defaultAccount.last_active_subscription || {};
 
     const hasActive = Boolean(entitlement.has_active_subscription);
     const rawPlan = String(entitlement.subscription_plan || '');
@@ -235,6 +283,10 @@ function parseAccountCheckResponse(data, profile = {}) {
     const expiresAt = entitlement.expires_at || lastActive.expires_at || null;
     const remainingDays = computeRemainingDays(expiresAt);
     const currency = pickCurrency(lastActive, entitlement, account) || '—';
+
+    const campaigns = parsePromoCampaigns(defaultAccount.eligible_promo_campaigns);
+    const plusCampaign = campaigns.find(c => c.key === 'plus');
+    const plusEligible = Boolean(!hasActive && plusCampaign);
 
     return {
         email: profile.email || '',
@@ -254,6 +306,9 @@ function parseAccountCheckResponse(data, profile = {}) {
         autoRenewRaw: lastActive.will_renew,
         hasPreviouslyPaid: formatBoolean(account.has_previously_paid_subscription),
         hasPreviouslyPaidRaw: Boolean(account.has_previously_paid_subscription),
+        eligiblePromoCampaigns: campaigns,
+        hasPlusPromo: plusEligible,
+        plusPromoCampaignId: plusCampaign ? plusCampaign.id : null,
         queriedAt: new Date().toISOString(),
         queriedAtDisplay: formatDateTime(new Date()),
         billingPageUrl: BILLING_PAGE_URL
@@ -699,14 +754,36 @@ async function querySubscriptionBySession(accessToken, options = {}) {
     };
 }
 
+/**
+ * 查询账号优惠/试用活动资格 (如 Plus 1 个月免费试用)
+ */
+async function queryPromoEligibility(accessToken, options = {}) {
+    const res = await querySubscriptionBySession(accessToken, options);
+    if (!res.ok) {
+        return { ok: false, error: res.error, statusCode: res.statusCode };
+    }
+    const data = res.data || {};
+    return {
+        ok: true,
+        accountId: data.accountId,
+        email: data.email,
+        isFree: !data.hasActiveSubscription,
+        plusEligible: Boolean(data.hasPlusPromo),
+        plusCampaignId: data.plusPromoCampaignId || null,
+        campaigns: data.eligiblePromoCampaigns || []
+    };
+}
+
 module.exports = {
     BILLING_PAGE_URL,
     normalizeSubscriptionPlan,
     formatPurchaseOrigin,
     computeRemainingDays,
+    parsePromoCampaigns,
     parseAccountCheckResponse,
     validateSessionTokenForQuery,
     querySubscriptionBySession,
+    queryPromoEligibility,
     cancelAutoRenew,
     resumeAutoRenew
 };

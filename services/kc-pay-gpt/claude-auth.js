@@ -181,19 +181,49 @@ async function injectClaudeSession(context, sessionKey) {
     await context.addCookies(cookies);
     console.log('🍪 [Claude] sessionKey 已注入到浏览器 Cookie (.claude.ai)');
 
-    // 挂载网络层埋点遥测与多媒体请求拦截，大幅节省海外代理带宽并加速页面就绪
+    // 挂载网络层埋点遥测与静态镜像加速，大幅节省海外代理带宽并加速页面就绪
     try {
-        const { shouldBlockLoginNavigation } = require('./auth-page-detect');
+        const { shouldBlockLoginNavigation, isTelemetryUrl } = require('./auth-page-detect');
+        const { handleStaticAssetCache } = require('./static-asset-cache');
         await context.route('**/*', async (route) => {
             const url = route.request().url();
             const resourceType = route.request().resourceType();
+
+            // ⚡ 本地镜像 0ms 瞬间提供 (读穿写入，零代理流量，包含 js.stripe.com/v3 静态 SDK)
+            const handledByCache = await handleStaticAssetCache(route).catch(() => false);
+            if (handledByCache) {
+                return;
+            }
+
+            // 核心支付与人机验证域放行原生网络通道（防指纹污染）
+            if (
+                url.includes('stripe.com') ||
+                url.includes('stripecdn.com') ||
+                url.includes('turnstile') ||
+                url.includes('challenges.cloudflare.com') ||
+                url.includes('hcaptcha.com')
+            ) {
+                await route.continue().catch(() => {});
+                return;
+            }
+
+            if (isTelemetryUrl(url)) {
+                await route.fulfill({
+                    status: 200,
+                    contentType: resourceType === 'script' ? 'application/javascript' : 'application/json',
+                    body: resourceType === 'script' ? '' : '{}'
+                }).catch(() => {});
+                return;
+            }
+
             if (shouldBlockLoginNavigation(url, resourceType)) {
                 await route.abort().catch(() => {});
                 return;
             }
+
             await route.continue().catch(() => {});
         });
-        console.log('🌐 [Claude] 网络层已开启遥测埋点拦截与媒体资源瘦身');
+        console.log('🌐 [Claude] 网络层已开启静态镜像加速与遥测埋点拦截');
     } catch (_) {}
 }
 

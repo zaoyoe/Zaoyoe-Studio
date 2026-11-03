@@ -10,7 +10,7 @@ const oregonAddress = { country: 'US', state: 'OR', line1: '123 Fixture Street',
 function harness({ started = true, failRecord = false, failQuarantine = false, throwAfterSubmit = false, native = false,
     paymentResponse = null, address = oregonAddress, region = 'US', currency = 'USD', pickerError = false,
     lastUsedId = null, runOptions = {}, addressRows = null, addressPoolFailure = false, failCooldown = false,
-    checkoutDue = { amount: 20, currency }, checkoutDueError = false } = {}) {
+    checkoutDue = { amount: 20, currency }, checkoutDueError = false, page = {} } = {}) {
     const store = {
         getPaymentRegion: vi.fn(async () => region), getAppConfigValue: vi.fn(async () => lastUsedId),
         reserveCard: vi.fn(async () => ({ id: 1, card_number: 'offline-fixture-card', card_expiry: '01/30', card_cvc: '000' })),
@@ -68,7 +68,7 @@ function harness({ started = true, failRecord = false, failQuarantine = false, t
         process: { env: {} }, console: { log() {}, warn() {} }, Date
     });
     return { store, completeStripeCardPayment, waitForCheckoutDueAmount, pickBillingAddressForCheckout, markAddressBound, onPaymentState,
-        run: () => module.exports.executePaymentWithRetry({}, { ...(native
+        run: () => module.exports.executePaymentWithRetry(page, { ...(native
         ? { platform: 'grok', planType: 'grok_bundle_premium_monthly', grokCheckout: { native: true } }
         : { platform: 'claude', planType: 'claude_pro' }), onPaymentState, ...runOptions }) };
 }
@@ -99,11 +99,33 @@ describe('ChatGPT checkout currency preflight', () => {
         expect(fixture.store.reserveCard).not.toHaveBeenCalled();
         expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
     });
+
+    it('does not submit or rotate a card when Checkout navigation fails', async () => {
+        const page = {
+            goto: vi.fn(async () => { throw new Error('offline navigation'); }),
+            url: () => '',
+            isClosed: () => false
+        };
+        const fixture = harness({ page, runOptions: {
+            platform: 'chatgpt', planType: 'plus', paymentRegion: 'US', paymentCurrency: 'USD',
+            checkoutUrl: 'https://checkout.test/cs_live_fixture', fastProtocol: false
+        } });
+
+        await expect(fixture.run()).resolves.toMatchObject({
+            success: false, code: 'CHECKOUT_NAVIGATION_FAILED', paymentState: 'not_started', canRetryCard: false
+        });
+        expect(page.goto).toHaveBeenCalledOnce();
+        expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
+        expect(fixture.store.cooldownCard).not.toHaveBeenCalled();
+        expect(fixture.store.quarantineCardForReview).not.toHaveBeenCalled();
+        expect(fixture.store.releaseCard).toHaveBeenCalledOnce();
+    });
     it('passes the verified card region and currency to the payment driver', async () => {
         const fixture = harness({ region: 'PH', currency: 'PHP', started: false,
+            checkoutDue: { amount: 1100, currency: 'PHP' },
             runOptions: { platform: 'chatgpt', planType: 'plus', paymentRegion: 'PH', paymentCurrency: 'PHP' } });
         await fixture.run();
-        expect(fixture.waitForCheckoutDueAmount).toHaveBeenCalledOnce();
+        expect(fixture.waitForCheckoutDueAmount).toHaveBeenCalled();
         expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
         expect(fixture.completeStripeCardPayment.mock.calls[0][3]).toMatchObject({ paymentRegion: 'PH', paymentCurrency: 'PHP' });
     });

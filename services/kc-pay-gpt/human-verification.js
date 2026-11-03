@@ -44,8 +44,14 @@ function randomBetween(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function isPaymentCheckoutUrl(url) {
+    const str = String(url || '');
+    return /checkout|pay\.openai\.com|\/c\/pay\//i.test(str) || isCheckoutPageUrl(str);
+}
+
 function isCheckoutOrUpgradeUrl(url) {
-    return /checkout|upgrade|subscribe|billing/i.test(String(url || ''));
+    const str = String(url || '');
+    return /checkout|upgrade|subscribe|billing|pay\.openai\.com|\/c\/pay\//i.test(str) || isCheckoutPageUrl(str);
 }
 
 const CAPTCHA_FAILURE_TEXT_PATTERNS = [
@@ -55,18 +61,12 @@ const CAPTCHA_FAILURE_TEXT_PATTERNS = [
     /人机验证未完成/i,
     /您的购买未成功/i,
     /购买未成功.*您可以重试/i,
-    /无法完成结账/i,
-    /请检查您的信息后重试/i,
     /无法验证.*浏览器/i,
     /未能验证.*浏览器/i,
     /我们无法验证您的浏览器/i,
     /unable to verify (your )?browser/i,
     /failed to verify (your )?browser/i,
     /could not verify (your )?browser/i,
-    /联系支持团队/i,
-    /contact (our )?support team/i,
-    /unable to complete checkout/i,
-    /your card was declined/i,
     /verification (was )?(not completed|failed|incomplete)/i,
     /unable to verify/i,
     /failed human verification/i
@@ -107,13 +107,16 @@ function isInvisibleStripeHcaptchaUrl(url) {
 
 function isBlockingCaptchaFrameUrl(url) {
     const u = String(url || '').toLowerCase();
-    if (u.includes('frame=challenge') || u.includes('hcaptcha.com/captcha/v1') || u.includes('hcaptcha.html')) {
-        return true;
-    }
     if (isInvisibleStripeHcaptchaUrl(url)) {
         return false;
     }
-    if (u.includes('frame=checkbox')) {
+    if (u.includes('/static/') || u.includes('/assets/')) {
+        return false;
+    }
+    if (u.includes('frame=challenge')) {
+        return true;
+    }
+    if (u.includes('frame=checkbox') && !u.includes('invisible')) {
         return true;
     }
     return u.includes('challenges.cloudflare')
@@ -126,15 +129,22 @@ function isCaptchaFrameUrl(url) {
 }
 
 function isHcaptchaCheckboxFrameUrl(url) {
-    return String(url || '').toLowerCase().includes('frame=checkbox');
+    const u = String(url || '').toLowerCase();
+    if (isInvisibleStripeHcaptchaUrl(u) || u.includes('frame=challenge')) {
+        return false;
+    }
+    return u.includes('frame=checkbox')
+        || u.includes('frame=anchor')
+        || u.includes('hcaptcha.html')
+        || u.includes('hcaptchainvisible.html');
 }
 
 function isHcaptchaChallengeFrameUrl(url) {
     const u = String(url || '').toLowerCase();
-    if (isInvisibleStripeHcaptchaUrl(u) || u.includes('frame=checkbox')) {
+    if (isInvisibleStripeHcaptchaUrl(u) || u.includes('frame=checkbox') || u.includes('frame=anchor')) {
         return false;
     }
-    return u.includes('frame=challenge') || u.includes('hcaptcha.com/captcha/v1') || u.includes('hcaptcha.html');
+    return u.includes('frame=challenge');
 }
 
 async function hasHcaptchaImageChallenge(page) {
@@ -215,36 +225,52 @@ async function logCaptchaFrameSnapshot(page, phase) {
 
 async function clickHcaptchaCheckboxFrames(page, phase = 'hcaptcha-checkbox') {
     let clicked = false;
-    const selectors = ['#checkbox', '#anchor', '[id="checkbox"]', '[role="checkbox"]', 'div[aria-checked]', '.checkbox'];
+    const selectors = ['#checkbox', '#anchor', '[id="checkbox"]', '[role="checkbox"]', 'div[aria-checked]', '.checkbox', '[aria-label*="human" i]', '[aria-label*="checkbox" i]'];
 
+    // 0. 优先检测主页面是否有 Checkout 的「One more step」复选框弹层，直接对其内部 iframe 执行精准点击
+    try {
+        const modal = page.locator('div:has-text("One more step"), div:has-text("Select the checkbox below"), div:has-text("完成验证"), div:has-text("人机验证"), [role="dialog"]:has(iframe[src*="hcaptcha"]), div[class*="modal"]:has(iframe[src*="hcaptcha"])').first();
+        if (await modal.isVisible({ timeout: 500 }).catch(() => false)) {
+            const modalIframe = modal.locator('iframe').first();
+            if (await modalIframe.isVisible({ timeout: 500 }).catch(() => false)) {
+                if (await humanClickLocator(page, modalIframe, 'checkbox-left')) {
+                    captchaLog(phase, '已点击 Checkout hCaptcha 弹层中的 checkbox iframe');
+                    clicked = true;
+                }
+            }
+        }
+    } catch (_) {}
+
+    // 1. 遍历 frame 寻找真实的 checkbox 元素并点击
     for (const frame of page.frames()) {
         const url = frame.url() || '';
-        if (!isHcaptchaCheckboxFrameUrl(url)) {
+        if (isHcaptchaChallengeFrameUrl(url) || isInvisibleStripeHcaptchaUrl(url)) {
             continue;
         }
         for (const sel of selectors) {
             try {
                 const loc = frame.locator(sel).first();
-                if (!(await loc.isVisible({ timeout: 600 }).catch(() => false))) {
+                if (!(await loc.isVisible({ timeout: 400 }).catch(() => false))) {
                     continue;
                 }
                 const box = await loc.boundingBox({ timeout: 1000 }).catch(() => null);
-                if (box) {
+                if (box && box.width > 5 && box.height > 5) {
                     await humanClickBoundingBox(page, box, 'center');
                 }
                 await loc.click({ timeout: 2000, delay: randomBetween(40, 120) }).catch(() => {});
-                captchaLog(phase, `已点击 hCaptcha checkbox frame (${url.slice(0, 70)}...)`);
+                captchaLog(phase, `已点击 hCaptcha checkbox frame (${url.slice(0, 70)}...) [sel=${sel}]`);
                 clicked = true;
                 break;
             } catch (_) { /* next selector */ }
         }
+        if (clicked) break;
     }
 
     if (!clicked) {
         const iframes = await collectCaptchaIframeLocators(page);
         for (const iframe of iframes) {
             const src = await iframe.getAttribute('src').catch(() => '') || '';
-            if (!/hcaptcha/i.test(src) || isHcaptchaChallengeFrameUrl(src)) {
+            if (isHcaptchaChallengeFrameUrl(src) || isInvisibleStripeHcaptchaUrl(src)) {
                 continue;
             }
             if (await humanClickLocator(page, iframe, 'checkbox-left')) {
@@ -556,7 +582,7 @@ async function isCheckoutPaymentReady(page) {
     const probes = [
         () => page.getByText(/^(Card number|卡号)$/i).first().isVisible({ timeout: 250 }),
         () => page.getByText(/Configure your plan|Due today|今日应付|付款方式|支付详细信息|付款详情|账单信息/i).first().isVisible({ timeout: 250 }),
-        () => page.getByText(/Plus plan|Pro plan|Monthly subscription|Pro 套餐|按月计费/i).first().isVisible({ timeout: 250 }),
+        () => page.getByText(/Plus plan|Pro plan|Team plan|ChatGPT Team|Team 套餐|Monthly subscription|Pro 套餐|按月计费/i).first().isVisible({ timeout: 250 }),
         () => page.getByRole('button', { name: /subscribe|订阅|pay|升级/i }).first().isVisible({ timeout: 250 }),
         () => page.locator('input[autocomplete="cc-number"]').first().isVisible({ timeout: 250 })
     ];
@@ -1202,6 +1228,31 @@ const HCAPTCHA_PROMPT_EXACT_DICT = {
     'select the two identical shapes': '请选择完全相同的【两个形状】',
     'please click on the two identical objects': '请点击完全相同的【两个物体】',
     'click on the two identical objects': '请点击完全相同的【两个物体】',
+
+    'find the three shapes with the same form': '请找出 3 个形状相同的图形',
+    'find three shapes with the same form': '请找出 3 个形状相同的图形',
+    'find the 3 shapes with the same form': '请找出 3 个形状相同的图形',
+    'find 3 shapes with the same form': '请找出 3 个形状相同的图形',
+    'click the three shapes with the same form': '请找出 3 个形状相同的图形',
+    'click on the three shapes with the same form': '请找出 3 个形状相同的图形',
+    'select the three shapes with the same form': '请选出 3 个形状相同的图形',
+    'select three shapes with the same form': '请选出 3 个形状相同的图形',
+    'find the two shapes with the same form': '请找出 2 个形状相同的图形',
+    'find two shapes with the same form': '请找出 2 个形状相同的图形',
+    'find the 2 shapes with the same form': '请找出 2 个形状相同的图形',
+    'find 2 shapes with the same form': '请找出 2 个形状相同的图形',
+    'click the two shapes with the same form': '请找出 2 个形状相同的图形',
+    'click on the two shapes with the same form': '请找出 2 个形状相同的图形',
+    'select the two shapes with the same form': '请选出 2 个形状相同的图形',
+    'select two shapes with the same form': '请选出 2 个形状相同的图形',
+    'find the shapes with the same form': '请找出形状相同的图形',
+    'find shapes with the same form': '请找出形状相同的图形',
+    'click on the shapes with the same form': '请找出形状相同的图形',
+    'select the shapes with the same form': '请选出形状相同的图形',
+    'three shapes with the same form': '3 个形状相同的图形',
+    'two shapes with the same form': '2 个形状相同的图形',
+    'shapes with the same form': '形状相同的图形',
+
     'tap all objects that can be completely concealed by the item shown': '请选出所有能被所示物品（完全遮蔽）的物体',
     'click all objects that can be completely concealed by the item shown': '请选出所有能被所示物品（完全遮蔽）的物体',
     'select all objects that can be completely concealed by the item shown': '请选出所有能被所示物品（完全遮蔽）的物体',
@@ -1290,13 +1341,30 @@ const HCAPTCHA_PROMPT_EXACT_DICT = {
     'things with on and off states': '有开关状态的物品',
     'items with on and off states': '有开关状态的物品',
     'objects with on and off states': '有开关状态的物品',
-    'devices with on and off states': '有开关状态的设备'
+    'devices with on and off states': '有开关状态的设备',
+
+    'click on all cells where two lines overlap': '请点击【两条线重叠的所有格子】',
+    'click on each cell where two lines overlap': '请点击【两条线重叠的每个格子】',
+    'click on the cells where two lines overlap': '请点击【两条线重叠的格子】',
+    'click all cells where two lines overlap': '请点击【两条线重叠的所有格子】',
+    'select all cells where two lines overlap': '请选择【两条线重叠的所有格子】',
+    'all cells where two lines overlap': '两条线重叠的所有格子',
+    'cells where two lines overlap': '两条线重叠的格子',
+    'cells where lines overlap': '线条重叠的格子'
 };
 
 const HCAPTCHA_NOUN_DICT = {
+    'cell': '格子', 'cells': '格子',
+    'all cells where two lines overlap': '两条线重叠的所有格子',
+    'cells where two lines overlap': '两条线重叠的格子',
     'letter': '字母', 'letters': '字母',
     'puzzle piece': '拼图碎片', 'puzzle pieces': '拼图碎片',
     'slider': '滑块', 'shape': '形状', 'shapes': '形状',
+    'three shapes with the same form': '3 个形状相同的图形',
+    'the three shapes with the same form': '3 个形状相同的图形',
+    'two shapes with the same form': '2 个形状相同的图形',
+    'the two shapes with the same form': '2 个形状相同的图形',
+    'shapes with the same form': '形状相同的图形',
     'outline': '轮廓', 'shadow': '阴影', 'silhouette': '剪影',
 
     'things that spin when you use them': '使用时会旋转的物品',
@@ -1467,6 +1535,32 @@ function translateHcaptchaPrompt(prompt) {
         return '请点击完全相同的形状';
     }
 
+    // 针对“相同形状/形式”几何图形（如 "Find the THREE shapes with the same form"）
+    const sameFormMatch = lower.match(/^(?:please\s+)?(?:find|click(?:\s+on)?|select|tap(?:\s+on)?|choose)\s+(?:the\s+)?(?:(\w+)\s+)?(shapes?|objects?|items?|patterns?|figures?)\s+(?:with|of|having)\s+(?:the\s+)?same\s+(?:form|shape|structure)$/i);
+    if (sameFormMatch) {
+        const numWord = (sameFormMatch[1] || '').toLowerCase();
+        const noun = (sameFormMatch[2] || '').toLowerCase();
+        const numZhMap = {
+            'two': '2 个', '2': '2 个',
+            'three': '3 个', '3': '3 个',
+            'four': '4 个', '4': '4 个',
+            'five': '5 个', '5': '5 个',
+            'one': '1 个', '1': '1 个'
+        };
+        const numZh = numZhMap[numWord] || (numWord ? `${numWord} 个` : '');
+        const nounZh = /pattern/i.test(noun) ? '图案' : (/object|item/i.test(noun) ? '物体' : '图形');
+        if (numZh) {
+            return `请找出 ${numZh}形状相同的${nounZh}`;
+        }
+        return `请找出形状相同的${nounZh}`;
+    }
+    if (lower.includes('same form') || lower.includes('same shape')) {
+        if (lower.includes('three') || /\b3\b/.test(lower)) return '请找出 3 个形状相同的图形';
+        if (lower.includes('two') || /\b2\b/.test(lower)) return '请找出 2 个形状相同的图形';
+        if (lower.includes('four') || /\b4\b/.test(lower)) return '请找出 4 个形状相同的图形';
+        return '请找出形状相同的图形';
+    }
+
     // 场所与情境匹配（如 "Tap the thing you can take inside the place"）
     if (lower.includes('take inside the place') || lower.includes('take inside') || lower.includes('bring inside') || lower.includes('take into the place')) {
         return '【场景匹配】请点击能带进右上角场所的物品';
@@ -1546,6 +1640,14 @@ function translateHcaptchaPrompt(prompt) {
     // 开关状态题型（如 "Find all things with on and off states"）
     if (/on\s+and\s+off\s+states?|turned\s+on\s+and\s+off|on\s*\/\s*off\s+states?/i.test(lower)) {
         return '请选出所有【有开关状态的物品】';
+    }
+
+    // 线条相交/重叠格子题型（如 "Click on all cells where two lines overlap"）
+    if (/cells?\s+where\s+(?:two\s+)?lines?\s+overlap/i.test(lower)) {
+        if (/^(?:please\s+)?(?:click|tap|select)/i.test(lower)) {
+            return '请点击【两条线重叠的所有格子】';
+        }
+        return '两条线重叠的所有格子';
     }
 
     // 2. 句式模式匹配
@@ -1749,6 +1851,18 @@ function formatCaptchaGuideMessage(promptZh, promptEn) {
         parts.push(
             `<div class="captcha-prompt-guide">` +
             `操作指引：请观察图中的几何图形，找出其中与其他项形状/特征明显不同的目标点击选定，确认选好后务必点击右下角「Verify / 提交」按钮完成验证。` +
+            `</div>`
+        );
+    } else if (fullText.includes('same form') || fullText.includes('相同图形') || fullText.includes('形状相同') || fullText.includes('相同形状')) {
+        parts.push(
+            `<div class="captcha-prompt-guide">` +
+            `操作指引：请仔细观察图中的几何图形，找出其中形状外形完全相同的目标点击选定。选好后务必点击右下角按钮继续（若有「Next」请点击下一步，最后一页点击「Verify / 提交」）。` +
+            `</div>`
+        );
+    } else if (fullText.includes('lines overlap') || fullText.includes('lines overlapping') || fullText.includes('两线重叠') || fullText.includes('两条线重叠') || fullText.includes('线重叠')) {
+        parts.push(
+            `<div class="captcha-prompt-guide">` +
+            `操作指引：请观察网格中穿过的彩色线条，点击所有【两条线条在同一个格点/圆圈上相交重叠】的格子。选好后务必点击右下角「Verify / 提交」按钮！` +
             `</div>`
         );
     } else if (fullText.includes('meet your eye') || fullText.includes('目光') || fullText.includes('对视')) {
@@ -2774,7 +2888,7 @@ async function clearHumanVerification(page, options = {}) {
         maxWaitMs = Number(process.env.CAPTCHA_CLEAR_TIMEOUT_MS || 120000),
         maxBypassRounds = 4,
         useVisualSolver = true,
-        requireCheckoutReady = /checkout/i.test(page.url() || ''),
+        requireCheckoutReady = (typeof isPaymentCheckoutUrl === 'function' ? isPaymentCheckoutUrl(page.url() || '') : /checkout|pay\.openai\.com|\/c\/pay\//i.test(page.url() || '')),
         checkoutReadyWaitMs = Number(process.env.CHECKOUT_READY_WAIT_MS || 60000)
     } = options;
 
@@ -2783,7 +2897,7 @@ async function clearHumanVerification(page, options = {}) {
         ? Math.max(maxBypassRounds, Number(process.env.CAPTCHA_CHECKOUT_MAX_ROUNDS || 15))
         : maxBypassRounds;
 
-    const onCheckout = /checkout/i.test(page.url() || '');
+    const onCheckout = typeof isPaymentCheckoutUrl === 'function' ? isPaymentCheckoutUrl(page.url() || '') : /checkout|pay\.openai\.com|\/c\/pay\//i.test(page.url() || '');
     const waitOverlayMs = Number(options.overlayWaitMs || 0);
     const isPostSubmitCheckout = onCheckout && String(phase).startsWith('post_submit');
     if (onCheckout && (isPostSubmitCheckout || waitOverlayMs > 0)) {
@@ -2951,6 +3065,20 @@ async function clearHumanVerification(page, options = {}) {
 
         let overlayCaptcha = await hasAnyCheckoutCaptchaSignal(page);
         let imageChallenge = await hasHcaptchaImageChallenge(page);
+
+        // 如果检测到弹出了 Checkout hCaptcha 复选框弹层（One more step...），但尚未展开图片题：
+        // 必须先自动点击复选框！很多时候一点击就直接勾选通过，无需打码或人工
+        if (overlayCaptcha && !imageChallenge) {
+            captchaLog(phase, '检测到 Checkout hCaptcha 复选框弹层，正在自动点击「I am human」复选框...');
+            await clickHcaptchaCheckboxFrames(page, `${phase}-checkbox-click`);
+            await page.waitForTimeout(2000);
+            if (await isVerificationCleared(page, verifyOpts)) {
+                captchaLog(phase, '点击复选框后验证直接静默通过！');
+                return { cleared: true, rounds: round, via: 'checkbox-passive-pass' };
+            }
+            // 重新刷新图片题状态
+            imageChallenge = await hasHcaptchaImageChallenge(page);
+        }
 
         // 若优先使用前端人工交互透传（自动求解已关闭、未配置打码平台或指定优先），立即唤起协助，跳过被动等待
         if (prioritizeUserInteractive && (imageChallenge || overlayCaptcha)) {
@@ -3125,6 +3253,7 @@ async function clearHumanVerification(page, options = {}) {
 }
 
 module.exports = {
+    isCheckoutOrUpgradeUrl,
     isCheckoutOverlayCaptchaVisible,
     hasCheckoutCaptchaOverlayText,
     hasAnyCheckoutCaptchaSignal,

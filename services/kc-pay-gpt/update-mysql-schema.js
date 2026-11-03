@@ -185,6 +185,10 @@ async function run() {
             await ensureColumn(connection, 'billing_records', 'platform', "VARCHAR(32) NOT NULL DEFAULT 'chatgpt'");
             await ensureColumn(connection, 'billing_records', 'plan_type', "VARCHAR(64) NOT NULL DEFAULT 'plus'");
             await ensureVarcharMinLength(connection, 'billing_records', 'plan_type', 64, "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+            await ensureColumn(connection, 'billing_records', 'protocol_attempt_id', 'VARCHAR(64) NULL');
+            await ensureColumn(connection, 'billing_records', 'stripe_payment_intent_id', 'VARCHAR(128) NULL');
+            await ensureColumn(connection, 'billing_records', 'stripe_payment_method_id', 'VARCHAR(128) NULL');
+            await ensureColumn(connection, 'billing_records', 'stripe_confirmation_token_hash', 'VARCHAR(64) NULL');
         }
 
         await ensureProductAssetsTable(connection);

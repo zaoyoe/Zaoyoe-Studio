@@ -490,6 +490,10 @@ async function ensureLegacyColumns() {
     await ensureColumn('billing_records', 'platform', "VARCHAR(32) NOT NULL DEFAULT 'chatgpt'");
     await ensureColumn('billing_records', 'plan_type', "VARCHAR(64) NOT NULL DEFAULT 'plus'");
     await ensureVarcharMinLength('billing_records', 'plan_type', 64, "VARCHAR(64) NOT NULL DEFAULT 'plus'");
+    await ensureColumn('billing_records', 'protocol_attempt_id', 'VARCHAR(64) NULL');
+    await ensureColumn('billing_records', 'stripe_payment_intent_id', 'VARCHAR(128) NULL');
+    await ensureColumn('billing_records', 'stripe_payment_method_id', 'VARCHAR(128) NULL');
+    await ensureColumn('billing_records', 'stripe_confirmation_token_hash', 'VARCHAR(64) NULL');
     await ensureColumn('tax_free_addresses', 'is_bound', 'TINYINT(1) NOT NULL DEFAULT 0 COMMENT \'是否已绑定成功支付\'');
     await ensureColumn('tax_free_addresses', 'bound_card_id', 'BIGINT UNSIGNED NULL DEFAULT NULL COMMENT \'绑定的卡片ID\'');
     await ensureColumn('tax_free_addresses', 'bound_at', 'TIMESTAMP NULL DEFAULT NULL COMMENT \'绑定时间\'');
@@ -915,7 +919,7 @@ async function getAdminData() {
         runQuery(
             `SELECT config_key, config_value
              FROM app_config
-             WHERE config_key IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             WHERE config_key IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 'proxy',
                 'max_concurrent_activations',
@@ -929,7 +933,8 @@ async function getAdminData() {
                 'email_source',
                 'inbox_api_base',
                 'inbox_email_domain',
-                'inbox_email_domains'
+                'inbox_email_domains',
+                'fast_protocol_enabled'
             ]
         ),
         runQuery(
@@ -977,6 +982,10 @@ async function getAdminData() {
             max_background_concurrent: Math.max(1, Number(configMap.max_background_concurrent || 1)),
             maintenance_mode: String(configMap.maintenance_mode || '0') === '1',
             maintenance_mode_drain: String(configMap.maintenance_mode_drain || '0') === '1',
+            fast_protocol_enabled: parseBooleanConfig(
+                configMap.fast_protocol_enabled ?? process.env.FAST_PROTOCOL_ENABLED,
+                true
+            ),
             email_source: ['random', 'pool', 'inbox'].includes(String(configMap.email_source || ''))
                 ? String(configMap.email_source)
                 : (String(configMap.pool_email_enabled || '0') === '1' ? 'pool' : 'random'),
@@ -1047,6 +1056,9 @@ async function saveConfig(config = {}) {
     }
     if (hasOwn('maintenance_mode_drain')) {
         configEntries.push(['maintenance_mode_drain', config.maintenance_mode_drain ? '1' : '0']);
+    }
+    if (hasOwn('fast_protocol_enabled')) {
+        configEntries.push(['fast_protocol_enabled', config.fast_protocol_enabled ? '1' : '0']);
     }
     if (hasOwn('email_source') || hasOwn('pool_email_enabled')) {
         const emailSource = ['random', 'pool', 'inbox'].includes(String(config.email_source))
@@ -2246,6 +2258,36 @@ async function setBrowserPoolEnabled(enabled) {
     return Boolean(enabled);
 }
 
+const FAST_PROTOCOL_CONFIG_KEY = 'fast_protocol_enabled';
+
+async function getFastProtocolEnabled() {
+    const fromDb = await getAppConfigValue(FAST_PROTOCOL_CONFIG_KEY, '');
+    if (fromDb !== '') {
+        return parseBooleanConfig(fromDb, true);
+    }
+    return parseBooleanConfig(process.env.FAST_PROTOCOL_ENABLED, true);
+}
+
+async function setFastProtocolEnabled(enabled) {
+    await setAppConfigValue(FAST_PROTOCOL_CONFIG_KEY, enabled ? '1' : '0');
+    return Boolean(enabled);
+}
+
+const RECORD_VIDEO_CONFIG_KEY = 'record_video_enabled';
+
+async function getRecordVideoEnabled() {
+    const fromDb = await getAppConfigValue(RECORD_VIDEO_CONFIG_KEY, '');
+    if (fromDb !== '') {
+        return parseBooleanConfig(fromDb, false);
+    }
+    return parseBooleanConfig(process.env.RECORD_VIDEO, false);
+}
+
+async function setRecordVideoEnabled(enabled) {
+    await setAppConfigValue(RECORD_VIDEO_CONFIG_KEY, enabled ? '1' : '0');
+    return Boolean(enabled);
+}
+
 async function getTelegramConfig() {
     const keys = [
         'telegram_bot_token',
@@ -2972,6 +3014,19 @@ async function listStaleRunningTasks(maxAgeMs = 15 * 60 * 1000) {
     );
 }
 
+// Startup runs before this singleton service accepts new tasks. Recover its
+// interrupted tasks even when the last recorded heartbeat was recent.
+async function listRunningTasksForRecovery() {
+    return runQuery(
+        `SELECT job_key, cdk_code, status, message, progress, raw_output,
+                execution_mode,
+                gpt_api_order_id, gpt_api_task_id, payment_state, updated_at
+         FROM task_logs
+         WHERE status = 'running'
+         ORDER BY updated_at ASC, id ASC`
+    );
+}
+
 async function listProducts() {
     const rows = await runQuery(
         `SELECT p.id,
@@ -3319,6 +3374,22 @@ async function releaseCard(cardId) {
          WHERE id = ?`,
         [Number(cardId)]
     );
+}
+
+/**
+ * 释放指定 ownerKey (通常为 jobKey) 持有的未完成卡片锁
+ */
+async function releaseCardsByOwner(ownerKey) {
+    if (!ownerKey) return 0;
+    const res = await runExecute(
+        `UPDATE card_assets
+         SET in_use = 0,
+             locked_at = NULL,
+             locked_by = NULL
+         WHERE in_use = 1 AND status = '正常' AND (locked_by = ? OR locked_by LIKE ?)`,
+        [ownerKey, `%${ownerKey}%`]
+    );
+    return Number(res?.affectedRows || 0);
 }
 
 /**
@@ -3683,8 +3754,9 @@ async function setPaymentRegion(regionCode) {
 async function createBillingRecord(data) {
     const result = await runExecute(
         `INSERT INTO billing_records
-            (payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id, cdk_code, email, status, error_code, error_message)
-         VALUES (COALESCE(?, NOW()), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id, protocol_attempt_id,
+             stripe_payment_intent_id, stripe_payment_method_id, stripe_confirmation_token_hash, cdk_code, email, status, error_code, error_message)
+         VALUES (COALESCE(?, NOW()), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             data.payment_time || null,
             data.card_number ? String(data.card_number) : null,
@@ -3693,6 +3765,10 @@ async function createBillingRecord(data) {
             String(data.currency || 'USD'),
             String(data.plan_type || 'plus'),
             data.stripe_session_id || null,
+            data.protocol_attempt_id || null,
+            data.stripe_payment_intent_id || null,
+            data.stripe_payment_method_id || null,
+            data.stripe_confirmation_token_hash || null,
             data.cdk_code || null,
             data.email || null,
             String(data.status || 'success'),
@@ -3748,7 +3824,9 @@ async function listBillingRecords(filters = {}, page = 1, pageSize = 20) {
 
     const offset = (page - 1) * pageSize;
     const records = await runQuery(
-        `SELECT id, payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id, cdk_code, email, status, error_code, error_message, created_at
+        `SELECT id, payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id,
+                protocol_attempt_id, stripe_payment_intent_id, stripe_payment_method_id, stripe_confirmation_token_hash,
+                cdk_code, email, status, error_code, error_message, created_at
          FROM billing_records
          ${whereClause}
          ORDER BY payment_time DESC
@@ -3792,7 +3870,9 @@ async function exportBillingRecordsCSV(filters = {}) {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const rows = await runQuery(
-        `SELECT payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id, cdk_code, email, status, error_code, error_message
+        `SELECT payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id,
+                protocol_attempt_id, stripe_payment_intent_id, stripe_payment_method_id, stripe_confirmation_token_hash,
+                cdk_code, email, status, error_code, error_message
          FROM billing_records
          ${whereClause}
          ORDER BY payment_time DESC
@@ -3801,7 +3881,7 @@ async function exportBillingRecordsCSV(filters = {}) {
     );
 
     const BOM = '\uFEFF';
-    const headers = '支付时间,卡号,卡片后四位,金额,币种,套餐类型,Stripe Session ID,CDK码,邮箱,状态,错误码,错误信息';
+    const headers = '支付时间,卡号,卡片后四位,金额,币种,套餐类型,Stripe Session ID,协议 Attempt ID,PaymentIntent ID,PaymentMethod ID,ConfirmationToken 哈希,CDK码,邮箱,状态,错误码,错误信息';
 
     const csvRows = rows.map((row) => {
         const paymentTime = row.payment_time
@@ -3815,6 +3895,10 @@ async function exportBillingRecordsCSV(filters = {}) {
             row.currency || '',
             row.plan_type || '',
             row.stripe_session_id || '',
+            row.protocol_attempt_id || '',
+            row.stripe_payment_intent_id || '',
+            row.stripe_payment_method_id || '',
+            row.stripe_confirmation_token_hash || '',
             row.cdk_code || '',
             row.email || '',
             row.status || '',
@@ -4225,6 +4309,10 @@ module.exports = {
     setAppConfigValue,
     getBrowserPoolEnabled,
     setBrowserPoolEnabled,
+    getFastProtocolEnabled,
+    setFastProtocolEnabled,
+    getRecordVideoEnabled,
+    setRecordVideoEnabled,
     getTelegramConfig,
     saveTelegramConfig,
     getGptApiConfig,
@@ -4268,6 +4356,7 @@ module.exports = {
     reserveCard,
     hasAvailableCard,
     releaseCard,
+    releaseCardsByOwner,
     cooldownCard,
     quarantineCardForReview,
     markCardExhausted,
@@ -4286,6 +4375,7 @@ module.exports = {
     getSessionByJobKey,
     clearSessionPayload,
     listStaleRunningTasks,
+    listRunningTasksForRecovery,
     PLAN_NAME_MAP,
     resolvePlanName,
     connectionInfo: {

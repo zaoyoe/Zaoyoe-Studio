@@ -6,8 +6,33 @@
 
     const mobile = window.matchMedia('(max-width: 900px)');
     const menuButton = document.querySelector('.topbar-mobile-toggle');
+    const navMenu = sidebar.querySelector('.nav-menu');
     sidebar.id ||= 'admin-sidebar';
     menuButton?.setAttribute('aria-controls', sidebar.id);
+
+    let scrollbarTimer = null;
+    function revealScrollbar(keepVisible = false) {
+        sidebar.classList.add('scrollbar-visible');
+        clearTimeout(scrollbarTimer);
+        scrollbarTimer = keepVisible
+            ? null
+            : setTimeout(() => {
+                sidebar.classList.remove('scrollbar-visible');
+                scrollbarTimer = null;
+            }, 900);
+    }
+
+    if (navMenu) {
+        navMenu.addEventListener('scroll', () => revealScrollbar(), { passive: true });
+        navMenu.addEventListener('pointerenter', () => revealScrollbar());
+        navMenu.addEventListener('keydown', () => revealScrollbar());
+        navMenu.addEventListener('pointerdown', () => revealScrollbar(true));
+        const releaseScrollbar = () => {
+            if (sidebar.classList.contains('scrollbar-visible')) revealScrollbar();
+        };
+        document.addEventListener('pointerup', releaseScrollbar);
+        document.addEventListener('pointercancel', releaseScrollbar);
+    }
 
     function syncMobileDrawer() {
         const closed = mobile.matches && !sidebar.classList.contains('mobile-open');

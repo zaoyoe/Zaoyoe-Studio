@@ -193,6 +193,7 @@ function normalizeUsStateName(state) {
     return raw;
 }
 
+
 /** 美国无销售税州：Oregon, Delaware, Montana, New Hampshire, Alaska */
 const US_TAX_FREE_LOCATIONS = [
     { city: 'Portland', state: 'Oregon', postalCodes: ['97201', '97205', '97209', '97214'] },

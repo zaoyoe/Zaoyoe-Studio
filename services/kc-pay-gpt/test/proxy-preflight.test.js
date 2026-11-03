@@ -152,8 +152,12 @@ describe('server preflight retry safety', () => {
         vm.runInNewContext(source.slice(start, end) + '\nresult = analyzeProcessOutput(input, false);', sandbox);
         return sandbox.result;
     };
-    it('automatically retries only a marked prepayment transient network failure', () => {
-        const result = analyze('❌ [运行时错误]: 代理连接暂时异常；尚未提交支付 [PROXY_PREFLIGHT_NETWORK]');
+    it.each([
+        '❌ [运行时错误]: 代理连接暂时异常；尚未提交支付 [PROXY_PREFLIGHT_NETWORK]',
+        '❌ [运行时错误]: 纯协议代理探针未确认目标地区，已停止且不启动浏览器 [PROXY_PREFLIGHT_NETWORK]',
+        '❌ [运行时错误]: 纯协议代理探针未确认目标地区，已停止且不启动浏览器 [PROTOCOL_PREREQUISITE_FAILED]'
+    ])('automatically retries prepayment transient network and protocol region probe failures: %s', (errorOutput) => {
+        const result = analyze(errorOutput);
         expect(result).toMatchObject({ shouldRetry: true, status: 'retry', paymentState: 'not_started', reachedPayment: false });
     });
     it.each(['AUTH', 'CERTIFICATE'])('does not retry preflight %s configuration problems', code => {

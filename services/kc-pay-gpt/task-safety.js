@@ -8,6 +8,47 @@ function classifyChatGptAuthFailure(message, paymentState) {
         deletePhone: false, deleteCard: false, paymentState: 'not_started' };
 }
 
+function classifyAccountAlreadySubscribed(message, paymentState) {
+    if (paymentState != null && normalizePaymentState(paymentState) !== 'not_started') return null;
+    const text = String(message || '');
+    if (!text.includes('ACCOUNT_ALREADY_SUBSCRIBED') && !text.includes('已有有效') && !text.includes('already_subscribed')) {
+        return null;
+    }
+    return {
+        status: 'failed',
+        message: '该账号已有有效 Plus 订阅，无需重复充值，请更换其他未订阅账号',
+        reachedPayment: false,
+        shouldRetry: false,
+        deletePhone: false,
+        deleteCard: false,
+        paymentState: 'not_started'
+    };
+}
+
+function classifyChatGptNavigationFailure(message, paymentState, fullOutput = '') {
+    if (paymentState != null && normalizePaymentState(paymentState) !== 'not_started') return null;
+    const text = `${String(message || '')} ${String(fullOutput || '')}`;
+    const hasNavTimeout = text.includes('[CHATGPT_NAV_TIMEOUT]')
+        || text.includes('[CHECKOUT_RENDER_TIMEOUT]')
+        || /page\.goto:\s*Timeout\s*\d*ms\s*exceeded/i.test(text)
+        || (/Timeout\s*\d*ms\s*exceeded/i.test(text) && /chatgpt\.com/i.test(text));
+    if (!hasNavTimeout) return null;
+    return {
+        status: 'retry',
+        message: text.includes('[CHECKOUT_RENDER_TIMEOUT]')
+            ? '收银台页面加载/渲染超时，准备切换代理重试'
+            : '连接 ChatGPT 官方页面超时，准备重试',
+        exhaustedMessage: text.includes('[CHECKOUT_RENDER_TIMEOUT]')
+            ? '多次尝试加载收银台页面均超时，请稍后重试或检查代理网络质量'
+            : '多次尝试连接 ChatGPT 官方页面均超时，请稍后重试或检查代理网络质量',
+        reachedPayment: false,
+        shouldRetry: true,
+        deletePhone: false,
+        deleteCard: false,
+        paymentState: 'not_started'
+    };
+}
+
 const KNOWN_PAYMENT_STATES = new Set(['not_started', 'started', 'succeeded', 'declined', 'unknown']);
 
 function normalizePaymentState(value) {
@@ -73,9 +114,9 @@ function classifyAutoRenewCancellation(result = {}) {
 }
 
 function classifyCheckoutFailure(message, paymentState) {
-    // Checkout creation precedes card submission. Never override known payment activity.
+    // Checkout readiness and billing guards run before submission. Preserve any pending payment.
     if (paymentState != null && !['not_started', 'declined'].includes(normalizePaymentState(paymentState))) return null;
-    const code = String(message || '').match(/\[(CHECKOUT_(?:HTTP_ERROR|UNUSUAL_ACTIVITY|NETWORK_ERROR|NO_REQUEST|REQUEST_PENDING|NAVIGATION_TIMEOUT|AUTH_REQUIRED|PAGE_ERROR|PAGE_CLOSED))\]\s*$/);
+    const code = String(message || '').match(/\[(CHECKOUT_(?:HTTP_ERROR|UNUSUAL_ACTIVITY|NETWORK_ERROR|NO_REQUEST|REQUEST_PENDING|NAVIGATION_TIMEOUT|NAVIGATION_FAILED|AUTH_REQUIRED|PAGE_ERROR|PAGE_CLOSED|PAGE_UNAVAILABLE|RENDER_TIMEOUT|RESOURCE_TIMEOUT|SESSION_FAILED|CURRENCY_UNCONFIRMED|AMOUNT_UNCONFIRMED|AMOUNT_MISMATCH)|PAYMENT_(?:REGION_NETWORK_MISMATCH|REGION_UNCONFIRMED|CURRENCY_MISMATCH)|NETWORK_REGION_UNCONFIRMED|CDK_PAYMENT_REGION_MISMATCH|BILLING_TAX_NOT_REMOVED|PRICING_REGION_UNCONFIRMED)\]\s*$/);
     if (!code) return null;
     return {
         status: 'failed',
@@ -91,9 +132,13 @@ function classifyCheckoutFailure(message, paymentState) {
 function classifyProxyPreflightFailure(message, paymentState) {
     // Explicit preflight marker only: never retry a TLS error during payment.
     if (paymentState != null && normalizePaymentState(paymentState) !== 'not_started') return null;
-    const code = String(message || '').match(/\[(PROXY_PREFLIGHT_(?:NETWORK|AUTH|CERTIFICATE))\]\s*$/)?.[1];
+    const msg = String(message || '');
+    const code = msg.match(/\[(PROXY_PREFLIGHT_(?:NETWORK|AUTH|CERTIFICATE)|PROTOCOL_PREREQUISITE_FAILED)\]\s*$/)?.[1];
     if (!code) return null;
-    const retry = code === 'PROXY_PREFLIGHT_NETWORK';
+    const isProxyNetworkFailure = code === 'PROXY_PREFLIGHT_NETWORK'
+        || msg.includes('纯协议代理探针未确认目标地区')
+        || msg.includes('纯协议代理探针请求异常');
+    const retry = isProxyNetworkFailure;
     return {
         status: retry ? 'retry' : 'failed', message,
         reachedPayment: false, shouldRetry: retry,
@@ -171,6 +216,8 @@ function classifyInterruptedTask(task = {}) {
 
 module.exports = {
     classifyChatGptAuthFailure,
+    classifyAccountAlreadySubscribed,
+    classifyChatGptNavigationFailure,
     KNOWN_PAYMENT_STATES,
     normalizePaymentState,
     mergePaymentState,

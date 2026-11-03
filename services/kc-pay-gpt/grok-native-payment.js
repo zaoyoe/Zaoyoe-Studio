@@ -91,6 +91,7 @@ async function assertNativeCard(page, card, helpers) {
     }
 }
 async function isTermsConfirmed(checkbox) {
+    if (!checkbox) return true;
     const aria = await checkbox.getAttribute('aria-checked').catch(() => null);
     if (aria === 'true') return true;
     if (aria === 'false' || aria === 'mixed') return false;
@@ -101,11 +102,38 @@ async function acceptNativeTerms(page) {
     const dialog = await checkoutDialog(page);
     await closeAddressSuggestions(page, dialog);
     const labels = dialog.locator('label').filter({ has: page.locator('a[href="https://x.ai/legal/bundled-subscription-terms?us=unified"]') });
-    const label = await uniqueVisible(labels, '新版订阅条款');
+    const labelMatches = await visibleMatches(labels);
+    let label = null;
+    if (labelMatches.length === 1) {
+        label = labelMatches[0];
+    } else {
+        // Fallback: 官方新版 UI 将条款改为段落展示或将复选框整合至“Agree, Subscribe & Pay”按钮
+        const termsCandidates = dialog.locator('label, div, p').filter({
+            has: page.locator('a[href*="bundled-subscription-terms"], a[href*="terms"], a[href*="privacy"], a[href*="legal"]')
+        });
+        const containerMatches = await visibleMatches(termsCandidates);
+        for (const candidate of containerMatches) {
+            const txt = await candidate.innerText().catch(() => '');
+            if (/Subscription Terms|订阅条款|组合订阅条款|By clicking|点击.*即表示同意/i.test(txt)) {
+                label = candidate;
+                break;
+            }
+        }
+    }
+
+    if (!label) {
+        const submitWithAgree = await visibleMatches(dialog.getByRole('button', { name: /^(?:Agree,\s*)?(?:订阅并付款|订阅并支付|Subscribe\s*(?:&|and)\s*Pay)$/i }));
+        if (submitWithAgree.length >= 1) {
+            console.log('[Grok] 页面条款已集成于提交按钮，无独立复选框');
+            return null;
+        }
+        throw grokError('GROK_ENTRY_AMBIGUOUS', '新版订阅条款 无法唯一确认，尚未提交支付');
+    }
+
     const text = await label.innerText();
     if (/迁移|合并|统一账号|取消.*旧|migrat|merge|unif|cancel.*existing/i.test(text)) throw grokError('GROK_MIGRATION_REQUIRED', '条款涉及账号合并或订阅迁移，已停止');
     const customBoxes = await visibleMatches(label.locator('[role="checkbox"]'));
-    let checkbox;
+    let checkbox = null;
     if (customBoxes.length === 1) {
         checkbox = customBoxes[0];
     } else if (customBoxes.length === 0) {
@@ -113,14 +141,19 @@ async function acceptNativeTerms(page) {
         if (inputBoxes.length === 1) checkbox = inputBoxes[0];
     }
     if (!checkbox) {
-        checkbox = await uniqueVisible(label.getByRole('checkbox'), '订阅条款复选框');
+        const roleCheckboxes = await visibleMatches(label.getByRole('checkbox'));
+        if (roleCheckboxes.length === 1) checkbox = roleCheckboxes[0];
     }
-    if (!await isTermsConfirmed(checkbox)) await checkbox.click({ timeout: 3000 });
-    await closeAddressSuggestions(page, dialog);
-    if (!await isTermsConfirmed(checkbox)) throw grokError('GROK_FORM_UNCONFIRMED', '订阅条款未被确认');
-    return checkbox;
+    if (checkbox) {
+        if (!await isTermsConfirmed(checkbox)) await checkbox.click({ timeout: 3000 });
+        await closeAddressSuggestions(page, dialog);
+        if (!await isTermsConfirmed(checkbox)) throw grokError('GROK_FORM_UNCONFIRMED', '订阅条款未被确认');
+        return checkbox;
+    }
+    console.log('[Grok] 订阅条款段落已核验（无独立复选框，由提交按钮 Agree 自动确认）');
+    return null;
 }
-const SUBMIT_BUTTON_NAME = /^(订阅并付款|订阅并支付|Subscribe\s*(?:&|and)\s*Pay)$/i;
+const SUBMIT_BUTTON_NAME = /^(?:Agree,\s*)?(?:订阅并付款|订阅并支付|Subscribe\s*(?:&|and)\s*Pay)$/i;
 async function nativeSubmitButton(page, { timeoutMs = 3000 } = {}) {
     const deadline = Date.now() + timeoutMs;
     let dialog;
@@ -136,22 +169,24 @@ async function nativeSubmitButton(page, { timeoutMs = 3000 } = {}) {
     await closeAddressSuggestions(page, dialog);
     return uniqueVisible(dialog.getByRole('button', { name: SUBMIT_BUTTON_NAME }), '订阅付款按钮');
 }
-const NATIVE_DECLINE_PATTERNS = /your payment method was declined|your card (?:was|has been) declined|card (?:was|has been) declined|payment (?:method )?(?:was )?declined|insufficient funds|do not honor|银行卡被拒绝|支付方式被拒绝|付款方式已被拒绝/i;
+const NATIVE_DECLINE_PATTERNS = /your payment method was declined|your card (?:was|has been) declined|card (?:was|has been) declined|payment (?:method )?(?:was )?declined|payment was not approved|payment failed|payment could not be processed|card number is (?:incorrect|invalid)|enter your card again|incorrect.*cvc|expired card|insufficient funds|do not honor|try a different (?:card|payment)|try another (?:payment )?method|银行卡被拒绝|支付方式被拒绝|付款方式已被拒绝|卡号不正确|请重新输入卡号/i;
 
 async function checkNativePaymentDecline(page) {
     try {
         const dialog = await checkoutDialog(page).catch(() => null);
-        if (!dialog) return null;
-        const candidates = dialog.locator('[role="alert"], [data-slot*="alert"], [class*="alert"], [class*="Error"], [class*="error"], p, div');
-        const count = await candidates.count().catch(() => 0);
-        for (let i = 0; i < Math.min(count, 30); i++) {
-            const el = candidates.nth(i);
-            if (!await el.isVisible().catch(() => false)) continue;
-            const text = (await el.innerText().catch(() => '')).trim();
-            if (!text || text.length > 200) continue;
-            if (/success|succeeded|成功/i.test(text)) continue;
-            if (NATIVE_DECLINE_PATTERNS.test(text)) {
-                return text;
+        const searchRoots = dialog ? [dialog, page] : [page];
+        for (const root of searchRoots) {
+            const candidates = root.locator('[role="alert"], [data-slot*="alert"], [class*="alert"], [class*="Error"], [class*="error"], p, div');
+            const count = await candidates.count().catch(() => 0);
+            for (let i = 0; i < Math.min(count, 30); i++) {
+                const el = candidates.nth(i);
+                if (!await el.isVisible().catch(() => false)) continue;
+                const text = (await el.innerText().catch(() => '')).trim();
+                if (!text || text.length > 200) continue;
+                if (/success|succeeded|成功/i.test(text)) continue;
+                if (NATIVE_DECLINE_PATTERNS.test(text)) {
+                    return text;
+                }
             }
         }
     } catch (_) {}
@@ -163,7 +198,7 @@ async function waitNativePaymentOutcome(page, observer, options = {}) {
     let nextLog = Date.now() + 10000;
     do {
         const result = observer.result();
-        if (result) return result;
+        if (result && (result.success || result.declined)) return result;
         if (page.isClosed()) break;
         if (await (options.hasCaptcha || (() => hasAnyCheckoutCaptchaSignal(page)))()) {
             const clear = options.clearCaptcha || (maxWaitMs => clearHumanVerification(page, {
@@ -171,19 +206,18 @@ async function waitNativePaymentOutcome(page, observer, options = {}) {
                 useVisualSolver: false, overlayWaitMs: 0
             }));
             await clear(Math.max(1, deadline - Date.now()));
-            if (observer.result()) return observer.result();
+            if (observer.result()?.success || observer.result()?.declined) return observer.result();
         }
-        if (!observer.isPending?.()) {
-            const declineText = await checkNativePaymentDecline(page);
-            if (declineText) {
-                console.warn(`[Grok/payment] 官方结账界面提示拒付: ${declineText}`);
-                observer.recordDecline?.(`支付卡被官方系统拒付: ${declineText}`);
-                return observer.result() || {
-                    success: false, submitted: true, declined: true, canRetryCard: true,
-                    error: `支付卡被官方系统拒付: ${declineText}`
-                };
-            }
+        const declineText = await checkNativePaymentDecline(page);
+        if (declineText) {
+            console.warn(`[Grok/payment] 官方结账界面提示拒付: ${declineText}`);
+            observer.recordDecline?.(`支付卡被官方系统拒付: ${declineText}`);
+            return observer.result() || {
+                success: false, submitted: true, declined: true, canRetryCard: true,
+                error: `支付卡被官方系统拒付: ${declineText}`
+            };
         }
+        if (result) return result;
         if (Date.now() >= nextLog) { console.log('[Grok] 等待本次官方购买状态确认，不重复提交...'); nextLog = Date.now() + 10000; }
         await page.waitForTimeout(Math.min(150, Math.max(1, deadline - Date.now())));
     } while (Date.now() < deadline);
@@ -231,7 +265,7 @@ async function completeGrokCommercePayment(page, card, address, options, helpers
         button = await nativeSubmitButton(page, { timeoutMs: 1500 });
         await assertNativeBilling(page, billing); await assertNativeCard(page, card, helpers);
         due = await assertNativeCheckoutReady(page, observer, { final: true });
-        if (!await isTermsConfirmed(checkbox)) throw grokError('GROK_FORM_UNCONFIRMED', '提交前订阅条款状态发生变化');
+        if (checkbox && !await isTermsConfirmed(checkbox)) throw grokError('GROK_FORM_UNCONFIRMED', '提交前订阅条款状态发生变化');
         observer.arm(due, options.grokAccount.email);
         console.log(`[Grok] 已核对今日应付 USD ${due.amount}，后续${due.interval === 'year' ? '每年' : '每月'} USD ${due.recurringAmount}，单次提交...`);
         stage = 'submit';

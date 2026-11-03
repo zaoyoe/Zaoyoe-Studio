@@ -35,7 +35,8 @@ function isLoginRedirectUrl(url) {
 }
 
 function isCheckoutPageUrl(url) {
-    return /chatgpt\.com\/checkout\//i.test(String(url || ''));
+    const value = String(url || '');
+    return /chatgpt\.com\/checkout\/|pay\.openai\.com|checkout\.stripe\.com|stripe\.com|(?:\/|%2f)checkout(?:\/|%2f)/i.test(value);
 }
 
 const TELEMETRY_HOSTS = [
@@ -51,23 +52,41 @@ const TELEMETRY_HOSTS = [
     'launchdarkly.com',
     'clarity.ms',
     'google-analytics.com',
-    'googletagmanager.com'
+    'googletagmanager.com',
+    'doubleclick.net',
+    'googleadservices.com',
+    'bat.bing.com',
+    'analytics.twitter.com',
+    'scribe.twitter.com',
+    'p.twitter.com'
 ];
+
+function isTelemetryUrl(url) {
+    const value = String(url || '').toLowerCase();
+    return TELEMETRY_HOSTS.some(host => value.includes(host));
+}
 
 function shouldBlockLoginNavigation(url, resourceType = '') {
     const value = String(url || '').toLowerCase();
+    // 核心支付与人机验证域绝不拦截
+    if (value.includes('hcaptcha.com') || value.includes('stripe.com') || value.includes('stripecdn.com') || value.includes('turnstile') || value.includes('challenges.cloudflare.com')) {
+        return false;
+    }
+    // 拦截高耗时第三方埋点分析/遥测（完全不影响 OpenAI 与 Stripe 核心业务，显著加速网络与页面就绪）
+    if (isTelemetryUrl(value)) {
+        return true;
+    }
+    // 拦截无意义音视频媒体请求，节省宝贵的代理带宽与连接数（注意：不 abort 字体文件，防止 Chromium page.screenshot 等待 document.fonts.ready 卡顿 20s）
+    if (resourceType === 'media') {
+        return true;
+    }
     if (value.includes('accounts.google.com') || value.includes('login.microsoftonline.com')) {
         return true;
     }
     if (resourceType === 'document' && isHardLoginRedirectUrl(url) && !isCheckoutPageUrl(url)) {
-        return true;
-    }
-    // 拦截无意义音视频媒体请求，节省代理带宽
-    if (resourceType === 'media') {
-        return true;
-    }
-    // 拦截高耗时第三方埋点分析/遥测（完全不影响 OpenAI 与 Stripe 核心业务，显著加速网络与页面就绪）
-    if (TELEMETRY_HOSTS.some(host => value.includes(host))) {
+        if (value.includes('chatgpt.com')) {
+            return false;
+        }
         return true;
     }
     return false;
@@ -188,6 +207,7 @@ module.exports = {
     isLoginRedirectUrl,
     isHardLoginRedirectUrl,
     isCheckoutPageUrl,
+    isTelemetryUrl,
     shouldBlockLoginNavigation,
     isLoginPageContent,
     hasVisibleLoginChrome,

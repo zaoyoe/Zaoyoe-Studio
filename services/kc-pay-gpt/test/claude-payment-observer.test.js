@@ -50,6 +50,7 @@ describe('explicit Claude payment evidence', () => {
     });
     it('recognizes explicit official declines', () => {
         expect(classifyClaudePaymentSnapshot({ url: 'https://claude.ai/upgrade/pro', text: 'Your card was declined' })).toMatchObject({ state: 'declined' });
+        expect(classifyClaudePaymentSnapshot({ url: 'https://claude.ai/upgrade/pro', text: 'Your card number is incorrect.' })).toMatchObject({ state: 'declined' });
     });
     it('recognizes the official English purchase failure shown in the incident screenshot', () => {
         const text = 'This purchase cannot be completed.';

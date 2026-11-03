@@ -31,6 +31,79 @@ function networkRegionError(code, message) {
 }
 
 /**
+ * 0 浏览器纯协议探针：无需启动 Chromium，直接通过 Node HTTP + 代理连接 Cloudflare Trace 同时核验公网 IP 与目标地区。
+ */
+async function checkProxyAndRegionProtocol(proxyUrl, expectedRegion, options = {}) {
+    const expected = String(expectedRegion || '').trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(expected)) return null;
+
+    const { fetch: undiciFetch, ProxyAgent } = require('undici');
+    const dispatcher = proxyUrl ? new ProxyAgent(String(proxyUrl).trim()) : undefined;
+    const urls = options.url
+        ? [options.url]
+        : [REGION_PROBE_URL, 'https://chatgpt.com/cdn-cgi/trace'];
+    const timeoutMs = options.probeTimeoutMs ?? 4500;
+
+    try {
+        for (const url of urls) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            const probeStart = Date.now();
+            try {
+                const resp = await undiciFetch(url, {
+                    method: 'GET',
+                    dispatcher,
+                    signal: controller.signal,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+                        'Accept': 'text/plain,*/*'
+                    }
+                });
+                const probeRttMs = Date.now() - probeStart;
+                if ([407, 597].includes(resp.status)) {
+                    throw preflightError('proxy_auth');
+                }
+                if (resp.ok) {
+                    const text = await resp.text();
+                    const { ip, loc } = parseTraceEgress(text);
+                    if (ip && loc) {
+                        if (loc !== expected) {
+                            throw networkRegionError('PAYMENT_REGION_NETWORK_MISMATCH',
+                                `当前网络出口地区 ${loc} 与卡密支付地区 ${expected} 不一致，已停止支付`);
+                        }
+                        const maxLatencyMs = options.maxLatencyMs ?? (process.env.PROXY_MAX_LATENCY_MS ? Number(process.env.PROXY_MAX_LATENCY_MS) : 1500);
+                        if (probeRttMs > maxLatencyMs && !options.skipLatencyGate && process.env.NODE_ENV !== 'test') {
+                            (options.log || console.warn)(`⚠️ [Network/region] 代理出口 RTT 延迟过高 (${probeRttMs}ms > ${maxLatencyMs}ms)，自动判定节点劣化并换新 [PROXY_PREFLIGHT_HIGH_LATENCY]`);
+                            throw Object.assign(
+                                new Error(`代理出口 RTT 延迟过高 (${probeRttMs}ms) [PROXY_PREFLIGHT_NETWORK]`),
+                                { code: 'PROXY_PREFLIGHT_NETWORK', latencyMs: probeRttMs }
+                            );
+                        }
+                        (options.log || console.log)(`[Network/region] 协议出口地区核验通过: ${loc} (RTT: ${probeRttMs}ms)`);
+                        return { ip, actualRegion: loc, expectedRegion: expected, transport: 'protocol', fastPath: true, rttMs: probeRttMs };
+                    }
+                }
+            } catch (err) {
+                if (err?.code === 'PAYMENT_REGION_NETWORK_MISMATCH'
+                    || err?.code === 'NETWORK_REGION_UNCONFIRMED'
+                    || String(err?.code || '').startsWith('PROXY_PREFLIGHT_')) {
+                    throw err;
+                }
+                const kind = probeFailureKind(err);
+                if (kind === 'proxy_auth' || kind === 'certificate') {
+                    throw preflightError(kind);
+                }
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+    } finally {
+        await dispatcher?.close?.().catch(() => {});
+    }
+    return null;
+}
+
+/**
  * 极速合并预检：通过一次 Cloudflare Trace 探针同时核验代理连通性、出口公网 IP 与目标地区（<300ms）。
  * 成功后避免分开串行请求两次（一次查 IP 一次查地区），在弱网住宅代理下直接节省 4~20 秒。
  */
@@ -238,4 +311,4 @@ async function checkProxyConnectivity(context, options = {}) {
     throw preflightError(kind);
 }
 
-module.exports = { parseProbeIp, parseNetworkRegion, probeFailureKind, checkProxyConnectivity, checkEgressRegion, checkProxyAndRegionFast };
+module.exports = { parseProbeIp, parseNetworkRegion, parseTraceEgress, probeFailureKind, checkProxyConnectivity, checkEgressRegion, checkProxyAndRegionFast, checkProxyAndRegionProtocol };
