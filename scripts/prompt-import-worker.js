@@ -68,14 +68,17 @@ async function main() {
         initial: Number(process.env.PROMPT_IMPORT_WORKER_INITIAL_CONCURRENCY || 3)
     });
     const intervalMs = Math.max(1000, Number(process.env.PROMPT_IMPORT_WORKER_INTERVAL_MS || 2000));
+    const idleIntervalMs = Math.max(1000, Number(process.env.PROMPT_IMPORT_WORKER_IDLE_INTERVAL_MS || 15000));
     const once = process.argv.includes('--once');
     let stopping = false;
     process.once('SIGINT', () => { stopping = true; });
     process.once('SIGTERM', () => { stopping = true; });
     do {
+        let claimedCount = 0;
         try {
             const activeLimit = controller.limit;
             const result = await runPromptImportWorkerBatch(supabase, { workerName, limit: activeLimit, leaseSeconds: 300 });
+            claimedCount = Number(result?.claimed || 0);
             const rejected = result.results.filter((entry) => entry.status === 'rejected');
             result.results.forEach((entry, index) => {
                 if (entry.status !== 'rejected') return;
@@ -90,7 +93,8 @@ async function main() {
             console.error(`[${new Date().toISOString()}] prompt-import-worker: ${error.message || error}`);
             if (once) process.exitCode = 1;
         }
-        if (!once && !stopping) await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        const sleepMs = claimedCount > 0 ? intervalMs : idleIntervalMs;
+        if (!once && !stopping) await new Promise((resolve) => setTimeout(resolve, sleepMs));
     } while (!once && !stopping);
 }
 

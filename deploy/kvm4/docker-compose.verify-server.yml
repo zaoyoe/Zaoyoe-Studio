@@ -55,6 +55,8 @@ services:
       - "4"
       - --interval-ms
       - "1000"
+      - --idle-interval-ms
+      - "15000"
     depends_on:
       verify-server:
         condition: service_healthy
@@ -81,6 +83,7 @@ services:
       PROMPT_IMPORT_WORKER_CONCURRENCY: "10"
       PROMPT_IMPORT_WORKER_INITIAL_CONCURRENCY: "3"
       PROMPT_IMPORT_WORKER_INTERVAL_MS: "2000"
+      PROMPT_IMPORT_WORKER_IDLE_INTERVAL_MS: "15000"
     command:
       - npm
       - run

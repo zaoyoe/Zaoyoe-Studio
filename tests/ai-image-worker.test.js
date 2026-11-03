@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
     DEFAULT_CONCURRENCY,
     DEFAULT_INTERVAL_MS,
+    DEFAULT_IDLE_INTERVAL_MS,
     applyEnvValues,
     logStartup,
     normalizeWorkerError,
@@ -18,6 +19,7 @@ test('ai image worker parses safe bounded runtime options', () => {
         '--limit', '99',
         '--concurrency', '99',
         '--interval-ms', '25',
+        '--idle-interval-ms', '20000',
         '--once',
         '--json',
         '--env-file', 'server/.env.worker'
@@ -28,6 +30,7 @@ test('ai image worker parses safe bounded runtime options', () => {
     assert.equal(parsed.concurrency, 8);
     assert.equal(parsed.concurrencyFromCli, true);
     assert.equal(parsed.intervalMs, 1000);
+    assert.equal(parsed.idleIntervalMs, 20000);
     assert.equal(parsed.once, true);
     assert.equal(parsed.json, true);
     assert.match(parsed.envFile, /server\/\.env\.worker$/);
@@ -41,7 +44,9 @@ test('ai image worker defaults to continuous preview-first batch mode', () => {
     assert.equal(parsed.concurrency, DEFAULT_CONCURRENCY);
     assert.equal(parsed.concurrencyFromCli, false);
     assert.equal(DEFAULT_INTERVAL_MS, 1000);
+    assert.equal(DEFAULT_IDLE_INTERVAL_MS, 15000);
     assert.equal(parsed.intervalMs, DEFAULT_INTERVAL_MS);
+    assert.equal(parsed.idleIntervalMs, DEFAULT_IDLE_INTERVAL_MS);
     assert.equal(parsed.once, false);
     assert.equal(parsed.json, false);
 });
