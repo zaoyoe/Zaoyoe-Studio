@@ -205,6 +205,7 @@ function createSupabaseStub(state = {}) {
     state.insertedTasks = Array.isArray(state.insertedTasks) ? state.insertedTasks : [];
     state.updateCalls = Array.isArray(state.updateCalls) ? state.updateCalls : [];
     state.fromCalls = Array.isArray(state.fromCalls) ? state.fromCalls : [];
+    state.selectQueries = Array.isArray(state.selectQueries) ? state.selectQueries : [];
     state.rpcCalls = Array.isArray(state.rpcCalls) ? state.rpcCalls : [];
     state.taskSeq = state.taskSeq || 1;
 
@@ -437,6 +438,13 @@ function createSupabaseStub(state = {}) {
                 if (query.limit) {
                     rows = rows.slice(0, query.limit);
                 }
+
+                state.selectQueries.push({
+                    table,
+                    filters: clone(query.filters),
+                    rows: rows.length,
+                    responseBytes: Buffer.byteLength(JSON.stringify(rows))
+                });
 
                 if (query.singleMode === 'single' || query.singleMode === 'maybeSingle') {
                     return {
@@ -8063,4 +8071,258 @@ test('ai image task prefs updates pin hide and clear accent without creating emp
     assert.equal(state.taskPrefs[0].accent, null);
     assert.deepEqual(payload.prefs.pinnedTaskIds, [ownedTaskId]);
     assert.deepEqual(payload.prefs.taskAccentById, {});
+});
+
+
+test('filtered task list reconciles delayed Sub2API actual cost and deducts points once', async () => {
+    const requests = [];
+    const state = {
+        tasks: [{
+            id: '77777777-7777-4777-8777-777777777777',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'deepseek-v4-flash',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '你好',
+            result_prompt: '你好！有什么可以帮你的吗？',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                input_tokens: 61,
+                output_tokens: 87,
+                total_tokens: 148
+            },
+            input_tokens: 61,
+            output_tokens: 87,
+            total_tokens: 148,
+            metadata: {
+                provider_base_url: LEGACY_SUB2API_TEST_BASE_URL,
+                billing_lookup_supported: true,
+                sub2api_client_request_id: 'fatherkey-aiw-task-delayed-sub2api-usage',
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-delayed-sub2api-chat',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                unit: 'sub2api_actual_cost_usd',
+                                cost_source: 'sub2api_usage_actual_cost',
+                                points_per_usd: 1
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-06-21T12:00:00.000Z',
+            updated_at: '2026-06-21T12:00:03.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-delayed-sub2api-key',
+            AI_IMAGE_API_BASE_URL: 'https://new.fatherkey.com/v1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url: String(url), headers: options.headers || {} });
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({
+                    usage_record: {
+                        request_id: 'client:fatherkey-aiw-task-delayed-sub2api-usage',
+                        actual_cost: 0.0002,
+                        total_cost: 0.0002,
+                        input_cost: 0.000033,
+                        output_cost: 0.000167
+                    }
+                })
+            };
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn&task_ids=77777777-7777-4777-8777-777777777777' }, res);
+
+    const payload = res.json();
+    const deductCall = state.rpcCalls.find((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown');
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks.length, 1);
+    assert.equal(payload.tasks[0].chargedPoints, 0.0002);
+    assert.equal(payload.tasks[0].cost, 0.0002);
+    assert.equal(state.tasks[0].charged_points, 0.0002);
+    assert.equal(state.tasks[0].metadata.pricing_charge.reconciled, true);
+    assert.equal(deductCall.args.p_amount, 0.0002);
+    assert.equal(requests.some((request) => request.url === `${LEGACY_SUB2API_TEST_BASE_URL}/usage/requests/${encodeURIComponent('client:fatherkey-aiw-task-delayed-sub2api-usage')}`), true);
+});
+
+test('filtered running image tasks with complete stored results recover to succeeded on list', async () => {
+    const state = {
+        tasks: [{
+            id: '88888888-8888-4888-8888-888888888888',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'text',
+            billing_mode: 'points',
+            status: 'running',
+            model: 'gpt-image-2',
+            ratio: '9:16',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '已经生成但状态未收口',
+            estimated_points: 8,
+            charged_points: 0,
+            created_at: '2026-06-21T11:00:00.000Z',
+            started_at: '2026-06-21T11:00:01.000Z',
+            updated_at: '2026-06-21T11:00:02.000Z',
+            metadata: {}
+        }],
+        results: [{
+            id: 'result-running-complete-0',
+            task_id: '88888888-8888-4888-8888-888888888888',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            result_index: 0,
+            image_url: 'https://cdn.example.com/complete-preview.webp',
+            original_image_url: 'https://cdn.example.com/complete-original.png',
+            storage_path: 'ai-images/complete-preview.webp',
+            original_storage_path: 'ai-images/complete-original.png',
+            mime_type: 'image/webp',
+            ratio: '9:16',
+            resolution: '1k',
+            prompt: '已经生成但状态未收口',
+            revised_prompt: '完整结果',
+            created_at: '2026-06-21T11:00:20.000Z',
+            metadata: {
+                original_status: 'ready',
+                preview_bytes: 234567,
+                original_bytes: 3456789
+            }
+        }]
+    };
+    const { handlers } = createHandlers({ state });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn&task_ids=88888888-8888-4888-8888-888888888888' }, res);
+
+    const payload = res.json();
+    const deductCall = state.rpcCalls.find((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown');
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.tasks.length, 1);
+    assert.equal(payload.tasks[0].status, 'succeeded');
+    assert.equal(payload.tasks[0].chargedPoints, 8);
+    assert.equal(payload.tasks[0].cost, 8);
+    assert.equal(payload.tasks[0].images.length, 1);
+    assert.equal(payload.tasks[0].images[0].imageUrl, 'https://cdn.example.com/complete-preview.webp');
+    assert.equal(payload.tasks[0].images[0].previewBytes, 234567);
+    assert.equal(payload.tasks[0].images[0].originalBytes, 3456789);
+    assert.equal(state.tasks[0].status, 'succeeded');
+    assert.equal(state.tasks[0].charged_points, 8);
+    assert.equal(state.tasks[0].metadata.recovery.previous_status, 'running');
+    assert.equal(state.tasks[0].metadata.delivery.delivered_image_count, 1);
+    assert.equal(deductCall.args.p_amount, 8);
+});
+test('filtered task IDs remain scoped to user and site and include pending originals', async () => {
+    const ownId = '11111111-1111-4111-8111-111111111111';
+    const foreignId = '22222222-2222-4222-8222-222222222222';
+    const intlId = '33333333-3333-4333-8333-333333333333';
+    const state = {
+        tasks: [
+            { id: ownId, user_id: 'user-ai-1', site: 'cn', status: 'succeeded' },
+            { id: foreignId, user_id: 'user-ai-2', site: 'cn', status: 'succeeded' },
+            { id: intlId, user_id: 'user-ai-1', site: 'intl', status: 'succeeded' }
+        ],
+        results: [{ id: 'own-result', task_id: ownId, site: 'cn', user_id: 'user-ai-1', image_url: 'https://cdn.example.com/preview.webp', metadata: { original_status: 'pending' } }]
+    };
+    const { handlers } = createHandlers({ state });
+    const res = createMockResponse();
+    await handlers.tasks({ method: 'GET', url: `/api/public/ai-image/tasks?site=cn&task_ids=${ownId},${foreignId},${intlId}` }, res);
+    assert.equal(res.statusCode, 200);
+    const payload = res.json();
+    assert.deepEqual(payload.tasks.map((task) => task.id), [ownId]);
+    assert.equal(payload.tasks[0].images[0].originalStatus, 'pending');
+    assert.equal(payload.tasks[0].images[0].originalReady, false);
+    assert.deepEqual(payload.tasks, payload.records, 'legacy response aliases remain compatible');
+    const query = state.selectQueries.find((query) => query.table === 'ai_image_tasks');
+    assert.ok(query.filters.some((filter) => filter.column === 'id' && filter.op === 'in'));
+    assert.ok(query.filters.some((filter) => filter.column === 'user_id' && filter.value === 'user-ai-1'));
+    assert.ok(query.filters.some((filter) => filter.column === 'site' && filter.value === 'cn'));
+});
+
+test('unknown task IDs return an empty list without querying all history or result rows', async () => {
+    const state = { tasks: [{ id: '11111111-1111-4111-8111-111111111111', user_id: 'user-ai-1', site: 'cn', status: 'succeeded' }] };
+    const { handlers } = createHandlers({ state });
+    const res = createMockResponse();
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn&task_ids=22222222-2222-4222-8222-222222222222' }, res);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json().tasks, []);
+    assert.equal(state.fromCalls.includes('ai_image_results'), false);
+    assert.equal(state.selectQueries[0].rows, 0);
+});
+
+test('invalid task ID filters fail closed before any task query', async (t) => {
+    const valid = '11111111-1111-4111-8111-111111111111';
+    for (const ids of ['', 'bad-id', `${valid},bad-id`, `${valid},`, Array(101).fill(valid).join(',')]) {
+        await t.test(`rejects ${ids ? ids.length : 'empty'} characters`, async () => {
+            const state = {};
+            const { handlers } = createHandlers({ state });
+            const res = createMockResponse();
+            await handlers.tasks({ method: 'GET', url: `/api/public/ai-image/tasks?site=cn&task_ids=${encodeURIComponent(ids)}` }, res);
+            assert.equal(res.statusCode, 400);
+            assert.equal(res.json().code, 'invalid_task_ids');
+            assert.deepEqual(state.fromCalls, []);
+        });
+    }
+});
+
+test('task ID filtering deduplicates UUIDs and still accepts uppercase UUID input', async () => {
+    const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const state = { tasks: [{ id, user_id: 'user-ai-1', site: 'cn', status: 'succeeded' }] };
+    const { handlers } = createHandlers({ state });
+    const res = createMockResponse();
+    await handlers.tasks({ method: 'GET', url: `/api/public/ai-image/tasks?site=cn&task_ids=${id},${id.toUpperCase()}` }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().tasks.length, 1);
+    const filter = state.selectQueries[0].filters.find((item) => item.op === 'in');
+    assert.deepEqual(filter.value, [id]);
+});
+
+test('one targeted task avoids rereading 39 completed task payloads in a synthetic history', async (t) => {
+    const tasks = Array.from({ length: 40 }, (_, i) => ({
+        id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+        user_id: 'user-ai-1', site: 'cn', mode: 'text', status: 'succeeded',
+        prompt: 'fixture prompt', metadata: { diagnostic: 'x'.repeat(3000) },
+        created_at: new Date(Date.UTC(2026, 9, 1, 0, 0, i)).toISOString()
+    }));
+    const results = tasks.map((task) => ({
+        id: `result-${task.id}`, task_id: task.id, user_id: 'user-ai-1', site: 'cn',
+        image_url: 'https://cdn.example.com/preview.webp', metadata: { original_status: 'pending' }
+    }));
+    const state = { tasks, results };
+    const { handlers } = createHandlers({ state });
+    const full = createMockResponse();
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn&limit=40' }, full);
+    assert.equal(full.statusCode, 200);
+    assert.equal(full.json().tasks.length, 40);
+    const fullBytes = state.selectQueries.filter((query) => ['ai_image_tasks', 'ai_image_results'].includes(query.table))
+        .reduce((sum, query) => sum + query.responseBytes, 0);
+    state.selectQueries.length = 0;
+    const filtered = createMockResponse();
+    await handlers.tasks({ method: 'GET', url: `/api/public/ai-image/tasks?site=cn&limit=40&task_ids=${tasks[0].id}` }, filtered);
+    assert.equal(filtered.statusCode, 200);
+    assert.equal(filtered.json().tasks.length, 1);
+    const filteredQueries = state.selectQueries.filter((query) => ['ai_image_tasks', 'ai_image_results'].includes(query.table));
+    const filteredBytes = filteredQueries.reduce((sum, query) => sum + query.responseBytes, 0);
+    assert.deepEqual(filteredQueries.map((query) => query.rows), [1, 1]);
+    assert.ok(filteredBytes < fullBytes / 10);
+    assert.ok(Buffer.byteLength(filtered.body) < Buffer.byteLength(full.body) / 10);
+    t.diagnostic(`Synthetic SELECT JSON bytes: ${fullBytes} -> ${filteredBytes}; API JSON bytes: ${Buffer.byteLength(full.body)} -> ${Buffer.byteLength(filtered.body)}. Not production egress.`);
 });

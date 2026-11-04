@@ -6643,12 +6643,29 @@ function createAiImageHandlers({
             const status = normalizeText(url.searchParams.get('status') || req.query?.status, 40).toLowerCase();
             const mode = normalizeText(url.searchParams.get('mode') || req.query?.mode, 40).toLowerCase();
 
+            const rawTaskIds = url.searchParams.get('task_ids') ?? req.query?.task_ids;
+            let requestedTaskIds = null;
+            if (rawTaskIds !== undefined && rawTaskIds !== null) {
+                const values = typeof rawTaskIds === 'string' ? rawTaskIds.split(',').map((value) => value.trim()) : [];
+                if (!values.length || values.length > 100 || values.some((value) => !isUuid(value))) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        code: 'invalid_task_ids',
+                        message: '任务 ID 列表无效'
+                    });
+                }
+                requestedTaskIds = [...new Set(values.map((value) => value.toLowerCase()))];
+            }
+
             let query = supabase
                 .from('ai_image_tasks')
                 .select(TASK_SELECT)
                 .eq('user_id', user.id)
                 .eq('site', site);
 
+            if (requestedTaskIds) {
+                query = query.in('id', requestedTaskIds);
+            }
             if (status) {
                 query = query.eq('status', status);
             }
