@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
+const { execFileSync } = require('node:child_process');
+
 // Each public route is an independent acceptance check. A successful direct API
 // response must never replace a failed frontend proxy or Cloudflare response.
 const ROUTES = Object.freeze({
@@ -19,6 +21,50 @@ const SAFE_HEADERS = ['server', 'cf-ray', 'cf-mitigated', 'content-type'];
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const USER_AGENT = process.env.VERIFY_USER_AGENT || DEFAULT_USER_AGENT;
+
+function curlFetch(url, options = {}) {
+    const args = ['-s', '-i', '--http2', '--max-time', '15'];
+    const headers = options.headers || {};
+    for (const [k, v] of Object.entries(headers)) {
+        args.push('-H', `${k}: ${v}`);
+    }
+    args.push(url);
+    const buf = execFileSync('curl', args, { maxBuffer: 10 * 1024 * 1024 });
+    const str = buf.toString('latin1');
+    const sections = str.split(/\r?\n\r?\n/);
+    let headerIdx = 0;
+    for (let i = 0; i < sections.length - 1; i++) {
+        if (/^HTTP\/[123]/i.test(sections[i])) headerIdx = i;
+    }
+    const headerLines = sections[headerIdx].split(/\r?\n/);
+    const statusMatch = headerLines[0].match(/HTTP\/\S+\s+(\d+)/);
+    const status = statusMatch ? parseInt(statusMatch[1], 10) : 500;
+    const respHeaders = new Headers();
+    for (let i = 1; i < headerLines.length; i++) {
+        const colon = headerLines[i].indexOf(':');
+        if (colon > 0) {
+            respHeaders.append(headerLines[i].slice(0, colon).trim(), headerLines[i].slice(colon + 1).trim());
+        }
+    }
+    let bodyOffset = 0;
+    for (let i = 0; i <= headerIdx; i++) {
+        const delim = str.slice(bodyOffset).indexOf(sections[i]);
+        bodyOffset += delim + Buffer.byteLength(sections[i], 'latin1');
+        const after = str.slice(bodyOffset);
+        const nl = after.match(/^(\r?\n\r?\n)/);
+        if (nl) bodyOffset += nl[1].length;
+    }
+    const bodyBuf = buf.subarray(bodyOffset);
+    return new Response(bodyBuf, { status, headers: respHeaders });
+}
+
+function defaultFetch(url, options = {}) {
+    try {
+        return curlFetch(url, options);
+    } catch {
+        return globalThis.fetch(url, options);
+    }
+}
 
 function diagnosticHeaders(response) {
     const headers = {};
@@ -108,7 +154,7 @@ async function checkAttempt(route, fetchImpl, timeoutMs) {
 }
 
 async function verifyDeploymentRoutes(chain, {
-    fetchImpl = globalThis.fetch,
+    fetchImpl = defaultFetch,
     attempts = 3,
     timeoutMs = 15000,
     retryDelayMs = 2000,
