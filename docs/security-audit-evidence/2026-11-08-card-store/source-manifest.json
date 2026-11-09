@@ -1,0 +1,176 @@
+{
+  "generatedAt": "2026-11-08T08:54:03.243020+00:00",
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "originMain": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "branch": "main",
+  "canonicalRemote": "https://github.com/zaoyoe/Zaoyoe-Studio.git",
+  "dirtyEntriesBeforeReport": 333,
+  "meaning": "Completion-time working-tree hashes; HEAD is a baseline only. These files include pre-existing uncommitted changes; this is not a production release manifest or proof of deployed code.",
+  "files": [
+    {
+      "path": "api/_lib/payments/zpay-webhook.js",
+      "bytes": 29549,
+      "sha256": "e1c18ec631d1df284167d9f195281bf438f3ecf9b752da50bcf9999b68a4dd0a"
+    },
+    {
+      "path": "api/_lib/payments/nowpayments-webhook.js",
+      "bytes": 37192,
+      "sha256": "18d4cd475514c8fba3357d77876c7f76b780f27b2adafa6f59bc880e0c71c1ab"
+    },
+    {
+      "path": "api/_lib/payments/provider-adapters.js",
+      "bytes": 68632,
+      "sha256": "120b16d0e6ed595da5705f7e76af24c8c9bd8b4e2a159aa2a5fe13c605be0f1e"
+    },
+    {
+      "path": "api/_lib/shop-cdk-secrets.js",
+      "bytes": 4494,
+      "sha256": "8215625a4a44ea8189548972e73aa2f194f114d503a35e0167e88f07aa0c76a6"
+    },
+    {
+      "path": "server/api-handlers/public/shop.js",
+      "bytes": 241652,
+      "sha256": "d4092aa8aca25b76feef3b051bcd16eb9db8b7e1ab4884209ad30ce90b9baf27"
+    },
+    {
+      "path": "server/api-handlers/public/guest-shop.js",
+      "bytes": 317879,
+      "sha256": "d3210bc1452c48029bdbeb794ac13592ccff1dafe3636867b1cc40adbfc7ee35"
+    },
+    {
+      "path": "server/api-handlers/public/tg-purchase.js",
+      "bytes": 39143,
+      "sha256": "42f300f1257df6ba94c434f72a0f50412446a5f642c89afa121162ef4a781f33"
+    },
+    {
+      "path": "server/api-handlers/admin/shop/mutate.js",
+      "bytes": 188419,
+      "sha256": "6602a520fa076d7cd8b161ebc08ad01aabb2f92fb9c217eafdbab2dab6c2ad1e"
+    },
+    {
+      "path": "server/api-handlers/admin/shop/supplier-catalog.js",
+      "bytes": 126160,
+      "sha256": "aeb29952c9ed013c50e0408b3553e8469d120b707e241842c3b5951a6a8eb480"
+    },
+    {
+      "path": "server/api-handlers/admin/shop/_r2-media.js",
+      "bytes": 5647,
+      "sha256": "2b16518f6803497deb8062775b04becdbf00f01f5d2ad66c119fd13994e19c13"
+    },
+    {
+      "path": "server/tg/payment-gateway.js",
+      "bytes": 13679,
+      "sha256": "ce01bf52dc340bdd0711547ae0a825f5f7ce2c1de73aaad6ac492a86c880aba6"
+    },
+    {
+      "path": "server/tg/nowpayments-gateway.js",
+      "bytes": 17386,
+      "sha256": "8ee51f2185caceb2cd66d7cb66089a7b85d728a01dfbe32e637a155477c377ad"
+    },
+    {
+      "path": "server/tg/order-query.js",
+      "bytes": 6916,
+      "sha256": "7be49295afd1a662a62494bcaecbce2c4452310c2645ae8b382c19667ef8ce30"
+    },
+    {
+      "path": "server/tg/worker.js",
+      "bytes": 12785,
+      "sha256": "442e09eff5cb075860269046396cc5ff1db773399d6dd8d967ea1a0ce38b8e9e"
+    },
+    {
+      "path": "services/kc-pay-gpt/server.js",
+      "bytes": 218523,
+      "sha256": "8c51f0f8ed4563ca1eedb3f7bae13e36f73a3a7c8eabbe827b257d39bf339b92"
+    },
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "bytes": 182602,
+      "sha256": "d4c79cd64039fecbff382143aa9ca87c8f5b6e0abe401d99d830e86cc9d7912a"
+    },
+    {
+      "path": "services/kc-pay-gpt/admin-auth.js",
+      "bytes": 19944,
+      "sha256": "10c39d520d52636d022a44d7e0400b05f16011429720d1a797bdfca5137195a4"
+    },
+    {
+      "path": "services/kc-pay-gpt/session-security.js",
+      "bytes": 3624,
+      "sha256": "04521acd851aa281ff249565d67660d9f76bf0c4e11b211bc5aa1ab0dd3899dd"
+    },
+    {
+      "path": "services/kc-pay-gpt/task-access.js",
+      "bytes": 1638,
+      "sha256": "a0fcc53e5e46f435254963237e994da2f849262ea3a676ed5e303f8fc23cabe4"
+    },
+    {
+      "path": "services/kc-pay-gpt/activation-routing.js",
+      "bytes": 2184,
+      "sha256": "ff8fd0129ef59e4be1935d50ee15b22cf862619b916d1476218eea5ecf12b649"
+    },
+    {
+      "path": "services/kc-pay-gpt/public/index.html",
+      "bytes": 178040,
+      "sha256": "08f50669aeb24801fd27a1e63f8bed550ff58e1af049f40914c7ca7c17877a49"
+    },
+    {
+      "path": "supabase/functions/upload-avatar/index.ts",
+      "bytes": 27087,
+      "sha256": "00e29f5ecfb70704c4f7b8c50517a842a3cbeab1efac99ffa5e86713c6509532"
+    },
+    {
+      "path": "supabase/migrations/20260523_add_shop_product_skus.sql",
+      "bytes": 93296,
+      "sha256": "23a7712b48c46da9544e212a675b5f2b7fb7782d3765871587fe6f644af6923a"
+    },
+    {
+      "path": "supabase/migrations/20260615_site_scoped_shop_sku_inventory_sources.sql",
+      "bytes": 17439,
+      "sha256": "7ebb23d724603da73d570216459837926a962c1ee3bcecd8807e2024d4405e12"
+    },
+    {
+      "path": "supabase/migrations/20261007_add_kc_pay_gpt_cdk_inventory.sql",
+      "bytes": 23835,
+      "sha256": "5f9ab159d583895e904b8a14f48a2b5929b41e1c7ec1a82e62c4b73cf92ba981"
+    },
+    {
+      "path": "supabase/migrations/20261107114915_purchase_security_boundary.sql",
+      "bytes": 1902,
+      "sha256": "00946aef3cabbdaaf16c7ae2779d7847be223767f9c9a53b14dc5d7668cb3c6a"
+    },
+    {
+      "path": "supabase/migrations/20261108013826_tg_authenticated_payment_query.sql",
+      "bytes": 10883,
+      "sha256": "14eed7652a39b0dc2a092c62ce49f5916152078eebc643b88866f382382af031"
+    },
+    {
+      "path": "tests/payment-zpay-webhook-handler.test.js",
+      "bytes": 30839,
+      "sha256": "15da6508dfdd4d3d2cdc3f08bf8a24d29a502e1228dc8e6a3f218c151837e072"
+    },
+    {
+      "path": "tests/guest-shop-payment-adapter.test.js",
+      "bytes": 43973,
+      "sha256": "8367358c9a28b12fc732861de5c03571177842dac91bdd6f81b8ccec5385e0af"
+    },
+    {
+      "path": "tests/guest-shop-webhook.test.js",
+      "bytes": 40526,
+      "sha256": "68719d7792bbf4e8b44ee1718d03c0877abdc584234868c3cbdd9d3bc95f3267"
+    },
+    {
+      "path": "tests/guest-shop-security.test.js",
+      "bytes": 17722,
+      "sha256": "f900fee2e7589b059181dc740fe4769b5bbc00493a3b68d0001149c0fa9a9885"
+    },
+    {
+      "path": "tests/shop-supplier-media-r2-and-markup.test.js",
+      "bytes": 12066,
+      "sha256": "fb3047da9c3434f6a4c635cc5ef173db9a08589f3c12f98bab9b38156e844891"
+    },
+    {
+      "path": "tests/guest-shop-order-access-endpoints.test.js",
+      "bytes": 63764,
+      "sha256": "ac2abfc93ce2b247578b38a3afa1669e1ba9078fbbcc4a533f7428f55d0c54c9"
+    }
+  ]
+}

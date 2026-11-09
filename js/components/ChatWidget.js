@@ -8653,7 +8653,18 @@ class ChatWidget {
         if (normalized.placement === 'modal') {
             surface.setAttribute('aria-modal', 'true');
         }
-        surface.innerHTML = this.renderEngagementSurfaceHtml(normalized);
+        const innerContent = this.renderEngagementSurfaceHtml(normalized);
+        if (normalized.placement === 'modal') {
+            surface.innerHTML = `
+                <div class="glass-ring glass-ring--shell engagement-surface__modal-ring">
+                    <div class="glass-ring__surface engagement-surface__modal-surface">
+                        ${innerContent}
+                    </div>
+                </div>
+            `;
+        } else {
+            surface.innerHTML = innerContent;
+        }
         this.bindEngagementSurfaceEscape(surface, normalized);
 
         surface.addEventListener('click', (event) => {
@@ -9206,6 +9217,9 @@ class ChatWidget {
             badge.className = 'notification-badge';
             badge.textContent = this.unreadCount > 99 ? '99+' : this.unreadCount;
             this.fab.appendChild(badge);
+            if (typeof window.triggerDockSupportBounce === 'function') {
+                window.triggerDockSupportBounce(true);
+            }
         }
     }
 
@@ -9216,12 +9230,18 @@ class ChatWidget {
         if (badge) badge.remove();
         const preview = this.fab.querySelector('.message-preview');
         if (preview) preview.remove();
+        if (typeof window.triggerDockSupportBounce === 'function') {
+            window.triggerDockSupportBounce(false);
+        }
     }
 
     showMessagePreview(message, senderName, options = {}) {
         // Remove existing preview
         const existingPreview = this.fab.querySelector('.message-preview');
         if (existingPreview) existingPreview.remove();
+        if (typeof window.triggerDockSupportBounce === 'function') {
+            window.triggerDockSupportBounce(true);
+        }
 
         const messageText = String(message || '');
         const title = String(senderName || this.t('chat.newMessage', '新消息')).trim() || this.t('chat.newMessage', '新消息');

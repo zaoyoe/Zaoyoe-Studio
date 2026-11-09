@@ -32,7 +32,7 @@ async function captchaModalFixture(viewport) {
     const toastEnd = html.indexOf("        updateFlowUI(1, 'pending');", toastStart);
     const page = await fixture(`<style>${css}</style><div id="statusMsg" style="display:none"></div><div id="capsuleToast" class="capsule-toast" style="display:none"></div>${html.slice(modalStart, modalEnd)}`);
     await page.setViewportSize(viewport);
-    await page.addScriptTag({ content: `let activeJobKey = 'offline'; let taskProgressValue = 50; let socket = null; const statusMsg = document.getElementById('statusMsg');\n${html.slice(scriptStart, scriptEnd)}\n${html.slice(toastStart, toastEnd)}` });
+    await page.addScriptTag({ content: `let activeJobKey = 'offline'; let activeTaskAccessToken = 'offline-capability'; let taskProgressValue = 50; let socket = null; const statusMsg = document.getElementById('statusMsg');\n${html.slice(scriptStart, scriptEnd)}\n${html.slice(toastStart, toastEnd)}` });
     return page;
 }
 

@@ -38,14 +38,30 @@ function createPublicConfigHandlers({
 
     function normalizeVerifyProviderVisibility(value) {
         const normalized = sanitizeText(value, 40).toLowerCase();
-        if (normalized === 'aidone' || normalized === 'catcard') {
+        if (normalized === 'aidone' || normalized === 'catcard' || normalized === '86ai' || normalized === 'all') {
             return normalized;
         }
         return 'both';
     }
 
     function getVerifyPublicProviderKeys(config = {}) {
-        const keys = ['aidone', 'catcard'];
+        const visibility = normalizeVerifyProviderVisibility(
+            config.provider_visibility
+            || config.providerVisibility
+            || config.verify_provider_visibility
+        );
+        let keys;
+        if (visibility === 'aidone') {
+            keys = ['aidone'];
+        } else if (visibility === 'catcard') {
+            keys = ['catcard'];
+        } else if (visibility === '86ai') {
+            keys = ['86ai'];
+        } else if (visibility === 'all') {
+            keys = ['aidone', 'catcard', '86ai'];
+        } else {
+            keys = ['aidone', 'catcard'];
+        }
         const activeProvider = normalizeVerifyProvider(config.active_provider || config.activeProvider || config.provider || 'aidone');
         if (!keys.includes(activeProvider)) {
             keys.unshift(activeProvider);
@@ -535,6 +551,12 @@ function createPublicConfigHandlers({
             extractPrice,
             Number(config.pricePerVerifyFull || config.price_per_verify_full) || Math.round(extractPrice * 2)
         );
+        const customSub6 = Number(config.pricePerVerifySub6 ?? config.price_per_verify_sub6);
+        const sub6Price = Math.max(1, Number.isFinite(customSub6) && customSub6 > 0 ? customSub6 : fullPrice);
+        const customSub12 = Number(config.pricePerVerifySub12 ?? config.price_per_verify_sub12);
+        const sub12Price = Math.max(1, Number.isFinite(customSub12) && customSub12 > 0 ? customSub12 : Math.round(fullPrice * 1.5));
+        const customSub24 = Number(config.pricePerVerifySub24 ?? config.price_per_verify_sub24);
+        const sub24Price = Math.max(1, Number.isFinite(customSub24) && customSub24 > 0 ? customSub24 : Math.round(fullPrice * 2));
 
         const modeVisibility = normalizeVerifyModeVisibility(config.mode_visibility || config.modeVisibility);
         const providerVisibility = normalizeVerifyProviderVisibility(config.provider_visibility || config.providerVisibility || config.verify_provider_visibility);
@@ -550,26 +572,37 @@ function createPublicConfigHandlers({
                     failedLinkPurchase: config.capabilities.failedLinkPurchase === true,
                     serviceStatus: config.capabilities.serviceStatus === true,
                     keyTypes: config.capabilities.keyTypes === true,
-                    batchSubmit: config.capabilities.batchSubmit === true
+                    batchSubmit: config.capabilities.batchSubmit === true,
+                    ...(config.capabilities.proActivation !== undefined ? { proActivation: config.capabilities.proActivation === true } : {})
                 }
                 : {},
             mode_visibility: modeVisibility,
             modeVisibility,
             provider_visibility: providerVisibility,
             providerVisibility,
+            mode: config.modeVisibility || config.mode_visibility || '',
+            price_per_pro_activation: Number(config.pricePerProActivation) || 0,
+            pricePerProActivation: Number(config.pricePerProActivation) || 0,
             price_per_verify: extractPrice,
             price_per_verify_extract: extractPrice,
             price_per_verify_full: fullPrice,
+            price_per_verify_sub6: sub6Price,
+            price_per_verify_sub12: sub12Price,
+            price_per_verify_sub24: sub24Price,
             pricePerVerify: extractPrice,
             pricePerVerifyExtract: extractPrice,
-            pricePerVerifyFull: fullPrice
+            pricePerVerifyFull: fullPrice,
+            pricePerVerifySub6: sub6Price,
+            pricePerVerifySub12: sub12Price,
+            pricePerVerifySub24: sub24Price,
+            supported_durations: ['sub6', 'sub12', 'sub24']
         };
     }
 
     function sanitizeVerifyProviderSettings(config = {}, activeProvider = '') {
         const sanitized = sanitizeVerifyPublicSettings(config);
         const provider = normalizeVerifyProvider(config.provider || activeProvider || sanitized.provider || 'aidone');
-        const publicLabel = provider === 'catcard' ? '通道 2' : '通道 1';
+        const publicLabel = provider === '86ai' ? '通道 3' : provider === 'catcard' ? '通道 2' : '通道 1';
         return {
             ...sanitized,
             provider,

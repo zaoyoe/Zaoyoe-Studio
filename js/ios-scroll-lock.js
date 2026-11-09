@@ -427,6 +427,8 @@
         isLocked = true;
         isLightLock = false;
         currentModal = modalElement || null;
+        document.body.classList.add('has-active-modal');
+        document.documentElement.classList.add('has-active-modal');
 
         stabilizeLockedViewport();
 
@@ -492,6 +494,8 @@
         isLocked = true;
         isLightLock = true;
         currentModal = modalElement || null;
+        document.body.classList.add('has-active-modal');
+        document.documentElement.classList.add('has-active-modal');
         lightScrollAnchorEnabled = shouldEnableLightScrollAnchor(currentModal, options);
         suspendedLightLock = null;
 
@@ -555,6 +559,8 @@
             lightScrollAnchorEnabled = false;
             suspendedLightLock = null;
             currentModal = null;
+            document.body.classList.remove('has-active-modal');
+            document.documentElement.classList.remove('has-active-modal');
         } else {
             const scrollY = Math.max(0, Math.round(savedScrollY || 0));
             const lightLockToRestore = getRestorableSuspendedLightLock();
@@ -571,6 +577,8 @@
             lightScrollAnchorEnabled = false;
             suspendedLightLock = null;
             currentModal = null;
+            document.body.classList.remove('has-active-modal');
+            document.documentElement.classList.remove('has-active-modal');
 
             if (isIOSMobile()) {
                 requestAnimationFrame(() => {
@@ -643,7 +651,8 @@
             return isLocked && currentModal === modalElement;
         },
         /** 检查当前是否处于锁定状态 */
-        get isLocked() { return isLocked; }
+        get isLocked() { return isLocked; },
+        get savedScrollY() { return savedScrollY; }
     };
 
     /**

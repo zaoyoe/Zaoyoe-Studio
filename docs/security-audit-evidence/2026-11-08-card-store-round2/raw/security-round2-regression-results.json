@@ -1,0 +1,35 @@
+[
+  {
+    "status": "fulfilled",
+    "value": {
+      "name": "round2-final",
+      "startedAt": "2026-11-08T10:02:08.954Z",
+      "finishedAt": "2026-11-08T10:02:10.851Z",
+      "code": 0,
+      "signal": null,
+      "output": "/tmp/security-round2-final.log"
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "name": "payment-tg-guest",
+      "startedAt": "2026-11-08T10:02:08.960Z",
+      "finishedAt": "2026-11-08T10:02:23.334Z",
+      "code": 0,
+      "signal": null,
+      "output": "/tmp/security-payment-tg-guest.log"
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "name": "kc-full",
+      "startedAt": "2026-11-08T10:02:08.961Z",
+      "finishedAt": "2026-11-08T10:04:48.312Z",
+      "code": 1,
+      "signal": null,
+      "output": "/tmp/security-kc-full.log"
+    }
+  }
+]

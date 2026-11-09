@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { randomBytes } from 'node:crypto';
 import { classifyPaymentResult, classifyOpenAiCardMethodFailure } from '../task-safety.js';
 import catalog from '../public/grok-plan-catalog.js';
 import { grokError } from '../grok-checkout-state.js';
@@ -10,13 +11,14 @@ const oregonAddress = { country: 'US', state: 'OR', line1: '123 Fixture Street',
 function harness({ started = true, failRecord = false, failQuarantine = false, throwAfterSubmit = false, native = false,
     paymentResponse = null, address = oregonAddress, region = 'US', currency = 'USD', pickerError = false,
     lastUsedId = null, runOptions = {}, addressRows = null, addressPoolFailure = false, failCooldown = false,
-    checkoutDue = { amount: 20, currency }, checkoutDueError = false, page = {} } = {}) {
+    checkoutDue = { amount: 20, currency }, checkoutDueError = false, page = {}, startCallbacks = 1, cardValidation = { valid: true } } = {}) {
     const store = {
         getPaymentRegion: vi.fn(async () => region), getAppConfigValue: vi.fn(async () => lastUsedId),
         reserveCard: vi.fn(async () => ({ id: 1, card_number: 'offline-fixture-card', card_expiry: '01/30', card_cvc: '000' })),
-        releaseCard: vi.fn(), cooldownCard: vi.fn(async () => { if (failCooldown) throw new Error('fixture cooldown error'); }), quarantineCardForReview: vi.fn(async () => { if (failQuarantine) throw new Error('fixture quarantine error'); }),
+        markCardPaymentStarted: vi.fn(async () => 1), completeCardPayment: vi.fn(async () => 1),
+        releaseCard: vi.fn(async () => 1), cooldownCard: vi.fn(async () => { if (failCooldown) throw new Error('fixture cooldown error'); }), quarantineCardForReview: vi.fn(async () => { if (failQuarantine) throw new Error('fixture quarantine error'); }),
         createBillingRecord: vi.fn(async () => { if (failRecord) throw new Error('fixture record error'); }),
-        bindCardPaymentProfile: vi.fn(), recordCardUsage: vi.fn()
+        bindCardPaymentProfile: vi.fn(), recordCardUsage: vi.fn(), markCardExhausted: vi.fn()
     };
     // When requested, compose the actual selector with the payment preflight.
     // All persistence still belongs to this mock store, with no real DB access.
@@ -45,8 +47,14 @@ function harness({ started = true, failRecord = false, failQuarantine = false, t
         return selector ? selector(...args) : address;
     });
     const markAddressBound = vi.fn(), onPaymentState = vi.fn();
+    const externalSubmission = vi.fn();
     const completeStripeCardPayment = vi.fn(async (_page, _card, _address, options) => {
-        if (started) await options.onPaymentAttemptStarted();
+        if (started) {
+            for (let i = 0; i < startCallbacks; i++) {
+                await options.onPaymentAttemptStarted();
+                externalSubmission();
+            }
+        }
         if (throwAfterSubmit) throw new Error('fixture browser closed');
         return paymentResponse || { success: false, submitted: false, captchaRequired: true, error: '人机验证未完成', dueAmount: 20, dueCurrency: 'USD' };
     });
@@ -56,10 +64,10 @@ function harness({ started = true, failRecord = false, failQuarantine = false, t
     };
     const waitForCheckoutDueAmount = vi.fn(readDue);
     const dependencies = {
-        './mysql-store': store, './stripe-payment': { completeStripeCardPayment, readCheckoutDueAmount: readDue, waitForCheckoutDueAmount },
+        'node:crypto': { randomBytes }, './mysql-store': store, './stripe-payment': { completeStripeCardPayment, readCheckoutDueAmount: readDue, waitForCheckoutDueAmount },
         './pricing-checkout': { ensureChatGptProUsageTier: async () => {} }, './tax-free-address': { pickBillingAddressForCheckout, markAddressBound },
         './region-config': { getRegionConfig: () => ({ currency }) }, './task-safety': { classifyPaymentResult, classifyOpenAiCardMethodFailure },
-        './card-validator': { validateCardNumber: () => ({ valid: true }) }, './public/grok-plan-catalog': catalog,
+        './card-validator': { validateCardNumber: () => cardValidation }, './public/grok-plan-catalog': catalog,
         './grok-checkout-state': { grokError }, './grok-billing-address': { assertNativeBillingRegion, normalizeNativeBillingAddress }
     };
     const module = { exports: {} };
@@ -67,10 +75,10 @@ function harness({ started = true, failRecord = false, failQuarantine = false, t
         module, exports: module.exports, require: key => { if (!(key in dependencies)) throw new Error('Unexpected dependency'); return dependencies[key]; },
         process: { env: {} }, console: { log() {}, warn() {} }, Date
     });
-    return { store, completeStripeCardPayment, waitForCheckoutDueAmount, pickBillingAddressForCheckout, markAddressBound, onPaymentState,
+    return { store, externalSubmission, completeStripeCardPayment, waitForCheckoutDueAmount, pickBillingAddressForCheckout, markAddressBound, onPaymentState,
         run: () => module.exports.executePaymentWithRetry(page, { ...(native
         ? { platform: 'grok', planType: 'grok_bundle_premium_monthly', grokCheckout: { native: true } }
-        : { platform: 'claude', planType: 'claude_pro' }), onPaymentState, ...runOptions }) };
+        : { platform: 'claude', planType: 'claude_pro' }), ownerKey: 'fixture_job', onPaymentState, ...runOptions }) };
 }
 
 describe('ChatGPT checkout currency preflight', () => {
@@ -253,7 +261,7 @@ describe('Grok bundle billing preflight before card reservation', () => {
         expect(await fixture.run()).toMatchObject({ success: true });
         const usedAddress = fixture.completeStripeCardPayment.mock.calls[0][2];
         expect(usedAddress.state).toBe('OR');
-        expect(fixture.store.bindCardPaymentProfile).toHaveBeenCalledWith(1, { holderName: 'Fixture', address: usedAddress });
+        expect(fixture.store.bindCardPaymentProfile).toHaveBeenCalledWith(1, { holderName: 'Fixture', address: usedAddress }, 'payment_fixture_job');
         expect(fixture.markAddressBound).toHaveBeenCalledWith(7, 1);
         expect(fixture.store.createBillingRecord).toHaveBeenCalledWith(expect.objectContaining({ amount: 8, currency: 'USD', status: 'success' }));
     });
@@ -265,7 +273,7 @@ describe('unknown submitted payment resources', () => {
         expect(await fixture.run()).toMatchObject({ paymentState: 'unknown', manualIntervention: true });
         expect(fixture.completeStripeCardPayment).toHaveBeenCalledOnce();
         expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
-        expect(fixture.store.quarantineCardForReview).toHaveBeenCalledWith(1);
+        expect(fixture.store.quarantineCardForReview).toHaveBeenCalledWith(1, 'payment_result_unknown', 'payment_fixture_job');
         expect(fixture.store.createBillingRecord).toHaveBeenCalledWith(expect.objectContaining({ amount: 20, currency: 'USD', status: 'pending' }));
         expect(fixture.store.releaseCard).not.toHaveBeenCalled();
     });
@@ -302,7 +310,7 @@ describe('unknown submitted payment resources', () => {
         expect(fixture.completeStripeCardPayment).toHaveBeenCalledOnce();
         expect(fixture.store.cooldownCard).not.toHaveBeenCalled();
         expect(fixture.store.releaseCard).not.toHaveBeenCalled();
-        expect(fixture.store.quarantineCardForReview).toHaveBeenCalledWith(1);
+        expect(fixture.store.quarantineCardForReview).toHaveBeenCalledWith(1, 'payment_result_unknown', 'payment_fixture_job');
         expect(fixture.store.createBillingRecord).toHaveBeenCalledWith(expect.objectContaining({ status: 'pending' }));
     });
     it.each([{ failRecord: true }, { failQuarantine: true }])('does not release after unknown-result bookkeeping failure: %j', async config => {
@@ -322,7 +330,7 @@ describe('unknown submitted payment resources', () => {
         expect(await fixture.run()).toMatchObject({ paymentState: 'unknown', manualIntervention: true });
         expect(fixture.completeStripeCardPayment).toHaveBeenCalledOnce();
         expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
-        expect(fixture.store.quarantineCardForReview).toHaveBeenCalledWith(1);
+        expect(fixture.store.quarantineCardForReview).toHaveBeenCalledWith(1, 'payment_result_unknown', 'payment_fixture_job');
         expect(fixture.store.cooldownCard).not.toHaveBeenCalled();
         expect(fixture.store.releaseCard).not.toHaveBeenCalled();
     });
@@ -353,7 +361,7 @@ describe('unknown submitted payment resources', () => {
             .mockResolvedValueOnce(null);
         expect(await fixture.run()).toMatchObject({ success: false, manualIntervention: true, cardsDeclined: 1 });
         expect(fixture.completeStripeCardPayment).toHaveBeenCalledOnce();
-        expect(fixture.store.cooldownCard).toHaveBeenCalledWith(1, 30, 'Stripe拒付');
+        expect(fixture.store.cooldownCard).toHaveBeenCalledWith(1, 30, 'payment_fixture_job');
         expect(fixture.store.quarantineCardForReview).not.toHaveBeenCalled();
         expect(fixture.store.releaseCard).not.toHaveBeenCalled();
     });
@@ -361,7 +369,7 @@ describe('unknown submitted payment resources', () => {
         const f = harness({ native: true, failRecord: true, paymentResponse: { success: false, submitted: true,
             declined: true, canRetryCard: true, error: '官方拒付' } });
         await expect(f.run()).rejects.toThrow('fixture record error');
-        expect(f.store.cooldownCard).toHaveBeenCalledWith(1, 30, 'Stripe拒付');
+        expect(f.store.cooldownCard).toHaveBeenCalledWith(1, 30, 'payment_fixture_job');
         expect(f.store.cooldownCard.mock.invocationCallOrder[0]).toBeLessThan(f.store.createBillingRecord.mock.invocationCallOrder[0]);
         expect(f.store.releaseCard).not.toHaveBeenCalled();
         expect(f.store.reserveCard).toHaveBeenCalledOnce();
@@ -370,9 +378,261 @@ describe('unknown submitted payment resources', () => {
         const f = harness({ native: true, failCooldown: true, failQuarantine, paymentResponse: { success: false, submitted: true,
             declined: true, canRetryCard: true, error: '官方拒付' } });
         await expect(f.run()).rejects.toThrow('fixture');
-        expect(f.store.quarantineCardForReview).toHaveBeenCalledWith(1, 'decline_cooldown_failed');
+        expect(f.store.quarantineCardForReview).toHaveBeenCalledWith(1, 'decline_cooldown_failed', 'payment_fixture_job');
         expect(f.store.releaseCard).not.toHaveBeenCalled();
         expect(f.store.reserveCard).toHaveBeenCalledOnce();
         expect(f.completeStripeCardPayment).toHaveBeenCalledOnce();
+    });
+});
+
+
+describe('round6 card ownership through payment retry', () => {
+    const ownerKey = 'payment_fixture_job';
+    const success = { success: true, submitted: true, dueAmount: 20, dueCurrency: 'USD' };
+    const unknown = { success: false, submitted: true, error: 'offline outcome unconfirmed' };
+    const declined = { success: false, submitted: true, declined: true, canRetryCard: true, error: 'offline official decline' };
+    const lost = () => Object.assign(new Error('offline ownership lost'), { code: 'CARD_LOCK_OWNERSHIP_LOST' });
+    const card = (receipt) => ({ id: 1, card_number: 'offline-fixture-card', card_expiry: '01/30', card_cvc: '000', ...receipt });
+
+    it('uses the same owner for reservation and a confirmed unsubmitted release', async () => {
+        const f = harness({ started: false });
+        expect(await f.run()).toMatchObject({ success: false, paymentState: 'not_started' });
+        expect(f.store.reserveCard).toHaveBeenCalledWith(ownerKey);
+        expect(f.store.releaseCard).toHaveBeenCalledExactlyOnceWith(1, ownerKey);
+    });
+    it('holds the same owner before submission and completes only after success billing', async () => {
+        const f = harness({ paymentResponse: success });
+        expect(await f.run()).toMatchObject({ success: true });
+        expect(f.store.bindCardPaymentProfile).toHaveBeenCalledExactlyOnceWith(1, { holderName: '', address: oregonAddress }, ownerKey);
+        expect(f.store.recordCardUsage).toHaveBeenCalledExactlyOnceWith(1, ownerKey);
+        expect(f.store.markCardPaymentStarted).toHaveBeenCalledExactlyOnceWith(1, ownerKey);
+        expect(f.store.completeCardPayment).toHaveBeenCalledExactlyOnceWith(1, ownerKey);
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.store.createBillingRecord.mock.invocationCallOrder[0]).toBeLessThan(f.store.completeCardPayment.mock.invocationCallOrder[0]);
+    });
+    it('passes the owner to unknown-result quarantine without ordinary release or rotation', async () => {
+        const f = harness({ paymentResponse: unknown });
+        expect(await f.run()).toMatchObject({ paymentState: 'unknown' });
+        expect(f.store.quarantineCardForReview).toHaveBeenCalledExactlyOnceWith(1, 'payment_result_unknown', ownerKey);
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+    });
+    it('cools down under the owner before looking for another card', async () => {
+        const f = harness({ paymentResponse: declined });
+        f.store.reserveCard.mockResolvedValueOnce(card()).mockResolvedValueOnce(null);
+        expect(await f.run()).toMatchObject({ success: false, cardsDeclined: 1 });
+        expect(f.store.cooldownCard).toHaveBeenCalledExactlyOnceWith(1, 30, ownerKey);
+        expect(f.store.reserveCard).toHaveBeenNthCalledWith(2, ownerKey);
+        expect(f.store.cooldownCard.mock.invocationCallOrder[0]).toBeLessThan(f.store.reserveCard.mock.invocationCallOrder[1]);
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+    });
+    it.each(['', ' bad', 'bad ', 'a/b', 'a.b', 'x'.repeat(49), null, 7, {}])('rejects invalid explicit owner before reserving or paying (%j)', async suppliedOwner => {
+        const f = harness({ runOptions: { ownerKey: suppliedOwner } });
+        expect(await f.run()).toMatchObject({ code: 'ASSET_LOCK_OWNER_INVALID', paymentState: 'not_started' });
+        expect(f.store.reserveCard).not.toHaveBeenCalled();
+        expect(f.completeStripeCardPayment).not.toHaveBeenCalled();
+    });
+    it('gives independent debug invocations bounded random owners without embedding the CDK', async () => {
+        const f = harness({ started: false, runOptions: { ownerKey: undefined, cdkCode: 'OFFLINE-CDK-DO-NOT-EMBED' } });
+        await f.run();
+        await f.run();
+        const owners = f.store.reserveCard.mock.calls.map(([owner]) => owner);
+        expect(owners).toHaveLength(2);
+        for (const owner of owners) {
+            expect(owner).toMatch(/^payment_debug_[a-f0-9]{32}$/);
+            expect(owner.length).toBeLessThanOrEqual(64);
+            expect(owner).not.toContain('OFFLINE-CDK');
+            expect(f.store.releaseCard).toHaveBeenCalledWith(1, owner);
+        }
+        expect(owners[0]).not.toBe(owners[1]);
+    });
+    it.each([undefined, null, 'payment_other_job', 'payment_fixture_job ', 'payment_Fixture_job'])('refuses prewarm without an exact matching receipt (%j)', async receipt => {
+        const prewarmedPayment = { card: card({ ownerKey: receipt }) };
+        const f = harness({ runOptions: { prewarmedPayment } });
+        expect(await f.run()).toMatchObject({ code: 'CARD_LOCK_OWNERSHIP_LOST', paymentState: 'not_started' });
+        expect(prewarmedPayment.consumed).not.toBe(true);
+        expect(f.store.reserveCard).not.toHaveBeenCalled();
+        expect(f.completeStripeCardPayment).not.toHaveBeenCalled();
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+    });
+    it('consumes and releases prewarm only when its receipt matches', async () => {
+        const prewarmedPayment = { card: card({ ownerKey }) };
+        const f = harness({ started: false, runOptions: { prewarmedPayment } });
+        expect(await f.run()).toMatchObject({ paymentState: 'not_started' });
+        expect(prewarmedPayment.consumed).toBe(true);
+        expect(f.store.reserveCard).not.toHaveBeenCalled();
+        expect(f.completeStripeCardPayment).toHaveBeenCalledOnce();
+        expect(f.store.releaseCard).toHaveBeenCalledExactlyOnceWith(1, ownerKey);
+    });
+    it('passes the owner to invalid-card retirement before trying another reservation', async () => {
+        const f = harness({ cardValidation: { valid: false, error: 'offline invalid card' } });
+        f.store.reserveCard.mockResolvedValueOnce(card()).mockResolvedValueOnce(null);
+        await f.run();
+        expect(f.store.markCardExhausted).toHaveBeenCalledExactlyOnceWith(1, ownerKey);
+        expect(f.store.reserveCard).toHaveBeenNthCalledWith(2, ownerKey);
+        expect(f.completeStripeCardPayment).not.toHaveBeenCalled();
+    });
+    it('stops immediately if invalid-card retirement loses ownership', async () => {
+        const f = harness({ cardValidation: { valid: false, error: 'offline invalid card' } });
+        f.store.markCardExhausted.mockRejectedValue(lost());
+        await expect(f.run()).rejects.toMatchObject({ code: 'CARD_LOCK_OWNERSHIP_LOST' });
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.completeStripeCardPayment).not.toHaveBeenCalled();
+    });
+    it.each(['bindCardPaymentProfile', 'recordCardUsage', 'completeCardPayment'])('stops success bookkeeping on ownership loss in %s', async action => {
+        const f = harness({ paymentResponse: success });
+        f.store[action].mockRejectedValue(lost());
+        await expect(f.run()).rejects.toMatchObject({ code: 'CARD_LOCK_OWNERSHIP_LOST' });
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+        expect(f.completeStripeCardPayment).toHaveBeenCalledOnce();
+        if (action === 'completeCardPayment') expect(f.store.createBillingRecord).toHaveBeenCalledOnce();
+        else expect(f.store.createBillingRecord).not.toHaveBeenCalled();
+        if (action === 'bindCardPaymentProfile') expect(f.store.recordCardUsage).not.toHaveBeenCalled();
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+    });
+    it('stops on a zero-row completion after preserving the success billing record', async () => {
+        const f = harness({ paymentResponse: success });
+        f.store.completeCardPayment.mockResolvedValue(0);
+        await expect(f.run()).rejects.toMatchObject({ code: 'CARD_LOCK_OWNERSHIP_LOST' });
+        expect(f.store.createBillingRecord).toHaveBeenCalledOnce();
+        expect(f.store.completeCardPayment).toHaveBeenCalledOnce();
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+    });
+    it('stops a confirmed-unsubmitted zero-row release without trying another card', async () => {
+        const f = harness({ started: false });
+        f.store.releaseCard.mockResolvedValue(0);
+        await expect(f.run()).rejects.toMatchObject({ code: 'CARD_LOCK_OWNERSHIP_LOST' });
+        expect(f.store.releaseCard.mock.calls.every(([, actualOwner]) => actualOwner === ownerKey)).toBe(true);
+        expect(f.completeStripeCardPayment).toHaveBeenCalledOnce();
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+    });
+    it('never releases or rotates after unknown-result quarantine loses ownership', async () => {
+        const f = harness({ paymentResponse: unknown });
+        f.store.quarantineCardForReview.mockRejectedValue(lost());
+        await expect(f.run()).rejects.toMatchObject({ code: 'CARD_LOCK_OWNERSHIP_LOST' });
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.store.createBillingRecord).not.toHaveBeenCalled();
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+    });
+    it('stops a decline on ownership loss without attempting fallback mutation or rotation', async () => {
+        const f = harness({ paymentResponse: declined });
+        f.store.cooldownCard.mockRejectedValue(lost());
+        await expect(f.run()).rejects.toMatchObject({ code: 'CARD_LOCK_OWNERSHIP_LOST' });
+        expect(f.store.quarantineCardForReview).not.toHaveBeenCalled();
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.store.createBillingRecord).not.toHaveBeenCalled();
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+    });
+    it.each([
+        ['succeeded', success], ['unknown', unknown], ['declined', declined]
+    ])('retains the card if the %s result callback fails before bookkeeping', async (state, paymentResponse) => {
+        const f = harness({ paymentResponse });
+        f.onPaymentState.mockImplementation(async actualState => {
+            if (actualState === state) throw new Error('offline result persistence failed');
+        });
+        await expect(f.run()).rejects.toThrow('offline result persistence failed');
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+        expect(f.store.bindCardPaymentProfile).not.toHaveBeenCalled();
+        expect(f.store.recordCardUsage).not.toHaveBeenCalled();
+        expect(f.store.createBillingRecord).not.toHaveBeenCalled();
+    });
+    it.each(['bindCardPaymentProfile', 'recordCardUsage'])('retains a successful payment card when %s persistence fails', async action => {
+        const f = harness({ paymentResponse: success });
+        f.store[action].mockRejectedValue(new Error('offline write failed'));
+        await expect(f.run()).rejects.toThrow('offline write failed');
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+        expect(f.store.createBillingRecord).not.toHaveBeenCalled();
+    });
+    it('keeps cleanup owner-qualified on an exception before any payment submission', async () => {
+        const f = harness({ started: false });
+        f.onPaymentState.mockImplementation(async state => {
+            if (state === 'not_started') throw new Error('offline pre-submit persistence failed');
+        });
+        await expect(f.run()).rejects.toThrow('offline pre-submit persistence failed');
+        expect(f.store.releaseCard).toHaveBeenCalledExactlyOnceWith(1, ownerKey);
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+    });
+});
+
+
+describe('round7 durable payment hold failures', () => {
+    const success = { success: true, submitted: true, dueAmount: 20, dueCurrency: 'USD' };
+    it.each(['zero_rows', 'write_error', 'response_lost'])('stops before external submission and retains recovery ownership on %s', async fault => {
+        const f = harness({ paymentResponse: success });
+        let durableHold = false;
+        f.store.markCardPaymentStarted.mockImplementation(async () => {
+            if (fault === 'zero_rows') return 0;
+            if (fault === 'response_lost') durableHold = true;
+            throw new Error('offline hold write/response failure');
+        });
+        const result = await f.run();
+        expect(result).toMatchObject({ success: false, paymentState: 'unknown', manualIntervention: true });
+        expect(f.externalSubmission).not.toHaveBeenCalled();
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+        expect(f.store.markCardPaymentStarted).toHaveBeenCalledOnce();
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.store.completeCardPayment).not.toHaveBeenCalled();
+        expect(f.store.cooldownCard).not.toHaveBeenCalled();
+        expect(f.store.quarantineCardForReview).toHaveBeenCalledOnce();
+        expect(durableHold).toBe(fault === 'response_lost');
+    });
+    it('never submits when started-state persistence fails after the durable hold', async () => {
+        const f = harness({ paymentResponse: success });
+        f.onPaymentState.mockImplementation(async state => {
+            if (state === 'started') throw new Error('offline task persistence failure');
+        });
+        expect(await f.run()).toMatchObject({ success: false, paymentState: 'unknown' });
+        expect(f.store.markCardPaymentStarted).toHaveBeenCalledOnce();
+        expect(f.externalSubmission).not.toHaveBeenCalled();
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+    });
+    it('rejects a repeated start callback before a second external submission', async () => {
+        const f = harness({ startCallbacks: 2, paymentResponse: success });
+        expect(await f.run()).toMatchObject({ success: false, paymentState: 'unknown' });
+        expect(f.externalSubmission).toHaveBeenCalledOnce();
+        expect(f.store.markCardPaymentStarted).toHaveBeenCalledOnce();
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.store.completeCardPayment).not.toHaveBeenCalled();
+    });
+    it('retains the card if both hold acknowledgement and recovery quarantine fail', async () => {
+        const f = harness({ failQuarantine: true });
+        f.store.markCardPaymentStarted.mockRejectedValue(new Error('offline acknowledgement lost'));
+        await expect(f.run()).rejects.toThrow('fixture quarantine error');
+        expect(f.externalSubmission).not.toHaveBeenCalled();
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.store.cooldownCard).not.toHaveBeenCalled();
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+    });
+    it.each(['address', 'billing', 'completion'])('does not release or resubmit after a successful charge with %s write failure', async fault => {
+        const f = harness({ address: { ...oregonAddress, id: 7 }, paymentResponse: success });
+        const target = fault === 'address' ? f.markAddressBound
+            : fault === 'billing' ? f.store.createBillingRecord : f.store.completeCardPayment;
+        target.mockRejectedValue(new Error('offline bookkeeping failure'));
+        await expect(f.run()).rejects.toThrow('offline bookkeeping failure');
+        expect(f.externalSubmission).toHaveBeenCalledOnce();
+        expect(f.store.reserveCard).toHaveBeenCalledOnce();
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
+        expect(f.store.cooldownCard).not.toHaveBeenCalled();
+        expect(f.store.quarantineCardForReview).not.toHaveBeenCalled();
+        if (fault !== 'completion') expect(f.store.completeCardPayment).not.toHaveBeenCalled();
+    });
+    it('holds through charge and bookkeeping, then completes exactly once', async () => {
+        const f = harness({ address: { ...oregonAddress, id: 7 }, paymentResponse: success });
+        expect(await f.run()).toMatchObject({ success: true });
+        const order = spy => spy.mock.invocationCallOrder[0];
+        expect(order(f.store.markCardPaymentStarted)).toBeLessThan(order(f.externalSubmission));
+        expect(order(f.externalSubmission)).toBeLessThan(order(f.store.bindCardPaymentProfile));
+        expect(order(f.store.bindCardPaymentProfile)).toBeLessThan(order(f.markAddressBound));
+        expect(order(f.markAddressBound)).toBeLessThan(order(f.store.recordCardUsage));
+        expect(order(f.store.recordCardUsage)).toBeLessThan(order(f.store.createBillingRecord));
+        expect(order(f.store.createBillingRecord)).toBeLessThan(order(f.store.completeCardPayment));
+        expect(f.store.completeCardPayment).toHaveBeenCalledOnce();
+        expect(f.store.releaseCard).not.toHaveBeenCalled();
     });
 });

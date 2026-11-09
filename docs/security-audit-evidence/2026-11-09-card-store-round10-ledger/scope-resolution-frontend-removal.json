@@ -1,0 +1,22 @@
+{
+  "recorded_at": "2026-11-09T10:36:35.643168+08:00",
+  "status": "ACCEPTED_OUT_OF_SCOPE_REMOVAL",
+  "path": "tests/nav-glass-foreground-motion.test.js",
+  "source": "Human user directly confirmed in this conversation",
+  "user_confirmation": "是前端视效吗？是我移除的，非安全加固方面的，你可以暂时不用管",
+  "classification": "Frontend visual-effect test, based on filename and user-confirmed scope; contents were not independently inspected",
+  "action": "Do not restore/recreate. Exclude this user-authorized removal from this security task; this path no longer blocks continuing local hardening.",
+  "historical_records": "Append-only resolution; original REVIEW and missing-status assertion remain unchanged, not rewritten to PASS",
+  "other_reviews": "No resolution of other historical REVIEW items is implied",
+  "production_scope": "Ledger phase B remains NOT RUN; no SQL, publish or deploy authorization",
+  "report_backup": {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/round10-report-before-user-scope-resolution.md",
+    "sha256": "c3f52986a1aed5e5ac1b75529c41895386d2515d38eddd7fe495a85c69744425",
+    "readback_verified": true
+  },
+  "preserved_record_hashes": {
+    "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/verification-results.json": "90195bcdafbd17d5c16a8c18e56c50bd603f4ff015f1aeb62a9cf77c248b048a",
+    "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/archive-attempt-01-failure.json": "d6940d712542bc714e47a950abade507bd9403ebee191e546caf5d28b3edc908",
+    "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/evidence-manifest.json": "a2c8e5d744aa0774aa250f56a547e67ac44242c2ed9ca6d0ba4a7e5c8d1db915"
+  }
+}

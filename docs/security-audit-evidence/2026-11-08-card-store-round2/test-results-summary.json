@@ -1,0 +1,123 @@
+{
+  "final": {
+    "targeted": {
+      "tests": 239,
+      "pass": 239,
+      "fail": 0,
+      "skip": 0,
+      "cancelled": 0,
+      "log": "raw/security-round2-final-verified.tap",
+      "files": 12,
+      "observedExitCode": 0
+    },
+    "mainTgGuestPayments": {
+      "tests": 166,
+      "pass": 166,
+      "fail": 0,
+      "skip": 0,
+      "cancelled": 0,
+      "log": "raw/security-payment-tg-guest-verified.tap",
+      "files": 11,
+      "observedExitCode": 0
+    },
+    "kcAffectedSerial": {
+      "tests": 260,
+      "pass": 260,
+      "fail": 0,
+      "skip": 0,
+      "files": 5,
+      "success": true,
+      "result": "raw/security-round2-kc-affected-final-results.json",
+      "observedExitCode": 0,
+      "exitEvidence": "handoff execution observation; final Vitest JSON success=true"
+    }
+  },
+  "historical": {
+    "kcFullInitial": {
+      "tests": 1693,
+      "pass": 1620,
+      "fail": 72,
+      "skip": 1,
+      "files": 71,
+      "success": false,
+      "result": "raw/security-round2-kc-full-results.json",
+      "observedExitCode": 1
+    },
+    "kcPrechangeComparison": {
+      "tests": 502,
+      "pass": 454,
+      "fail": 48,
+      "skip": 0,
+      "files": 12,
+      "success": false,
+      "result": "raw/security-round2-kc-prechange-results.json",
+      "observedExitCode": 1,
+      "scope": "Only the 12 initially failing files; 180-file copy plus 3 verified prechange overlays, not pristine Git main"
+    },
+    "zpayAmountBefore": {
+      "tests": 28,
+      "pass": 23,
+      "fail": 5,
+      "skip": 0,
+      "cancelled": 0,
+      "log": "raw/security-round2-amount-before.tap",
+      "exitCode": null,
+      "exitEvidence": "TAP verdict; no separate process exit record archived"
+    },
+    "zpayAmountAfter": {
+      "tests": 71,
+      "pass": 71,
+      "fail": 0,
+      "skip": 0,
+      "cancelled": 0,
+      "log": "raw/security-round2-amount-after.tap",
+      "exitCode": null,
+      "note": "28 new boundary cases are included in final 239; do not add totals"
+    },
+    "mediaSupplierInitial": {
+      "tests": 120,
+      "pass": 110,
+      "fail": 10,
+      "skip": 0,
+      "cancelled": 0,
+      "log": "raw/security-round2-media-supplier.tap",
+      "cause": "VM fixture dropped async when extracting function; preserve original failures",
+      "countCorrection": {
+        "previous": {
+          "tests": null,
+          "pass": null,
+          "fail": null,
+          "skip": null,
+          "cancelled": null
+        },
+        "reason": "Initial summary recognized TAP counters only; this original .tap-named file contains Node spec reporter counters. Read the existing ℹ counter lines; raw file is unchanged.",
+        "evidenceFormat": "NODE_SPEC_REPORTER_DESPITE_TAP_FILENAME",
+        "correctedAt": "2026-11-08T10:36:58.861Z"
+      }
+    },
+    "mediaSupplierRerun": {
+      "tests": 120,
+      "pass": 120,
+      "fail": 0,
+      "skip": 0,
+      "cancelled": 0,
+      "log": "raw/security-round2-media-supplier-rerun.tap"
+    },
+    "kcActivationFocused": {
+      "tests": 20,
+      "pass": 20,
+      "fail": 0,
+      "skip": 0,
+      "cancelled": 0,
+      "log": "raw/security-round2-kc-activation-final.tap",
+      "note": "Included in final 239; do not add totals"
+    }
+  },
+  "interpretation": [
+    "Final groups overlap with historical reruns and one another; no combined unique-test claim is made.",
+    "KC full suite was not rerun after fixture correction. Do not claim final full suite is green or final failure count is 41.",
+    "Seven unchanged failing files have 41 matching failures in initial-current and prechange comparison; final state of those files remains NOT RERUN.",
+    "Eight failures in billing/navigation/payment/native-flow first parallel run were absent in prechange comparison and passed in final serial rerun; retain as variability, not proven historical failures.",
+    "recharge-routing fixture retained business assertions and gained real admission-set helpers, crypto and task-token dependencies."
+  ]
+}

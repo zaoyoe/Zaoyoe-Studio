@@ -45,7 +45,7 @@ function security() {
     return { resolveClientIp: () => '192.0.2.10', _private: { isProductionLikeRuntime: () => true }, applyRateLimitHeaders() {}, takeRateLimitToken: async () => ({ allowed: true }) };
 }
 function gateway(overrides = {}) {
-    return { channels: () => [{ id: 'alipay', label: '支付宝' }, { id: 'wxpay', label: '微信支付' }], identity: () => ({ provider: 'zpay', merchant_id: '7654321' }), createPayment: async () => ({ checkout_url: 'https://pay.example/checkout', provider_trade_no: 'ZP-REMOTE-123' }), verifyWebhook: () => ({ order_no: ORDER.order_no, provider: 'zpay', merchant_id: '7654321', provider_trade_no: 'ZP-REMOTE-123', payment_channel: 'alipay', amount_minor: 124, currency: 'CNY', verified_payload: { verified_by: 'signed_notify', event_status: 'paid' } }), ...overrides };
+    return { channels: () => [{ id: 'alipay', label: '支付宝' }, { id: 'wxpay', label: '微信支付' }], identity: () => ({ provider: 'zpay', merchant_id: '7654321' }), createPayment: async () => ({ checkout_url: 'https://pay.example/checkout', provider_trade_no: 'ZP-REMOTE-123' }), verifyWebhook: () => ({ order_no: ORDER.order_no, provider: 'zpay', merchant_id: '7654321', provider_trade_no: 'ZP-REMOTE-123', payment_channel: 'alipay', amount_minor: 126, currency: 'CNY', verified_payload: { verified_by: 'signed_notify', event_status: 'paid' } }), queryPayment: async () => ({ ...queriedPayment(), provider_trade_no: 'ZP-REMOTE-123' }), ...overrides };
 }
 function stubAdmin(supabase, overrides = {}) {
     return { getOptionalSupabaseAdmin: () => supabase, requireAdmin: async () => ({ supabase, user: { id: UUID }, isSuperAdmin: true }), parseJsonBody: async (req) => req.body, sendJson(res, status, data) { res.status(status).end(JSON.stringify(data)); }, writeAdminAuditLog: async () => {}, ...overrides };
@@ -61,8 +61,14 @@ function dbQuery(data, methods = {}) {
     };
     return { query, calls };
 }
+function purchaseDb(rpc) {
+    return { rpc, from(table) {
+        assert.equal(table, 'tg_purchase_orders');
+        return { select() { return this; }, eq() { return this; }, maybeSingle: async () => ({ data: { ...ORDER } }) };
+    } };
+}
 function purchaseHandlers(rpc, overrides = {}) {
-    return createTgPurchaseHandlers({ admin: stubAdmin({ rpc }), env: ENV, requestSecurity: security(), gateway: gateway(), leaseTokenFactory: () => UUID, ...overrides });
+    return createTgPurchaseHandlers({ admin: stubAdmin(purchaseDb(rpc)), env: ENV, requestSecurity: security(), gateway: gateway(), leaseTokenFactory: () => UUID, ...overrides });
 }
 function requestQuote() { return { product_id: 'stars', username: '@Telegram_User', stars_quantity: 100, channel: 'alipay' }; }
 function requestOrder(changes = {}) { return { quote_id: QUOTE_ID, product_id: 'stars', username: 'telegram_user', stars_quantity: 100, expected_total_minor: 126, price_version: 3, channel: 'alipay', status_token: TOKEN, idempotency_key: KEY, ...changes }; }
@@ -140,6 +146,7 @@ test('admin price update binds optimistic version to actual RPC contract and han
 test('purchase quote validates product mapping and preserves the immutable SQL quote snapshot', async () => {
     const calls = [];
     const handlers = purchaseHandlers(async (name, args) => {
+        if (name === 'fn_tg_purchase_payment_reconciliation_ready') return { data: true };
         calls.push({ name, args });
         return { data: { success: true, quote: { quote_id: QUOTE_ID, product_family: 'telegram_stars', term_months: null, stars_quantity: 100, username: 'telegram_user', currency: 'CNY', total_minor: 126, subtotal_minor: 124, payment_fee_minor: 2, payment_fee_rate_bps: 100, price_version: 3, payment_channel: 'alipay', expires_at: '2026-10-15T00:10:00Z' } } };
     });
@@ -158,6 +165,7 @@ test('checkout is created once after claim, binding quote, merchant, channel and
     let checkoutCalls = 0;
     const checkout = gateway({ createPayment: async () => { checkoutCalls++; return { checkout_url: 'https://pay.example/checkout', provider_trade_no: 'ZP-REMOTE-123' }; } });
     const rpc = async (name, args) => {
+        if (name === 'fn_tg_purchase_payment_reconciliation_ready') return { data: true };
         calls.push({ name, args });
         if (name === 'fn_tg_create_purchase') return { data: { success: true, existing: false, order: ORDER } };
         if (name === 'fn_tg_claim_purchase_checkout') return { data: { success: true, action: 'create', order: { ...ORDER, payment_status: 'checkout_creating' } } };
@@ -225,6 +233,7 @@ test('order response must match the full client quote binding before checkout cr
 test('database quote conflicts are returned safely without claiming a checkout', async () => {
     const calls = [];
     const handlers = purchaseHandlers(async (name, args) => {
+        if (name === 'fn_tg_purchase_payment_reconciliation_ready') return { data: true };
         calls.push({ name, args });
         return { data: { success: false, code: 'quote_mismatch' } };
     });
@@ -242,6 +251,7 @@ test('busy or replayed checkout never creates a second upstream payment', async 
         const rpcCalls = [];
         const resultOrder = { ...ORDER, payment_status: status, checkout_url: status === 'awaiting_payment' ? 'https://pay.example/existing' : null };
         const rpc = async (name) => {
+        if (name === 'fn_tg_purchase_payment_reconciliation_ready') return { data: true };
             rpcCalls.push(name);
             if (name === 'fn_tg_create_purchase') return { data: { success: true, existing, order: resultOrder } };
             if (name === 'fn_tg_claim_purchase_checkout') return { data: { success: false, action: 'busy', order: resultOrder } };
@@ -260,6 +270,7 @@ test('ambiguous payment creation enters manual review and idempotent replay does
     let status = 'awaiting_payment';
     const rpcNames = [];
     const rpc = async (name) => {
+        if (name === 'fn_tg_purchase_payment_reconciliation_ready') return { data: true };
         rpcNames.push(name);
         if (name === 'fn_tg_create_purchase') return { data: { success: true, existing: status === 'manual_review', order: { ...ORDER, payment_status: status } } };
         if (name === 'fn_tg_claim_purchase_checkout') return { data: { success: true, action: 'create', order: { ...ORDER, payment_status: 'checkout_creating' } } };
@@ -280,17 +291,17 @@ test('ambiguous payment creation enters manual review and idempotent replay does
 
 test('signed webhook is acknowledged idempotently and remains active while sales are closed', async () => {
     const calls = [];
-    const rpc = async (name, args) => { calls.push({ name, args }); return { data: { success: true, existing: calls.length > 1 } }; };
+    const rpc = async (name, args) => { calls.push({ name, args }); return { data: name === 'fn_tg_purchase_payment_reconciliation_ready' ? true : { success: true, existing: calls.length > 2 } }; };
     const handlerGateway = gateway();
-    const handlers = createTgPurchaseHandlers({ admin: stubAdmin({ rpc }), env: { ...ENV, TG_PURCHASE_ENABLED: 'false' }, requestSecurity: security(), gateway: handlerGateway });
+    const handlers = createTgPurchaseHandlers({ admin: stubAdmin(purchaseDb(rpc)), env: { ...ENV, TG_PURCHASE_ENABLED: 'false' }, requestSecurity: security(), gateway: handlerGateway });
     for (let i = 0; i < 2; i++) {
         const res = await call(handlers.webhook, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'pid=7654321&trade_status=TRADE_SUCCESS' });
         assert.equal(res.statusCode, 200);
         assert.equal(res.body, 'success');
     }
-    assert.equal(calls.length, 2);
-    assert.equal(calls[0].name, 'fn_tg_confirm_purchase_payment');
-    assert.deepEqual(calls[0].args.p_verified_payload, { verified_by: 'signed_notify', event_status: 'paid' });
+    assert.equal(calls.length, 4);
+    assert.equal(calls.filter(call => call.name === 'fn_tg_confirm_purchase_payment').length, 2);
+    assert.deepEqual(calls[1].args.p_verified_payload, { verified_by: 'authenticated_query', event_status: 'paid' });
 });
 
 test('malformed and duplicate callback fields never reach the payment confirmation RPC', async () => {
@@ -305,7 +316,7 @@ test('malformed and duplicate callback fields never reach the payment confirmati
 
 test('status lookup uses a header-held secret and accepts SQL payment_expires_at', async () => {
     let args;
-    const handlers = purchaseHandlers(async (name, input) => { args = input; return { data: { success: true, order: { ...ORDER, checkout_url: 'https://pay.example/x' } } }; });
+    const handlers = purchaseHandlers(async (name, input) => { assert.equal(name, 'fn_tg_purchase_status'); args = input; return { data: { success: true, order: { ...ORDER, checkout_url: 'https://pay.example/x' } } }; }, { gateway: gateway({ queryPayment: async () => null }) });
     const res = await call(handlers.status, { method: 'GET', url: `/?order_no=${ORDER.order_no}`, headers: { 'x-tg-status-token': TOKEN } });
     assert.equal(res.statusCode, 200);
     assert.match(args.p_status_token_hash, /^[a-f0-9]{64}$/);
@@ -388,6 +399,7 @@ test('quote rejects unavailable channels before RPC and rejects absent, waived o
 test('changed fee snapshots after checkout claim cannot reach the upstream payment provider', async () => {
     let payments = 0;
     const handler = purchaseHandlers(async (name) => {
+        if (name === 'fn_tg_purchase_payment_reconciliation_ready') return { data: true };
         if (name === 'fn_tg_create_purchase') return { data: { success: true, order: ORDER } };
         if (name === 'fn_tg_claim_purchase_checkout') return { data: { success: true, action: 'create', order: {
             ...ORDER, payment_status: 'checkout_creating', subtotal_minor: 126, payment_fee_minor: 0, payment_fee_rate_bps: 0
@@ -404,6 +416,7 @@ test('signed subtotal-only callback passes authentication but is rejected agains
     let confirmed = false;
     const amounts = [];
     const handler = purchaseHandlers(async (name, args) => {
+        if (name === 'fn_tg_purchase_payment_reconciliation_ready') return { data: true };
         assert.equal(name, 'fn_tg_confirm_purchase_payment'); amounts.push(args.p_amount_minor);
         if (args.p_amount_minor !== ORDER.total_minor) return { data: { success: false, code: 'payment_binding_mismatch' } };
         confirmed = true; return { data: { success: true } };
@@ -413,7 +426,7 @@ test('signed subtotal-only callback passes authentication but is rejected agains
     const underpaid = await call(handler.webhook, { method: 'GET', url: `/?amount=${ORDER.subtotal_minor}` });
     assert.equal(underpaid.statusCode, 409); assert.equal(confirmed, false);
     const paid = await call(handler.webhook, { method: 'GET', url: `/?amount=${ORDER.total_minor}` });
-    assert.equal(paid.statusCode, 200); assert.equal(confirmed, true); assert.deepEqual(amounts, [124, 126]);
+    assert.equal(paid.statusCode, 200); assert.equal(confirmed, true); assert.deepEqual(amounts, [126]);
 });
 
 function cancelRequest(changes = {}) {
@@ -587,7 +600,6 @@ test('a signed callback with a checkout alias requires an independent identical 
             rpc: async (name, args) => {
                 if (name === 'fn_tg_purchase_payment_reconciliation_ready') return { data: true };
                 assert.equal(name, 'fn_tg_confirm_purchase_payment'); confirmations++;
-                if (confirmations === 1) return { data: { success: false, code: 'payment_binding_mismatch' } };
                 assert.equal(args.p_verified_payload.verified_by, 'authenticated_query');
                 return { data: { success: true, existing: true } };
             }
@@ -597,9 +609,9 @@ test('a signed callback with a checkout alias requires an independent identical 
             queryPayment: async () => mode === 'unpaid' ? null : { ...verified, ...(mode === 'mismatch' ? { amount_minor: 1 } : {}) }
         }) });
         const res = await call(handlers.webhook, { method: 'GET' });
-        assert.equal(res.statusCode, mode === 'paid' ? 200 : 409);
+        assert.equal(res.statusCode, mode === 'paid' ? 200 : mode === 'bound' ? 409 : 503);
         assert.equal(res.body, mode === 'paid' ? 'success' : 'error');
-        assert.equal(confirmations, mode === 'paid' ? 2 : 1);
+        assert.equal(confirmations, mode === 'paid' ? 1 : 0);
     }
 });
 
@@ -628,4 +640,48 @@ test('uncommitted or malformed completion notes never become public explanations
         assert.equal(projected.checkout_url, undefined); assert.equal(projected.can_close, false);
     }
     assert.equal(safeOrder({ ...ORDER, completion_note: '尚未提交的内部草稿说明。' }).completion_note, undefined);
+});
+
+for (const [name, patch] of [
+    ['order', { order_no: 'TGP-OTHER' }], ['provider', { provider: 'nowpayments' }],
+    ['merchant', { merchant_id: 'other-merchant' }], ['trade', { provider_trade_no: 'other-trade' }],
+    ['channel', { payment_channel: 'wxpay' }], ['fee-inclusive total', { amount_minor: ORDER.total_minor - 1 }],
+    ['currency', { currency: 'USD' }], ['proof', { verified_payload: { verified_by: 'signed_notify' } }]
+]) test(`ZPay callback refuses a queried ${name} mismatch without settlement and accepts a corrected retry`, async () => {
+    const signed = { ...queriedPayment(), verified_payload: { verified_by: 'signed_notify', event_status: 'paid' } };
+    let rejected = true; let confirmations = 0; let queries = 0;
+    const db = purchaseDb(async (name, args) => {
+        if (name === 'fn_tg_purchase_payment_reconciliation_ready') return { data: true };
+        assert.equal(name, 'fn_tg_confirm_purchase_payment'); confirmations++;
+        assert.equal(args.p_verified_payload.verified_by, 'authenticated_query');
+        return { data: { success: true } };
+    });
+    const handlers = createTgPurchaseHandlers({ admin: stubAdmin(db), env: ENV, requestSecurity: security(), gateway: gateway({
+        verifyWebhook: () => signed,
+        queryPayment: async ({ order }) => { queries++; assert.equal(order.order_no, ORDER.order_no); return { ...queriedPayment(), ...(rejected ? patch : {}) }; }
+    }) });
+    assert.equal((await call(handlers.webhook)).statusCode, 503);
+    assert.equal(confirmations, 0);
+    rejected = false;
+    assert.equal((await call(handlers.webhook)).statusCode, 200);
+    assert.equal(confirmations, 1); assert.equal(queries, 2);
+});
+
+for (const mode of ['missing-query', 'outage', 'empty-response']) test(`ZPay callback fails closed on ${mode} and can be retried`, async () => {
+    let unavailable = true; let confirmations = 0;
+    const queryPayment = async () => {
+        if (unavailable && mode === 'outage') throw new Error('private provider credential');
+        return unavailable ? null : { ...queriedPayment(), provider_trade_no: 'ZP-REMOTE-123' };
+    };
+    const paymentGateway = gateway({ queryPayment: mode === 'missing-query' ? undefined : queryPayment });
+    const handlers = createTgPurchaseHandlers({ admin: stubAdmin(purchaseDb(async (name) => {
+        if (name === 'fn_tg_purchase_payment_reconciliation_ready') return { data: true };
+        assert.equal(name, 'fn_tg_confirm_purchase_payment'); confirmations++;
+        return { data: { success: true } };
+    })), env: ENV, requestSecurity: security(), gateway: paymentGateway });
+    const failure = await call(handlers.webhook);
+    assert.equal(failure.statusCode, 503); assert.equal(confirmations, 0);
+    assert.ok(!failure.text.includes('private provider credential'));
+    unavailable = false; paymentGateway.queryPayment = queryPayment;
+    assert.equal((await call(handlers.webhook)).statusCode, 200); assert.equal(confirmations, 1);
 });

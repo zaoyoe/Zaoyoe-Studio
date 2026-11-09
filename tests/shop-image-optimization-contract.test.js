@@ -81,7 +81,12 @@ test('admin shop product cards use the storefront shop image optimization contra
     assert.match(shopClientSource, /function getShopResponsiveR2CardVariantUrl\(url, variant = ''\) \{/);
     assert.match(shopClientSource, /return `\$\{getZaoyoeAssetCdnOrigin\(\{ canonical: true \}\)\}\/products\/card\/\$\{encodeURIComponent\(basename\)\}\.webp`;/);
     assert.match(uploadAvatarSource, /cardImageData\?: string/);
-    assert.match(uploadAvatarSource, /const cardFilename = `products\/card\/\$\{productKeyBase\}\.webp`/);
+    assert.match(uploadAvatarSource, /const cardFilename = `products\/card\/\$\{await productImageDigest\(cardImageBuffer!\)\}\.webp`/);
+    assert.match(uploadAvatarSource, /thumbImageData\?: string/);
+    assert.match(uploadAvatarSource, /const thumbFilename = `products\/thumb\/\$\{await productImageDigest\(thumbImageBuffer!\)\}\.webp`/);
+    assert.match(uploadAvatarSource, /Product thumbnail must be WebP/);
+    assert.match(uploadAvatarSource, /assertImageMagicBytes\(thumbImageBuffer, 'image\/webp'/);
+    assert.match(uploadAvatarSource, /assertImageSize\(thumbImageBuffer, 'thumb'/);
     assert.match(uploadAvatarSource, /imageAsset/);
     assert.match(uploadAvatarSource, /ContentType: 'image\/webp'/);
 });

@@ -1,0 +1,132 @@
+{
+  "captured_at_utc": "2026-11-08T12:53:25.650327+00:00",
+  "basis": "Current uncommitted file bytes at archive time; not a clean candidate or contemporaneous cryptographic binding of earlier test runs.",
+  "files": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "role": "round4_changed_file",
+      "sha256_at_archive": "8b0c12e59e929c674d9f88660fad9049e68475ba721aebe43ae2fcd6415beb83",
+      "bytes": 194511
+    },
+    {
+      "path": "services/kc-pay-gpt/server.js",
+      "role": "round4_changed_file",
+      "sha256_at_archive": "e0b922950a566c1f1fa5512e794cc80f2837e752e1f6e4006c9bf86fad96c582",
+      "bytes": 222714
+    },
+    {
+      "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+      "role": "round4_changed_file",
+      "sha256_at_archive": "3f846e4ee51ecc0e18113892d1a1d3b582fc1b2ddfe39ac44ce2a264e86cadf5",
+      "bytes": 49419
+    },
+    {
+      "path": "tests/security-round4-kc-local-settlement.test.js",
+      "role": "round4_changed_file",
+      "sha256_at_archive": "4fc4446cca9aab38d8230633b01c18ed9cb20de5a64c4609855d84e50d670e06",
+      "bytes": 16026
+    },
+    {
+      "path": "services/kc-pay-gpt/task-safety.js",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "70544066f07d5338c46e1e8f659c9a06bb4ec6d2bda6db11a0b81f42553eae50",
+      "bytes": 11193
+    },
+    {
+      "path": "services/kc-pay-gpt/session-security.js",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "04521acd851aa281ff249565d67660d9f76bf0c4e11b211bc5aa1ab0dd3899dd",
+      "bytes": 3624
+    },
+    {
+      "path": "services/kc-pay-gpt/credential-security.js",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "3dde372f68b2e1b1d8a620781733a961787bb1008163ff90c4cc91242e224fcf",
+      "bytes": 3514
+    },
+    {
+      "path": "services/kc-pay-gpt/package.json",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "aa9e7d6266251cf4160b3714332e1930315636952a18edbb87b493f7c20880b6",
+      "bytes": 1315
+    },
+    {
+      "path": "services/kc-pay-gpt/package-lock.json",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "7fc5737ba42f9d82a7219e5050d1a5741a60f2a45d11395f44c3ba4e5fb7e9c2",
+      "bytes": 193141
+    },
+    {
+      "path": "services/kc-pay-gpt/vitest.config.js",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "cc93b9d616f22a2ae8524884776407149fee55c4016fb6e1c13bdd5bea355e6a",
+      "bytes": 149
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "1a8b2908ffad6ef42e288b4c0475c28a503073408853eb42e713a8fe41e174b9",
+      "bytes": 19582
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing-recovery.test.js",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "340d1d017616094a37687e3871f7f9abe2412f8ca1d87f4536f7a7c42a23b669",
+      "bytes": 5335
+    },
+    {
+      "path": "services/kc-pay-gpt/test/task-safety.test.js",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "b9fac87e62510596231a34b94faccf0b772fbf5d10e8af1592bf2100761454a1",
+      "bytes": 11061
+    },
+    {
+      "path": "services/kc-pay-gpt/test/local-preview-recovery.test.js",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "1c0e6fce296d13e4bc03038003f059e34fbb1adf0752ba5f48ac2cd2491673f3",
+      "bytes": 14199
+    },
+    {
+      "path": "services/kc-pay-gpt/test/task-diagnostics.test.js",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "826ea45de7c15f8c52039bba951f2cbecaf7f7b189f9a3608c62cef0bc5ef257",
+      "bytes": 3838
+    },
+    {
+      "path": "tests/security-round3-kc-activation-atomic.test.js",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "6919ebdc2b15868ed9543c479d54a06ce6888a27b2cbf86252e31f6e0bf4189b",
+      "bytes": 23717
+    },
+    {
+      "path": "tests/security-round2-kc-activation.test.js",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "0fc07c07133f3420bfa95a4e928e34c790b85ee6df233a549b721bd06ee916c6",
+      "bytes": 13782
+    },
+    {
+      "path": "services/kc-pay-gpt/Dockerfile",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "023ebb80f6d25aa857053f4dc8026f55674af45ea34529a7311559af53e5fa4e",
+      "bytes": 2016
+    },
+    {
+      "path": "services/kc-pay-gpt/.dockerignore",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "5a5023d9e6dbae10022ba839347d5dab25b09016dbfaf629017cc54818890b80",
+      "bytes": 127
+    },
+    {
+      "path": "services/kc-pay-gpt/docker-compose.yml",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "e03d588b3bed6e7c5ac0bf488e24c9977cc49154c9628ca09029069262334181",
+      "bytes": 4166
+    },
+    {
+      "path": "deploy/kvm4/verify-server.Dockerfile",
+      "role": "related_dependency_or_packaging_snapshot",
+      "sha256_at_archive": "084a689549a6b107d956b6bf472657bcb154b39b3971a1e8d7d0c9e2e9424caa",
+      "bytes": 350
+    }
+  ]
+}

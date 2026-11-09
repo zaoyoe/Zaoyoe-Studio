@@ -43,6 +43,13 @@ const PUBLIC_GOOGLE_CLIENT_ID_INTL_ENV_NAMES = Object.freeze([
     'PUBLIC_GOOGLE_OAUTH_CLIENT_ID_INTL'
 ]);
 
+const PUBLIC_TURNSTILE_SITE_KEY_ENV_NAMES = Object.freeze([
+    'CLOUDFLARE_TURNSTILE_SITE_KEY',
+    'NEXT_PUBLIC_TURNSTILE_SITE_KEY',
+    'TURNSTILE_SITE_KEY',
+    'PUBLIC_TURNSTILE_SITE_KEY'
+]);
+
 function getFirstEnvValue(names = [], env = process.env) {
     for (const name of names) {
         const value = String(env?.[name] || '').trim();
@@ -148,6 +155,14 @@ function resolvePublicGoogleClientConfig(env = process.env, options = {}) {
     };
 }
 
+function resolvePublicTurnstileConfig(env = process.env) {
+    const siteKey = getFirstEnvValue(PUBLIC_TURNSTILE_SITE_KEY_ENV_NAMES, env);
+    return {
+        enabled: Boolean(siteKey),
+        siteKey: siteKey || ''
+    };
+}
+
 function resolvePublicSupabaseConfig(env = process.env, options = {}) {
     const google = resolvePublicGoogleClientConfig(env, options);
     return {
@@ -162,11 +177,13 @@ function resolvePublicSupabaseConfig(env = process.env, options = {}) {
 
 function buildSupabaseRuntimeScript(env = process.env, options = {}) {
     const config = resolvePublicSupabaseConfig(env, options);
+    const turnstile = resolvePublicTurnstileConfig(env);
     const serializedConfig = JSON.stringify(config);
     const serializedUrl = JSON.stringify(config.url);
     const serializedKey = JSON.stringify(config.publishableKey);
     const serializedSite = JSON.stringify(config.site || 'cn');
     const serializedGoogleAuth = JSON.stringify(config.auth?.google || null);
+    const serializedTurnstile = JSON.stringify(turnstile);
 
     return [
         '(function (global) {',
@@ -176,6 +193,7 @@ function buildSupabaseRuntimeScript(env = process.env, options = {}) {
         `  global.SUPABASE_KEY = ${serializedKey};`,
         `  global.__ZAOYOE_RUNTIME_SITE__ = ${serializedSite};`,
         `  global.__ZAOYOE_GOOGLE_AUTH_CONFIG__ = ${serializedGoogleAuth};`,
+        `  global.__ZAOYOE_TURNSTILE_CONFIG__ = ${serializedTurnstile};`,
         '}(typeof window !== "undefined" ? window : globalThis));'
     ].join('\n');
 }
@@ -186,6 +204,7 @@ module.exports = {
     PUBLIC_GOOGLE_CLIENT_ID_INTL_ENV_NAMES,
     PUBLIC_SUPABASE_KEY_ENV_NAMES,
     PUBLIC_SUPABASE_URL_ENV_NAMES,
+    PUBLIC_TURNSTILE_SITE_KEY_ENV_NAMES,
     buildSupabaseRuntimeScript,
     getFirstEnvValue,
     getSupabasePublishableKey,
@@ -193,5 +212,6 @@ module.exports = {
     hasSupabasePublicClientConfig,
     inferPublicRuntimeSite,
     resolvePublicGoogleClientConfig,
-    resolvePublicSupabaseConfig
+    resolvePublicSupabaseConfig,
+    resolvePublicTurnstileConfig
 };

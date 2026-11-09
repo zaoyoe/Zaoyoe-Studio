@@ -1,0 +1,101 @@
+[
+  {
+    "status": "fulfilled",
+    "value": {
+      "file": "services/kc-pay-gpt/mysql-store.js",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "file": "services/kc-pay-gpt/payment-retry.js",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "file": "services/kc-pay-gpt/stripe-protocol-payment.js",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "file": "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "file": "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "file": "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "file": "services/kc-pay-gpt/test/card-freeze.test.js",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "file": "services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "file": "tests/security-round5-kc-owner-locks.test.js",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "file": "tests/security-round6-kc-card-ownership.test.js",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "file": "tests/security-round7-kc-payment-hold.test.js",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  }
+]

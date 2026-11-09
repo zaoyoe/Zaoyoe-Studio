@@ -311,12 +311,15 @@ async function actionConfirm(db, { purchaseId, quotedAmountCny, adminId }) {
 
     let outcome;
     try {
+        const reqQty = Number.isSafeInteger(claimed?.quantity) && claimed.quantity > 0 ? claimed.quantity : 1;
         outcome = await adapter.createPurchase({
             requestId: claimed.requestId || before.original_request_id,
             goodsNo: claimed.goodsNo,
-            quantity: 1,
+            quantity: reqQty,
             variant: claimed.variant && typeof claimed.variant === 'object' ? claimed.variant : {},
-            maxCost: { currency: 'CNY', amount: claimed.costCeilingCny }
+            maxCost: { currency: 'CNY', amount: claimed.costCeilingCny },
+            prequotedPrice: quotedAmountCny,
+            parallelPreflight: true
         });
     } catch (error) {
         // The trade call itself failed without a definitive answer: the debit may
@@ -329,7 +332,7 @@ async function actionConfirm(db, { purchaseId, quotedAmountCny, adminId }) {
     if (outcome?.outcome === 'rejected') {
         const code = FAILURE_CODE.test(String(outcome.code || '')) ? String(outcome.code) : 'supplier_rejected';
         const recorded = await recordOutcome(db, { purchaseId, adminId, outcome: 'rejected', failureCode: code });
-        return { status: 'rejected', reason: code, recorded: recorded?.status || 'rejected' };
+        return { status: 'rejected', reason: code, message: outcome.reason || code, recorded: recorded?.status || 'rejected' };
     }
     if (outcome?.outcome === 'unknown') {
         const code = FAILURE_CODE.test(String(outcome.code || '')) ? String(outcome.code) : 'supplier_outcome_unknown';
@@ -476,3 +479,8 @@ module.exports = async function supplierManualPurchase(req, res, options = {}) {
         });
     }
 };
+
+module.exports.actionContext = actionContext;
+module.exports.actionQuote = actionQuote;
+module.exports.actionConfirm = actionConfirm;
+module.exports.actionFinalize = actionFinalize;

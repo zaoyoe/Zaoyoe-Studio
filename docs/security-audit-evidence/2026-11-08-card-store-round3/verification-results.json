@@ -1,0 +1,129 @@
+{
+  "recorded_at": "2026-11-08T19:52:32.441363+08:00",
+  "result_scope": "LOCAL_FOCUSED_TESTS_ONLY",
+  "record_source": "Previous execution context plus raw logs preserved and counter-checked in this continuation; tests not rerun for documentation-only edits.",
+  "runtime": {
+    "node": "v25.9.0",
+    "python": "3.13.7",
+    "vitest": "4.1.9"
+  },
+  "final_runs": [
+    {
+      "id": "native-final",
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "command": [
+        "node",
+        "--test",
+        "tests/security-round3-kc-activation-atomic.test.js",
+        "tests/security-round2-kc-activation.test.js"
+      ],
+      "launcher": "/tmp/security-test-isolation-20261108/run.py",
+      "raw": "raw/atomic-final.log",
+      "pass": 71,
+      "fail": 0,
+      "skip": 0,
+      "exit": 0
+    },
+    {
+      "id": "kc-target-fixture-corrected",
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt",
+      "command": [
+        "node",
+        "./node_modules/vitest/vitest.mjs",
+        "run",
+        "test/gpt-outsourcing-store.test.js",
+        "test/recharge-routing.test.js",
+        "test/gpt-outsourcing-recovery.test.js",
+        "test/task-safety.test.js",
+        "test/local-preview-recovery.test.js",
+        "--no-file-parallelism",
+        "--maxWorkers=1"
+      ],
+      "launcher": "/tmp/security-test-isolation-20261108/run.py",
+      "raw": "raw/kc-target-fixture-corrected.log",
+      "test_files": 5,
+      "pass": 161,
+      "fail": 0,
+      "exit": 0,
+      "per_file_pass": {
+        "gpt-outsourcing-store.test.js": 26,
+        "recharge-routing.test.js": 54,
+        "gpt-outsourcing-recovery.test.js": 6,
+        "task-safety.test.js": 56,
+        "local-preview-recovery.test.js": 19
+      }
+    }
+  ],
+  "focused_total": {
+    "pass": 232,
+    "fail": 0,
+    "meaning": "Sum of the two final focused runs; not the KC full suite or production verification."
+  },
+  "syntax": {
+    "raw": "raw/round3-syntax.json",
+    "pass": 6,
+    "fail": 0
+  },
+  "whitespace": {
+    "raw": "raw/round3-whitespace.json",
+    "result": "PASS",
+    "scope": "Added lines of this round delta only"
+  },
+  "patch_reverse_check": {
+    "command": [
+      "git",
+      "apply",
+      "--reverse",
+      "--check",
+      "-p1",
+      "/tmp/security-test-isolation-20261108/round3-delta.patch"
+    ],
+    "exit": 0,
+    "effect": "Read-only applicability check; patch was not applied."
+  },
+  "baseline_failure": {
+    "raw": "raw/atomic-baseline-reproduced.log",
+    "pass": 0,
+    "fail": 1,
+    "exit": 1,
+    "meaning": "Expected pre-change failure: consumed CDK remained after task INSERT failure.",
+    "source": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-atomic-hardening-20261108-fozv701z/services/kc-pay-gpt/mysql-store.js",
+    "source_kind": "pre-edit dirty file backup, not pristine Git main",
+    "original_full_command_retained": false,
+    "replay_recipe": "See README.md; do not present reconstructed recipe as an original command log."
+  },
+  "historical_runs_preserved": [
+    {
+      "raw": "raw/atomic-baseline.log",
+      "meaning": "Earlier fixture SQL-pattern failure; NOT valid vulnerability reproduction evidence."
+    },
+    {
+      "raw": "raw/atomic-first.log",
+      "pass": 67,
+      "meaning": "Earlier focused pass, superseded by expanded 71-test final run."
+    },
+    {
+      "raw": "raw/kc-target-first.log",
+      "pass": 142,
+      "meaning": "Earlier narrower target run; not added to final total."
+    },
+    {
+      "raw": "raw/kc-target-final.log",
+      "pass": 155,
+      "fail": 5,
+      "meaning": "Uncorrected WebSocket token fixture failures; preserved."
+    }
+  ],
+  "previous_round_full_suite": {
+    "report": "docs/security-card-store-hardening-round2-2026-11-08.md",
+    "test_files": 71,
+    "tests": 1693,
+    "pass": 1620,
+    "fail": 72,
+    "skip": 1,
+    "exit": 1,
+    "this_round_status": "NOT RERUN; original failures are not erased or converted to PASS."
+  },
+  "database_application": "NO MIGRATION / SQL NOT RUN",
+  "production": "NOT RUN"
+}

@@ -18,7 +18,7 @@ function harness({ envelope = null, newOwner = false, cardOwner = 'gptapi_job-1'
     const state = {
         task: { id: 10, job_key: 'job-1', cdk_code: 'CDK-1', execution_mode: 'third_party_api', status: 'running',
             progress: 20, payment_state: 'not_started', recovery_required: 0, gpt_api_raw: envelope ? JSON.stringify(envelope) : null },
-        cdk: { cdk_code: 'CDK-1', used_at: '2026-10-01T00:00:00Z' },
+        cdk: { cdk_code: 'CDK-1', used_at: '2026-10-01T00:00:00Z', is_active: 1 },
         card: { id: 7, card_number: '4242424242424242', card_expiry: '12/30', card_cvc: '123',
             card_holder: 'Test', usage_count: 0, daily_usage_count: dailyCount,
             daily_usage_reset_at: new Date().toISOString(), in_use: envelope?.attempt?.cardAssetId ? 1 : 0, locked_by: cardOwner },

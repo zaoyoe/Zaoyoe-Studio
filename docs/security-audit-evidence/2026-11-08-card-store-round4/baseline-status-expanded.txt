@@ -1,0 +1,463 @@
+ M .env.local.example
+ M admin-config.js
+ M admin-sidebar.css
+ M admin-studio.css
+ M admin-studio.html
+ M admin-studio.js
+ M announcement-loader.js
+ M api/_lib/admin-studio-access.mjs
+ M api/_lib/admin.js
+ M api/_lib/guest-shop/promo.js
+ M api/_lib/payments/guest-shop-adapter.js
+ M api/_lib/payments/nowpayments-webhook.js
+ M api/_lib/payments/provider-adapters.js
+ M api/_lib/payments/zpay-webhook.js
+ M api/_lib/public-runtime-config.js
+ M api/_lib/request-security.js
+ M api/_lib/shop-cdk-secrets.js
+ M api/_lib/vercel-build.js
+ M api/admin.js
+ M api/public.js
+ M api/shop/purchase.js
+ M api/support.js
+ M avatar-fix.css
+ M css/admin-studio-page.css
+ M css/ai-image-workbench.css
+ M css/auth-sheet.css
+ M css/chat-widget.css
+ M css/framer_home.css
+ M css/framer_home_critical.css
+ M css/guest-orders.css
+ M css/homepage-overlays.css
+ M css/index-page.css
+ M css/privacy-page.css
+ M css/profile-modal.css
+ M css/shop-list-layout.css
+ M css/shop-page.css
+ M css/verify-page.css
+ M css/wallet.css
+ M guest-orders.html
+ M guestbook.html
+ M guestbook.js
+ M index.html
+ M index_old.html
+ M inject-auth.js
+ M js/admin-access.js
+ M js/admin-scrollbar-auto-hide-helper.js
+ M js/admin-shop.js
+ M js/admin-tickets.js
+ M js/ai-image-workbench.js
+ M js/chat-widget-loader.js
+ M js/components/ChatWidget.js
+ M js/components/WalletModal.js
+ M js/framer-nav-runtime.js
+ M js/framer_home.js
+ M js/guest-orders-client.js
+ M js/guest-shop-client.js
+ M js/home-hero-liquid-bootstrap.js
+ M js/i18n.js
+ M js/ios-scroll-lock.js
+ M js/profile-modal-loader.js
+ M js/profile-modal-template.js
+ M js/public-scrollbar-auto-hide.js
+ M js/shop-client.js
+ M js/shop-image-variants.js
+ M js/shop-list-layout.js
+ M js/site-layout-runtime.js
+ M js/verify-page.js
+ M js/wallet-modal-loader.js
+ M lang/en.json
+ M lang/zh.json
+ M privacy.html
+ M prompts-poetry.css
+ M prompts-poetry.js
+ M prompts.html
+ M refund-policy.html
+ M reset-password.html
+ M script.js
+ M scripts/generate-responsive-image-variants.js
+ M scripts/local-preview-server.js
+ M security-cards.js
+ M server/api-handlers/_ai-image-models.js
+ M server/api-handlers/_ai-image-runtime.js
+ M server/api-handlers/_verify-job-runtime.js
+ M server/api-handlers/_verify-provider-runtime.js
+ M server/api-handlers/admin/access/session.js
+ M server/api-handlers/admin/ai-image/config.js
+ M server/api-handlers/admin/ai-image/model-config.js
+ M server/api-handlers/admin/settings/verify-monitor-quota.js
+ M server/api-handlers/admin/shop/categories.js
+ M server/api-handlers/admin/shop/mutate.js
+ M server/api-handlers/admin/shop/products.js
+ M server/api-handlers/admin/shop/supplier-catalog.js
+ M server/api-handlers/admin/shop/supplier-manual-purchase.js
+ M server/api-handlers/admin/tickets/list.js
+ M server/api-handlers/admin/tickets/process.js
+ M server/api-handlers/public/ai-image.js
+ M server/api-handlers/public/config.js
+ M server/api-handlers/public/guest-shop.js
+ M server/api-handlers/public/shop.js
+ M server/api-handlers/public/tg-purchase.js
+ M server/api-handlers/public/verify.js
+ M server/index.js
+ M server/integrations/suppliers/registry.js
+ M server/integrations/suppliers/xiareng/client.js
+ M server/tg/gramix-client.js
+ M server/tg/nowpayments-gateway.js
+ M server/tg/payment-gateway.js
+ M services/kc-pay-gpt/.env.example
+ M services/kc-pay-gpt/admin-auth.js
+ M services/kc-pay-gpt/human-verification.js
+ M services/kc-pay-gpt/mysql-store.js
+ M services/kc-pay-gpt/public/admin-login.html
+ M services/kc-pay-gpt/public/admin.html
+ M services/kc-pay-gpt/public/index.html
+ M services/kc-pay-gpt/public/task-messages.js
+ M services/kc-pay-gpt/server.js
+ M services/kc-pay-gpt/session-security.js
+ M services/kc-pay-gpt/test/captcha-content.test.js
+ M services/kc-pay-gpt/test/captcha-interaction.test.js
+ M services/kc-pay-gpt/test/local-preview-recovery.test.js
+ M services/kc-pay-gpt/test/public-task-messages.test.js
+ M services/kc-pay-gpt/test/recharge-captcha-bridge.test.js
+ M services/kc-pay-gpt/test/recharge-routing.test.js
+ M shop.html
+ M style.css
+ M supabase-auth-functions.js
+ M supabase-guestbook-functions.js
+ M supabase/functions/upload-avatar/index.ts
+ M terms.html
+ M tests/admin-access-session.test.js
+ M tests/admin-ai-image-config-handler.test.js
+ M tests/admin-ai-image-model-config-handler.test.js
+ M tests/admin-ai-image-settings-ui-contract.test.js
+ M tests/admin-entry-navigation.test.js
+ M tests/admin-runtime-auth.test.js
+ M tests/admin-shop-categories-handler.test.js
+ M tests/admin-shop-products-handler.test.js
+ M tests/admin-shop-supplier-catalog-handler.test.js
+ M tests/admin-shop-supplier-catalog-ui.test.js
+ M tests/admin-shop-supplier-workspace.test.js
+ M tests/admin-studio-access.test.js
+ M tests/admin-tickets-process.test.js
+ M tests/ai-image-runtime.test.js
+ M tests/ai-image-workbench-api-contract.test.js
+ M tests/ai-image-workbench-standalone-window.test.js
+ M tests/engagement-robot-contract.test.js
+ M tests/frontend-supabase-runtime-config.test.js
+ M tests/gramix-client.test.js
+ M tests/guest-orders-detail-breakdown.test.js
+ M tests/guest-shop-checkout-batch-status.test.js
+ M tests/guest-shop-payment-adapter.test.js
+ M tests/guest-shop-webhook.test.js
+ M tests/homepage-first-paint-performance.test.js
+ M tests/image-delivery-audit-contract.test.js
+ M tests/nowpayments-webhook-handler.test.js
+ M tests/payment-zpay-webhook-handler.test.js
+ M tests/profile-modal-shop-light-theme.test.js
+ M tests/provider-adapters-zpay-refund.test.js
+ M tests/public-ai-image-handler.test.js
+ M tests/public-page-first-paint-defer-contract.test.js
+ M tests/request-security.test.js
+ M tests/shop-image-optimization-contract.test.js
+ M tests/shop-list-layout-contract.test.js
+ M tests/shop-purchase-endpoint.test.js
+ M tests/shop-purchase-guidance-regression.test.js
+ M tests/shop-purchase-modal-keyboard-scroll.test.js
+ M tests/shop-security-hardening.test.js
+ M tests/shop-storefront-mobile-polish-regression.test.js
+ M tests/shop-supplier-xiareng-client.test.js
+ M tests/support-endpoint.test.js
+ M tests/tg-payment-callback-preview.test.js
+ M tests/tg-payment-gateway.test.js
+ M tests/tg-purchase.test.js
+ M tests/tg-usdt-payment.test.js
+ M tests/vercel-build-output.test.js
+ M vercel.json
+ M verify-widget.css
+ M verify-widget.js
+ M verify.html
+ M workbench.html
+?? api/_lib/admin-session-store.js
+?? api/_lib/glass-image-sample.js
+?? api/_lib/input-sanitizer.js
+?? api/_lib/payments/zpay-amount.js
+?? api/_lib/purchase-step-up.js
+?? api/_lib/session-security.js
+?? api/_lib/support-ticket-access.js
+?? api/_lib/turnstile.js
+?? assets/guide/2fa/step-1.png
+?? assets/guide/2fa/step-10.png
+?? assets/guide/2fa/step-2.png
+?? assets/guide/2fa/step-3.png
+?? assets/guide/2fa/step-4.png
+?? assets/guide/2fa/step-5.png
+?? assets/guide/2fa/step-6.png
+?? assets/guide/2fa/step-7.png
+?? assets/guide/2fa/step-8.png
+?? assets/guide/2fa/step-9.png
+?? assets/products-card/0cd096f9a1129548b3c0.webp
+?? assets/products-card/0f83137ab096dbc4f653.webp
+?? assets/products-card/2cd4b46dad8726040bf7.webp
+?? assets/products-card/4cfdeef0396b015a6b59.webp
+?? assets/products-card/58b6792214eed3ca6461.webp
+?? assets/products-card/5e171d67258a364e41e6.webp
+?? assets/products-card/799be6fed56041df903c.webp
+?? assets/products-card/7aed65d2587df8910d6e.webp
+?? assets/products-card/802f6fff1e01d262a452.webp
+?? assets/products-card/84a487ee8f2ab12c926e.webp
+?? assets/products-card/8de0bbbd8328b630b67c.webp
+?? assets/products-card/98c09405b793a973d7ff.webp
+?? assets/products-card/9b22f5163825c2cb1671.webp
+?? assets/products-card/c0795c4af8819c494f0b.webp
+?? assets/products-card/d82ffff5962a53ba8352.webp
+?? assets/products-card/edbcc7db15b3c76b98f7.webp
+?? assets/products-card/efa5409859ec193439ce.webp
+?? assets/products-card/f407c28008cd530c7c5b.webp
+?? assets/products-card/f5ae1e086805dbeff67c.webp
+?? assets/products-card/f74754392025b7c3ece1.webp
+?? assets/products-card/f757f0858de59d8479bb.webp
+?? assets/products-card/f925f1bbdc15b0103683.webp
+?? assets/products-card/fc963a711a743d9938d0.webp
+?? assets/products-thumb/0d6ffe330a3ead39dc5a.webp
+?? assets/products-thumb/190d7923816f7074b03b.webp
+?? assets/products-thumb/272410b83decb0f93f9a.webp
+?? assets/products-thumb/2f371b833f90ff7c786e.webp
+?? assets/products-thumb/3246b7b9bc21f8e295e0.webp
+?? assets/products-thumb/34c2a74f4e769ed17160.webp
+?? assets/products-thumb/3ca54d0a71542ffb5109.webp
+?? assets/products-thumb/4284063fc2551f4d0a78.webp
+?? assets/products-thumb/43b9ffd3d2b8e5250078.webp
+?? assets/products-thumb/4a7d7c607bbc0c130fd1.webp
+?? assets/products-thumb/501d6a6556f2ede2153d.webp
+?? assets/products-thumb/50b07cce7fcb7ed61986.webp
+?? assets/products-thumb/6960ca1417fb7124c04e.webp
+?? assets/products-thumb/6a3a0aa34a333419092f.webp
+?? assets/products-thumb/6d1ce720a821a8500929.webp
+?? assets/products-thumb/713390378e1e86cb3b28.webp
+?? assets/products-thumb/79aaa5d6eaf0bbfb8f5f.webp
+?? assets/products-thumb/9e9387696c410c7ca209.webp
+?? assets/products-thumb/adf5a6085b6195edb6a4.webp
+?? assets/products-thumb/c5d044aad85140a575d2.webp
+?? assets/products-thumb/d52a9a76bc6cbc240ea3.webp
+?? assets/products-thumb/e438edda0f49fd70b240.webp
+?? assets/products-thumb/fb307b27c7259313b4fb.webp
+?? css/desktop-nav-glass.css
+?? css/home-hero-text-nojs.css
+?? css/label-input.css
+?? css/magnifying-dock.css
+?? css/modal-glass.css
+?? css/tutorial-page.css
+?? deploy/kvm4/security-maintenance/zaoyoe-cdk-shredder
+?? deploy/kvm4/security-maintenance/zaoyoe-cdk-shredder.service
+?? deploy/kvm4/security-maintenance/zaoyoe-cdk-shredder.timer
+?? deploy/kvm4/security-maintenance/zaoyoe-db-security-audit
+?? deploy/kvm4/security-maintenance/zaoyoe-db-security-audit.service
+?? deploy/kvm4/security-maintenance/zaoyoe-db-security-audit.timer
+?? docs/bblabu-media-adaptation-2026-11-08.md
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/README.md
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/archive-integrity.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-amount-final-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-continuation.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-dispatch-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-finalization-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-media-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-routing-fixture-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-sanitizer-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/baseline-and-boundaries.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/evidence-copy-index.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/final-commands.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/packaging-static-review.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/blocked-reads.jsonl
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/preload.cjs
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-payment-tg-guest-verified.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-amount-after.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-amount-before.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-backup-verification-final.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-final-verification-commands.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-final-verification-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-final-verification-runner-correction.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-final-verification.cjs
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-final-verified.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-activation-final.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-affected-final-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-full-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-prechange-command.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-prechange-exit.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-prechange-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-media-supplier-rerun.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-media-supplier.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-regression-commands.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-regression-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-static-checks-final.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-static-checks.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/source-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/test-results-summary.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/README.md
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/backup-manifests/additional-backup-local-preview-recovery.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/backup-manifests/manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/backup-verification.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/baseline-and-boundaries.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/delta/round3-delta.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/evidence-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/packaging-boundary.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/raw-provenance.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/raw/blocked-reads.jsonl
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/raw/preload.cjs
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/raw/round3-syntax.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/raw/round3-whitespace.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/raw/run.py
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/source-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/verification-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store/evidence-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store/guest-media-focused-tests-result.json
+?? docs/security-audit-evidence/2026-11-08-card-store/guest-media-focused-tests.tap
+?? docs/security-audit-evidence/2026-11-08-card-store/isolated-probes-result.json
+?? docs/security-audit-evidence/2026-11-08-card-store/media-import-isolated-probe-result.json
+?? docs/security-audit-evidence/2026-11-08-card-store/public-page-headers.json
+?? docs/security-audit-evidence/2026-11-08-card-store/source-manifest.json
+?? docs/security-card-store-attack-audit-2026-11-08.md
+?? docs/security-card-store-hardening-round2-2026-11-08.md
+?? docs/security-card-store-hardening-round3-2026-11-08.md
+?? docs/security-hardening-2026-11-07-kc-tg-local-review.md
+?? docs/security-hardening-2026-11-07-local-review.md
+?? docs/security-hardening-2026-11-08-admin-session-step-up-local-review.md
+?? docs/security-hardening-2026-11-08-local-acceptance-supplement.md
+?? docs/security-hardening-2026-11-08-local-review.md
+?? google-2fa-tutorial.html
+?? js/ai-media-model-capabilities.js
+?? js/desktop-nav-glass.mjs
+?? js/glass-foreground.mjs
+?? js/glass-mutations.mjs
+?? js/guestbook-rendering.js
+?? js/home-hero-text-preload.js
+?? js/i18n-preload.js
+?? js/label-input.js
+?? js/lens.js
+?? js/magnifying-dock.js
+?? js/member-orders-bridge.js
+?? js/mobile-glass-lens.mjs
+?? js/mobile-glass-refraction.mjs
+?? js/mobile-glass-scene.mjs
+?? js/mobile-glass.mjs
+?? js/model-standards-media.js
+?? js/prompt-spotlight.js
+?? js/turnstile-client.js
+?? label-input-preview.html
+?? magnifying-dock-preview.html
+?? model-standards.html
+?? rolling-counter-preview.html
+?? scripts/audit-db-security.js
+?? scripts/install-kvm4-security-maintenance.sh
+?? scripts/shred-expired-cdks.js
+?? scripts/sync-i18n-preload.js
+?? scripts/verify-security-local-browser.mjs
+?? server/api-handlers/_bblabu-media.js
+?? server/api-handlers/_google-one-activation-runtime.js
+?? server/api-handlers/admin/settings/verify-activation-jobs.js
+?? server/api-handlers/admin/shop/_product-image-assets.js
+?? server/api-handlers/admin/shop/_r2-media.js
+?? server/api-handlers/admin/shop/_remote-media-security.js
+?? server/integrations/suppliers/auto-dispatch.js
+?? server/integrations/suppliers/stock-sync.js
+?? server/integrations/suppliers/xiareng/category-groups.js
+?? server/tg/bounded-response.js
+?? services/kc-pay-gpt/admin-security.js
+?? services/kc-pay-gpt/credential-security.js
+?? services/kc-pay-gpt/internal-captcha-security.js
+?? services/kc-pay-gpt/lib/qrcode-generator.LICENSE
+?? services/kc-pay-gpt/lib/qrcode-generator.PROVENANCE.json
+?? services/kc-pay-gpt/lib/qrcode-generator.js
+?? services/kc-pay-gpt/public-request-security.js
+?? services/kc-pay-gpt/public/admin-security.js
+?? services/kc-pay-gpt/public/vendor/lucide/LICENSE
+?? services/kc-pay-gpt/public/vendor/lucide/PROVENANCE.json
+?? services/kc-pay-gpt/public/vendor/lucide/lucide-0.468.0.min.js
+?? services/kc-pay-gpt/task-access.js
+?? services/kc-pay-gpt/test/admin-auth-security.test.js
+?? services/kc-pay-gpt/test/admin-sensitive-ui-security.test.js
+?? services/kc-pay-gpt/test/admin-step-up-security.test.js
+?? services/kc-pay-gpt/test/internal-captcha-security.test.js
+?? services/kc-pay-gpt/test/task-access-security.test.js
+?? supabase/acceptance/20261108_admin_studio_sessions_README.md
+?? supabase/acceptance/20261108_admin_studio_sessions_readonly.sql
+?? supabase/migrations/20261102165955_google_one_86ai_activation.sql
+?? supabase/migrations/20261103_shop_supplier_custom_cost_ceiling.sql
+?? supabase/migrations/20261103_shop_supplier_multi_variant_draft_v3.sql
+?? supabase/migrations/20261105_add_shop_category_icon_url.sql
+?? supabase/migrations/20261106_shop_product_min_purchase_quantity.sql
+?? supabase/migrations/20261107114915_purchase_security_boundary.sql
+?? supabase/migrations/20261107_core_security_hardening.sql
+?? supabase/migrations/20261107_security_rls_audit_and_hardening.sql
+?? supabase/migrations/20261108013826_tg_authenticated_payment_query.sql
+?? supabase/migrations/20261108041927_admin_studio_revocable_sessions.sql
+?? supabase/migrations/20261108_ai_media_bblabu_constraints.sql
+?? supabase/migrations/20261108_shop_product_sales_config.sql
+?? tests/admin-shop-category-batch-actions.test.js
+?? tests/admin-sidebar-scrollbar-auto-hide.test.js
+?? tests/admin-studio-session-migration-contract.test.js
+?? tests/admin-tickets-guest-order-workflow.test.js
+?? tests/bblabu-media.test.js
+?? tests/core-security-hardening.test.js
+?? tests/desktop-nav-glass-readiness.test.js
+?? tests/dock-and-capsule-nav-modal-hide.test.js
+?? tests/dock-guest-orders-buttons.test.js
+?? tests/dock-touch-interaction.test.js
+?? tests/first-paint-runtime.test.js
+?? tests/glass-foreground.test.js
+?? tests/glass-image-sample.test.js
+?? tests/glass-lens-tiles.test.js
+?? tests/glass-scroll-mutations.test.js
+?? tests/glass-sitewide-entry-contract.test.js
+?? tests/google-one-86ai-channel3.test.js
+?? tests/guest-orders-skeleton.test.js
+?? tests/guestbook-glass-theme.test.js
+?? tests/guestbook-rendering.test.js
+?? tests/home-hero-desktop-cleanup.test.js
+?? tests/homepage-hero-text-first-paint.test.js
+?? tests/label-input-sitewide-parity.test.js
+?? tests/mobile-glass.test.js
+?? tests/nav-modal-scroll-stability.test.js
+?? tests/nav-modal-visibility.test.js
+?? tests/orders-filter-and-member-query.test.js
+?? tests/profile-modal-lbi-input-contract.test.js
+?? tests/profile-modal-loader-lbi-shared.test.js
+?? tests/prompt-copy-security-and-watermark.test.js
+?? tests/prompts-spotlight-dock-search.test.js
+?? tests/security-boundary-regressions.test.js
+?? tests/security-maintenance-installer.test.js
+?? tests/security-round2-kc-activation.test.js
+?? tests/security-round2-kc-credentials.test.js
+?? tests/security-round2-kc-public-guard.test.js
+?? tests/security-round2-media-download.test.js
+?? tests/security-round2-supplier-rich-text.test.js
+?? tests/security-round2-zpay-amount.test.js
+?? tests/security-round3-kc-activation-atomic.test.js
+?? tests/session-security-boundaries.test.js
+?? tests/shop-accurate-stock-and-supplier-sync.test.js
+?? tests/shop-min-purchase-quantity.test.js
+?? tests/shop-product-image-assets.test.js
+?? tests/shop-product-image-upload.test.js
+?? tests/shop-purchase-guidance-fullscreen.test.js
+?? tests/shop-sales-config-modes.test.js
+?? tests/shop-step-up-client.test.js
+?? tests/shop-success-modal-opaque-contract.test.js
+?? tests/shop-supplier-dispatch-config.test.js
+?? tests/shop-supplier-media-r2-and-markup.test.js
+?? tests/shop-title-and-spec-clamp.test.js
+?? tests/support-ticket-access.test.js
+?? tests/tg-authenticated-payment-query-contract.test.js
+?? tests/tg-upstream-response-security.test.js
+?? tests/turnstile-and-honeypot-security.test.js
+?? tests/verify-page-scroll-motion.test.js
+?? tests/wallet-modal-glass-ring-contract.test.js
+?? vendor/glasswork/LICENSE
+?? vendor/glasswork/NOTICE.md
+?? vendor/glasswork/adapt.js
+?? vendor/glasswork/glass.css
+?? vendor/glasswork/lens-map.mjs
+?? vendor/glasswork/lens-tiles.mjs
+?? vendor/glasswork/lens-worker.mjs
+?? vendor/glasswork/lens.js
+?? vendor/glasswork/refract.js

@@ -126,8 +126,8 @@ test('ai image workbench sidebar rail features top toggle button, compose icon, 
     assert.match(js, /ai-image-rail-compose-icon/);
     assert.match(js, /data-rail-tooltip="新建对话"/);
 
-    // 3. Mode switcher shifted up right below History
-    assert.match(css, /\.ai-image-history-rail \.ai-image-rail-mode-switcher\s*\{[\s\S]*margin:\s*8px 0 auto 0;/);
+    // 3. Mode switcher vertically centered on desktop
+    assert.match(css, /\.ai-image-history-rail \.ai-image-rail-mode-switcher\s*\{[\s\S]*margin:\s*auto 0;/);
 
     // 4. Hover no longer expands collapsed sidebar width (stays 58px)
     assert.match(css, /\.ai-image-history-sidebar\.is-collapsed:hover\s*\{[\s\S]*grid-template-columns:\s*58px 0;[\s\S]*flex-basis:\s*58px;[\s\S]*width:\s*58px;/);

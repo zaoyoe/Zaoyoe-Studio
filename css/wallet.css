@@ -1,3 +1,6 @@
+@layer glass-foreground;
+@import url("./modal-glass.css?v=20261108_RIM_3") layer(glass-foreground.modal-rim);
+
 /**
  * 💳 Wallet Modal Styles
  * Simple, clean styling for the wallet modal
@@ -67,6 +70,7 @@ body.wallet-modal-lock {
 }
 
 .wallet-overlay.wallet-modal-force-hidden .wallet-modal,
+.wallet-overlay.wallet-modal-force-hidden .wallet-modal__surface,
 .wallet-overlay.wallet-modal-force-hidden .wallet-backdrop,
 .wallet-overlay.wallet-modal-force-hidden .wallet-viewport {
     opacity: 0 !important;
@@ -97,10 +101,6 @@ body.wallet-modal-lock {
 
 .wallet-overlay.loading .wallet-modal {
     pointer-events: none;
-    box-shadow:
-        0 26px 70px rgba(0, 0, 0, 0.32),
-        0 0 0 1px rgba(251, 191, 36, 0.12),
-        inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .wallet-backdrop {
@@ -189,28 +189,109 @@ body.wallet-modal-lock {
     touch-action: auto;
 }
 
-.wallet-modal {
-    background: var(--wallet-sheet-panel);
-    border-radius: 26px;
+/* 可复用的液态玻璃外圈（复用 Dock 栏 Glasswork / mobile-glass 液态玻璃材质与折射透镜） */
+.glass-ring,
+.glass-ring * {
     box-sizing: border-box;
-    max-width: 700px;
-    width: 100%;
-    height: 500px;
-    overflow: hidden;
+}
+
+/* 共享尺寸和边框仅作兜底，钱包懒加载不能覆盖其它弹窗自己的布局。 */
+:where(.glass-ring) {
+    width: min(100%, 36rem);
+    padding: var(--glass-ring-width);
+    border: 0;
+}
+
+.glass-ring {
+    /* 外圈几何与不透明内板参数 */
+    --glass-ring-width: 8px;              /* 外圈厚度：建议 6–8px */
+    --glass-radius: 28px;                 /* 外框圆角 */
+    --glass-panel: #fffefd;               /* 不透明主体 */
+    --glass-surface-ink: #1f2937;
+    --glass-surface-border: rgba(255, 255, 255, 0.72);
+    --glass-surface-shadow:
+        0 0 0 0.5px rgba(15, 23, 42, 0.08),
+        0 2px 10px rgba(15, 23, 42, 0.06);
     position: relative;
     isolation: isolate;
-    box-shadow:
-        0 26px 70px rgba(0, 0, 0, 0.28),
-        inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    border: 1px solid var(--wallet-sheet-border);
+    min-width: 0;
+    border-radius: var(--glass-radius);
+    corner-shape: superellipse(1.2);
+
+}
+
+/* 外圈材质与折射由 modal-glass.css 统一维护，避免懒加载改变其他弹窗。 */
+
+/* 组件自己的内容内边距和面板样式优先，兼容任意 CSS 加载顺序。 */
+:where(.glass-ring__surface) {
+    padding: clamp(20px, 4vw, 32px);
+    border: 1px solid var(--glass-surface-border);
+    background: var(--glass-panel);
+    color: var(--glass-surface-ink);
+    box-shadow: var(--glass-surface-shadow);
+}
+
+/* 弹窗内容层保持不透明，并隔离外圈玻璃层的自适应字色 */
+.glass-ring__surface {
+    position: relative;
+    z-index: 2;
+    min-width: 0;
+    border-radius:
+        max(0px, calc(var(--glass-radius) - var(--glass-ring-width)));
+    corner-shape: inherit;
+}
+
+/* 小屏上再收窄一点 */
+@media (max-width: 520px) {
+    .glass-ring {
+        --glass-ring-width: 7px;
+    }
+}
+
+/* 使用方可按需切换深色主体 */
+[data-theme="dark"] .glass-ring {
+    --glass-panel: #202124;
+    --glass-surface-ink: #f2f5f8;
+    --glass-surface-border: rgba(255, 255, 255, 0.10);
+    --glass-surface-shadow:
+        0 0 0 0.5px rgba(0, 0, 0, 0.36),
+        0 2px 10px rgba(0, 0, 0, 0.28);
+    --glass-ring-fallback-bg: rgba(34, 37, 44, 0.94);
+}
+
+.wallet-modal {
+    box-sizing: border-box;
+    max-width: calc(700px + (var(--glass-ring-width, 8px) * 2));
+    width: 100%;
+    height: calc(500px + (var(--glass-ring-width, 8px) * 2));
+    position: relative;
+    isolation: isolate;
     display: flex;
     flex-direction: column;
     color: var(--wallet-sheet-text);
     max-height: calc(var(--wallet-modal-overlay-height, 100dvh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 40px);
     transform: translate3d(0, calc(var(--wallet-modal-translate-y, 0px) + 24px), 0) scale(0.988);
     opacity: 0;
-    transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease;
+    transition: transform 0.34s ease-out, opacity 0.24s ease;
     will-change: transform;
+}
+
+[data-theme="dark"] .wallet-modal.glass-ring {
+    --glass-panel: #0f1217;
+}
+
+.wallet-modal__surface {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+    position: relative;
+    z-index: 2;
+    color: var(--wallet-sheet-text);
 }
 
 .wallet-overlay.active .wallet-modal {
@@ -312,7 +393,7 @@ body.wallet-modal-lock {
 
 .wallet-modal > * {
     position: relative;
-    z-index: 1;
+    z-index: 2;
 }
 
 .affiliate-reward-guide {
@@ -1251,7 +1332,7 @@ body.wallet-modal-lock {
     content: '';
     position: absolute;
     inset: 0 12px 0 12px;
-    border-radius: 0 0 24px 24px;
+    border-radius: 0 0 max(0px, calc(var(--glass-radius, 24px) - var(--glass-ring-width, 7px))) max(0px, calc(var(--glass-radius, 24px) - var(--glass-ring-width, 7px)));
     background: linear-gradient(180deg,
             rgba(11, 14, 18, 0) 0%,
             rgba(11, 14, 18, 0.78) 48%,
@@ -1265,7 +1346,7 @@ body.wallet-modal-lock {
 
     .wallet-recharge-scroll-cue::before {
         inset: 0 0 0 0;
-        border-radius: 0 0 26px 0;
+        border-radius: 0 0 max(0px, calc(var(--glass-radius, 28px) - var(--glass-ring-width, 8px))) 0;
     }
 }
 
@@ -1396,10 +1477,10 @@ body.wallet-modal-lock {
     pointer-events: none;
     /* Let clicks pass through */
     transition:
-        left 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-        top 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-        width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-        height 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        left 0.28s ease-out,
+        top 0.28s ease-out,
+        width 0.28s ease-out,
+        height 0.28s ease-out,
         opacity 0.18s ease,
         border-color 0.18s ease,
         box-shadow 0.18s ease,
@@ -4236,11 +4317,12 @@ body.wallet-modal-lock {
     }
 
     .wallet-modal {
-        width: min(calc(100vw - 24px), 700px);
-        height: min(500px, calc(var(--wallet-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
+        --glass-radius: 24px;
+        width: min(calc(100vw - 24px), calc(700px + (var(--glass-ring-width, 8px) * 2)));
+        height: min(calc(500px + (var(--glass-ring-width, 8px) * 2)), calc(var(--wallet-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
         min-height: min(400px, calc(var(--wallet-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
         max-height: calc(var(--wallet-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
-        border-radius: 20px;
+        border-radius: var(--glass-radius);
     }
 
     .wallet-header {
@@ -4282,7 +4364,7 @@ body.wallet-modal-lock {
         position: sticky;
         top: 0;
         z-index: 2;
-        background: var(--wallet-sheet-panel);
+        background: var(--glass-panel, var(--wallet-sheet-panel));
     }
 
     .sidebar-indicator {
@@ -4881,7 +4963,8 @@ body.wallet-modal-lock {
     }
 
     .wallet-modal {
-        border-radius: 16px;
+        --glass-radius: 22px;
+        border-radius: var(--glass-radius);
     }
 
     .wallet-menu-item {
@@ -5264,6 +5347,36 @@ body.wallet-modal-lock {
     z-index: 10002;
     /* Above wallet modal */
     animation: fadeIn 0.2s ease-out;
+}
+
+.wallet-order-modal-ring,
+.wallet-date-picker-ring {
+    --glass-ring-width: 8px;
+    --glass-radius: 28px;
+    --glass-panel: #0f1217;
+    display: flex;
+    flex-direction: column;
+    width: auto;
+    max-width: calc(100vw - 16px);
+    min-height: 0;
+}
+
+.wallet-order-modal-ring {
+    animation: walletOrderModalIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.wallet-order-modal-ring > .wallet-order-modal {
+    animation: none;
+    padding: 0;
+    background: var(--glass-panel);
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+.wallet-date-picker-ring > .date-picker-content {
+    background: var(--glass-panel);
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 .wallet-order-modal {
@@ -6937,7 +7050,7 @@ body.wallet-modal-lock {
     z-index: 300000;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     opacity: 0;
-    animation: toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: toastSlideIn 0.35s ease-out forwards;
     white-space: nowrap;
     display: flex;
     align-items: center;
@@ -6973,7 +7086,7 @@ body.wallet-modal-lock {
 }
 
 .wallet-toast--leaving {
-    animation: toastSlideOut 0.3s ease forwards;
+    animation: toastSlideOut 0.3s ease-out forwards;
 }
 
 @media (max-width: 640px) {
@@ -7056,6 +7169,15 @@ html:not([data-theme="dark"]) .date-picker-modal {
 }
 
 html[data-theme="light"] .wallet-modal,
+html:not([data-theme="dark"]) .wallet-modal,
+html[data-theme="light"] .wallet-order-modal-ring,
+html:not([data-theme="dark"]) .wallet-order-modal-ring,
+html[data-theme="light"] .wallet-date-picker-ring,
+html:not([data-theme="dark"]) .wallet-date-picker-ring {
+    --glass-panel: #fffefd;
+    --glass-surface-ink: #1f2937;
+}
+
 [data-theme="light"] .wallet-order-modal,
 [data-theme="light"] .order-detail-modal,
 [data-theme="light"] .date-picker-content {
@@ -7072,6 +7194,10 @@ html[data-theme="light"] .wallet-modal,
 [data-theme="light"] .order-detail-header {
     background: #ffffff;
     border-color: var(--wallet-sheet-border);
+}
+
+[data-theme="light"] .wallet-modal__surface .wallet-header {
+    background: transparent;
 }
 
 [data-theme="light"] .wallet-header h2,
@@ -7114,6 +7240,16 @@ html:not([data-theme="dark"]) .custom-recharge-section.is-package-mode .custom-r
 [data-theme="light"] .wallet-sidebar {
     background: #ffffff;
     border-color: var(--wallet-sheet-border);
+}
+
+[data-theme="light"] .wallet-modal__surface .wallet-sidebar {
+    background: var(--glass-panel, #fffefd);
+}
+
+@media (min-width: 601px) {
+    [data-theme="light"] .wallet-modal__surface .wallet-sidebar {
+        background: transparent;
+    }
 }
 
 [data-theme="light"] .sidebar-indicator {
@@ -8528,6 +8664,7 @@ html:not([data-theme="dark"]) .wallet-crypto-warning {
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .wallet-order-modal-ring,
     .wallet-order-modal,
     .wallet-order-modal--content-swapping > *,
     .wallet-order-modal-body--fade,

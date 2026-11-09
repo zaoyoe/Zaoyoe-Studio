@@ -1,0 +1,86 @@
+{
+  "mode": "EXECUTE",
+  "status": "PASS",
+  "sourceBefore": {
+    "mysql-store.js": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+    "payment-retry.js": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22",
+    "stripe-protocol-payment.js": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d",
+    "mysql-schema.sql": "5762c14dac28291cf566ced78a71af2fb26d466b915c69968cf28027b3bfc055"
+  },
+  "preflight": {
+    "status": "PASS",
+    "serverUuid": "8a30916c-dbe1-11f1-90b5-2ea4ac7236b8",
+    "version": "8.4.11",
+    "database": "kc_fault_lab_7d64646488d639c6"
+  },
+  "scenarios": [
+    {
+      "id": "exact_owner_and_single_hold",
+      "status": "PASS"
+    },
+    {
+      "id": "concurrent_reserve",
+      "status": "PASS"
+    },
+    {
+      "id": "pending_hold_cleanup",
+      "status": "PASS"
+    },
+    {
+      "id": "unsafe_task_cleanup",
+      "status": "PASS"
+    },
+    {
+      "id": "confirmed_no_charge_cleanup",
+      "status": "PASS"
+    },
+    {
+      "id": "hold_cleanup_race",
+      "status": "PASS"
+    },
+    {
+      "id": "database_deadlock",
+      "status": "PASS"
+    },
+    {
+      "id": "disconnect_uncommitted",
+      "status": "PASS"
+    },
+    {
+      "id": "disconnect_before_commit",
+      "status": "PASS"
+    },
+    {
+      "id": "discard_commit_ack",
+      "status": "PASS"
+    },
+    {
+      "id": "discard_hold_ack",
+      "status": "PASS"
+    },
+    {
+      "id": "reload_store_preserves_hold",
+      "status": "PASS"
+    }
+  ],
+  "manualScenarios": [
+    {
+      "id": "tcp_commit_reply_loss",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "worker_process_restart",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "mysqld_crash_restart",
+      "status": "NOT RUN"
+    }
+  ],
+  "sourceAfter": {
+    "mysql-store.js": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+    "payment-retry.js": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22",
+    "stripe-protocol-payment.js": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d",
+    "mysql-schema.sql": "5762c14dac28291cf566ced78a71af2fb26d466b915c69968cf28027b3bfc055"
+  }
+}

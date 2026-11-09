@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { readBoundedResponseText } = require('./bounded-response');
 const { buildNowpaymentsIpnSignature, queryNowpaymentsMinimum } = require('../../api/_lib/payments/nowpayments');
 const pricing = require('../../js/tg-payment-pricing');
 const fx = require('../../api/_lib/payments/usdt-market-fx');
@@ -94,8 +95,8 @@ function createTgNowpaymentsGateway({ env = process.env, fetchImpl = globalThis.
             const response = await fetchImpl(`https://api.nowpayments.io/v1${path}`, { method: payload ? 'POST' : 'GET', redirect: 'error', signal: controller.signal,
                 headers: { 'Content-Type': 'application/json', 'x-api-key': value.apiKey }, ...(payload ? { body: JSON.stringify(payload) } : {}) });
             if (!response.ok) throw unavailable();
-            return parsePaymentJson(await response.text());
-        } catch (_) { throw unavailable(); } finally { clearTimeout(timer); }
+            return parsePaymentJson(await readBoundedResponseText(response, { maxBytes: 65536, signal: controller.signal }));
+        } catch (_) { throw unavailable(); } finally { clearTimeout(timer); controller.abort(); }
     }
     function matches(payload, order, checkout, exact) {
         return payload?.order_id === order.order_no && exact?.payment_id === checkout.payment_id

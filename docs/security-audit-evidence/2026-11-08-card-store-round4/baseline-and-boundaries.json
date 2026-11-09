@@ -1,0 +1,41 @@
+{
+  "captured_at_utc": "2026-11-08T12:53:25.650327+00:00",
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "origin_main": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "branch": "main",
+  "origin": "https://github.com/zaoyoe/Zaoyoe-Studio.git",
+  "behind": 0,
+  "freshness_fetch": "git fetch origin main succeeded during this continuation before archive edits",
+  "release_candidate": "NOT_READY_DIRTY_WORKTREE",
+  "status_mode": "git status --porcelain=v1 --untracked-files=all",
+  "pre_round_status_entries": 463,
+  "pre_archive_status_entries": 464,
+  "new_paths_before_archival": [
+    "tests/security-round4-kc-local-settlement.test.js"
+  ],
+  "missing_pre_round_paths": [],
+  "all_pre_round_paths_still_readable": true,
+  "path_presence_limit": "Presence/readability does not establish byte-for-byte preservation of all pre-existing edits; no full initial workspace hash set exists.",
+  "round4_changed_files": [
+    "services/kc-pay-gpt/mysql-store.js",
+    "services/kc-pay-gpt/server.js",
+    "services/kc-pay-gpt/test/recharge-routing.test.js",
+    "tests/security-round4-kc-local-settlement.test.js"
+  ],
+  "backup_scope": "Per-file dirty backups only; not full-workspace, stash/commit or database backup.",
+  "prohibited_actions_not_performed": [
+    "commit",
+    "stage",
+    "push",
+    "PR",
+    "merge",
+    "deploy",
+    "SQL execution",
+    "real database connection",
+    "real payment",
+    "production worker startup",
+    "real .env read",
+    "reset/restore/clean/rebase/branch switch"
+  ],
+  "systems": "This round is KC focused local testing. No new main-site, TG or production firewall/permission/release acceptance."
+}

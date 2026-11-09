@@ -577,6 +577,8 @@ function getPromptModalImageEntries(item = {}) {
 
 function shouldForcePromptPageTop() {
     if (!window.__PROMPTS_FORCE_SCROLL_TOP__) return false;
+    if (typeof currentFilter !== 'undefined' && currentFilter === 'search') return false;
+    if (document.body?.classList.contains('prompt-spotlight-active') || Boolean(window.PromptSpotlight?.isOpen?.())) return false;
 
     const urlParams = new URLSearchParams(window.location.search);
     return !urlParams.has('id') && !window.location.hash;
@@ -3960,6 +3962,7 @@ function schedulePromptLiveDataRetry(initialFilter = 'all', tagParam = '', attem
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    bindPromptSecurityHoneypot();
     bindPromptImageDragLock();
     bindPromptThemeStarryLoader();
     initializePromptStaticControls();
@@ -7276,12 +7279,15 @@ function appendPromptGalleryPageItems(items = []) {
     return nextBaseItems.length;
 }
 
-function renderGallery(filter, reset = true) {
+function renderGallery(filter, reset = true, options = {}) {
     const grid = document.querySelector('.gallery-container');
     if (!grid) return;
 
     if (filter !== 'search') {
         discardPromptSupabaseSearchOnlyItems();
+        if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('prompt-search-change', { detail: { active: false } }));
+        }
     }
     currentFilter = filter;
 
@@ -7291,7 +7297,7 @@ function renderGallery(filter, reset = true) {
 
     allFilteredItems = applyPromptGalleryFiltersAndSort();
 
-    renderCurrentPage();
+    renderCurrentPage(options);
     promptGalleryHasRendered = true;
     document.documentElement.classList.remove('prompts-gallery-pending');
 }
@@ -7563,9 +7569,17 @@ function renderCurrentPage(options = {}) {
     const grid = document.querySelector('.gallery-container');
     if (!grid) return;
 
-    const preserveScroll = options.preserveScroll === true;
-    const preservedScrollY = preserveScroll ? window.scrollY : 0;
+    const isSearchMode = (typeof currentFilter !== 'undefined' && currentFilter === 'search');
+    const preserveScroll = options.preserveScroll === true
+        || isSearchMode
+        || document.body?.classList.contains('prompt-spotlight-active')
+        || Boolean(window.PromptSpotlight?.isOpen?.());
+    const preservedScrollY = preserveScroll ? (window.scrollY || window.pageYOffset || 0) : 0;
     const previousRenderedCount = promptGalleryRenderedCount;
+    const previousGridHeight = grid.offsetHeight || 0;
+    if (preserveScroll && previousGridHeight > 0) {
+        grid.style.minHeight = `${Math.max(previousGridHeight, preservedScrollY + 600)}px`;
+    }
     resetPromptGalleryInfiniteState();
     promptGalleryMasonryState = preparePromptGalleryContainer(grid);
 
@@ -7585,7 +7599,17 @@ function renderCurrentPage(options = {}) {
     requestAnimationFrame(() => {
         grid.classList.add('visible');
         if (preserveScroll) {
-            window.scrollTo({ top: preservedScrollY, behavior: 'auto' });
+            if ((window.scrollY || 0) !== preservedScrollY) {
+                window.scrollTo({ top: preservedScrollY, behavior: 'auto' });
+            }
+            setTimeout(() => {
+                if (grid && grid.style.minHeight) {
+                    const contentHeight = grid.scrollHeight || 0;
+                    if (contentHeight >= preservedScrollY + (window.innerHeight || 800)) {
+                        grid.style.minHeight = '';
+                    }
+                }
+            }, 600);
         } else {
             forcePromptPageTop();
         }
@@ -7925,6 +7949,12 @@ function handleNavClick(filterType, clickedItem) {
 
     // Clear search
     if (searchInput) searchInput.value = '';
+    if (window.PromptSpotlight && typeof window.PromptSpotlight.setQuery === 'function') {
+        window.PromptSpotlight.setQuery('');
+    }
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('prompt-search-change', { detail: { active: false } }));
+    }
 
     // Special handling for back button
     if (filterType === 'back') {
@@ -8142,7 +8172,10 @@ async function filterBySearch(query) {
 
     // If no query, show all cards
     if (!normalizedQuery) {
-        renderGallery('all', true);
+        const shouldPreserve = (typeof currentFilter !== 'undefined' && currentFilter === 'search')
+            || document.body?.classList.contains('prompt-spotlight-active')
+            || Boolean(window.PromptSpotlight?.isOpen?.());
+        renderGallery('all', true, { preserveScroll: shouldPreserve });
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         const allItem = document.querySelector('.nav-item[data-filter="all"]');
         if (allItem) allItem.classList.add('active');
@@ -8188,6 +8221,37 @@ async function filterBySearch(query) {
     // Show local matches immediately, then merge indexed database matches without
     // loading every prompt record into the first page.
     if (localResults.size > 0) {
+        const isSpotlightActive = document.body?.classList.contains('prompt-spotlight-active')
+            || Boolean(window.PromptSpotlight?.isSearching?.());
+
+        if (isSpotlightActive && shouldPromptSearchHydrateDetails(normalizedQuery)) {
+            let hasRendered = false;
+            const serverSearch = await refinePromptSearchWithServer(
+                normalizedQuery,
+                searchingForColor,
+                localResults,
+                searchRequestId
+            );
+            if (serverSearch.results && serverSearch.results.size > localResults.size) {
+                hasRendered = true;
+            }
+            if (!serverSearch.available && isPromptSearchRequestCurrent(searchRequestId, normalizedQuery)) {
+                const detailResults = await refinePromptSearchWithDetails(
+                    normalizedQuery,
+                    searchingForColor,
+                    serverSearch.results || localResults,
+                    searchRequestId
+                );
+                if (detailResults && detailResults.size > (serverSearch.results?.size || localResults.size)) {
+                    hasRendered = true;
+                }
+            }
+            if (!hasRendered) {
+                applySearchResults(localResults, searchingForColor);
+            }
+            return;
+        }
+
         applySearchResults(localResults, searchingForColor);
         if (shouldPromptSearchHydrateDetails(normalizedQuery)) {
             void (async () => {
@@ -8599,8 +8663,15 @@ function applySearchResults(matchedIds, searchingForColor) {
     promptGalleryBaseFilteredItems = allFilteredItems;
     allFilteredItems = applyPromptGalleryFiltersAndSort(promptGalleryBaseFilteredItems);
 
-    renderCurrentPage();
+    if (document.body?.classList.contains('prompt-spotlight-active') || Boolean(window.PromptSpotlight?.isOpen?.())) {
+        renderCurrentPage({ preserveScroll: true });
+    } else {
+        renderCurrentPage();
+    }
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('prompt-search-change', { detail: { active: true } }));
+    }
 }
 
 // --- Modal Logic ---
@@ -10852,6 +10923,97 @@ function syncPromptModalUnlockPriceState() {
     }
 }
 
+// ===========================================
+// PROMPT ANTI-SCRAPER & ZERO-WIDTH WATERMARK PROTECTION
+// ===========================================
+
+// Invisible cryptographic zero-width watermark signature: [ZWSP, ZWNJ, ZWJ, ZWNJ, ZWSP]
+// Invisible to human eyes and transparent to Midjourney / Gemini / Stable Diffusion prompts,
+// but indelibly marks copied text for forensic origin tracking and scrapers attribution.
+const PROMPT_INVISIBLE_WATERMARK = '\u200B\u200C\u200D\u200C\u200B';
+
+let _promptCopyHistory = [];
+const PROMPT_COPY_BURST_LIMIT = 6; // Max 6 copies in 10s
+const PROMPT_COPY_BURST_WINDOW_MS = 10000;
+
+function injectPromptSecurityWatermark(text) {
+    if (typeof text !== 'string' || !text) return '';
+    if (text.includes(PROMPT_INVISIBLE_WATERMARK)) {
+        return text;
+    }
+    const spaceIndex = text.indexOf(' ');
+    if (spaceIndex !== -1 && spaceIndex < 40) {
+        return text.slice(0, spaceIndex + 1) + PROMPT_INVISIBLE_WATERMARK + text.slice(spaceIndex + 1);
+    }
+    return text + PROMPT_INVISIBLE_WATERMARK;
+}
+
+function hasPromptSecurityWatermark(text) {
+    return typeof text === 'string' && text.includes(PROMPT_INVISIBLE_WATERMARK);
+}
+
+function detectAutomatedCrawler() {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+    try {
+        if (sessionStorage.getItem('__zy_bot_flag__') === '1') {
+            return true;
+        }
+        if (navigator.webdriver) {
+            return true;
+        }
+        if (window.__webdriver_evaluate || window.__selenium_evaluate || window._phantom || window.callPhantom) {
+            return true;
+        }
+        if (document.documentElement && document.documentElement.getAttribute('webdriver')) {
+            return true;
+        }
+    } catch {
+        return false;
+    }
+    return false;
+}
+
+function isPromptCopyRateLimited() {
+    const now = Date.now();
+    _promptCopyHistory = _promptCopyHistory.filter((timestamp) => (now - timestamp) < PROMPT_COPY_BURST_WINDOW_MS);
+    if (_promptCopyHistory.length >= PROMPT_COPY_BURST_LIMIT) {
+        return true;
+    }
+    _promptCopyHistory.push(now);
+    return false;
+}
+
+function bindPromptSecurityHoneypot() {
+    if (typeof document === 'undefined') return;
+    const honeypotBtn = document.getElementById('honeypotPromptCopyBtn');
+    if (!honeypotBtn || honeypotBtn.dataset.bound === '1') return;
+    honeypotBtn.dataset.bound = '1';
+    honeypotBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+            sessionStorage.setItem('__zy_bot_flag__', '1');
+        } catch {}
+        console.warn('[Security] Automated crawler honeypot triggered');
+        trackPromptAnalyticsEvent('crawler_honeypot_triggered', {
+            source: 'honeypot_prompt_copy',
+            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : ''
+        });
+    });
+}
+
+// Export for testability and runtime inspections
+if (typeof window !== 'undefined') {
+    window.ZaoyoePromptSecurity = {
+        PROMPT_INVISIBLE_WATERMARK,
+        injectPromptSecurityWatermark,
+        hasPromptSecurityWatermark,
+        detectAutomatedCrawler,
+        isPromptCopyRateLimited,
+        bindPromptSecurityHoneypot
+    };
+}
+
 function copyPromptText(btn) {
     // Prevent multiple simultaneous copy operations
     if (_copyInProgress) {
@@ -10859,8 +11021,36 @@ function copyPromptText(btn) {
         return;
     }
 
+    // Rate limit bursts (max 6 copies in 10s)
+    if (isPromptCopyRateLimited()) {
+        console.warn('[Security] Prompt copy burst rate limited');
+        if (btn) {
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-shield-alt"></i>';
+            btn.title = '复制频率过快，请稍后';
+            setTimeout(() => {
+                btn.innerHTML = originalContent;
+                btn.title = '';
+            }, 2000);
+        }
+        return;
+    }
+
     _copyInProgress = true;
-    const text = document.getElementById('modalPromptText').textContent;
+    let text = document.getElementById('modalPromptText')?.textContent || '';
+
+    // Check automated headless browser / crawler environment
+    if (detectAutomatedCrawler()) {
+        console.warn('[Security] Automated crawler intercepted in copyPromptText');
+        trackPromptAnalyticsEvent('crawler_copy_intercepted', {
+            prompt_id: currentPromptId,
+            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : ''
+        });
+        text = '/* 提示：检测到自动化控制环境。请在真实浏览器中访问 https://www.fatherkey.com/prompts.html 获取完整提示词。 */\n' + text.slice(0, 40) + '... [Auto-scraping blocked]';
+    } else {
+        // Embed zero-width watermark for legitimate users
+        text = injectPromptSecurityWatermark(text);
+    }
 
     navigator.clipboard.writeText(text).then(() => {
         const originalContent = btn.innerHTML;
@@ -13316,3 +13506,17 @@ document.addEventListener('click', function (e) {
         closePromptModal();
     }
 });
+
+// Expose prompt search and gallery APIs
+if (typeof window !== 'undefined') {
+    window.isPromptSearchActive = function() {
+        return (typeof currentFilter !== 'undefined' && currentFilter === 'search')
+            || Boolean(document.getElementById('gallerySearch')?.value.trim());
+    };
+    if (typeof filterBySearch === 'function') {
+        window.filterBySearch = filterBySearch;
+    }
+    if (typeof renderGallery === 'function') {
+        window.renderGallery = renderGallery;
+    }
+}

@@ -1,0 +1,952 @@
+TAP version 13
+# Subtest: release: an old task cannot change a card owned by "payment_next-job"
+ok 1 - release: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 99.644333
+  type: 'test'
+  ...
+# Subtest: release: an old task cannot change a card owned by "payment_job-1"
+ok 2 - release: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 1.071291
+  type: 'test'
+  ...
+# Subtest: release: an old task cannot change a card owned by "payment_Job-1-extra"
+ok 3 - release: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 1.003209
+  type: 'test'
+  ...
+# Subtest: release: an old task cannot change a card owned by "payment_Job-1 "
+ok 4 - release: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.889084
+  type: 'test'
+  ...
+# Subtest: release: an old task cannot change a card owned by null
+ok 5 - release: an old task cannot change a card owned by null
+  ---
+  duration_ms: 1.10075
+  type: 'test'
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"in_use":0}
+ok 6 - release: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 1.341541
+  type: 'test'
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"is_active":0}
+ok 7 - release: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 1.933041
+  type: 'test'
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"status":"待人工复核"}
+ok 8 - release: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.840541
+  type: 'test'
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"status":"已冻结"}
+ok 9 - release: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 2.0875
+  type: 'test'
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"status":"已报废"}
+ok 10 - release: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 1.634667
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence ("")
+ok 11 - release: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 1.294042
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence (null)
+ok 12 - release: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 2.017833
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence (true)
+ok 13 - release: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.7085
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence ("payment_bad key")
+ok 14 - release: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 3.856166
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 15 - release: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 1.345958
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence ({})
+ok 16 - release: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 1.602375
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence (["payment_Job-1"])
+ok 17 - release: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 1.652583
+  type: 'test'
+  ...
+# Subtest: release: invalid asset ID fails before persistence (true)
+ok 18 - release: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.938125
+  type: 'test'
+  ...
+# Subtest: release: invalid asset ID fails before persistence (-1)
+ok 19 - release: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 2.150625
+  type: 'test'
+  ...
+# Subtest: release: invalid asset ID fails before persistence (1.5)
+ok 20 - release: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 2.084708
+  type: 'test'
+  ...
+# Subtest: release: invalid asset ID fails before persistence ("55 OR 1=1")
+ok 21 - release: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 1.482166
+  type: 'test'
+  ...
+# Subtest: release: invalid asset ID fails before persistence ([])
+ok 22 - release: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 6.465833
+  type: 'test'
+  ...
+# Subtest: release: invalid asset ID fails before persistence (9007199254740992)
+ok 23 - release: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 2.139458
+  type: 'test'
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by "payment_next-job"
+ok 24 - cooldown: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 12.319333
+  type: 'test'
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by "payment_job-1"
+ok 25 - cooldown: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 2.004542
+  type: 'test'
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by "payment_Job-1-extra"
+ok 26 - cooldown: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 1.550167
+  type: 'test'
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by "payment_Job-1 "
+ok 27 - cooldown: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 1.55125
+  type: 'test'
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by null
+ok 28 - cooldown: an old task cannot change a card owned by null
+  ---
+  duration_ms: 1.490208
+  type: 'test'
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"in_use":0}
+ok 29 - cooldown: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 2.18625
+  type: 'test'
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"is_active":0}
+ok 30 - cooldown: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 1.002917
+  type: 'test'
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"status":"待人工复核"}
+ok 31 - cooldown: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.980541
+  type: 'test'
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"status":"已冻结"}
+ok 32 - cooldown: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 1.136459
+  type: 'test'
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"status":"已报废"}
+ok 33 - cooldown: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.824916
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence ("")
+ok 34 - cooldown: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.759916
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence (null)
+ok 35 - cooldown: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 0.663666
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence (true)
+ok 36 - cooldown: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 1.84375
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence ("payment_bad key")
+ok 37 - cooldown: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 1.611791
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 38 - cooldown: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 1.682458
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence ({})
+ok 39 - cooldown: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.998416
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence (["payment_Job-1"])
+ok 40 - cooldown: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.632083
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence (true)
+ok 41 - cooldown: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.821458
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence (-1)
+ok 42 - cooldown: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 0.992333
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence (1.5)
+ok 43 - cooldown: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 1.000666
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence ("55 OR 1=1")
+ok 44 - cooldown: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 1.737583
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence ([])
+ok 45 - cooldown: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 2.097625
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence (9007199254740992)
+ok 46 - cooldown: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 0.85525
+  type: 'test'
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by "payment_next-job"
+ok 47 - quarantine: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 0.844834
+  type: 'test'
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by "payment_job-1"
+ok 48 - quarantine: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 1.7085
+  type: 'test'
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by "payment_Job-1-extra"
+ok 49 - quarantine: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 1.524875
+  type: 'test'
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by "payment_Job-1 "
+ok 50 - quarantine: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 1.758125
+  type: 'test'
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by null
+ok 51 - quarantine: an old task cannot change a card owned by null
+  ---
+  duration_ms: 2.127542
+  type: 'test'
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"in_use":0}
+ok 52 - quarantine: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 1.281459
+  type: 'test'
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"is_active":0}
+ok 53 - quarantine: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 0.763667
+  type: 'test'
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"status":"待人工复核"}
+ok 54 - quarantine: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.900792
+  type: 'test'
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"status":"已冻结"}
+ok 55 - quarantine: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 1.25575
+  type: 'test'
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"status":"已报废"}
+ok 56 - quarantine: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.891541
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence ("")
+ok 57 - quarantine: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.82425
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence (null)
+ok 58 - quarantine: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 2.569833
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence (true)
+ok 59 - quarantine: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 1.061333
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence ("payment_bad key")
+ok 60 - quarantine: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 1.226916
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 61 - quarantine: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 1.453375
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence ({})
+ok 62 - quarantine: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 1.001708
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence (["payment_Job-1"])
+ok 63 - quarantine: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 3.700708
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence (true)
+ok 64 - quarantine: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 1.89875
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence (-1)
+ok 65 - quarantine: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 1.073042
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence (1.5)
+ok 66 - quarantine: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 0.747666
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence ("55 OR 1=1")
+ok 67 - quarantine: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 1.132042
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence ([])
+ok 68 - quarantine: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 1.904209
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence (9007199254740992)
+ok 69 - quarantine: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 1.644041
+  type: 'test'
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by "payment_next-job"
+ok 70 - exhaust: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 2.346041
+  type: 'test'
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by "payment_job-1"
+ok 71 - exhaust: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 1.133834
+  type: 'test'
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by "payment_Job-1-extra"
+ok 72 - exhaust: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 0.772833
+  type: 'test'
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by "payment_Job-1 "
+ok 73 - exhaust: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.867875
+  type: 'test'
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by null
+ok 74 - exhaust: an old task cannot change a card owned by null
+  ---
+  duration_ms: 1.572834
+  type: 'test'
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"in_use":0}
+ok 75 - exhaust: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 1.103709
+  type: 'test'
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"is_active":0}
+ok 76 - exhaust: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 0.808709
+  type: 'test'
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"status":"待人工复核"}
+ok 77 - exhaust: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.700583
+  type: 'test'
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"status":"已冻结"}
+ok 78 - exhaust: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 1.060292
+  type: 'test'
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"status":"已报废"}
+ok 79 - exhaust: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 1.590792
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence ("")
+ok 80 - exhaust: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.849708
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence (null)
+ok 81 - exhaust: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 0.714125
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence (true)
+ok 82 - exhaust: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.69875
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence ("payment_bad key")
+ok 83 - exhaust: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 0.666125
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 84 - exhaust: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.617334
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence ({})
+ok 85 - exhaust: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.560584
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence (["payment_Job-1"])
+ok 86 - exhaust: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.845125
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence (true)
+ok 87 - exhaust: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.677167
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence (-1)
+ok 88 - exhaust: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 0.654708
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence (1.5)
+ok 89 - exhaust: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 5.3995
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence ("55 OR 1=1")
+ok 90 - exhaust: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 1.06075
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence ([])
+ok 91 - exhaust: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 1.058917
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence (9007199254740992)
+ok 92 - exhaust: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 0.673459
+  type: 'test'
+  ...
+# Subtest: usage: an old task cannot change a card owned by "payment_next-job"
+ok 93 - usage: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 2.871875
+  type: 'test'
+  ...
+# Subtest: usage: an old task cannot change a card owned by "payment_job-1"
+ok 94 - usage: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 2.713708
+  type: 'test'
+  ...
+# Subtest: usage: an old task cannot change a card owned by "payment_Job-1-extra"
+ok 95 - usage: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 1.471583
+  type: 'test'
+  ...
+# Subtest: usage: an old task cannot change a card owned by "payment_Job-1 "
+ok 96 - usage: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.720625
+  type: 'test'
+  ...
+# Subtest: usage: an old task cannot change a card owned by null
+ok 97 - usage: an old task cannot change a card owned by null
+  ---
+  duration_ms: 1.300792
+  type: 'test'
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"in_use":0}
+ok 98 - usage: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 1.127625
+  type: 'test'
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"is_active":0}
+ok 99 - usage: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 0.799792
+  type: 'test'
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"status":"待人工复核"}
+ok 100 - usage: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 1.664541
+  type: 'test'
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"status":"已冻结"}
+ok 101 - usage: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 1.86375
+  type: 'test'
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"status":"已报废"}
+ok 102 - usage: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.960334
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence ("")
+ok 103 - usage: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.761625
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence (null)
+ok 104 - usage: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 0.937209
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence (true)
+ok 105 - usage: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 2.669166
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence ("payment_bad key")
+ok 106 - usage: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 1.508417
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 107 - usage: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.856708
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence ({})
+ok 108 - usage: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.70875
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence (["payment_Job-1"])
+ok 109 - usage: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.663333
+  type: 'test'
+  ...
+# Subtest: usage: invalid asset ID fails before persistence (true)
+ok 110 - usage: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.56525
+  type: 'test'
+  ...
+# Subtest: usage: invalid asset ID fails before persistence (-1)
+ok 111 - usage: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 0.731416
+  type: 'test'
+  ...
+# Subtest: usage: invalid asset ID fails before persistence (1.5)
+ok 112 - usage: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 1.844959
+  type: 'test'
+  ...
+# Subtest: usage: invalid asset ID fails before persistence ("55 OR 1=1")
+ok 113 - usage: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 3.094584
+  type: 'test'
+  ...
+# Subtest: usage: invalid asset ID fails before persistence ([])
+ok 114 - usage: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 1.596542
+  type: 'test'
+  ...
+# Subtest: usage: invalid asset ID fails before persistence (9007199254740992)
+ok 115 - usage: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 1.88625
+  type: 'test'
+  ...
+# Subtest: profile: an old task cannot change a card owned by "payment_next-job"
+ok 116 - profile: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 2.54175
+  type: 'test'
+  ...
+# Subtest: profile: an old task cannot change a card owned by "payment_job-1"
+ok 117 - profile: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 3.092042
+  type: 'test'
+  ...
+# Subtest: profile: an old task cannot change a card owned by "payment_Job-1-extra"
+ok 118 - profile: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 0.9595
+  type: 'test'
+  ...
+# Subtest: profile: an old task cannot change a card owned by "payment_Job-1 "
+ok 119 - profile: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 1.358958
+  type: 'test'
+  ...
+# Subtest: profile: an old task cannot change a card owned by null
+ok 120 - profile: an old task cannot change a card owned by null
+  ---
+  duration_ms: 0.952959
+  type: 'test'
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"in_use":0}
+ok 121 - profile: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 2.442916
+  type: 'test'
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"is_active":0}
+ok 122 - profile: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 4.315334
+  type: 'test'
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"status":"待人工复核"}
+ok 123 - profile: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 1.336708
+  type: 'test'
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"status":"已冻结"}
+ok 124 - profile: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 0.765917
+  type: 'test'
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"status":"已报废"}
+ok 125 - profile: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 1.722083
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence ("")
+ok 126 - profile: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 1.419667
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence (null)
+ok 127 - profile: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 1.556667
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence (true)
+ok 128 - profile: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 1.185417
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence ("payment_bad key")
+ok 129 - profile: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 0.916708
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 130 - profile: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.607084
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence ({})
+ok 131 - profile: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.560208
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence (["payment_Job-1"])
+ok 132 - profile: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 1.814125
+  type: 'test'
+  ...
+# Subtest: profile: invalid asset ID fails before persistence (true)
+ok 133 - profile: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 1.505417
+  type: 'test'
+  ...
+# Subtest: profile: invalid asset ID fails before persistence (-1)
+ok 134 - profile: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 1.68475
+  type: 'test'
+  ...
+# Subtest: profile: invalid asset ID fails before persistence (1.5)
+ok 135 - profile: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 1.936792
+  type: 'test'
+  ...
+# Subtest: profile: invalid asset ID fails before persistence ("55 OR 1=1")
+ok 136 - profile: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 0.84325
+  type: 'test'
+  ...
+# Subtest: profile: invalid asset ID fails before persistence ([])
+ok 137 - profile: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 0.854833
+  type: 'test'
+  ...
+# Subtest: profile: invalid asset ID fails before persistence (9007199254740992)
+ok 138 - profile: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 0.732166
+  type: 'test'
+  ...
+# Subtest: owned release is idempotent and cannot release a subsequent owner
+ok 139 - owned release is idempotent and cannot release a subsequent owner
+  ---
+  duration_ms: 1.175083
+  type: 'test'
+  ...
+# Subtest: an ownership transfer just before release is checked by the UPDATE itself
+ok 140 - an ownership transfer just before release is checked by the UPDATE itself
+  ---
+  duration_ms: 0.855167
+  type: 'test'
+  ...
+# Subtest: matching owner can cool down, exhaust and quarantine, preserving the respective states
+ok 141 - matching owner can cool down, exhaust and quarantine, preserving the respective states
+  ---
+  duration_ms: 2.439166
+  type: 'test'
+  ...
+# Subtest: usage and payment profile require ownership and retain the lock for final release
+ok 142 - usage and payment profile require ownership and retain the lock for final release
+  ---
+  duration_ms: 1.832125
+  type: 'test'
+  ...
+# Subtest: daily usage cooldown and write rollback retain their existing safety behavior
+ok 143 - daily usage cooldown and write rollback retain their existing safety behavior
+  ---
+  duration_ms: 1.323292
+  type: 'test'
+  ...
+# Subtest: runtime release checks phone and card ownership separately
+ok 144 - runtime release checks phone and card ownership separately
+  ---
+  duration_ms: 0.922166
+  type: 'test'
+  ...
+# Subtest: runtime release with no owner cannot clear either asset
+ok 145 - runtime release with no owner cannot clear either asset
+  ---
+  duration_ms: 1.208958
+  type: 'test'
+  ...
+# Subtest: reserveCard: return the exact owner as a reservation receipt
+ok 146 - reserveCard: return the exact owner as a reservation receipt
+  ---
+  duration_ms: 1.001625
+  type: 'test'
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations (undefined)
+ok 147 - reserveCard: never truncate or accept unowned reservations (undefined)
+  ---
+  duration_ms: 0.641375
+  type: 'test'
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations ("")
+ok 148 - reserveCard: never truncate or accept unowned reservations ("")
+  ---
+  duration_ms: 0.568333
+  type: 'test'
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations (true)
+ok 149 - reserveCard: never truncate or accept unowned reservations (true)
+  ---
+  duration_ms: 1.15475
+  type: 'test'
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 150 - reserveCard: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 1.040667
+  type: 'test'
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations ("bad owner")
+ok 151 - reserveCard: never truncate or accept unowned reservations ("bad owner")
+  ---
+  duration_ms: 0.796333
+  type: 'test'
+  ...
+# Subtest: reserveRuntimeAssets: return the exact owner as a reservation receipt
+ok 152 - reserveRuntimeAssets: return the exact owner as a reservation receipt
+  ---
+  duration_ms: 1.075042
+  type: 'test'
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations (undefined)
+ok 153 - reserveRuntimeAssets: never truncate or accept unowned reservations (undefined)
+  ---
+  duration_ms: 0.582458
+  type: 'test'
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations ("")
+ok 154 - reserveRuntimeAssets: never truncate or accept unowned reservations ("")
+  ---
+  duration_ms: 0.641792
+  type: 'test'
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations (true)
+ok 155 - reserveRuntimeAssets: never truncate or accept unowned reservations (true)
+  ---
+  duration_ms: 0.725375
+  type: 'test'
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 156 - reserveRuntimeAssets: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 1.06075
+  type: 'test'
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations ("bad owner")
+ok 157 - reserveRuntimeAssets: never truncate or accept unowned reservations ("bad owner")
+  ---
+  duration_ms: 0.730666
+  type: 'test'
+  ...
+1..157
+# tests 157
+# suites 0
+# pass 157
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 538.915292

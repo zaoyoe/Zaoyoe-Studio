@@ -84,8 +84,10 @@ function text(value, length = 160) {
     return ['string', 'number'].includes(typeof value) ? String(value).trim().slice(0, length) : '';
 }
 function count(value) {
-    if (value === null || value === undefined || value === '' || !/^\d+$/.test(String(value))) return null;
-    const parsed = Number(value);
+    if (value === null || value === undefined || value === '') return null;
+    const str = String(value).trim();
+    if (!/^\d+$/.test(str)) return null;
+    const parsed = Number(str);
     return Number.isSafeInteger(parsed) ? parsed : null;
 }
 function money(value) {
@@ -136,12 +138,28 @@ function variantRequirements(source) {
     // invent option combinations or silently select the first SKU.
     if (config && Object.keys(config).some((key) => !['category', 'sku', 'wholesale'].includes(key))) reasons.push('含未识别商品配置，暂仅预览');
     if (config?.sku != null && ((!record(config.sku) && !Array.isArray(config.sku)) || Object.keys(config.sku).length)) reasons.push('SKU 组合需核验，暂仅预览');
-    if (source.widget != null && !isEmptyContainer(source.widget) && (!Array.isArray(source.widget) || source.widget.length)) reasons.push('含自定义填写项，暂仅预览');
+    const hasWidget = source.widget != null && !isEmptyContainer(source.widget) && (!Array.isArray(source.widget) || source.widget.length);
     const draftStatus = source.draft_status == null ? null : count(source.draft_status);
     if (source.draft_status != null && draftStatus === null) reasons.push('预选卡状态待核验');
     if (draftStatus === 1) reasons.push('含预选卡配置，暂仅预览');
     if (Number(source.seckill_status) === 1) reasons.push('含限时配置，暂仅预览');
-    return { races, requiresRace: races.length > 0, importable: reasons.length === 0, reasons };
+    const racePrices = {};
+    if (category) {
+        for (const raceName of races) {
+            const p = money(category[raceName]);
+            if (p !== null) racePrices[raceName] = p;
+        }
+    }
+    const notices = [];
+    if (hasWidget) notices.push('含上游自定义填写项（导入后建议由客服/人工发货）');
+    return {
+        races,
+        racePrices,
+        requiresRace: races.length > 0,
+        hasWidget: Boolean(hasWidget),
+        importable: reasons.length === 0,
+        reasons: reasons.length > 0 ? reasons : notices
+    };
 }
 
 function normalizeCategoryId(value) {
@@ -220,13 +238,14 @@ function normalizeCatalogItem(source = {}, { currency = null, detail = false, ca
         source: 'supply',
         name,
         description: text(source.description, 4000),
-        imageUrl: '',
+        purchaseNotes: text(source.purchase_notes || source.notice || source.buy_notice || source.help, 4000) || null,
+        imageUrl: source.cover ? (String(source.cover).startsWith('http') ? String(source.cover) : `https://xiareng.cc${source.cover}`) : '',
         supplierUnitPrice: money(source.user_price),
         currency,
         priceKind: 'member_reference',
         currencyStatus: currency ? 'operator_confirmed' : 'unverified',
         availableQuantity: count(source.stock),
-        salesCount: null,
+        salesCount: count(source.sales ?? source.sales_count ?? source.sold ?? source.sold_num ?? source.sold_count ?? source.buy_count ?? source.purchase_count ?? source.order_count ?? source.orders),
         minimumQuantity: count(source.minimum) === 0 ? 1 : count(source.minimum),
         maximumQuantity: count(source.maximum),
         draftStatus: source.draft_status == null ? null : count(source.draft_status),
@@ -253,10 +272,38 @@ function normalizeVariant(item, input = {}) {
     return race ? { race } : {};
 }
 
-function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000, fetchImpl = globalThis.fetch } = {}) {
+function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000, fetchImpl = globalThis.fetch, enableCache = false, cacheTtlMs = 60_000 } = {}) {
     if (!text(appId) || !appKey) throw new TypeError('Xiareng credentials are required');
     const confirmedCurrency = /^[A-Z]{3}$/.test(String(currency)) ? String(currency) : QUOTE_CURRENCY;
     const deadline = Math.min(30_000, Math.max(500, Number(timeoutMs) || 10_000));
+    const detailCache = new Map();
+
+    function getCachedGoodsDetail(goodsNo) {
+        if (!enableCache) return null;
+        const entry = detailCache.get(goodsNo);
+        if (!entry) return null;
+        if (Date.now() > entry.expiresAt) {
+            detailCache.delete(goodsNo);
+            return null;
+        }
+        return entry.item;
+    }
+
+    function setCachedGoodsDetail(goodsNo, item) {
+        if (!enableCache || !item) return;
+        if (detailCache.size > 200) {
+            const now = Date.now();
+            for (const [k, v] of detailCache.entries()) {
+                if (now > v.expiresAt) detailCache.delete(k);
+            }
+            if (detailCache.size > 200) detailCache.clear();
+        }
+        detailCache.set(goodsNo, {
+            item,
+            expiresAt: Date.now() + Math.max(1000, Number(cacheTtlMs) || 60_000)
+        });
+    }
+
     const error = (operation, code, retryable = false) => new SupplierAdapterError('虾仁接口暂不可用，请检查账号配置或稍后重试。', {
         providerId: PROVIDER_ID,
         operation,
@@ -410,10 +457,16 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
         },
         async getGoodsDetail(goodsNo) {
             const normalizedGoodsNo = normalizeSupplierCode(goodsNo);
+            const cached = getCachedGoodsDetail(normalizedGoodsNo);
+            if (cached) return cached;
             const data = await request('detail', { code: normalizedGoodsNo });
             const item = record(data) && normalizeCatalogItem(data, { currency: confirmedCurrency, detail: true });
             if (!item || item.providerGoodsId !== normalizedGoodsNo) throw error('detail', 'supplier_invalid_response');
+            setCachedGoodsDetail(normalizedGoodsNo, item);
             return item;
+        },
+        clearGoodsDetailCache() {
+            detailCache.clear();
         },
         async getDraftCards({ goodsNo, page = 1, limit = 20 } = {}) {
             if (!Number.isSafeInteger(page) || page < 1 || page > 10_000) throw new TypeError('Invalid draft-card page');
@@ -514,28 +567,108 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
         async createPurchase(input = {}) {
             const requestId = text(input.requestId, 64);
             if (!UUID.test(requestId)) throw new TypeError('Invalid supplier request id');
-            if (input.quantity !== 1) throw new TypeError('当前仅支持数量为 1 的受控采购');
+            const requestedQuantity = input.quantity !== undefined
+                ? (Number.isSafeInteger(input.quantity) && input.quantity > 0 ? input.quantity : null)
+                : 1;
+            if (requestedQuantity === null) throw new TypeError('Invalid purchase quantity');
             const ceiling = money(input.maxCost?.amount);
             if (input.maxCost?.currency !== QUOTE_CURRENCY || ceiling === null || !/[1-9]/.test(ceiling)) {
                 throw new TypeError('Invalid supplier cost ceiling');
             }
             const item = await this.getGoodsDetail(input.goodsNo);
+            if (count(item.draftStatus) === 1) {
+                return {
+                    outcome: 'rejected',
+                    definitivelyNotAccepted: true,
+                    requestId,
+                    code: 'supplier_draft_cards_not_supported',
+                    reason: '该商品为上游预选卡密商品，不支持自动出卡，需人工选卡',
+                    evidenceHash: evidenceHash({ requestId, code: 'supplier_draft_cards_not_supported' })
+                };
+            }
+            if (item.variantRequirements?.hasWidget) {
+                return {
+                    outcome: 'rejected',
+                    definitivelyNotAccepted: true,
+                    requestId,
+                    code: 'supplier_widget_params_required',
+                    reason: '该商品包含上游必填输入项或直充参数，需人工发货或配置参数',
+                    evidenceHash: evidenceHash({ requestId, code: 'supplier_widget_params_required' })
+                };
+            }
+            if (item.minimumQuantity > 1 && requestedQuantity < item.minimumQuantity) {
+                const reason = `未达到上游起售数量：该商品最少需购买 ${item.minimumQuantity} 件，当前申请 ${requestedQuantity} 件`;
+                return {
+                    outcome: 'rejected',
+                    definitivelyNotAccepted: true,
+                    requestId,
+                    code: 'supplier_minimum_quantity_not_met',
+                    reason,
+                    minimumQuantity: item.minimumQuantity,
+                    requestedQuantity,
+                    evidenceHash: evidenceHash({ requestId, code: 'supplier_minimum_quantity_not_met', minimumQuantity: item.minimumQuantity, requestedQuantity })
+                };
+            }
+            if (item.maximumQuantity > 0 && requestedQuantity > item.maximumQuantity) {
+                const reason = `超过上游限购数量：该商品单笔最多购买 ${item.maximumQuantity} 件，当前申请 ${requestedQuantity} 件`;
+                return {
+                    outcome: 'rejected',
+                    definitivelyNotAccepted: true,
+                    requestId,
+                    code: 'supplier_maximum_quantity_exceeded',
+                    reason,
+                    maximumQuantity: item.maximumQuantity,
+                    requestedQuantity,
+                    evidenceHash: evidenceHash({ requestId, code: 'supplier_maximum_quantity_exceeded', maximumQuantity: item.maximumQuantity, requestedQuantity })
+                };
+            }
             const selected = normalizeVariant(item, input.variant);
-            const quote = await this.quotePrice({ goodsNo: item.providerGoodsId, quantity: 1, variant: input.variant });
-            const ceilingCheck = compareMoney(quote.amount, ceiling);
-            if (ceilingCheck === null) throw error('quote', 'supplier_invalid_response');
-            // Refuse before any debit: the quote alone already exceeds the ceiling.
-            if (ceilingCheck > 0) {
-                return { outcome: 'rejected', definitivelyNotAccepted: true, requestId,
-                    code: 'cost_ceiling_exceeded', evidenceHash: evidenceHash({ requestId, code: 'cost_ceiling_exceeded', quote: quote.amount }) };
+            let quoteAmount = null;
+            if (input.prequotedPrice && money(input.prequotedPrice) !== null) {
+                quoteAmount = money(input.prequotedPrice);
             }
-            const stock = await this.getStock({ goodsNo: item.providerGoodsId, variant: input.variant });
-            if (stock.availableQuantity < 1) {
-                return { outcome: 'rejected', definitivelyNotAccepted: true, requestId,
-                    code: 'supplier_out_of_stock', evidenceHash: evidenceHash({ requestId, code: 'supplier_out_of_stock' }) };
+
+            if (input.parallelPreflight === true) {
+                const [quote, stock] = await Promise.all([
+                    quoteAmount
+                        ? Promise.resolve({ amount: quoteAmount })
+                        : this.quotePrice({ goodsNo: item.providerGoodsId, quantity: requestedQuantity, variant: input.variant }),
+                    this.getStock({ goodsNo: item.providerGoodsId, variant: input.variant }),
+                    checkInventoryStateForItem(item, requestedQuantity, input.variant)
+                ]);
+                const ceilingCheck = compareMoney(quote.amount, ceiling);
+                if (ceilingCheck === null) throw error('quote', 'supplier_invalid_response');
+                if (ceilingCheck > 0) {
+                    return { outcome: 'rejected', definitivelyNotAccepted: true, requestId,
+                        code: 'cost_ceiling_exceeded', evidenceHash: evidenceHash({ requestId, code: 'cost_ceiling_exceeded', quote: quote.amount }) };
+                }
+                if (stock.availableQuantity < requestedQuantity) {
+                    return { outcome: 'rejected', definitivelyNotAccepted: true, requestId,
+                        code: 'supplier_out_of_stock',
+                        reason: `上游库存不足：剩余库存 ${stock.availableQuantity} 件，需采购 ${requestedQuantity} 件`,
+                        evidenceHash: evidenceHash({ requestId, code: 'supplier_out_of_stock' }) };
+                }
+            } else {
+                const quote = quoteAmount
+                    ? { amount: quoteAmount }
+                    : await this.quotePrice({ goodsNo: item.providerGoodsId, quantity: requestedQuantity, variant: input.variant });
+                const ceilingCheck = compareMoney(quote.amount, ceiling);
+                if (ceilingCheck === null) throw error('quote', 'supplier_invalid_response');
+                // Refuse before any debit: the quote alone already exceeds the ceiling.
+                if (ceilingCheck > 0) {
+                    return { outcome: 'rejected', definitivelyNotAccepted: true, requestId,
+                        code: 'cost_ceiling_exceeded', evidenceHash: evidenceHash({ requestId, code: 'cost_ceiling_exceeded', quote: quote.amount }) };
+                }
+                const stock = await this.getStock({ goodsNo: item.providerGoodsId, variant: input.variant });
+                if (stock.availableQuantity < requestedQuantity) {
+                    return { outcome: 'rejected', definitivelyNotAccepted: true, requestId,
+                        code: 'supplier_out_of_stock',
+                        reason: `上游库存不足：剩余库存 ${stock.availableQuantity} 件，需采购 ${requestedQuantity} 件`,
+                        evidenceHash: evidenceHash({ requestId, code: 'supplier_out_of_stock' }) };
+                }
+                await checkInventoryStateForItem(item, requestedQuantity, input.variant);
             }
-            await checkInventoryStateForItem(item, 1, input.variant);
-            const payload = await send('trade', { shared_code: item.providerGoodsId, num: 1, request_no: requestId, device: 0, ...selected });
+            const payload = await send('trade', { shared_code: item.providerGoodsId, num: requestedQuantity, request_no: requestId, device: 0, ...selected });
             if (Number(payload.code) !== 200) {
                 // A business rejection is definitive: no order, no debit. An
                 // existing request key proves an earlier attempt landed, but the
@@ -544,8 +677,9 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
                     return { outcome: 'unknown', requestId, code: 'request_key_already_exists',
                         evidenceHash: evidenceHash({ requestId, code: 'request_key_already_exists' }) };
                 }
+                const upstreamMsg = text(payload.msg, 200) || '上游拒绝交易';
                 return { outcome: 'rejected', definitivelyNotAccepted: true, requestId,
-                    code: 'supplier_rejected', evidenceHash: evidenceHash({ requestId, code: 'supplier_rejected' }) };
+                    code: 'supplier_rejected', reason: upstreamMsg, evidenceHash: evidenceHash({ requestId, code: 'supplier_rejected' }) };
             }
             const data = record(payload.data);
             const orderNo = text(data?.tradeNo, 160);

@@ -1,0 +1,65 @@
+{
+  "generatedAt": "2026-11-08T08:36:09.681Z",
+  "method": "actual handlers with in-memory dependency stubs; no database, HTTP server, real env, payment, or network",
+  "zpay": [
+    {
+      "name": "complete_query",
+      "status": 200,
+      "response": "success",
+      "creditRpcCalled": true,
+      "processing": "processed_paid"
+    },
+    {
+      "name": "missing_query_amount",
+      "status": 200,
+      "response": "success",
+      "creditRpcCalled": true,
+      "processing": "processed_paid"
+    },
+    {
+      "name": "missing_query_identity_and_amount",
+      "status": 200,
+      "response": "success",
+      "creditRpcCalled": true,
+      "processing": "processed_paid"
+    },
+    {
+      "name": "query_amount_mismatch",
+      "status": 200,
+      "response": "success",
+      "creditRpcCalled": false,
+      "processing": "amount_mismatch"
+    },
+    {
+      "name": "query_not_paid",
+      "status": 503,
+      "response": "query verification pending",
+      "creditRpcCalled": false,
+      "processing": null
+    },
+    {
+      "name": "invalid_notification_signature",
+      "status": 401,
+      "response": "invalid signature",
+      "creditRpcCalled": false,
+      "processing": "signature_mismatch"
+    }
+  ],
+  "kc": {
+    "name": "kc_two_distinct_cdks_max_concurrency_one",
+    "configuredLimit": 1,
+    "responses": [
+      {
+        "status": 200,
+        "success": true
+      },
+      {
+        "status": 200,
+        "success": true
+      }
+    ],
+    "slotsAfter": 2,
+    "workersDispatched": 2
+  },
+  "assertions": 7
+}

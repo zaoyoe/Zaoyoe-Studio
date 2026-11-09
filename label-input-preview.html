@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3f5f4" />
+    <title>Label input · Preview</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #222827;
+        background: #f3f5f4;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-width: 320px;
+        min-height: 100vh;
+        margin: 0;
+      }
+
+      button, input { font: inherit; }
+
+      .page {
+        width: min(100% - 64px, 1040px);
+        min-height: 100vh;
+        margin-inline: auto;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .topbar {
+        min-height: 76px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #dce2df;
+      }
+
+      .wordmark {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #3b4542;
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .mark {
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        border-radius: 7px;
+        background: #dcebe3;
+        color: #2e6a4c;
+      }
+
+      .mark svg { width: 13px; height: 13px; }
+
+      .license {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #717b77;
+        font-size: 12px;
+      }
+
+      .license::before {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #55916e;
+        content: "";
+      }
+
+      main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding-block: 72px 88px;
+      }
+
+      .intro { margin-bottom: 62px; }
+
+      .eyebrow {
+        margin: 0 0 14px;
+        color: #648071;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        color: #222827;
+        font-size: 42px;
+        font-weight: 570;
+        line-height: 1.12;
+        letter-spacing: 0;
+      }
+
+      .lede {
+        margin: 14px 0 0;
+        color: #737d79;
+        font-size: 15px;
+        line-height: 1.55;
+      }
+
+      .fields {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(280px, 1fr));
+        align-items: start;
+        gap: 48px 56px;
+      }
+
+      .field-demo {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .field-kind {
+        margin: 0 0 14px;
+        color: #89928f;
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      /* ══ Label input ═══════════════════════════════════════
+         The label is its placeholder until focus or a value lifts it.
+
+         ── ONE THING MOVES ──────────────────────────────────
+         The outline stays whole. Focus changes its ink and opens
+         the gap; the label is the event, and the line makes room.
+
+         The gap is two short paths across the notch, each from
+         the middle to one side, retracted from the middle outward. */
+      .lbi {
+        --fill-on: #222827;
+        --fill-slab: #f3f5f4;
+        --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --ink: #222827;
+        --ink-3: #697570;
+        --ink-4: #929b97;
+
+        position: relative;
+        display: grid;
+        place-items: center;
+        padding-top: 12px;
+        font-family: var(--font-ui);
+      }
+
+      .lbi-box {
+        position: relative;
+        width: 280px;
+        height: 52px;
+        background: transparent;
+        cursor: text;
+      }
+
+      .lbi-ring {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+        pointer-events: none;
+      }
+
+      .lbi-ring path {
+        fill: none;
+        stroke: color-mix(in srgb, var(--fill-on) 32%, var(--fill-slab));
+        stroke-width: 1;
+        stroke-linecap: butt;
+        transition: stroke 220ms ease, stroke-width 220ms ease;
+      }
+
+      .lbi[data-focus="true"] .lbi-ring path {
+        stroke: var(--ink);
+        stroke-width: 1.5;
+      }
+
+      /* The gap is whole at rest. When the label lifts, its two
+         halves retract from the middle to either side. */
+      .lbi-gap {
+        stroke-dasharray: 1 2;
+        stroke-dashoffset: 0;
+        transition: stroke 220ms ease, stroke-width 220ms ease,
+          stroke-dashoffset 420ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .lbi[data-up="true"] .lbi-gap { stroke-dashoffset: -1; }
+
+      /* The lifted label is the resting label moved up by half
+         the field height and scaled from its left edge. */
+      .lbi-label {
+        position: absolute;
+        left: var(--lbi-x);
+        top: 50%;
+        color: var(--ink-4);
+        font-size: 16px;
+        line-height: 1;
+        white-space: pre;
+        transform: translateY(-50%);
+        transform-origin: left center;
+        transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), color 220ms ease;
+        cursor: text;
+        user-select: none;
+      }
+
+      .lbi[data-up="true"] .lbi-label {
+        color: var(--ink-3);
+        transform: translateY(-50%) translateY(-26px) scale(0.78);
+      }
+
+      .lbi[data-focus="true"] .lbi-label { color: var(--fill-on); }
+      .lbi-label span { display: inline-block; }
+
+      /* Each letter lifts a hair and settles in sequence. */
+      .lbi[data-focus="true"] .lbi-label span {
+        animation: lbi-hop 460ms cubic-bezier(0.3, 0.7, 0.3, 1) both;
+        animation-delay: calc(var(--i) * 24ms);
+      }
+
+      .lbi-field {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        padding: 0 0 0 var(--lbi-x);
+        border: 0;
+        border-radius: inherit;
+        outline: none;
+        background: transparent;
+        color: var(--fill-on);
+        font-family: inherit;
+        font-size: 16px;
+      }
+
+      .lbi-field[data-flip="1"] { animation: lbi-flip-a 300ms cubic-bezier(0.22, 1, 0.36, 1); }
+      .lbi-field[data-flip="0"] { animation: lbi-flip-b 300ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+      .lbi-eye {
+        position: absolute;
+        top: 50%;
+        right: 10px;
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        margin-top: -15px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--ink-4);
+        cursor: pointer;
+        transition: color 160ms ease, scale 160ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .lbi-eye:hover { color: var(--fill-on); }
+      .lbi-eye:active { scale: 0.96; }
+      .lbi-eye svg {
+        grid-area: 1 / 1;
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        transition: opacity 220ms ease, scale 220ms cubic-bezier(0.22, 1, 0.36, 1), filter 220ms ease;
+      }
+
+      .lbi-eye svg:last-child { opacity: 0; scale: 0.7; filter: blur(2px); }
+      .lbi-eye[data-show="true"] svg:first-child { opacity: 0; scale: 0.7; filter: blur(2px); }
+      .lbi-eye[data-show="true"] svg:last-child { opacity: 1; scale: 1; filter: none; }
+
+      .shape-control {
+        width: 100%;
+        margin-top: 64px;
+        padding-top: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        border-top: 1px solid #dce2df;
+      }
+
+      .shape-label {
+        color: #6f7975;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .segmented {
+        display: inline-grid;
+        grid-template-columns: repeat(3, minmax(74px, 1fr));
+        gap: 3px;
+        padding: 3px;
+        border: 1px solid #dce2df;
+        border-radius: 8px;
+        background: #eaeeec;
+      }
+
+      .segmented button {
+        min-height: 31px;
+        padding: 0 12px;
+        border: 0;
+        border-radius: 5px;
+        background: transparent;
+        color: #707a76;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .segmented button[aria-pressed="true"] {
+        background: #fff;
+        color: #2b3430;
+        box-shadow: 0 1px 2px #202a2414;
+      }
+
+      .segmented button:focus-visible,
+      .lbi-eye:focus-visible {
+        outline: 2px solid #57916d;
+        outline-offset: 2px;
+      }
+
+      footer {
+        min-height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid #dce2df;
+        color: #8b9490;
+        font-size: 11px;
+      }
+
+      footer span:last-child { color: #6e7974; }
+
+      @keyframes lbi-hop {
+        0% { transform: translateY(0); }
+        38% { transform: translateY(-3px); }
+        100% { transform: translateY(0); }
+      }
+
+      @keyframes lbi-flip-a {
+        0% { filter: blur(3px); opacity: 0.55; }
+        55% { filter: blur(0.6px); opacity: 0.88; }
+        100% { filter: blur(0); opacity: 1; }
+      }
+
+      @keyframes lbi-flip-b {
+        0% { filter: blur(3px); opacity: 0.55; }
+        55% { filter: blur(0.6px); opacity: 0.88; }
+        100% { filter: blur(0); opacity: 1; }
+      }
+
+      @media (max-width: 700px) {
+        .page { width: min(100% - 40px, 520px); }
+        main { padding-block: 54px 64px; }
+        .intro { margin-bottom: 46px; }
+        h1 { font-size: 36px; }
+        .fields { grid-template-columns: 1fr; gap: 34px; }
+        .shape-control { margin-top: 48px; }
+      }
+
+      @media (max-width: 380px) {
+        .page { width: calc(100% - 32px); }
+        .shape-control { align-items: flex-start; flex-direction: column; gap: 12px; }
+        .segmented { width: 100%; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .lbi-ring path, .lbi-gap, .lbi-label { transition-duration: 160ms; }
+        .lbi[data-focus="true"] .lbi-label span, .lbi-field { animation: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <div class="wordmark">
+          <span class="mark" aria-hidden="true">
+            <svg viewBox="0 0 16 16"><path d="M3 4.5h10M3 8h6M3 11.5h8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+          </span>
+          <span>Bencho / Components</span>
+        </div>
+        <span class="license">MIT licensed</span>
+      </header>
+
+      <main>
+        <section class="intro" aria-labelledby="title">
+          <p class="eyebrow">Form fields · 01</p>
+          <h1 id="title">Label input</h1>
+          <p class="lede">A small motion study in the edge of a field.</p>
+        </section>
+
+        <section class="fields" aria-label="Label input examples">
+          <div class="field-demo">
+            <p class="field-kind">Email</p>
+            <div class="lbi" data-field="Email" data-up="false" data-focus="false" data-filled="false">
+              <div class="lbi-box">
+                <svg class="lbi-ring" viewBox="0 0 280 52" aria-hidden="true">
+                  <path class="lbi-right"></path>
+                  <path class="lbi-left"></path>
+                  <path class="lbi-gap lbi-gap-left" pathLength="1"></path>
+                  <path class="lbi-gap lbi-gap-right" pathLength="1"></path>
+                </svg>
+                <label class="lbi-label"><span>Email</span></label>
+                <input class="lbi-field" type="text" name="search-preview" aria-label="Email" autocomplete="off" autocapitalize="off" spellcheck="false" />
+              </div>
+            </div>
+          </div>
+
+          <div class="field-demo">
+            <p class="field-kind">Password</p>
+            <div class="lbi" data-field="Password" data-up="false" data-focus="false" data-filled="false">
+              <div class="lbi-box">
+                <svg class="lbi-ring" viewBox="0 0 280 52" aria-hidden="true">
+                  <path class="lbi-right"></path>
+                  <path class="lbi-left"></path>
+                  <path class="lbi-gap lbi-gap-left" pathLength="1"></path>
+                  <path class="lbi-gap lbi-gap-right" pathLength="1"></path>
+                </svg>
+                <label class="lbi-label"><span>Password</span></label>
+                <input class="lbi-field" type="text" name="search-preview" aria-label="Password" autocomplete="off" autocapitalize="off" spellcheck="false" />
+                <button class="lbi-eye" type="button" aria-label="Show password" data-show="false">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.1 3.8M6.2 6.2C3.5 8.1 2 12 2 12s3.6 7 10 7c1.4 0 2.7-.3 3.8-.8"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="shape-control">
+          <span class="shape-label">Corner radius</span>
+          <div class="segmented" role="group" aria-label="Corner radius">
+            <button type="button" data-corner="10" aria-pressed="false">Soft</button>
+            <button type="button" data-corner="20" aria-pressed="true">Round</button>
+            <button type="button" data-corner="26" aria-pressed="false">Pill</button>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <span>BENCHO · INTERACTION STUDY</span>
+        <span>Preview</span>
+      </footer>
+    </div>
+
+    <script>
+      (() => {
+        const W = 280;
+        const H = 52;
+        const S = 0.78;
+        /* Keep the stroke half inside the SVG edge so it is not clipped. */
+        const IN = 0.75;
+        const fields = [...document.querySelectorAll(".lbi")];
+        let corner = 20;
+        let flip = 0;
+
+        function updateField(root) {
+          const field = root.dataset.field;
+          const label = root.querySelector(".lbi-label");
+          const input = root.querySelector(".lbi-field");
+          const box = root.querySelector(".lbi-box");
+          const r = Math.min(H / 2, Math.max(0, corner));
+          const up = root.dataset.focus === "true" || input.value.length > 0;
+          const lx = Math.max(16, r + 6);
+          const x0 = Math.max(r, lx - 5);
+          /* Measure the untransformed label; getBoundingClientRect() already
+             includes the lifted label's scale and would scale the notch twice. */
+          const x1 = Math.min(W - r, Math.max(x0 + 10, Math.round(lx + label.offsetWidth * S + 5)));
+          const a = Math.max(0, r - IN);
+          const R = W - IN;
+          const B = H - IN;
+          const mid = Math.round(W / 2);
+          const nm = Math.round((x0 + x1) / 2);
+
+          root.dataset.up = String(up);
+          root.dataset.filled = String(input.value.length > 0);
+          box.style.borderRadius = `${r}px`;
+          box.style.setProperty("--lbi-x", `${lx}px`);
+
+          const right = r > 0
+            ? `M${x1},${IN} ${x1 < W - r ? `L${W - r},${IN} ` : ''}A${a},${a} 0 0 1 ${R},${r} L${R},${H - r} A${a},${a} 0 0 1 ${W - r},${B} L${mid},${B}`
+            : `M${x1},${IN} L${R},${IN} L${R},${B} L${mid},${B}`;
+          const left = r > 0
+            ? `M${x0},${IN} ${x0 > r ? `L${r},${IN} ` : ''}A${a},${a} 0 0 0 ${IN},${r} L${IN},${H - r} A${a},${a} 0 0 0 ${r},${B} L${mid},${B}`
+            : `M${x0},${IN} L${IN},${IN} L${IN},${B} L${mid},${B}`;
+
+          root.querySelector(".lbi-right").setAttribute("d", right);
+          root.querySelector(".lbi-left").setAttribute("d", left);
+          root.querySelector(".lbi-gap-left").setAttribute("d", `M${nm},${IN} L${x0},${IN}`);
+          root.querySelector(".lbi-gap-right").setAttribute("d", `M${nm},${IN} L${x1},${IN}`);
+          input.style.paddingRight = field === "Password" ? "48px" : `${lx}px`;
+
+          if (field === "Password") {
+            const eye = root.querySelector(".lbi-eye");
+            const shown = eye.dataset.show === "true";
+            input.style.webkitTextSecurity = shown ? "none" : "disc";
+            eye.setAttribute("aria-label", shown ? "Hide password" : "Show password");
+          }
+        }
+
+        fields.forEach((root) => {
+          const input = root.querySelector(".lbi-field");
+          const label = root.querySelector(".lbi-label");
+          const word = root.dataset.field;
+          label.htmlFor = `lbi-${word.toLowerCase()}`;
+          input.id = label.htmlFor;
+          label.querySelector("span").replaceWith(...[...word].map((character, index) => {
+            const span = document.createElement("span");
+            span.textContent = character;
+            span.style.setProperty("--i", index);
+            return span;
+          }));
+
+          input.addEventListener("focus", () => {
+            root.dataset.focus = "true";
+            updateField(root);
+          });
+          input.addEventListener("blur", () => {
+            root.dataset.focus = "false";
+            updateField(root);
+          });
+          input.addEventListener("input", () => updateField(root));
+          root.querySelector(".lbi-box").addEventListener("click", (event) => {
+            if (!event.target.closest("button")) input.focus();
+          });
+          root.querySelector(".lbi-label").addEventListener("click", () => input.focus());
+
+          const eye = root.querySelector(".lbi-eye");
+          if (eye) {
+            eye.addEventListener("pointerdown", (event) => event.preventDefault());
+            eye.addEventListener("click", () => {
+              eye.dataset.show = String(eye.dataset.show !== "true");
+              /* Alternate animation names so every toggle restarts the blur. */
+              flip = 1 - flip;
+              input.dataset.flip = String(flip);
+              updateField(root);
+            });
+          }
+          updateField(root);
+        });
+
+        document.querySelectorAll("[data-corner]").forEach((button) => {
+          button.addEventListener("click", () => {
+            corner = Number(button.dataset.corner);
+            document.querySelectorAll("[data-corner]").forEach((item) => {
+              item.setAttribute("aria-pressed", String(item === button));
+            });
+            fields.forEach(updateField);
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

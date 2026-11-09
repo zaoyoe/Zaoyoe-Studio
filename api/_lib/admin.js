@@ -1,3 +1,4 @@
+const adminSessions = require('./admin-session-store');
 const { createClient } = require('@supabase/supabase-js');
 const {
     getSupabasePublishableKey,
@@ -76,6 +77,16 @@ function getSupabasePublicClient() {
     );
 
     return supabasePublic;
+}
+
+// Password reauthentication must never change the request or service-role session.
+function createSupabasePasswordVerificationClient() {
+    return createClient(getSupabaseUrl(), getSupabasePublishableKey(), {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        global: {
+            fetch: (url, options = {}) => fetch(url, { ...options, signal: AbortSignal.timeout(10_000) })
+        }
+    });
 }
 
 function createSupabaseRequestClient(req) {
@@ -193,13 +204,13 @@ async function parseJsonBody(req) {
     return raw ? JSON.parse(raw) : {};
 }
 
-async function getAuthenticatedUser(req) {
+async function getAuthenticatedUser(req, options = {}) {
     let cookiePayload = null;
     let cookieLookupError = null;
     let cookieAuthError = null;
 
     try {
-        cookiePayload = await getAdminStudioCookiePayload(req);
+        cookiePayload = options.bearerOnly || getBearerToken(req) ? null : await getAdminStudioCookiePayload(req);
     } catch (error) {
         cookieLookupError = createAuthServiceUnavailableError(error, 'Admin studio session unavailable');
     }
@@ -208,6 +219,7 @@ async function getAuthenticatedUser(req) {
         const adminSupabase = getSupabaseAdmin();
         if (adminSupabase?.auth?.admin?.getUserById) {
             try {
+                await adminSessions.validateStudioSession(adminSupabase, cookiePayload);
                 const { data, error } = await adminSupabase.auth.admin.getUserById(cookiePayload.sub);
                 if (!error && data?.user) {
                     return {
@@ -218,7 +230,7 @@ async function getAuthenticatedUser(req) {
                     };
                 }
             } catch (error) {
-                cookieAuthError = createAuthServiceUnavailableError(error);
+                cookieAuthError = error?.code?.startsWith('admin_session_') ? error : createAuthServiceUnavailableError(error);
             }
         }
     }
@@ -425,7 +437,8 @@ function buildAdminPermissionError(options = {}, availablePermissions = []) {
 }
 
 async function requireAdmin(req, options = {}) {
-    const { user, token, error } = await getAuthenticatedUser(req);
+    const authContext = await getAuthenticatedUser(req, options);
+    const { user, token, error } = authContext;
     if (!user) {
         const authError = new Error(error?.message || 'Unauthorized');
         authError.statusCode = Number(error?.statusCode) || 401;
@@ -441,6 +454,10 @@ async function requireAdmin(req, options = {}) {
     const hasServiceRole = Boolean(getSupabaseServiceRoleKey());
     const adminSupabase = hasServiceRole ? getSupabaseAdmin() : null;
     const supabase = adminSupabase || requestClient;
+    // Admin Bearer access must stop after Supabase sign-out too. No positive cache.
+    const adminSession = token
+        ? await adminSessions.requireActiveBearerSession(adminSupabase, token, user.id)
+        : null;
     const permissionClient = requestClient || adminSupabase;
     let activeRoles = [];
 
@@ -497,6 +514,8 @@ async function requireAdmin(req, options = {}) {
 
     return {
         supabase,
+        adminSession,
+        adminStudioPayload: authContext.adminStudioPayload || null,
         requestSupabase: requestClient,
         adminSupabase,
         token,
@@ -516,7 +535,7 @@ async function writeAdminAuditLog({
     site = '',
     module = ''
 }) {
-    if (!supabase || !adminId || !actionType) return;
+    if (!supabase || !adminId || !actionType) return false;
 
     try {
         const normalizedDetails = (details && typeof details === 'object' && !Array.isArray(details))
@@ -533,7 +552,7 @@ async function writeAdminAuditLog({
             normalizedDetails.module = normalizedModule;
         }
 
-        await supabase
+        const { error } = await supabase
             .from('admin_audit_logs')
             .insert({
                 admin_id: adminId,
@@ -541,17 +560,22 @@ async function writeAdminAuditLog({
                 action_type: actionType,
                 details: normalizedDetails
             });
-    } catch (error) {
-        console.warn('[AdminAPI] Failed to write audit log:', error.message);
+        if (error) return false;
+        return true;
+    } catch (_) {
+        console.warn('[AdminAPI] Failed to write audit log');
+        return false;
     }
 }
 
 module.exports = {
     createSupabaseRequestClient,
+    createSupabasePasswordVerificationClient,
     getEnv,
     getSupabaseAdmin,
     getOptionalSupabaseAdmin,
     getAuthenticatedUser,
+    getAdminStudioCookiePayload,
     getBearerToken,
     getSupabasePublishableKey,
     getSupabasePublicClient,

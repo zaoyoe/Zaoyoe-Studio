@@ -1,0 +1,116 @@
+{
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "release_candidate": false,
+  "files": [
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/audited-run.cjs",
+      "bytes": 4650,
+      "sha256": "3259b44634094a6dd3a4753301e20454923df42939fbacce5d2a25d10933657b"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/post-check.cjs",
+      "bytes": 1641,
+      "sha256": "c3b2dfe5226f984c315e30fa8aa90e998a04939e718bdb1c874f1cca873564f1"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/prepare-lab.py",
+      "bytes": 4841,
+      "sha256": "776a5594e5e8a3ee7722005a5382bcd19345d8aef144b1467fe813e89e0e7925"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/executed-statements-01.sql",
+      "bytes": 180091,
+      "sha256": "4964bab25102c69cfd2dc4c7f30a52314f67d96438f1ce5eb8dc28212fbef554"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/fixture.sql",
+      "bytes": 5900,
+      "sha256": "eabf0b9891aeed9303458fc5c12aed65dab6e14bd1452a06e2d1b13d80c4c8c1"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/identity-before.sql",
+      "bytes": 92,
+      "sha256": "244d7e518170e1c8d8cf749e489db3b48598901f75e893fc3bd21e8e48c53089"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/post-check.sql",
+      "bytes": 359,
+      "sha256": "54a6fdf75da6f596122ef97b53f11c9c44e2cd61f6eaece54ce3702ff27e5a9e"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/root-hardening.sql",
+      "bytes": 76,
+      "sha256": "5020cf4daab049ea39d9cba565d001bd42349639a8b0d5c18c17cfe1c9279ae7"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/audited-run-02.cjs",
+      "bytes": 4650,
+      "sha256": "5086c680a1a87a2bfa9baa861967525d2fbcb08700d712f98a2f80a9ca0ad695"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/audited-run.cjs",
+      "bytes": 4650,
+      "sha256": "3259b44634094a6dd3a4753301e20454923df42939fbacce5d2a25d10933657b"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/diagnose-aliases.cjs",
+      "bytes": 1334,
+      "sha256": "3a1788b919fa7dcbc3eca5358570d16e3885e59bc2c5e93e512686a381df3a45"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/prepare-lab.py",
+      "bytes": 4841,
+      "sha256": "776a5594e5e8a3ee7722005a5382bcd19345d8aef144b1467fe813e89e0e7925"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/diagnose-aliases-01.sql",
+      "bytes": 356,
+      "sha256": "94bfdc669c85d4fb3a4b2cc5505532cf09a0d0eab3f4a7fa068cc997c4938dd3"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/executed-statements-01.sql",
+      "bytes": 321,
+      "sha256": "8fc701df9199b3d9752f87114f74ede135783cb8cbc6b58e68af2215e9a32e82"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/executed-statements-02.sql",
+      "bytes": 4250,
+      "sha256": "1bcc02ee8ce0b608abf5dbf1e9c85a9bc4a38737af59fd7f6dee39484c5facea"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/fixture.sql",
+      "bytes": 5900,
+      "sha256": "e2d919cdac2c96de34da16623f0fa886b3b7e2ce90abe6ee507f784502da9feb"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/identity-before.sql",
+      "bytes": 92,
+      "sha256": "244d7e518170e1c8d8cf749e489db3b48598901f75e893fc3bd21e8e48c53089"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/root-hardening.sql",
+      "bytes": 76,
+      "sha256": "5020cf4daab049ea39d9cba565d001bd42349639a8b0d5c18c17cfe1c9279ae7"
+    },
+    {
+      "path": "docs/security-card-store-hardening-round9-2026-11-09.md",
+      "bytes": 7757,
+      "sha256": "a339d6666304f33fbd698d7c2eb1f7d4737b162b9c796ecdc714ad073e15eb31"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/README.md",
+      "bytes": 8759,
+      "sha256": "e9f96823912ec5f36afee27280b552d97aa5b617e9e37886d673477fa640afea"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs",
+      "bytes": 20505,
+      "sha256": "3e37631c80cd3d4b24c9eadc284d3e55a52b114cd4485b5984751d0241982b57"
+    },
+    {
+      "path": "tests/security-round8-kc-mysql-lab.test.js",
+      "bytes": 20917,
+      "sha256": "213353b1be7e0204f881d5326aeaa887dd8b2f06668fd6312cd6ac0ebb9ae91e"
+    }
+  ]
+}

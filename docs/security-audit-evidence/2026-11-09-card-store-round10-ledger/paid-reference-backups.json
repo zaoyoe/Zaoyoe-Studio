@@ -1,0 +1,14 @@
+[
+  {
+    "path": "services/kc-pay-gpt/acceptance/payment-attempt-ledger/20261109-ledger-DRAFT.sql",
+    "backup": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/before-paid-reference-20261109-ledger-DRAFT.sql",
+    "sha256": "330b8ae85b6c6a77db1d195440728953bfcac09c1866b86da5375fc7b5d74479",
+    "readback_verified": true
+  },
+  {
+    "path": "tests/security-round10-kc-payment-attempt-ledger.test.js",
+    "backup": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/before-paid-reference-security-round10-kc-payment-attempt-ledger.test.js",
+    "sha256": "ef328530793797fc1bca2d90f8f55fa181e1d02ac71596e46aac5998f07bdddd",
+    "readback_verified": true
+  }
+]

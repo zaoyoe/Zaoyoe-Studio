@@ -1544,7 +1544,7 @@ test('customer robot account, wallet, shop and verify routes open the intended U
     assert.match(chatWidget, /waitForVerifyHistoryFocus\(timeoutMs = 2200\)/);
     assert.match(chatWidget, /verifyHelpTarget && this\.isCurrentEngagementVerifyPage\(\)/);
     assert.match(chatWidget, /const focused = await this\.focusVerifyHelpFromEngagement\(verifyHelpTarget\)/);
-    assert.match(verifyWidget, /<aside class="verify-guide-card" id="help" data-verify-help="1" tabindex="-1">/);
+    assert.match(verifyWidget, /google-2fa-tutorial\.html/);
     assert.match(verifyWidget, /function focusVerifyHelpFromEngagement\(\)/);
     assert.match(verifyWidget, /function focusVerifyHistoryFromEngagement\(\)/);
     assert.match(verifyWidget, /window\.ZaoyoeVerifyFocusHelp = focusVerifyHelpFromEngagement/);

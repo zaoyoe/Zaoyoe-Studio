@@ -1,3 +1,4 @@
+const bblabuMedia = require('./_bblabu-media');
 const {
     deductPointsForService
 } = require('../../api/_lib/payments/rpc');
@@ -51,6 +52,7 @@ const TASK_SELECT = [
     'points_ledger_reference_id',
     'api_base_url',
     'api_key_tail',
+    'api_key_fingerprint',
     'token_usage',
     'input_tokens',
     'output_tokens',
@@ -469,7 +471,7 @@ function buildPlaceholderExecutionResult(task = {}) {
         };
     }
 
-    const quantity = normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
+    const quantity = normalizePositiveInt(task.quantity, 1, { min: 1, max: 10 });
     const images = Array.from({ length: quantity }, (_, index) => ({
         image_url: pickDemoImage(index, task),
         original_image_url: pickDemoImage(index, task),
@@ -512,6 +514,8 @@ async function loadQueuedTasks(supabase, { site = '', limit = 5 } = {}) {
         .from('ai_image_tasks')
         .select(TASK_SELECT)
         .eq('status', 'queued')
+        .neq('billing_mode', 'api')
+        .or(`metadata->>next_poll_at.is.null,metadata->>next_poll_at.lte.${new Date().toISOString()}`)
         .order('estimated_points', { ascending: true })
         .order('created_at', { ascending: true })
         .limit(candidateLimit);
@@ -992,7 +996,7 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
 function getExpectedImageCount(task = {}) {
     if (String(task.mode || '').trim() === 'video') return 1;
     if (!['text', 'image', 'agent'].includes(String(task.mode || '').trim())) return 0;
-    return normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
+    return normalizePositiveInt(task.quantity, 1, { min: 1, max: 10 });
 }
 
 function getDeliveredImageCount(executionOrResults = {}) {
@@ -1005,7 +1009,7 @@ function getDeliveredImageCount(executionOrResults = {}) {
 function getTaskChargeQuantity(task = {}, deliveredCount = 0) {
     const expectedCount = getExpectedImageCount(task);
     if (!expectedCount) return 1;
-    return Math.min(expectedCount, Math.max(0, normalizePositiveInt(deliveredCount, 0, { min: 0, max: 8 })));
+    return Math.min(expectedCount, Math.max(0, normalizePositiveInt(deliveredCount, 0, { min: 0, max: 10 })));
 }
 
 function buildChargeTaskForDeliveredResults(task = {}, deliveredCount = 0) {
@@ -1556,6 +1560,17 @@ async function recoverTaskFromExistingResults(supabase, task = {}, {
     }
 }
 
+async function deferBblabuVideo(supabase, task, error = {}) {
+    const current = await loadTaskById(supabase, task.id);
+    if (!current || !bblabuMedia.isResumableVideo(current) || bblabuMedia.videoExpired(current)) return null;
+    const { data, error: updateError } = await supabase.from('ai_image_tasks').update({
+        status: 'queued', error_code: null, error_message: null,
+        metadata: { ...safeObject(current.metadata), next_poll_at: error.metadata?.next_poll_at || new Date(Date.now() + 8000).toISOString() }
+    }).eq('id', current.id).eq('status', 'running').select(TASK_SELECT).maybeSingle();
+    if (updateError) throw updateError;
+    return data ? { task: data, results: [], pending: true } : null;
+}
+
 async function failStaleRunningTasks(supabase, {
     site = '',
     limit = 5,
@@ -1578,6 +1593,11 @@ async function failStaleRunningTasks(supabase, {
             continue;
         }
 
+        if (bblabuMedia.isResumableVideo(task) && !bblabuMedia.videoExpired(task)) {
+            const deferred = await deferBblabuVideo(supabase, task);
+            if (deferred) results.push(deferred);
+            continue;
+        }
         await releaseTaskAuthorizationIfNeeded(
             supabase,
             task,
@@ -1753,6 +1773,10 @@ async function executeAiImageTask({
             if (isAiWorkbenchBillingError(error)) {
                 throw error;
             }
+            if (error.code === 'ai_video_provider_pending') {
+                const deferred = await deferBblabuVideo(supabase, runningTask, error);
+                if (deferred) return deferred;
+            }
             return failTaskWithRetry(supabase, runningTask, error);
         }
         throw error;
@@ -1821,7 +1845,7 @@ async function runAiImageTaskBatch({
         : await loadQueuedTasks(supabase, { site, limit });
     const results = staleResults.slice();
 
-    const taskResults = await runTasksWithConcurrency(tasks, concurrency, async (task) => {
+    const taskResults = await runTasksWithConcurrency(tasks.filter(task => task.billing_mode !== 'api'), concurrency, async (task) => {
         try {
             return await executeAiImageTask({
                 supabase,

@@ -1,0 +1,18 @@
+{
+  "method": "Reverse the archived round-only patch against byte copies in a temporary directory; never apply it to the workspace.",
+  "git_apply_reverse_exit_code": 0,
+  "recovered_files": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "sha256": "8b0c12e59e929c674d9f88660fad9049e68475ba721aebe43ae2fcd6415beb83",
+      "matches_initial_backup": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+      "sha256": "1a8b2908ffad6ef42e288b4c0475c28a503073408853eb42e713a8fe41e174b9",
+      "matches_initial_backup": true
+    }
+  ],
+  "new_test_removed_from_temporary_copy_only": true,
+  "scope": "Only the three round-5 code/test files; no full workspace or production recovery claim."
+}

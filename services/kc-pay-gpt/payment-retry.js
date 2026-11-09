@@ -10,6 +10,7 @@
  * 4. 成功 → 绑定地址/姓名到卡片、标记地址已绑定
  */
 
+const { randomBytes } = require('node:crypto');
 const store = require('./mysql-store');
 const { completeStripeCardPayment, readCheckoutDueAmount, waitForCheckoutDueAmount, estimateTaxFreeAmount } = require('./stripe-payment');
 const { ensureChatGptProUsageTier } = require('./pricing-checkout');
@@ -203,9 +204,25 @@ async function executePaymentWithRetry(page, options) {
         : (region === 'US' ? '美国免税' : regionConfig.label || region);
     progress(`已选取${addressLabel}账单地址 (${addressSource}): ${address.line1}, ${address.city}, ${address.state}`);
 
-    const ownerKey = options?.ownerKey
-        ? `payment_${String(options.ownerKey).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48)}`
-        : (cdkCode ? `payment_${cdkCode}_${Date.now()}` : `payment_debug_${Date.now()}`);
+    const suppliedOwner = options?.ownerKey;
+    if (suppliedOwner !== undefined && (typeof suppliedOwner !== 'string' || !/^[a-zA-Z0-9_-]{1,48}$/.test(suppliedOwner))) {
+        await persistPaymentState('not_started');
+        return { success: false, error: '支付任务归属标识无效，已停止支付', code: 'ASSET_LOCK_OWNER_INVALID',
+            manualIntervention: true, paymentState: 'not_started', screenshots: [] };
+    }
+    // Debug calls get a bounded random owner, never a CDK or a timestamp alias.
+    const ownerKey = suppliedOwner === undefined ? `payment_debug_${randomBytes(16).toString('hex')}` : `payment_${suppliedOwner}`;
+    const requireOwnedCardChange = (affectedRows) => {
+        if (affectedRows !== 1) {
+            const error = new Error('银行卡锁归属已变化，已停止自动操作，需人工核对');
+            error.code = 'CARD_LOCK_OWNERSHIP_LOST';
+            throw error;
+        }
+    };
+
+    const requireCardReleased = async (cardId) => {
+        requireOwnedCardChange(await store.releaseCard(cardId, ownerKey));
+    };
 
     const screenshots = [];
     const declinedLast4s = [];
@@ -353,6 +370,12 @@ async function executePaymentWithRetry(page, options) {
         let prewarmedTokens = null;
 
         if (!protocolOnly && cardAttempt === 1 && options?.prewarmedPayment?.card) {
+            // A prewarmed card must carry the receipt returned by reserveCard.
+            if (options.prewarmedPayment.card.ownerKey !== ownerKey) {
+                await persistPaymentState('not_started');
+                return { success: false, error: '预热银行卡锁归属不匹配，已停止支付', code: 'CARD_LOCK_OWNERSHIP_LOST',
+                    manualIntervention: true, paymentState: 'not_started', screenshots: [] };
+            }
             card = options.prewarmedPayment.card;
             options.prewarmedPayment.consumed = true;
             prewarmedTokens = options.prewarmedPayment.tokenPromise;
@@ -386,7 +409,7 @@ async function executePaymentWithRetry(page, options) {
         const cardValidation = validateCardNumber(card.card_number);
         if (!cardValidation.valid) {
             progress(`卡片 ...${cardLast4} 本地校验未通过 (${cardValidation.error})，标记已报废并更换下一张`);
-            await store.markCardExhausted(card.id);
+            await store.markCardExhausted(card.id, ownerKey);
             declinedLast4s.push(cardLast4);
             cardAttempt -= 1;
             continue;
@@ -402,6 +425,29 @@ async function executePaymentWithRetry(page, options) {
 
         let cardHandled = false;
         let attemptStarted = false;
+        let paymentHoldAttempted = false;
+        const beginPaymentSubmission = async (message) => {
+            // Treat an ambiguous write/COMMIT as held; finally cannot undo it.
+            if (paymentHoldAttempted) {
+                const error = new Error('本次银行卡已进入支付保护，禁止重复提交');
+                error.code = 'CARD_PAYMENT_HOLD_FAILED';
+                throw error;
+            }
+            paymentHoldAttempted = true;
+            cardHandled = true;
+            attemptStarted = true;
+            try {
+                if (await store.markCardPaymentStarted(card.id, ownerKey) !== 1) {
+                    throw new Error('银行卡支付保护未写入');
+                }
+                await persistPaymentState('started', message);
+            } catch (_) {
+                const error = new Error('银行卡支付保护保存失败，已停止提交并保留卡片待核账');
+                error.code = 'CARD_PAYMENT_HOLD_FAILED';
+                throw error;
+            }
+        };
+
         lastPersistedPaymentState = 'not_started';
 
         try {
@@ -437,8 +483,7 @@ async function executePaymentWithRetry(page, options) {
                             userAgent: options.userAgent || '',
                             protocolOnly,
                             onPaymentAttemptStarted: async () => {
-                                attemptStarted = true;
-                                await persistPaymentState('started', '正在提交银行卡支付 (Stripe 纯协议直充)');
+                                await beginPaymentSubmission('正在提交银行卡支付 (Stripe 纯协议直充)');
                             }
                         });
 
@@ -473,7 +518,7 @@ async function executePaymentWithRetry(page, options) {
                                     paymentResult.screenshot = filePath;
                                 } catch (_) {}
                             }
-                        } else if (protocolOnly) {
+                        } else if (protocolOnly || paymentHoldAttempted) {
                             paymentResult = {
                                 ...(protoRes || {}),
                                 success: false,
@@ -489,11 +534,11 @@ async function executePaymentWithRetry(page, options) {
                             progress(`[协议支付] ${protoRes.error || '银行卡需要 3DS 验证，平滑切入收银台 UI'}...`);
                         }
                     } catch (protoErr) {
-                        console.warn(`⚠️ [协议支付] 协议尝试异常${protocolOnly ? '，停止并转人工复核' : '，平滑转入收银台 UI'}: ${protoErr.message}`);
-                        if (protocolOnly) {
+                        console.warn(`⚠️ [协议支付] 协议尝试异常${protocolOnly || paymentHoldAttempted ? '，停止并转人工复核' : '，平滑转入收银台 UI'}: ${protoErr.message}`);
+                        if (protocolOnly || paymentHoldAttempted) {
                             paymentResult = {
                                 success: false,
-                                code: 'PAYMENT_RESULT_UNKNOWN',
+                                code: protoErr.code === 'CARD_PAYMENT_HOLD_FAILED' ? protoErr.code : 'PAYMENT_RESULT_UNKNOWN',
                                 error: `纯协议支付异常，结果未确认: ${protoErr.message}`,
                                 submitted: attemptStarted,
                                 submissionAttempted: attemptStarted,
@@ -644,15 +689,14 @@ async function executePaymentWithRetry(page, options) {
                                 paymentCurrency: currency,
                                 grokCheckout: options.grokCheckout,
                                 onPaymentAttemptStarted: async () => {
-                                    attemptStarted = true;
-                                    await persistPaymentState('started', '正在提交银行卡支付');
+                                    await beginPaymentSubmission('正在提交银行卡支付');
                                 }
                             });
                         }
                     }
                 }
             } catch (error) {
-                paymentResult = { success: false, error: error.message,
+                paymentResult = { success: false, error: error.message, code: error.code,
                     submitted: attemptStarted, submissionAttempted: attemptStarted };
             }
             if (paymentResult.dueAmount > 0) {
@@ -672,19 +716,23 @@ async function executePaymentWithRetry(page, options) {
             );
 
             const paymentResultCode = String(paymentResult.code || '').trim().toUpperCase();
-            const isPaymentGuardFailure = PAYMENT_GUARD_ERROR_CODES.has(paymentResultCode);
+            const isPaymentGuardFailure = paymentResultCode === 'CARD_PAYMENT_HOLD_FAILED' || PAYMENT_GUARD_ERROR_CODES.has(paymentResultCode);
             const isDeclined = !isPaymentGuardFailure && Boolean(paymentResult.declined || paymentResult.canRetryCard
                 || (!options.grokCheckout?.native && !isCaptchaOrNonCard && paymentResult.code !== 'PAYMENT_RESULT_UNKNOWN' && isPaymentDeclined(paymentResult.error || '')));
 
             const paymentState = classifyPaymentResult({
                 success: Boolean(paymentResult.success),
                 declined: isDeclined,
-                submitted: paymentResult.submitted,
-                submissionAttempted: paymentResult.submissionAttempted,
+                submitted: paymentResult.submitted || paymentHoldAttempted,
+                submissionAttempted: paymentResult.submissionAttempted || paymentHoldAttempted,
                 previousState: lastPersistedPaymentState,
                 captchaRequired: paymentResult.captchaRequired,
                 error: paymentResult.error
             });
+            // A submitted/terminal result owns its recovery path before any
+            // callback or bookkeeping can throw. Only confirmed pre-submit
+            // failures may use finally's ordinary release.
+            cardHandled = cardHandled || paymentState !== 'not_started';
             await persistPaymentState(paymentState, paymentState === 'unknown'
                 ? '支付结果未知，暂停自动重试并保留 CDK 与银行卡供人工复核'
                 : '');
@@ -705,13 +753,11 @@ async function executePaymentWithRetry(page, options) {
                 progress(`实际扣款金额（免税后）: ${billedCurrency} ${billedAmount}`);
 
                 const holderName = paymentResult.holderName || card.card_holder || billingHolderName || '';
-                await store.bindCardPaymentProfile(card.id, { holderName, address });
+                await store.bindCardPaymentProfile(card.id, { holderName, address }, ownerKey);
                 if (address.id) {
                     await markAddressBound(address.id, card.id);
                 }
-                await store.recordCardUsage(card.id);
-                await store.releaseCard(card.id);
-                cardHandled = true;
+                await store.recordCardUsage(card.id, ownerKey);
                 await store.createBillingRecord({
                     card_number: card.card_number,
                     card_last4: cardLast4,
@@ -724,6 +770,8 @@ async function executePaymentWithRetry(page, options) {
                     ...paymentCorrelation,
                     status: 'success'
                 });
+                requireOwnedCardChange(await store.completeCardPayment(card.id, ownerKey));
+                cardHandled = true;
                 progress(`支付成功！卡片: ...${cardLast4}，姓名: ${holderName}，地址: ${address.line1}, ${address.city}`);
                 if (paymentResult.screenshot) {
                     screenshots.push(paymentResult.screenshot);
@@ -750,7 +798,7 @@ async function executePaymentWithRetry(page, options) {
                 // Even if bookkeeping fails, an unresolved submitted payment must
                 // never reach finally's normal release path.
                 cardHandled = true;
-                await store.quarantineCardForReview(card.id);
+                await store.quarantineCardForReview(card.id, 'payment_result_unknown', ownerKey);
                 await store.createBillingRecord({
                     card_number: card.card_number,
                     card_last4: cardLast4,
@@ -783,9 +831,10 @@ async function executePaymentWithRetry(page, options) {
                 cardHandled = true;
                 progress(`Stripe 拒绝支付 [${lastError}]，将卡片置入 30 分钟智能冷却避让 (ID: ${card.id}, ...${cardLast4})`);
                 try {
-                    await store.cooldownCard(card.id, 30, 'Stripe拒付');
+                    await store.cooldownCard(card.id, 30, ownerKey);
                 } catch (error) {
-                    await store.quarantineCardForReview(card.id, 'decline_cooldown_failed');
+                    if (error?.code === 'CARD_LOCK_OWNERSHIP_LOST') throw error;
+                    await store.quarantineCardForReview(card.id, 'decline_cooldown_failed', ownerKey);
                     throw error;
                 }
                 await store.createBillingRecord({
@@ -851,7 +900,7 @@ async function executePaymentWithRetry(page, options) {
             }
 
             // 非银行拒付：立即将卡片安全释放回卡池，保证处于正常可用状态
-            await store.releaseCard(card.id, true);
+            await requireCardReleased(card.id);
             cardHandled = true;
 
             progress(`卡片 ...${cardLast4} 已恢复可用状态（非卡片问题，无需报废或冷却）`);
@@ -868,7 +917,7 @@ async function executePaymentWithRetry(page, options) {
             };
         } finally {
             if (card?.id && !cardHandled) {
-                await store.releaseCard(card.id, true).catch(() => { });
+                await store.releaseCard(card.id, ownerKey).catch(() => { });
             }
         }
     }

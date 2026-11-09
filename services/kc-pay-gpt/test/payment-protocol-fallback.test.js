@@ -3,13 +3,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { randomBytes } from 'node:crypto';
+import { classifyPaymentResult, classifyOpenAiCardMethodFailure } from '../task-safety.js';
 
 describe('Payment Protocol Decline UI Fallback', () => {
     function createFixture({
         protoRes = { success: false, declined: true, error: 'Your card was declined.', code: 'card_declined' },
         uiPaymentResult = { success: true, dueAmount: 982.14, dueCurrency: 'PHP' },
         env = {},
-        extraOptions = {}
+        extraOptions = {}, protocolStarted = true, protocolError = null
     } = {}) {
         const store = {
             getPaymentRegion: vi.fn(async () => 'PH'),
@@ -20,7 +22,8 @@ describe('Payment Protocol Decline UI Fallback', () => {
                 card_expiry: '10/28',
                 card_cvc: '123'
             })),
-            releaseCard: vi.fn(),
+            markCardPaymentStarted: vi.fn(async () => 1), completeCardPayment: vi.fn(async () => 1),
+            releaseCard: vi.fn(async () => 1),
             cooldownCard: vi.fn(),
             quarantineCardForReview: vi.fn(),
             createBillingRecord: vi.fn(),
@@ -37,14 +40,22 @@ describe('Payment Protocol Decline UI Fallback', () => {
             screenshot: vi.fn(async () => {})
         };
 
-        const executeStripeProtocolPayment = vi.fn(async () => protoRes);
-        const completeStripeCardPayment = vi.fn(async () => uiPaymentResult);
+        const executeStripeProtocolPayment = vi.fn(async options => {
+            if (protocolStarted) await options.onPaymentAttemptStarted();
+            if (protocolError) throw protocolError;
+            return protoRes;
+        });
+        const completeStripeCardPayment = vi.fn(async (_page, _card, _address, options) => {
+            await options.onPaymentAttemptStarted();
+            return uiPaymentResult;
+        });
         const waitForCheckoutDueAmount = vi.fn(async () => ({ amount: 982.14, currency: 'PHP' }));
         const readCheckoutDueAmount = vi.fn(async () => ({ amount: 982.14, currency: 'PHP' }));
         const onProgress = vi.fn();
         const onPaymentState = vi.fn();
 
         const dependencies = {
+            'node:crypto': { randomBytes },
             './mysql-store': store,
             './stripe-payment': {
                 completeStripeCardPayment,
@@ -66,8 +77,7 @@ describe('Payment Protocol Decline UI Fallback', () => {
             },
             './region-config': { getRegionConfig: () => ({ currency: 'PHP' }) },
             './task-safety': {
-                classifyPaymentResult: () => ({ kind: 'success', category: 'paid' }),
-                classifyOpenAiCardMethodFailure: () => null
+                classifyPaymentResult, classifyOpenAiCardMethodFailure
             },
             './card-validator': { validateCardNumber: () => ({ valid: true }) },
             './public/grok-plan-catalog': {},
@@ -244,15 +254,16 @@ describe('Payment Protocol Decline UI Fallback', () => {
         expect(result.cardsDeclined).toBe(3);
     });
 
-    it('lazily wakes up browser and UI only when protocol explicitly requests fallbackToUi (e.g. 3DS required)', async () => {
+    it('permits UI fallback only when protocol has not entered the submission barrier', async () => {
         const fixture = createFixture({
             protoRes: {
                 success: false,
                 declined: false,
                 fallbackToUi: true,
                 requiresAction: true,
-                error: '银行卡需要 3DS 验证，平滑切入收银台 UI'
+                error: '协议预检查不支持当前页面'
             },
+            protocolStarted: false,
             uiPaymentResult: {
                 success: true,
                 dueAmount: 982.14,
@@ -373,4 +384,47 @@ describe('Payment Protocol Decline UI Fallback', () => {
         expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
         expect(result.success).toBe(false);
     });
+    it.each([
+        { success: false, fallbackToUi: true, submitted: false, error: 'offline unsupported response' },
+        { success: false, requiresAction: true, fallbackToUi: true, submitted: true, code: 'PAYMENT_REQUIRES_ACTION' },
+        { success: false, submitted: false, captchaRequired: true, error: 'captcha required' }
+    ])('never opens UI or rotates after the durable hold: %j', async protoRes => {
+        const fixture = createFixture({ protoRes });
+        const ensureBrowserPage = vi.fn();
+        const refreshCheckoutSession = vi.fn();
+        expect(await fixture.run({ ensureBrowserPage, refreshCheckoutSession })).toMatchObject({ success: false, paymentState: 'unknown' });
+        expect(fixture.executeStripeProtocolPayment).toHaveBeenCalledOnce();
+        expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
+        expect(ensureBrowserPage).not.toHaveBeenCalled();
+        expect(refreshCheckoutSession).not.toHaveBeenCalled();
+        expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
+        expect(fixture.store.releaseCard).not.toHaveBeenCalled();
+        expect(fixture.store.cooldownCard).not.toHaveBeenCalled();
+    });
+    it('never falls back after the protocol throws after payment protection', async () => {
+        const fixture = createFixture({ protocolError: new Error('offline socket response lost') });
+        expect(await fixture.run()).toMatchObject({ success: false, paymentState: 'unknown' });
+        expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
+        expect(fixture.store.markCardPaymentStarted).toHaveBeenCalledOnce();
+        expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
+        expect(fixture.store.releaseCard).not.toHaveBeenCalled();
+    });
+    it('permits one UI attempt when the protocol throws before protection', async () => {
+        const fixture = createFixture({ protocolStarted: false, protocolError: new Error('offline preflight failure') });
+        expect(await fixture.run()).toMatchObject({ success: true });
+        expect(fixture.completeStripeCardPayment).toHaveBeenCalledOnce();
+        expect(fixture.store.markCardPaymentStarted).toHaveBeenCalledOnce();
+        expect(fixture.store.completeCardPayment).toHaveBeenCalledOnce();
+        expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
+    });
+    it('stops protocol and UI when the durable hold cannot be acknowledged', async () => {
+        const fixture = createFixture();
+        fixture.store.markCardPaymentStarted.mockRejectedValue(new Error('offline hold acknowledgement lost'));
+        expect(await fixture.run()).toMatchObject({ success: false, paymentState: 'unknown' });
+        expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
+        expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
+        expect(fixture.store.releaseCard).not.toHaveBeenCalled();
+        expect(fixture.store.cooldownCard).not.toHaveBeenCalled();
+    });
+
 });

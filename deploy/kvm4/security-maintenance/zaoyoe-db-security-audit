@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CANONICAL_ROOT="/opt/zaoyoe-verify-server"
+CONTAINER_NAME="zaoyoe-verify-server"
+
+[[ -f "$CANONICAL_ROOT/.env" ]] || { echo "Missing $CANONICAL_ROOT/.env" >&2; exit 1; }
+
+exec 9>/run/lock/zaoyoe-db-security-audit.lock
+flock -n 9 || { echo '{"status":"busy"}'; exit 0; }
+
+container_id="$(docker inspect --format '{{.Id}}' "$CONTAINER_NAME" 2>/dev/null)" || {
+    echo "Container $CONTAINER_NAME not found" >&2; exit 1;
+}
+
+docker exec -i --workdir /app "$container_id" node scripts/audit-db-security.js

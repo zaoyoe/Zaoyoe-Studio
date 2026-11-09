@@ -1,0 +1,57 @@
+{
+  "recorded_at": "2026-11-08T19:52:32.441363+08:00",
+  "kind": "pre-edit-file-backup-not-git-or-database-backup",
+  "backup_identity": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-atomic-hardening-20261108-fozv701z",
+  "result": "PASS",
+  "verified_files": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "backup_path": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-atomic-hardening-20261108-fozv701z/services/kc-pay-gpt/mysql-store.js",
+      "expected_sha256": "fa94509edeb320c5f8e6f99d0312d2037821066961cdf9ac2ebd45b1bb47dd6f",
+      "actual_sha256": "fa94509edeb320c5f8e6f99d0312d2037821066961cdf9ac2ebd45b1bb47dd6f",
+      "bytes": 182966,
+      "match": true
+    },
+    {
+      "path": "services/kc-pay-gpt/server.js",
+      "backup_path": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-atomic-hardening-20261108-fozv701z/services/kc-pay-gpt/server.js",
+      "expected_sha256": "119c7d6de78b7079fe730aef342d677cb378ad11ce8498ad2ce00fee16db0ddb",
+      "actual_sha256": "119c7d6de78b7079fe730aef342d677cb378ad11ce8498ad2ce00fee16db0ddb",
+      "bytes": 220089,
+      "match": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+      "backup_path": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-atomic-hardening-20261108-fozv701z/services/kc-pay-gpt/test/recharge-routing.test.js",
+      "expected_sha256": "25b4fb536dbedf88ecce53e3f2fcc3f69e08af8856d65e226bd1a0c37c73ec1e",
+      "actual_sha256": "25b4fb536dbedf88ecce53e3f2fcc3f69e08af8856d65e226bd1a0c37c73ec1e",
+      "bytes": 30948,
+      "match": true
+    },
+    {
+      "path": "tests/security-round2-kc-activation.test.js",
+      "backup_path": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-atomic-hardening-20261108-fozv701z/tests/security-round2-kc-activation.test.js",
+      "expected_sha256": "9b639239765b1f786afbf65110ef51a25110860ed7b10b5ad43912bc123e71c0",
+      "actual_sha256": "9b639239765b1f786afbf65110ef51a25110860ed7b10b5ad43912bc123e71c0",
+      "bytes": 12464,
+      "match": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/local-preview-recovery.test.js",
+      "backup_path": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-atomic-hardening-20261108-fozv701z/services/kc-pay-gpt/test/local-preview-recovery.test.js",
+      "expected_sha256": "17fa876b7b0b0f9a6679693ddfd2d0905c3a7c5cd4576e71f11363ddfbb4fc90",
+      "actual_sha256": "17fa876b7b0b0f9a6679693ddfd2d0905c3a7c5cd4576e71f11363ddfbb4fc90",
+      "bytes": 12196,
+      "match": true
+    }
+  ],
+  "new_file_before_state": {
+    "path": "tests/security-round3-kc-activation-atomic.test.js",
+    "state": "ABSENT",
+    "delta_before": "/dev/null"
+  },
+  "limitations": [
+    "Five per-file dirty-state backups only; not a backup of the whole dirty worktree.",
+    "Not a Git commit/stash or a database backup; original backup is in a temporary directory."
+  ]
+}

@@ -1,0 +1,43 @@
+--- a/services/kc-pay-gpt/test/mysql-card-cooldown.test.js
++++ b/services/kc-pay-gpt/test/mysql-card-cooldown.test.js
+@@ -27,32 +27,33 @@
+         const { store, execute, createPool } = harness();
+         expect(store.cooldownCard).toBeTypeOf('function');
+         expect(createPool).not.toHaveBeenCalled();
+-        await store.cooldownCard(55, 30, 'Stripe拒付');
++        await store.cooldownCard(55, 30, 'payment_fixture');
+         expect(execute).toHaveBeenCalledOnce();
+         const [sql, params] = execute.mock.calls[0];
+-        expect(params).toEqual([30, 55]);
++        expect(params).toEqual([30, 55, 'payment_fixture']);
+         expect(sql).toContain('GREATEST'); // Never shorten an existing daily usage cooldown.
+         expect(sql).toContain('INTERVAL ? MINUTE');
+         expect(sql).toContain('in_use = 0');
+         expect(sql).toContain('locked_at = NULL');
+         expect(sql).toContain('locked_by = NULL');
+-        expect(sql).toContain("WHERE id = ? AND is_active = 1 AND status = '正常'");
++        expect(sql).toContain("WHERE id = ? AND is_active = 1 AND status = '正常' AND in_use = 1");
++        expect(sql).toContain('CAST(locked_by AS BINARY) = CAST(? AS BINARY)');
+         expect(sql.split('WHERE')[0]).not.toMatch(/status\s*=|is_active\s*=/); // Never reactivate manual-review assets.
+     });
+     it('defaults to 30 minutes and normalizes numeric input through bound parameters', async () => {
+         const { store, execute } = harness();
+-        await store.cooldownCard('55');
+-        expect(execute.mock.calls[0][1]).toEqual([30, 55]);
++        await store.cooldownCard('55', undefined, 'payment_fixture');
++        expect(execute.mock.calls[0][1]).toEqual([30, 55, 'payment_fixture']);
+     });
+     it.each([0, -1, 1.5, 1441, NaN, Infinity, '30); DROP TABLE card_assets; --'])('rejects unsafe duration %s before persistence', async minutes => {
+         const { store, execute, createPool } = harness();
+-        await expect(store.cooldownCard(55, minutes)).rejects.toThrow('冷却时长无效');
++        await expect(store.cooldownCard(55, minutes, 'payment_fixture')).rejects.toThrow('冷却时长无效');
+         expect(execute).not.toHaveBeenCalled();
+         expect(createPool).not.toHaveBeenCalled();
+     });
+     it.each([null, 0, -1, 1.5, NaN, Infinity, '55 OR 1=1'])('does not mutate cards for invalid ID %s', async cardId => {
+         const { store, execute } = harness();
+-        await store.cooldownCard(cardId);
++        await expect(store.cooldownCard(cardId, undefined, 'payment_fixture')).rejects.toMatchObject({ code: 'ASSET_LOCK_ID_INVALID' });
+         expect(execute).not.toHaveBeenCalled();
+     });
+ });

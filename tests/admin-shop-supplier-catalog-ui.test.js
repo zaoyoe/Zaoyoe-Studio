@@ -43,6 +43,11 @@ test('admin shop exposes a safe 16688 supplier catalog import workspace', () => 
     assert.match(adminHtml, /id="supplierOrderLookupNumber"[^>]+placeholder="粘贴虾仁后台显示的订单号"/);
     assert.match(adminHtml, /id="supplierOrderLookupButton"[^>]+data-shop-action="supplier-order-lookup"/);
     assert.match(adminHtml, /id="supplierOrderLookupResult"[^>]+aria-live="polite"/);
+    assert.match(adminHtml, /class="shop-supplier-layout"/);
+    assert.match(adminHtml, /id="supplierCatalogSidebar"/);
+    assert.match(adminHtml, /id="supplierCatalogTree"/);
+    assert.match(adminHtml, /id="supplierCatalogTreeAllBtn"/);
+    assert.match(adminHtml, /class="shop-supplier-main"/);
 
     assert.match(shopSource, /SHOP_TAB_IDS: \['products', 'supplier-catalog'/);
     assert.match(shopSource, /case 'supplier-catalog':\s*return this\.runShopTabLoader/);
@@ -153,4 +158,74 @@ test('draft-card inspection stays read-only, uncached, text-rendered and invalid
     assert.match(closeBlock, /\+\+this\.supplierCatalogDraftCardsRequestToken/);
     assert.match(closeBlock, /this\.supplierCatalogDetailItem = null/);
     assert.match(closeBlock, /body\.replaceChildren\(\)/);
+});
+
+test('supplier mapping summary auto-syncs upstream cover icon and provides manual sync button', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    assert.match(shopSource, /case 'supplier-mapping-sync-image':\s*this\.syncSupplierMappingImage\(actionEl\);/);
+    assert.match(shopSource, /data-shop-action="supplier-mapping-sync-image"/);
+    assert.match(shopSource, /同步上游图标/);
+
+    const summaryBlock = extractFunctionBlock(shopSource, 'loadProductSupplierSummary: async function');
+    assert.match(summaryBlock, /firstImageUrl/);
+    assert.match(summaryBlock, /iconInput\.value = firstImageUrl/);
+    assert.match(summaryBlock, /this\.currentProductImageAsset = buildShopProductImageAssetFromUrl\(firstImageUrl\)/);
+    assert.match(summaryBlock, /this\.updatePreview\(\)/);
+
+    const syncMethodBlock = extractFunctionBlock(shopSource, 'syncSupplierMappingImage: function');
+    assert.match(syncMethodBlock, /iconInput\.value = imageUrl/);
+    assert.match(syncMethodBlock, /this\.productIconUploadDirty = true/);
+    assert.match(syncMethodBlock, /已同步上游商品图标，保存商品后生效/);
+});
+
+test('supplier mapping auto-sync prioritizes admin manual edits over upstream defaults', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const autoSyncBlock = extractFunctionBlock(shopSource, 'applySupplierAutoSyncToProductModal: function');
+    assert.match(autoSyncBlock, /isDefaultOrEmptyIcon/);
+    assert.match(autoSyncBlock, /currentUsageValue/);
+    assert.match(autoSyncBlock, /iconInput\.value = firstImageUrl/);
+    assert.match(autoSyncBlock, /usageInput\.value = firstDescription/);
+
+    const fillBlock = extractFunctionBlock(shopSource, 'fillProductModalFromData: function');
+    assert.match(fillBlock, /this\.applySupplierAutoSyncToProductModal\(data\)/);
+
+    // Verify auto-restores if existing instructions match upstream text but were stripped of images
+    assert.match(autoSyncBlock, /isDamagedStrippedCopy/);
+    assert.match(autoSyncBlock, /firstDescription\.includes\('<img'\)/);
+    assert.match(autoSyncBlock, /!currentUsageValue\.includes\('<img'\)/);
+
+    // Verify custom styling classes are applied to inputs and dropdowns
+    assert.match(shopSource, /class="shop-supplier-custom-select"/);
+    assert.match(shopSource, /class="modern-input shop-supplier-custom-input shop-supplier-ceiling-input"/);
+    assert.match(shopSource, /class="shop-supplier-mapping-card"/);
+    assert.match(shopSource, /class="shop-supplier-summary__toggle"/);
+});
+
+test('supplier catalog batch import displays real fine-grained progress and supports direct publish', () => {
+    const adminHtml = readRepoFile('admin-studio.html');
+    const shopSource = readRepoFile('js/admin-shop.js');
+
+    // 1. Modals and controls in admin-studio.html
+    assert.match(adminHtml, /id="supplierCatalogBatchModal"/);
+    assert.match(adminHtml, /id="batchImportProgressContainer"/);
+    assert.match(adminHtml, /id="batchImportProgressBar"/);
+    assert.match(adminHtml, /id="batchImportProgressPercent"/);
+    assert.match(adminHtml, /id="batchImportProgressStatusText"/);
+    assert.match(adminHtml, /id="batchImportTotalCount"/);
+    assert.match(adminHtml, /id="batchImportSuccessCount"/);
+    assert.match(adminHtml, /id="batchImportSkippedCount"/);
+    assert.match(adminHtml, /id="batchImportFailedCount"/);
+
+    // Detail modal has both draft and direct publish buttons
+    assert.match(adminHtml, /data-shop-action="supplier-catalog-import-detail"/);
+    assert.match(adminHtml, /data-shop-action="supplier-catalog-import-publish-detail"/);
+
+    // 2. Real-time fine-grained progress and concurrency in js/admin-shop.js
+    const batchImportBlock = extractFunctionBlock(shopSource, 'runChunkedSupplierCatalogBatchImport: async function');
+    assert.match(batchImportBlock, /const CONCURRENCY = Math\.min\(2, total\);/);
+    assert.match(batchImportBlock, /goodsNos:\s*\[currentItem\.goodsNo\]/);
+    assert.match(batchImportBlock, /updateProgressUI\(currentItem\.name\)/);
+    assert.match(batchImportBlock, /Math\.round\(\(processedCount \/ total\) \* 100\)/);
+    assert.match(batchImportBlock, /r\.status === 'skipped' \|\| r\.status === 'already_imported'/);
+    assert.match(batchImportBlock, /this\.supplierCatalogBatchInFlight/);
 });

@@ -4037,6 +4037,9 @@
         document.body?.classList.add('guest-shop-modal-open');
         if (!deferScrollLock) lockGuestModalScroll(modal);
         modal.classList.add('active');
+        try {
+            window.dispatchEvent(new CustomEvent('zaoyoe:label-input-refresh'));
+        } catch (_) {}
         // A cached single-item quote becomes a gentle roll-in after activation;
         // an in-flight batch quote calls the same renderer when it resolves.
         if (freshConfirmation && !state.previewPending && state.listSubtotal !== null) renderPayableSummary();
@@ -5719,6 +5722,21 @@
         quantityField?.addEventListener('input', handleQuantityInput);
         quantityField?.addEventListener('change', handleQuantityInput);
         element('guestCashDiscountCode')?.addEventListener('input', handleDiscountCodeInput);
+        function handleVisibilityOrFocus() {
+            if (document.hidden) return;
+            if (!state.orderNo || state.statusRequestInFlight) return;
+            if (state.pollTimer && state.pollStartedAt > 0) {
+                window.clearTimeout(state.pollTimer);
+                state.pollTimer = null;
+                void pollStatus({ immediate: true });
+            }
+        }
+        if (typeof document?.addEventListener === 'function') {
+            document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+        }
+        if (typeof window !== 'undefined' && typeof window?.addEventListener === 'function') {
+            window.addEventListener('focus', handleVisibilityOrFocus);
+        }
         syncQuantityUi();
         syncDiscountUi();
         const stored = storedCheckout();

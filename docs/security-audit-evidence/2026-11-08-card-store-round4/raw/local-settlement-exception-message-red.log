@@ -1,0 +1,100 @@
+
+ RUN  v4.1.9 /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt
+
+ ❯ test/recharge-routing.test.js (71 tests | 1 failed) 268ms
+     ✓ 'grok' uses only its own credential checks and execution mode 9ms
+     ✓ 'claude' uses only its own credential checks and execution mode 3ms
+     ✓ 'chatgpt' uses only its own credential checks and execution mode 2ms
+     ✓ preserves full ChatGPT Session JSON in local mode 3ms
+     ✓ fails closed before locking the CDK when the outsourced channel is enabled without an API key 1ms
+     ✓ rejects missing API key before creating an outsourced task or routing to local payment 3ms
+     ✓ rejects missing endpoint before creating an outsourced task or routing to local payment 1ms
+     ✓ rejects mismatched currency before creating an outsourced task or routing to local payment 2ms
+     ✓ rejects unmapped current plan before creating an outsourced task or routing to local payment 1ms
+     ✓ 'grok' does not depend on GPT supplier configuration 3ms
+     ✓ 'claude' does not depend on GPT supplier configuration 1ms
+     ✓ rejects wrong browser platform before locking any CDK 1ms
+     ✓ rejects profile JSON instead of login cookie before locking any CDK 2ms
+     ✓ rejects irrelevant cookie before locking any CDK 1ms
+     ✓ does not unlock an unrelated active CDK when its lookup fails 2ms
+     ✓ never unlocks by CDK when atomic admission fails or its commit outcome is unknown 2ms
+     ✓ records card-pool rejection for 'grok' without leaking internal instructions or starting a task 1ms
+     ✓ records card-pool rejection for 'claude' without leaking internal instructions or starting a task 3ms
+     ✓ records card-pool rejection for 'chatgpt' without leaking internal instructions or starting a task 1ms
+     ✓ records Claude credential rejection without logging the submitted credential 3ms
+     ✓ does not expose raw diagnostics when restoring an existing task 1ms
+     ✓ rejects a conflicting database platform and retired Grok plan before reserving assets 4ms
+     ✓ rejects a cooled-down local ChatGPT Session before locking its CDK 1ms
+     ✓ does not apply the local Session cooldown to third-party ChatGPT checkout 1ms
+     ✓ 'grok' reaches the matching payment adapter with its exact CDK plan 115ms
+     ✓ 'claude' reaches the matching payment adapter with its exact CDK plan 2ms
+     ✓ 'chatgpt' reaches the matching payment adapter with its exact CDK plan 2ms
+     ✓ falls back to UI Checkout when API checkout fails in CHECKOUT_MODE=api 2ms
+     ✓ falls back to UI Checkout when API checkout fails in CHECKOUT_MODE=auto 4ms
+     ✓ falls back to UI Checkout when API checkout fails in CHECKOUT_MODE=hybrid 2ms
+     ✓ uses protocol preparation and browser confirmation when FAST_PROTOCOL_ENABLED=false 2ms
+     ✓ uses protocol preparation and browser confirmation when FAST_PROTOCOL_ENABLED=0 2ms
+     ✓ keeps explicit hybrid confirmation in the browser even when fast protocol is enabled 1ms
+     ✓ keeps successful protocol preparation free of browser work in pure protocol mode 1ms
+     ✓ stops pure protocol API failure before browser or payment 2ms
+     ✓ stops when required pure protocol capabilities are unavailable 1ms
+     ✓ stops hybrid preparation failure without payment or browser fallback: {"protocolSessionOk":false} 3ms
+     ✓ stops hybrid preparation failure without payment or browser fallback: {"protocolRegionOk":false} 1ms
+     ✓ stops hybrid API CHECKOUT_UNUSUAL_ACTIVITY without UI fallback 4ms
+     ✓ stops hybrid API ACCOUNT_ALREADY_SUBSCRIBED without UI fallback 1ms
+     ✓ stops hybrid API CHECKOUT_AUTH_ERROR without UI fallback 1ms
+     ✓ keeps real recharge directly on UI Checkout when CHECKOUT_MODE=ui 1ms
+     ✓ stops a tampered task plan before installing credentials or opening checkout 1ms
+     ✓ does not open checkout when official Grok authentication rejects the cookie 1ms
+     ✓ dispatches Grok raw cookies and clears inherited GPT credentials 3ms
+     ✓ retains started even when saving the state fails 2ms
+     ✓ retains unknown even when saving the state fails 2ms
+     ✓ retains succeeded even when saving the state fails 2ms
+     ✓ cools a ChatGPT Session after unusual activity only before payment starts 2ms
+     ✓ does not set Session cooldown for another platform 1ms
+     ✓ does not set Session cooldown for third-party API mode 1ms
+     ✓ does not set Session cooldown for payment already started 1ms
+     ✓ does not set Session cooldown for ordinary checkout failure 1ms
+     × keeps worker exception details out of the saved and reported public message 12ms
+     ✓ retains assets after a transient persistence failure and only reports the saved manual result 3ms
+     ✓ stops refused settlement without a fallback unlock or completion notice: {"refuseAt":1} 1ms
+     ✓ stops refused settlement without a fallback unlock or completion notice: {"refuseFinal":true} 1ms
+     ✓ retains assets after a rejected final write and only reports a confirmed manual settlement 1ms
+     ✓ does not compensate or report completion when the final commit response is lost 1ms
+     ✓ uses persisted stronger evidence when the worker fails before payment 1ms
+     ✓ uses the persisted review message for normal completion and does not report card-pool exhaustion 2ms
+     ✓ serializes unawaited stdout callbacks before finalization and does not downgrade payment evidence 2ms
+     ✓ preserves a started marker even when a single output chunk ends with declined 2ms
+     ✓ retains assets when legacy output reports an unknown payment without a state marker 2ms
+     ✓ accepts affirmative success after an earlier legacy unknown-payment message 3ms
+     ✓ reports affirmative success only after settlement and safely annotates auto-renew confirmation 3ms
+     ✓ does not unlock or send a success notice when saving the auto-renew result fails 1ms
+     ✓ does not advertise success after an annotation is refused or its commit response is lost 4ms
+     ✓ persists cancellation exceptions as a review result before reporting them 2ms
+     ✓ keeps payment completed when auto-renew needs review 1ms
+     ✓ closes the context with recording disabled and continues cleanup after close failure 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/recharge-routing.test.js > server dispatch and interruption preserve payment resources > keeps worker exception details out of the saved and reported public message
+AssertionError: expected 'offline internal diagnostic: syntheti…' to be '任务执行异常，请稍后重试或联系客服' // Object.is equality
+
+Expected: "任务执行异常，请稍后重试或联系客服"
+Received: "offline internal diagnostic: synthetic-secret-fixture"
+
+ ❯ test/recharge-routing.test.js:463:42
+    461|         const h = await spawnHarness({ workerError: 'offline internal …
+    462|         const finalWrite = h.events.find(event => event.type === 'writ…
+    463|         expect(finalWrite.input.message).toBe('任务执行异常，请稍后重试或联系客服');
+       |                                          ^
+    464|         const status = h.events.filter(event => event.type === 'broadc…
+    465|         expect(status.message).toBe(finalWrite.input.message);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 70 passed (71)
+   Start at  20:37:36
+   Duration  831ms (transform 146ms, setup 0ms, import 303ms, tests 268ms, environment 0ms)
+

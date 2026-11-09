@@ -540,13 +540,53 @@
             let lastScrollY = Math.max(0, global.scrollY || global.pageYOffset || 0);
             let scrollDownStartY = lastScrollY;
             let scrollTicking = false;
+            let modalWasActive = false;
 
             const SCROLL_CAPSULE_THRESHOLD = 24;
             const SCROLL_HIDE_BUFFER = 480;
             const SCROLL_DELTA_UP_THRESHOLD = 8;
 
+            const getEffectiveScrollY = () => {
+                if (document.body.classList.contains('ios-scroll-lock-fixed') || document.body.style.position === 'fixed') {
+                    const top = parseFloat(document.body.style.top);
+                    if (!isNaN(top) && top < 0) {
+                        return Math.abs(top);
+                    }
+                }
+                if (global.iOSScrollLock?.isLocked && typeof global.iOSScrollLock.savedScrollY === 'number') {
+                    return global.iOSScrollLock.savedScrollY;
+                }
+                return Math.max(0, global.scrollY || global.pageYOffset || 0);
+            };
+
+            const isModalActive = () => {
+                return Boolean(global.iOSScrollLock?.isLocked) ||
+                    document.body.classList.contains('has-active-modal') ||
+                    document.body.classList.contains('ios-scroll-lock-fixed') ||
+                    document.body.classList.contains('auth-sheet-open') ||
+                    document.body.classList.contains('guestbook-composer-open') ||
+                    document.body.classList.contains('wallet-modal-lock') ||
+                    document.body.classList.contains('guest-shop-modal-open') ||
+                    document.body.classList.contains('ai-image-workbench-open') ||
+                    document.body.dataset.shopPurchaseModalOpen === 'true' ||
+                    document.body.dataset.shopCartOpen === 'true';
+            };
+
             const updateRuntimeNavScroll = () => {
-                const scrollY = Math.max(0, global.scrollY || global.pageYOffset || 0);
+                const scrollY = getEffectiveScrollY();
+                if (isModalActive()) {
+                    modalWasActive = true;
+                    scrollDownStartY = scrollY;
+                    lastScrollY = scrollY;
+                    return;
+                }
+                if (modalWasActive) {
+                    // Restoring the page after a modal is not a downward scroll gesture.
+                    modalWasActive = false;
+                    if (nav.classList.contains('nav-hidden')) nav.classList.remove('nav-hidden');
+                    scrollDownStartY = scrollY;
+                    lastScrollY = scrollY;
+                }
 
                 if (scrollY > 0 && !nav.classList.contains('nav-ready')) {
                     nav.classList.add('nav-ready');
@@ -557,7 +597,7 @@
                     Boolean(nav.querySelector('.nav-hamburger.active'));
 
                 if (isMobileMenuOpen) {
-                    nav.classList.remove('nav-hidden');
+                    if (nav.classList.contains('nav-hidden')) nav.classList.remove('nav-hidden');
                     scrollDownStartY = scrollY;
                     lastScrollY = scrollY;
                     return;
@@ -565,18 +605,18 @@
 
                 if (scrollY <= SCROLL_CAPSULE_THRESHOLD) {
                     // Stage 1: At top (unscrolled stretched state)
-                    nav.classList.remove('scrolled');
-                    nav.classList.remove('nav-hidden');
+                    if (nav.classList.contains('scrolled')) nav.classList.remove('scrolled');
+                    if (nav.classList.contains('nav-hidden')) nav.classList.remove('nav-hidden');
                     scrollDownStartY = scrollY;
                     lastScrollY = scrollY;
                 } else {
                     // In capsule mode (> 24px)
-                    nav.classList.add('scrolled');
+                    if (!nav.classList.contains('scrolled')) nav.classList.add('scrolled');
                     const delta = scrollY - lastScrollY;
 
                     if (delta <= -SCROLL_DELTA_UP_THRESHOLD) {
                         // Scrolling up -> reveal capsule downwards immediately and reset downward buffer anchor
-                        nav.classList.remove('nav-hidden');
+                        if (nav.classList.contains('nav-hidden')) nav.classList.remove('nav-hidden');
                         scrollDownStartY = scrollY;
                         lastScrollY = scrollY;
                     } else if (delta > 0) {
@@ -588,9 +628,9 @@
                         const isNearBottom = (global.innerHeight + scrollY) >= (document.documentElement.scrollHeight - 16);
 
                         if (downwardTravel >= SCROLL_HIDE_BUFFER && !isNearBottom) {
-                            nav.classList.add('nav-hidden');
+                            if (!nav.classList.contains('nav-hidden')) nav.classList.add('nav-hidden');
                         } else {
-                            nav.classList.remove('nav-hidden');
+                            if (nav.classList.contains('nav-hidden')) nav.classList.remove('nav-hidden');
                         }
                         lastScrollY = scrollY;
                     }
@@ -632,6 +672,17 @@
             };
 
             global.addEventListener('scroll', onScroll, { passive: true });
+            // A fixed-body lock may open/close without emitting a window scroll.
+            // Observe only the body lock attributes so the resume baseline is reliable.
+            if (typeof global.MutationObserver === 'function') {
+                const modalStateObserver = new global.MutationObserver(() => {
+                    if (isModalActive() || modalWasActive) onScroll();
+                });
+                modalStateObserver.observe(document.body, {
+                    attributes: true,
+                    attributeFilter: ['class', 'style', 'data-shop-purchase-modal-open', 'data-shop-cart-open']
+                });
+            }
             nav.dataset.scrollBound = '1';
             updateRuntimeNavScroll();
             if (typeof global.requestAnimationFrame === 'function') {

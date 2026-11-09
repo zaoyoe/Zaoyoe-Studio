@@ -1,3 +1,5 @@
+const mediaCapabilities = require('../../js/ai-media-model-capabilities');
+const bblabuMedia = require('./_bblabu-media');
 const crypto = require('node:crypto');
 const dns = require('node:dns').promises;
 const net = require('node:net');
@@ -48,7 +50,9 @@ const RESOLUTION_SQUARE_EDGE = Object.freeze({
 const VIDEO_RESOLUTION_LONG_EDGE = Object.freeze({
     '480p': 854,
     '720p': 1280,
+    '768p': 1366,
     '1080p': 1920,
+    '2k': 2048,
     '4k': 3840
 });
 const SUPPORTED_VIDEO_RATIOS = Object.freeze(new Set([
@@ -2933,7 +2937,8 @@ async function fetchProviderImageBuffer(imageUrl, {
     env,
     mimeType = 'image/png',
     fetchImpl = globalThis.fetch,
-    timing = null
+    timing = null,
+    allowBinary = false
 } = {}) {
     if (typeof fetchImpl !== 'function') {
         const error = new Error('Fetch runtime is unavailable');
@@ -2961,7 +2966,7 @@ async function fetchProviderImageBuffer(imageUrl, {
         response.headers?.get?.('content-type') || mimeType,
         mimeType
     );
-    if (!responseMimeType.startsWith('image/')) {
+    if (!responseMimeType.startsWith('image/') && !(allowBinary && responseMimeType === 'application/octet-stream')) {
         const error = new Error(`AI 图片结果 URL 返回的不是图片内容：${responseMimeType}`);
         error.statusCode = 502;
         error.code = 'ai_image_result_url_not_image';
@@ -3419,7 +3424,7 @@ function getTaskReferenceImageUrls(task = {}) {
         if (!url || seen.has(url)) return false;
         seen.add(url);
         return true;
-    }).slice(0, MAX_REFERENCE_IMAGE_INPUTS);
+    }).slice(0, metadata.media_capability?.channel === 'bblabu' ? 50 : MAX_REFERENCE_IMAGE_INPUTS);
 }
 
 function normalizeReferenceMediaUrl(item) {
@@ -3926,7 +3931,9 @@ function buildImageEditFormData({
     form.append('prompt', buildImageEditPrompt(task));
     form.append('n', String(quantity));
     form.append('size', size.size);
-    if (quality) {
+    const profile = mediaCapabilities.resolve(config);
+    Object.entries(mediaCapabilities.imageParameters(task, profile)).forEach(([key, value]) => form.append(key, String(value)));
+    if (quality && profile?.quality !== false) {
         form.append('quality', quality);
     }
     if (responseFormat) {
@@ -3985,7 +3992,9 @@ async function requestOpenAiCompatibleImageBatch({
         n: quantity,
         size: size.size
     };
-    if (quality) {
+    const profile = mediaCapabilities.resolve(config);
+    Object.assign(requestBody, mediaCapabilities.imageParameters(task, profile));
+    if (quality && profile?.quality !== false) {
         requestBody.quality = quality;
     }
     if (responseFormat) {
@@ -4020,7 +4029,7 @@ async function requestOpenAiCompatibleImages({
     signal = null,
     onProviderTask = null
 } = {}) {
-    const requestedCount = normalizePositiveInt(quantity, 1, { min: 1, max: 8 });
+    const requestedCount = normalizePositiveInt(quantity, 1, { min: 1, max: mediaCapabilities.resolve(config)?.maxQuantity || 8 });
     const payloads = [];
     const providerTaskIds = [];
     let revisedPrompt = '';
@@ -4259,6 +4268,21 @@ async function requestOpenAiCompatibleVideos({
     signal = null,
     onProviderTask = null
 } = {}) {
+    bblabuMedia.assertVideoIdentity(task, config);
+    const profile = mediaCapabilities.resolve(config);
+    if (profile) {
+        mediaCapabilities.normalizeInput(mediaCapabilities.taskInput(task), profile);
+        return bblabuMedia.requestVideo({ task, config, profile,
+            extractData: extractProviderVideoData,
+            saveHandle: async (id, metadata) => onProviderTask?.({ providerTaskId: id, status: metadata.status, asyncMetadata: metadata }),
+            request: async (url, options) => {
+                const response = await fetchProviderResponse(fetchImpl, url, { ...options, headers: {
+                    Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json'
+                }, ...(signal ? { signal } : {}) }, { env, label: 'BBLABU 视频任务' });
+                return { response, payload: await readUpstreamPayload(response, {}, { env, signal }) };
+            }
+        });
+    }
     const metadata = task.metadata && typeof task.metadata === 'object' && !Array.isArray(task.metadata) ? task.metadata : {};
     const videoRatio = normalizeVideoRatio(metadata.video_ratio || metadata.ratio || task.ratio || size.ratio || 'adaptive');
     const videoResolution = normalizeVideoResolution(metadata.video_resolution || metadata.resolution || task.resolution || size.resolution || '720p');
@@ -4500,9 +4524,10 @@ async function normalizeGeneratedImageItem(item = {}, {
     size,
     fetchImpl,
     uploadImageBuffer,
-    timing = null
+    timing = null,
+    mediaProfile = null
 } = {}) {
-    const mimeType = normalizeText(item.mime_type || item.mimeType || 'image/png', 120) || 'image/png';
+    let mimeType = normalizeText(item.mime_type || item.mimeType || 'image/png', 120) || 'image/png';
     const providerImageUrl = normalizeText(item.url || item.image_url, 4000);
     let stored = {
         image_url: '',
@@ -4512,7 +4537,14 @@ async function normalizeGeneratedImageItem(item = {}, {
     };
     let deferredOriginalUpload = null;
 
-    if (providerImageUrl) {
+    let actualImage = null;
+    if (mediaProfile) {
+        const buffer = providerImageUrl ? (await fetchProviderImageBuffer(providerImageUrl, { env, fetchImpl, timing, allowBinary: true })).buffer : Buffer.from(String(item.b64_json || ''), 'base64');
+        actualImage = await bblabuMedia.inspectImage(buffer);
+        mimeType = actualImage.mimeType;
+        const uploadResult = await uploadImageBuffer(buffer, { env, task, index, mimeType, timing });
+        stored = uploadResult?.stored || uploadResult || stored;
+    } else if (providerImageUrl) {
         const uploadResult = await persistProviderImageUrl(providerImageUrl, {
             env,
             task,
@@ -4556,8 +4588,8 @@ async function normalizeGeneratedImageItem(item = {}, {
         ...stored,
         result_index: index,
         mime_type: mimeType,
-        width: size.width,
-        height: size.height,
+        width: actualImage?.width || size.width,
+        height: actualImage?.height || size.height,
         ratio: task.ratio || '1:1',
         resolution: task.resolution || '720p',
         prompt: task.prompt || '',
@@ -4568,7 +4600,8 @@ async function normalizeGeneratedImageItem(item = {}, {
             ...(stored.metadata && typeof stored.metadata === 'object' && !Array.isArray(stored.metadata) ? stored.metadata : {}),
             provider: 'openai-compatible',
             provider_item_id: normalizeText(item.id, 160),
-            size: size.size
+            size: size.size,
+            ...actualImage?.metadata
         }
     };
 }
@@ -4719,14 +4752,15 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
         fetchImpl,
         env,
         signal,
-        onProviderTask: async ({ providerTaskId, status, payloadSummary, sub2ApiClientRequestId } = {}) => {
-            await updateProviderTaskHandle(supabase, task, providerTaskId, {
+        onProviderTask: async ({ providerTaskId, status, payloadSummary, sub2ApiClientRequestId, asyncMetadata } = {}) => {
+            return updateProviderTaskHandle(supabase, task, providerTaskId, {
                 status,
                 payload_summary: payloadSummary,
                 provider_base_url: config.baseUrl,
                 billing_lookup_supported: supportsLegacySub2ApiUsageLookup(config.baseUrl),
                 sub2api_client_request_id: normalizeText(sub2ApiClientRequestId, 160),
-                source: 'openai-compatible-videos'
+                source: 'openai-compatible-videos',
+                ...asyncMetadata
             });
         }
     });
@@ -4774,15 +4808,18 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
 
     const postprocessStart = nowMs();
     const postprocessTiming = {};
-    const images = await Promise.all(data.map((item, index) => normalizeGeneratedVideoItem(item, {
-        env,
-        task,
-        index,
-        size,
-        fetchImpl,
-        config,
-        timing: postprocessTiming
-    })));
+    let images;
+    try {
+        images = await Promise.all(data.map((item, index) => normalizeGeneratedVideoItem(item, {
+            env, task, index, size, fetchImpl, config, timing: postprocessTiming
+        })));
+    } catch (error) {
+        if (bblabuMedia.isResumableVideo(task) && !bblabuMedia.videoExpired(task)
+            && bblabuMedia.retryableResultError(error)) {
+            throw bblabuMedia.pending(task, '视频结果保存暂时失败，将继续恢复原任务');
+        }
+        throw error;
+    }
     if (typeof onImageResult === 'function') {
         for (let index = 0; index < images.length; index += 1) {
             const { deferredOriginalUpload, ...outputImage } = images[index];
@@ -4923,6 +4960,12 @@ async function executeOpenAiCompatibleImageGeneration(task = {}, {
         throw error;
     }
 
+    const mediaProfile = mediaCapabilities.resolve(config);
+    if (mediaProfile) mediaCapabilities.normalizeInput(mediaCapabilities.taskInput(task), mediaProfile);
+    if (mediaProfile && uploadImageBuffer === uploadGeneratedImageBufferPreviewFirst) uploadImageBuffer = uploadGeneratedImageBufferToR2;
+    if (mediaProfile && uploadImageBuffer === uploadGeneratedImageBufferToR2 && !resolveR2Config(env).configured && !isInlineDataUrlAllowed(env)) {
+        throw Object.assign(new Error('请先配置媒体原图存储'), { statusCode: 503, code: 'ai_image_storage_not_configured' });
+    }
     const responseFormat = resolveOpenAiImageResponseFormat(env);
     if ((uploadImageBuffer === uploadGeneratedImageBufferToR2 || uploadImageBuffer === uploadGeneratedImageBufferPreviewFirst) && shouldRequireStorageBeforeCall({
         model: config.model,
@@ -4939,9 +4982,9 @@ async function executeOpenAiCompatibleImageGeneration(task = {}, {
         ratio: task.ratio || '1:1',
         resolution: task.resolution || '1k'
     });
-    const requestedCount = normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
-    const quantity = normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
-    const quality = normalizeOpenAiImageQuality(task.metadata?.quality || env.AI_IMAGE_QUALITY);
+    const requestedCount = normalizePositiveInt(task.quantity, 1, { min: 1, max: mediaProfile?.maxQuantity || 8 });
+    const quantity = normalizePositiveInt(task.quantity, 1, { min: 1, max: mediaProfile?.maxQuantity || 8 });
+    const quality = mediaProfile?.quality === false ? '' : normalizeOpenAiImageQuality(task.metadata?.quality || env.AI_IMAGE_QUALITY);
     const isImageEdit = String(task.mode || '').trim() === 'image';
     const executorTiming = {};
     let referenceImages = [];
@@ -5035,6 +5078,7 @@ async function executeOpenAiCompatibleImageGeneration(task = {}, {
         const imageNormalizeStart = nowMs();
         // eslint-disable-next-line no-await-in-loop
         const image = await normalizeGeneratedImageItem(data[index], {
+            mediaProfile,
             env,
             task,
             index: resultIndex,

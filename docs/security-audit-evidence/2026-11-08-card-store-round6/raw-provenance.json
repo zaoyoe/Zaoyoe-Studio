@@ -1,0 +1,71 @@
+{
+  "raw_logs": "Ten original logs copied byte-for-byte after finite text-shape scanning. Intermediate source versions are not reconstructed and are not claimed to be rerunnable from the final tree.",
+  "exit_codes": "From prior execution/session record, not embedded in all raw outputs or freshly rerun during archive.",
+  "final_commands": [
+    {
+      "log": "raw/kc-round6-native-final.log",
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "command": [
+        "node",
+        "--test",
+        "--test-reporter=tap",
+        "tests/security-round2-kc-activation.test.js",
+        "tests/security-round3-kc-activation-atomic.test.js",
+        "tests/security-round4-kc-local-settlement.test.js",
+        "tests/security-round5-kc-owner-locks.test.js",
+        "tests/security-round6-kc-card-ownership.test.js"
+      ],
+      "provenance": "Reconstructed semantic command and reporter from session summary/raw log; argument ordering not a shell transcript."
+    },
+    {
+      "log": "raw/kc-round6-vitest-final.log",
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt",
+      "command": [
+        "node",
+        "./node_modules/vitest/vitest.mjs",
+        "run",
+        "test/openai-payment-method.test.js",
+        "test/payment-retry-safety.test.js",
+        "test/mysql-card-cooldown.test.js",
+        "test/recharge-routing.test.js",
+        "test/card-freeze.test.js",
+        "test/payment-protocol-fallback.test.js",
+        "test/gpt-api-client.test.js",
+        "test/stripe-protocol-payment.test.js",
+        "test/task-safety.test.js",
+        "test/payment-decline-dictionary.test.js",
+        "--no-file-parallelism",
+        "--maxWorkers=1"
+      ],
+      "provenance": "Reconstructed semantic command/test selection from session summary; not an independently persisted shell transcript."
+    },
+    {
+      "log": "raw/kc-round6-caller-compatibility-final.log",
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "command": [
+        "node",
+        "--test",
+        "tests/security-round6-kc-payment-callers.test.js"
+      ],
+      "provenance": "Command retained in session summary."
+    },
+    {
+      "log": "raw/kc-round6-chatgpt-regression-final.log",
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt",
+      "command": [
+        "node",
+        "./node_modules/vitest/vitest.mjs",
+        "run",
+        "test/chatgpt-billing.test.js",
+        "test/chatgpt-checkout-team-promo.test.js",
+        "--no-file-parallelism",
+        "--maxWorkers=1"
+      ],
+      "provenance": "Command retained in session summary."
+    }
+  ],
+  "launcher": "python3 /tmp/security-test-isolation-20261108/run.py --cwd <cwd> --log <original-log> -- <command>",
+  "baseline_source": "Initial baseline used KC_ATOMIC_STORE_SOURCE pointing at /tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/mysql-store.js. Current test source has 164 cases; the initial 157-case snapshot is not separately retained.",
+  "intermediate_commands": "Not fully retained; scope/counts/stage are recorded without inventing exact command lines.",
+  "source_status": "All results were produced with dirty local files, not a clean committed release candidate."
+}

@@ -1,0 +1,5 @@
+{
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "branch": "main",
+  "purpose": "Per-file pre-edit dirty backups, not whole worktree or database backup"
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "path": "js/admin-shop.js",
+    "sha256": "c60cf3ccf1e988154e2d023b6d1b659730dc66d0feb10d46042815877158e214"
+  },
+  {
+    "path": "server/api-handlers/admin/shop/supplier-catalog.js",
+    "sha256": "8943086239fbb9e3c7a2141d2eba6ee28995cc83461212b2ecccabcb54fae8e6"
+  },
+  {
+    "path": "server/api-handlers/admin/shop/_r2-media.js",
+    "sha256": "85d36f944f68da64e3474e2f88058453bb61209b697fc2b965e61a6a5a2ead8b"
+  },
+  {
+    "path": "tests/shop-product-image-assets.test.js",
+    "sha256": "e75811be886f7afd3c9fe0a6e0d998744dc1f052fdd4b97a443d904b3b2fdaf2"
+  }
+]

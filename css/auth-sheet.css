@@ -51,6 +51,7 @@
     --auth-sheet-google-bg-hover: rgba(255, 255, 255, 0.06);
     --auth-sheet-google-border: rgba(255, 255, 255, 0.08);
     --auth-sheet-google-border-hover: rgba(255, 255, 255, 0.14);
+    --auth-sheet-google-press-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
     --auth-sheet-control-shadow-hover: 0 10px 22px rgba(0, 0, 0, 0.18);
     --auth-sheet-link-hover: #f2f5f8;
     --auth-sheet-handle-bg: rgba(107, 158, 206, 0.24);
@@ -101,6 +102,7 @@ html:not([data-theme="dark"]) {
     --auth-sheet-google-bg-hover: #ffffff;
     --auth-sheet-google-border: rgba(148, 163, 184, 0.24);
     --auth-sheet-google-border-hover: rgba(107, 158, 206, 0.3);
+    --auth-sheet-google-press-shadow: inset 0 1px 2px rgba(82, 127, 168, 0.06);
     --auth-sheet-control-shadow-hover: 0 12px 24px rgba(148, 163, 184, 0.18);
     --auth-sheet-link-hover: #527fa8;
     --auth-sheet-handle-bg: rgba(107, 158, 206, 0.24);
@@ -272,12 +274,30 @@ body.auth-sheet-open {
     min-height: 0;
 }
 
+.auth-sheet-ring {
+    --glass-ring-width: 8px;
+    --glass-radius: 28px;
+    --glass-panel: var(--auth-sheet-panel-strong);
+    position: relative;
+    width: 100%;
+    min-height: 0;
+    padding: var(--glass-ring-width);
+    border-radius: var(--glass-radius);
+    box-sizing: border-box;
+}
+
 .auth-sheet {
     position: relative;
     width: 100%;
     max-height: min(88svh, 860px);
     min-height: 0;
-    border-radius: 26px;
+    padding: 0;
+    border-radius: max(0px, calc(var(--glass-radius, 28px) - var(--glass-ring-width, 8px))) !important;
+    background: var(--auth-sheet-panel-strong) !important;
+    border: 1px solid var(--auth-sheet-border) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: var(--auth-sheet-panel-shadow) !important;
     overflow: hidden;
     color: var(--auth-sheet-text);
     display: grid;
@@ -304,52 +324,45 @@ body.auth-sheet-open {
     touch-action: auto;
 }
 
-.auth-sheet-surface {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    border-radius: inherit;
-    background: var(--auth-sheet-panel);
-    border: 1px solid var(--auth-sheet-border);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    box-shadow: var(--auth-sheet-panel-shadow);
-}
-
-#loginModal.auth-sheet-overlay .auth-sheet-surface,
-#loginModal.auth-sheet-overlay.login-overlay .auth-sheet-surface {
-    background: var(--auth-sheet-panel) !important;
+#loginModal.auth-sheet-overlay .auth-sheet,
+#loginModal.auth-sheet-overlay.login-overlay .auth-sheet {
+    background: var(--auth-sheet-panel-strong) !important;
     border: 1px solid var(--auth-sheet-border) !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
     box-shadow: var(--auth-sheet-panel-shadow) !important;
 }
 
+.auth-sheet-surface {
+    display: none !important;
+}
+
 .auth-sheet-motion-shell {
     position: relative;
-    z-index: 1;
+    z-index: 3;
     min-height: 0;
     width: min(100%, 414px);
     margin: 0 auto;
     padding-bottom: 10px;
+    color: var(--auth-sheet-text);
     transform: translateY(24px) scale(0.988);
     opacity: 0;
-    transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease;
+    transition: transform 0.34s ease-out, opacity 0.24s ease;
 }
 
 .auth-sheet-form-core {
     position: relative;
-    z-index: 1;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
     min-height: 0;
     width: min(100%, 414px);
     margin: 0 auto;
     padding: 10px 18px 16px;
+    color: var(--auth-sheet-text);
     transform: translateY(18px);
     opacity: 0;
-    transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease;
+    transition: transform 0.3s ease-out, opacity 0.22s ease;
 }
 
 .auth-sheet-overlay.active .auth-sheet-motion-shell,
@@ -359,14 +372,20 @@ body.auth-sheet-open {
 }
 
 @keyframes authSheetStaggeredRise {
-    from {
+    0% {
         opacity: 0;
         transform: translateY(30px);
+        pointer-events: none;
     }
 
-    to {
+    99.9% {
+        pointer-events: none;
+    }
+
+    100% {
         opacity: 1;
         transform: translateY(0);
+        pointer-events: auto;
     }
 }
 
@@ -402,23 +421,24 @@ body.auth-sheet-open {
     animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.38s backwards;
 }
 
-.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :nth-child(1) {
+/* Hidden anti-bot fields must never animate into view. */
+.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :not(.auth-hp-guard):nth-child(1) {
     animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.24s backwards;
 }
 
-.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :nth-child(2) {
+.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :not(.auth-hp-guard):nth-child(2) {
     animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.29s backwards;
 }
 
-.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :nth-child(3) {
+.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :not(.auth-hp-guard):nth-child(3) {
     animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.34s backwards;
 }
 
-.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :nth-child(4) {
+.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :not(.auth-hp-guard):nth-child(4) {
     animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.39s backwards;
 }
 
-.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :nth-child(5) {
+.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :not(.auth-hp-guard):nth-child(5) {
     animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.44s backwards;
 }
 
@@ -434,11 +454,11 @@ body.auth-sheet-open {
     animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.3s backwards;
 }
 
-.auth-sheet-overlay.active #loginView.auth-sheet-view.is-active .auth-sheet-form > :nth-child(1) {
+.auth-sheet-overlay.active #loginView.auth-sheet-view.is-active .auth-sheet-form > :not(.auth-hp-guard):nth-child(1) {
     animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.36s backwards;
 }
 
-.auth-sheet-overlay.active #loginView.auth-sheet-view.is-active .auth-sheet-form > :nth-child(2) {
+.auth-sheet-overlay.active #loginView.auth-sheet-view.is-active .auth-sheet-form > :not(.auth-hp-guard):nth-child(2) {
     animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.42s backwards;
 }
 
@@ -522,7 +542,7 @@ body.auth-sheet-open {
     border-radius: 999px;
     background: var(--auth-sheet-tab-indicator);
     box-shadow: var(--auth-sheet-tab-indicator-shadow);
-    transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), width 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: transform 0.26s ease-out, width 0.26s ease-out;
     z-index: 0;
 }
 
@@ -613,6 +633,7 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-success {
 
 .auth-sheet-body {
     position: relative;
+    flex: 1 0 auto;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: hidden;
@@ -624,10 +645,13 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-success {
     touch-action: pan-y;
 }
 
-#loginModal.auth-sheet-input-active .auth-sheet-body,
-#loginModal[data-auth-current-view="register"] .auth-sheet-body,
-#loginModal[data-auth-current-view="reset"] .auth-sheet-body {
+#loginModal.auth-sheet-input-active .auth-sheet-body {
     overflow-y: auto;
+}
+
+#loginModal[data-auth-current-view="register"] .auth-sheet-body,
+#loginModal[data-auth-current-view="login"] .auth-sheet-body {
+    overflow-y: hidden;
 }
 
 .auth-sheet-body::-webkit-scrollbar {
@@ -663,8 +687,21 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-success {
 }
 
 #loginView.auth-sheet-view--primary {
-    gap: 10px;
-    padding-top: 8px;
+    gap: 8px;
+    padding-top: 6px;
+    /* Keep the button's press motion and shadow inside the clipped body. */
+    padding-bottom: 6px;
+}
+
+#registerView.auth-sheet-view--primary,
+#resetView.auth-sheet-view--primary {
+    gap: 8px;
+    padding-top: 6px;
+    padding-bottom: 2px;
+}
+
+#loginModal[data-auth-current-view="login"] .auth-sheet-form-core {
+    padding-bottom: 16px;
 }
 
 #loginView .auth-sheet-login-stack {
@@ -728,34 +765,305 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-success {
     gap: 4px;
 }
 
+/* ══ Label input (SVG Morphing Notch Border) ══════════════ */
+.lbi {
+    --fill-on: var(--auth-sheet-text, #f2f5f8);
+    --fill-slab: var(--auth-sheet-panel, #0c0e12);
+    --ink: #ffffff;
+    --lbi-ink: rgba(255, 255, 255, 0.92);
+    --lbi-border-focus: rgba(255, 255, 255, 0.42);
+    --ink-3: rgba(226, 232, 240, 0.65);
+    --ink-4: rgba(226, 232, 240, 0.45);
+    --ring-stroke: rgba(255, 255, 255, 0.22);
+    --lbi-border: rgba(255, 255, 255, 0.22);
+
+    position: relative;
+    width: 100%;
+    padding-top: 14px;
+    margin-top: 0;
+    box-sizing: border-box;
+}
+
+html[data-theme="light"] .lbi,
+html:not([data-theme="dark"]) .lbi {
+    --fill-on: #0f172a;
+    --fill-slab: #ffffff;
+    --ink: #0f172a;
+    --lbi-ink: #0f172a;
+    --lbi-border-focus: rgba(15, 23, 42, 0.45);
+    --ink-3: rgba(71, 85, 105, 0.78);
+    --ink-4: rgba(100, 116, 139, 0.65);
+    --ring-stroke: rgba(148, 163, 184, 0.45);
+    --lbi-border: rgba(148, 163, 184, 0.45);
+}
+
+.lbi-box {
+    position: relative;
+    width: 100%;
+    height: 48px;
+    background: transparent;
+    cursor: text;
+    box-sizing: border-box;
+    filter: none !important;
+    box-shadow: none !important;
+}
+
+.lbi-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.lbi-ring path {
+    fill: none;
+    stroke: var(--lbi-border, var(--ring-stroke));
+    stroke-width: 1;
+    stroke-linecap: butt;
+    stroke-linejoin: round;
+    shape-rendering: geometricPrecision;
+    transition: stroke 240ms cubic-bezier(0.16, 1, 0.3, 1), stroke-width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lbi[data-focus="true"] .lbi-ring path {
+    stroke: var(--lbi-border-focus, var(--lbi-ink)) !important;
+    stroke-width: 1.2 !important;
+}
+
+.lbi[data-focus="true"] .lbi-box {
+    filter: none !important;
+    box-shadow: none !important;
+    border-color: var(--lbi-border-focus) !important;
+}
+
+.lbi-gap {
+    stroke-dasharray: 1 2;
+    stroke-dashoffset: 0;
+    transition: stroke 220ms ease, stroke-width 220ms ease,
+        stroke-dashoffset 420ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.lbi[data-up="true"] .lbi-gap {
+    stroke-dashoffset: -1 !important;
+}
+
+.lbi-label {
+    position: absolute;
+    top: 50%;
+    left: var(--lbi-x, 24px);
+    display: inline-flex;
+    align-items: center;
+    transform: translateY(-50%);
+    transform-origin: 0 50%;
+    color: var(--ink-4);
+    font-size: 15px;
+    line-height: 1.25;
+    padding: 2px 0;
+    pointer-events: none;
+    user-select: none;
+    white-space: nowrap;
+    transition:
+        transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
+        color 220ms ease;
+    z-index: 3;
+}
+
+.lbi-label span {
+    display: inline-block;
+}
+
+.lbi[data-up="true"] .lbi-label {
+    transform: translateY(-50%) translateY(-24px) scale(0.78);
+    color: var(--ink-3);
+}
+
+.lbi[data-focus="true"] .lbi-label {
+    color: var(--ink);
+}
+
+.lbi[data-focus="true"] .lbi-label span {
+    animation: lbi-hop 460ms cubic-bezier(0.3, 0.7, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 24ms);
+}
+
+@keyframes lbi-hop {
+    0% { transform: translateY(0); }
+    38% { transform: translateY(-3px); }
+    100% { transform: translateY(0); }
+}
+
+/* The input inside the box */
+#loginModal .lbi .auth-sheet-input,
+.lbi .auth-sheet-input,
+#loginModal .lbi .auth-sheet-input.auth-sheet-input--canonical,
+.lbi .auth-sheet-input.auth-sheet-input--canonical,
+#loginModal .lbi .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked,
+.lbi .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked {
+    position: absolute !important;
+    inset: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 48px !important;
+    border: none !important;
+    outline: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border-radius: 20px !important;
+    color: var(--fill-on) !important;
+    font-size: 15px;
+    line-height: 48px;
+    box-sizing: border-box;
+    margin: 0 !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 2;
+}
+
+#loginModal .lbi .auth-sheet-input:focus,
+.lbi .auth-sheet-input:focus,
+#loginModal .lbi .auth-sheet-input.auth-sheet-input--canonical:focus,
+.lbi .auth-sheet-input.auth-sheet-input--canonical:focus,
+#loginModal .lbi .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked:focus,
+.lbi .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked:focus,
+#loginModal .lbi .auth-sheet-input:focus-visible,
+.lbi .auth-sheet-input:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: transparent !important;
+}
+
+/* Proxy styling on mobile */
+#loginModal .lbi .auth-sheet-input-proxy,
+.lbi .auth-sheet-input-proxy {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 48px !important;
+    border: none !important;
+    outline: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border-radius: 20px !important;
+    color: var(--fill-on) !important;
+    padding-left: var(--lbi-x, 24px);
+    z-index: 1;
+}
+
+.lbi .auth-sheet-input-proxy-placeholder {
+    display: none !important;
+}
+
+/* Eye button for password */
+.lbi-eye {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--ink-4);
+    cursor: pointer;
+    border-radius: 8px;
+    transition: color 160ms ease, background-color 160ms ease;
+    z-index: 3;
+}
+
+.lbi-eye:hover {
+    color: var(--fill-on);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="light"] .lbi-eye:hover,
+html:not([data-theme="dark"]) .lbi-eye:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.lbi-eye svg {
+    grid-area: 1 / 1;
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: opacity 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1), filter 220ms ease;
+}
+
+.lbi-eye svg:last-child {
+    opacity: 0;
+    transform: scale(0.75);
+    filter: blur(2px);
+    pointer-events: none;
+}
+
+.lbi-eye[data-show="true"] svg:first-child {
+    opacity: 0;
+    transform: scale(0.75);
+    filter: blur(2px);
+    pointer-events: none;
+}
+
+.lbi-eye[data-show="true"] svg:last-child {
+    opacity: 1;
+    transform: scale(1);
+    filter: none;
+    pointer-events: auto;
+}
+
+/* Password blur ripple animation */
+.lbi .auth-sheet-input[data-flip] {
+    animation-duration: 200ms;
+    animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.lbi .auth-sheet-input[data-flip="0"] { animation-name: lbi-blur-a; }
+.lbi .auth-sheet-input[data-flip="1"] { animation-name: lbi-blur-b; }
+
+@keyframes lbi-blur-a {
+    0% { filter: blur(3px); opacity: 0.6; }
+    100% { filter: blur(0); opacity: 1; }
+}
+@keyframes lbi-blur-b {
+    0% { filter: blur(3px); opacity: 0.6; }
+    100% { filter: blur(0); opacity: 1; }
+}
+
+.auth-sheet-inline-group .lbi {
+    flex: 1;
+    min-width: 0;
+    margin-top: 0;
+}
+
 .auth-sheet-label {
-    font-size: 10.5px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--auth-sheet-soft);
+    display: none !important;
 }
 
 #loginModal .auth-sheet-input-proxy,
 .auth-sheet-input-proxy {
-    width: 100%;
-    height: 44px;
-    min-height: 44px;
-    padding: 11px 13px;
-    border-radius: 13px;
-    border: 1px solid var(--auth-sheet-border);
-    background: var(--auth-sheet-field-bg);
-    color: var(--auth-sheet-text);
-    font-size: 16px;
-    line-height: 1.35;
-    text-align: left;
-    appearance: none;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: text !important;
-    position: relative;
-    overflow: hidden;
-    touch-action: manipulation;
+    display: none !important;
+    position: absolute !important;
+    width: 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
     box-sizing: border-box;
 }
 
@@ -791,8 +1099,8 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-success {
     display: none;
 }
 
-#loginModal .auth-sheet-input,
-.auth-sheet-input {
+#loginModal :not(.lbi) > .auth-sheet-input,
+.auth-sheet-input:not(.lbi *) {
     width: 100%;
     height: 44px;
     min-height: 44px;
@@ -874,11 +1182,13 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-success {
     -webkit-text-fill-color: var(--auth-sheet-text) !important;
     caret-color: var(--auth-sheet-link-accent) !important;
     border-color: var(--auth-sheet-border) !important;
-    -webkit-box-shadow: 0 0 0 1000px var(--auth-sheet-field-bg) inset !important;
-    box-shadow: 0 0 0 1000px var(--auth-sheet-field-bg) inset !important;
+    -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+    box-shadow: 0 0 0 1000px transparent inset !important;
+    background: transparent !important;
+    background-color: transparent !important;
     transition:
-        background-color 9999s ease-in-out 0s,
-        color 9999s ease-in-out 0s;
+        background-color 999999s ease-in-out 0s,
+        color 999999s ease-in-out 0s;
 }
 
 #loginModal .auth-sheet-input:-webkit-autofill:focus,
@@ -886,12 +1196,10 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-success {
 .auth-sheet-input:-webkit-autofill:focus,
 .auth-sheet-input:-webkit-autofill:focus-visible {
     border-color: var(--auth-sheet-link-accent) !important;
-    -webkit-box-shadow:
-        0 0 0 1000px var(--auth-sheet-field-bg-focus) inset,
-        0 0 0 3px rgba(126, 184, 239, 0.14) !important;
-    box-shadow:
-        0 0 0 1000px var(--auth-sheet-field-bg-focus) inset,
-        0 0 0 3px rgba(126, 184, 239, 0.14) !important;
+    -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+    box-shadow: 0 0 0 1000px transparent inset !important;
+    background: transparent !important;
+    background-color: transparent !important;
 }
 
 #loginModal .auth-sheet-input:-moz-autofill,
@@ -900,7 +1208,8 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-success {
 .auth-sheet-input:-moz-autofill:focus {
     color: var(--auth-sheet-text) !important;
     caret-color: var(--auth-sheet-link-accent) !important;
-    box-shadow: 0 0 0 1000px var(--auth-sheet-field-bg) inset !important;
+    box-shadow: 0 0 0 1000px transparent inset !important;
+    background: transparent !important;
 }
 
 .auth-sheet-inline-group {
@@ -913,7 +1222,7 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-success {
 .auth-sheet-inline-group--code {
     grid-template-columns: minmax(0, 1fr) 124px;
     gap: 10px;
-    align-items: stretch;
+    align-items: end;
 }
 
 .auth-sheet-field--code {
@@ -1116,13 +1425,6 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-success {
     overflow: hidden;
 }
 
-.auth-sheet-google-btn:hover {
-    transform: translate3d(0, -1px, 0);
-    background: var(--auth-sheet-google-bg-hover);
-    border-color: var(--auth-sheet-google-border-hover);
-    box-shadow: var(--auth-sheet-control-shadow-hover);
-}
-
 .auth-sheet-google-mark,
 .auth-sheet-google-btn img {
     width: 18px;
@@ -1312,13 +1614,6 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-input.auth-sheet-input--po
     caret-color: #527fa8 !important;
 }
 
-#loginModal .auth-sheet-submit:hover,
-#loginModal .auth-sheet-submit.login-submit-btn:hover {
-    transform: translateY(-1px);
-    background: #f6f8fb !important;
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.24);
-}
-
 html[data-theme="light"] #loginModal .auth-sheet-submit,
 html[data-theme="light"] #loginModal .auth-sheet-submit.login-submit-btn,
 html:not([data-theme="dark"]) #loginModal .auth-sheet-submit,
@@ -1331,27 +1626,6 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-submit.login-submit-btn {
     transform: translateZ(0);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
-}
-
-html[data-theme="light"] #loginModal .auth-sheet-submit:hover,
-html[data-theme="light"] #loginModal .auth-sheet-submit.login-submit-btn:hover,
-html:not([data-theme="dark"]) #loginModal .auth-sheet-submit:hover,
-html:not([data-theme="dark"]) #loginModal .auth-sheet-submit.login-submit-btn:hover {
-    transform: translate3d(0, -1px, 0);
-    background: rgba(112, 166, 216, 0.96) !important;
-    border-color: rgba(82, 127, 168, 0.5) !important;
-    box-shadow:
-        inset 0 0 0 1px rgba(255, 255, 255, 0.14),
-        inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
-    filter: none;
-}
-
-html[data-theme="light"] #loginModal .auth-sheet-google-btn:hover,
-html:not([data-theme="dark"]) #loginModal .auth-sheet-google-btn:hover {
-    transform: none;
-    background: rgba(255, 255, 255, 0.96) !important;
-    border-color: rgba(107, 158, 206, 0.34);
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 
 #loginModal .auth-sheet-submit:disabled,
@@ -1385,6 +1659,8 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-google-btn:hover {
 #loginModal .auth-sheet-inline-group--code .verify-code-btn:hover,
 #loginModal .auth-sheet-inline-group--code .verify-code-btn:active,
 #loginModal .auth-sheet-inline-group--code .verify-code-btn:focus-visible {
+    height: 48px;
+    min-height: 48px;
     border-radius: 13px;
     background: rgba(216, 224, 234, 0.12) !important;
     border: 1px solid rgba(216, 224, 234, 0.18) !important;
@@ -1485,14 +1761,12 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify
     }
 
     #loginModal .auth-sheet-input-proxy,
-    .auth-sheet-input-proxy.auth-sheet-input-proxy--desktop-hidden {
-        display: none;
+    .auth-sheet-input-proxy {
+        display: none !important;
     }
 
-    #loginModal .auth-sheet-input.auth-sheet-input--canonical,
-    .auth-sheet-input.auth-sheet-input--canonical,
-    #loginModal .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked,
-    .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked {
+    #loginModal :not(.lbi) > .auth-sheet-input.auth-sheet-input--canonical:not(.lbi *),
+    .auth-sheet-input.auth-sheet-input--canonical:not(.lbi *) {
         position: static !important;
         top: auto !important;
         left: auto !important;
@@ -1510,17 +1784,58 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify
         background: var(--auth-sheet-field-bg) !important;
     }
 
-    #loginModal .auth-sheet-input.auth-sheet-input--canonical:focus,
-    #loginModal .auth-sheet-input.auth-sheet-input--canonical:focus-visible,
-    .auth-sheet-input.auth-sheet-input--canonical:focus,
-    .auth-sheet-input.auth-sheet-input--canonical:focus-visible,
-    #loginModal .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked:focus,
-    #loginModal .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked:focus-visible,
-    .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked:focus,
-    .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked:focus-visible {
+    #loginModal:not(:has(.lbi)) .auth-sheet-input.auth-sheet-input--canonical:focus,
+    #loginModal:not(:has(.lbi)) .auth-sheet-input.auth-sheet-input--canonical:focus-visible,
+    .auth-sheet-input.auth-sheet-input--canonical:not(.lbi *):focus,
+    .auth-sheet-input.auth-sheet-input--canonical:not(.lbi *):focus-visible {
         border-color: var(--auth-sheet-link-accent) !important;
         background: var(--auth-sheet-field-bg-focus) !important;
         box-shadow: 0 0 0 3px rgba(126, 184, 239, 0.14) !important;
+    }
+
+    #loginModal .lbi .auth-sheet-input,
+    .lbi .auth-sheet-input,
+    #loginModal .lbi .auth-sheet-input.auth-sheet-input--canonical,
+    .lbi .auth-sheet-input.auth-sheet-input--canonical,
+    #loginModal .lbi .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked,
+    .lbi .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked {
+        position: absolute !important;
+        inset: 0 !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 48px !important;
+        margin: 0 !important;
+        padding: 0 44px 0 var(--lbi-x, 24px) !important;
+        border: none !important;
+        outline: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        border-radius: 20px !important;
+        color: var(--fill-on) !important;
+        font-size: 15px !important;
+        line-height: 48px !important;
+        box-sizing: border-box !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        z-index: 2 !important;
+    }
+
+    #loginModal .lbi .auth-sheet-input:focus,
+    #loginModal .lbi .auth-sheet-input:focus-visible,
+    .lbi .auth-sheet-input:focus,
+    .lbi .auth-sheet-input:focus-visible,
+    #loginModal .lbi .auth-sheet-input.auth-sheet-input--canonical:focus,
+    #loginModal .lbi .auth-sheet-input.auth-sheet-input--canonical:focus-visible,
+    .lbi .auth-sheet-input.auth-sheet-input--canonical:focus,
+    .lbi .auth-sheet-input.auth-sheet-input--canonical:focus-visible {
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        outline: none !important;
     }
 
     .auth-input-plane {
@@ -1528,7 +1843,7 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify
     }
 }
 
-@media (max-height: 680px) {
+@media (max-height: 520px) {
     #loginModal .auth-sheet-body {
         overflow-y: auto;
     }
@@ -1554,10 +1869,26 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify
         width: 100%;
     }
 
-    .auth-sheet {
+    .auth-sheet-ring {
+        --glass-ring-width: 7px;
+        --glass-radius: 26px;
         width: 100%;
         max-height: 88svh;
-        border-radius: 20px 20px 0 0;
+        padding: var(--glass-ring-width) var(--glass-ring-width) 0;
+        border-radius: var(--glass-radius) var(--glass-radius) 0 0;
+    }
+
+    .auth-sheet {
+        max-height: calc(88svh - 7px);
+        padding: 0;
+        border-radius:
+            max(0px, calc(var(--glass-radius, 26px) - var(--glass-ring-width, 7px)))
+            max(0px, calc(var(--glass-radius, 26px) - var(--glass-ring-width, 7px)))
+            0 0 !important;
+    }
+
+    .auth-sheet-surface {
+        display: none !important;
     }
 
     .auth-sheet-motion-shell {
@@ -1566,6 +1897,10 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify
 
     .auth-sheet-form-core {
         padding: 10px 20px calc(14px + env(safe-area-inset-bottom));
+    }
+
+    #loginModal[data-auth-current-view="login"] .auth-sheet-form-core {
+        padding-bottom: calc(6px + env(safe-area-inset-bottom));
     }
 
     .auth-sheet-header {
@@ -1694,4 +2029,238 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify
     .auth-sheet-spinner {
         animation: none;
     }
+}
+
+/* Shared press feedback; Google keeps its entrance transform independent. */
+#loginModal :is(#loginView, #registerView) .auth-sheet-submit,
+#loginModal #loginView .auth-sheet-google-btn {
+    --control-press-hover: 0.85px;
+    --control-press-active: 1.8px;
+    transform: translateY(0);
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+        translate 150ms cubic-bezier(0.22, 1, 0.36, 1),
+        background-color 150ms ease, border-color 150ms ease,
+        box-shadow 150ms ease, color 150ms ease, filter 150ms ease;
+}
+
+#loginModal #loginView .auth-sheet-google-btn {
+    translate: 0 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    #loginModal #loginView .auth-sheet-google-btn:not(:disabled):not([aria-disabled="true"]):not(.is-loading):hover {
+        translate: 0 var(--control-press-hover);
+        background: var(--auth-sheet-google-bg-hover) !important;
+        border-color: var(--auth-sheet-google-border-hover) !important;
+        filter: brightness(1.06);
+        box-shadow: var(--auth-sheet-google-press-shadow) !important;
+    }
+
+    #loginModal :is(#loginView, #registerView) .auth-sheet-submit:not(:disabled):not([aria-disabled="true"]):not(.is-disabled):not(.is-loading):not(.is-processing):not(.is-dimmed):not(.shop-purchase-sold-out-btn):hover {
+        transform: translateY(var(--control-press-hover));
+        filter: brightness(1.06);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+    }
+}
+
+#loginModal :is(#loginView, #registerView) .auth-sheet-submit:not(:disabled):not([aria-disabled="true"]):not(.is-disabled):not(.is-loading):not(.is-processing):not(.is-dimmed):not(.shop-purchase-sold-out-btn):active {
+    transform: translateY(var(--control-press-active));
+    filter: brightness(1.02);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+}
+
+#loginModal #loginView .auth-sheet-google-btn:not(:disabled):not([aria-disabled="true"]):not(.is-loading):active {
+    translate: 0 var(--control-press-active);
+    filter: brightness(1.02);
+    box-shadow: var(--auth-sheet-google-press-shadow) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #loginModal #loginView .auth-sheet-google-btn,
+    #loginModal #loginView .auth-sheet-google-btn:hover,
+    #loginModal #loginView .auth-sheet-google-btn:active,
+    #loginModal :is(#loginView, #registerView) .auth-sheet-submit,
+    #loginModal :is(#loginView, #registerView) .auth-sheet-submit:hover,
+    #loginModal :is(#loginView, #registerView) .auth-sheet-submit:active {
+        transform: none !important;
+        translate: none !important;
+        transition: none !important;
+    }
+}
+
+#loginModal #authSheetTabs .auth-sheet-tab:is([data-auth-tab="login"], [data-auth-tab="register"]) {
+    --control-press-hover: 0.75px;
+    --control-press-active: 1.5px;
+    transform: translateY(0);
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+        background-color 150ms ease, border-color 150ms ease,
+        box-shadow 150ms ease, color 150ms ease, filter 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    #loginModal #authSheetTabs .auth-sheet-tab:is([data-auth-tab="login"], [data-auth-tab="register"]):not(:disabled):not([aria-disabled="true"]):not(.is-disabled):not(.is-loading):not(.is-processing):not(.is-dimmed):not(.shop-purchase-sold-out-btn):hover {
+        transform: translateY(var(--control-press-hover));
+        filter: brightness(1.06);
+        box-shadow: none;
+    }
+}
+
+#loginModal #authSheetTabs .auth-sheet-tab:is([data-auth-tab="login"], [data-auth-tab="register"]):not(:disabled):not([aria-disabled="true"]):not(.is-disabled):not(.is-loading):not(.is-processing):not(.is-dimmed):not(.shop-purchase-sold-out-btn):active {
+    transform: translateY(var(--control-press-active));
+    filter: brightness(1.02);
+    box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #loginModal #authSheetTabs .auth-sheet-tab:is([data-auth-tab="login"], [data-auth-tab="register"]),
+    #loginModal #authSheetTabs .auth-sheet-tab:is([data-auth-tab="login"], [data-auth-tab="register"]):hover,
+    #loginModal #authSheetTabs .auth-sheet-tab:is([data-auth-tab="login"], [data-auth-tab="register"]):active {
+        transform: none !important;
+        transition: none !important;
+    }
+}
+
+@media (hover: hover) and (pointer: fine) {
+    html:not([data-theme="dark"]) #loginModal :is(#loginView, #registerView) .auth-sheet-submit:hover:not(:disabled):not([aria-disabled="true"]) {
+        box-shadow: 0 2px 6px rgba(82, 127, 168, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Label Input Component Enforcement
+   Remove legacy proxy button and force transparent input
+   ══════════════════════════════════════════════════════════════ */
+#loginModal .auth-sheet-input-proxy,
+.auth-sheet-input-proxy {
+    display: none !important;
+    position: absolute !important;
+    width: 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+}
+
+#loginModal .lbi .auth-sheet-input,
+.lbi .auth-sheet-input,
+#loginModal .lbi-box input,
+.lbi-box input {
+    position: absolute !important;
+    inset: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 48px !important;
+    border: none !important;
+    outline: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border-radius: 20px !important;
+    color: var(--fill-on) !important;
+    font-size: 15px !important;
+    line-height: 48px !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 2 !important;
+    cursor: text !important;
+}
+
+#loginModal .lbi .auth-sheet-input:focus,
+.lbi .auth-sheet-input:focus,
+#loginModal .lbi .auth-sheet-input:focus-visible,
+.lbi .auth-sheet-input:focus-visible,
+#loginModal .lbi-box input:focus,
+.lbi-box input:focus {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+#loginModal .lbi .auth-sheet-input:-webkit-autofill,
+#loginModal .lbi .auth-sheet-input:-webkit-autofill:hover,
+#loginModal .lbi .auth-sheet-input:-webkit-autofill:focus,
+#loginModal .lbi .auth-sheet-input:-webkit-autofill:active,
+.lbi .auth-sheet-input:-webkit-autofill,
+.lbi .auth-sheet-input:-webkit-autofill:hover,
+.lbi .auth-sheet-input:-webkit-autofill:focus,
+.lbi .auth-sheet-input:-webkit-autofill:active,
+.lbi-box input:-webkit-autofill,
+.lbi-box input:-webkit-autofill:hover,
+.lbi-box input:-webkit-autofill:focus,
+.lbi-box input:-webkit-autofill:active {
+    -webkit-text-fill-color: var(--fill-on) !important;
+    caret-color: var(--ink) !important;
+    border: none !important;
+    outline: none !important;
+    border-radius: 20px !important;
+    -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+    box-shadow: 0 0 0 1000px transparent inset !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    transition: background-color 999999s ease-in-out 0s, color 999999s ease-in-out 0s !important;
+}
+
+#loginModal .lbi .auth-sheet-input:-moz-autofill,
+.lbi .auth-sheet-input:-moz-autofill,
+.lbi-box input:-moz-autofill {
+    color: var(--fill-on) !important;
+    caret-color: var(--ink) !important;
+    box-shadow: 0 0 0 1000px transparent inset !important;
+    border-radius: 20px !important;
+    background: transparent !important;
+}
+
+#loginModal .lbi .auth-sheet-input::placeholder,
+.lbi .auth-sheet-input::placeholder,
+#loginModal .lbi-box input::placeholder,
+.lbi-box input::placeholder {
+    color: transparent !important;
+    opacity: 0 !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Cloudflare Turnstile Zero-CLS Layout & Auto-Dismiss
+   ══════════════════════════════════════════════════════════════ */
+.auth-turnstile-slot {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 0;
+    height: 0;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                margin 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-turnstile-slot.is-visible:not(.is-dismissed) {
+    height: auto;
+    max-height: 100px;
+    margin: 6px 0;
+    opacity: 1;
+}
+
+.auth-turnstile-slot.is-dismissed {
+    height: 0 !important;
+    max-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }

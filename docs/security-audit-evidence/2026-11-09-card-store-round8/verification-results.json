@@ -1,0 +1,590 @@
+{
+  "recorded_at": "2026-11-09T09:21:54.416302+08:00",
+  "scope": "OFFLINE TOOLING ONLY",
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "origin_main": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "branch": "main",
+  "behind": 0,
+  "index_unchanged": true,
+  "staged_empty": true,
+  "initial_status_count": 651,
+  "checkpoint_status_count": 714,
+  "missing_initial_status_entries": [],
+  "prior_source_checks": [
+    {
+      "path": "services/kc-pay-gpt/.dockerignore",
+      "expected": "5a5023d9e6dbae10022ba839347d5dab25b09016dbfaf629017cc54818890b80",
+      "actual": "5a5023d9e6dbae10022ba839347d5dab25b09016dbfaf629017cc54818890b80",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/Dockerfile",
+      "expected": "023ebb80f6d25aa857053f4dc8026f55674af45ea34529a7311559af53e5fa4e",
+      "actual": "023ebb80f6d25aa857053f4dc8026f55674af45ea34529a7311559af53e5fa4e",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/grok-native-payment.js",
+      "expected": "c1c9adf9d305b5cdafbf9c8403a997f9dd1292468dad7deb5d3b43658164ce65",
+      "actual": "c1c9adf9d305b5cdafbf9c8403a997f9dd1292468dad7deb5d3b43658164ce65",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "expected": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+      "actual": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/package-lock.json",
+      "expected": "7fc5737ba42f9d82a7219e5050d1a5741a60f2a45d11395f44c3ba4e5fb7e9c2",
+      "actual": "7fc5737ba42f9d82a7219e5050d1a5741a60f2a45d11395f44c3ba4e5fb7e9c2",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/package.json",
+      "expected": "aa9e7d6266251cf4160b3714332e1930315636952a18edbb87b493f7c20880b6",
+      "actual": "aa9e7d6266251cf4160b3714332e1930315636952a18edbb87b493f7c20880b6",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/payment-retry.js",
+      "expected": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22",
+      "actual": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/stripe-payment.js",
+      "expected": "b24f9e38166701c094952f8f88f76c851cf21c5ed535ca593ccce43f6fddc30a",
+      "actual": "b24f9e38166701c094952f8f88f76c851cf21c5ed535ca593ccce43f6fddc30a",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/stripe-protocol-payment.js",
+      "expected": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d",
+      "actual": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/card-freeze.test.js",
+      "expected": "ebbb32bc5a773fd89f19f392a79440fb5ddfccb5fb7f352c6821fedb5227a312",
+      "actual": "ebbb32bc5a773fd89f19f392a79440fb5ddfccb5fb7f352c6821fedb5227a312",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/chatgpt-billing.test.js",
+      "expected": "8f68e09626c446f3a11eb97fe77ae518c2ff5a85085967e7318d34ef6f32e5a1",
+      "actual": "8f68e09626c446f3a11eb97fe77ae518c2ff5a85085967e7318d34ef6f32e5a1",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/chatgpt-checkout-team-promo.test.js",
+      "expected": "6ecb85e5f0d6b6aeec2b00cf5528fe4fc62020bb0dc59f3f00f1910e255e18a9",
+      "actual": "6ecb85e5f0d6b6aeec2b00cf5528fe4fc62020bb0dc59f3f00f1910e255e18a9",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-api-client.test.js",
+      "expected": "b73470a7a8440a79898183fcbd8f942d50ed77addbbe93ba2727bdc5517e6950",
+      "actual": "b73470a7a8440a79898183fcbd8f942d50ed77addbbe93ba2727bdc5517e6950",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing-recovery.test.js",
+      "expected": "340d1d017616094a37687e3871f7f9abe2412f8ca1d87f4536f7a7c42a23b669",
+      "actual": "340d1d017616094a37687e3871f7f9abe2412f8ca1d87f4536f7a7c42a23b669",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+      "expected": "7ae006a5872cd8feeb20495203efe12b52816f081d4e7fdb4e600b013507e36a",
+      "actual": "7ae006a5872cd8feeb20495203efe12b52816f081d4e7fdb4e600b013507e36a",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing-worker.test.js",
+      "expected": "137b00a23270687c2f909062902e012579ab591cf4fe2b74b1379c582b94b09d",
+      "actual": "137b00a23270687c2f909062902e012579ab591cf4fe2b74b1379c582b94b09d",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing.test.js",
+      "expected": "3f4ba14451f97c260e17215b46ee53f99ccfe547c314cd395e5a2a3cac2fc9e4",
+      "actual": "3f4ba14451f97c260e17215b46ee53f99ccfe547c314cd395e5a2a3cac2fc9e4",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "expected": "ba5523d9ade2832c42e46fa01c7d2eb094a84a5d14ae3755ec9f2d65be831b5f",
+      "actual": "ba5523d9ade2832c42e46fa01c7d2eb094a84a5d14ae3755ec9f2d65be831b5f",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/openai-payment-method.test.js",
+      "expected": "287e135c4f5c371b5267b3b2efd890ecaab095c71bd458b460a67b4e54440d3d",
+      "actual": "287e135c4f5c371b5267b3b2efd890ecaab095c71bd458b460a67b4e54440d3d",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-decline-dictionary.test.js",
+      "expected": "ba4d6f3cfcc7c58fe096a2fcaa2172cfe51065c546e0486d1d582e6f08a0c2ed",
+      "actual": "ba4d6f3cfcc7c58fe096a2fcaa2172cfe51065c546e0486d1d582e6f08a0c2ed",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "expected": "8dd381041bfd0cc910c35ec3cd1e67720ca886d95907d36b4cbae31d37adee94",
+      "actual": "8dd381041bfd0cc910c35ec3cd1e67720ca886d95907d36b4cbae31d37adee94",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "expected": "d7675bf3fd08afcf7a8bc4a1db2e06e6eb8a5585b3b05e4c7a9e6c38f2eb6dc1",
+      "actual": "d7675bf3fd08afcf7a8bc4a1db2e06e6eb8a5585b3b05e4c7a9e6c38f2eb6dc1",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/recharge-captcha-bridge.test.js",
+      "expected": "a38c1789fd7c9c0ccc1384a598bf7411cb5c3642c358862c3fbee9e165bc3d83",
+      "actual": "a38c1789fd7c9c0ccc1384a598bf7411cb5c3642c358862c3fbee9e165bc3d83",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+      "expected": "3f846e4ee51ecc0e18113892d1a1d3b582fc1b2ddfe39ac44ce2a264e86cadf5",
+      "actual": "3f846e4ee51ecc0e18113892d1a1d3b582fc1b2ddfe39ac44ce2a264e86cadf5",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+      "expected": "75a46fdd8c6234038f67f29f94a0bd65526ad264d8830ec45b8cedd2e5d87b42",
+      "actual": "75a46fdd8c6234038f67f29f94a0bd65526ad264d8830ec45b8cedd2e5d87b42",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/task-safety.test.js",
+      "expected": "b9fac87e62510596231a34b94faccf0b772fbf5d10e8af1592bf2100761454a1",
+      "actual": "b9fac87e62510596231a34b94faccf0b772fbf5d10e8af1592bf2100761454a1",
+      "unchanged": true
+    },
+    {
+      "path": "tests/security-round2-kc-activation.test.js",
+      "expected": "0fc07c07133f3420bfa95a4e928e34c790b85ee6df233a549b721bd06ee916c6",
+      "actual": "0fc07c07133f3420bfa95a4e928e34c790b85ee6df233a549b721bd06ee916c6",
+      "unchanged": true
+    },
+    {
+      "path": "tests/security-round2-kc-credentials.test.js",
+      "expected": "d83e88db72b8fa3e84828cfa5fd589856f1f81fc49ebfd7c2efac9fbd55c4b38",
+      "actual": "d83e88db72b8fa3e84828cfa5fd589856f1f81fc49ebfd7c2efac9fbd55c4b38",
+      "unchanged": true
+    },
+    {
+      "path": "tests/security-round2-kc-public-guard.test.js",
+      "expected": "a2e3f5ad5a1839b076a868e1de0c6e1293c6bb3f8405adfc7993647a421555c5",
+      "actual": "a2e3f5ad5a1839b076a868e1de0c6e1293c6bb3f8405adfc7993647a421555c5",
+      "unchanged": true
+    },
+    {
+      "path": "tests/security-round3-kc-activation-atomic.test.js",
+      "expected": "6919ebdc2b15868ed9543c479d54a06ce6888a27b2cbf86252e31f6e0bf4189b",
+      "actual": "6919ebdc2b15868ed9543c479d54a06ce6888a27b2cbf86252e31f6e0bf4189b",
+      "unchanged": true
+    },
+    {
+      "path": "tests/security-round4-kc-local-settlement.test.js",
+      "expected": "4fc4446cca9aab38d8230633b01c18ed9cb20de5a64c4609855d84e50d670e06",
+      "actual": "4fc4446cca9aab38d8230633b01c18ed9cb20de5a64c4609855d84e50d670e06",
+      "unchanged": true
+    },
+    {
+      "path": "tests/security-round5-kc-owner-locks.test.js",
+      "expected": "e6e5f5d7eb17c3161735e6cc1576ea8744134916d5493f25bab82658cbc93079",
+      "actual": "e6e5f5d7eb17c3161735e6cc1576ea8744134916d5493f25bab82658cbc93079",
+      "unchanged": true
+    },
+    {
+      "path": "tests/security-round6-kc-card-ownership.test.js",
+      "expected": "824122a09c7bffaf7274773da7e8452f41c6e19a9fff92bb7d5ed62d86f25859",
+      "actual": "824122a09c7bffaf7274773da7e8452f41c6e19a9fff92bb7d5ed62d86f25859",
+      "unchanged": true
+    },
+    {
+      "path": "tests/security-round6-kc-payment-callers.test.js",
+      "expected": "e2505a01acb904ec6cda98aabcec042ad645954c97e33bc98b20c542c11f535a",
+      "actual": "e2505a01acb904ec6cda98aabcec042ad645954c97e33bc98b20c542c11f535a",
+      "unchanged": true
+    },
+    {
+      "path": "tests/security-round7-kc-payment-hold.test.js",
+      "expected": "fe1620710ec237f7e2e4d618ed5165d08b580a544869f3ecd90f3927920eb9c1",
+      "actual": "fe1620710ec237f7e2e4d618ed5165d08b580a544869f3ecd90f3927920eb9c1",
+      "unchanged": true
+    }
+  ],
+  "prior_evidence_checks": [
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/.gitignore",
+      "expected": "e225b14afe6f21eb3d425af095238d6c60c776492948bf0ca05202823a8e89ea",
+      "actual": "e225b14afe6f21eb3d425af095238d6c60c776492948bf0ca05202823a8e89ea",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/README.md",
+      "expected": "c236e64c41613475c84e97662bbbb9fd7e0e57345cc564d3abc42e835bbe947c",
+      "actual": "c236e64c41613475c84e97662bbbb9fd7e0e57345cc564d3abc42e835bbe947c",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/archive-events.json",
+      "expected": "7e290d6cd398d7a827ae5c9088df78005026659ffa1f54cab12a276a6c30ddac",
+      "actual": "7e290d6cd398d7a827ae5c9088df78005026659ffa1f54cab12a276a6c30ddac",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/archive-procedure-first.py",
+      "expected": "7bf48f53701bcb989a692db2686b12401a5a1970d6cd77f083f2bdb863af948a",
+      "actual": "7bf48f53701bcb989a692db2686b12401a5a1970d6cd77f083f2bdb863af948a",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/archive-procedure.py",
+      "expected": "2e9450db89637089cb8d6c5d199e769f320c7b2179fd56e8ac6719a295b239f7",
+      "actual": "2e9450db89637089cb8d6c5d199e769f320c7b2179fd56e8ac6719a295b239f7",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/backup-manifests/initial.json",
+      "expected": "63325ac80dbbc8583a20e4f5c5cc85077325e693c4cb9fe8b3e0a6afb5b7b429",
+      "actual": "63325ac80dbbc8583a20e4f5c5cc85077325e693c4cb9fe8b3e0a6afb5b7b429",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/backup-manifests/resume.json",
+      "expected": "688d2ff541a93b6dcaae06ba0b9585046c9135fb290b98bc2050330a922c4aab",
+      "actual": "688d2ff541a93b6dcaae06ba0b9585046c9135fb290b98bc2050330a922c4aab",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/backup-manifests/round6-fixture-before.json",
+      "expected": "65d0b0351aae1556ca157fc8c8f44f8ad5da3f06db7a48138a85598ad9fed1f5",
+      "actual": "65d0b0351aae1556ca157fc8c8f44f8ad5da3f06db7a48138a85598ad9fed1f5",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/backup-verification.json",
+      "expected": "00339d7c0ab2a3c6b66efc7dad4067eaaa42a3fe8e482743a54aa2daa0edbd3a",
+      "actual": "00339d7c0ab2a3c6b66efc7dad4067eaaa42a3fe8e482743a54aa2daa0edbd3a",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/baseline-and-boundaries.json",
+      "expected": "30f55a8529eaa3869d7af822daf2dfab6fc4dd4b182248a91dcf1034f8b26c2a",
+      "actual": "30f55a8529eaa3869d7af822daf2dfab6fc4dd4b182248a91dcf1034f8b26c2a",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/baseline-status-expanded.txt",
+      "expected": "69d10c6592d98d91c272e1d6821cd54ec7a733ac50d29b54506fcf7872046753",
+      "actual": "69d10c6592d98d91c272e1d6821cd54ec7a733ac50d29b54506fcf7872046753",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/delta/round7-working-tree-delta.patch",
+      "expected": "47e6db015f11aaf798493beef289a1602b96f6c3a1b5ba2cacea9c80d913b077",
+      "actual": "47e6db015f11aaf798493beef289a1602b96f6c3a1b5ba2cacea9c80d913b077",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/delta-recovery-verification.json",
+      "expected": "14bfcd864a1d2cb77c8723b340cd3376ee6573ef188569f1405d56454d96411b",
+      "actual": "14bfcd864a1d2cb77c8723b340cd3376ee6573ef188569f1405d56454d96411b",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/evidence-manifest.json",
+      "expected": "3330b9953a17b07426ac363cb42cf77e5167006372d7f23267c811aa426b7727",
+      "actual": "3330b9953a17b07426ac363cb42cf77e5167006372d7f23267c811aa426b7727",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/final-integrity.json",
+      "expected": "9b059873acc773cf0f094b2cdd551235feaaa8dfb29fb6fffc0d332d142749c9",
+      "actual": "9b059873acc773cf0f094b2cdd551235feaaa8dfb29fb6fffc0d332d142749c9",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/finalization-backup-verification.json",
+      "expected": "1634f09c6cdf17685195f6bc9c4668d6b495566c0326f8f4675e9614d663bd97",
+      "actual": "1634f09c6cdf17685195f6bc9c4668d6b495566c0326f8f4675e9614d663bd97",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/finalization-procedure.py",
+      "expected": "4f2f682dd9802acd9de54f4d3c4e2ce827c37e995362e5b4390c3f580ea89c79",
+      "actual": "4f2f682dd9802acd9de54f4d3c4e2ce827c37e995362e5b4390c3f580ea89c79",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/historical-round6-integrity.json",
+      "expected": "393dd23bd5bd6b468ec661ae9417e858e3754d1346bfb7342655f5bdc47f498b",
+      "actual": "393dd23bd5bd6b468ec661ae9417e858e3754d1346bfb7342655f5bdc47f498b",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/isolation/preload.cjs",
+      "expected": "d87e682b933d9a57ab604efce87a4b57f9b5df497b48e30d4f36cea4bf71a625",
+      "actual": "d87e682b933d9a57ab604efce87a4b57f9b5df497b48e30d4f36cea4bf71a625",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/isolation/run.py",
+      "expected": "3fbef5365d0b6779881f5ea667379c6b9f9804d1e6c84b47a8a59a02738cfe6c",
+      "actual": "3fbef5365d0b6779881f5ea667379c6b9f9804d1e6c84b47a8a59a02738cfe6c",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/log-provenance.json",
+      "expected": "e969d396290427cc99bfb344d1364207ccf429068f2f13034f41145d649dd894",
+      "actual": "e969d396290427cc99bfb344d1364207ccf429068f2f13034f41145d649dd894",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/log-scan-before-archive.json",
+      "expected": "2f9312201d6a89e9819d040a1d076f9c6e48679a8b861adcc0a5273817109ed4",
+      "actual": "2f9312201d6a89e9819d040a1d076f9c6e48679a8b861adcc0a5273817109ed4",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-chatgpt-regression.log",
+      "expected": "5bb74c7a5522461207205c375dc588e66e17d7d1d33ebb9041cf70ad5c035ca9",
+      "actual": "5bb74c7a5522461207205c375dc588e66e17d7d1d33ebb9041cf70ad5c035ca9",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-fault-vitest-first.log",
+      "expected": "9367b55f910ff4a51405f0b5e046dd7d088bcf00aad14fb19b4a12ceea23ed5e",
+      "actual": "9367b55f910ff4a51405f0b5e046dd7d088bcf00aad14fb19b4a12ceea23ed5e",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-fault-vitest-path-fix.log",
+      "expected": "f097aaecf1ecf8e07cf4c2701c34b859612f6aaa762115bbc1dae091c3df04a3",
+      "actual": "f097aaecf1ecf8e07cf4c2701c34b859612f6aaa762115bbc1dae091c3df04a3",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-initial-vitest.log",
+      "expected": "184ad9dd65e77d8ac04c337440dac363d44a4b8534cc63cb4f09476605858b88",
+      "actual": "184ad9dd65e77d8ac04c337440dac363d44a4b8534cc63cb4f09476605858b88",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-kc-regression.log",
+      "expected": "145b6ec9bb2f8e88f98a0607eabb625c5393937a497255dbce36c12cc83474a7",
+      "actual": "145b6ec9bb2f8e88f98a0607eabb625c5393937a497255dbce36c12cc83474a7",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-model-first.log",
+      "expected": "d3a75806704036f03526a3afbc48f896237fe8b0eb1e25426a02ee9e74ccf69a",
+      "actual": "d3a75806704036f03526a3afbc48f896237fe8b0eb1e25426a02ee9e74ccf69a",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-native-regression-fixture-fixed.log",
+      "expected": "d67224fb475d8ca203729f60ad117c235b7178fe9a81498fe6b445187cb25ecd",
+      "actual": "d67224fb475d8ca203729f60ad117c235b7178fe9a81498fe6b445187cb25ecd",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-native-regression.log",
+      "expected": "00f75d78e0c4c549d717a8b2b8df26d8f50f9f95deaeb7e5bc250d1b2f9f9145",
+      "actual": "00f75d78e0c4c549d717a8b2b8df26d8f50f9f95deaeb7e5bc250d1b2f9f9145",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-vitest-adapted.log",
+      "expected": "9f8d5b5da348f13f11dfb65642db335e7530e9af1d3e4ed72f5aa2e364b1877b",
+      "actual": "9f8d5b5da348f13f11dfb65642db335e7530e9af1d3e4ed72f5aa2e364b1877b",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-vitest-helper-fix.log",
+      "expected": "0cde9d584708e10320d6907ffd30c8fb18a77c8dc93555f8e090938797d805b4",
+      "actual": "0cde9d584708e10320d6907ffd30c8fb18a77c8dc93555f8e090938797d805b4",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/packaging-boundary.json",
+      "expected": "d1324a6fe38528ad820194f97aee40c18919437e1eb088b82d930addd4f97aa7",
+      "actual": "d1324a6fe38528ad820194f97aee40c18919437e1eb088b82d930addd4f97aa7",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-extra-regression-plan.json",
+      "expected": "8b77deb5555ef6c06abce50ae2625b7f1883e60e2697d3f9fd6ab6f9c7b88bc0",
+      "actual": "8b77deb5555ef6c06abce50ae2625b7f1883e60e2697d3f9fd6ab6f9c7b88bc0",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-extra-regression-results.json",
+      "expected": "ce6a6cd769caae8878e94b1b753674185ec7d29785c2dc0fec268fb0d5de7806",
+      "actual": "ce6a6cd769caae8878e94b1b753674185ec7d29785c2dc0fec268fb0d5de7806",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-regression-plan.json",
+      "expected": "cc2cfa5763ebdc2de0e392a464602c3be7bc4cea633798b2b009a6e1ae18e7c7",
+      "actual": "cc2cfa5763ebdc2de0e392a464602c3be7bc4cea633798b2b009a6e1ae18e7c7",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-regression-results.json",
+      "expected": "01f1317a394f1e610a0c5b33ee7db22058b235af1d8340d6d75ad19e2e23d500",
+      "actual": "01f1317a394f1e610a0c5b33ee7db22058b235af1d8340d6d75ad19e2e23d500",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-syntax-results.json",
+      "expected": "0365d64021ca836e2aa958537c1df067730c08208eab6b77d6dea4e9205f6c80",
+      "actual": "0365d64021ca836e2aa958537c1df067730c08208eab6b77d6dea4e9205f6c80",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/source-manifest.json",
+      "expected": "214d36cd60f1136f0cee222c91c8259dd69f78797f5e50171d3b6097b68aeaa0",
+      "actual": "214d36cd60f1136f0cee222c91c8259dd69f78797f5e50171d3b6097b68aeaa0",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/status-before-archive-expanded.txt",
+      "expected": "345d36fb2c577e3db98b9ee3f3992e6844518140771a70f64e1eaccc42424eb3",
+      "actual": "345d36fb2c577e3db98b9ee3f3992e6844518140771a70f64e1eaccc42424eb3",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/verification-results.json",
+      "expected": "229e0fb25fbd64c9c01ac252ae81649617e704d92ddf16315714c21e34ad6d2d",
+      "actual": "229e0fb25fbd64c9c01ac252ae81649617e704d92ddf16315714c21e34ad6d2d",
+      "unchanged": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/whitespace-results.json",
+      "expected": "faf5e4325d1d65a0d6a28f57232da8159bd23096e0fd4aae3c538e21e5803210",
+      "actual": "faf5e4325d1d65a0d6a28f57232da8159bd23096e0fd4aae3c538e21e5803210",
+      "unchanged": true
+    }
+  ],
+  "runtime_schema_checks": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "sha256": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+      "backup_sha256": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/payment-retry.js",
+      "sha256": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22",
+      "backup_sha256": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/stripe-protocol-payment.js",
+      "sha256": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d",
+      "backup_sha256": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d",
+      "unchanged": true
+    },
+    {
+      "path": "services/kc-pay-gpt/mysql-schema.sql",
+      "sha256": "5762c14dac28291cf566ced78a71af2fb26d466b915c69968cf28027b3bfc055",
+      "backup_sha256": "5762c14dac28291cf566ced78a71af2fb26d466b915c69968cf28027b3bfc055",
+      "unchanged": true
+    }
+  ],
+  "harness_backup_checks": [
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/before-driver-error-guard/services__kc-pay-gpt__acceptance__mysql-payment-hold__lab.cjs",
+      "sha256": "eed7c27abcc9ca2b8b7c4c3604271907641b522825fd7d9e3599d2559e53c186",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/before-driver-error-guard/tests__security-round8-kc-mysql-lab.test.js",
+      "sha256": "26cc5c257eb50521f1516717dfc59012e6efd44f9837aa0825c67753d885dbfa",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/cli.cjs",
+      "sha256": "88114dceb85b257f9760e2e4ac13b8975b1c3e7e1e46b33cb8e749267dc80fd6",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/fixture.sql",
+      "sha256": "1949fcf408ea1126ac4524fc0532a935c5430fc82cce30dcd4bd2ed2fdb590e3",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/lab.cjs",
+      "sha256": "75b2cd46404464a507f178d7ab02b48f7d5dc9538eeae3039b918ed85b200de9",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/plan.cjs",
+      "sha256": "079d1db4d82e193c47ca84d004b1a7f2ef6c3bf27dd34f791946a2ef05edca5c",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/safety.cjs",
+      "sha256": "ba62db8c59528947083b8f45f97a758e6a03b1c3c6c4d636e9c5846e1755fc76",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/store-loader.cjs",
+      "sha256": "425987bce97895a841965f37714561939c6a0307605666f26867103180f29851",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/cli.cjs",
+      "sha256": "88114dceb85b257f9760e2e4ac13b8975b1c3e7e1e46b33cb8e749267dc80fd6",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/fixture.sql",
+      "sha256": "b07a5fe44b53c3f1c93252e229759bf7ba40af990ad6cdb949d2730538f87ef5",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/lab.cjs",
+      "sha256": "07c0b2a4571d2512608fb9f80a09a2df73bb3fd272165adf3913388e69b5c56a",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/plan.cjs",
+      "sha256": "0cabe2d545f33c27b27c4df8169d97b3776eddc09179533a4a7fb57799439c24",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/safety.cjs",
+      "sha256": "ba62db8c59528947083b8f45f97a758e6a03b1c3c6c4d636e9c5846e1755fc76",
+      "verified": true
+    },
+    {
+      "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/store-loader.cjs",
+      "sha256": "425987bce97895a841965f37714561939c6a0307605666f26867103180f29851",
+      "verified": true
+    }
+  ],
+  "ignored_files": [],
+  "scope_exception": {
+    "path": "js/engagement-runtime-loader.js",
+    "observed_sha256": "c9186bfbfe8422abe6d1676a2f47402a12c8c4df3895073bf9fb6d807af53413",
+    "status": "REVIEW; prior handoff mismatch remains unresolved",
+    "current_sha256": "c9186bfbfe8422abe6d1676a2f47402a12c8c4df3895073bf9fb6d807af53413",
+    "unchanged_this_round": true
+  },
+  "sql_execution": "NOT RUN",
+  "real_mysql_cases": "12 NOT RUN",
+  "manual_fault_cases": "3 NOT RUN",
+  "production_changes": "NOT RUN",
+  "command_boundary": "No git add/commit/push/PR/deploy or database commands; clean-env guarded Node tests/check/plan only. Git status is a checkpoint before this record creates itself."
+}

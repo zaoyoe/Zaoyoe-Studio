@@ -84,6 +84,11 @@ function decryptCdk(payload, { inventoryId, site = 'cn', env = process.env } = {
     if (!payload || typeof payload !== 'object') {
         throw new Error('CDK 密文记录无效');
     }
+    if (String(payload.ciphertext || '').trim() === 'SHREDDED') {
+        const safeError = new Error('CDK 已过归档留存期并完成安全脱敏碎纸化，已无法解密');
+        safeError.code = 'shop_cdk_shredded';
+        throw safeError;
+    }
     if (Number(payload.version || 0) !== VERSION || payload.algorithm !== ALGORITHM) {
         throw new Error('CDK 密文版本或算法不受支持');
     }

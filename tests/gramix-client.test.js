@@ -11,12 +11,7 @@ const {
 } = require('../server/tg/gramix-client');
 
 function response(status, payload, headers = {}) {
-    return {
-        status,
-        ok: status >= 200 && status < 300,
-        headers: { get(name) { return headers[String(name).toLowerCase()] || null; } },
-        async json() { return payload; }
-    };
+    return new Response(JSON.stringify(payload), { status, headers });
 }
 
 function client(fetchImpl, options = {}) {
@@ -165,7 +160,7 @@ test('timeout also covers a stalled JSON response body', async () => {
     let signal;
     const api = client(async (_url, init) => {
         signal = init.signal;
-        return { status: 200, ok: true, json: () => new Promise(() => {}) };
+        return new Response(new ReadableStream({}));
     }, { timeoutMs: 250 });
     await assert.rejects(api.getBalance(), (error) => error.code === 'gramix_timeout');
     assert.equal(signal.aborted, true);

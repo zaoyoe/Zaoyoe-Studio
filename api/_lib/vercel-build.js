@@ -65,13 +65,14 @@ const PRIVATE_EXTENSIONS = new Set([
     '.tmp',
     '.toml'
 ]);
-const PRIVATE_PATTERN_EXTENSIONS = new Set(['.css', '.html', '.js']);
+const PRIVATE_PATTERN_EXTENSIONS = new Set(['.cjs', '.css', '.html', '.js', '.mjs']);
 const PRIVATE_BASENAME_PATTERNS = [
     /preview/i,
     /^debug/i,
     /(?:^|[-_])debug(?:[-_.]|$)/i,
     /(?:^|[-_])smoke(?:[-_.]|$)/i,
-    /(?:^|[-_])test(?:[-_.]|$)/i,
+    /(?:^|[-_.])test(?:[-_.]|$)/i,
+    /(?:^|[-_.])spec(?:[-_.]|$)/i,
     /(?:^|[-_])old(?:[-_.]|$)/i,
     /(?:^|[-_])migrate(?:[-_.]|$)/i
 ];

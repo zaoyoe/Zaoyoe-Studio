@@ -1,0 +1,197 @@
+{
+  "scope": "Authorized local synthetic MySQL only; not a production acceptance",
+  "setup_attempt_01": {
+    "exit": 1,
+    "cause": "Python target file API error",
+    "recovery": "target file only; no SQL rerun"
+  },
+  "execution_attempts": [
+    {
+      "attempt": "execute-01",
+      "status": "FAIL",
+      "exit": 1,
+      "preflight": {
+        "status": "FAIL"
+      },
+      "pass": 0,
+      "fail": 0,
+      "not_run": 12,
+      "manual": [
+        {
+          "id": "tcp_commit_reply_loss",
+          "status": "NOT RUN"
+        },
+        {
+          "id": "worker_process_restart",
+          "status": "NOT RUN"
+        },
+        {
+          "id": "mysqld_crash_restart",
+          "status": "NOT RUN"
+        }
+      ],
+      "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/execute-01.log"
+    },
+    {
+      "attempt": "execute-02",
+      "status": "FAIL",
+      "exit": 1,
+      "preflight": {
+        "status": "PASS",
+        "serverUuid": "ca19329e-dbe0-11f1-aa3c-0605081862a4",
+        "version": "8.4.11",
+        "database": "kc_fault_lab_88db804f71ff9b98"
+      },
+      "pass": 0,
+      "fail": 1,
+      "not_run": 11,
+      "manual": [
+        {
+          "id": "tcp_commit_reply_loss",
+          "status": "NOT RUN"
+        },
+        {
+          "id": "worker_process_restart",
+          "status": "NOT RUN"
+        },
+        {
+          "id": "mysqld_crash_restart",
+          "status": "NOT RUN"
+        }
+      ],
+      "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/execute-02.log"
+    },
+    {
+      "attempt": "execute-03",
+      "status": "PASS",
+      "exit": 0,
+      "preflight": {
+        "status": "PASS",
+        "serverUuid": "8a30916c-dbe1-11f1-90b5-2ea4ac7236b8",
+        "version": "8.4.11",
+        "database": "kc_fault_lab_7d64646488d639c6"
+      },
+      "pass": 12,
+      "fail": 0,
+      "not_run": 0,
+      "manual": [
+        {
+          "id": "tcp_commit_reply_loss",
+          "status": "NOT RUN"
+        },
+        {
+          "id": "worker_process_restart",
+          "status": "NOT RUN"
+        },
+        {
+          "id": "mysqld_crash_restart",
+          "status": "NOT RUN"
+        }
+      ],
+      "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/execute-03.log"
+    }
+  ],
+  "final_database_scenarios": [
+    {
+      "id": "exact_owner_and_single_hold",
+      "status": "PASS"
+    },
+    {
+      "id": "concurrent_reserve",
+      "status": "PASS"
+    },
+    {
+      "id": "pending_hold_cleanup",
+      "status": "PASS"
+    },
+    {
+      "id": "unsafe_task_cleanup",
+      "status": "PASS"
+    },
+    {
+      "id": "confirmed_no_charge_cleanup",
+      "status": "PASS"
+    },
+    {
+      "id": "hold_cleanup_race",
+      "status": "PASS"
+    },
+    {
+      "id": "database_deadlock",
+      "status": "PASS"
+    },
+    {
+      "id": "disconnect_uncommitted",
+      "status": "PASS"
+    },
+    {
+      "id": "disconnect_before_commit",
+      "status": "PASS"
+    },
+    {
+      "id": "discard_commit_ack",
+      "status": "PASS"
+    },
+    {
+      "id": "discard_hold_ack",
+      "status": "PASS"
+    },
+    {
+      "id": "reload_store_preserves_hold",
+      "status": "PASS"
+    }
+  ],
+  "final_database_exit": 0,
+  "manual_scenarios": [
+    {
+      "id": "tcp_commit_reply_loss",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "worker_process_restart",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "mysqld_crash_restart",
+      "status": "NOT RUN"
+    }
+  ],
+  "offline_final": {
+    "files": 2,
+    "breakdown": {
+      "round8_lab": 80,
+      "round7_hold": 119
+    },
+    "exit": 0,
+    "tests": 199,
+    "pass": 199,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "log": "logs/offline-final-01.log"
+  },
+  "syntax": {
+    "active": {
+      "checks": 15,
+      "node_files": 12,
+      "python_ast": 3,
+      "pass": 15,
+      "fail": 0
+    },
+    "historical_snapshots_syntax_only": {
+      "checks": 3,
+      "not_operational_evidence": true
+    },
+    "raw": "syntax-results.json"
+  },
+  "actual_sql_statements_final": 874,
+  "expected_deadlocks": 1,
+  "earlier_kc_full_suite": {
+    "status": "HISTORICAL / NOT RERUN",
+    "files": 71,
+    "pass": 1672,
+    "fail": 40,
+    "exit": 1
+  }
+}

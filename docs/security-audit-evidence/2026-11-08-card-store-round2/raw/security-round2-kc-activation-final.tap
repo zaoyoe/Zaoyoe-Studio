@@ -1,0 +1,130 @@
+TAP version 13
+# Subtest: KC real activation handler reserves capacity before the first CDK lookup can yield
+ok 1 - KC real activation handler reserves capacity before the first CDK lookup can yield
+  ---
+  duration_ms: 3.888541
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after invalid CDK
+ok 2 - KC real activation handler releases admission after invalid CDK
+  ---
+  duration_ms: 0.523125
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after used CDK
+ok 3 - KC real activation handler releases admission after used CDK
+  ---
+  duration_ms: 0.425584
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after non-self-service CDK
+ok 4 - KC real activation handler releases admission after non-self-service CDK
+  ---
+  duration_ms: 0.422
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after empty card pool
+ok 5 - KC real activation handler releases admission after empty card pool
+  ---
+  duration_ms: 0.452417
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after failed CDK compare-and-set
+ok 6 - KC real activation handler releases admission after failed CDK compare-and-set
+  ---
+  duration_ms: 0.397208
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after CDK lookup failure
+ok 7 - KC real activation handler releases admission after CDK lookup failure
+  ---
+  duration_ms: 0.702667
+  type: 'test'
+  ...
+# Subtest: KC real activation handler resumes an existing task without reserving another worker slot
+ok 8 - KC real activation handler resumes an existing task without reserving another worker slot
+  ---
+  duration_ms: 0.450042
+  type: 'test'
+  ...
+# Subtest: KC task creation failure returns the claimed CDK and admission capacity
+ok 9 - KC task creation failure returns the claimed CDK and admission capacity
+  ---
+  duration_ms: 0.584625
+  type: 'test'
+  ...
+# Subtest: KC synchronous worker dispatch failure returns the CDK and both kinds of capacity
+ok 10 - KC synchronous worker dispatch failure returns the CDK and both kinds of capacity
+  ---
+  duration_ms: 0.870083
+  type: 'test'
+  ...
+# Subtest: KC never returns a CDK when an unstarted task cannot be retired
+ok 11 - KC never returns a CDK when an unstarted task cannot be retired
+  ---
+  duration_ms: 0.456041
+  type: 'test'
+  ...
+# Subtest: KC retires unstarted tasks before returning their CDK
+ok 12 - KC retires unstarted tasks before returning their CDK
+  ---
+  duration_ms: 1.151667
+  type: 'test'
+  ...
+# Subtest: KC maintenance and missing credentials never claim CDKs or capacity
+ok 13 - KC maintenance and missing credentials never claim CDKs or capacity
+  ---
+  duration_ms: 0.421125
+  type: 'test'
+  ...
+# Subtest: KC real status renderer displays hostile server messages as text and preserves line breaks
+ok 14 - KC real status renderer displays hostile server messages as text and preserves line breaks
+  ---
+  duration_ms: 0.599333
+  type: 'test'
+  ...
+# Subtest: KC real capsule renderer only uses static SVG markup and appends the message as text
+ok 15 - KC real capsule renderer only uses static SVG markup and appends the message as text
+  ---
+  duration_ms: 0.621166
+  type: 'test'
+  ...
+# Subtest: KC capsule replacement and manual dismiss retain their timer lifecycle
+ok 16 - KC capsule replacement and manual dismiss retain their timer lifecycle
+  ---
+  duration_ms: 0.43925
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: admin-login.html
+ok 17 - KC inline scripts compile after security changes: admin-login.html
+  ---
+  duration_ms: 1.078834
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: admin.html
+ok 18 - KC inline scripts compile after security changes: admin.html
+  ---
+  duration_ms: 3.970084
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: index.html
+ok 19 - KC inline scripts compile after security changes: index.html
+  ---
+  duration_ms: 1.458834
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: subscription.html
+ok 20 - KC inline scripts compile after security changes: subscription.html
+  ---
+  duration_ms: 0.689375
+  type: 'test'
+  ...
+1..20
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 129.630958

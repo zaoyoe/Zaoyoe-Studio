@@ -1,0 +1,89 @@
+--- before/services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs
++++ after/services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs
+@@ -106,7 +106,7 @@
+ }
+ async function preflight(pool, target) {
+     validateTarget(target);
+-    const [identity] = await pool.query('SELECT @@server_uuid AS server_uuid, @@version AS version, CURRENT_USER() AS current_user, DATABASE() AS db, @@partial_revokes AS partial_revokes, CURRENT_ROLE() AS current_role');
++    const [identity] = await pool.query('SELECT @@server_uuid AS server_uuid, @@version AS version, CURRENT_USER() AS `current_user`, DATABASE() AS db, @@partial_revokes AS partial_revokes, CURRENT_ROLE() AS `current_role`');
+     const actual = identity[0];
+     requireThat(identity.length === 1 && actual.server_uuid === target.serverUuid
+         && /^8\.4\.\d+(?:[-+].*)?$/.test(actual.version)
+@@ -172,15 +172,26 @@
+     const cases = [
+         ['exact_owner_and_single_hold', async () => {
+             const id = await seed(); await store.reserveCard(owner);
+-            for (const wrong of ['payment_labownera', `${owner} `, 'payment_Other']) {
++            for (const wrong of ['payment_labownera', 'payment_Other']) {
+                 await expectError(() => store.markCardPaymentStarted(id, wrong), 'CARD_LOCK_OWNERSHIP_LOST');
+                 requireThat(await store.releaseCard(id, wrong) === 0, 'LAB_WRONG_OWNER_RELEASED');
+             }
++            await expectError(() => store.markCardPaymentStarted(id, `${owner} `), 'ASSET_LOCK_OWNER_INVALID');
++            await expectError(() => store.releaseCard(id, `${owner} `), 'ASSET_LOCK_OWNER_INVALID');
++            // Test MySQL PAD SPACE/collation behavior with a malformed stored
++            // owner and a valid request owner, not an invalid request stopped
++            // before SQL by requireAssetLockOwner().
++            await query('UPDATE card_assets SET locked_by = ? WHERE id = ?', [`${owner} `, id]);
++            await expectError(() => store.markCardPaymentStarted(id, owner), 'CARD_LOCK_OWNERSHIP_LOST');
++            requireThat(await store.releaseCard(id, owner) === 0, 'LAB_PADDED_OWNER_RELEASED');
++            await checkHeld(id, '正常', `${owner} `);
++            await query('UPDATE card_assets SET locked_by = ? WHERE id = ?', [owner, id]);
+             await store.markCardPaymentStarted(id, owner);
+             await expectError(() => store.markCardPaymentStarted(id, owner), 'CARD_LOCK_OWNERSHIP_LOST');
+-            for (const wrong of ['payment_labownera', `${owner} `, 'payment_Other']) {
++            for (const wrong of ['payment_labownera', 'payment_Other']) {
+                 await expectError(() => store.completeCardPayment(id, wrong), 'CARD_LOCK_OWNERSHIP_LOST');
+             }
++            await expectError(() => store.completeCardPayment(id, `${owner} `), 'ASSET_LOCK_OWNER_INVALID');
+             await checkHeld(id);
+             await store.completeCardPayment(id, owner);
+             await expectError(() => store.completeCardPayment(id, owner), 'CARD_LOCK_OWNERSHIP_LOST');
+--- before/tests/security-round8-kc-mysql-lab.test.js
++++ after/tests/security-round8-kc-mysql-lab.test.js
+@@ -172,6 +172,10 @@
+     assert.equal((await preflight(pool, target())).status, 'PASS');
+     assert.ok(seen.every(sql => /^(SELECT|SHOW) /.test(sql)));
+     assert.ok(seen.includes('SHOW GRANTS'));
++    // CURRENT_USER is reserved in real MySQL 8.4. Do not let a permissive
++    // fake pool hide an unquoted alias regression (round-9 real-server finding).
++    assert.match(seen[0], /CURRENT_USER\(\) AS `current_user`/);
++    assert.match(seen[0], /CURRENT_ROLE\(\) AS `current_role`/);
+ });
+ for (const [label, change, expected] of [
+     ['UUID', { identity: { server_uuid: 'other' } }, 'LAB_SERVER_IDENTITY_MISMATCH'],
+@@ -250,6 +254,14 @@
+     changed = 1; await store.markCardPaymentStarted(1, 'payment_LabOwnerA');
+     changed = 2; await assert.rejects(() => store.markCardPaymentStarted(1, 'payment_LabOwnerA'), failCode('CARD_LOCK_OWNERSHIP_LOST'));
+ });
++test('malformed request owner is rejected before SQL, separately from SQL ownership loss', async () => {
++    let writes = 0;
++    const store = loadStore({ async execute() { writes++; throw Error('must not reach SQL'); } }, target());
++    for (const method of ['markCardPaymentStarted', 'completeCardPayment', 'releaseCard']) {
++        await assert.rejects(() => store[method](1, 'payment_LabOwnerA '), failCode('ASSET_LOCK_OWNER_INVALID'));
++    }
++    assert.equal(writes, 0);
++});
+ test('bounded query timeout destroys instead of releasing the connection', async () => {
+     let destroyed = 0, released = 0;
+     const c = { async query({ sql }) { if (sql.startsWith('SET SESSION')) return [[]]; return new Promise(() => {}); },
+--- before/services/kc-pay-gpt/acceptance/mysql-payment-hold/README.md
++++ after/services/kc-pay-gpt/acceptance/mysql-payment-hold/README.md
+@@ -103,3 +103,18 @@
+ KC 当前 Dockerfile 使用 `COPY . .`，并未排除 `acceptance/`，因此将来全量构建可能带入本夹具，
+ 但夹具不是服务启动入口，也未被接入 HTTP 路由。发布前仍需单独审查是否将验收工具排除出镜像；
+ 本轮没有构建镜像或验证生产制品，也没有以其它链路部署成功替代 KC 验证。
++
++## 后续记录：第九轮已授权的真实实例验收
++
++以上“未执行”描述保留为第八轮历史，不覆盖其证据。2026-11-09 用户另行明确授权后，
++第九轮使用全新本地 MySQL **8.4.11** 数据目录完成了 **12/12 自动场景 PASS**。
++三项手工故障（TCP 回包丢失、worker 进程重启、mysqld 崩溃重启）仍全部 **NOT RUN**。
++
++真实验收发现并修正了两处夹具问题，不是生产支付修复：身份查询的保留字别名缺少反引号；
++格式无效 owner 的预期错误码写成了归属丢失。现同时测试格式校验拒绝与数据库中尾随空格 owner
++的字节精确比较，未放宽保护条件。失败记录和失败实例数据目录保留，最终通过来自另一全新实例。
++本次未改 `mysql-store.js` 等支付 runtime 或 schema，未连接生产、付款、提交或部署。
++
++实验进程已正常停止，23316 无监听；临时数据目录保留，不是长期备份承诺。
++第九轮结果、只读收尾检查和重试归因见 `docs/security-card-store-hardening-round9-2026-11-09.md`
++及 `docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/`；不得回写第八轮结果为 PASS。

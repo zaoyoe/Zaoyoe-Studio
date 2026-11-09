@@ -397,19 +397,25 @@ function createTgPurchaseHandlers({ admin, env = process.env, requestSecurity = 
                 if (!verified) return plain(res, 401, 'error');
                 // Verification remains available after the sales switch closes.
                 const supabase = admin.getOptionalSupabaseAdmin?.(); if (!supabase) return plain(res, 503, 'error');
-                let data = await confirmPayment(supabase, verified);
-                if (data?.success !== true && data?.code === 'payment_binding_mismatch' && typeof gateway.queryPayment === 'function') {
-                    const { data: current, error: lookupError } = await supabase.from('tg_purchase_orders')
-                        .select('order_no,payment_provider,payment_merchant_id,payment_channel,provider_trade_no,total_minor,currency')
-                        .eq('order_no', verified.order_no).maybeSingle();
-                    if (lookupError) return plain(res, 503, 'error');
-                    if (!current || current.provider_trade_no !== current.order_no) return plain(res, 409, 'error');
-                    const queried = await gateway.queryPayment({ order: current });
-                    const keys = ['order_no', 'provider', 'merchant_id', 'provider_trade_no', 'payment_channel', 'amount_minor', 'currency'];
-                    if (!queried || keys.some(key => queried[key] !== verified[key])) return plain(res, 409, 'error');
-                    await requirePaymentReconciliation(supabase, current.payment_channel);
-                    data = await confirmPayment(supabase, queried);
-                }
+                // A signed notification is a trigger, never independent proof of funds.
+                // Resolve the immutable local order before querying the provider.
+                const { data: current, error: lookupError } = await supabase.from('tg_purchase_orders')
+                    .select('order_no,payment_provider,payment_merchant_id,payment_channel,provider_trade_no,total_minor,currency')
+                    .eq('order_no', verified.order_no).maybeSingle();
+                if (lookupError) return plain(res, 503, 'error');
+                if (!current || current.payment_provider !== 'zpay'
+                    || current.payment_merchant_id !== verified.merchant_id
+                    || current.payment_channel !== verified.payment_channel
+                    || current.total_minor !== verified.amount_minor || current.currency !== verified.currency
+                    || (current.provider_trade_no && current.provider_trade_no !== current.order_no
+                        && current.provider_trade_no !== verified.provider_trade_no)) return plain(res, 409, 'error');
+                if (typeof gateway.queryPayment !== 'function') return plain(res, 503, 'error');
+                const queried = await gateway.queryPayment({ order: current });
+                const keys = ['order_no', 'provider', 'merchant_id', 'provider_trade_no', 'payment_channel', 'amount_minor', 'currency'];
+                if (!queried || queried.verified_payload?.verified_by !== 'authenticated_query'
+                    || keys.some(key => queried[key] !== verified[key])) return plain(res, 503, 'error');
+                await requirePaymentReconciliation(supabase, current.payment_channel);
+                const data = await confirmPayment(supabase, queried);
                 return plain(res, data?.success === true ? 200 : 409, data?.success === true ? 'success' : 'error');
             } catch (caught) { return plain(res, [400, 413].includes(caught?.statusCode) ? caught.statusCode : 503, 'error'); }
         }

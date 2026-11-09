@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { resolveActivationInput, buildActivationCredentialEnv } from '../activation-routing.js';
 import { validateOutsourceConfig, canonicalizeOutsourcePlan } from '../gpt-outsourcing.js';
@@ -38,16 +39,20 @@ function handlerHarness(fixture, overrides = {}) {
             plan_mapping: { plus: 'plus-monthly', go: 'go-monthly', pro_100: 'pro100-monthly',
                 pro_200: 'pro200-monthly', pro_500: 'pro500-monthly' } })),
         hasAvailableCard: vi.fn(async () => true), markCdkUsed: vi.fn(async () => true),
-        markCdkUnused: vi.fn(async () => {}), createTaskLog: vi.fn(async () => ({ jobKey: 'fixture-job' })), ...overrides
+        markCdkUnused: vi.fn(async () => {}), createTaskLog: vi.fn(async () => ({ jobKey: 'fixture-job' })),
+        createActivationTask: vi.fn(async () => ({ created: true, jobKey: 'fixture-job' })),
+        retireSafeActivationTask: vi.fn(async () => ({ released: true })), ...overrides
     };
     const spawnActivationWorker = vi.fn(), runGptApiWorker = vi.fn(async () => {});
-    const context = { ...sessions, Buffer, Date, store, ensureStoreReady: async () => {},
+    const context = { ...sessions, Buffer, Date, crypto, store, ensureStoreReady: async () => {},
         validateOutsourceConfig, canonicalizeOutsourcePlan,
         fingerprintSessionPayload, getClientIp: () => '', getRemainingCooldownMinutes: value => value ? 7 : 0,
         activeForegroundJobs: new Set(),
         resolveActivationInput, formatTaskErrorMessage, redactSensitiveText: s => s,
-        logTask: vi.fn(), reserveForegroundSlot: vi.fn(), fireTelegramNotification: vi.fn(),
+        logTask: vi.fn(), issueTaskAccessToken: key => `offline-task-access-${key}`, fireTelegramNotification: vi.fn(),
         spawnActivationWorker, runGptApiWorker, console: { log() {}, error() {} } };
+    // Exercise the real capacity bookkeeping used by the extracted handler.
+    vm.runInNewContext(snippet('function reserveForegroundSlot(', 'function getTotalActiveJobs('), context);
     vm.runInNewContext(snippet('function decodeJwtPart(', 'const verifyPassword'), context);
     const realValidator = context.validateAccessToken;
     context.validateAccessToken = vi.fn(realValidator);
@@ -61,7 +66,8 @@ describe('actual activation request platform routing with a mock store', () => {
     it.each(fixtures)('$platform uses only its own credential checks and execution mode', async fixture => {
         const h = handlerHarness(fixture); await h.request();
         expect(h.response.value).toMatchObject({ success: true, jobKey: 'fixture-job' });
-        expect(h.store.markCdkUsed).toHaveBeenCalledOnce();
+        expect(h.store.createActivationTask).toHaveBeenCalledOnce();
+        expect(h.store.markCdkUsed).not.toHaveBeenCalled();
         expect(h.store.markCdkUnused).not.toHaveBeenCalled();
         expect(h.context.validateAccessToken).toHaveBeenCalledTimes(fixture.platform === 'chatgpt' ? 1 : 0);
         if (fixture.platform === 'chatgpt') {
@@ -71,7 +77,7 @@ describe('actual activation request platform routing with a mock store', () => {
             expect(h.spawnActivationWorker.mock.calls[0][0]).toMatchObject({ sessionRaw: fixture.credential,
                 task: { platform: fixture.platform, executionMode: 'local_card_pool' } });
         }
-        expect(h.store.createTaskLog.mock.calls[0][0].tokenPreview).not.toContain('offline-cookie');
+        expect(h.store.createActivationTask.mock.calls[0][0].tokenPreview).not.toContain('offline-cookie');
     });
     it('preserves full ChatGPT Session JSON in local mode', async () => {
         const h = handlerHarness(fixtures[2], { getGptApiConfig: async () => ({ enabled: false }) }); await h.request();
@@ -88,6 +94,7 @@ describe('actual activation request platform routing with a mock store', () => {
         expect(h.store.hasAvailableCard).not.toHaveBeenCalled();
         expect(h.store.markCdkUsed).not.toHaveBeenCalled();
         expect(h.store.createTaskLog).not.toHaveBeenCalled();
+        expect(h.store.createActivationTask).not.toHaveBeenCalled();
         expect(h.spawnActivationWorker).not.toHaveBeenCalled();
         expect(h.runGptApiWorker).not.toHaveBeenCalled();
     });
@@ -107,6 +114,7 @@ describe('actual activation request platform routing with a mock store', () => {
         expect(h.store.hasAvailableCard).not.toHaveBeenCalled();
         expect(h.store.markCdkUsed).not.toHaveBeenCalled();
         expect(h.store.createTaskLog).not.toHaveBeenCalled();
+        expect(h.store.createActivationTask).not.toHaveBeenCalled();
         expect(h.spawnActivationWorker).not.toHaveBeenCalled();
         expect(h.runGptApiWorker).not.toHaveBeenCalled();
     });
@@ -131,10 +139,16 @@ describe('actual activation request platform routing with a mock store', () => {
         const h = handlerHarness(fixtures[0], { verifyCdkDetails: async () => { throw new Error('lookup failed'); } });
         await h.request(); expect(h.store.markCdkUnused).not.toHaveBeenCalled(); expect(h.response.statusCode).toBe(500);
     });
-    it('releases only the lock acquired by this request when task creation fails', async () => {
-        const h = handlerHarness(fixtures[0], { createTaskLog: async () => { throw new Error('insert failed'); } });
-        await h.request(); expect(h.store.markCdkUsed).toHaveBeenCalledOnce(); expect(h.store.markCdkUnused).toHaveBeenCalledOnce();
-        expect(h.context.logTask).toHaveBeenCalledWith('', expect.stringContaining('stage=task_create'), 'error');
+    it('never unlocks by CDK when atomic admission fails or its commit outcome is unknown', async () => {
+        const h = handlerHarness(fixtures[0], { createActivationTask: vi.fn(async () => { throw new Error('insert or commit failed'); }) });
+        await h.request();
+        expect(h.response.statusCode).toBe(500);
+        expect(h.store.createActivationTask).toHaveBeenCalledOnce();
+        expect(h.store.markCdkUsed).not.toHaveBeenCalled();
+        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+        expect(h.store.retireSafeActivationTask).not.toHaveBeenCalled();
+        expect(h.spawnActivationWorker).not.toHaveBeenCalled();
+        expect(h.context.logTask).toHaveBeenCalledWith('', expect.stringContaining('stage=task_admission'), 'error');
     });
     it.each(fixtures)('records card-pool rejection for $platform without leaking internal instructions or starting a task', async fixture => {
         const h = handlerHarness(fixture, { getGptApiConfig: async () => ({ enabled: false }), hasAvailableCard: async () => false });
@@ -144,6 +158,7 @@ describe('actual activation request platform routing with a mock store', () => {
         expect(h.context.logTask).toHaveBeenCalledWith('', expect.stringContaining('stage=card_pool_check code=CARD_POOL_UNAVAILABLE'), 'warn');
         expect(h.store.markCdkUsed).not.toHaveBeenCalled();
         expect(h.store.createTaskLog).not.toHaveBeenCalled();
+        expect(h.store.createActivationTask).not.toHaveBeenCalled();
         expect(h.spawnActivationWorker).not.toHaveBeenCalled();
         expect(h.runGptApiWorker).not.toHaveBeenCalled();
     });
@@ -182,6 +197,7 @@ describe('actual activation request platform routing with a mock store', () => {
         expect(h.store.hasAvailableCard).not.toHaveBeenCalled();
         expect(h.store.markCdkUsed).not.toHaveBeenCalled();
         expect(h.store.createTaskLog).not.toHaveBeenCalled();
+        expect(h.store.createActivationTask).not.toHaveBeenCalled();
         expect(h.spawnActivationWorker).not.toHaveBeenCalled();
     });
     it('does not apply the local Session cooldown to third-party ChatGPT checkout', async () => {
@@ -326,30 +342,76 @@ describe('real worker entry uses restored platform modules without network or pa
     });
 });
 
-function spawnHarness({ state = 'not_started', failPersist = false, latestState = null,
-    platform = 'grok', executionMode = 'local_card_pool', runOutput = null, sessionCooldownScopeKey = 'fixture-session-fingerprint' } = {}) {
+function spawnHarness({ state = 'not_started', failPersist = false, failAt = 0, refuseAt = 0,
+    refuseFinal = false, failFinal = false, loseFinalResponse = false, failAnnotation = false,
+    refuseAnnotation = false, loseAnnotationResponse = false, autoRenewError = false, cardPoolEmpty = false,
+    workerError = 'fixture worker interruption',
+    latestState = null, paymentSequence = null, unawaitedPayments = false,
+    platform = 'grok', executionMode = 'local_card_pool', runOutput = null, runStatus = 'failed',
+    autoRenewConfirmed = false, sessionCooldownScopeKey = 'fixture-session-fingerprint' } = {}) {
     let done; const finished = new Promise(resolve => { done = resolve; });
+    let savedState = latestState || 'not_started', settled = false, writes = 0, paymentCallback, finalFailed = false;
+    const events = [];
     const store = {
         getPaymentRegion: async () => 'US', getActiveProxy: async () => '', getHcaptchaConfig: async () => ({}),
-        updateTaskLog: vi.fn(async () => { if (failPersist) throw new Error('fixture persistence failure'); }),
-        getTaskStatus: async () => ({ payment_state: latestState || state }), markCdkUnused: vi.fn(async () => {}),
+        updateTaskLog: vi.fn(), markCdkUnused: vi.fn(), getTaskStatus: vi.fn(),
+        updateLocalActivationTask: vi.fn(async (_key, input, options = {}) => {
+            events.push({ type: 'write', input, options });
+            writes += 1;
+            if (failPersist || writes === failAt || (failAnnotation && options.annotate)) throw new Error('fixture persistence failure');
+            if (failFinal && options.finalize && !finalFailed) {
+                finalFailed = true;
+                throw new Error('fixture final write failed before commit');
+            }
+            if (writes === refuseAt || (options.finalize && refuseFinal) || (options.annotate && refuseAnnotation) || (settled && !options.annotate)) {
+                return { applied: false, released: false, reason: 'OFFLINE_OWNER_CHANGED' };
+            }
+            // The store itself is exercised separately through its real SQL.
+            // Here return the effective persisted evidence for the worker flow.
+            await Promise.resolve();
+            savedState = safety.mergePaymentState(savedState, input.paymentState);
+            const confirmed = (options.finalize || options.annotate) && input.status === 'success' && savedState === 'succeeded';
+            const recoveryRequired = !confirmed && (safety.shouldRetainCdk({ paymentState: savedState }) || !!input.recoveryRequired);
+            const status = options.annotate ? input.status : recoveryRequired ? 'manual' : input.status;
+            if (options.finalize) settled = true;
+            const result = { applied: true, status, paymentState: savedState, recoveryRequired,
+                released: !!options.finalize && status === 'failed' && !recoveryRequired,
+                message: status === 'manual' && input.status !== 'manual'
+                    ? '支付结果或任务状态需人工复核，已保留 CDK 与银行卡' : input.message };
+            events.push({ type: 'saved', result, options });
+            if ((loseFinalResponse && options.finalize) || (loseAnnotationResponse && options.annotate)) throw new Error('fixture commit response lost');
+            return result;
+        }),
+        releaseCardsByOwner: vi.fn(async () => { events.push({ type: 'releaseCards' }); }),
+        resetCdkFailure: vi.fn(async () => {}), resetActivationAttemptFailure: vi.fn(async () => {}),
         getMaintenanceModeState: async () => ({ enabled: false }),
         setActivationAttemptCooldown: vi.fn(async () => {})
     };
     let runtimeEnv;
     const sandbox = { ...safety, ...sessions, path, __dirname: root, process: { env: { CHATGPT_TOKEN: 'unrelated-token' } },
         store, buildActivationCredentialEnv, getPlatformForPlan, reportTaskFailure, redactSensitiveText: s => s,
-        MAX_PROCESS_ATTEMPTS: 2, normalizeTaskProgress: p => p, logTask() {}, broadcastToTask: vi.fn(),
-        notifyTaskOutcome: vi.fn(),
+        MAX_PROCESS_ATTEMPTS: 2, normalizeTaskProgress: p => p, logTask() {},
+        broadcastToTask: vi.fn((_key, value) => { events.push({ type: 'broadcast', value }); }),
+        notifyTaskOutcome: vi.fn(value => { events.push({ type: 'notify', value }); }),
+        finalizeRetryAnalysis: analysis => analysis, isNoActivationEligibilityMessage: () => false,
+        isCardPoolExhaustedIssue: () => cardPoolEmpty, extractAutoRenewResultFromOutput: () => null,
+        cancelAutoRenew: vi.fn(async () => {
+            events.push({ type: 'autoRenewCheck' });
+            if (autoRenewError) throw new Error('offline cancellation error');
+            return { ok: true, data: autoRenewConfirmed ? { alreadyCancelled: true } : { verificationUnknown: true } };
+        }),
         buildHcaptchaEnvFromConfig: () => ({ env: {} }), extractCardLast4FromOutput: () => null,
         extractTaskMediaFromOutput: () => ({ screenshots: [], videos: [] }), getCheckoutProgress: () => 10,
         getTotalActiveJobs: () => 1, releaseForegroundSlot: () => done(),
         runCheckoutScript: async (_key, _script, env, _attempt, _progress, payment) => {
-            runtimeEnv = env;
+            runtimeEnv = env; paymentCallback = payment;
+            const pending = (paymentSequence || (runOutput === null ? [state] : [])).map(value => payment(value));
+            if (!unawaitedPayments) await Promise.all(pending);
+            else pending.forEach(operation => operation.catch(() => {}));
             if (runOutput !== null) {
-                return { output: runOutput, analysis: { status: 'failed', message: 'offline fixture', paymentState: state, shouldRetry: false } };
+                return { output: runOutput, analysis: { status: runStatus, message: 'offline fixture', paymentState: state, shouldRetry: false } };
             }
-            await payment(state); throw new Error('fixture worker interruption');
+            throw new Error(workerError);
         },
         spawnWorkerWithBrowser: ({ runtimeEnv, runScript }) => runScript(runtimeEnv), console: { error() {} }
     };
@@ -359,19 +421,27 @@ function spawnHarness({ state = 'not_started', failPersist = false, latestState 
     const token = platform === 'chatgpt' ? jwt : 'offline-token';
     sandbox.spawnActivationWorker({ task: { jobKey: 'fixture-job', executionMode }, token,
         sessionRaw: fixture?.credential || '', cdk: 'OFFLINE-CDK', cdkDetails: { platform, plan_type: planType }, clientIp: '', sessionCooldownScopeKey });
-    return finished.then(() => ({ store, runtimeEnv, sandbox }));
+    return finished.then(() => ({ store, runtimeEnv, sandbox, events, paymentCallback }));
 }
 
 describe('server dispatch and interruption preserve payment resources', () => {
     it('dispatches Grok raw cookies and clears inherited GPT credentials', async () => {
         const h = await spawnHarness();
         expect(h.runtimeEnv).toMatchObject({ PLATFORM: 'grok', GROK_TOKEN: fixtures[0].credential, CHATGPT_TOKEN: '', CHATGPT_SESSION_JSON: '', CLAUDE_SESSION_KEY: '' });
-        expect(h.store.markCdkUnused).toHaveBeenCalledOnce();
+        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+        expect(h.store.releaseCardsByOwner).toHaveBeenCalledOnce();
+        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
+            expect.objectContaining({ status: 'failed', paymentState: 'not_started' }), { finalize: true });
+        const saved = h.events.findIndex(event => event.type === 'saved' && event.options.finalize);
+        expect(h.events.findIndex(event => event.type === 'notify')).toBeGreaterThan(saved);
+        expect(h.events.findIndex(event => event.type === 'releaseCards')).toBeGreaterThan(saved);
     });
     it.each(['started', 'unknown', 'succeeded'])('retains %s even when saving the state fails', async state => {
         const h = await spawnHarness({ state, failPersist: true, latestState: 'not_started' });
         expect(h.store.markCdkUnused).not.toHaveBeenCalled();
-        expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'manual', recoveryRequired: true }));
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
+        expect(h.sandbox.broadcastToTask.mock.calls.some(([, event]) => event.type === 'status')).toBe(false);
     });
     it('cools a ChatGPT Session after unusual activity only before payment starts', async () => {
         const h = await spawnHarness({ platform: 'chatgpt', runOutput: '[CHECKOUT_UNUSUAL_ACTIVITY]', sessionCooldownScopeKey: 'a'.repeat(64) });
@@ -386,6 +456,163 @@ describe('server dispatch and interruption preserve payment resources', () => {
     ])('does not set Session cooldown for %s', async (_label, options) => {
         const h = await spawnHarness({ runOutput: '[CHECKOUT_UNUSUAL_ACTIVITY]', ...options });
         expect(h.store.setActivationAttemptCooldown).not.toHaveBeenCalled();
+    });
+    it('keeps worker exception details out of the saved and reported public message', async () => {
+        const h = await spawnHarness({ workerError: 'offline internal diagnostic: synthetic-secret-fixture' });
+        const finalWrite = h.events.find(event => event.type === 'write' && event.options.finalize);
+        expect(finalWrite.input.message).toBe('任务执行异常，请稍后重试或联系客服');
+        const status = h.events.filter(event => event.type === 'broadcast' && event.value.type === 'status').at(-1).value;
+        expect(status.message).toBe(finalWrite.input.message);
+        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ message: status.message }));
+        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+    });
+    it('retains assets after a transient persistence failure and only reports the saved manual result', async () => {
+        const h = await spawnHarness({ failAt: 1 });
+        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
+            expect.objectContaining({ status: 'manual', paymentState: 'unknown', recoveryRequired: true }), { finalize: true });
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledOnce();
+        expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ type: 'status', status: 'manual' }));
+    });
+    it.each([{ refuseAt: 1 }, { refuseFinal: true }])('stops refused settlement without a fallback unlock or completion notice: %j', async options => {
+        const h = await spawnHarness(options);
+        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+        expect(h.store.updateTaskLog).not.toHaveBeenCalled();
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
+    });
+    it('retains assets after a rejected final write and only reports a confirmed manual settlement', async () => {
+        const h = await spawnHarness({ state: 'not_started', runOutput: 'offline output', failFinal: true });
+        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
+            expect.objectContaining({ status: 'manual', paymentState: 'unknown', recoveryRequired: true }), { finalize: true });
+        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledOnce();
+        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'failure' }));
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+    });
+    it('does not compensate or report completion when the final commit response is lost', async () => {
+        const h = await spawnHarness({ state: 'not_started', runOutput: 'offline output', loseFinalResponse: true });
+        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
+        expect(h.sandbox.broadcastToTask).not.toHaveBeenCalledWith('fixture-job', expect.objectContaining({ type: 'status' }));
+    });
+    it('uses persisted stronger evidence when the worker fails before payment', async () => {
+        const h = await spawnHarness({ latestState: 'succeeded' });
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({
+            type: 'status', status: 'manual', paymentState: 'succeeded', recoveryRequired: true }));
+        const status = h.events.filter(event => event.type === 'broadcast' && event.value.type === 'status').at(-1).value;
+        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'failure', message: status.message }));
+        expect(status.message).toContain('人工复核');
+    });
+    it('uses the persisted review message for normal completion and does not report card-pool exhaustion', async () => {
+        const h = await spawnHarness({ latestState: 'succeeded', runOutput: 'offline failed result', cardPoolEmpty: true });
+        const status = h.events.filter(event => event.type === 'broadcast' && event.value.type === 'status').at(-1).value;
+        expect(status).toMatchObject({ status: 'manual', paymentState: 'succeeded', recoveryRequired: true });
+        expect(status.message).toContain('人工复核');
+        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ event: 'failure', message: status.message }));
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+    });
+    it('serializes unawaited stdout callbacks before finalization and does not downgrade payment evidence', async () => {
+        const h = await spawnHarness({ state: 'not_started', paymentSequence: ['started', 'not_started'],
+            unawaitedPayments: true, runOutput: 'offline output' });
+        const finalWrite = h.events.find(event => event.type === 'write' && event.options.finalize);
+        expect(finalWrite.input.paymentState).toBe('started');
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ type: 'status', status: 'manual' }));
+    });
+    it('preserves a started marker even when a single output chunk ends with declined', async () => {
+        const h = await spawnHarness({ state: 'declined', runOutput: 'PAYMENT_STATE:started\nPAYMENT_STATE:declined' });
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
+            expect.objectContaining({ paymentState: 'started' }), { finalize: true });
+    });
+    it('retains assets when legacy output reports an unknown payment without a state marker', async () => {
+        const h = await spawnHarness({ state: 'not_started', runOutput: '支付结果未知，请人工复核' });
+        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
+            expect.objectContaining({ status: 'manual', paymentState: 'unknown', recoveryRequired: true }), { finalize: true });
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+    });
+    it('accepts affirmative success after an earlier legacy unknown-payment message', async () => {
+        const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
+            runOutput: '支付结果未知\nPAYMENT_STATE:succeeded', autoRenewConfirmed: true });
+        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'success' }));
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+    });
+    it('reports affirmative success only after settlement and safely annotates auto-renew confirmation', async () => {
+        const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
+            runOutput: 'PAYMENT_STATE:succeeded', autoRenewConfirmed: true });
+        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
+            expect.objectContaining({ status: 'success', paymentState: 'succeeded', autoRenewStatus: 'disabled' }), { annotate: true });
+        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'success' }));
+        const saved = h.events.findIndex(event => event.type === 'saved' && event.options.finalize);
+        const renewalSaved = h.events.findIndex(event => event.type === 'saved' && event.options.annotate);
+        const renewalCheck = h.events.findIndex(event => event.type === 'autoRenewCheck');
+        expect(renewalCheck).toBeGreaterThan(saved);
+        expect(renewalSaved).toBeGreaterThan(renewalCheck);
+        expect(h.events.findIndex(event => event.type === 'broadcast' && event.value.status === 'success')).toBeGreaterThan(renewalSaved);
+        expect(h.events[saved].result).toMatchObject({ status: 'manual', recoveryRequired: true });
+        expect(h.events[renewalSaved].result).toMatchObject({ status: 'success', recoveryRequired: false });
+        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        const writes = h.store.updateLocalActivationTask.mock.calls.length;
+        await expect(h.paymentCallback('started')).rejects.toThrow('已结算');
+        expect(h.store.updateLocalActivationTask).toHaveBeenCalledTimes(writes);
+    });
+    it('does not unlock or send a success notice when saving the auto-renew result fails', async () => {
+        const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
+            runOutput: 'PAYMENT_STATE:succeeded', autoRenewConfirmed: true, failAnnotation: true });
+        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
+            expect.objectContaining({ status: 'success', paymentState: 'succeeded' }), { annotate: true });
+        expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
+        expect(h.sandbox.broadcastToTask).not.toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success' }));
+        const lastSaved = h.events.filter(event => event.type === 'saved').at(-1);
+        expect(lastSaved.result).toMatchObject({ status: 'manual', paymentState: 'succeeded', recoveryRequired: true });
+        const finalWrite = h.events.find(event => event.type === 'write' && event.options.finalize);
+        expect(finalWrite.input).toMatchObject({ status: 'manual', autoRenewStatus: 'pending', recoveryRequired: true });
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+    });
+    it('does not advertise success after an annotation is refused or its commit response is lost', async () => {
+        for (const options of [{ refuseAnnotation: true }, { loseAnnotationResponse: true }]) {
+            const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
+                runOutput: 'PAYMENT_STATE:succeeded', autoRenewConfirmed: true, ...options });
+            expect(h.sandbox.broadcastToTask).not.toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success' }));
+            expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
+            expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+            expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+            expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
+                expect.objectContaining({ status: 'success', paymentState: 'succeeded' }), { annotate: true });
+            const finalized = h.events.find(event => event.type === 'saved' && event.options.finalize);
+            expect(finalized.result).toMatchObject({ status: 'manual', recoveryRequired: true });
+            // A lost COMMIT response can mean success is already durable. The
+            // worker must not announce it without acknowledgement or undo it.
+            if (options.loseAnnotationResponse) {
+                expect(h.events.filter(event => event.type === 'saved').at(-1).result.status).toBe('success');
+            }
+        }
+    });
+    it('persists cancellation exceptions as a review result before reporting them', async () => {
+        const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
+            runOutput: 'PAYMENT_STATE:succeeded', autoRenewError: true });
+        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job', expect.objectContaining({
+            status: 'manual', paymentState: 'succeeded', autoRenewStatus: 'verification_unknown', recoveryRequired: true
+        }), { annotate: true });
+        const status = h.events.filter(event => event.type === 'broadcast' && event.value.type === 'status').at(-1).value;
+        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ event: 'failure', message: status.message }));
+        expect(h.sandbox.broadcastToTask).not.toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success' }));
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+    });
+    it('keeps payment completed when auto-renew needs review', async () => {
+        const h = await spawnHarness({ state: 'succeeded', runStatus: 'success', runOutput: 'PAYMENT_STATE:succeeded' });
+        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
+            expect.objectContaining({ status: 'manual', paymentState: 'succeeded', recoveryRequired: true }), { annotate: true });
+        expect(h.sandbox.broadcastToTask).toHaveBeenLastCalledWith('fixture-job', expect.objectContaining({ status: 'manual', paymentState: 'succeeded' }));
+        expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'success' }));
+        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
     });
     it('closes the context with recording disabled and continues cleanup after close failure', async () => {
         const h = await workerHarness(fixtures[0], { contextCloseError: new Error('fixture context close failure') });

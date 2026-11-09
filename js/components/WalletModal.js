@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20261018_WALLET_PAYMENT_SELECTOR_1&controlPress=20261018_2&rechargeSpacing=20261018_1&calmHover=20261018_4&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';
+    const walletCssHref = 'css/wallet.css?v=20261018_WALLET_PAYMENT_SELECTOR_1&controlPress=20261018_2&rechargeSpacing=20261018_1&calmHover=20261018_4&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&glassRing=20261108_8';
     const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v3';
@@ -4561,7 +4561,8 @@
             const detailOverlay = document.createElement('div');
             detailOverlay.className = 'wallet-order-modal-overlay';
             detailOverlay.innerHTML = `
-                <div class="wallet-order-modal wallet-order-modal--compact wallet-payment-qr-modal${isMobilePayment ? ' wallet-payment-qr-modal--mobile-handoff' : ''}">
+                <div class="glass-ring glass-ring--shell wallet-order-modal-ring">
+                <div class="wallet-order-modal glass-ring__surface wallet-order-modal--compact wallet-payment-qr-modal${isMobilePayment ? ' wallet-payment-qr-modal--mobile-handoff' : ''}">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title wallet-payment-qr-title">
                             <span class="wallet-payment-qr-title-icon">${this.renderWalletInlineIcon('fa-qrcode', '#fbbf24')}</span>
@@ -4618,6 +4619,7 @@
                             </div>
                         </div>
                     </div>
+                </div>
                 </div>
             `;
 
@@ -4748,7 +4750,8 @@
             const detailOverlay = document.createElement('div');
             detailOverlay.className = 'wallet-order-modal-overlay';
             detailOverlay.innerHTML = `
-                <div class="wallet-order-modal wallet-order-modal--compact wallet-payment-qr-modal wallet-crypto-checkout-modal">
+                <div class="glass-ring glass-ring--shell wallet-order-modal-ring">
+                <div class="wallet-order-modal glass-ring__surface wallet-order-modal--compact wallet-payment-qr-modal wallet-crypto-checkout-modal">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title wallet-payment-qr-title">
                             <span class="wallet-payment-qr-title-icon wallet-crypto-title-icon">${this.renderWalletInlineIcon('fa-coins', '#22c55e')}</span>
@@ -4824,6 +4827,7 @@
                             </div>
                         </div>
                     </div>
+                </div>
                 </div>
             `;
 
@@ -5119,7 +5123,8 @@
             const extraClass = modalClass ? ` ${modalClass}` : '';
 
             return `
-                <div class="wallet-order-modal wallet-order-modal--loading${extraClass}">
+                <div class="glass-ring glass-ring--shell wallet-order-modal-ring">
+                <div class="wallet-order-modal glass-ring__surface wallet-order-modal--loading${extraClass}">
                     <div class="wallet-order-loading-state" aria-label="${this.escapeAttribute(loadingLabel)}">
                         <div class="wallet-order-loading-row">
                             <span class="wallet-pending-dots wallet-order-loading-dots" aria-hidden="true">
@@ -5127,6 +5132,7 @@
                             </span>
                         </div>
                     </div>
+                </div>
                 </div>
             `;
         },
@@ -5545,7 +5551,35 @@
          * Pre-fetch wallet data in background (called when avatar dropdown opens)
          * So data is instantly available when user clicks 'My Orders'
          */
+        warmShell() {
+            if (this.isOpen || this._shellWarmScheduled || typeof document === 'undefined' || !document.body?.appendChild) {
+                return;
+            }
+            if (document.getElementById('wallet-modal-overlay')?.querySelector?.('.glass-ring__surface')) {
+                return;
+            }
+            this._shellWarmScheduled = true;
+            Promise.resolve(walletCssReadyPromise).then(() => {
+                const buildShell = () => {
+                    this._shellWarmScheduled = false;
+                    if (this.isOpen || !document.body?.appendChild) return;
+                    if (document.getElementById('wallet-modal-overlay')?.querySelector?.('.glass-ring__surface')) return;
+                    try {
+                        this.render();
+                    } catch (err) {
+                        console.warn('[WalletModal] Shell warmup skipped:', err?.message || err);
+                    }
+                };
+                if (typeof window.requestIdleCallback === 'function') {
+                    window.requestIdleCallback(buildShell, { timeout: 600 });
+                } else {
+                    window.setTimeout(buildShell, 48);
+                }
+            });
+        },
+
         prefetchData() {
+            this.warmShell();
             const pointsService = window.PointsService;
             if (!pointsService) {
                 return;
@@ -5779,7 +5813,11 @@
         render() {
             let overlay = document.getElementById('wallet-modal-overlay');
             if (overlay) {
-                if (!overlay.querySelector('.wallet-backdrop') || !overlay.querySelector('.wallet-viewport')) {
+                if (
+                    !overlay.querySelector('.wallet-backdrop') ||
+                    !overlay.querySelector('.wallet-viewport') ||
+                    !overlay.querySelector('.glass-ring__surface')
+                ) {
                     overlay.remove();
                     overlay = null;
                 }
@@ -5801,10 +5839,16 @@
             overlay.innerHTML = `
                 <div class="wallet-backdrop" aria-hidden="true"></div>
                 <div class="wallet-viewport">
-                    <div class="wallet-modal">
-                        <div class="wallet-header">
-                            <h2>${window.i18n?.t('wallet.title') || '我的钱包'}</h2>
-                        </div>
+                    <div class="wallet-modal glass-ring">
+                        <section
+                            class="glass-ring__surface wallet-modal__surface"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="wallet-modal-title"
+                        >
+                            <div class="wallet-header">
+                                <h2 id="wallet-modal-title">${window.i18n?.t('wallet.title') || '我的钱包'}</h2>
+                            </div>
                         
                         <div class="wallet-layout">
                             <!-- Left Sidebar Menu -->
@@ -6136,6 +6180,7 @@
                                 </svg>
                             </span>
                         </div>
+                        </section>
                     </div>
                 </div>
             `;
@@ -12266,7 +12311,8 @@
             const modal = document.createElement('div');
             modal.className = 'date-picker-modal';
             modal.innerHTML = `
-                <div class="date-picker-content">
+                <div class="glass-ring glass-ring--shell wallet-date-picker-ring">
+                <div class="date-picker-content glass-ring__surface">
                     <div class="date-picker-header">📅 选择日期范围</div>
                     <div class="date-picker-row">
                         <label>开始日期</label>
@@ -12280,6 +12326,7 @@
                         <button class="date-cancel js-wallet-date-cancel">取消</button>
                         <button class="date-confirm js-wallet-date-confirm">确定</button>
                     </div>
+                </div>
                 </div>
             `;
 
@@ -12730,7 +12777,8 @@
             const modal = document.createElement('div');
             modal.className = 'wallet-order-modal-overlay';
             modal.innerHTML = `
-                <div class="wallet-order-modal wallet-order-modal--compact">
+                <div class="glass-ring glass-ring--shell wallet-order-modal-ring">
+                <div class="wallet-order-modal glass-ring__surface wallet-order-modal--compact">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title">
                             📅 选择日期范围
@@ -12759,6 +12807,7 @@
                             </button>
                         </div>
                     </div>
+                </div>
                 </div>
             `;
 
@@ -13544,7 +13593,8 @@
             const loadingLabel = window.i18n?.t('wallet.loading') || '加载中...';
 
             return `
-                <div class="wallet-order-modal wallet-order-modal--shop-detail">
+                <div class="glass-ring glass-ring--shell wallet-order-modal-ring">
+                <div class="wallet-order-modal glass-ring__surface wallet-order-modal--shop-detail">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title">
                             ${this.renderWalletInlineIcon('fa-box-open', '#6b9ece')} ${window.i18n?.t('wallet.orderDetails') || '订单详情'}
@@ -13584,6 +13634,7 @@
                         </div>
                     </div>
                 </div>
+                </div>
             `;
         },
 
@@ -13603,7 +13654,8 @@
             };
 
             detailOverlay.innerHTML = `
-                <div class="wallet-order-modal">
+                <div class="glass-ring glass-ring--shell wallet-order-modal-ring">
+                <div class="wallet-order-modal glass-ring__surface">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title">
                             💡 ${window.i18n?.t('wallet.orderDetails') || '订单详情'}
@@ -13644,6 +13696,7 @@
                         </div>
                     </div>
                 </div>
+                </div>
             `;
 
             document.body.appendChild(detailOverlay);
@@ -13674,7 +13727,8 @@
             };
 
             detailOverlay.innerHTML = `
-                <div class="wallet-order-modal">
+                <div class="glass-ring glass-ring--shell wallet-order-modal-ring">
+                <div class="wallet-order-modal glass-ring__surface">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title">
                             🎫 ${window.i18n?.t('wallet.redeemDetails') || '兑换详情'}
@@ -13710,6 +13764,7 @@
                             </div>
                         </div>
                     </div>
+                </div>
                 </div>
             `;
 
@@ -13974,7 +14029,8 @@
             };
 
             detailOverlay.innerHTML = `
-                <div class="wallet-order-modal">
+                <div class="glass-ring glass-ring--shell wallet-order-modal-ring">
+                <div class="wallet-order-modal glass-ring__surface">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title">
                             ${this.renderWalletInlineIcon(isRedemptionReversal ? 'fa-undo-alt' : (normalizedAmount >= 0 ? 'fa-bolt' : 'fa-shopping-bag'), isRedemptionReversal ? '#fb7185' : (normalizedAmount >= 0 ? '#fbbf24' : '#22c55e'))} ${this.escapeHtml(titleText)}
@@ -14002,6 +14058,7 @@
                             </div>
                         </div>
                     </div>
+                </div>
                 </div>
             `;
 
@@ -14044,7 +14101,8 @@
             };
 
             detailOverlay.innerHTML = `
-                <div class="wallet-order-modal">
+                <div class="glass-ring glass-ring--shell wallet-order-modal-ring">
+                <div class="wallet-order-modal glass-ring__surface">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title">
                             ${this.renderWalletInlineIcon('fa-undo-alt', '#10b981')} ${this.tr('wallet.shopRefundDetails', '退款详情')}
@@ -14085,6 +14143,7 @@
                             </div>
                         </div>
                     </div>
+                </div>
                 </div>
             `;
 

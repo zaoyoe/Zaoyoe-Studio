@@ -142,6 +142,7 @@ function getPromptImageUrlsFromAssets(assets = []) {
     return dedupePromptImageUrls(urls);
 }
 const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [
+    '.sidebar-nav',
     '.select-options',
     '.modal-content',
     '.user-modal-left',
@@ -5084,6 +5085,12 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-clean-empty-verify-keys':
                 window.cleanZeroBalanceVerifyKeys?.();
                 break;
+            case 'settings-refresh-activation-jobs':
+                window.refreshVerifyActivationJobs?.(true);
+                break;
+            case 'settings-resolve-activation-job':
+                window.handleVerifyActivationJobAction?.(actionEl);
+                break;
             case 'settings-refresh-verify-monitor':
                 runAdminStudioActionFeedback(actionEl, async () => {
                     const state = await window.refreshVerifyMonitor?.(true);
@@ -9404,12 +9411,17 @@ function setAiImageHiddenModelInputValues(provider = {}) {
     }
 }
 
-function renderAiImageVisibleModelPill(model = '', group = 'image', selectedModels = [], providerId = '', modelDisplayNames = {}) {
+function renderAiImageVisibleModelPill(model = '', group = 'image', selectedModels = [], providerId = '', modelDisplayNames = {}, baseUrl = '') {
     const label = String(model || '').trim();
     if (!label) return '';
     const selectedSet = new Set(normalizeAiImageModelsList(selectedModels, '').map((item) => item.toLowerCase()));
     const isSelected = selectedSet.has(label.toLowerCase());
     const displayName = getAiImageModelDisplayName(label, modelDisplayNames);
+    const capability = window.AIMediaModelCapabilities?.resolve({ model: label, baseUrl });
+    const capabilityLabel = capability ? (capability.execution === 'ready'
+        ? (capability.kind === 'image' ? `已适配 · ${capability.formats.join('/').toUpperCase()} · 最多 ${capability.maxQuantity} 张 / ${capability.maxImages} 参考图`
+            : `已适配 · ${capability.duration_min}–${capability.duration_max} 秒 · ${capability.resolutions.join('/')} · 图/视频/音频 ${capability.references.images}/${capability.references.videos}/${capability.references.audios}`)
+        : `待适配 · ${capability.reviewReason || '能力尚未核验'}`) : '';
     return `
         <div class="ai-image-admin-visible-model-item ${isSelected ? 'is-selected' : ''}">
             <button class="ai-image-admin-visible-model-pill ${isSelected ? 'is-selected' : ''}" type="button"
@@ -9421,6 +9433,7 @@ function renderAiImageVisibleModelPill(model = '', group = 'image', selectedMode
                 <i class="fas ${isSelected ? 'fa-check' : 'fa-plus'}"></i>
                 <span>${escapeHtml(label)}</span>
             </button>
+            ${capabilityLabel ? `<small class="ai-image-admin-model-capability" title="${escapeHtml(capabilityLabel)}">${escapeHtml(capabilityLabel)}</small>` : ''}
             ${isSelected ? `
                 <label class="ai-image-admin-model-display-name">
                     <i class="fas fa-tag" aria-hidden="true"></i>
@@ -9475,11 +9488,12 @@ function renderAiImageVisibleModelSection({
     detectedModels = [],
     selectedModels = [],
     providerId = '',
-    modelDisplayNames = {}
+    modelDisplayNames = {},
+    baseUrl = ''
 } = {}) {
     const detected = mergeAiImageModelCandidates(detectedModels, selectedModels);
     const selectedCount = normalizeAiImageModelsList(selectedModels, '').length;
-    const pills = detected.map((model) => renderAiImageVisibleModelPill(model, group, selectedModels, providerId, modelDisplayNames)).join('');
+    const pills = detected.map((model) => renderAiImageVisibleModelPill(model, group, selectedModels, providerId, modelDisplayNames, baseUrl)).join('');
     return `
         <div class="ai-image-admin-visible-model-section" data-model-picker-section="${escapeHtml(group)}">
             <div class="ai-image-admin-visible-model-section__header">
@@ -9541,6 +9555,7 @@ function renderAiImageProviderVisibleModelSection(provider = {}) {
                 ${visibleModelGroups.map((group) => renderAiImageVisibleModelSection({
                     ...group,
                     providerId: provider.providerId || '',
+                    baseUrl: provider.baseUrl || provider.base_url || '',
                     modelDisplayNames
                 })).join('')}
             </div>
@@ -12166,7 +12181,7 @@ function updateAiImagePricingStrategyVisibility() {
         setCustomDropdownValue?.('aiImagePricingRatioDropdown', '*');
     } else if (mode === 'video') {
         const currentResolution = document.getElementById('aiImagePricingResolutionInput')?.value || '';
-        if (!['480p', '720p', '1080p', '4k', '*'].includes(currentResolution)) {
+        if (!['480p', '720p', '768p', '1080p', '2k', '4k', '*'].includes(currentResolution)) {
             setCustomDropdownValue?.('aiImagePricingResolutionDropdown', '720p');
         }
     }
@@ -12630,7 +12645,7 @@ function readAiImagePricingDraft() {
     const isVisualMode = isAiImagePricingVisualMode(mode);
     const supportsImageOutputTokens = isAiImagePricingImageOutputTokenMode(mode);
     const quantity = isAiImagePricingQuantityMode(mode)
-        ? normalizeAiImagePricingInt(document.getElementById('aiImagePricingQuantityInput')?.value, 1, { min: 1, max: 8 })
+        ? normalizeAiImagePricingInt(document.getElementById('aiImagePricingQuantityInput')?.value, 1, { min: 1, max: 10 })
         : 1;
     const tokenConfig = isSub2ApiActualCost
         ? {

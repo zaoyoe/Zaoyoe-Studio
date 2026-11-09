@@ -1,0 +1,1900 @@
+TAP version 13
+# Subtest: KC real activation handler reserves capacity before the first CDK lookup can yield
+ok 1 - KC real activation handler reserves capacity before the first CDK lookup can yield
+  ---
+  duration_ms: 6.875209
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after invalid CDK
+ok 2 - KC real activation handler releases admission after invalid CDK
+  ---
+  duration_ms: 0.880125
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after used CDK
+ok 3 - KC real activation handler releases admission after used CDK
+  ---
+  duration_ms: 5.761375
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after non-self-service CDK
+ok 4 - KC real activation handler releases admission after non-self-service CDK
+  ---
+  duration_ms: 1.826125
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after empty card pool
+ok 5 - KC real activation handler releases admission after empty card pool
+  ---
+  duration_ms: 1.363084
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after failed CDK compare-and-set
+ok 6 - KC real activation handler releases admission after failed CDK compare-and-set
+  ---
+  duration_ms: 3.989833
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after CDK lookup failure
+ok 7 - KC real activation handler releases admission after CDK lookup failure
+  ---
+  duration_ms: 0.762
+  type: 'test'
+  ...
+# Subtest: KC real activation handler resumes an existing task without reserving another worker slot
+ok 8 - KC real activation handler resumes an existing task without reserving another worker slot
+  ---
+  duration_ms: 0.764416
+  type: 'test'
+  ...
+# Subtest: KC atomic admission failure returns capacity without unscoped CDK compensation
+ok 9 - KC atomic admission failure returns capacity without unscoped CDK compensation
+  ---
+  duration_ms: 0.624417
+  type: 'test'
+  ...
+# Subtest: KC synchronous dispatch failure retains the CDK and task capacity for recovery
+ok 10 - KC synchronous dispatch failure retains the CDK and task capacity for recovery
+  ---
+  duration_ms: 1.367292
+  type: 'test'
+  ...
+# Subtest: KC failure before dispatch retires only the created task through the atomic primitive
+ok 11 - KC failure before dispatch retires only the created task through the atomic primitive
+  ---
+  duration_ms: 1.951417
+  type: 'test'
+  ...
+# Subtest: KC never falls back to an unscoped CDK unlock when retirement refused
+ok 12 - KC never falls back to an unscoped CDK unlock when retirement refused
+  ---
+  duration_ms: 0.581334
+  type: 'test'
+  ...
+# Subtest: KC never falls back to an unscoped CDK unlock when retirement throws
+ok 13 - KC never falls back to an unscoped CDK unlock when retirement throws
+  ---
+  duration_ms: 1.929709
+  type: 'test'
+  ...
+# Subtest: KC admission resumes a task discovered under the transaction lock without redispatch
+ok 14 - KC admission resumes a task discovered under the transaction lock without redispatch
+  ---
+  duration_ms: 1.344917
+  type: 'test'
+  ...
+# Subtest: KC maintenance and missing credentials never claim CDKs or capacity
+ok 15 - KC maintenance and missing credentials never claim CDKs or capacity
+  ---
+  duration_ms: 0.73075
+  type: 'test'
+  ...
+# Subtest: KC real status renderer displays hostile server messages as text and preserves line breaks
+ok 16 - KC real status renderer displays hostile server messages as text and preserves line breaks
+  ---
+  duration_ms: 0.941208
+  type: 'test'
+  ...
+# Subtest: KC real capsule renderer only uses static SVG markup and appends the message as text
+ok 17 - KC real capsule renderer only uses static SVG markup and appends the message as text
+  ---
+  duration_ms: 1.372542
+  type: 'test'
+  ...
+# Subtest: KC capsule replacement and manual dismiss retain their timer lifecycle
+ok 18 - KC capsule replacement and manual dismiss retain their timer lifecycle
+  ---
+  duration_ms: 0.832292
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: admin-login.html
+ok 19 - KC inline scripts compile after security changes: admin-login.html
+  ---
+  duration_ms: 2.463875
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: admin.html
+ok 20 - KC inline scripts compile after security changes: admin.html
+  ---
+  duration_ms: 5.390792
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: index.html
+ok 21 - KC inline scripts compile after security changes: index.html
+  ---
+  duration_ms: 5.70025
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: subscription.html
+ok 22 - KC inline scripts compile after security changes: subscription.html
+  ---
+  duration_ms: 0.675584
+  type: 'test'
+  ...
+# Subtest: atomic admission rolls back CDK consumption when task INSERT fails
+ok 23 - atomic admission rolls back CDK consumption when task INSERT fails
+  ---
+  duration_ms: 148.084041
+  type: 'test'
+  ...
+# Subtest: atomic admission encrypts Session and commits the task on the consuming connection
+ok 24 - atomic admission encrypts Session and commits the task on the consuming connection
+  ---
+  duration_ms: 2.281042
+  type: 'test'
+  ...
+# Subtest: atomic admission leaves no orphan consumption after encryption failure
+ok 25 - atomic admission leaves no orphan consumption after encryption failure
+  ---
+  duration_ms: 1.008166
+  type: 'test'
+  ...
+# Subtest: atomic admission leaves no orphan consumption after commit rejection
+ok 26 - atomic admission leaves no orphan consumption after commit rejection
+  ---
+  duration_ms: 0.858708
+  type: 'test'
+  ...
+# Subtest: atomic admission leaves no orphan consumption after CDK CAS conflict
+ok 27 - atomic admission leaves no orphan consumption after CDK CAS conflict
+  ---
+  duration_ms: 1.359916
+  type: 'test'
+  ...
+# Subtest: atomic admission leaves no orphan consumption after deadlock victim
+ok 28 - atomic admission leaves no orphan consumption after deadlock victim
+  ---
+  duration_ms: 0.785041
+  type: 'test'
+  ...
+# Subtest: lost COMMIT response keeps both task and CDK, and retry resumes without inserting again
+ok 29 - lost COMMIT response keeps both task and CDK, and retry resumes without inserting again
+  ---
+  duration_ms: 1.343667
+  type: 'test'
+  ...
+# Subtest: concurrent admission in the serialized transaction model creates only one task
+ok 30 - concurrent admission in the serialized transaction model creates only one task
+  ---
+  duration_ms: 2.901208
+  type: 'test'
+  ...
+# Subtest: transaction rechecks disabled CDKs
+ok 31 - transaction rechecks disabled CDKs
+  ---
+  duration_ms: 1.7365
+  type: 'test'
+  ...
+# Subtest: transaction rechecks used CDKs
+ok 32 - transaction rechecks used CDKs
+  ---
+  duration_ms: 0.95475
+  type: 'test'
+  ...
+# Subtest: transaction rechecks non-self-service CDKs
+ok 33 - transaction rechecks non-self-service CDKs
+  ---
+  duration_ms: 1.441541
+  type: 'test'
+  ...
+# Subtest: transaction rechecks cooling down CDKs
+ok 34 - transaction rechecks cooling down CDKs
+  ---
+  duration_ms: 1.077375
+  type: 'test'
+  ...
+# Subtest: transaction rechecks changed platform CDKs
+ok 35 - transaction rechecks changed platform CDKs
+  ---
+  duration_ms: 0.703834
+  type: 'test'
+  ...
+# Subtest: transaction rechecks changed plan CDKs
+ok 36 - transaction rechecks changed plan CDKs
+  ---
+  duration_ms: 1.015208
+  type: 'test'
+  ...
+# Subtest: transaction rechecks changed region CDKs
+ok 37 - transaction rechecks changed region CDKs
+  ---
+  duration_ms: 2.94275
+  type: 'test'
+  ...
+# Subtest: transaction rejects a deleted CDK
+ok 38 - transaction rejects a deleted CDK
+  ---
+  duration_ms: 0.758584
+  type: 'test'
+  ...
+# Subtest: admission blocks unresolved prior task: {"status":"manual"}
+ok 39 - admission blocks unresolved prior task: {"status":"manual"}
+  ---
+  duration_ms: 1.42875
+  type: 'test'
+  ...
+# Subtest: admission blocks unresolved prior task: {"status":"failed","payment_state":"unknown"}
+ok 40 - admission blocks unresolved prior task: {"status":"failed","payment_state":"unknown"}
+  ---
+  duration_ms: 0.932458
+  type: 'test'
+  ...
+# Subtest: admission blocks unresolved prior task: {"status":"failed","recovery_required":1}
+ok 41 - admission blocks unresolved prior task: {"status":"failed","recovery_required":1}
+  ---
+  duration_ms: 0.742875
+  type: 'test'
+  ...
+# Subtest: admission blocks unresolved prior task: {"status":"failed","execution_mode":"third_party_api","gpt_api_order_id":"offline-order"}
+ok 42 - admission blocks unresolved prior task: {"status":"failed","execution_mode":"third_party_api","gpt_api_order_id":"offline-order"}
+  ---
+  duration_ms: 0.852916
+  type: 'test'
+  ...
+# Subtest: admission blocks unresolved prior task: {"status":"failed","execution_mode":"third_party_api","gpt_api_raw":"{\\"attempt\\":{\\"dispatchStarted\\":true}}"}
+ok 43 - admission blocks unresolved prior task: {"status":"failed","execution_mode":"third_party_api","gpt_api_raw":"{\\"attempt\\":{\\"dispatchStarted\\":true}}"}
+  ---
+  duration_ms: 2.036292
+  type: 'test'
+  ...
+# Subtest: admission refuses incomplete binding and unknown execution mode before opening a transaction
+ok 44 - admission refuses incomplete binding and unknown execution mode before opening a transaction
+  ---
+  duration_ms: 5.453292
+  type: 'test'
+  ...
+# Subtest: task-owned retirement atomically clears Session, finishes the task and returns its CDK
+ok 45 - task-owned retirement atomically clears Session, finishes the task and returns its CDK
+  ---
+  duration_ms: 1.67475
+  type: 'test'
+  ...
+# Subtest: retirement rolls back both writes after retire failure
+ok 46 - retirement rolls back both writes after retire failure
+  ---
+  duration_ms: 0.722958
+  type: 'test'
+  ...
+# Subtest: retirement rolls back both writes after retire_cas failure
+ok 47 - retirement rolls back both writes after retire_cas failure
+  ---
+  duration_ms: 1.704666
+  type: 'test'
+  ...
+# Subtest: retirement rolls back both writes after release failure
+ok 48 - retirement rolls back both writes after release failure
+  ---
+  duration_ms: 0.779208
+  type: 'test'
+  ...
+# Subtest: retirement rolls back both writes after release_cas failure
+ok 49 - retirement rolls back both writes after release_cas failure
+  ---
+  duration_ms: 0.671791
+  type: 'test'
+  ...
+# Subtest: retirement preserves a consistent task and CDK after before_apply commit failure
+ok 50 - retirement preserves a consistent task and CDK after before_apply commit failure
+  ---
+  duration_ms: 0.701917
+  type: 'test'
+  ...
+# Subtest: retirement preserves a consistent task and CDK after after_apply commit failure
+ok 51 - retirement preserves a consistent task and CDK after after_apply commit failure
+  ---
+  duration_ms: 0.850916
+  type: 'test'
+  ...
+# Subtest: retirement retains a task whose payment state is started
+ok 52 - retirement retains a task whose payment state is started
+  ---
+  duration_ms: 0.59925
+  type: 'test'
+  ...
+# Subtest: retirement retains a task whose payment state is unknown
+ok 53 - retirement retains a task whose payment state is unknown
+  ---
+  duration_ms: 0.553333
+  type: 'test'
+  ...
+# Subtest: retirement retains a task whose payment state is succeeded
+ok 54 - retirement retains a task whose payment state is succeeded
+  ---
+  duration_ms: 0.727875
+  type: 'test'
+  ...
+# Subtest: retirement retains a task whose payment state is declined
+ok 55 - retirement retains a task whose payment state is declined
+  ---
+  duration_ms: 0.646917
+  type: 'test'
+  ...
+# Subtest: retirement retains a task whose payment state is null
+ok 56 - retirement retains a task whose payment state is null
+  ---
+  duration_ms: 0.612417
+  type: 'test'
+  ...
+# Subtest: retirement refuses risk evidence: {"status":"manual"}
+ok 57 - retirement refuses risk evidence: {"status":"manual"}
+  ---
+  duration_ms: 0.614916
+  type: 'test'
+  ...
+# Subtest: retirement refuses risk evidence: {"recovery_required":1}
+ok 58 - retirement refuses risk evidence: {"recovery_required":1}
+  ---
+  duration_ms: 1.218958
+  type: 'test'
+  ...
+# Subtest: retirement refuses risk evidence: {"execution_mode":"legacy_unknown"}
+ok 59 - retirement refuses risk evidence: {"execution_mode":"legacy_unknown"}
+  ---
+  duration_ms: 0.607083
+  type: 'test'
+  ...
+# Subtest: retirement refuses risk evidence: {"gpt_api_order_id":"offline-order"}
+ok 60 - retirement refuses risk evidence: {"gpt_api_order_id":"offline-order"}
+  ---
+  duration_ms: 0.599833
+  type: 'test'
+  ...
+# Subtest: retirement refuses risk evidence: {"gpt_api_task_id":"offline-provider-task"}
+ok 61 - retirement refuses risk evidence: {"gpt_api_task_id":"offline-provider-task"}
+  ---
+  duration_ms: 0.70375
+  type: 'test'
+  ...
+# Subtest: retirement refuses risk evidence: {"gpt_api_raw":"{}"}
+ok 62 - retirement refuses risk evidence: {"gpt_api_raw":"{}"}
+  ---
+  duration_ms: 0.868458
+  type: 'test'
+  ...
+# Subtest: startup recovery may retire only an explicitly declined local task
+ok 63 - startup recovery may retire only an explicitly declined local task
+  ---
+  duration_ms: 1.504541
+  type: 'test'
+  ...
+# Subtest: late old-task retirement never releases the newer owner CDK
+ok 64 - late old-task retirement never releases the newer owner CDK
+  ---
+  duration_ms: 0.791417
+  type: 'test'
+  ...
+# Subtest: another unresolved task blocks retirement even when the retiring task is the latest owner
+ok 65 - another unresolved task blocks retirement even when the retiring task is the latest owner
+  ---
+  duration_ms: 0.819333
+  type: 'test'
+  ...
+# Subtest: retirement refuses an inactive or already unheld CDK
+ok 66 - retirement refuses an inactive or already unheld CDK
+  ---
+  duration_ms: 2.114583
+  type: 'test'
+  ...
+# Subtest: diagnostic createTaskLog remains callable outside an activation transaction
+ok 67 - diagnostic createTaskLog remains callable outside an activation transaction
+  ---
+  duration_ms: 0.98325
+  type: 'test'
+  ...
+# Subtest: HTTP handler preserves committed consumption after a lost COMMIT response
+ok 68 - HTTP handler preserves committed consumption after a lost COMMIT response
+  ---
+  duration_ms: 2.717083
+  type: 'test'
+  ...
+# Subtest: HTTP retry after a lost COMMIT response resumes its persisted task without dispatching again
+ok 69 - HTTP retry after a lost COMMIT response resumes its persisted task without dispatching again
+  ---
+  duration_ms: 2.161167
+  type: 'test'
+  ...
+# Subtest: HTTP handler retains the committed task after entering an uncertain dispatch
+ok 70 - HTTP handler retains the committed task after entering an uncertain dispatch
+  ---
+  duration_ms: 2.61525
+  type: 'test'
+  ...
+# Subtest: startup recovery rechecks current payment evidence instead of releasing from a stale snapshot
+ok 71 - startup recovery rechecks current payment evidence instead of releasing from a stale snapshot
+  ---
+  duration_ms: 1.945959
+  type: 'test'
+  ...
+# Subtest: local settlement rolls back task result when CDK return fails
+ok 72 - local settlement rolls back task result when CDK return fails
+  ---
+  duration_ms: 111.709916
+  type: 'test'
+  ...
+# Subtest: safe failure returns only its CDK and clears Session in the same transaction
+ok 73 - safe failure returns only its CDK and clears Session in the same transaction
+  ---
+  duration_ms: 1.06675
+  type: 'test'
+  ...
+# Subtest: local settlement rollback preserves both rows on task_write
+ok 74 - local settlement rollback preserves both rows on task_write
+  ---
+  duration_ms: 1.896875
+  type: 'test'
+  ...
+# Subtest: local settlement rollback preserves both rows on task_cas
+ok 75 - local settlement rollback preserves both rows on task_cas
+  ---
+  duration_ms: 1.723292
+  type: 'test'
+  ...
+# Subtest: local settlement rollback preserves both rows on session_clear
+ok 76 - local settlement rollback preserves both rows on session_clear
+  ---
+  duration_ms: 0.892291
+  type: 'test'
+  ...
+# Subtest: local settlement rollback preserves both rows on session_cas
+ok 77 - local settlement rollback preserves both rows on session_cas
+  ---
+  duration_ms: 0.745542
+  type: 'test'
+  ...
+# Subtest: local settlement rollback preserves both rows on release_cas
+ok 78 - local settlement rollback preserves both rows on release_cas
+  ---
+  duration_ms: 0.727334
+  type: 'test'
+  ...
+# Subtest: persisted started cannot be downgraded by a safe failure
+ok 79 - persisted started cannot be downgraded by a safe failure
+  ---
+  duration_ms: 0.885917
+  type: 'test'
+  ...
+# Subtest: persisted unknown cannot be downgraded by a safe failure
+ok 80 - persisted unknown cannot be downgraded by a safe failure
+  ---
+  duration_ms: 0.785
+  type: 'test'
+  ...
+# Subtest: persisted succeeded cannot be downgraded by a safe failure
+ok 81 - persisted succeeded cannot be downgraded by a safe failure
+  ---
+  duration_ms: 1.269167
+  type: 'test'
+  ...
+# Subtest: persisted null cannot be downgraded by a safe failure
+ok 82 - persisted null cannot be downgraded by a safe failure
+  ---
+  duration_ms: 2.736125
+  type: 'test'
+  ...
+# Subtest: persisted unrecognized cannot be downgraded by a safe failure
+ok 83 - persisted unrecognized cannot be downgraded by a safe failure
+  ---
+  duration_ms: 0.73675
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"execution_mode":"third_party_api"}
+ok 84 - refuses incompatible, completed or foreign task {"execution_mode":"third_party_api"}
+  ---
+  duration_ms: 0.687667
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"execution_mode":"legacy_unknown"}
+ok 85 - refuses incompatible, completed or foreign task {"execution_mode":"legacy_unknown"}
+  ---
+  duration_ms: 0.682292
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"gpt_api_order_id":"offline-provider-order"}
+ok 86 - refuses incompatible, completed or foreign task {"gpt_api_order_id":"offline-provider-order"}
+  ---
+  duration_ms: 0.597625
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"gpt_api_task_id":"offline-provider-task"}
+ok 87 - refuses incompatible, completed or foreign task {"gpt_api_task_id":"offline-provider-task"}
+  ---
+  duration_ms: 0.71275
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"gpt_api_raw":"{}"}
+ok 88 - refuses incompatible, completed or foreign task {"gpt_api_raw":"{}"}
+  ---
+  duration_ms: 0.760792
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"cdk_code":"OTHER-CDK"}
+ok 89 - refuses incompatible, completed or foreign task {"cdk_code":"OTHER-CDK"}
+  ---
+  duration_ms: 1.621292
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"status":"failed","finished_at":"offline-finished"}
+ok 90 - refuses incompatible, completed or foreign task {"status":"failed","finished_at":"offline-finished"}
+  ---
+  duration_ms: 4.462083
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"status":"success","payment_state":"succeeded","finished_at":"offline-finished"}
+ok 91 - refuses incompatible, completed or foreign task {"status":"success","payment_state":"succeeded","finished_at":"offline-finished"}
+  ---
+  duration_ms: 2.127041
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"status":"cancelled"}
+ok 92 - refuses incompatible, completed or foreign task {"status":"cancelled"}
+  ---
+  duration_ms: 0.786791
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"status":"maintenance"}
+ok 93 - refuses incompatible, completed or foreign task {"status":"maintenance"}
+  ---
+  duration_ms: 1.501834
+  type: 'test'
+  ...
+# Subtest: unavailable CDK does not become reusable {"used_at":null}
+ok 94 - unavailable CDK does not become reusable {"used_at":null}
+  ---
+  duration_ms: 1.737542
+  type: 'test'
+  ...
+# Subtest: unavailable CDK does not become reusable {"is_active":0}
+ok 95 - unavailable CDK does not become reusable {"is_active":0}
+  ---
+  duration_ms: 1.402
+  type: 'test'
+  ...
+# Subtest: late old task cannot return or modify a newer owner CDK
+ok 96 - late old task cannot return or modify a newer owner CDK
+  ---
+  duration_ms: 2.277334
+  type: 'test'
+  ...
+# Subtest: another unresolved task blocks safe release even if current task is newest
+ok 97 - another unresolved task blocks safe release even if current task is newest
+  ---
+  duration_ms: 0.743375
+  type: 'test'
+  ...
+# Subtest: duplicate completion is idempotent and a late payment callback cannot resurrect it
+ok 98 - duplicate completion is idempotent and a late payment callback cannot resurrect it
+  ---
+  duration_ms: 0.730541
+  type: 'test'
+  ...
+# Subtest: concurrent finalizations return the CDK once in the offline serial model
+ok 99 - concurrent finalizations return the CDK once in the offline serial model
+  ---
+  duration_ms: 2.627417
+  type: 'test'
+  ...
+# Subtest: intermediate unknown state stays recoverable until an affirmative success
+ok 100 - intermediate unknown state stays recoverable until an affirmative success
+  ---
+  duration_ms: 0.948917
+  type: 'test'
+  ...
+# Subtest: post-success auto-renew annotation can require review without returning CDK
+ok 101 - post-success auto-renew annotation can require review without returning CDK
+  ---
+  duration_ms: 0.916292
+  type: 'test'
+  ...
+# Subtest: pending auto-renew completion can become success without returning CDK or restoring Session
+ok 102 - pending auto-renew completion can become success without returning CDK or restoring Session
+  ---
+  duration_ms: 0.930084
+  type: 'test'
+  ...
+# Subtest: failed auto-renew annotation preserves the committed pending result
+ok 103 - failed auto-renew annotation preserves the committed pending result
+  ---
+  duration_ms: 0.840208
+  type: 'test'
+  ...
+# Subtest: late auto-renew annotation cannot change a task after the CDK gains another owner
+ok 104 - late auto-renew annotation cannot change a task after the CDK gains another owner
+  ---
+  duration_ms: 0.844167
+  type: 'test'
+  ...
+# Subtest: commit uncertainty before_apply never triggers a separate CDK unlock
+ok 105 - commit uncertainty before_apply never triggers a separate CDK unlock
+  ---
+  duration_ms: 2.386375
+  type: 'test'
+  ...
+# Subtest: commit uncertainty after_apply never triggers a separate CDK unlock
+ok 106 - commit uncertainty after_apply never triggers a separate CDK unlock
+  ---
+  duration_ms: 0.791833
+  type: 'test'
+  ...
+# Subtest: rollback failure does not replace the original transaction failure
+ok 107 - rollback failure does not replace the original transaction failure
+  ---
+  duration_ms: 0.715917
+  type: 'test'
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: job-1
+ok 108 - local cleanup releases only the canonical complete payment owner: job-1
+  ---
+  duration_ms: 108.839916
+  type: 'test'
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: AbC_-123
+ok 109 - local cleanup releases only the canonical complete payment owner: AbC_-123
+  ---
+  duration_ms: 0.898375
+  type: 'test'
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: gptapi_job-1
+ok 110 - local cleanup releases only the canonical complete payment owner: gptapi_job-1
+  ---
+  duration_ms: 0.695709
+  type: 'test'
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: XXXXXXXXXXXXXXXXXXXX
+ok 111 - local cleanup releases only the canonical complete payment owner: XXXXXXXXXXXXXXXXXXXX
+  ---
+  duration_ms: 0.661666
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: null
+ok 112 - invalid owner cannot widen cleanup: null
+  ---
+  duration_ms: 0.764542
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: undefined
+ok 113 - invalid owner cannot widen cleanup: undefined
+  ---
+  duration_ms: 1.650417
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: ""
+ok 114 - invalid owner cannot widen cleanup: ""
+  ---
+  duration_ms: 0.703042
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "%"
+ok 115 - invalid owner cannot widen cleanup: "%"
+  ---
+  duration_ms: 0.600417
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "_%"
+ok 116 - invalid owner cannot widen cleanup: "_%"
+  ---
+  duration_ms: 0.609125
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "job%1"
+ok 117 - invalid owner cannot widen cleanup: "job%1"
+  ---
+  duration_ms: 0.644875
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "job 1"
+ok 118 - invalid owner cannot widen cleanup: "job 1"
+  ---
+  duration_ms: 0.586042
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: " job-1"
+ok 119 - invalid owner cannot widen cleanup: " job-1"
+  ---
+  duration_ms: 0.631792
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "job-1\\n"
+ok 120 - invalid owner cannot widen cleanup: "job-1\\n"
+  ---
+  duration_ms: 1.082875
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+ok 121 - invalid owner cannot widen cleanup: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  ---
+  duration_ms: 0.844333
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: 123
+ok 122 - invalid owner cannot widen cleanup: 123
+  ---
+  duration_ms: 1.863
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: {}
+ok 123 - invalid owner cannot widen cleanup: {}
+  ---
+  duration_ms: 1.026041
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: ["job-1"]
+ok 124 - invalid owner cannot widen cleanup: ["job-1"]
+  ---
+  duration_ms: 0.61
+  type: 'test'
+  ...
+# Subtest: retirement follows CDK then fresh task lock order
+ok 125 - retirement follows CDK then fresh task lock order
+  ---
+  duration_ms: 1.811208
+  type: 'test'
+  ...
+# Subtest: retirement aborts if the task CDK changes after discovery
+ok 126 - retirement aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 1.1275
+  type: 'test'
+  ...
+# Subtest: retirement rejects a replacement task using the same job key
+ok 127 - retirement rejects a replacement task using the same job key
+  ---
+  duration_ms: 1.365333
+  type: 'test'
+  ...
+# Subtest: retirement waits for a CDK holder without holding a task lock
+ok 128 - retirement waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 3.993875
+  type: 'test'
+  ...
+# Subtest: save follows CDK then fresh task lock order
+ok 129 - save follows CDK then fresh task lock order
+  ---
+  duration_ms: 8.960209
+  type: 'test'
+  ...
+# Subtest: save aborts if the task CDK changes after discovery
+ok 130 - save aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 2.639041
+  type: 'test'
+  ...
+# Subtest: save rejects a replacement task using the same job key
+ok 131 - save rejects a replacement task using the same job key
+  ---
+  duration_ms: 0.789416
+  type: 'test'
+  ...
+# Subtest: save waits for a CDK holder without holding a task lock
+ok 132 - save waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 1.987667
+  type: 'test'
+  ...
+# Subtest: reserve follows CDK then fresh task lock order
+ok 133 - reserve follows CDK then fresh task lock order
+  ---
+  duration_ms: 1.236375
+  type: 'test'
+  ...
+# Subtest: reserve aborts if the task CDK changes after discovery
+ok 134 - reserve aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 0.690292
+  type: 'test'
+  ...
+# Subtest: reserve rejects a replacement task using the same job key
+ok 135 - reserve rejects a replacement task using the same job key
+  ---
+  duration_ms: 0.580708
+  type: 'test'
+  ...
+# Subtest: reserve waits for a CDK holder without holding a task lock
+ok 136 - reserve waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 1.058083
+  type: 'test'
+  ...
+# Subtest: finalize follows CDK then fresh task lock order
+ok 137 - finalize follows CDK then fresh task lock order
+  ---
+  duration_ms: 1.044875
+  type: 'test'
+  ...
+# Subtest: finalize aborts if the task CDK changes after discovery
+ok 138 - finalize aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 0.811959
+  type: 'test'
+  ...
+# Subtest: finalize rejects a replacement task using the same job key
+ok 139 - finalize rejects a replacement task using the same job key
+  ---
+  duration_ms: 1.726208
+  type: 'test'
+  ...
+# Subtest: finalize waits for a CDK holder without holding a task lock
+ok 140 - finalize waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 1.133708
+  type: 'test'
+  ...
+# Subtest: retirement evaluates the fresh payment evidence after locking
+ok 141 - retirement evaluates the fresh payment evidence after locking
+  ---
+  duration_ms: 0.713709
+  type: 'test'
+  ...
+# Subtest: retirement retains assets when fresh task evidence changes: execution_mode
+ok 142 - retirement retains assets when fresh task evidence changes: execution_mode
+  ---
+  duration_ms: 0.619
+  type: 'test'
+  ...
+# Subtest: retirement retains assets when fresh task evidence changes: gpt_api_order_id
+ok 143 - retirement retains assets when fresh task evidence changes: gpt_api_order_id
+  ---
+  duration_ms: 0.542083
+  type: 'test'
+  ...
+# Subtest: retirement retains assets when fresh task evidence changes: recovery_required
+ok 144 - retirement retains assets when fresh task evidence changes: recovery_required
+  ---
+  duration_ms: 1.038166
+  type: 'test'
+  ...
+# Subtest: missing task never releases assets
+ok 145 - missing task never releases assets
+  ---
+  duration_ms: 0.902083
+  type: 'test'
+  ...
+# Subtest: missing CDK still permits legacy hold without releasing assets
+ok 146 - missing CDK still permits legacy hold without releasing assets
+  ---
+  duration_ms: 0.82675
+  type: 'test'
+  ...
+# Subtest: legacy task without CDK can be held but cannot settle
+ok 147 - legacy task without CDK can be held but cannot settle
+  ---
+  duration_ms: 1.305083
+  type: 'test'
+  ...
+# Subtest: case-insensitive task lookup cannot authorize a different job ID
+ok 148 - case-insensitive task lookup cannot authorize a different job ID
+  ---
+  duration_ms: 0.774292
+  type: 'test'
+  ...
+# Subtest: deleted task after discovery cannot authorize a release
+ok 149 - deleted task after discovery cannot authorize a release
+  ---
+  duration_ms: 0.608833
+  type: 'test'
+  ...
+# Subtest: inactive CDK refuses provider card reservation
+ok 150 - inactive CDK refuses provider card reservation
+  ---
+  duration_ms: 0.7735
+  type: 'test'
+  ...
+# Subtest: write failure after CDK-first retirement rolls back and releases the connection
+ok 151 - write failure after CDK-first retirement rolls back and releases the connection
+  ---
+  duration_ms: 1.415834
+  type: 'test'
+  ...
+# Subtest: release: an old task cannot change a card owned by "payment_next-job"
+ok 152 - release: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 107.526084
+  type: 'test'
+  ...
+# Subtest: release: an old task cannot change a card owned by "payment_job-1"
+ok 153 - release: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 0.991917
+  type: 'test'
+  ...
+# Subtest: release: an old task cannot change a card owned by "payment_Job-1-extra"
+ok 154 - release: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 0.773375
+  type: 'test'
+  ...
+# Subtest: release: an old task cannot change a card owned by "payment_Job-1 "
+ok 155 - release: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.699959
+  type: 'test'
+  ...
+# Subtest: release: an old task cannot change a card owned by null
+ok 156 - release: an old task cannot change a card owned by null
+  ---
+  duration_ms: 0.967166
+  type: 'test'
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"in_use":0}
+ok 157 - release: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 1.628708
+  type: 'test'
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"is_active":0}
+ok 158 - release: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 0.906667
+  type: 'test'
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"status":"待人工复核"}
+ok 159 - release: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.733667
+  type: 'test'
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"status":"已冻结"}
+ok 160 - release: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 1.114917
+  type: 'test'
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"status":"已报废"}
+ok 161 - release: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 1.076167
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence ("")
+ok 162 - release: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 1.74775
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence (null)
+ok 163 - release: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 1.4015
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence (true)
+ok 164 - release: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.762334
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence ("payment_bad key")
+ok 165 - release: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 1.690708
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 166 - release: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.609792
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence ({})
+ok 167 - release: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.741958
+  type: 'test'
+  ...
+# Subtest: release: invalid/missing owner fails before persistence (["payment_Job-1"])
+ok 168 - release: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.614167
+  type: 'test'
+  ...
+# Subtest: release: invalid asset ID fails before persistence (true)
+ok 169 - release: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 1.02125
+  type: 'test'
+  ...
+# Subtest: release: invalid asset ID fails before persistence (-1)
+ok 170 - release: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 1.4735
+  type: 'test'
+  ...
+# Subtest: release: invalid asset ID fails before persistence (1.5)
+ok 171 - release: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 1.145083
+  type: 'test'
+  ...
+# Subtest: release: invalid asset ID fails before persistence ("55 OR 1=1")
+ok 172 - release: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 1.043125
+  type: 'test'
+  ...
+# Subtest: release: invalid asset ID fails before persistence ([])
+ok 173 - release: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 4.71875
+  type: 'test'
+  ...
+# Subtest: release: invalid asset ID fails before persistence (9007199254740992)
+ok 174 - release: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 4.346042
+  type: 'test'
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by "payment_next-job"
+ok 175 - cooldown: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 1.107292
+  type: 'test'
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by "payment_job-1"
+ok 176 - cooldown: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 0.670666
+  type: 'test'
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by "payment_Job-1-extra"
+ok 177 - cooldown: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 0.795583
+  type: 'test'
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by "payment_Job-1 "
+ok 178 - cooldown: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.663417
+  type: 'test'
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by null
+ok 179 - cooldown: an old task cannot change a card owned by null
+  ---
+  duration_ms: 0.582833
+  type: 'test'
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"in_use":0}
+ok 180 - cooldown: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 1.127166
+  type: 'test'
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"is_active":0}
+ok 181 - cooldown: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 1.28425
+  type: 'test'
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"status":"待人工复核"}
+ok 182 - cooldown: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.748125
+  type: 'test'
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"status":"已冻结"}
+ok 183 - cooldown: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 0.633291
+  type: 'test'
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"status":"已报废"}
+ok 184 - cooldown: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.610292
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence ("")
+ok 185 - cooldown: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.958583
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence (null)
+ok 186 - cooldown: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 0.735334
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence (true)
+ok 187 - cooldown: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.654208
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence ("payment_bad key")
+ok 188 - cooldown: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 0.963959
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 189 - cooldown: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 1.556
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence ({})
+ok 190 - cooldown: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.616916
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence (["payment_Job-1"])
+ok 191 - cooldown: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.522416
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence (true)
+ok 192 - cooldown: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.513041
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence (-1)
+ok 193 - cooldown: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 0.495042
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence (1.5)
+ok 194 - cooldown: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 0.57425
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence ("55 OR 1=1")
+ok 195 - cooldown: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 0.553583
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence ([])
+ok 196 - cooldown: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 0.812084
+  type: 'test'
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence (9007199254740992)
+ok 197 - cooldown: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 0.832333
+  type: 'test'
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by "payment_next-job"
+ok 198 - quarantine: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 0.965792
+  type: 'test'
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by "payment_job-1"
+ok 199 - quarantine: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 1.041625
+  type: 'test'
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by "payment_Job-1-extra"
+ok 200 - quarantine: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 0.585167
+  type: 'test'
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by "payment_Job-1 "
+ok 201 - quarantine: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.621917
+  type: 'test'
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by null
+ok 202 - quarantine: an old task cannot change a card owned by null
+  ---
+  duration_ms: 1.288625
+  type: 'test'
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"in_use":0}
+ok 203 - quarantine: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 0.842917
+  type: 'test'
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"is_active":0}
+ok 204 - quarantine: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 0.575667
+  type: 'test'
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"status":"待人工复核"}
+ok 205 - quarantine: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 1.004875
+  type: 'test'
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"status":"已冻结"}
+ok 206 - quarantine: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 0.960041
+  type: 'test'
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"status":"已报废"}
+ok 207 - quarantine: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 1.561083
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence ("")
+ok 208 - quarantine: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.73775
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence (null)
+ok 209 - quarantine: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 0.851917
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence (true)
+ok 210 - quarantine: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.856125
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence ("payment_bad key")
+ok 211 - quarantine: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 1.089709
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 212 - quarantine: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.660458
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence ({})
+ok 213 - quarantine: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.602542
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence (["payment_Job-1"])
+ok 214 - quarantine: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.629042
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence (true)
+ok 215 - quarantine: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 1.890291
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence (-1)
+ok 216 - quarantine: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 0.590833
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence (1.5)
+ok 217 - quarantine: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 0.598834
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence ("55 OR 1=1")
+ok 218 - quarantine: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 0.529584
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence ([])
+ok 219 - quarantine: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 0.584875
+  type: 'test'
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence (9007199254740992)
+ok 220 - quarantine: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 0.527791
+  type: 'test'
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by "payment_next-job"
+ok 221 - exhaust: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 0.743625
+  type: 'test'
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by "payment_job-1"
+ok 222 - exhaust: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 1.415833
+  type: 'test'
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by "payment_Job-1-extra"
+ok 223 - exhaust: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 1.639667
+  type: 'test'
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by "payment_Job-1 "
+ok 224 - exhaust: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.712333
+  type: 'test'
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by null
+ok 225 - exhaust: an old task cannot change a card owned by null
+  ---
+  duration_ms: 0.739959
+  type: 'test'
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"in_use":0}
+ok 226 - exhaust: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 0.6045
+  type: 'test'
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"is_active":0}
+ok 227 - exhaust: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 0.61325
+  type: 'test'
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"status":"待人工复核"}
+ok 228 - exhaust: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.541209
+  type: 'test'
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"status":"已冻结"}
+ok 229 - exhaust: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 0.525334
+  type: 'test'
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"status":"已报废"}
+ok 230 - exhaust: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.787458
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence ("")
+ok 231 - exhaust: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.731917
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence (null)
+ok 232 - exhaust: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 1.567
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence (true)
+ok 233 - exhaust: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.6605
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence ("payment_bad key")
+ok 234 - exhaust: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 0.622875
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 235 - exhaust: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.6005
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence ({})
+ok 236 - exhaust: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.662333
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence (["payment_Job-1"])
+ok 237 - exhaust: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.649959
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence (true)
+ok 238 - exhaust: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.731291
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence (-1)
+ok 239 - exhaust: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 0.649041
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence (1.5)
+ok 240 - exhaust: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 0.570292
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence ("55 OR 1=1")
+ok 241 - exhaust: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 2.727417
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence ([])
+ok 242 - exhaust: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 0.674042
+  type: 'test'
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence (9007199254740992)
+ok 243 - exhaust: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 0.626
+  type: 'test'
+  ...
+# Subtest: usage: an old task cannot change a card owned by "payment_next-job"
+ok 244 - usage: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 0.800417
+  type: 'test'
+  ...
+# Subtest: usage: an old task cannot change a card owned by "payment_job-1"
+ok 245 - usage: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 0.670458
+  type: 'test'
+  ...
+# Subtest: usage: an old task cannot change a card owned by "payment_Job-1-extra"
+ok 246 - usage: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 0.623458
+  type: 'test'
+  ...
+# Subtest: usage: an old task cannot change a card owned by "payment_Job-1 "
+ok 247 - usage: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.636292
+  type: 'test'
+  ...
+# Subtest: usage: an old task cannot change a card owned by null
+ok 248 - usage: an old task cannot change a card owned by null
+  ---
+  duration_ms: 0.529042
+  type: 'test'
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"in_use":0}
+ok 249 - usage: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 0.81025
+  type: 'test'
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"is_active":0}
+ok 250 - usage: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 0.777
+  type: 'test'
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"status":"待人工复核"}
+ok 251 - usage: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 1.152375
+  type: 'test'
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"status":"已冻结"}
+ok 252 - usage: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 0.556667
+  type: 'test'
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"status":"已报废"}
+ok 253 - usage: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.657542
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence ("")
+ok 254 - usage: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.555916
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence (null)
+ok 255 - usage: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 0.531541
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence (true)
+ok 256 - usage: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.482
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence ("payment_bad key")
+ok 257 - usage: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 0.700042
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 258 - usage: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.810625
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence ({})
+ok 259 - usage: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.694625
+  type: 'test'
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence (["payment_Job-1"])
+ok 260 - usage: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.572584
+  type: 'test'
+  ...
+# Subtest: usage: invalid asset ID fails before persistence (true)
+ok 261 - usage: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.861792
+  type: 'test'
+  ...
+# Subtest: usage: invalid asset ID fails before persistence (-1)
+ok 262 - usage: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 0.903167
+  type: 'test'
+  ...
+# Subtest: usage: invalid asset ID fails before persistence (1.5)
+ok 263 - usage: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 0.846084
+  type: 'test'
+  ...
+# Subtest: usage: invalid asset ID fails before persistence ("55 OR 1=1")
+ok 264 - usage: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 0.541917
+  type: 'test'
+  ...
+# Subtest: usage: invalid asset ID fails before persistence ([])
+ok 265 - usage: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 0.577833
+  type: 'test'
+  ...
+# Subtest: usage: invalid asset ID fails before persistence (9007199254740992)
+ok 266 - usage: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 0.630708
+  type: 'test'
+  ...
+# Subtest: profile: an old task cannot change a card owned by "payment_next-job"
+ok 267 - profile: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 0.853208
+  type: 'test'
+  ...
+# Subtest: profile: an old task cannot change a card owned by "payment_job-1"
+ok 268 - profile: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 0.535875
+  type: 'test'
+  ...
+# Subtest: profile: an old task cannot change a card owned by "payment_Job-1-extra"
+ok 269 - profile: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 0.742916
+  type: 'test'
+  ...
+# Subtest: profile: an old task cannot change a card owned by "payment_Job-1 "
+ok 270 - profile: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.70675
+  type: 'test'
+  ...
+# Subtest: profile: an old task cannot change a card owned by null
+ok 271 - profile: an old task cannot change a card owned by null
+  ---
+  duration_ms: 1.062375
+  type: 'test'
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"in_use":0}
+ok 272 - profile: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 1.237959
+  type: 'test'
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"is_active":0}
+ok 273 - profile: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 2.363125
+  type: 'test'
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"status":"待人工复核"}
+ok 274 - profile: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.69425
+  type: 'test'
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"status":"已冻结"}
+ok 275 - profile: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 0.847292
+  type: 'test'
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"status":"已报废"}
+ok 276 - profile: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.814333
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence ("")
+ok 277 - profile: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.781375
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence (null)
+ok 278 - profile: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 1.8065
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence (true)
+ok 279 - profile: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.657042
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence ("payment_bad key")
+ok 280 - profile: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 0.524208
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 281 - profile: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.663959
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence ({})
+ok 282 - profile: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.678875
+  type: 'test'
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence (["payment_Job-1"])
+ok 283 - profile: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.583625
+  type: 'test'
+  ...
+# Subtest: profile: invalid asset ID fails before persistence (true)
+ok 284 - profile: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.593
+  type: 'test'
+  ...
+# Subtest: profile: invalid asset ID fails before persistence (-1)
+ok 285 - profile: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 0.659208
+  type: 'test'
+  ...
+# Subtest: profile: invalid asset ID fails before persistence (1.5)
+ok 286 - profile: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 0.650667
+  type: 'test'
+  ...
+# Subtest: profile: invalid asset ID fails before persistence ("55 OR 1=1")
+ok 287 - profile: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 0.721375
+  type: 'test'
+  ...
+# Subtest: profile: invalid asset ID fails before persistence ([])
+ok 288 - profile: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 1.520125
+  type: 'test'
+  ...
+# Subtest: profile: invalid asset ID fails before persistence (9007199254740992)
+ok 289 - profile: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 0.658
+  type: 'test'
+  ...
+# Subtest: owned release is idempotent and cannot release a subsequent owner
+ok 290 - owned release is idempotent and cannot release a subsequent owner
+  ---
+  duration_ms: 0.805584
+  type: 'test'
+  ...
+# Subtest: an ownership transfer just before release is checked by the UPDATE itself
+ok 291 - an ownership transfer just before release is checked by the UPDATE itself
+  ---
+  duration_ms: 0.774958
+  type: 'test'
+  ...
+# Subtest: matching owner can cool down, exhaust and quarantine, preserving the respective states
+ok 292 - matching owner can cool down, exhaust and quarantine, preserving the respective states
+  ---
+  duration_ms: 2.070458
+  type: 'test'
+  ...
+# Subtest: usage and payment profile require ownership and retain the lock for final release
+ok 293 - usage and payment profile require ownership and retain the lock for final release
+  ---
+  duration_ms: 1.661417
+  type: 'test'
+  ...
+# Subtest: daily usage cooldown and write rollback retain their existing safety behavior
+ok 294 - daily usage cooldown and write rollback retain their existing safety behavior
+  ---
+  duration_ms: 2.46725
+  type: 'test'
+  ...
+# Subtest: runtime release checks phone and card ownership separately
+ok 295 - runtime release checks phone and card ownership separately
+  ---
+  duration_ms: 0.895791
+  type: 'test'
+  ...
+# Subtest: runtime release with no owner cannot clear either asset
+ok 296 - runtime release with no owner cannot clear either asset
+  ---
+  duration_ms: 0.717542
+  type: 'test'
+  ...
+# Subtest: reserveCard: return the exact owner as a reservation receipt
+ok 297 - reserveCard: return the exact owner as a reservation receipt
+  ---
+  duration_ms: 0.648042
+  type: 'test'
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations (undefined)
+ok 298 - reserveCard: never truncate or accept unowned reservations (undefined)
+  ---
+  duration_ms: 0.54275
+  type: 'test'
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations ("")
+ok 299 - reserveCard: never truncate or accept unowned reservations ("")
+  ---
+  duration_ms: 0.539208
+  type: 'test'
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations (true)
+ok 300 - reserveCard: never truncate or accept unowned reservations (true)
+  ---
+  duration_ms: 0.554416
+  type: 'test'
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 301 - reserveCard: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.501125
+  type: 'test'
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations ("bad owner")
+ok 302 - reserveCard: never truncate or accept unowned reservations ("bad owner")
+  ---
+  duration_ms: 0.9375
+  type: 'test'
+  ...
+# Subtest: reserveRuntimeAssets: return the exact owner as a reservation receipt
+ok 303 - reserveRuntimeAssets: return the exact owner as a reservation receipt
+  ---
+  duration_ms: 1.137625
+  type: 'test'
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations (undefined)
+ok 304 - reserveRuntimeAssets: never truncate or accept unowned reservations (undefined)
+  ---
+  duration_ms: 0.881
+  type: 'test'
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations ("")
+ok 305 - reserveRuntimeAssets: never truncate or accept unowned reservations ("")
+  ---
+  duration_ms: 0.602083
+  type: 'test'
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations (true)
+ok 306 - reserveRuntimeAssets: never truncate or accept unowned reservations (true)
+  ---
+  duration_ms: 0.721792
+  type: 'test'
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+ok 307 - reserveRuntimeAssets: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.552334
+  type: 'test'
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations ("bad owner")
+ok 308 - reserveRuntimeAssets: never truncate or accept unowned reservations ("bad owner")
+  ---
+  duration_ms: 0.627
+  type: 'test'
+  ...
+# Subtest: unchanged owned profile accepts matched rows even when changedRows is zero
+ok 309 - unchanged owned profile accepts matched rows even when changedRows is zero
+  ---
+  duration_ms: 0.697333
+  type: 'test'
+  ...
+# Subtest: the installed mysql2 config keeps FOUND_ROWS for the actual store pool options (no connection)
+ok 310 - the installed mysql2 config keeps FOUND_ROWS for the actual store pool options (no connection)
+  ---
+  duration_ms: 4.685792
+  type: 'test'
+  ...
+# Subtest: cooldown: transfer immediately before UPDATE cannot mutate a new owner's card
+ok 311 - cooldown: transfer immediately before UPDATE cannot mutate a new owner's card
+  ---
+  duration_ms: 0.73425
+  type: 'test'
+  ...
+# Subtest: exhaust: transfer immediately before UPDATE cannot mutate a new owner's card
+ok 312 - exhaust: transfer immediately before UPDATE cannot mutate a new owner's card
+  ---
+  duration_ms: 0.568125
+  type: 'test'
+  ...
+# Subtest: quarantine: transfer immediately before UPDATE cannot mutate a new owner's card
+ok 313 - quarantine: transfer immediately before UPDATE cannot mutate a new owner's card
+  ---
+  duration_ms: 0.571208
+  type: 'test'
+  ...
+# Subtest: profile: transfer immediately before UPDATE cannot mutate a new owner's card
+ok 314 - profile: transfer immediately before UPDATE cannot mutate a new owner's card
+  ---
+  duration_ms: 0.501375
+  type: 'test'
+  ...
+# Subtest: runtime release validates both IDs before clearing either asset
+ok 315 - runtime release validates both IDs before clearing either asset
+  ---
+  duration_ms: 0.548125
+  type: 'test'
+  ...
+1..315
+# tests 315
+# suites 0
+# pass 315
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 430.047375

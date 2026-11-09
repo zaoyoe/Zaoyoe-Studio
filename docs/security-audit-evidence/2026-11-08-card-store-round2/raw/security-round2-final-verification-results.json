@@ -1,0 +1,24 @@
+[
+  {
+    "status": "fulfilled",
+    "value": {
+      "name": "round2-final-verified",
+      "startedAt": "2026-11-08T10:21:54.904Z",
+      "finishedAt": "2026-11-08T10:21:56.312Z",
+      "code": 0,
+      "signal": null,
+      "output": "/tmp/security-round2-final-verified.tap"
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "name": "payment-tg-guest-verified",
+      "startedAt": "2026-11-08T10:21:54.906Z",
+      "finishedAt": "2026-11-08T10:21:58.648Z",
+      "code": 0,
+      "signal": null,
+      "output": "/tmp/security-payment-tg-guest-verified.tap"
+    }
+  }
+]

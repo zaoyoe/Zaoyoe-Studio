@@ -1,0 +1,54 @@
+{
+  "scope": "Offline only, no real SQL or MySQL",
+  "final_runs": [
+    {
+      "id": "round8-offline-final",
+      "file": "tests/security-round8-kc-mysql-lab.test.js",
+      "log": "logs/offline-tests-02.log",
+      "observed_exit": 0,
+      "tests": 79,
+      "pass": 79,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    {
+      "id": "round7-targeted-regression",
+      "file": "tests/security-round7-kc-payment-hold.test.js",
+      "log": "logs/payment-hold-regression-01.log",
+      "observed_exit": 0,
+      "tests": 119,
+      "pass": 119,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    }
+  ],
+  "total_files": 2,
+  "total_tests": 198,
+  "pass": 198,
+  "fail": 0,
+  "not_counted_again": {
+    "logs/offline-tests-01.log": {
+      "tests": 77,
+      "pass": 77,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    }
+  },
+  "syntax": "syntax-results-02.json",
+  "plan": {
+    "log": "logs/plan-only-01.log",
+    "observed_exit": 0,
+    "mode": "PLAN_ONLY",
+    "connected": false,
+    "sqlExecuted": false,
+    "database_cases": 12,
+    "manual_cases": 3,
+    "all_cases": "NOT RUN"
+  }
+}

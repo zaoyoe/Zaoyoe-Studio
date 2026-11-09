@@ -1,0 +1,83 @@
+{
+  "recorded_at": "2026-11-08T19:52:32.441363+08:00",
+  "files": [
+    {
+      "path": "raw/atomic-baseline.log",
+      "original_path": "/tmp/security-test-isolation-20261108/atomic-baseline.log",
+      "sha256": "2db22d1bf754ac0e3abb411d164afce3dde823dc5a8fafacd4c6b1d7fb7d97b7",
+      "bytes": 2136
+    },
+    {
+      "path": "raw/atomic-baseline-reproduced.log",
+      "original_path": "/tmp/security-test-isolation-20261108/atomic-baseline-reproduced.log",
+      "sha256": "f4710c34d4580a3a0b1c3d8b26b08fa2c0fcf614562cc4f3b4c0f4011c7ee226",
+      "bytes": 959
+    },
+    {
+      "path": "raw/atomic-first.log",
+      "original_path": "/tmp/security-test-isolation-20261108/atomic-first.log",
+      "sha256": "1c0afa4ec09cd841ed68088dee94fbedd91eb4912741823c41680a076abe1cb0",
+      "bytes": 5856
+    },
+    {
+      "path": "raw/atomic-final.log",
+      "original_path": "/tmp/security-test-isolation-20261108/atomic-final.log",
+      "sha256": "038cabb677af5bc52976a326d3c863700cfeb02a7991415408f2dbef2dd1781a",
+      "bytes": 6273
+    },
+    {
+      "path": "raw/kc-target-first.log",
+      "original_path": "/tmp/security-test-isolation-20261108/kc-target-first.log",
+      "sha256": "161d45102755eb5d9af7c883864e9941f5db4d74b87d5d1e453b5acf09a9c0c8",
+      "bytes": 462
+    },
+    {
+      "path": "raw/kc-target-final.log",
+      "original_path": "/tmp/security-test-isolation-20261108/kc-target-final.log",
+      "sha256": "62ccedc40469a2054f2b8fd3589eff2693e62c833b7e6147ccbcb5fb922aad32",
+      "bytes": 5731
+    },
+    {
+      "path": "raw/kc-target-fixture-corrected.log",
+      "original_path": "/tmp/security-test-isolation-20261108/kc-target-fixture-corrected.log",
+      "sha256": "ed0407ad5b7f3a8e7dba508a9359e5d2ded0ba9c2ec4660b4b85440d76a14156",
+      "bytes": 520
+    },
+    {
+      "path": "raw/selfcheck.log",
+      "original_path": "/tmp/security-test-isolation-20261108/selfcheck.log",
+      "sha256": "0d94204509a3555a744907b781f2d1d976d771aab087f406a6770d5a6b167e59",
+      "bytes": 21
+    },
+    {
+      "path": "raw/blocked-reads.jsonl",
+      "original_path": "/tmp/security-test-isolation-20261108/blocked-reads.jsonl",
+      "sha256": "10c02ad99b0a064b9f5b81041376407f9b2db87d2d45349c0459a7ce0f3b825f",
+      "bytes": 31
+    },
+    {
+      "path": "raw/preload.cjs",
+      "original_path": "/tmp/security-test-isolation-20261108/preload.cjs",
+      "sha256": "d87e682b933d9a57ab604efce87a4b57f9b5df497b48e30d4f36cea4bf71a625",
+      "bytes": 1438
+    },
+    {
+      "path": "raw/run.py",
+      "original_path": "/tmp/security-test-isolation-20261108/run.py",
+      "sha256": "3fbef5365d0b6779881f5ea667379c6b9f9804d1e6c84b47a8a59a02738cfe6c",
+      "bytes": 1099
+    },
+    {
+      "path": "raw/round3-syntax.json",
+      "original_path": "/tmp/security-test-isolation-20261108/round3-syntax.json",
+      "sha256": "c8fef2af0fb1cd1a4cceb53d8d53f222820a801f5e6a9bd95f8d66c1ab764f80",
+      "bytes": 713
+    },
+    {
+      "path": "raw/round3-whitespace.json",
+      "original_path": "/tmp/security-test-isolation-20261108/round3-whitespace.json",
+      "sha256": "809b32d3dbcc563b5a7f3733a6291519e12b04525a5976631ad963be6086255c",
+      "bytes": 78
+    }
+  ]
+}

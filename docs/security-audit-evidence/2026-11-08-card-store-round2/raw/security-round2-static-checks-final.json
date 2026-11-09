@@ -1,0 +1,376 @@
+{
+  "checkedAt": "2026-11-08T10:28:23.823Z",
+  "syntax": [
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "api/_lib/payments/zpay-amount.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "api/_lib/payments/zpay-amount.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "api/_lib/payments/provider-adapters.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "api/_lib/payments/provider-adapters.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "api/_lib/payments/zpay-webhook.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "api/_lib/payments/zpay-webhook.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "server/api-handlers/admin/shop/_remote-media-security.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "server/api-handlers/admin/shop/_remote-media-security.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "server/api-handlers/admin/shop/_r2-media.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "server/api-handlers/admin/shop/_r2-media.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "server/api-handlers/admin/shop/_product-image-assets.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "server/api-handlers/admin/shop/_product-image-assets.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "server/api-handlers/admin/shop/supplier-catalog.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "server/api-handlers/admin/shop/supplier-catalog.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "js/admin-shop.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "js/admin-shop.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "services/kc-pay-gpt/public-request-security.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "services/kc-pay-gpt/public-request-security.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "services/kc-pay-gpt/credential-security.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "services/kc-pay-gpt/credential-security.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "services/kc-pay-gpt/server.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "services/kc-pay-gpt/server.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "services/kc-pay-gpt/mysql-store.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "services/kc-pay-gpt/mysql-store.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "services/kc-pay-gpt/test/recharge-routing.test.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "services/kc-pay-gpt/test/recharge-routing.test.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "tests/security-round2-zpay-amount.test.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "tests/security-round2-zpay-amount.test.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "tests/security-round2-kc-activation.test.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "tests/security-round2-kc-activation.test.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "tests/security-round2-kc-credentials.test.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "tests/security-round2-kc-credentials.test.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "tests/security-round2-kc-public-guard.test.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "tests/security-round2-kc-public-guard.test.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "tests/security-round2-media-download.test.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "tests/security-round2-media-download.test.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "tests/security-round2-supplier-rich-text.test.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "tests/security-round2-supplier-rich-text.test.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "tests/provider-adapters-zpay-refund.test.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "tests/provider-adapters-zpay-refund.test.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "tests/payment-zpay-webhook-handler.test.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "tests/payment-zpay-webhook-handler.test.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "file": "tests/shop-product-image-assets.test.js",
+        "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "args": [
+          "--check",
+          "tests/shop-product-image-assets.test.js"
+        ],
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  ],
+  "diffCheck": {
+    "command": "git",
+    "args": [
+      "diff",
+      "--check",
+      "--",
+      "api/_lib/payments/zpay-amount.js",
+      "api/_lib/payments/provider-adapters.js",
+      "api/_lib/payments/zpay-webhook.js",
+      "server/api-handlers/admin/shop/_remote-media-security.js",
+      "server/api-handlers/admin/shop/_r2-media.js",
+      "server/api-handlers/admin/shop/_product-image-assets.js",
+      "server/api-handlers/admin/shop/supplier-catalog.js",
+      "js/admin-shop.js",
+      "services/kc-pay-gpt/public-request-security.js",
+      "services/kc-pay-gpt/credential-security.js",
+      "services/kc-pay-gpt/server.js",
+      "services/kc-pay-gpt/mysql-store.js",
+      "services/kc-pay-gpt/test/recharge-routing.test.js",
+      "tests/security-round2-zpay-amount.test.js",
+      "tests/security-round2-kc-activation.test.js",
+      "tests/security-round2-kc-credentials.test.js",
+      "tests/security-round2-kc-public-guard.test.js",
+      "tests/security-round2-media-download.test.js",
+      "tests/security-round2-supplier-rich-text.test.js",
+      "tests/provider-adapters-zpay-refund.test.js",
+      "tests/payment-zpay-webhook-handler.test.js",
+      "services/kc-pay-gpt/.env.example",
+      "services/kc-pay-gpt/public/index.html",
+      "tests/shop-supplier-media-r2-and-markup.test.js",
+      "tests/shop-product-image-assets.test.js"
+    ],
+    "exitCode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "scope": [
+    "api/_lib/payments/zpay-amount.js",
+    "api/_lib/payments/provider-adapters.js",
+    "api/_lib/payments/zpay-webhook.js",
+    "server/api-handlers/admin/shop/_remote-media-security.js",
+    "server/api-handlers/admin/shop/_r2-media.js",
+    "server/api-handlers/admin/shop/_product-image-assets.js",
+    "server/api-handlers/admin/shop/supplier-catalog.js",
+    "js/admin-shop.js",
+    "services/kc-pay-gpt/public-request-security.js",
+    "services/kc-pay-gpt/credential-security.js",
+    "services/kc-pay-gpt/server.js",
+    "services/kc-pay-gpt/mysql-store.js",
+    "services/kc-pay-gpt/test/recharge-routing.test.js",
+    "tests/security-round2-zpay-amount.test.js",
+    "tests/security-round2-kc-activation.test.js",
+    "tests/security-round2-kc-credentials.test.js",
+    "tests/security-round2-kc-public-guard.test.js",
+    "tests/security-round2-media-download.test.js",
+    "tests/security-round2-supplier-rich-text.test.js",
+    "tests/provider-adapters-zpay-refund.test.js",
+    "tests/payment-zpay-webhook-handler.test.js",
+    "services/kc-pay-gpt/.env.example",
+    "services/kc-pay-gpt/public/index.html",
+    "tests/shop-supplier-media-r2-and-markup.test.js",
+    "tests/shop-product-image-assets.test.js"
+  ]
+}

@@ -155,51 +155,41 @@ async function signPayload(encodedPayload, secret) {
     return base64UrlEncode(new Uint8Array(signature));
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function validPayload(payload) {
+    const now = Math.floor(Date.now() / 1000);
+    return payload && typeof payload === 'object' && !Array.isArray(payload)
+        && payload.v === 2 && payload.scope === 'admin-studio'
+        && typeof payload.sub === 'string' && UUID_PATTERN.test(payload.sub)
+        && typeof payload.sid === 'string' && UUID_PATTERN.test(payload.sid)
+        && Number.isSafeInteger(payload.iat) && payload.iat <= now + 5
+        && Number.isSafeInteger(payload.exp) && payload.exp > now
+        && payload.exp > payload.iat && payload.exp - payload.iat <= 3600;
+}
+
 export async function issueAdminStudioToken(payload = {}) {
-    const nowSeconds = Math.floor(Date.now() / 1000);
+    const iat = Math.floor(Date.now() / 1000);
     const normalizedPayload = {
-        v: 1,
-        scope: 'admin-studio',
-        sub: String(payload.sub || ''),
-        exp: Number(payload.exp || (nowSeconds + getAdminStudioTtlSeconds()))
+        v: 2, scope: 'admin-studio', sub: payload.sub, sid: payload.sid,
+        iat, exp: payload.exp ?? (iat + getAdminStudioTtlSeconds())
     };
-
-    if (!normalizedPayload.sub) {
-        throw new Error('Admin studio token requires sub');
-    }
-
+    if (!validPayload(normalizedPayload)) throw new Error('Invalid admin studio session payload');
     const encodedPayload = base64UrlEncode(textEncoder.encode(JSON.stringify(normalizedPayload)));
     const signature = await signPayload(encodedPayload, getAdminStudioAccessSecret());
     return `${encodedPayload}.${signature}`;
 }
 
 export async function verifyAdminStudioToken(token) {
-    if (typeof token !== 'string' || !token.includes('.')) {
-        return null;
-    }
-
+    if (typeof token !== 'string' || token.length > 2048
+        || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/.test(token)) return null;
     const [encodedPayload, providedSignature] = token.split('.');
-    if (!encodedPayload || !providedSignature) {
-        return null;
-    }
-
     const expectedSignature = await signPayload(encodedPayload, getAdminStudioAccessSecret());
-    if (!constantTimeEquals(expectedSignature, providedSignature)) {
-        return null;
-    }
-
+    if (!constantTimeEquals(expectedSignature, providedSignature)) return null;
     try {
         const payload = JSON.parse(textDecoder.decode(base64UrlDecode(encodedPayload)));
-        const nowSeconds = Math.floor(Date.now() / 1000);
-        if (payload?.scope !== 'admin-studio') return null;
-        if (!payload?.sub) return null;
-        if (!Number.isFinite(Number(payload?.exp)) || Number(payload.exp) <= nowSeconds) {
-            return null;
-        }
-        return payload;
-    } catch (_) {
-        return null;
-    }
+        return validPayload(payload) ? payload : null;
+    } catch (_) { return null; }
 }
 
 export function buildAdminStudioSetCookie(token, options = {}) {

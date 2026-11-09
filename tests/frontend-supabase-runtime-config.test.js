@@ -492,15 +492,20 @@ test('guestbook boot exposes Supabase init state and fails with explicit preview
 
 test('guestbook render batch computes stagger delay before using it in CSS variables', () => {
     const guestbookSource = readRepoFile('guestbook.js');
-    const delayDeclaration = "const delay = Math.min(index * 0.1, 1.0); // 100ms stagger, capped at 1s";
+    const animationHelper = guestbookSource.match(/function animateMessage\(element, index, step = 0\.1\) \{([\s\S]*?)\n    \}/)?.[1];
+    assert.ok(animationHelper, 'batch entrance animations should keep their 100ms default stagger');
+    const delayDeclaration = 'const delay = Math.min(index * step, 1.0);';
     const delayUsage = "setCssVariables(element, { '--guestbook-stagger-delay': `${delay}s` });";
 
-    assert.notEqual(guestbookSource.includes(delayDeclaration), false, 'guestbook.js should declare the stagger delay');
-    assert.notEqual(guestbookSource.includes(delayUsage), false, 'guestbook.js should apply the stagger delay CSS variable');
+    assert.notEqual(animationHelper.includes(delayDeclaration), false, 'the animation helper should cap stagger at 1s');
+    assert.notEqual(animationHelper.includes(delayUsage), false, 'the animation helper should apply the stagger CSS variable');
     assert.ok(
-        guestbookSource.indexOf(delayDeclaration) < guestbookSource.indexOf(delayUsage),
-        'guestbook.js should declare delay before using it during batch rendering'
+        animationHelper.indexOf(delayDeclaration) < animationHelper.indexOf(delayUsage),
+        'the animation helper should declare delay before using it'
     );
+    const renderBatch = guestbookSource.match(/function renderBatch\(count\) \{([\s\S]*?)\n    \}/)?.[1];
+    assert.match(renderBatch, /appendMasonryBatch\([\s\S]*animateMessage\(element, index\)/,
+        'batch cards should enter after being attached at the original stagger');
 });
 
 test('public pages wire the chat widget through the shared bootstrap loader', () => {
@@ -1075,26 +1080,26 @@ test('public pages lazy-load notifications while homepage gates announcement wor
         if (/<script[^>]+src=["'][^"']*announcement-loader\.js\?v=/.test(source)) {
             violations.push(`${relativePath} should not execute announcement-loader.js outside the shared engagement loader`);
         }
-        if (relativePath === 'index.html' && source.includes('rel="preload" href="announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1" as="script"')) {
+        if (relativePath === 'index.html' && source.includes('rel="preload" href="announcement-loader.js?v=20261108_ANNOUNCEMENT_MATERIAL_1" as="script"')) {
             violations.push('index.html should not preload announcement-loader.js before homepage cards');
         }
-        if (relativePath !== 'index.html' && !source.includes('rel="preload" href="announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1" as="script"')) {
+        if (relativePath !== 'index.html' && !source.includes('rel="preload" href="announcement-loader.js?v=20261108_ANNOUNCEMENT_MATERIAL_1" as="script"')) {
             violations.push(`${relativePath} should preload announcement-loader.js from the document head`);
         }
         const headEndIndex = source.indexOf('</head>');
-        const engagementIndex = source.indexOf('js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1');
+        const engagementIndex = source.indexOf('js/engagement-runtime-loader.js?v=20261108_ANNOUNCEMENT_MATERIAL_1');
         if (headEndIndex === -1 || engagementIndex === -1 || engagementIndex > headEndIndex) {
             violations.push(`${relativePath} should start the shared engagement loader from the document head`);
         }
-        if (!/js\/engagement-runtime-loader\.js\?v=20260519_ANNOUNCEMENT_HAIRLINE_1[^\"]*"[^>]*data-load-announcement="1"[^>]*async/.test(source)) {
+        if (!/js\/engagement-runtime-loader\.js\?v=20261108_ANNOUNCEMENT_MATERIAL_1[^\"]*"[^>]*data-load-announcement="1"[^>]*async/.test(source)) {
             violations.push(`${relativePath} should run the announcement engagement bootstrap asynchronously from the head`);
         }
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260519_ANNOUNCEMENT_HAIRLINE_1';",
+        "const VERSION = '20261108_ANNOUNCEMENT_MATERIAL_1';",
         "const NOTIFICATION_SRC = 'notification-client.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1';",
-        "const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1';",
+        "const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20261108_ANNOUNCEMENT_MATERIAL_1';",
         'const NOTIFICATION_IDLE_TIMEOUT_MS = 1800;',
         'const ANNOUNCEMENT_BOOT_DELAY_MS = 0;',
         "const HOMEPAGE_FIRST_PAINT_EVENT = 'zaoyoe:homepage-first-paint-ready';",
@@ -2581,12 +2586,12 @@ test('login auth sheet preserves smooth resize transitions between auth views', 
     );
     assert.match(
         authSheetStyles,
-        /\.auth-sheet-overlay\.active #loginView\.auth-sheet-view\.is-active \.auth-sheet-form > :nth-child\(1\) \{[\s\S]*?animation:\s*authSheetStaggeredRise 0\.6s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) 0\.36s backwards;/,
+        /\.auth-sheet-overlay\.active #loginView\.auth-sheet-view\.is-active \.auth-sheet-form > :not\(\.auth-hp-guard\):nth-child\(1\) \{[\s\S]*?animation:\s*authSheetStaggeredRise 0\.6s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) 0\.36s backwards;/,
         'css/auth-sheet.css should show the email field after the divider'
     );
     assert.match(
         authSheetStyles,
-        /\.auth-sheet-overlay\.active #loginView\.auth-sheet-view\.is-active \.auth-sheet-form > :nth-child\(2\) \{[\s\S]*?animation:\s*authSheetStaggeredRise 0\.6s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) 0\.42s backwards;/,
+        /\.auth-sheet-overlay\.active #loginView\.auth-sheet-view\.is-active \.auth-sheet-form > :not\(\.auth-hp-guard\):nth-child\(2\) \{[\s\S]*?animation:\s*authSheetStaggeredRise 0\.6s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) 0\.42s backwards;/,
         'css/auth-sheet.css should show the password field after the email field'
     );
     assert.match(
@@ -3627,10 +3632,11 @@ test('shop client runtime renderers externalize product cards, purchase feedback
         'getVersionedShopImageUrl: function (url, productOrVersion = {})',
         'setShopCardImageSource: function (cardImage, originalUrl, options = {}) {',
         'const primaryUrl = appendShopImageUrlVersion(',
-        "this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' }),",
+        "const cardUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });",
         'handleShopCardImageError: function (cardImage, originalUrl) {',
         'const SHOP_GRID_EAGER_IMAGE_COUNT = 4;',
-        'const shouldLoadImageEagerly = index < SHOP_GRID_EAGER_IMAGE_COUNT;',
+        "const shouldLoadImageEagerly = document.documentElement.dataset.shopLayout !== 'list'",
+        '&& index < SHOP_GRID_EAGER_IMAGE_COUNT;',
         "productImage.loading = shouldLoadImageEagerly ? 'eager' : 'lazy';",
         'setDiscountMessage: function (message = \'\'',
         'buildDiscountAssetCardMarkup: function (item = {}, { selected = false, claimable = false, claimPending = false } = {})',
@@ -17225,7 +17231,7 @@ test('final frontend runtime remnants route through delegated or bound listeners
 
     const notificationAssetMarkers = [
         'css/notification-client.css?v=20260513_NOTIFICATION_MOBILE_STAGGER_1',
-        'js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1'
+        'js/engagement-runtime-loader.js?v=20261108_ANNOUNCEMENT_MATERIAL_1'
     ];
 
     for (const marker of notificationAssetMarkers) {
@@ -17742,12 +17748,12 @@ test('announcement runtime renderers externalize decoration particles and physic
     );
 
     assert.equal(
-        indexSource.includes('./js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1'),
+        indexSource.includes('./js/engagement-runtime-loader.js?v=20261108_ANNOUNCEMENT_MATERIAL_1'),
         true,
         'index.html should defer announcement loading through the shared engagement bootstrap'
     );
     assert.equal(
-        guestbookSource.includes('js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1'),
+        guestbookSource.includes('js/engagement-runtime-loader.js?v=20261108_ANNOUNCEMENT_MATERIAL_1'),
         true,
         'guestbook.html should defer announcement loading through the shared engagement bootstrap'
     );
@@ -17759,7 +17765,7 @@ test('announcement runtime renderers externalize decoration particles and physic
 
     for (const source of [verifySource, shopSource, legacyIndexSource]) {
         assert.equal(
-            source.includes('js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1'),
+            source.includes('js/engagement-runtime-loader.js?v=20261108_ANNOUNCEMENT_MATERIAL_1'),
             true,
             'announcement entry pages should defer announcement loading through the shared engagement bootstrap'
         );

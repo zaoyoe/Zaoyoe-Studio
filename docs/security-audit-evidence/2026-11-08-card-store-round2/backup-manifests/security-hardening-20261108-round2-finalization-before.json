@@ -1,0 +1,9 @@
+{
+  "tests/security-round2-kc-credentials.test.js": "13d4904b36948d71abfd0292fa25c8cbb73f6ce98a66a570600b3ee372b58165",
+  "api/_lib/payments/provider-adapters.js": "3a33c840e78834b499148c687cf2281ba124de1e3b4bb2236608436090aeb4fa",
+  "tests/provider-adapters-zpay-refund.test.js": "b68800046f7298aaf4cb33d75a5d2ceb36a786ee2f8c04da0944cbd028569b7a",
+  "tests/payment-zpay-webhook-handler.test.js": "3b25531862c873ffe1bcc78271e0aa522dd27bdd5e7a4dd8fa8ca173fea26f4d",
+  "services/kc-pay-gpt/server.js": "49c0668646a99fc288ba2a5dd9785df8f1c8f5719072742a014146f7a2f416f0",
+  "services/kc-pay-gpt/public/index.html": "f5cd17fc547f43665e596f49cbcff9b2786664b537415b90650d0a13b72233df",
+  "server/api-handlers/admin/shop/supplier-catalog.js": "aeb29952c9ed013c50e0408b3553e8469d120b707e241842c3b5951a6a8eb480"
+}

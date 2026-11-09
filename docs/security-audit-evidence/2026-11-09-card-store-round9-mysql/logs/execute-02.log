@@ -1,0 +1,87 @@
+{
+  "mode": "EXECUTE",
+  "status": "FAIL",
+  "sourceBefore": {
+    "mysql-store.js": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+    "payment-retry.js": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22",
+    "stripe-protocol-payment.js": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d",
+    "mysql-schema.sql": "5762c14dac28291cf566ced78a71af2fb26d466b915c69968cf28027b3bfc055"
+  },
+  "preflight": {
+    "status": "PASS",
+    "serverUuid": "ca19329e-dbe0-11f1-aa3c-0605081862a4",
+    "version": "8.4.11",
+    "database": "kc_fault_lab_88db804f71ff9b98"
+  },
+  "scenarios": [
+    {
+      "id": "exact_owner_and_single_hold",
+      "status": "FAIL",
+      "error": "LAB_EXPECTED_ERROR_MISSING"
+    },
+    {
+      "id": "concurrent_reserve",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "pending_hold_cleanup",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "unsafe_task_cleanup",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "confirmed_no_charge_cleanup",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "hold_cleanup_race",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "database_deadlock",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "disconnect_uncommitted",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "disconnect_before_commit",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "discard_commit_ack",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "discard_hold_ack",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "reload_store_preserves_hold",
+      "status": "NOT RUN"
+    }
+  ],
+  "manualScenarios": [
+    {
+      "id": "tcp_commit_reply_loss",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "worker_process_restart",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "mysqld_crash_restart",
+      "status": "NOT RUN"
+    }
+  ],
+  "sourceAfter": {
+    "mysql-store.js": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+    "payment-retry.js": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22",
+    "stripe-protocol-payment.js": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d",
+    "mysql-schema.sql": "5762c14dac28291cf566ced78a71af2fb26d466b915c69968cf28027b3bfc055"
+  }
+}

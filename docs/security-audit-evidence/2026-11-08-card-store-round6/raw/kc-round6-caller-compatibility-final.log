@@ -1,0 +1,23 @@
+✔ KC payment caller processStripePayment: normal task (6.335041ms)
+✔ KC payment caller activateSubscription: normal task (0.939ms)
+✔ KC CLI owner declaration contract: normal task (2.213ms)
+✔ KC payment caller processStripePayment: missing task (0.702834ms)
+✔ KC payment caller activateSubscription: missing task (0.762083ms)
+✔ KC CLI owner declaration contract: missing task (1.193875ms)
+✔ KC payment caller processStripePayment: empty task (1.367917ms)
+✔ KC payment caller activateSubscription: empty task (0.601916ms)
+✔ KC CLI owner declaration contract: empty task (1.561208ms)
+✔ KC payment caller processStripePayment: invalid task remains invalid (0.542625ms)
+✔ KC payment caller activateSubscription: invalid task remains invalid (1.002792ms)
+✔ KC CLI owner declaration contract: invalid task remains invalid (0.951792ms)
+✔ KC payment caller processStripePayment: oversized task remains invalid (0.557375ms)
+✔ KC payment caller activateSubscription: oversized task remains invalid (0.897333ms)
+✔ KC CLI owner declaration contract: oversized task remains invalid (0.701541ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 161.741708

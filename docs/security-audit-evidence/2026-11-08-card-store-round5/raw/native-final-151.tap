@@ -1,0 +1,916 @@
+TAP version 13
+# Subtest: KC real activation handler reserves capacity before the first CDK lookup can yield
+ok 1 - KC real activation handler reserves capacity before the first CDK lookup can yield
+  ---
+  duration_ms: 4.127959
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after invalid CDK
+ok 2 - KC real activation handler releases admission after invalid CDK
+  ---
+  duration_ms: 0.47975
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after used CDK
+ok 3 - KC real activation handler releases admission after used CDK
+  ---
+  duration_ms: 0.448
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after non-self-service CDK
+ok 4 - KC real activation handler releases admission after non-self-service CDK
+  ---
+  duration_ms: 0.476792
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after empty card pool
+ok 5 - KC real activation handler releases admission after empty card pool
+  ---
+  duration_ms: 0.551
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after failed CDK compare-and-set
+ok 6 - KC real activation handler releases admission after failed CDK compare-and-set
+  ---
+  duration_ms: 0.543459
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after CDK lookup failure
+ok 7 - KC real activation handler releases admission after CDK lookup failure
+  ---
+  duration_ms: 0.406875
+  type: 'test'
+  ...
+# Subtest: KC real activation handler resumes an existing task without reserving another worker slot
+ok 8 - KC real activation handler resumes an existing task without reserving another worker slot
+  ---
+  duration_ms: 0.396334
+  type: 'test'
+  ...
+# Subtest: KC atomic admission failure returns capacity without unscoped CDK compensation
+ok 9 - KC atomic admission failure returns capacity without unscoped CDK compensation
+  ---
+  duration_ms: 0.473583
+  type: 'test'
+  ...
+# Subtest: KC synchronous dispatch failure retains the CDK and task capacity for recovery
+ok 10 - KC synchronous dispatch failure retains the CDK and task capacity for recovery
+  ---
+  duration_ms: 0.540958
+  type: 'test'
+  ...
+# Subtest: KC failure before dispatch retires only the created task through the atomic primitive
+ok 11 - KC failure before dispatch retires only the created task through the atomic primitive
+  ---
+  duration_ms: 0.440084
+  type: 'test'
+  ...
+# Subtest: KC never falls back to an unscoped CDK unlock when retirement refused
+ok 12 - KC never falls back to an unscoped CDK unlock when retirement refused
+  ---
+  duration_ms: 1.26
+  type: 'test'
+  ...
+# Subtest: KC never falls back to an unscoped CDK unlock when retirement throws
+ok 13 - KC never falls back to an unscoped CDK unlock when retirement throws
+  ---
+  duration_ms: 0.521833
+  type: 'test'
+  ...
+# Subtest: KC admission resumes a task discovered under the transaction lock without redispatch
+ok 14 - KC admission resumes a task discovered under the transaction lock without redispatch
+  ---
+  duration_ms: 0.438375
+  type: 'test'
+  ...
+# Subtest: KC maintenance and missing credentials never claim CDKs or capacity
+ok 15 - KC maintenance and missing credentials never claim CDKs or capacity
+  ---
+  duration_ms: 0.342209
+  type: 'test'
+  ...
+# Subtest: KC real status renderer displays hostile server messages as text and preserves line breaks
+ok 16 - KC real status renderer displays hostile server messages as text and preserves line breaks
+  ---
+  duration_ms: 0.615417
+  type: 'test'
+  ...
+# Subtest: KC real capsule renderer only uses static SVG markup and appends the message as text
+ok 17 - KC real capsule renderer only uses static SVG markup and appends the message as text
+  ---
+  duration_ms: 0.701042
+  type: 'test'
+  ...
+# Subtest: KC capsule replacement and manual dismiss retain their timer lifecycle
+ok 18 - KC capsule replacement and manual dismiss retain their timer lifecycle
+  ---
+  duration_ms: 0.547625
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: admin-login.html
+ok 19 - KC inline scripts compile after security changes: admin-login.html
+  ---
+  duration_ms: 0.718125
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: admin.html
+ok 20 - KC inline scripts compile after security changes: admin.html
+  ---
+  duration_ms: 2.938959
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: index.html
+ok 21 - KC inline scripts compile after security changes: index.html
+  ---
+  duration_ms: 1.450458
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: subscription.html
+ok 22 - KC inline scripts compile after security changes: subscription.html
+  ---
+  duration_ms: 0.633458
+  type: 'test'
+  ...
+# Subtest: atomic admission rolls back CDK consumption when task INSERT fails
+ok 23 - atomic admission rolls back CDK consumption when task INSERT fails
+  ---
+  duration_ms: 82.0475
+  type: 'test'
+  ...
+# Subtest: atomic admission encrypts Session and commits the task on the consuming connection
+ok 24 - atomic admission encrypts Session and commits the task on the consuming connection
+  ---
+  duration_ms: 1.387125
+  type: 'test'
+  ...
+# Subtest: atomic admission leaves no orphan consumption after encryption failure
+ok 25 - atomic admission leaves no orphan consumption after encryption failure
+  ---
+  duration_ms: 1.037209
+  type: 'test'
+  ...
+# Subtest: atomic admission leaves no orphan consumption after commit rejection
+ok 26 - atomic admission leaves no orphan consumption after commit rejection
+  ---
+  duration_ms: 1.2255
+  type: 'test'
+  ...
+# Subtest: atomic admission leaves no orphan consumption after CDK CAS conflict
+ok 27 - atomic admission leaves no orphan consumption after CDK CAS conflict
+  ---
+  duration_ms: 0.779875
+  type: 'test'
+  ...
+# Subtest: atomic admission leaves no orphan consumption after deadlock victim
+ok 28 - atomic admission leaves no orphan consumption after deadlock victim
+  ---
+  duration_ms: 3.818292
+  type: 'test'
+  ...
+# Subtest: lost COMMIT response keeps both task and CDK, and retry resumes without inserting again
+ok 29 - lost COMMIT response keeps both task and CDK, and retry resumes without inserting again
+  ---
+  duration_ms: 1.458083
+  type: 'test'
+  ...
+# Subtest: concurrent admission in the serialized transaction model creates only one task
+ok 30 - concurrent admission in the serialized transaction model creates only one task
+  ---
+  duration_ms: 2.253
+  type: 'test'
+  ...
+# Subtest: transaction rechecks disabled CDKs
+ok 31 - transaction rechecks disabled CDKs
+  ---
+  duration_ms: 1.963291
+  type: 'test'
+  ...
+# Subtest: transaction rechecks used CDKs
+ok 32 - transaction rechecks used CDKs
+  ---
+  duration_ms: 0.860083
+  type: 'test'
+  ...
+# Subtest: transaction rechecks non-self-service CDKs
+ok 33 - transaction rechecks non-self-service CDKs
+  ---
+  duration_ms: 0.746792
+  type: 'test'
+  ...
+# Subtest: transaction rechecks cooling down CDKs
+ok 34 - transaction rechecks cooling down CDKs
+  ---
+  duration_ms: 0.626
+  type: 'test'
+  ...
+# Subtest: transaction rechecks changed platform CDKs
+ok 35 - transaction rechecks changed platform CDKs
+  ---
+  duration_ms: 0.60225
+  type: 'test'
+  ...
+# Subtest: transaction rechecks changed plan CDKs
+ok 36 - transaction rechecks changed plan CDKs
+  ---
+  duration_ms: 0.589584
+  type: 'test'
+  ...
+# Subtest: transaction rechecks changed region CDKs
+ok 37 - transaction rechecks changed region CDKs
+  ---
+  duration_ms: 2.606292
+  type: 'test'
+  ...
+# Subtest: transaction rejects a deleted CDK
+ok 38 - transaction rejects a deleted CDK
+  ---
+  duration_ms: 1.017791
+  type: 'test'
+  ...
+# Subtest: admission blocks unresolved prior task: {"status":"manual"}
+ok 39 - admission blocks unresolved prior task: {"status":"manual"}
+  ---
+  duration_ms: 1.951417
+  type: 'test'
+  ...
+# Subtest: admission blocks unresolved prior task: {"status":"failed","payment_state":"unknown"}
+ok 40 - admission blocks unresolved prior task: {"status":"failed","payment_state":"unknown"}
+  ---
+  duration_ms: 1.44725
+  type: 'test'
+  ...
+# Subtest: admission blocks unresolved prior task: {"status":"failed","recovery_required":1}
+ok 41 - admission blocks unresolved prior task: {"status":"failed","recovery_required":1}
+  ---
+  duration_ms: 0.798709
+  type: 'test'
+  ...
+# Subtest: admission blocks unresolved prior task: {"status":"failed","execution_mode":"third_party_api","gpt_api_order_id":"offline-order"}
+ok 42 - admission blocks unresolved prior task: {"status":"failed","execution_mode":"third_party_api","gpt_api_order_id":"offline-order"}
+  ---
+  duration_ms: 0.911
+  type: 'test'
+  ...
+# Subtest: admission blocks unresolved prior task: {"status":"failed","execution_mode":"third_party_api","gpt_api_raw":"{\\"attempt\\":{\\"dispatchStarted\\":true}}"}
+ok 43 - admission blocks unresolved prior task: {"status":"failed","execution_mode":"third_party_api","gpt_api_raw":"{\\"attempt\\":{\\"dispatchStarted\\":true}}"}
+  ---
+  duration_ms: 1.213584
+  type: 'test'
+  ...
+# Subtest: admission refuses incomplete binding and unknown execution mode before opening a transaction
+ok 44 - admission refuses incomplete binding and unknown execution mode before opening a transaction
+  ---
+  duration_ms: 3.569416
+  type: 'test'
+  ...
+# Subtest: task-owned retirement atomically clears Session, finishes the task and returns its CDK
+ok 45 - task-owned retirement atomically clears Session, finishes the task and returns its CDK
+  ---
+  duration_ms: 3.260083
+  type: 'test'
+  ...
+# Subtest: retirement rolls back both writes after retire failure
+ok 46 - retirement rolls back both writes after retire failure
+  ---
+  duration_ms: 1.23825
+  type: 'test'
+  ...
+# Subtest: retirement rolls back both writes after retire_cas failure
+ok 47 - retirement rolls back both writes after retire_cas failure
+  ---
+  duration_ms: 0.974791
+  type: 'test'
+  ...
+# Subtest: retirement rolls back both writes after release failure
+ok 48 - retirement rolls back both writes after release failure
+  ---
+  duration_ms: 0.784625
+  type: 'test'
+  ...
+# Subtest: retirement rolls back both writes after release_cas failure
+ok 49 - retirement rolls back both writes after release_cas failure
+  ---
+  duration_ms: 1.558334
+  type: 'test'
+  ...
+# Subtest: retirement preserves a consistent task and CDK after before_apply commit failure
+ok 50 - retirement preserves a consistent task and CDK after before_apply commit failure
+  ---
+  duration_ms: 1.0835
+  type: 'test'
+  ...
+# Subtest: retirement preserves a consistent task and CDK after after_apply commit failure
+ok 51 - retirement preserves a consistent task and CDK after after_apply commit failure
+  ---
+  duration_ms: 0.759375
+  type: 'test'
+  ...
+# Subtest: retirement retains a task whose payment state is started
+ok 52 - retirement retains a task whose payment state is started
+  ---
+  duration_ms: 0.595458
+  type: 'test'
+  ...
+# Subtest: retirement retains a task whose payment state is unknown
+ok 53 - retirement retains a task whose payment state is unknown
+  ---
+  duration_ms: 0.54275
+  type: 'test'
+  ...
+# Subtest: retirement retains a task whose payment state is succeeded
+ok 54 - retirement retains a task whose payment state is succeeded
+  ---
+  duration_ms: 0.535666
+  type: 'test'
+  ...
+# Subtest: retirement retains a task whose payment state is declined
+ok 55 - retirement retains a task whose payment state is declined
+  ---
+  duration_ms: 0.5285
+  type: 'test'
+  ...
+# Subtest: retirement retains a task whose payment state is null
+ok 56 - retirement retains a task whose payment state is null
+  ---
+  duration_ms: 0.537708
+  type: 'test'
+  ...
+# Subtest: retirement refuses risk evidence: {"status":"manual"}
+ok 57 - retirement refuses risk evidence: {"status":"manual"}
+  ---
+  duration_ms: 0.57525
+  type: 'test'
+  ...
+# Subtest: retirement refuses risk evidence: {"recovery_required":1}
+ok 58 - retirement refuses risk evidence: {"recovery_required":1}
+  ---
+  duration_ms: 0.8985
+  type: 'test'
+  ...
+# Subtest: retirement refuses risk evidence: {"execution_mode":"legacy_unknown"}
+ok 59 - retirement refuses risk evidence: {"execution_mode":"legacy_unknown"}
+  ---
+  duration_ms: 0.720542
+  type: 'test'
+  ...
+# Subtest: retirement refuses risk evidence: {"gpt_api_order_id":"offline-order"}
+ok 60 - retirement refuses risk evidence: {"gpt_api_order_id":"offline-order"}
+  ---
+  duration_ms: 0.626125
+  type: 'test'
+  ...
+# Subtest: retirement refuses risk evidence: {"gpt_api_task_id":"offline-provider-task"}
+ok 61 - retirement refuses risk evidence: {"gpt_api_task_id":"offline-provider-task"}
+  ---
+  duration_ms: 0.617334
+  type: 'test'
+  ...
+# Subtest: retirement refuses risk evidence: {"gpt_api_raw":"{}"}
+ok 62 - retirement refuses risk evidence: {"gpt_api_raw":"{}"}
+  ---
+  duration_ms: 0.553917
+  type: 'test'
+  ...
+# Subtest: startup recovery may retire only an explicitly declined local task
+ok 63 - startup recovery may retire only an explicitly declined local task
+  ---
+  duration_ms: 1.2345
+  type: 'test'
+  ...
+# Subtest: late old-task retirement never releases the newer owner CDK
+ok 64 - late old-task retirement never releases the newer owner CDK
+  ---
+  duration_ms: 0.587125
+  type: 'test'
+  ...
+# Subtest: another unresolved task blocks retirement even when the retiring task is the latest owner
+ok 65 - another unresolved task blocks retirement even when the retiring task is the latest owner
+  ---
+  duration_ms: 0.588875
+  type: 'test'
+  ...
+# Subtest: retirement refuses an inactive or already unheld CDK
+ok 66 - retirement refuses an inactive or already unheld CDK
+  ---
+  duration_ms: 1.07875
+  type: 'test'
+  ...
+# Subtest: diagnostic createTaskLog remains callable outside an activation transaction
+ok 67 - diagnostic createTaskLog remains callable outside an activation transaction
+  ---
+  duration_ms: 0.715292
+  type: 'test'
+  ...
+# Subtest: HTTP handler preserves committed consumption after a lost COMMIT response
+ok 68 - HTTP handler preserves committed consumption after a lost COMMIT response
+  ---
+  duration_ms: 2.259917
+  type: 'test'
+  ...
+# Subtest: HTTP retry after a lost COMMIT response resumes its persisted task without dispatching again
+ok 69 - HTTP retry after a lost COMMIT response resumes its persisted task without dispatching again
+  ---
+  duration_ms: 2.242917
+  type: 'test'
+  ...
+# Subtest: HTTP handler retains the committed task after entering an uncertain dispatch
+ok 70 - HTTP handler retains the committed task after entering an uncertain dispatch
+  ---
+  duration_ms: 1.711458
+  type: 'test'
+  ...
+# Subtest: startup recovery rechecks current payment evidence instead of releasing from a stale snapshot
+ok 71 - startup recovery rechecks current payment evidence instead of releasing from a stale snapshot
+  ---
+  duration_ms: 1.700125
+  type: 'test'
+  ...
+# Subtest: local settlement rolls back task result when CDK return fails
+ok 72 - local settlement rolls back task result when CDK return fails
+  ---
+  duration_ms: 70.593458
+  type: 'test'
+  ...
+# Subtest: safe failure returns only its CDK and clears Session in the same transaction
+ok 73 - safe failure returns only its CDK and clears Session in the same transaction
+  ---
+  duration_ms: 1.1325
+  type: 'test'
+  ...
+# Subtest: local settlement rollback preserves both rows on task_write
+ok 74 - local settlement rollback preserves both rows on task_write
+  ---
+  duration_ms: 1.500708
+  type: 'test'
+  ...
+# Subtest: local settlement rollback preserves both rows on task_cas
+ok 75 - local settlement rollback preserves both rows on task_cas
+  ---
+  duration_ms: 0.782125
+  type: 'test'
+  ...
+# Subtest: local settlement rollback preserves both rows on session_clear
+ok 76 - local settlement rollback preserves both rows on session_clear
+  ---
+  duration_ms: 0.723167
+  type: 'test'
+  ...
+# Subtest: local settlement rollback preserves both rows on session_cas
+ok 77 - local settlement rollback preserves both rows on session_cas
+  ---
+  duration_ms: 0.716083
+  type: 'test'
+  ...
+# Subtest: local settlement rollback preserves both rows on release_cas
+ok 78 - local settlement rollback preserves both rows on release_cas
+  ---
+  duration_ms: 0.698375
+  type: 'test'
+  ...
+# Subtest: persisted started cannot be downgraded by a safe failure
+ok 79 - persisted started cannot be downgraded by a safe failure
+  ---
+  duration_ms: 0.9495
+  type: 'test'
+  ...
+# Subtest: persisted unknown cannot be downgraded by a safe failure
+ok 80 - persisted unknown cannot be downgraded by a safe failure
+  ---
+  duration_ms: 0.895917
+  type: 'test'
+  ...
+# Subtest: persisted succeeded cannot be downgraded by a safe failure
+ok 81 - persisted succeeded cannot be downgraded by a safe failure
+  ---
+  duration_ms: 0.848709
+  type: 'test'
+  ...
+# Subtest: persisted null cannot be downgraded by a safe failure
+ok 82 - persisted null cannot be downgraded by a safe failure
+  ---
+  duration_ms: 0.673334
+  type: 'test'
+  ...
+# Subtest: persisted unrecognized cannot be downgraded by a safe failure
+ok 83 - persisted unrecognized cannot be downgraded by a safe failure
+  ---
+  duration_ms: 0.617875
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"execution_mode":"third_party_api"}
+ok 84 - refuses incompatible, completed or foreign task {"execution_mode":"third_party_api"}
+  ---
+  duration_ms: 0.647291
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"execution_mode":"legacy_unknown"}
+ok 85 - refuses incompatible, completed or foreign task {"execution_mode":"legacy_unknown"}
+  ---
+  duration_ms: 0.613167
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"gpt_api_order_id":"offline-provider-order"}
+ok 86 - refuses incompatible, completed or foreign task {"gpt_api_order_id":"offline-provider-order"}
+  ---
+  duration_ms: 0.535
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"gpt_api_task_id":"offline-provider-task"}
+ok 87 - refuses incompatible, completed or foreign task {"gpt_api_task_id":"offline-provider-task"}
+  ---
+  duration_ms: 0.571833
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"gpt_api_raw":"{}"}
+ok 88 - refuses incompatible, completed or foreign task {"gpt_api_raw":"{}"}
+  ---
+  duration_ms: 0.579834
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"cdk_code":"OTHER-CDK"}
+ok 89 - refuses incompatible, completed or foreign task {"cdk_code":"OTHER-CDK"}
+  ---
+  duration_ms: 1.519209
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"status":"failed","finished_at":"offline-finished"}
+ok 90 - refuses incompatible, completed or foreign task {"status":"failed","finished_at":"offline-finished"}
+  ---
+  duration_ms: 0.710917
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"status":"success","payment_state":"succeeded","finished_at":"offline-finished"}
+ok 91 - refuses incompatible, completed or foreign task {"status":"success","payment_state":"succeeded","finished_at":"offline-finished"}
+  ---
+  duration_ms: 0.737792
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"status":"cancelled"}
+ok 92 - refuses incompatible, completed or foreign task {"status":"cancelled"}
+  ---
+  duration_ms: 0.643584
+  type: 'test'
+  ...
+# Subtest: refuses incompatible, completed or foreign task {"status":"maintenance"}
+ok 93 - refuses incompatible, completed or foreign task {"status":"maintenance"}
+  ---
+  duration_ms: 0.855916
+  type: 'test'
+  ...
+# Subtest: unavailable CDK does not become reusable {"used_at":null}
+ok 94 - unavailable CDK does not become reusable {"used_at":null}
+  ---
+  duration_ms: 0.704
+  type: 'test'
+  ...
+# Subtest: unavailable CDK does not become reusable {"is_active":0}
+ok 95 - unavailable CDK does not become reusable {"is_active":0}
+  ---
+  duration_ms: 0.625375
+  type: 'test'
+  ...
+# Subtest: late old task cannot return or modify a newer owner CDK
+ok 96 - late old task cannot return or modify a newer owner CDK
+  ---
+  duration_ms: 0.717084
+  type: 'test'
+  ...
+# Subtest: another unresolved task blocks safe release even if current task is newest
+ok 97 - another unresolved task blocks safe release even if current task is newest
+  ---
+  duration_ms: 0.705125
+  type: 'test'
+  ...
+# Subtest: duplicate completion is idempotent and a late payment callback cannot resurrect it
+ok 98 - duplicate completion is idempotent and a late payment callback cannot resurrect it
+  ---
+  duration_ms: 0.886666
+  type: 'test'
+  ...
+# Subtest: concurrent finalizations return the CDK once in the offline serial model
+ok 99 - concurrent finalizations return the CDK once in the offline serial model
+  ---
+  duration_ms: 3.042708
+  type: 'test'
+  ...
+# Subtest: intermediate unknown state stays recoverable until an affirmative success
+ok 100 - intermediate unknown state stays recoverable until an affirmative success
+  ---
+  duration_ms: 0.824541
+  type: 'test'
+  ...
+# Subtest: post-success auto-renew annotation can require review without returning CDK
+ok 101 - post-success auto-renew annotation can require review without returning CDK
+  ---
+  duration_ms: 0.694375
+  type: 'test'
+  ...
+# Subtest: pending auto-renew completion can become success without returning CDK or restoring Session
+ok 102 - pending auto-renew completion can become success without returning CDK or restoring Session
+  ---
+  duration_ms: 0.622416
+  type: 'test'
+  ...
+# Subtest: failed auto-renew annotation preserves the committed pending result
+ok 103 - failed auto-renew annotation preserves the committed pending result
+  ---
+  duration_ms: 0.627417
+  type: 'test'
+  ...
+# Subtest: late auto-renew annotation cannot change a task after the CDK gains another owner
+ok 104 - late auto-renew annotation cannot change a task after the CDK gains another owner
+  ---
+  duration_ms: 0.562625
+  type: 'test'
+  ...
+# Subtest: commit uncertainty before_apply never triggers a separate CDK unlock
+ok 105 - commit uncertainty before_apply never triggers a separate CDK unlock
+  ---
+  duration_ms: 0.686583
+  type: 'test'
+  ...
+# Subtest: commit uncertainty after_apply never triggers a separate CDK unlock
+ok 106 - commit uncertainty after_apply never triggers a separate CDK unlock
+  ---
+  duration_ms: 0.600542
+  type: 'test'
+  ...
+# Subtest: rollback failure does not replace the original transaction failure
+ok 107 - rollback failure does not replace the original transaction failure
+  ---
+  duration_ms: 0.601625
+  type: 'test'
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: job-1
+ok 108 - local cleanup releases only the canonical complete payment owner: job-1
+  ---
+  duration_ms: 68.606042
+  type: 'test'
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: AbC_-123
+ok 109 - local cleanup releases only the canonical complete payment owner: AbC_-123
+  ---
+  duration_ms: 0.793834
+  type: 'test'
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: gptapi_job-1
+ok 110 - local cleanup releases only the canonical complete payment owner: gptapi_job-1
+  ---
+  duration_ms: 0.643584
+  type: 'test'
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: XXXXXXXXXXXXXXXXXXXX
+ok 111 - local cleanup releases only the canonical complete payment owner: XXXXXXXXXXXXXXXXXXXX
+  ---
+  duration_ms: 0.615917
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: null
+ok 112 - invalid owner cannot widen cleanup: null
+  ---
+  duration_ms: 0.623333
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: undefined
+ok 113 - invalid owner cannot widen cleanup: undefined
+  ---
+  duration_ms: 0.5485
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: ""
+ok 114 - invalid owner cannot widen cleanup: ""
+  ---
+  duration_ms: 0.594417
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "%"
+ok 115 - invalid owner cannot widen cleanup: "%"
+  ---
+  duration_ms: 0.564375
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "_%"
+ok 116 - invalid owner cannot widen cleanup: "_%"
+  ---
+  duration_ms: 0.553083
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "job%1"
+ok 117 - invalid owner cannot widen cleanup: "job%1"
+  ---
+  duration_ms: 0.626
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "job 1"
+ok 118 - invalid owner cannot widen cleanup: "job 1"
+  ---
+  duration_ms: 0.538041
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: " job-1"
+ok 119 - invalid owner cannot widen cleanup: " job-1"
+  ---
+  duration_ms: 0.518875
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "job-1\\n"
+ok 120 - invalid owner cannot widen cleanup: "job-1\\n"
+  ---
+  duration_ms: 0.502916
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+ok 121 - invalid owner cannot widen cleanup: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  ---
+  duration_ms: 0.729958
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: 123
+ok 122 - invalid owner cannot widen cleanup: 123
+  ---
+  duration_ms: 0.566875
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: {}
+ok 123 - invalid owner cannot widen cleanup: {}
+  ---
+  duration_ms: 0.560208
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: ["job-1"]
+ok 124 - invalid owner cannot widen cleanup: ["job-1"]
+  ---
+  duration_ms: 0.524125
+  type: 'test'
+  ...
+# Subtest: retirement follows CDK then fresh task lock order
+ok 125 - retirement follows CDK then fresh task lock order
+  ---
+  duration_ms: 1.683125
+  type: 'test'
+  ...
+# Subtest: retirement aborts if the task CDK changes after discovery
+ok 126 - retirement aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 0.898542
+  type: 'test'
+  ...
+# Subtest: retirement rejects a replacement task using the same job key
+ok 127 - retirement rejects a replacement task using the same job key
+  ---
+  duration_ms: 1.770541
+  type: 'test'
+  ...
+# Subtest: retirement waits for a CDK holder without holding a task lock
+ok 128 - retirement waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 1.303083
+  type: 'test'
+  ...
+# Subtest: save follows CDK then fresh task lock order
+ok 129 - save follows CDK then fresh task lock order
+  ---
+  duration_ms: 6.912417
+  type: 'test'
+  ...
+# Subtest: save aborts if the task CDK changes after discovery
+ok 130 - save aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 3.136416
+  type: 'test'
+  ...
+# Subtest: save rejects a replacement task using the same job key
+ok 131 - save rejects a replacement task using the same job key
+  ---
+  duration_ms: 1.147584
+  type: 'test'
+  ...
+# Subtest: save waits for a CDK holder without holding a task lock
+ok 132 - save waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 0.739625
+  type: 'test'
+  ...
+# Subtest: reserve follows CDK then fresh task lock order
+ok 133 - reserve follows CDK then fresh task lock order
+  ---
+  duration_ms: 1.14525
+  type: 'test'
+  ...
+# Subtest: reserve aborts if the task CDK changes after discovery
+ok 134 - reserve aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 0.619
+  type: 'test'
+  ...
+# Subtest: reserve rejects a replacement task using the same job key
+ok 135 - reserve rejects a replacement task using the same job key
+  ---
+  duration_ms: 0.55025
+  type: 'test'
+  ...
+# Subtest: reserve waits for a CDK holder without holding a task lock
+ok 136 - reserve waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 0.6805
+  type: 'test'
+  ...
+# Subtest: finalize follows CDK then fresh task lock order
+ok 137 - finalize follows CDK then fresh task lock order
+  ---
+  duration_ms: 0.892167
+  type: 'test'
+  ...
+# Subtest: finalize aborts if the task CDK changes after discovery
+ok 138 - finalize aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 1.71275
+  type: 'test'
+  ...
+# Subtest: finalize rejects a replacement task using the same job key
+ok 139 - finalize rejects a replacement task using the same job key
+  ---
+  duration_ms: 1.345208
+  type: 'test'
+  ...
+# Subtest: finalize waits for a CDK holder without holding a task lock
+ok 140 - finalize waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 0.835417
+  type: 'test'
+  ...
+# Subtest: retirement evaluates the fresh payment evidence after locking
+ok 141 - retirement evaluates the fresh payment evidence after locking
+  ---
+  duration_ms: 0.661542
+  type: 'test'
+  ...
+# Subtest: retirement retains assets when fresh task evidence changes: execution_mode
+ok 142 - retirement retains assets when fresh task evidence changes: execution_mode
+  ---
+  duration_ms: 1.101458
+  type: 'test'
+  ...
+# Subtest: retirement retains assets when fresh task evidence changes: gpt_api_order_id
+ok 143 - retirement retains assets when fresh task evidence changes: gpt_api_order_id
+  ---
+  duration_ms: 0.607875
+  type: 'test'
+  ...
+# Subtest: retirement retains assets when fresh task evidence changes: recovery_required
+ok 144 - retirement retains assets when fresh task evidence changes: recovery_required
+  ---
+  duration_ms: 0.658333
+  type: 'test'
+  ...
+# Subtest: missing task never releases assets
+ok 145 - missing task never releases assets
+  ---
+  duration_ms: 1.473083
+  type: 'test'
+  ...
+# Subtest: missing CDK still permits legacy hold without releasing assets
+ok 146 - missing CDK still permits legacy hold without releasing assets
+  ---
+  duration_ms: 1.758291
+  type: 'test'
+  ...
+# Subtest: legacy task without CDK can be held but cannot settle
+ok 147 - legacy task without CDK can be held but cannot settle
+  ---
+  duration_ms: 1.796625
+  type: 'test'
+  ...
+# Subtest: case-insensitive task lookup cannot authorize a different job ID
+ok 148 - case-insensitive task lookup cannot authorize a different job ID
+  ---
+  duration_ms: 0.669125
+  type: 'test'
+  ...
+# Subtest: deleted task after discovery cannot authorize a release
+ok 149 - deleted task after discovery cannot authorize a release
+  ---
+  duration_ms: 0.723791
+  type: 'test'
+  ...
+# Subtest: inactive CDK refuses provider card reservation
+ok 150 - inactive CDK refuses provider card reservation
+  ---
+  duration_ms: 0.712625
+  type: 'test'
+  ...
+# Subtest: write failure after CDK-first retirement rolls back and releases the connection
+ok 151 - write failure after CDK-first retirement rolls back and releases the connection
+  ---
+  duration_ms: 0.950542
+  type: 'test'
+  ...
+1..151
+# tests 151
+# suites 0
+# pass 151
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 253.5475

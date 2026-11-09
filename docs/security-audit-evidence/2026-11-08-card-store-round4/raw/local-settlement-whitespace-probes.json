@@ -1,0 +1,12 @@
+[
+  {
+    "case": "clean_difference",
+    "exit_code": 1,
+    "output": ""
+  },
+  {
+    "case": "trailing_whitespace",
+    "exit_code": 3,
+    "output": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-round4-whitespace-probe-_29g1097/after:1: trailing whitespace.\n+second  \n"
+  }
+]

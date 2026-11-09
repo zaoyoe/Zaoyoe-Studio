@@ -57,3 +57,14 @@ button.login-trigger-btn:hover #navUserAvatar,
 #guestbookModal.guestbook-modal-interactive {
     display: flex !important;
 }
+
+/* 隐藏首页右侧吸附的客服机器人入口 */
+.chat-widget-fab,
+[data-chat-widget-fab],
+[data-chat-widget-placeholder="1"] {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    transform: none !important;
+}

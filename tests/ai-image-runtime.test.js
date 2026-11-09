@@ -186,6 +186,14 @@ function createQueryBuilder(executor) {
             state.filters.push({ op: 'eq', column, value });
             return builder;
         },
+        neq(column, value) {
+            state.filters.push({ op: 'neq', column, value });
+            return builder;
+        },
+        or(value) {
+            state.filters.push({ op: 'or', value });
+            return builder;
+        },
         lt(column, value) {
             state.filters.push({ op: 'lt', column, value });
             return builder;
@@ -233,6 +241,13 @@ function createQueryBuilder(executor) {
 function applyFilters(rows = [], filters = []) {
     return rows.filter((row) => filters.every(({ op, column, value }) => {
         if (op === 'eq') return row[column] === value;
+        if (op === 'neq') return row[column] !== value;
+        if (op === 'or') return value.split(',').some(condition => {
+            const match = /^(metadata->>next_poll_at)\.(is|lte)\.(.+)$/.exec(condition);
+            assert.ok(match, `Unsupported OR filter: ${condition}`);
+            const actual = row.metadata?.next_poll_at;
+            return match[2] === 'is' ? actual == null : actual != null && Date.parse(actual) <= Date.parse(match[3]);
+        });
         if (op === 'lt') {
             const rowTime = Date.parse(String(row[column] || ''));
             const valueTime = Date.parse(String(value || ''));
@@ -5885,4 +5900,82 @@ test('timed clone cache stops serving stale values after the stale window', asyn
 
     assert.equal(refreshed.status, 'refresh');
     assert.deepEqual(refreshed.value, { version: 2 });
+});
+
+function bblabuPendingTask(overrides = {}) {
+    const started = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+    return {
+        id: 'task-bblabu-pending', site: 'cn', user_id: 'user-1', mode: 'video', billing_mode: 'points',
+        status: 'queued', model: 'sd16-seedance-2.0', ratio: '16:9', resolution: '720p', quantity: 1,
+        prompt: 'test video', estimated_points: 20, charged_points: 0, provider_task_id: 'bblabu-original-id',
+        created_at: started, started_at: started, updated_at: started,
+        metadata: { provider_base_url: 'https://api.bblabu.cn/v1',
+            provider_async: { submitted_at: started, credential_fingerprint: 'internal-fingerprint' },
+            billing_v2: { enabled: true, authorization_required: true, authorization_points: 20, status: 'authorized' } },
+        ...overrides
+    };
+}
+
+test('BBLABU pending video preserves its authorization and original start time across polling', async () => {
+    const task = bblabuPendingTask();
+    const state = { tasks: [task] };
+    const supabase = createSupabaseStub(state);
+    const result = await executeAiImageTask({ supabase, task, executor: async () => {
+        throw Object.assign(new Error('still processing'), { code: 'ai_video_provider_pending',
+            metadata: { next_poll_at: new Date(Date.now() + 8000).toISOString() } });
+    } });
+    assert.equal(result.pending, true);
+    assert.equal(result.task.status, 'queued');
+    assert.equal(result.task.provider_task_id, 'bblabu-original-id');
+    assert.equal(result.task.started_at, task.started_at);
+    assert.equal(result.task.metadata.billing_v2.status, 'authorized');
+    assert.ok(Date.parse(result.task.metadata.next_poll_at) > Date.now());
+    assert.deepEqual(state.rpcCalls, []);
+    assert.deepEqual(state.pointsLedger, []);
+});
+
+test('BBLABU stale running video resumes by handle without releasing the reservation', async () => {
+    const state = { tasks: [bblabuPendingTask({ status: 'running' })] };
+    const results = await failStaleRunningTasks(createSupabaseStub(state), { site: 'cn', staleAfterMs: 1000, videoStaleAfterMs: 1000 });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].pending, true);
+    assert.equal(state.tasks[0].status, 'queued');
+    assert.equal(state.tasks[0].provider_task_id, 'bblabu-original-id');
+    assert.equal(state.tasks[0].metadata.billing_v2.status, 'authorized');
+    assert.deepEqual(state.rpcCalls, []);
+});
+
+test('BBLABU expired video terminates and releases its reservation', async () => {
+    const old = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    const task = bblabuPendingTask({ status: 'running', started_at: old, updated_at: old });
+    task.metadata.provider_async.submitted_at = old;
+    const state = { tasks: [task] };
+    const results = await failStaleRunningTasks(createSupabaseStub(state), { site: 'cn', staleAfterMs: 1000, videoStaleAfterMs: 1000 });
+    assert.equal(results.length, 1);
+    assert.equal(state.tasks[0].status, 'failed');
+    assert.deepEqual(state.rpcCalls.map(call => call.name), ['fn_release_ai_workbench_points']);
+});
+
+test('BBLABU deferred polling and API tasks are excluded before applying the points worker limit', async () => {
+    const future = new Date(Date.now() + 60000).toISOString();
+    const state = { tasks: [
+        ...Array.from({ length: 20 }, (_, i) => bblabuPendingTask({ id: `task-api-${i}`, billing_mode: 'api', estimated_points: 0 })),
+        ...Array.from({ length: 20 }, (_, i) => {
+            const task = bblabuPendingTask({ id: `task-wait-${i}`, estimated_points: 1 });
+            task.metadata.next_poll_at = future;
+            return task;
+        }),
+        bblabuPendingTask({ id: 'task-ready' })
+    ] };
+    const executed = [];
+    const supabase = createSupabaseStub(state);
+    const result = await runAiImageTaskBatch({ supabase, site: 'cn', limit: 1, executor: async task => {
+        executed.push(task.id);
+        throw Object.assign(new Error('pending'), { code: 'ai_video_provider_pending' });
+    } });
+    assert.equal(result.processed, 1);
+    assert.deepEqual(executed, ['task-ready']);
+    const explicitApi = await runAiImageTaskBatch({ supabase, taskId: 'task-api-0', executor: async () => { throw new Error('must not execute'); } });
+    assert.equal(explicitApi.processed, 0);
+    assert.deepEqual(state.rpcCalls, []);
 });

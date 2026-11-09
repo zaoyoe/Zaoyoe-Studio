@@ -262,3 +262,52 @@ test('client places discount help icon in dt and not in dd', () => {
     assert.doesNotMatch(clientSource, /help\.title\s*=/);
 });
 
+test('resolveOrderStatus shows 已付款·待发货 for paid unfulfilled orders and 已完成 only after delivered', () => {
+    const sandbox = {
+        normalizeText: (v, max = 2000) => String(v || '').trim().slice(0, max),
+        PAYMENT_LABELS: {
+            pending: { text: '待支付', tone: 'warn' },
+            created: { text: '待支付', tone: 'warn' },
+            confirmed: { text: '已完成', tone: 'ok' },
+            expired: { text: '已过期', tone: 'danger' }
+        }
+    };
+    const fnStatusLabel = extractFunction(clientSource, 'statusLabel');
+    const fnResolveOrderStatus = extractFunction(clientSource, 'resolveOrderStatus');
+    vm.runInNewContext(`${fnStatusLabel}; ${fnResolveOrderStatus}; globalThis.resolveOrderStatus = resolveOrderStatus;`, sandbox);
+
+    const { resolveOrderStatus } = sandbox;
+
+    // Paid but fulfillment is pending -> must be "已付款·待发货" with warn tone
+    const paidPending = resolveOrderStatus({ payment_status: 'confirmed', fulfillment_status: 'pending' });
+    assert.equal(paidPending.text, '已付款·待发货');
+    assert.equal(paidPending.tone, 'warn');
+
+    // Paid but fulfillment is empty/null -> must be "已付款·待发货"
+    const paidNull = resolveOrderStatus({ payment_status: 'confirmed', fulfillment_status: null });
+    assert.equal(paidNull.text, '已付款·待发货');
+    assert.equal(paidNull.tone, 'warn');
+
+    // Paid and fulfilling -> "已付款·发货中"
+    const paidFulfilling = resolveOrderStatus({ payment_status: 'confirmed', fulfillment_status: 'fulfilling' });
+    assert.equal(paidFulfilling.text, '已付款·发货中');
+    assert.equal(paidFulfilling.tone, 'warn');
+
+    // Paid and delivered -> "已完成" with ok tone
+    const paidDelivered = resolveOrderStatus({ payment_status: 'confirmed', fulfillment_status: 'delivered' });
+    assert.equal(paidDelivered.text, '已完成');
+    assert.equal(paidDelivered.tone, 'ok');
+
+    // Paid and failed -> "已付款·发货失败" with danger tone
+    const paidFailed = resolveOrderStatus({ payment_status: 'confirmed', fulfillment_status: 'failed' });
+    assert.equal(paidFailed.text, '已付款·发货失败');
+    assert.equal(paidFailed.tone, 'danger');
+
+    // Unpaid -> "待支付"
+    const unpaid = resolveOrderStatus({ payment_status: 'pending', fulfillment_status: 'pending' });
+    assert.equal(unpaid.text, '待支付');
+    assert.equal(unpaid.tone, 'warn');
+
+    // Client item badge uses createOrderStatusBadge instead of raw payment_status
+    assert.match(clientSource, /badges\.appendChild\(createOrderStatusBadge\(order\)\);/);
+});

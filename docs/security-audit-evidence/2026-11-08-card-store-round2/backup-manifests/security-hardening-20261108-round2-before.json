@@ -1,0 +1,12 @@
+{
+  "api/_lib/payments/zpay-webhook.js": "e1c18ec631d1df284167d9f195281bf438f3ecf9b752da50bcf9999b68a4dd0a",
+  "api/_lib/payments/provider-adapters.js": "120b16d0e6ed595da5705f7e76af24c8c9bd8b4e2a159aa2a5fe13c605be0f1e",
+  "server/api-handlers/admin/shop/_r2-media.js": "2b16518f6803497deb8062775b04becdbf00f01f5d2ad66c119fd13994e19c13",
+  "services/kc-pay-gpt/server.js": "8c51f0f8ed4563ca1eedb3f7bae13e36f73a3a7c8eabbe827b257d39bf339b92",
+  "services/kc-pay-gpt/mysql-store.js": "d4c79cd64039fecbff382143aa9ca87c8f5b6e0abe401d99d830e86cc9d7912a",
+  "services/kc-pay-gpt/public/index.html": "08f50669aeb24801fd27a1e63f8bed550ff58e1af049f40914c7ca7c17877a49",
+  "services/kc-pay-gpt/.env.example": "dca9d5ba299ceb97b7ec44eb330f1f6397c8aec19549b1c63f8a5677d7046d7e",
+  "server/api-handlers/admin/shop/mutate.js": "6602a520fa076d7cd8b161ebc08ad01aabb2f92fb9c217eafdbab2dab6c2ad1e",
+  "server/api-handlers/public/shop.js": "d4092aa8aca25b76feef3b051bcd16eb9db8b7e1ab4884209ad30ce90b9baf27",
+  "api/_lib/shop-cdk-secrets.js": "8215625a4a44ea8189548972e73aa2f194f114d503a35e0167e88f07aa0c76a6"
+}

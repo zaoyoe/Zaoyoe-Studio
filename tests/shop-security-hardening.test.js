@@ -55,9 +55,22 @@ test('shop discount validation is no longer handled by public table reads in the
     );
     assert.match(
         sharedShopHandlerSource,
-        /rpc\('fn_purchase_shop_item'/,
-        'shop purchase route should delegate to the server-side purchase RPC'
+        /executeTrustedPurchaseRpc\(adminSupabase, 'fn_purchase_shop_item'/,
+        'shop purchases must select the trusted server client for the purchase RPC'
     );
+    assert.match(
+        sharedShopHandlerSource,
+        /executeTrustedPurchaseRpc\(adminSupabase, 'fn_purchase_shop_item_with_discounts'/,
+        'discounted purchases must use the same trusted client boundary'
+    );
+    const trustedPurchaseRpc = sharedShopHandlerSource.slice(
+        sharedShopHandlerSource.indexOf('async function executeTrustedPurchaseRpc('),
+        sharedShopHandlerSource.indexOf('async function executeTrustedPurchaseRpc(') + 1200
+    );
+    assert.match(trustedPurchaseRpc, /adminSupabase\.rpc\(name, params\)/,
+        'the trusted purchase helper must invoke the selected server RPC');
+    assert.doesNotMatch(trustedPurchaseRpc, /requestSupabase|createSupabaseClientForRequest/,
+        'the purchase helper must never retry a debit with a browser-authorized client');
 });
 
 test('shop migration restores site-aware pricing, balance isolation, and secure discount validation', () => {

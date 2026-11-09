@@ -9,8 +9,9 @@
     const VERSION = '20260928_WALLET_AMOUNT_STYLE_RESTORE_1';
     const IOS_CHROME_KEYBOARD_VERSION = '20260514_ALL_KEYBOARD_RELEASE_1';
     const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';
+    const WALLET_CSS_HREF = 'css/wallet.css?v=20261018_WALLET_PAYMENT_SELECTOR_1&controlPress=20261018_2&rechargeSpacing=20261018_1&calmHover=20261018_4&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&glassRing=20261108_8';
     const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260928_WALLET_AMOUNT_STYLE_RESTORE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1';
-    const WALLET_MODAL_RUNTIME_SRC = `${WALLET_MODAL_SRC}&usdtNetworks=20261018_SELECTOR_1&controlPress=20261018_2&rechargeSpacing=20261018_1&calmHover=20261018_4&fxRefresh=20261018_1&iosChromeKeyboard=${IOS_CHROME_KEYBOARD_VERSION}`;
+    const WALLET_MODAL_RUNTIME_SRC = `${WALLET_MODAL_SRC}&usdtNetworks=20261018_SELECTOR_1&controlPress=20261018_2&rechargeSpacing=20261018_1&calmHover=20261018_4&fxRefresh=20261018_1&glassRing=20261108_8&iosChromeKeyboard=${IOS_CHROME_KEYBOARD_VERSION}`;
     const POLL_INTERVAL_MS = 100;
     const MAX_WAIT_MS = 10000;
 
@@ -105,7 +106,26 @@
         });
     }
 
+    function ensureWalletStylesheet() {
+        if (typeof document === 'undefined' || !document.head?.appendChild) {
+            return;
+        }
+        const existing = document.getElementById('wallet-modal-css');
+        if (existing) {
+            if (existing.getAttribute('href') !== WALLET_CSS_HREF) {
+                existing.href = WALLET_CSS_HREF;
+            }
+            return;
+        }
+        const link = document.createElement('link');
+        link.id = 'wallet-modal-css';
+        link.rel = 'stylesheet';
+        link.href = WALLET_CSS_HREF;
+        document.head.appendChild(link);
+    }
+
     function ensureWalletModalReady() {
+        ensureWalletStylesheet();
         if (hasWalletModal()) {
             return Promise.resolve(global.WalletModal);
         }
@@ -135,6 +155,7 @@
 
     function warmWalletModal(options = {}) {
         return ensureWalletModalReady().then((walletModal) => {
+            walletModal?.warmShell?.();
             if (options.prefetch !== false && typeof walletModal?.prefetchData === 'function') {
                 walletModal.prefetchData();
             }
@@ -143,7 +164,10 @@
     }
 
     function warmWalletRuntime() {
-        return ensureWalletModalReady();
+        return ensureWalletModalReady().then((walletModal) => {
+            walletModal?.warmShell?.();
+            return walletModal;
+        });
     }
 
     function openWalletModal(view = 'balance', context = {}) {

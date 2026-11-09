@@ -1,0 +1,17 @@
+[
+  {
+    "path": "server/api-handlers/admin/shop/_product-image-assets.js",
+    "sha256": "579ac8fb6aad66adc1b0ba13608039a4a5fc8cd17203a16cd7b9858ffdd26c01",
+    "bytes": 6700
+  },
+  {
+    "path": "server/api-handlers/admin/shop/supplier-catalog.js",
+    "sha256": "aeb29952c9ed013c50e0408b3553e8469d120b707e241842c3b5951a6a8eb480",
+    "bytes": 126160
+  },
+  {
+    "path": "tests/shop-product-image-assets.test.js",
+    "sha256": "e9d49c4def007a5014ee8ca526b72c6cc4e71b86e5557e66708c9a38f33e69fb",
+    "bytes": 15679
+  }
+]

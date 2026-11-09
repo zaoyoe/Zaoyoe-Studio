@@ -1,0 +1,28 @@
+{
+  "pid": 90849,
+  "args": [
+    "/opt/homebrew/Cellar/mysql@8.4/8.4.11_6/bin/mysqld",
+    "--no-defaults",
+    "--basedir=/opt/homebrew/Cellar/mysql@8.4/8.4.11_6",
+    "--datadir=/private/tmp/kc-hold-88db804f71ff9b98/data",
+    "--socket=/private/tmp/kc-hold-88db804f71ff9b98/mysql.sock",
+    "--pid-file=/private/tmp/kc-hold-88db804f71ff9b98/mysql.pid",
+    "--log-error=/private/tmp/kc-hold-88db804f71ff9b98/server.log",
+    "--tmpdir=/private/tmp/kc-hold-88db804f71ff9b98/tmp",
+    "--secure-file-priv=/private/tmp/kc-hold-88db804f71ff9b98/files",
+    "--local-infile=OFF",
+    "--mysqlx=OFF",
+    "--skip-log-bin",
+    "--bind-address=127.0.0.1",
+    "--port=23316",
+    "--skip-name-resolve",
+    "--partial-revokes=OFF",
+    "--max-connections=12",
+    "--innodb-buffer-pool-size=64M",
+    "--innodb-redo-log-capacity=64M",
+    "--innodb-flush-log-at-trx-commit=1",
+    "--skip-networking=ON"
+  ],
+  "new_datadir": "/private/tmp/kc-hold-88db804f71ff9b98/data",
+  "networking": false
+}

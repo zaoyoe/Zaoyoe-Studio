@@ -1,0 +1,232 @@
+TAP version 13
+# Subtest: local cleanup releases only the canonical complete payment owner: job-1
+ok 1 - local cleanup releases only the canonical complete payment owner: job-1
+  ---
+  duration_ms: 84.286292
+  type: 'test'
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: AbC_-123
+ok 2 - local cleanup releases only the canonical complete payment owner: AbC_-123
+  ---
+  duration_ms: 0.893041
+  type: 'test'
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: gptapi_job-1
+ok 3 - local cleanup releases only the canonical complete payment owner: gptapi_job-1
+  ---
+  duration_ms: 1.3195
+  type: 'test'
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: XXXXXXXXXXXXXXXXXXXX
+ok 4 - local cleanup releases only the canonical complete payment owner: XXXXXXXXXXXXXXXXXXXX
+  ---
+  duration_ms: 1.075959
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: null
+ok 5 - invalid owner cannot widen cleanup: null
+  ---
+  duration_ms: 0.810458
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: undefined
+ok 6 - invalid owner cannot widen cleanup: undefined
+  ---
+  duration_ms: 0.692833
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: ""
+ok 7 - invalid owner cannot widen cleanup: ""
+  ---
+  duration_ms: 0.60675
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "%"
+ok 8 - invalid owner cannot widen cleanup: "%"
+  ---
+  duration_ms: 0.748667
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "_%"
+ok 9 - invalid owner cannot widen cleanup: "_%"
+  ---
+  duration_ms: 0.637
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "job%1"
+ok 10 - invalid owner cannot widen cleanup: "job%1"
+  ---
+  duration_ms: 0.991792
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "job 1"
+ok 11 - invalid owner cannot widen cleanup: "job 1"
+  ---
+  duration_ms: 0.709791
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: " job-1"
+ok 12 - invalid owner cannot widen cleanup: " job-1"
+  ---
+  duration_ms: 0.536708
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "job-1\\n"
+ok 13 - invalid owner cannot widen cleanup: "job-1\\n"
+  ---
+  duration_ms: 0.5725
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+ok 14 - invalid owner cannot widen cleanup: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  ---
+  duration_ms: 0.568167
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: 123
+ok 15 - invalid owner cannot widen cleanup: 123
+  ---
+  duration_ms: 0.623375
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: {}
+ok 16 - invalid owner cannot widen cleanup: {}
+  ---
+  duration_ms: 0.5815
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: ["job-1"]
+ok 17 - invalid owner cannot widen cleanup: ["job-1"]
+  ---
+  duration_ms: 0.561459
+  type: 'test'
+  ...
+# Subtest: retirement follows CDK then fresh task lock order
+ok 18 - retirement follows CDK then fresh task lock order
+  ---
+  duration_ms: 1.762375
+  type: 'test'
+  ...
+# Subtest: retirement aborts if the task CDK changes after discovery
+ok 19 - retirement aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 1.32775
+  type: 'test'
+  ...
+# Subtest: retirement waits for a CDK holder without holding a task lock
+ok 20 - retirement waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 0.833084
+  type: 'test'
+  ...
+# Subtest: save follows CDK then fresh task lock order
+ok 21 - save follows CDK then fresh task lock order
+  ---
+  duration_ms: 2.725417
+  type: 'test'
+  ...
+# Subtest: save aborts if the task CDK changes after discovery
+ok 22 - save aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 2.406333
+  type: 'test'
+  ...
+# Subtest: save waits for a CDK holder without holding a task lock
+ok 23 - save waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 1.455042
+  type: 'test'
+  ...
+# Subtest: reserve follows CDK then fresh task lock order
+ok 24 - reserve follows CDK then fresh task lock order
+  ---
+  duration_ms: 1.558708
+  type: 'test'
+  ...
+# Subtest: reserve aborts if the task CDK changes after discovery
+ok 25 - reserve aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 1.823709
+  type: 'test'
+  ...
+# Subtest: reserve waits for a CDK holder without holding a task lock
+ok 26 - reserve waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 1.554209
+  type: 'test'
+  ...
+# Subtest: finalize follows CDK then fresh task lock order
+ok 27 - finalize follows CDK then fresh task lock order
+  ---
+  duration_ms: 1.24425
+  type: 'test'
+  ...
+# Subtest: finalize aborts if the task CDK changes after discovery
+ok 28 - finalize aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 0.642625
+  type: 'test'
+  ...
+# Subtest: finalize waits for a CDK holder without holding a task lock
+ok 29 - finalize waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 0.796541
+  type: 'test'
+  ...
+# Subtest: retirement evaluates the fresh payment evidence after locking
+ok 30 - retirement evaluates the fresh payment evidence after locking
+  ---
+  duration_ms: 0.961208
+  type: 'test'
+  ...
+# Subtest: missing task never releases assets
+ok 31 - missing task never releases assets
+  ---
+  duration_ms: 0.632834
+  type: 'test'
+  ...
+# Subtest: missing CDK still permits legacy hold without releasing assets
+ok 32 - missing CDK still permits legacy hold without releasing assets
+  ---
+  duration_ms: 0.643167
+  type: 'test'
+  ...
+# Subtest: legacy task without CDK can be held but cannot settle
+ok 33 - legacy task without CDK can be held but cannot settle
+  ---
+  duration_ms: 1.16
+  type: 'test'
+  ...
+# Subtest: case-insensitive task lookup cannot authorize a different job ID
+ok 34 - case-insensitive task lookup cannot authorize a different job ID
+  ---
+  duration_ms: 0.662208
+  type: 'test'
+  ...
+# Subtest: deleted task after discovery cannot authorize a release
+ok 35 - deleted task after discovery cannot authorize a release
+  ---
+  duration_ms: 0.664041
+  type: 'test'
+  ...
+# Subtest: inactive CDK refuses provider card reservation
+ok 36 - inactive CDK refuses provider card reservation
+  ---
+  duration_ms: 0.745959
+  type: 'test'
+  ...
+# Subtest: write failure after CDK-first retirement rolls back and releases the connection
+ok 37 - write failure after CDK-first retirement rolls back and releases the connection
+  ---
+  duration_ms: 0.709959
+  type: 'test'
+  ...
+1..37
+# tests 37
+# suites 0
+# pass 37
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 255.253083

@@ -1,0 +1,6 @@
+{
+  "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/README.md",
+  "backup": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/README-before-followup.md",
+  "sha256": "2642b5f3a067381097ccb17b56d4fb164c2c8b6448aca68202d5397e4acdb738",
+  "readback_verified": true
+}

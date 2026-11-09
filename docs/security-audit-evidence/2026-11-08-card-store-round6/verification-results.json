@@ -1,0 +1,154 @@
+{
+  "runs": [
+    {
+      "log": "raw/kc-round6-baseline-native.log",
+      "tests": 157,
+      "passed": 1,
+      "failed": 156,
+      "skipped": 0,
+      "exit_code_from_session_record": 1,
+      "status": "FAIL",
+      "note": "Initial 157 tests against pre-change dirty store; not the later 164-test version.",
+      "raw_sha256": "222bf72552b132ea5f964bf479077a6c21e19b168d03244679d1abce5d251abe",
+      "count_validation": "Matched raw summary"
+    },
+    {
+      "log": "raw/kc-round6-native-first.log",
+      "tests": 157,
+      "passed": 1,
+      "failed": 156,
+      "skipped": 0,
+      "exit_code_from_session_record": 1,
+      "status": "FAIL",
+      "note": "Apply script failed before writing runtime source. This is still old-source evidence, not an after-fix result.",
+      "raw_sha256": "932fa0e384ee05973e84c011c503d6df02d5f8c7217a2f061d10c0781c5a17c8",
+      "count_validation": "Matched raw summary"
+    },
+    {
+      "log": "raw/kc-round6-native-after.log",
+      "tests": 157,
+      "passed": 157,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code_from_session_record": 0,
+      "status": "PASS",
+      "note": "Intermediate; before seven additional store assertions.",
+      "raw_sha256": "c37385d7530be146f8d9276e6e97e1eeba567e0c7de806bc332956fc73339a7f",
+      "count_validation": "Matched raw summary"
+    },
+    {
+      "log": "raw/kc-round6-vitest-adapted.log",
+      "tests": 105,
+      "passed": 105,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code_from_session_record": 0,
+      "status": "PASS",
+      "note": "Intermediate three-file result, excluded from final sum.",
+      "raw_sha256": "ab9ef745fc2b1d2dfc7649f366e3d3c2f4d320b82a54bc931cc2fbca8e35da10",
+      "count_validation": "Matched raw summary"
+    },
+    {
+      "log": "raw/kc-round6-retry-before-callback-fix.log",
+      "tests": 100,
+      "passed": 25,
+      "failed": 10,
+      "skipped": 65,
+      "exit_code_from_session_record": 1,
+      "status": "FAIL",
+      "note": "Selected callback failures before callback fix, not a whole-round baseline.",
+      "raw_sha256": "4db66a48293798e6ac5aaf493fef1045fb179914a111f3fb27883c96be703f92",
+      "count_validation": "Matched raw summary"
+    },
+    {
+      "log": "raw/kc-round6-vitest-after-callback-fix.log",
+      "tests": 140,
+      "passed": 140,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code_from_session_record": 0,
+      "status": "PASS",
+      "note": "Intermediate three-file result after callback fix.",
+      "raw_sha256": "b8042dec52cfb41f1d02cef6f56ea438ed40a6fb1fb943a3ba90f1886e2f32f7",
+      "count_validation": "Matched raw summary"
+    },
+    {
+      "log": "raw/kc-round6-native-final.log",
+      "tests": 315,
+      "passed": 315,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code_from_session_record": 0,
+      "status": "PASS",
+      "note": "Final native: 151 earlier-round cases plus 164 round-6 store cases.",
+      "raw_sha256": "f57232ec6132f6793f8d70f65f14dc430ea25bd3287ec24c69bd2587a7932d19",
+      "count_validation": "Matched raw summary"
+    },
+    {
+      "log": "raw/kc-round6-vitest-final.log",
+      "tests": 362,
+      "passed": 362,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code_from_session_record": 0,
+      "status": "PASS",
+      "note": "Final 10-file Vitest selection.",
+      "raw_sha256": "eb1e3f5e482240e32582c0a395f603d4fc609adb3c04320276a63ceaf01afaa2",
+      "count_validation": "Matched raw summary"
+    },
+    {
+      "log": "raw/kc-round6-caller-compatibility-final.log",
+      "tests": 15,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code_from_session_record": 0,
+      "status": "PASS",
+      "note": "Final caller tests: real complete ChatGPT module with mocked external dependencies; index expression/argument contract only, not a complete CLI/browser run.",
+      "raw_sha256": "280bcfa9bac90ff2647438f8c456fbab6abf126e6d55f9a6796835fdcbcd83a0",
+      "count_validation": "Matched raw summary"
+    },
+    {
+      "log": "raw/kc-round6-chatgpt-regression-final.log",
+      "tests": 18,
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code_from_session_record": 0,
+      "status": "PASS",
+      "note": "Final two-file ChatGPT selection after caller changes.",
+      "raw_sha256": "d3303b7470e15659a7e142265a8fae58a99966431f44573b4d7c014739a3f3f9",
+      "count_validation": "Matched raw summary"
+    }
+  ],
+  "final_focused_total": {
+    "passed": 710,
+    "failed": 0,
+    "skipped": 0,
+    "components": [
+      "raw/kc-round6-native-final.log",
+      "raw/kc-round6-vitest-final.log",
+      "raw/kc-round6-caller-compatibility-final.log",
+      "raw/kc-round6-chatgpt-regression-final.log"
+    ]
+  },
+  "counting_boundary": "Only four final invocations count toward 710. Do not add baseline/intermediate runs or the historical full suite. The 151 earlier-round cases intentionally occur inside native-final.",
+  "final_file_counts": {
+    "vitest": 10,
+    "chatgpt_additional_vitest": 2,
+    "syntax": 9
+  },
+  "historical_full_suite": {
+    "status": "FAIL",
+    "passed": 1672,
+    "failed": 40,
+    "skipped": 0,
+    "files": 71,
+    "passed_files": 63,
+    "failed_files": 8,
+    "exit_code": 1,
+    "source": "../2026-11-08-card-store-round5/verification-results.json",
+    "round6_rerun": "NOT RUN"
+  },
+  "real_database_and_production": "NOT RUN"
+}

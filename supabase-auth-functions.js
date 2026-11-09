@@ -589,9 +589,17 @@ function restoreRememberedLoginState() {
     const rememberMeInput = document.getElementById('rememberMe');
 
     if (emailInput) {
-        emailInput.value = remembered?.email || '';
-        emailInput.dispatchEvent(new Event('input', { bubbles: true }));
-        emailInput.dispatchEvent(new Event('change', { bubbles: true }));
+        emailInput.dataset.rememberedEmail = (shouldRememberEmail && remembered?.email) ? remembered.email : '';
+        if (emailInput.dataset.rememberedEmail) {
+            let list = document.getElementById('loginEmailRememberedList');
+            if (!list) {
+                list = document.createElement('datalist');
+                list.id = 'loginEmailRememberedList';
+                emailInput.parentNode.appendChild(list);
+            }
+            list.innerHTML = `<option value="${emailInput.dataset.rememberedEmail}">`;
+            emailInput.setAttribute('list', 'loginEmailRememberedList');
+        }
     }
 
     if (rememberMeInput) {
@@ -956,18 +964,22 @@ async function handleRegister(event) {
         }
 
         const inviteCode = getInviteCodeForCurrentSite();
+        const captchaToken = window.ZaoyoeSecurity?.getTurnstileToken?.() || undefined;
 
         // 注册用户
+        const registerOptions = {
+            data: {
+                full_name: username || email.split('@')[0],
+                avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(username || email.split('@')[0])}&background=random`,
+                invite_code: inviteCode
+            },
+            ...(captchaToken ? { captchaToken } : {})
+        };
+
         const { data, error } = await window.supabaseClient.auth.signUp({
             email: email,
             password: password,
-            options: {
-                data: {
-                    full_name: username || email.split('@')[0],
-                    avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(username || email.split('@')[0])}&background=random`,
-                    invite_code: inviteCode
-                }
-            }
+            options: registerOptions
         });
 
         if (error) throw error;
@@ -1064,9 +1076,12 @@ async function handleLogin(event) {
         }
 
         // Step 1: 尝试登录
+        const captchaToken = window.ZaoyoeSecurity?.getTurnstileToken?.() || undefined;
+        const signInOptions = captchaToken ? { captchaToken } : undefined;
         const { data, error } = await window.supabaseClient.auth.signInWithPassword({
             email: email,
-            password: password
+            password: password,
+            ...(signInOptions ? { options: signInOptions } : {})
         });
 
         if (error) {
@@ -1388,8 +1403,9 @@ function warmSupabaseAuthWalletRuntime(reason = 'auth-ready') {
 
 function scheduleSupabaseAuthWalletWarmPrefetch(reason = 'auth-ready') {
     const isDropdownWarmup = reason === 'dropdown-open';
+    const isImmediateWarmup = isDropdownWarmup || reason === 'avatar-intent';
 
-    if (isDropdownWarmup) {
+    if (isImmediateWarmup) {
         if (walletWarmPrefetchHandle) {
             return;
         }
@@ -1404,11 +1420,7 @@ function scheduleSupabaseAuthWalletWarmPrefetch(reason = 'auth-ready') {
             });
         };
 
-        if (typeof window.requestIdleCallback === 'function') {
-            walletWarmPrefetchHandle = window.requestIdleCallback(runWarmPrefetch, { timeout: 900 });
-        } else {
-            walletWarmPrefetchHandle = window.setTimeout(runWarmPrefetch, 160);
-        }
+        walletWarmPrefetchHandle = window.setTimeout(runWarmPrefetch, 0);
 
         return;
     }
@@ -1441,6 +1453,24 @@ if (!window.__zaoyoeWalletBootstrapReadyWarmupBound) {
         scheduleSupabaseAuthWalletWarmPrefetch('bootstrap-ready');
     });
     window.__zaoyoeWalletBootstrapReadyWarmupBound = true;
+}
+
+if (!window.__zaoyoeWalletIntentWarmupBound && typeof document !== 'undefined') {
+    const onWalletEntryIntent = (event) => {
+        const target = event?.target;
+        if (!target || typeof target.closest !== 'function') return;
+        if (!target.closest('#userAvatarBtn, .user-avatar-btn, #authBtn, [data-wallet-open], [onclick*="openWalletModal"]')) {
+            return;
+        }
+        if (!window.__ZAOYOE_LAST_AUTH_USER__ && !readCachedUserProfile()) {
+            return;
+        }
+        scheduleSupabaseAuthWalletWarmPrefetch('avatar-intent');
+    };
+    document.addEventListener('pointerenter', onWalletEntryIntent, { capture: true, passive: true });
+    document.addEventListener('pointerdown', onWalletEntryIntent, { capture: true, passive: true });
+    document.addEventListener('focusin', onWalletEntryIntent, { capture: true, passive: true });
+    window.__zaoyoeWalletIntentWarmupBound = true;
 }
 
 async function openSupabaseAuthWalletView(view = 'balance', context = {}) {
@@ -2535,9 +2565,12 @@ async function handlePasswordReset(event) {
     submitBtn.disabled = true;
 
     try {
-        const { error } = await window.supabaseClient.auth.resetPasswordForEmail(email, {
-            redirectTo: buildAuthRedirectUrl('/reset-password.html')
-        });
+        const captchaToken = window.ZaoyoeSecurity?.getTurnstileToken?.() || undefined;
+        const resetOptions = {
+            redirectTo: buildAuthRedirectUrl('/reset-password.html'),
+            ...(captchaToken ? { captchaToken } : {})
+        };
+        const { error } = await window.supabaseClient.auth.resetPasswordForEmail(email, resetOptions);
 
         if (error) throw error;
 
@@ -5293,6 +5326,12 @@ function bindProfileModalInputBehavior(input) {
 function bindProfileModalInputs() {
     const { inputs } = getProfileModalElements();
     inputs.forEach((input) => bindProfileModalInputBehavior(input));
+    try {
+        window.LabelInput?.scan?.();
+        document.querySelectorAll('#profileModal .lbi').forEach((root) => {
+            window.LabelInput?.update?.(root);
+        });
+    } catch (_) {}
 }
 
 function attachProfileModalViewportHandlers() {
@@ -5549,6 +5588,13 @@ async function openProfileModal(event) {
             void profileFront.offsetWidth;
             profileFront.classList.add('animate-in');
         }
+
+        try {
+            window.LabelInput?.scan?.();
+            document.querySelectorAll('#profileModal .lbi').forEach((root) => {
+                window.LabelInput?.update?.(root);
+            });
+        } catch (_) {}
     });
 
     // 保持当前数据，避免每次打开先闪“加载中...”
@@ -5700,6 +5746,14 @@ function switchProfileTab(tabName) {
 
     window.requestAnimationFrame(() => {
         scheduleProfileModalLayout({ settled: true });
+        if (tabName === 'security') {
+            try {
+                window.LabelInput?.scan?.();
+                document.querySelectorAll('#profileModal .lbi').forEach((root) => {
+                    window.LabelInput?.update?.(root);
+                });
+            } catch (_) {}
+        }
     });
 }
 

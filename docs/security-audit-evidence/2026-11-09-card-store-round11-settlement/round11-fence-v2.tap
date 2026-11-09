@@ -1,0 +1,143 @@
+✔ release: legacy path cannot mutate or select a fenced card in enforce mode (73.676667ms)
+✔ release: guard off issues no draft-column SQL against an unmigrated schema (1.090625ms)
+✔ runtimeRelease: legacy path cannot mutate or select a fenced card in enforce mode (0.944417ms)
+✔ runtimeRelease: guard off issues no draft-column SQL against an unmigrated schema (0.756458ms)
+✔ staleCleanup: legacy path cannot mutate or select a fenced card in enforce mode (1.614667ms)
+✔ staleCleanup: guard off issues no draft-column SQL against an unmigrated schema (0.831375ms)
+✔ startupCleanup: legacy path cannot mutate or select a fenced card in enforce mode (0.844167ms)
+✔ startupCleanup: guard off issues no draft-column SQL against an unmigrated schema (0.687792ms)
+✔ ownerCleanup: legacy path cannot mutate or select a fenced card in enforce mode (0.70975ms)
+✔ ownerCleanup: guard off issues no draft-column SQL against an unmigrated schema (0.68575ms)
+✔ markStarted: legacy path cannot mutate or select a fenced card in enforce mode (0.660208ms)
+✔ markStarted: guard off issues no draft-column SQL against an unmigrated schema (0.536333ms)
+✔ complete: legacy path cannot mutate or select a fenced card in enforce mode (0.617459ms)
+✔ complete: guard off issues no draft-column SQL against an unmigrated schema (0.562584ms)
+✔ cooldown: legacy path cannot mutate or select a fenced card in enforce mode (0.612542ms)
+✔ cooldown: guard off issues no draft-column SQL against an unmigrated schema (0.559625ms)
+✔ quarantine: legacy path cannot mutate or select a fenced card in enforce mode (1.420417ms)
+✔ quarantine: guard off issues no draft-column SQL against an unmigrated schema (0.732209ms)
+✔ exhausted: legacy path cannot mutate or select a fenced card in enforce mode (0.869167ms)
+✔ exhausted: guard off issues no draft-column SQL against an unmigrated schema (0.68975ms)
+✔ usage: legacy path cannot mutate or select a fenced card in enforce mode (0.88375ms)
+✔ usage: guard off issues no draft-column SQL against an unmigrated schema (1.870792ms)
+✔ profile: legacy path cannot mutate or select a fenced card in enforce mode (0.626125ms)
+✔ profile: guard off issues no draft-column SQL against an unmigrated schema (0.512958ms)
+✔ freeze: legacy path cannot mutate or select a fenced card in enforce mode (0.555958ms)
+✔ freeze: guard off issues no draft-column SQL against an unmigrated schema (0.518084ms)
+✔ unfreeze: legacy path cannot mutate or select a fenced card in enforce mode (0.487334ms)
+✔ unfreeze: guard off issues no draft-column SQL against an unmigrated schema (0.461334ms)
+✔ resetCooldown: legacy path cannot mutate or select a fenced card in enforce mode (0.5505ms)
+✔ resetCooldown: guard off issues no draft-column SQL against an unmigrated schema (0.515291ms)
+✔ deleteById: legacy path cannot mutate or select a fenced card in enforce mode (0.498417ms)
+✔ deleteById: guard off issues no draft-column SQL against an unmigrated schema (0.476042ms)
+✔ deleteByPan: legacy path cannot mutate or select a fenced card in enforce mode (0.519208ms)
+✔ deleteByPan: guard off issues no draft-column SQL against an unmigrated schema (0.467708ms)
+✔ bulkEmpty: legacy path cannot mutate or select a fenced card in enforce mode (0.695166ms)
+✔ bulkEmpty: guard off issues no draft-column SQL against an unmigrated schema (0.512416ms)
+✔ bulkUpdate: legacy path cannot mutate or select a fenced card in enforce mode (0.715625ms)
+✔ bulkUpdate: guard off issues no draft-column SQL against an unmigrated schema (0.577333ms)
+✔ legacyIncrement: legacy path cannot mutate or select a fenced card in enforce mode (0.563042ms)
+✔ legacyIncrement: guard off issues no draft-column SQL against an unmigrated schema (0.675666ms)
+✔ reserve: legacy path cannot mutate or select a fenced card in enforce mode (0.913583ms)
+✔ reserve: guard off issues no draft-column SQL against an unmigrated schema (0.710791ms)
+✔ runtimeReserve: legacy path cannot mutate or select a fenced card in enforce mode (0.805375ms)
+✔ runtimeReserve: guard off issues no draft-column SQL against an unmigrated schema (0.550416ms)
+✔ availability: legacy path cannot mutate or select a fenced card in enforce mode (0.683666ms)
+✔ availability: guard off issues no draft-column SQL against an unmigrated schema (0.571542ms)
+✔ runtimeSnapshot: legacy path cannot mutate or select a fenced card in enforce mode (0.695584ms)
+✔ runtimeSnapshot: guard off issues no draft-column SQL against an unmigrated schema (0.667084ms)
+✔ providerReserve: legacy path cannot mutate or select a fenced card in enforce mode (2.15525ms)
+✔ providerReserve: guard off issues no draft-column SQL against an unmigrated schema (0.881667ms)
+✔ providerFinalize: legacy path cannot mutate or select a fenced card in enforce mode (1.546625ms)
+✔ providerFinalize: guard off issues no draft-column SQL against an unmigrated schema (0.863042ms)
+✔ enforce mode with missing schema fails closed, with no unguarded retry (1.028083ms)
+✔ invalid mode cannot silently disable the guard (0.9715ms)
+✔ deleteById: admin safety applies without ledger schema {"in_use":1,"locked_by":"payment_JobA"} (0.703875ms)
+✔ deleteById: admin safety applies without ledger schema {"in_use":0,"locked_by":"payment_JobA"} (0.655209ms)
+✔ deleteById: admin safety applies without ledger schema {"status":"支付处理中"} (0.658833ms)
+✔ deleteById: admin safety applies without ledger schema {"status":"待人工复核"} (0.606833ms)
+✔ deleteById: admin safety applies without ledger schema {"status":"支付结果未知"} (0.602042ms)
+✔ deleteByPan: admin safety applies without ledger schema {"in_use":1,"locked_by":"payment_JobA"} (0.608291ms)
+✔ deleteByPan: admin safety applies without ledger schema {"in_use":0,"locked_by":"payment_JobA"} (0.713708ms)
+✔ deleteByPan: admin safety applies without ledger schema {"status":"支付处理中"} (0.59975ms)
+✔ deleteByPan: admin safety applies without ledger schema {"status":"待人工复核"} (0.600542ms)
+✔ deleteByPan: admin safety applies without ledger schema {"status":"支付结果未知"} (0.626709ms)
+✔ resetCooldown: admin safety applies without ledger schema {"in_use":1,"locked_by":"payment_JobA"} (0.687875ms)
+✔ resetCooldown: admin safety applies without ledger schema {"in_use":0,"locked_by":"payment_JobA"} (0.592167ms)
+✔ resetCooldown: admin safety applies without ledger schema {"status":"支付处理中"} (0.593ms)
+✔ resetCooldown: admin safety applies without ledger schema {"status":"待人工复核"} (0.586417ms)
+✔ resetCooldown: admin safety applies without ledger schema {"status":"支付结果未知"} (0.701125ms)
+✔ freeze: admin safety applies without ledger schema {"in_use":1,"locked_by":"payment_JobA"} (0.605458ms)
+✔ freeze: admin safety applies without ledger schema {"in_use":0,"locked_by":"payment_JobA"} (0.57325ms)
+✔ freeze: admin safety applies without ledger schema {"status":"支付处理中"} (0.608042ms)
+✔ freeze: admin safety applies without ledger schema {"status":"待人工复核"} (0.596792ms)
+✔ freeze: admin safety applies without ledger schema {"status":"支付结果未知"} (0.508458ms)
+✔ reset cannot unfreeze an idle card (0.497ms)
+✔ deleteById: an idle unbound card remains administrable (0.501083ms)
+✔ resetCooldown: an idle unbound card remains administrable (0.550333ms)
+✔ bulk update cannot turn a blocked existing PAN into a duplicate insert (0.584166ms)
+✔ ambiguous duplicate PAN rows abort the entire batch (0.569ms)
+✔ ledger-linked billing records are excluded from legacy delete paths (0.556583ms)
+✖ admin routes use safe store methods and no longer clear ownership directly (1.73425ms)
+ℹ tests 81
+ℹ suites 0
+ℹ pass 80
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 243.065917
+
+✖ failing tests:
+
+test at tests/security-round11-kc-asset-fence.test.js:169:1
+✖ admin routes use safe store methods and no longer clear ownership directly (1.73425ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /store.getIdleCardSecret/. Input:
+  
+  "app.delete('/api/admin/cards/:id', requireSecondaryAuth, async (req, res) => {\n" +
+    '    try {\n' +
+    '        await ensureStoreReady();\n' +
+    '        const cardId = Number(req.params.id);\n' +
+    '        if (!/^[1-9][0-9]*$/.test(req.params.id) || !Number.isSafeInteger(cardId)) {\n' +
+    "            return res.status(400).json({ success: false, error: '无效的卡片 ID' });\n" +
+    '        }\n' +
+    '        if (!await store.deleteIdleCardById(cardId)) {\n' +
+    "            return res.status(409).json({ success: false, error: '卡片不存在或仍被占用/待核账，不能删除' });\n" +
+    '        }\n' +
+    '        res.json({ success: true });\n' +
+    '    } catch (error) {\n' +
+    "        res.status(500).json({ success: false, message: '卡片删除未确认，请核对后重试' });\n" +
+    '    }\n' +
+    '});\n' +
+    '\n' +
+    "app.post('/api/admin/cards/:id/reset-cooldown', requireSecondaryAuth, async (req, res) => {\n" +
+    '    try {\n' +
+    '        await ensureStoreReady();\n' +
+    '        const cardId = Number(req.params.id);\n' +
+    '        if (!/^[1-9][0-9]*$/.test(req.params.id) || !Number.isSafeInteger(cardId)) {\n' +
+    "            return res.status(400).json({ success: false, error: '无效的卡片 ID' });\n" +
+    '        }\n' +
+    '        if (!await store.resetIdleCardCooldown(cardId)) {\n' +
+    "            return res.status(409).json({ success: false, error: '卡片不存在、已冻结或仍被占用/待核账，不能重置冷却' });\n" +
+    '        }\n' +
+    "        res.json({ success: true, message: '卡片已重置并恢复正常可用' });\n" +
+    '    } catch (error) {\n' +
+    "        res.status(500).json({ success: false, message: '冷却重置未确认，请核对后重试' });\n" +
+    '    }\n' +
+    '});\n' +
+    '\n'
+  
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round11-kc-asset-fence.test.js:173:12)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: "app.delete('/api/admin/cards/:id', requireSecondaryAuth, async (req, res) => {\n    try {\n        await ensureStoreReady();\n        const cardId = Number(req.params.id);\n        if (!/^[1-9][0-9]*$/.test(req.params.id) || !Number.isSafeInteger(cardId)) {\n            return res.status(400).json({ success: false, error: '无效的卡片 ID' });\n        }\n        if (!await store.deleteIdleCardById(cardId)) {\n            return res.status(409).json({ success: false, error: '卡片不存在或仍被占用/待核账，不能删除' });\n        }\n        res.json({ success: true });\n    } catch (error) {\n        res.status(500).json({ success: false, message: '卡片删除未确认，请核对后重试' });\n    }\n});\n\napp.post('/api/admin/cards/:id/reset-cooldown', requireSecondaryAuth, async (req, res) => {\n    try {\n        await ensureStoreReady();\n        const cardId = Number(req.params.id);\n        if (!/^[1-9][0-9]*$/.test(req.params.id) || !Number.isSafeInteger(cardId)) {\n            return res.status(400).json({ success: false, error: '无效的卡片 ID' });\n        }\n        if (!await store.resetIdleCardCooldown(cardId)) {\n            return res.status(409).json({ success: false, error: '卡片不存在、已冻结或仍被占用/待核账，不能重置冷却' });\n        }\n        res.json({ success: true, message: '卡片已重置并恢复正常可用' });\n    } catch (error) {\n        res.status(500).json({ success: false, message: '冷却重置未确认，请核对后重试' });\n    }\n});\n\n",
+    expected: /store.getIdleCardSecret/,
+    operator: 'match',
+    diff: 'simple'
+  }

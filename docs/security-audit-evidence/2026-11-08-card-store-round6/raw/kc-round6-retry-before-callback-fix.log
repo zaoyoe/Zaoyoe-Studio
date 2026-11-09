@@ -1,0 +1,242 @@
+
+ RUN  v4.1.9 /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt
+
+ ❯ test/payment-retry-safety.test.js (100 tests | 10 failed | 65 skipped) 55ms
+     ↓ does not reserve a card when currency is missing or mismatched ({"checkoutDue":null,"expectedCode":"CHECKOUT_CURRENCY_UNCONFIRMED"})
+     ↓ does not reserve a card when currency is missing or mismatched ({"checkoutDue":{"amount":20,"currency":"USD"},"expectedCode":"PAYMENT_CURRENCY_MISMATCH"})
+     ↓ does not reserve a card when currency is missing or mismatched ({"checkoutDue":{"amount":20,"currency":null},"expectedCode":"CHECKOUT_CURRENCY_UNCONFIRMED"})
+     ↓ does not reserve a card when checkout currency cannot be read
+     ↓ does not reserve a card when checkout amount does not match expected plan amount (pro_200 vs $100)
+     ↓ does not submit or rotate a card when Checkout navigation fails
+     ↓ passes the verified card region and currency to the payment driver
+     ↓ does not classify a pre-submit currency guard as a decline or rotate the reserved card
+     ↓ does not rotate cards when the required tax-free amount is not reached
+     ↓ composes the real mixed-state address pool with grok_bundle_plus_monthly before reserving a card
+     ↓ composes the real mixed-state address pool with grok_bundle_plus_annual before reserving a card
+     ↓ composes the real mixed-state address pool with grok_bundle_premium_monthly before reserving a card
+     ↓ composes the real mixed-state address pool with grok_bundle_premium_annual before reserving a card
+     ↓ composes the real mixed-state address pool with grok_bundle_super_monthly before reserving a card
+     ↓ composes the real mixed-state address pool with grok_bundle_super_annual before reserving a card
+     ↓ composes the real mixed-state address pool with grok_bundle_ultra_monthly before reserving a card
+     ↓ composes the real mixed-state address pool with grok_bundle_ultra_annual before reserving a card
+     ↓ composes an Oregon-only fallback before card reservation when the pool is empty or unavailable (false)
+     ↓ composes an Oregon-only fallback before card reservation when the pool is empty or unavailable (true)
+     ↓ composes the actual picker but rejects malformed Oregon pool data before reserving a card
+     ↓ limits grok_bundle_plus_monthly to the Oregon address policy
+     ↓ limits grok_bundle_plus_annual to the Oregon address policy
+     ↓ limits grok_bundle_premium_monthly to the Oregon address policy
+     ↓ limits grok_bundle_premium_annual to the Oregon address policy
+     ↓ limits grok_bundle_super_monthly to the Oregon address policy
+     ↓ limits grok_bundle_super_annual to the Oregon address policy
+     ↓ limits grok_bundle_ultra_monthly to the Oregon address policy
+     ↓ limits grok_bundle_ultra_annual to the Oregon address policy
+     ↓ stops an unsupported or missing address null before reserving any card
+     ↓ stops an unsupported or missing address {"country":"US","state":"Delaware","line1":"123 Fixture Street","city":"Dover","postal_code":"19901"} before reserving any card
+     ↓ stops an unsupported or missing address {"country":"CA","state":"OR","line1":"123 Fixture Street","city":"Fixture","postal_code":"97000"} before reserving any card
+     ↓ stops an unsupported or missing address {"country":"US","state":"OR","line1":" ","city":"Fixture","postal_code":"97000"} before reserving any card
+     ↓ stops an unsupported or missing address {"country":"US","state":"OR","line1":"123 Fixture Street","city":"","postal_code":"97000"} before reserving any card
+     ↓ stops an unsupported or missing address {"country":"US","state":"OR","line1":"123 Fixture Street","city":"Fixture","postal_code":""} before reserving any card
+     ↓ stops an unsupported or missing address {"country":"US","state":"OR","line1":"123 Fixture Street","city":"Fixture","postal_code":"not-a-zip"} before reserving any card
+     ↓ stops an unsupported or missing address {"country":"US","state":"OR","line1":"123 Fixture Street","city":"Fixture","postal_code":"97000","line2":5} before reserving any card
+     ↓ stops PH/PHP before address selection or card reservation
+     ↓ stops US/CAD before address selection or card reservation
+     ↓ does not touch the card pool when no supported address can be obtained
+     ↓ preserves the default regional policy for {"platform":"chatgpt","planType":"plus"}
+     ↓ preserves the default regional policy for {"platform":"claude","planType":"claude_pro"}
+     ↓ preserves the default regional policy for {"platform":"grok","planType":"supergrok"}
+     ↓ preserves the default regional policy for {"platform":"grok","planType":"grok_bundle_unknown_monthly"}
+     ↓ preserves the default regional policy for {"platform":"chatgpt","planType":"grok_bundle_plus_monthly"}
+     ↓ binds the same canonical address used by payment after a confirmed success
+     ↓ quarantines a submitted verification failure without retry or release
+     ↓ releases a verification failure that occurred before submission
+     ↓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: 无法唯一确认 Card [OPENAI_CARD_METHOD_AMBIGUOUS]
+     ↓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: Card 尚未选中 [OPENAI_CARD_METHOD_NOT_SELECTED]
+     ↓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: 找不到 Card [OPENAI_CARD_METHOD_NOT_FOUND]
+     ↓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: 付款方式无法确认 [OPENAI_CARD_METHOD_CHANGED]
+     ↓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: ChatGPT 信用卡字段已变化或填写不完整，尚未提交付款 [OPENAI_CARD_FIELDS_CHANGED]
+     ↓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: 无法定位完整的信用卡输入框，尚未提交付款 [OPENAI_CARD_FIELDS_NOT_READY]
+     ↓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: 信用卡字段未完整写入，尚未提交付款 [OPENAI_CARD_FIELDS_INCOMPLETE]
+     ↓ retains an already submitted payment when a card-field guard error is returned
+     ↓ does not release after unknown-result bookkeeping failure: {"failRecord":true}
+     ↓ does not release after unknown-result bookkeeping failure: {"failQuarantine":true}
+     ↓ preserves submission even when the payment driver throws
+     ↓ does not infer a native bank decline from unrelated text after submission
+     ↓ records actual native first-period amount and retains assets on unknown result
+     ↓ releases an unsubmitted native scope failure without treating it as a card decline
+     ↓ rotates a native card only for a correlated explicit official decline
+     ↓ cools down an explicitly declined card before billing-record failure and never releases or rotates it
+     ↓ retains a declined card when cooldown persistence fails, including quarantine failure (false)
+     ↓ retains a declined card when cooldown persistence fails, including quarantine failure (true)
+     ✓ uses the same owner for reservation and a confirmed unsubmitted release 6ms
+     ✓ uses the same owner for a successful profile, usage and release before success billing 2ms
+     ✓ passes the owner to unknown-result quarantine without ordinary release or rotation 1ms
+     ✓ cools down under the owner before looking for another card 1ms
+     ✓ rejects invalid explicit owner before reserving or paying ("") 1ms
+     ✓ rejects invalid explicit owner before reserving or paying (" bad") 1ms
+     ✓ rejects invalid explicit owner before reserving or paying ("bad ") 1ms
+     ✓ rejects invalid explicit owner before reserving or paying ("a/b") 1ms
+     ✓ rejects invalid explicit owner before reserving or paying ("a.b") 2ms
+     ✓ rejects invalid explicit owner before reserving or paying ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") 1ms
+     ✓ rejects invalid explicit owner before reserving or paying (null) 1ms
+     ✓ rejects invalid explicit owner before reserving or paying (7) 1ms
+     ✓ rejects invalid explicit owner before reserving or paying ({}) 1ms
+     ✓ gives independent debug invocations bounded random owners without embedding the CDK 3ms
+     ✓ refuses prewarm without an exact matching receipt (undefined) 1ms
+     ✓ refuses prewarm without an exact matching receipt (null) 1ms
+     ✓ refuses prewarm without an exact matching receipt ("payment_other_job") 1ms
+     ✓ refuses prewarm without an exact matching receipt ("payment_fixture_job ") 1ms
+     ✓ refuses prewarm without an exact matching receipt ("payment_Fixture_job") 2ms
+     ✓ consumes and releases prewarm only when its receipt matches 2ms
+     ✓ passes the owner to invalid-card retirement before trying another reservation 1ms
+     ✓ stops immediately if invalid-card retirement loses ownership 2ms
+     × stops success bookkeeping on ownership loss in bindCardPaymentProfile 6ms
+     × stops success bookkeeping on ownership loss in recordCardUsage 1ms
+     × stops success bookkeeping on ownership loss in releaseCard 2ms
+     × stops on a zero-row success release without publishing a success billing record 2ms
+     ✓ stops a confirmed-unsubmitted zero-row release without trying another card 1ms
+     ✓ never releases or rotates after unknown-result quarantine loses ownership 1ms
+     × stops a decline on ownership loss without attempting fallback mutation or rotation 3ms
+     × retains the card if the succeeded result callback fails before bookkeeping 2ms
+     × retains the card if the unknown result callback fails before bookkeeping 1ms
+     × retains the card if the declined result callback fails before bookkeeping 1ms
+     × retains a successful payment card when bindCardPaymentProfile persistence fails 1ms
+     × retains a successful payment card when recordCardUsage persistence fails 1ms
+     ✓ keeps cleanup owner-qualified on an exception before any payment submission 1ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/payment-retry-safety.test.js > round6 card ownership through payment retry > stops success bookkeeping on ownership loss in bindCardPaymentProfile
+ FAIL  test/payment-retry-safety.test.js > round6 card ownership through payment retry > stops success bookkeeping on ownership loss in recordCardUsage
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      1,
+      "payment_fixture_job",
+    ]
+
+
+Number of calls: 1
+
+ ❯ test/payment-retry-safety.test.js:482:71
+    480|         expect(f.store.createBillingRecord).not.toHaveBeenCalled();
+    481|         if (action === 'bindCardPaymentProfile') expect(f.store.record…
+    482|         if (action !== 'releaseCard') expect(f.store.releaseCard).not.…
+       |                                                                       ^
+    483|         else expect(f.store.releaseCard).toHaveBeenCalledOnce();
+    484|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  test/payment-retry-safety.test.js > round6 card ownership through payment retry > stops success bookkeeping on ownership loss in releaseCard
+AssertionError: expected "vi.fn()" to be called once, but got 2 times
+ ❯ test/payment-retry-safety.test.js:483:42
+    481|         if (action === 'bindCardPaymentProfile') expect(f.store.record…
+    482|         if (action !== 'releaseCard') expect(f.store.releaseCard).not.…
+    483|         else expect(f.store.releaseCard).toHaveBeenCalledOnce();
+       |                                          ^
+    484|     });
+    485|     it('stops on a zero-row success release without publishing a succe…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  test/payment-retry-safety.test.js > round6 card ownership through payment retry > stops on a zero-row success release without publishing a success billing record
+AssertionError: expected "vi.fn()" to be called once, but got 2 times
+ ❯ test/payment-retry-safety.test.js:490:37
+    488|         await expect(f.run()).rejects.toMatchObject({ code: 'CARD_LOCK…
+    489|         expect(f.store.createBillingRecord).not.toHaveBeenCalled();
+    490|         expect(f.store.releaseCard).toHaveBeenCalledOnce();
+       |                                     ^
+    491|         expect(f.store.reserveCard).toHaveBeenCalledOnce();
+    492|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  test/payment-retry-safety.test.js > round6 card ownership through payment retry > stops a decline on ownership loss without attempting fallback mutation or rotation
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      1,
+      "decline_cooldown_failed",
+      "payment_fixture_job",
+    ]
+
+
+Number of calls: 1
+
+ ❯ test/payment-retry-safety.test.js:513:53
+    511|         f.store.cooldownCard.mockRejectedValue(lost());
+    512|         await expect(f.run()).rejects.toMatchObject({ code: 'CARD_LOCK…
+    513|         expect(f.store.quarantineCardForReview).not.toHaveBeenCalled();
+       |                                                     ^
+    514|         expect(f.store.releaseCard).not.toHaveBeenCalled();
+    515|         expect(f.store.createBillingRecord).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  test/payment-retry-safety.test.js > round6 card ownership through payment retry > retains the card if the succeeded result callback fails before bookkeeping
+ FAIL  test/payment-retry-safety.test.js > round6 card ownership through payment retry > retains the card if the unknown result callback fails before bookkeeping
+ FAIL  test/payment-retry-safety.test.js > round6 card ownership through payment retry > retains the card if the declined result callback fails before bookkeeping
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      1,
+      "payment_fixture_job",
+    ]
+
+
+Number of calls: 1
+
+ ❯ test/payment-retry-safety.test.js:526:41
+    524|         });
+    525|         await expect(f.run()).rejects.toThrow('offline result persiste…
+    526|         expect(f.store.releaseCard).not.toHaveBeenCalled();
+       |                                         ^
+    527|         expect(f.store.reserveCard).toHaveBeenCalledOnce();
+    528|         expect(f.store.bindCardPaymentProfile).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+ FAIL  test/payment-retry-safety.test.js > round6 card ownership through payment retry > retains a successful payment card when bindCardPaymentProfile persistence fails
+ FAIL  test/payment-retry-safety.test.js > round6 card ownership through payment retry > retains a successful payment card when recordCardUsage persistence fails
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      1,
+      "payment_fixture_job",
+    ]
+
+
+Number of calls: 1
+
+ ❯ test/payment-retry-safety.test.js:536:41
+    534|         f.store[action].mockRejectedValue(new Error('offline write fai…
+    535|         await expect(f.run()).rejects.toThrow('offline write failed');
+    536|         expect(f.store.releaseCard).not.toHaveBeenCalled();
+       |                                         ^
+    537|         expect(f.store.reserveCard).toHaveBeenCalledOnce();
+    538|         expect(f.store.createBillingRecord).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  10 failed | 25 passed | 65 skipped (100)
+   Start at  22:20:38
+   Duration  311ms (transform 46ms, setup 0ms, import 68ms, tests 55ms, environment 0ms)
+

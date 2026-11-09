@@ -1,0 +1,12 @@
+[
+  {
+    "path": "services/kc-pay-gpt/server.js",
+    "sha256": "49c0668646a99fc288ba2a5dd9785df8f1c8f5719072742a014146f7a2f416f0",
+    "backup": "/tmp/security-hardening-20261108-round2-dispatch-before/services/kc-pay-gpt/server.js"
+  },
+  {
+    "path": "tests/security-round2-kc-activation.test.js",
+    "sha256": "4f3accc0709931e949794eace09fb2956829fe9b9a5a3664adb045cdf7994d84",
+    "backup": "/tmp/security-hardening-20261108-round2-dispatch-before/tests/security-round2-kc-activation.test.js"
+  }
+]

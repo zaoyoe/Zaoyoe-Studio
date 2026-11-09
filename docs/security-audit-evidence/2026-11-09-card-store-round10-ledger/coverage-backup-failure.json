@@ -1,0 +1,8 @@
+{
+  "status": "FAIL",
+  "exit": 1,
+  "operation": "attempted pre-coverage backup of newly-created round10 test file",
+  "error": "PosixPath + str expression",
+  "effects": "backup was not created; subsequent patch only inserted additional tests into this new file, with no deletion of pre-existing tests or edits to historical files",
+  "boundary": "Do not claim a successful 109-test pre-coverage snapshot. The earlier 97-test pre-deadline snapshot and both test run logs remain intact."
+}

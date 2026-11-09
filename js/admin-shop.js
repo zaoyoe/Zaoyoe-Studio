@@ -15,6 +15,7 @@ const SHOP_ADMIN_PUBLISHABLE_KEY = String(SHOP_ADMIN_RUNTIME_CONFIG?.publishable
 const SHOP_PRODUCT_IMAGE_CARD_WIDTH = 480;
 const SHOP_PRODUCT_IMAGE_CARD_HEIGHT = 320;
 const SHOP_PRODUCT_IMAGE_CARD_QUALITY = 0.78;
+const SHOP_PRODUCT_IMAGE_THUMB_SIZE = 160;
 
 const GUEST_ORDER_EXCEPTION_META = Object.freeze({
     any: { label: '全部异常', tone: 'muted' },
@@ -151,11 +152,28 @@ function normalizeShopProductCdnUrl(url, options = {}) {
 
 function getShopProductCdnUrlCandidates(url) {
     const trimmed = String(url || '').trim();
-    return Array.from(new Set([
+    const candidates = [
         normalizeShopProductCdnUrl(trimmed),
         normalizeShopProductCdnUrl(trimmed, { canonical: true }),
         trimmed
-    ].filter(Boolean)));
+    ];
+
+    // Older catalog assets and their generated variants can use any of these CDN aliases.
+    try {
+        const parsed = new URL(trimmed, window.location.origin);
+        const aliases = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'];
+        if (aliases.includes(parsed.hostname)) {
+            aliases.forEach((hostname) => {
+                const alias = new URL(parsed.href);
+                alias.hostname = hostname;
+                candidates.push(alias.href);
+            });
+        }
+    } catch (error) {
+        // Keep the existing candidates for relative or malformed legacy values.
+    }
+
+    return Array.from(new Set(candidates.filter(Boolean)));
 }
 
 function getShopProductR2CardVariantUrl(url) {
@@ -288,7 +306,10 @@ function buildShopProductImageAssetForSave(iconUrl, existingAsset = null) {
 }
 
 function buildShopProductImageCacheVersion(product = {}) {
-    return String(product?.image_cache_version || product?.image_updated_at || product?.updated_at || product?.created_at || '').trim();
+    const version = String(product?.image_updated_at || product?.image_cache_version || '').trim();
+    // Older catalog caches used price/stock timestamps as image revisions.
+    if (!product?.image_updated_at && [product?.updated_at, product?.created_at].some(value => String(value || '').trim() === version)) return '';
+    return version;
 }
 
 function appendShopImageUrlVersion(url, version = '') {
@@ -300,6 +321,7 @@ function appendShopImageUrlVersion(url, version = '') {
 
     try {
         const parsed = new URL(rawUrl, window.location.origin);
+        if (/\/(?:assets\/products-(?:card|thumb)|products\/(?:original|card|thumb)|shop\/products\/cover\/v1\/(?:original|card|thumb))\/[a-f0-9]{20}\.(?:webp|png|jpe?g|gif)$/i.test(parsed.pathname)) return rawUrl;
         parsed.searchParams.set('v', normalizedVersion);
         if (parsed.origin === window.location.origin) {
             return `${parsed.pathname}${parsed.search}${parsed.hash}`;
@@ -417,10 +439,16 @@ const ShopAdmin = {
     supplierCatalogItems: [],
     supplierCatalogTotal: 0,
     supplierCatalogCategoryKey: '',
+    supplierCatalogGroupKey: '',
+    supplierCatalogExplicitAll: false,
+    supplierCatalogTreeExpandedGroups: new Set(),
     supplierCatalogCategoryNeedsReselect: false,
     supplierCatalogPreviousCategoryLabel: '',
     supplierCatalogSnapshot: null,
     supplierCatalogLoading: false,
+    supplierCatalogUnlistedOnly: false,
+    supplierCatalogBatchCategoriesData: null,
+    supplierCatalogBatchInFlight: false,
     supplierCatalogSelectedGoodsNos: new Set(),
     supplierCatalogRequestToken: 0,
     supplierOrderLookupRequestToken: 0,
@@ -640,6 +668,32 @@ const ShopAdmin = {
             console[logMethod](`[ShopAdmin] ${normalizedMessage}`);
         }
         return null;
+    },
+
+    notifyShopCatalogChanged: function (reason = 'update', detail = {}) {
+        try {
+            const timestamp = Date.now();
+            const payload = {
+                type: 'shop_catalog_updated',
+                reason,
+                timestamp,
+                detail: detail || {}
+            };
+            if (typeof window.BroadcastChannel === 'function') {
+                try {
+                    const channel = new BroadcastChannel('zaoyoe_shop_catalog_channel');
+                    channel.postMessage(payload);
+                    setTimeout(() => {
+                        try { channel.close(); } catch (_) {}
+                    }, 120);
+                } catch (_) {}
+            }
+            try {
+                window.localStorage?.setItem('zaoyoe_shop_catalog_v', String(timestamp));
+            } catch (_) {}
+        } catch (err) {
+            console.warn('[ShopAdmin] Failed to broadcast shop catalog change:', err);
+        }
     },
 
     setProductSaveInlineError: function (message = '') {
@@ -4562,6 +4616,66 @@ Example output format:
     },
 
     // Category Filter Logic
+    getCategoryIconUrl: function (categoryName, explicitCandidate = null) {
+        const name = String(categoryName || '').trim();
+        if (!name) return '';
+        const lower = name.toLowerCase();
+        const found = Array.isArray(this.categoryData)
+            ? this.categoryData.find((c) => String(c?.name || '').trim().toLowerCase() === lower)
+            : null;
+        const candidate = explicitCandidate || found?.icon_url;
+        if (candidate) {
+            const isMisassignedAi = (
+                candidate.includes('202608282029589417833') ||
+                candidate.includes('202606030325329662693') ||
+                candidate.includes('gpt.png') ||
+                candidate.includes('openai')
+            ) && (lower.includes('gemini') || lower.includes('claude'));
+
+            if (!isMisassignedAi) return candidate;
+        }
+
+        return this.getCategoryPredefinedIcon(name);
+    },
+
+    resolveCategoryIconUrl: function (catOrName) {
+        if (!catOrName) return '';
+        if (typeof catOrName === 'string') return this.getCategoryIconUrl(catOrName);
+        return this.getCategoryIconUrl(catOrName.name, catOrName.icon_url);
+    },
+
+    getCategoryPredefinedIcon: function (categoryName) {
+        const name = String(categoryName || '').trim();
+        if (!name) return '';
+        const lower = name.toLowerCase();
+
+        if (lower.includes('gemini')) return '/assets/affiliate-poster-icons/gemini.png';
+        if (lower.includes('claude')) return '/assets/affiliate-poster-icons/claude.png';
+        if (lower.includes('gpt') || lower.includes('openai')) return '/assets/affiliate-poster-icons/gpt.png';
+        if (lower.includes('苹果') || lower.includes('apple') || lower.includes('icloud') || lower.includes('小火煎')) return '/assets/affiliate-poster-icons/apple-id.svg';
+        if (lower.includes('谷歌') || lower.includes('gmail') || lower.includes('邮箱') || lower.includes('mail')) return '/assets/affiliate-poster-icons/gmail.png';
+        if (lower.includes('影音') || lower.includes('影视') || lower.includes('video') || lower.includes('media') || lower.includes('netflix') || lower.includes('youtube') || lower.includes('油管')) return 'https://xiareng.cc/assets/static/images/smm/youtube.svg';
+        if (lower.includes('飞机会员')) return 'https://xiareng.cc/assets/cache/general/image/202609082301585122771.jpg';
+        if (lower.includes('telegram') || lower.includes('飞机') || lower.includes('tg')) return 'https://xiareng.cc/assets/cache/general/image/2026-06-03/887a95445c80001b836e033dfc96aefe.gif';
+        if (lower.includes('礼品卡') || lower.includes('gift') || lower.includes('卡')) return 'https://xiareng.cc/assets/cache/general/image/202608282040165745618.png';
+        if (lower.includes('line') || lower.includes('kakao') || lower.includes('日韩台')) return 'https://xiareng.cc/assets/cache/general/image/202609090349395858414.webp';
+        if (lower.includes('resource') || lower.includes('资源') || lower.includes('api') || lower.includes('中转') || lower.includes('forward')) return '/assets/affiliate-poster-icons/api-transfer.svg';
+        if (lower.includes('其他') || lower.includes('其它') || lower.includes('other')) return '/assets/favicon.svg';
+        if (lower.includes('twitter') || lower.includes('推特') || lower === 'x' || lower.includes('/x')) return 'https://xiareng.cc/assets/cache/general/image/202608280328199135825.jpg';
+        if (lower.includes('tiktok') || lower.includes('抖音') || lower.includes('tk')) return 'https://xiareng.cc/assets/cache/general/image/202608282100277454204.png';
+        if (lower.includes('threads')) return 'https://xiareng.cc/assets/cache/general/image/202608282035556231552.jpg';
+        if (lower.includes('instagram') || lower.includes('ins')) return 'https://xiareng.cc/assets/cache/general/image/202608282032204664123.png';
+        if (lower.includes('linkedin') || lower.includes('领英')) return 'https://xiareng.cc/assets/cache/general/image/202608280327037859504.png';
+        if (lower.includes('bumble') || lower.includes('大黄蜂') || lower.includes('巴豆')) return 'https://xiareng.cc/assets/cache/general/image/202609082304026891880.png';
+        if (lower.includes('whatsapp')) return 'https://xiareng.cc/assets/cache/general/image/2026-09-09/e3d9a6aa1ff9e820d90686a386ce7a04.webp';
+        if (lower.includes('usdt') || lower.includes('tron') || lower.includes('trx')) return '/assets/tg-network-icons/tron.svg';
+        if (lower.includes('facebook') || lower.includes('脸书') || lower.includes('fb')) return 'https://xiareng.cc/assets/cache/general/image/202608282053342883033.png';
+        if (lower.includes('雅虎') || lower.includes('yahoo')) return 'https://xiareng.cc/assets/cache/user/1571/image/202609032352313890364.png';
+        if (lower.includes('刷粉') || lower.includes('粉')) return 'https://xiareng.cc/assets/static/images/smm/telegram.svg';
+
+        return '';
+    },
+
     getSortedAdminProductCategories: function (categories = this.categoryData) {
         return (Array.isArray(categories) ? categories : [])
             .filter((category) => String(category?.name || '').trim())
@@ -4575,9 +4689,15 @@ Example output format:
     normalizeCurrentProductCategory: function (categories = this.categoryData) {
         const sortedCategories = this.getSortedAdminProductCategories(categories);
         const currentCategory = String(this.currentCategory || '').trim();
-        if (currentCategory && currentCategory !== 'all' && sortedCategories.some((category) => category.name === currentCategory)) {
-            this.currentCategory = currentCategory;
-            return currentCategory;
+
+        if (currentCategory && currentCategory !== 'all') {
+            if (sortedCategories.some((category) => category.name === currentCategory)) {
+                return currentCategory;
+            }
+            // Preserve explicitly set category (e.g. freshly imported category not yet in local memory)
+            if (this.currentCategory) {
+                return this.currentCategory;
+            }
         }
 
         if (sortedCategories.length > 0) {
@@ -4601,18 +4721,33 @@ Example output format:
         if (typeof window !== 'undefined' && window.innerWidth <= 820) {
             return;
         }
-        const top = active.offsetTop;
-        const height = active.offsetHeight;
-        if (!height) {
+        let top = 0;
+        let left = 0;
+        let width = 0;
+        let height = 0;
+        if (typeof active.getBoundingClientRect === 'function' && typeof container.getBoundingClientRect === 'function') {
+            const activeRect = active.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            top = Math.round(activeRect.top - containerRect.top + container.scrollTop);
+            left = Math.round(activeRect.left - containerRect.left);
+            width = Math.round(activeRect.width || active.offsetWidth);
+            height = Math.round(active.offsetHeight || activeRect.height);
+        } else {
+            top = active.offsetTop;
+            left = active.offsetLeft;
+            width = active.offsetWidth;
+            height = active.offsetHeight;
+        }
+        if (!height || !width) {
             requestAnimationFrame(() => this.syncCategoryIndicator(options));
             return;
         }
         const skipMotion = !options.animate || indicator.dataset.placed !== '1';
         const motionStyle = skipMotion ? 'transition:none;' : '';
-        indicator.setAttribute('style', `height:${height}px;transform:translate3d(0,${top}px,0);${motionStyle}`);
+        indicator.setAttribute('style', `width:${width}px;height:${height}px;transform:translate3d(${left}px,${top}px,0);${motionStyle}`);
         if (skipMotion) {
             void indicator.offsetHeight;
-            indicator.setAttribute('style', `height:${height}px;transform:translate3d(0,${top}px,0);`);
+            indicator.setAttribute('style', `width:${width}px;height:${height}px;transform:translate3d(${left}px,${top}px,0);`);
         }
         indicator.dataset.placed = '1';
     },
@@ -4639,17 +4774,28 @@ Example output format:
             tab.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
         const titleEl = document.getElementById('productCatalogCategoryTitle');
+        const activeIconUrl = this.currentCategory && this.currentCategory !== 'all' ? this.getCategoryIconUrl(this.currentCategory) : '';
+        const activeIconHtml = activeIconUrl
+            ? `<img class="category-icon" src="${this.escapeForAttr(activeIconUrl)}" alt="" style="width:22px;height:22px;border-radius:6px;object-fit:cover;flex-shrink:0;vertical-align:middle;margin-right:8px;" loading="lazy">`
+            : '';
         if (titleEl) {
-            titleEl.textContent = this.currentCategory === 'all' ? '全部商品' : this.currentCategory;
+            const catTitle = this.currentCategory === 'all' ? '全部商品' : this.currentCategory;
+            titleEl.innerHTML = `${activeIconHtml}<span>${this.escapeHtml(catTitle)}</span>`;
         }
         const mobileTitleEl = document.getElementById('adminProductMobileCategoryTitle');
         if (mobileTitleEl) {
-            mobileTitleEl.textContent = this.currentCategory === 'all' ? '全部商品' : this.currentCategory;
+            const catTitle = this.currentCategory === 'all' ? '全部商品' : this.currentCategory;
+            mobileTitleEl.innerHTML = `${activeIconHtml}<span>${this.escapeHtml(catTitle)}</span>`;
         }
         const activeSidebarTab = document.querySelector('#productCategorySidebarList .filter-tab.active');
         if (activeSidebarTab && typeof activeSidebarTab.scrollIntoView === 'function') {
             activeSidebarTab.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
         }
+        const publishBtn = document.getElementById('categoryPublishAllBtn');
+        const unpublishBtn = document.getElementById('categoryUnpublishAllBtn');
+        const hasSpecificCat = this.currentCategory && this.currentCategory !== 'all';
+        if (publishBtn) publishBtn.style.display = hasSpecificCat ? 'inline-flex' : 'none';
+        if (unpublishBtn) unpublishBtn.style.display = hasSpecificCat ? 'inline-flex' : 'none';
         this.syncCategoryIndicator({ animate: true });
     },
 
@@ -4661,13 +4807,58 @@ Example output format:
         }
     },
 
+    getCategoryAndDescendantNames: function (categoryName) {
+        const normalized = String(categoryName || '').trim();
+        if (!normalized || normalized === 'all') return [normalized];
+        const list = [normalized];
+        if (!Array.isArray(this.categoryData)) return list;
+        const cat = this.categoryData.find((c) => c.name === normalized);
+        if (!cat) return list;
+        const pid = String(cat.id || cat.name);
+        const children = this.categoryData.filter((c) =>
+            (c.parent_id && String(c.parent_id) === pid) ||
+            (c.parent_name && c.parent_name === normalized)
+        );
+        children.forEach((ch) => {
+            if (ch?.name && !list.includes(ch.name)) {
+                list.push(ch.name);
+            }
+        });
+        return list;
+    },
+
     filterCategory: function (category, btn) {
         this.setProductCategoryDrawer(false);
         const normalizedCategory = String(category || '').trim();
         if (!normalizedCategory) return;
+
+        // If category is a parent with children, toggle its expand/collapse state
+        if (Array.isArray(this.categoryData)) {
+            const cat = this.categoryData.find((c) => c.name === normalizedCategory);
+            if (cat) {
+                const pid = String(cat.id || cat.name);
+                const children = this.categoryData.filter((c) =>
+                    (c.parent_id && String(c.parent_id) === pid) ||
+                    (c.parent_name && c.parent_name === normalizedCategory)
+                );
+                if (children.length > 0) {
+                    if (!this._categoryExpandedState) this._categoryExpandedState = new Set();
+                    if (this._categoryExpandedState.has(pid)) {
+                        this._categoryExpandedState.delete(pid);
+                    } else {
+                        this._categoryExpandedState.add(pid);
+                    }
+                    this.renderProductCategoryFilters();
+                }
+            }
+        }
+
         this.currentCategory = normalizedCategory;
 
         this.syncProductCategoryFilterButtons();
+
+        const targetCategories = this.getCategoryAndDescendantNames(normalizedCategory);
+        const targetCategorySet = new Set(targetCategories);
 
         // 1. Check exact cache key for 0ms instant category switch
         const cacheKey = `${this.currentStatusFilter}:${this.currentProductDeliveryFilter}:${this.productSearchQuery || ''}:${normalizedCategory}`;
@@ -4684,7 +4875,7 @@ Example output format:
         if (allCached && Array.isArray(allCached.data) && !this.productSearchQuery) {
             const filteredData = normalizedCategory === 'all'
                 ? allCached.data
-                : allCached.data.filter(p => String(p?.category || '').trim() === normalizedCategory);
+                : allCached.data.filter(p => targetCategorySet.has(String(p?.category || '').trim()));
             this.renderProductListRows(filteredData);
             this.syncProductSelectionModeUi();
             return;
@@ -4717,9 +4908,11 @@ Example output format:
 
         // Invalidate cache on status switch
         this.invalidateProductCache();
+        this.productCategoryCountMap = {};
 
         // Reload Grid
         this.loadProducts();
+        void this.refreshCategoryCountsBackground();
     },
 
     applyProductSearch: function () {
@@ -5292,7 +5485,10 @@ Example output format:
                     this.loadProducts()
                 ]));
             case 'supplier-catalog':
-                return this.runShopTabLoader(normalizedTab, () => this.loadSupplierCatalog());
+                return this.runShopTabLoader(normalizedTab, () => Promise.all([
+                    this.loadSupplierCatalog(),
+                    this.loadSupplierDispatchConfig()
+                ]));
             case 'import':
                 return this.runShopTabLoader(normalizedTab, () => this.initImportView());
             case 'inventory':
@@ -5962,6 +6158,18 @@ Example output format:
                 return;
             }
 
+            const overlayTarget = target.closest('[data-shop-overlay-close]');
+            if (overlayTarget && target === overlayTarget) {
+                const overlayType = overlayTarget.dataset.shopOverlayClose;
+                if (overlayType === 'category-parent-modal') {
+                    this.closeCategoryParentModal();
+                    return;
+                } else if (overlayType === 'category-icon-modal') {
+                    this.closeCategoryIconModal();
+                    return;
+                }
+            }
+
             const actionEl = target.closest('[data-shop-action]');
             if (!actionEl) {
                 return;
@@ -5973,6 +6181,43 @@ Example output format:
                     break;
                 case 'import-create-category':
                     this.showCreateCategoryDialog();
+                    break;
+                case 'category-view-products':
+                    this.selectCategory(this.contextMenuCategory);
+                    this.closeCategoryContextMenu();
+                    break;
+                case 'category-create-sub-category':
+                    this.createSubCategoryFor(this.contextMenuCategory);
+                    break;
+                case 'category-custom-icon':
+                    this.openCategoryIconCustomizer(this.contextMenuCategory);
+                    break;
+                case 'category-set-parent':
+                    this.openCategoryParentPicker(this.contextMenuCategory);
+                    break;
+                case 'category-clear-parent':
+                    this.clearCategoryParent(this.contextMenuCategory);
+                    break;
+                case 'category-publish-all-products':
+                    this.batchToggleCategoryProducts(this.contextMenuCategory, true);
+                    break;
+                case 'category-unpublish-all-products':
+                    this.batchToggleCategoryProducts(this.contextMenuCategory, false);
+                    break;
+                case 'category-icon-modal-close':
+                    this.closeCategoryIconModal();
+                    break;
+                case 'category-icon-modal-save':
+                    this.saveCategoryIconFromModal();
+                    break;
+                case 'category-icon-modal-reset':
+                    this.resetCategoryIconFromModal();
+                    break;
+                case 'category-parent-modal-close':
+                    this.closeCategoryParentModal();
+                    break;
+                case 'category-parent-modal-save':
+                    this.saveCategoryParentFromModal();
                     break;
                 case 'import-category-rename':
                     this.renameCategoryFromMenu();
@@ -6055,8 +6300,44 @@ Example output format:
                 case 'supplier-order-lookup':
                     void this.lookupSupplierOrderByNumber();
                     break;
+                case 'supplier-dispatch-save':
+                    void this.saveSupplierDispatchConfig();
+                    break;
                 case 'supplier-catalog-import':
                     void this.importSupplierCatalogGoods();
+                    break;
+                case 'supplier-catalog-open-batch-modal':
+                    void this.openSupplierCatalogBatchModal();
+                    break;
+                case 'supplier-catalog-batch-close':
+                    this.closeSupplierCatalogBatchModal();
+                    break;
+                case 'batch-import-select-all':
+                    this.setSupplierCatalogBatchMatrixAll(true);
+                    break;
+                case 'batch-import-deselect-all':
+                    this.setSupplierCatalogBatchMatrixAll(false);
+                    break;
+                case 'batch-import-select-current':
+                    this.setSupplierCatalogBatchMatrixOnlyCurrent();
+                    break;
+                case 'supplier-catalog-batch-start':
+                    void this.runChunkedSupplierCatalogBatchImport();
+                    break;
+                case 'category-publish-all':
+                    void this.publishCurrentCategory(actionEl);
+                    break;
+                case 'category-unpublish-all':
+                    void this.unpublishCurrentCategory(actionEl);
+                    break;
+                case 'product-batch-edit':
+                    this.openProductBatchEditModal();
+                    break;
+                case 'product-batch-edit-close':
+                    this.closeProductBatchEditModal();
+                    break;
+                case 'product-batch-edit-submit':
+                    void this.submitProductBatchEdit();
                     break;
                 case 'supplier-catalog-page':
                     this.changeSupplierCatalogPage(actionEl.dataset.pageDirection);
@@ -6065,11 +6346,76 @@ Example output format:
                     void this.openSupplierCatalogDetail(actionEl.dataset.goodsNo);
                     break;
                 case 'supplier-catalog-import-detail':
-                    void this.importSupplierCatalogDetail();
+                    void this.importSupplierCatalogDetail({ initialStatus: 'draft' });
+                    break;
+                case 'supplier-catalog-import-publish-detail':
+                    void this.importSupplierCatalogDetail({ initialStatus: 'published' });
+                    break;
+                case 'supplier-detail-tab':
+                    this.switchSupplierCatalogDetailTab(actionEl);
+                    break;
+                case 'supplier-mapping-save-ceiling':
+                    void this.saveSupplierMappingCostCeiling(actionEl);
+                    break;
+                case 'supplier-mapping-sync-usage':
+                    this.syncSupplierMappingUsageInstructions(actionEl);
+                    break;
+                case 'supplier-mapping-sync-image':
+                    this.syncSupplierMappingImage(actionEl);
+                    break;
+                case 'supplier-mapping-apply-multiplier':
+                    this.applySupplierMappingMultiplierToProduct(actionEl);
                     break;
                 case 'supplier-catalog-detail-close':
                     this.closeSupplierCatalogDetail();
                     break;
+                case 'supplier-catalog-tree-toggle': {
+                    const groupKey = String(actionEl.dataset.groupKey || '').trim();
+                    if (groupKey) {
+                        if (this.supplierCatalogTreeExpandedGroups.has(groupKey)) {
+                            this.supplierCatalogTreeExpandedGroups.delete(groupKey);
+                        } else {
+                            this.supplierCatalogTreeExpandedGroups.add(groupKey);
+                        }
+                        const catDiv = actionEl.closest('.tree-category');
+                        if (catDiv) catDiv.classList.toggle('expanded');
+                    }
+                    break;
+                }
+                case 'supplier-catalog-tree-group': {
+                    const groupKey = String(actionEl.dataset.groupKey || '').trim();
+                    if (e.target.closest('.tree-chevron')) {
+                        if (groupKey) {
+                            if (this.supplierCatalogTreeExpandedGroups.has(groupKey)) {
+                                this.supplierCatalogTreeExpandedGroups.delete(groupKey);
+                            } else {
+                                this.supplierCatalogTreeExpandedGroups.add(groupKey);
+                            }
+                            const catDiv = actionEl.closest('.tree-category');
+                            if (catDiv) catDiv.classList.toggle('expanded');
+                        }
+                        break;
+                    }
+                    if (groupKey) {
+                        this.supplierCatalogTreeExpandedGroups.add(groupKey);
+                        this.selectSupplierCatalogGroup(groupKey);
+                        void this.loadSupplierCatalog({ page: 1 });
+                    }
+                    break;
+                }
+                case 'supplier-catalog-tree-category': {
+                    const categoryKey = String(actionEl.dataset.categoryKey || '').trim();
+                    this.selectSupplierCatalogCategory(categoryKey);
+                    void this.loadSupplierCatalog({ page: 1 });
+                    break;
+                }
+                case 'supplier-catalog-tree-all': {
+                    this.supplierCatalogExplicitAll = true;
+                    this.selectSupplierCatalogCategory('');
+                    this.supplierCatalogGroupKey = '';
+                    void this.loadSupplierCatalog({ page: 1 });
+                    break;
+                }
                 case 'guest-exceptions-search':
                     this.loadGuestOrderExceptions(1);
                     break;
@@ -6159,6 +6505,12 @@ Example output format:
                     break;
                 case 'product-batch-delete':
                     this.batchDeleteProducts(actionEl);
+                    break;
+                case 'product-batch-publish':
+                    void this.batchToggleSelectedProducts(true, actionEl);
+                    break;
+                case 'product-batch-unpublish':
+                    void this.batchToggleSelectedProducts(false, actionEl);
                     break;
                 case 'product-export-selected':
                     this.exportProducts(true);
@@ -6631,10 +6983,97 @@ Example output format:
             this.markProductModalDirty(actionEl);
 
             switch (actionEl.dataset.shopChange) {
+                case 'product-sync-sales-mode':
+                    this.syncSalesModeControls();
+                    break;
+                case 'batch-import-sales-mode':
+                    this.syncBatchImportSalesModeControls();
+                    break;
+                case 'supplier-import-sales-mode':
+                    this.syncSupplierImportSalesModeControls();
+                    break;
+                case 'supplier-catalog-unlisted-only':
+                    this.supplierCatalogUnlistedOnly = Boolean(actionEl.checked);
+                    void this.loadSupplierCatalog({ page: 1 });
+                    break;
+                case 'batch-import-matrix-select-all':
+                    document.querySelectorAll('.batch-import-cat-check').forEach((cb) => { cb.checked = actionEl.checked; });
+                    this.syncSupplierCatalogBatchModalSelection();
+                    break;
+                case 'batch-import-cat-check':
+                    this.syncSupplierCatalogBatchModalSelection();
+                    break;
+                case 'batch-edit-toggle-channels': {
+                    const group = document.getElementById('batchEditChannelsGroup');
+                    if (group) {
+                        group.style.opacity = actionEl.checked ? '1' : '0.5';
+                        group.style.pointerEvents = actionEl.checked ? 'auto' : 'none';
+                    }
+                    break;
+                }
+                case 'batch-edit-toggle-multiplier': {
+                    const group = document.getElementById('batchEditMultiplierGroup');
+                    if (group) {
+                        group.style.opacity = actionEl.checked ? '1' : '0.5';
+                        group.style.pointerEvents = actionEl.checked ? 'auto' : 'none';
+                    }
+                    break;
+                }
+                case 'batch-edit-toggle-quantity': {
+                    const group = document.getElementById('batchEditQuantityGroup');
+                    if (group) {
+                        group.style.opacity = actionEl.checked ? '1' : '0.5';
+                        group.style.pointerEvents = actionEl.checked ? 'auto' : 'none';
+                    }
+                    break;
+                }
                 case 'supplier-catalog-race':
                     ++this.supplierCatalogPreviewRequestToken;
+                    this.updateSupplierCatalogPriceCalculations();
                     this.syncSupplierCatalogDetailControls();
                     { const preview = document.getElementById('supplierCatalogPreview'); if (preview) preview.textContent = ''; }
+                    break;
+                case 'supplier-catalog-markup-multiplier':
+                    this.updateSupplierCatalogPriceCalculations();
+                    break;
+                case 'supplier-dispatch-threshold':
+                    this.syncSupplierDispatchUI();
+                    break;
+                case 'supplier-catalog-cost-ceiling':
+                    if (actionEl.dataset) actionEl.dataset.userEdited = '1';
+                    break;
+                case 'supplier-catalog-toggle-all-variants': {
+                    const isChecked = actionEl.checked;
+                    document.querySelectorAll('.supplier-catalog-variant-check').forEach((cb) => {
+                        cb.checked = isChecked;
+                    });
+                    const firstCheck = document.querySelector('.supplier-catalog-variant-check:checked');
+                    const raceSelect = document.getElementById('supplierCatalogRace');
+                    if (raceSelect && firstCheck) {
+                        raceSelect.value = firstCheck.dataset.race || '';
+                    }
+                    this.syncSupplierCatalogDetailControls();
+                    break;
+                }
+                case 'supplier-catalog-variant-check': {
+                    const allChecks = Array.from(document.querySelectorAll('.supplier-catalog-variant-check'));
+                    const checkedCount = allChecks.filter((cb) => cb.checked).length;
+                    const selectAll = document.getElementById('supplierCatalogSelectAllVariants');
+                    if (selectAll) {
+                        selectAll.checked = checkedCount === allChecks.length && checkedCount > 0;
+                        selectAll.indeterminate = checkedCount > 0 && checkedCount < allChecks.length;
+                    }
+                    const firstCheck = document.querySelector('.supplier-catalog-variant-check:checked');
+                    const raceSelect = document.getElementById('supplierCatalogRace');
+                    if (raceSelect && firstCheck) {
+                        raceSelect.value = firstCheck.dataset.race || '';
+                    }
+                    this.syncSupplierCatalogDetailControls();
+                    break;
+                }
+                case 'supplier-dispatch-mode':
+                case 'supplier-dispatch-threshold':
+                    this.syncSupplierDispatchUI();
                     break;
                 case 'supplier-catalog-account':
                     this.supplierCatalogAccountKey = String(actionEl.value || '');
@@ -6791,8 +7230,17 @@ Example output format:
             this.markProductModalDirty(actionEl);
 
             switch (actionEl.dataset.shopInput) {
+                case 'batch-import-filter-category':
+                    this.filterSupplierCatalogBatchMatrix(actionEl.value);
+                    break;
                 case 'product-update-preview':
                     this.updatePreview();
+                    break;
+                case 'supplier-catalog-markup-multiplier':
+                    this.updateSupplierCatalogPriceCalculations();
+                    break;
+                case 'supplier-dispatch-threshold':
+                    this.syncSupplierDispatchUI();
                     break;
 	                case 'product-sku-tier-input':
 	                    this.syncProductSkuTierSummary(actionEl);
@@ -6945,28 +7393,156 @@ Example output format:
         }
 
         try {
-            // Use the same category source as Import tab
-            await this.loadCategories();
+            if (!this.categoryData || !this.categoryData.length || (this.currentCategory && !this.categoryData.some(c => c.name === this.currentCategory))) {
+                await this.loadCategories({ force: true });
+            } else {
+                await this.loadCategories();
+            }
 
             const categories = this.getSortedAdminProductCategories(this.categoryData);
             this.normalizeCurrentProductCategory(categories);
 
-            // 1. Populate sidebar tabs (with count badges and sliding indicator, without 'all' tab)
+            // 1. Populate sidebar tabs (with hierarchical nesting, icons, drag handles and counts)
             if (sidebarContainer) {
                 sidebarContainer.innerHTML = '<span class="list-aside__indicator" aria-hidden="true"></span>';
 
+                const categoryMap = new Map();
                 categories.forEach(cat => {
+                    if (cat.id) categoryMap.set(String(cat.id), cat);
+                    if (cat.name) categoryMap.set(String(cat.name).toLowerCase(), cat);
+                });
+
+                const topLevelCategories = [];
+                const childrenByParent = new Map();
+
+                categories.forEach(cat => {
+                    const parentKey = cat.parent_id || cat.parent_name;
+                    const parentCat = parentKey ? (categoryMap.get(String(parentKey)) || categoryMap.get(String(parentKey).toLowerCase())) : null;
+                    if (parentCat && parentCat !== cat) {
+                        const pid = String(parentCat.id || parentCat.name);
+                        if (!childrenByParent.has(pid)) childrenByParent.set(pid, []);
+                        childrenByParent.get(pid).push(cat);
+                    } else {
+                        topLevelCategories.push(cat);
+                    }
+                });
+
+                if (!this._categoryExpandedState) {
+                    this._categoryExpandedState = new Set();
+                }
+
+                // If currently active category is a child, automatically expand its parent group
+                if (this.currentCategory) {
+                    for (const [pid, children] of childrenByParent.entries()) {
+                        if (children.some(c => c.name === this.currentCategory)) {
+                            this._categoryExpandedState.add(pid);
+                        }
+                    }
+                }
+
+                const createCategoryButton = (cat, isChild = false) => {
                     const btn = document.createElement('button');
-                    btn.className = `filter-tab${this.currentCategory === cat.name ? ' active' : ''}`;
+                    btn.className = `filter-tab${this.currentCategory === cat.name ? ' active' : ''}${isChild ? ' filter-tab--child' : ''}`;
                     btn.type = 'button';
                     btn.dataset.shopAction = 'product-filter-category';
                     btn.dataset.category = cat.name;
+                    btn.dataset.categoryId = cat.id || '';
                     btn.setAttribute('aria-pressed', this.currentCategory === cat.name ? 'true' : 'false');
+                    btn.setAttribute('draggable', 'true');
+
+                    const iconUrl = this.resolveCategoryIconUrl(cat);
+                    const folderColor = cat.color || '#6b9ece';
+                    const iconHtml = iconUrl
+                        ? `<img class="category-icon" src="${this.escapeForAttr(iconUrl)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+                        : `<i class="fas fa-folder category-folder-icon ${this.buildCategoryColorClass(folderColor)}"></i>`;
+
+                    const isPublic = this.isCategoryPublic(cat);
+                    const hiddenIconHtml = !isPublic
+                        ? `<i class="fas fa-eye-slash" title="已设为对外隐藏" style="font-size: 11px; opacity: 0.55; margin-left: 5px; color: #94a3b8;"></i>`
+                        : '';
+
+                    const directCount = this.getCategoryProductCount(cat.name);
+                    let displayCount = directCount;
+                    const catPid = String(cat.id || cat.name);
+                    const childList = childrenByParent.get(catPid);
+                    if (Array.isArray(childList) && childList.length > 0) {
+                        const isExpanded = this._categoryExpandedState.has(catPid);
+                        displayCount = isExpanded
+                            ? directCount
+                            : (directCount + childList.reduce((sum, c) => sum + this.getCategoryProductCount(c.name), 0));
+                    }
+
                     btn.innerHTML = `
-                        <span data-list-category-label class="category-name">${this.escapeHtml(cat.name)}</span>
-                        <span class="count" data-list-category-count data-category-count="${this.escapeForAttr(cat.name)}">${this.getCategoryProductCount(cat.name)}</span>
+                        <span class="category-tab-main">
+                            <span class="category-drag-handle" title="按住拖拽排序，或拖入分类设为子分类"><i class="fas fa-grip-vertical"></i></span>
+                            ${iconHtml}
+                            <span data-list-category-label class="category-name">${this.escapeHtml(cat.name)}</span>
+                            ${hiddenIconHtml}
+                        </span>
+                        <span class="count" data-list-category-count data-category-count="${this.escapeForAttr(cat.name)}">${displayCount}</span>
                     `;
-                    sidebarContainer.appendChild(btn);
+
+                    btn.addEventListener('contextmenu', (e) => {
+                        this.showCategoryContextMenu(e, cat.name);
+                    });
+
+                    this.attachCategoryDragListeners(btn, cat);
+
+                    return btn;
+                };
+
+                topLevelCategories.forEach(parentCat => {
+                    const pid = String(parentCat.id || parentCat.name);
+                    const children = childrenByParent.get(pid) || [];
+                    const hasChildren = children.length > 0;
+
+                    if (!hasChildren) {
+                        const btn = createCategoryButton(parentCat, false);
+                        sidebarContainer.appendChild(btn);
+                    } else {
+                        const groupDiv = document.createElement('div');
+                        groupDiv.className = 'category-item-group';
+                        groupDiv.dataset.parentCategory = parentCat.name;
+
+                        const rowDiv = document.createElement('div');
+                        rowDiv.className = 'category-item-row';
+
+                        const isExpanded = this._categoryExpandedState.has(pid);
+                        const chevron = document.createElement('span');
+                        chevron.className = `category-tree-chevron${isExpanded ? ' expanded' : ''}`;
+                        chevron.innerHTML = '<i class="fas fa-chevron-right"></i>';
+                        chevron.title = isExpanded ? '收起子分类' : '展开子分类';
+                        chevron.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            this.toggleCategorySubTabs(pid);
+                        });
+
+                        const parentBtn = createCategoryButton(parentCat, false);
+                        const tabMain = parentBtn.querySelector('.category-tab-main');
+                        if (tabMain) {
+                            tabMain.insertBefore(chevron, tabMain.firstChild);
+                        }
+
+                        rowDiv.appendChild(parentBtn);
+                        groupDiv.appendChild(rowDiv);
+
+                        const subWrapper = document.createElement('div');
+                        subWrapper.className = `category-sub-tabs-wrapper${isExpanded ? ' is-expanded' : ''}`;
+                        subWrapper.dataset.parentPid = pid;
+
+                        const subTabs = document.createElement('div');
+                        subTabs.className = 'category-sub-tabs';
+                        subTabs.dataset.parentPid = pid;
+
+                        children.forEach(childCat => {
+                            const childBtn = createCategoryButton(childCat, true);
+                            subTabs.appendChild(childBtn);
+                        });
+
+                        subWrapper.appendChild(subTabs);
+                        groupDiv.appendChild(subWrapper);
+                        sidebarContainer.appendChild(groupDiv);
+                    }
                 });
 
                 this.syncCategoryIndicator();
@@ -6987,7 +7563,11 @@ Example output format:
                 categories.forEach(cat => {
                     const btn = document.createElement('button');
                     btn.className = `filter-tab${this.currentCategory === cat.name ? ' active' : ''}`;
-                    btn.textContent = cat.name;
+                    const iconUrl = this.resolveCategoryIconUrl(cat);
+                    const iconHtml = iconUrl
+                        ? `<img class="category-icon" src="${this.escapeForAttr(iconUrl)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+                        : '';
+                    btn.innerHTML = `${iconHtml}<span>${this.escapeHtml(cat.name)}</span>`;
                     btn.dataset.shopAction = 'product-filter-category';
                     btn.dataset.category = cat.name;
                     container.appendChild(btn);
@@ -6999,6 +7579,650 @@ Example output format:
         } catch (e) {
             console.error('Failed to load category filters:', e);
         }
+    },
+
+    toggleCategorySubTabs: function (pid) {
+        if (!this._categoryExpandedState) this._categoryExpandedState = new Set();
+        if (this._categoryExpandedState.has(pid)) {
+            this._categoryExpandedState.delete(pid);
+        } else {
+            this._categoryExpandedState.add(pid);
+        }
+        const isExpanded = this._categoryExpandedState.has(pid);
+        const wrappers = document.querySelectorAll(`#productCategorySidebarList .category-sub-tabs-wrapper[data-parent-pid="${CSS.escape ? CSS.escape(pid) : pid}"]`);
+        if (wrappers.length > 0) {
+            wrappers.forEach((w) => w.classList.toggle('is-expanded', isExpanded));
+            const chevrons = document.querySelectorAll(`#productCategorySidebarList .category-item-group[data-parent-category] .category-tree-chevron`);
+            chevrons.forEach((ch) => {
+                if (ch.closest?.('.category-item-group')?.querySelector(`[data-parent-pid="${pid}"]`)) {
+                    ch.classList.toggle('expanded', isExpanded);
+                }
+            });
+            this.syncCategoryIndicator({ animate: true });
+        } else {
+            this.renderProductCategoryFilters();
+        }
+    },
+
+    attachCategoryDragListeners: function (element, category) {
+        if (!element || !category) return;
+
+        element.addEventListener('dragstart', (e) => {
+            ShopAdmin._draggedCategory = category;
+            element.classList.add('is-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            try {
+                e.dataTransfer.setData('text/plain', JSON.stringify({
+                    id: category.id,
+                    name: category.name,
+                    parent_id: category.parent_id || null
+                }));
+            } catch (_) {}
+        });
+
+        element.addEventListener('dragend', () => {
+            ShopAdmin._draggedCategory = null;
+            element.classList.remove('is-dragging');
+            document.querySelectorAll('.filter-tab').forEach((el) => {
+                el.classList.remove('drop-over-top', 'drop-over-bottom', 'drop-over-middle');
+            });
+        });
+
+        element.addEventListener('dragover', (e) => {
+            const dragged = ShopAdmin._draggedCategory;
+            if (!dragged || (dragged.id && dragged.id === category.id) || dragged.name === category.name) {
+                return;
+            }
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+
+            const rect = element.getBoundingClientRect();
+            const offsetY = e.clientY - rect.top;
+            const height = rect.height;
+
+            element.classList.remove('drop-over-top', 'drop-over-bottom', 'drop-over-middle');
+            const isTargetChild = Boolean(category.parent_id || category.parent_name);
+            if (isTargetChild) {
+                // 目标为子分类：只支持在其上方或下方排序
+                if (offsetY < height * 0.5) {
+                    element.classList.add('drop-over-top');
+                } else {
+                    element.classList.add('drop-over-bottom');
+                }
+            } else {
+                // 目标为一级分类：顶部35%放上方，底部35%放下方，中间30%移入成为子分类
+                if (offsetY < height * 0.35) {
+                    element.classList.add('drop-over-top');
+                } else if (offsetY > height * 0.65) {
+                    element.classList.add('drop-over-bottom');
+                } else {
+                    element.classList.add('drop-over-middle');
+                }
+            }
+        });
+
+        element.addEventListener('dragleave', (e) => {
+            if (!element.contains(e.relatedTarget)) {
+                element.classList.remove('drop-over-top', 'drop-over-bottom', 'drop-over-middle');
+            }
+        });
+
+        element.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const dragged = ShopAdmin._draggedCategory;
+            if (!dragged || (dragged.id && dragged.id === category.id) || dragged.name === category.name) {
+                element.classList.remove('drop-over-top', 'drop-over-bottom', 'drop-over-middle');
+                return;
+            }
+
+            const rect = element.getBoundingClientRect();
+            const offsetY = e.clientY - rect.top;
+            const height = rect.height;
+            const isTargetChild = Boolean(category.parent_id || category.parent_name);
+            element.classList.remove('drop-over-top', 'drop-over-bottom', 'drop-over-middle');
+
+            if (!isTargetChild && offsetY >= height * 0.35 && offsetY <= height * 0.65) {
+                // 移入作为子分类
+                await ShopAdmin.setCategoryParent(dragged.id, category.id, category.name);
+            } else {
+                // 相对重排（并联动更新父级层级）
+                const placeBefore = isTargetChild ? (offsetY < height * 0.5) : (offsetY < height * 0.35);
+                await ShopAdmin.reorderCategoryRelativeTo(dragged, category, placeBefore);
+            }
+        });
+    },
+
+    reorderCategoryRelativeTo: async function (draggedCat, targetCat, placeBefore) {
+        if (!this.requireWritableSite({ label: '重排商品分类顺序' })) return;
+
+        const previousSnapshot = JSON.parse(JSON.stringify(this.categoryData));
+        try {
+            // 1. 判断并计算目标父级状态
+            let newParentId = null;
+            let newParentName = null;
+            if (targetCat.parent_id) {
+                // 目标项本身是子分类：成为同一个父级下的同级兄弟子分类
+                newParentId = targetCat.parent_id;
+                newParentName = targetCat.parent_name || '';
+            } else {
+                // 目标项是一级顶级分类：脱离原父级，提升为一级顶级分类
+                newParentId = null;
+                newParentName = null;
+            }
+
+            const parentChanged = (draggedCat.parent_id || null) !== newParentId;
+
+            // 2. 内存就地修改（0ms 乐观更新）
+            const inMemoryDragged = this.categoryData.find(c => (draggedCat.id && c.id === draggedCat.id) || c.name === draggedCat.name);
+            if (inMemoryDragged) {
+                inMemoryDragged.parent_id = newParentId;
+                inMemoryDragged.parent_name = newParentName;
+            }
+
+            const list = [...this.getSortedAdminProductCategories(this.categoryData)];
+            const draggedIndex = list.findIndex(c => (draggedCat.id && c.id === draggedCat.id) || c.name === draggedCat.name);
+            if (draggedIndex === -1) return;
+            const [item] = list.splice(draggedIndex, 1);
+
+            let targetIndex = list.findIndex(c => (targetCat.id && c.id === targetCat.id) || c.name === targetCat.name);
+            if (targetIndex === -1) targetIndex = list.length;
+            const insertIndex = placeBefore ? targetIndex : targetIndex + 1;
+            list.splice(insertIndex, 0, item);
+
+            const assignments = list.map((cat, idx) => ({
+                id: cat.id,
+                sort_order: (idx + 1) * 10
+            }));
+
+            assignments.forEach(a => {
+                const found = this.categoryData.find(c => c.id === a.id);
+                if (found) found.sort_order = a.sort_order;
+            });
+
+            // 3. 0毫秒立即渲染！（极速响应，用户松手即生效）
+            await this.renderProductCategoryFilters();
+            this.renderImportList();
+
+            // 4. 后台静默异步提交
+            (async () => {
+                try {
+                    const promises = [
+                        this.callAdminMutation('reorder_categories', { assignments })
+                    ];
+                    if (parentChanged) {
+                        promises.push(this.callAdminMutation('set_category_parent', {
+                            categoryId: draggedCat.id,
+                            parentId: newParentId,
+                            parentName: newParentName || ''
+                        }));
+                    }
+                    await Promise.all(promises);
+                    this.notifyShopCatalogChanged('category_reorder', { categoryId: draggedCat.id, parentId: newParentId });
+                } catch (err) {
+                    console.error('Failed to persist category order in background:', err);
+                    // 保存失败时回滚
+                    this.categoryData = previousSnapshot;
+                    await this.renderProductCategoryFilters();
+                    this.renderImportList();
+                    alert('分类排序或移动保存失败: ' + (err.message || '网络异常'));
+                }
+            })();
+        } catch (err) {
+            console.error('Failed to reorder categories:', err);
+            this.categoryData = previousSnapshot;
+            await this.renderProductCategoryFilters();
+            alert('分类排序失败: ' + (err.message || '未知错误'));
+        }
+    },
+
+    setCategoryParent: async function (categoryId, parentId = null, parentName = '') {
+        if (!this.requireWritableSite({ label: '设置父级分类' })) return;
+
+        const target = this.categoryData.find(c => c.id === categoryId || c.name === categoryId);
+        if (!target) return;
+
+        const prevParentId = target.parent_id;
+        const prevParentName = target.parent_name;
+
+        // 1. 0ms 乐观更新并瞬间渲染
+        target.parent_id = parentId || null;
+        target.parent_name = parentName || null;
+        await this.renderProductCategoryFilters();
+        this.renderImportList();
+
+        // 2. 异步提交持久化
+        try {
+            await this.callAdminMutation('set_category_parent', {
+                categoryId: target.id,
+                parentId: parentId || null,
+                parentName: parentName || ''
+            });
+            this.notifyShopCatalogChanged('category_parent_update', { categoryId: target.id, parentId });
+        } catch (err) {
+            console.error('Failed to set category parent:', err);
+            // 回滚
+            target.parent_id = prevParentId;
+            target.parent_name = prevParentName;
+            await this.renderProductCategoryFilters();
+            this.renderImportList();
+            alert('设置父级分类失败: ' + (err.message || '未知错误'));
+        }
+    },
+
+    clearCategoryParent: async function (categoryKey) {
+        const cat = this.categoryData.find(c => c.name === categoryKey || c.id === categoryKey);
+        if (!cat) return;
+        this.closeCategoryContextMenu();
+        await this.setCategoryParent(cat.id, null, '');
+    },
+
+    selectCategory: function (categoryName) {
+        if (!categoryName) return;
+        this.selectedCategory = categoryName;
+        this.renderProductCategoryFilters();
+        this.filterAndRenderProducts();
+    },
+
+    createSubCategoryFor: async function (parentCategoryKey) {
+        this.closeCategoryContextMenu();
+        const parentCat = this.categoryData.find(c => c.name === parentCategoryKey || c.id === parentCategoryKey);
+        if (!parentCat) return;
+
+        const name = prompt(`为【${parentCat.name}】创建子分类，请输入子分类名称:`);
+        if (!name || !name.trim()) return;
+
+        if (!this.requireWritableSite({ label: '创建子分类' })) return;
+
+        try {
+            const result = await this.callAdminMutation('create_category', {
+                name: name.trim(),
+                color: parentCat.color || '#6b9ece',
+                parentId: parentCat.id,
+                parentName: parentCat.name
+            });
+            const created = result?.category;
+            if (created) {
+                created.parent_id = parentCat.id;
+                created.parent_name = parentCat.name;
+                this.categoryData.push(created);
+            }
+            const pid = String(parentCat.id || parentCat.name);
+            this._categoryExpandedState.add(pid);
+            await this.renderProductCategoryFilters();
+            this.renderImportList();
+            this.notifyShopCatalogChanged('category_created', { category: created });
+        } catch (err) {
+            console.error('Failed to create subcategory:', err);
+            alert('创建子分类失败: ' + (err.message || '未知错误'));
+        }
+    },
+
+    batchToggleCategoryProducts: async function (categoryName, shouldPublish) {
+        if (!this.requireWritableSite({ label: shouldPublish ? '一键上架本类商品' : '一键下架本类商品' })) return;
+
+        const actionText = shouldPublish ? '上架' : '下架';
+        if (!confirm(`确定要${actionText}分类"${categoryName}"下的所有商品吗？`)) {
+            this.closeCategoryContextMenu();
+            return;
+        }
+        this.closeCategoryContextMenu();
+
+        try {
+            const result = await this.callAdminMutation('batch_toggle_category_products', {
+                category: categoryName,
+                is_active: Boolean(shouldPublish)
+            });
+
+            const count = result?.updatedCount ?? 0;
+            alert(`已成功${actionText}分类"${categoryName}"下的 ${count} 个商品`);
+            await this.loadProducts({ force: true });
+            await this.renderProductCategoryFilters();
+            this.notifyShopCatalogChanged('batch_toggle_products', { category: categoryName, is_active: shouldPublish });
+        } catch (err) {
+            console.error(`Failed to batch ${actionText} products:`, err);
+            alert(`${actionText}失败: ` + (err.message || '未知错误'));
+        }
+    },
+
+    openCategoryParentPicker: function (categoryKey) {
+        this.closeCategoryContextMenu();
+        const cat = this.categoryData.find(c => c.name === categoryKey || c.id === categoryKey);
+        if (!cat) {
+            alert('未找到该分类');
+            return;
+        }
+
+        this._parentPickerTargetCategory = cat;
+        this._selectedParentIdInModal = cat.parent_id || null;
+
+        const modal = document.getElementById('categoryParentPickerModal');
+        if (!modal) return;
+
+        const targetIcon = document.getElementById('categoryParentTargetIcon');
+        const targetName = document.getElementById('categoryParentTargetName');
+        const currentStatus = document.getElementById('categoryParentCurrentStatus');
+        const rootBtn = document.getElementById('categoryParentAsRootBtn');
+        const rootCheck = document.getElementById('categoryParentRootCheck');
+        const grid = document.getElementById('categoryParentOptionsGrid');
+        const searchInput = document.getElementById('categoryParentSearchInput');
+        const select = document.getElementById('categoryParentSelect');
+
+        if (targetIcon) targetIcon.src = this.resolveCategoryIconUrl(cat) || '/assets/favicon.svg';
+        if (targetName) targetName.textContent = cat.name;
+        if (currentStatus) {
+            if (cat.parent_id || cat.parent_name) {
+                const parentCat = this.categoryData.find(c => c.id === cat.parent_id || c.name === cat.parent_name);
+                currentStatus.textContent = `当前为【${parentCat?.name || cat.parent_name}】的子分类`;
+            } else {
+                currentStatus.textContent = '当前是一级顶级分类';
+            }
+        }
+
+        const updateSelectionVisuals = (chosenParentId) => {
+            this._selectedParentIdInModal = chosenParentId || null;
+            if (select) select.value = chosenParentId || '';
+
+            // 设为顶级按钮高亮状态
+            if (!chosenParentId) {
+                if (rootBtn) {
+                    rootBtn.style.background = 'rgba(52, 211, 153, 0.15)';
+                    rootBtn.style.borderColor = '#34d399';
+                }
+                if (rootCheck) rootCheck.style.display = 'inline-block';
+            } else {
+                if (rootBtn) {
+                    rootBtn.style.background = 'rgba(255, 255, 255, 0.03)';
+                    rootBtn.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                }
+                if (rootCheck) rootCheck.style.display = 'none';
+            }
+
+            // 网格卡片高亮状态
+            grid?.querySelectorAll('.category-parent-option-card').forEach(card => {
+                const isSelected = card.dataset.parentId === (chosenParentId || '');
+                card.classList.toggle('selected', isSelected);
+            });
+        };
+
+        if (rootBtn) {
+            rootBtn.onclick = () => updateSelectionVisuals(null);
+        }
+
+        // 仅一级分类可以作为父级（排除自身与自身子分类）
+        const topLevelCandidates = this.categoryData.filter(c => {
+            if (c.id === cat.id || c.name === cat.name) return false;
+            if (c.parent_id === cat.id || c.parent_name === cat.name) return false;
+            return !c.parent_id && !c.parent_name;
+        });
+
+        if (grid) {
+            const renderOptions = (filterKeyword = '') => {
+                const filtered = topLevelCandidates.filter(c => {
+                    if (!filterKeyword) return true;
+                    return c.name.toLowerCase().includes(filterKeyword.toLowerCase());
+                });
+
+                if (filtered.length === 0) {
+                    grid.innerHTML = '<div style="grid-column: span 2; padding: 18px 10px; text-align: center; color: #64748b; font-size: 12px;">无匹配的父级分类</div>';
+                    return;
+                }
+
+                grid.innerHTML = filtered.map(pCat => {
+                    const icon = this.resolveCategoryIconUrl(pCat) || '/assets/favicon.svg';
+                    const count = this.getCategoryProductCount(pCat.name);
+                    const isSelected = pCat.id === this._selectedParentIdInModal;
+                    return `
+                        <button type="button" class="category-parent-option-card${isSelected ? ' selected' : ''}" data-parent-id="${this.escapeForAttr(pCat.id)}" title="${this.escapeForAttr(pCat.name)}">
+                            <img src="${this.escapeForAttr(icon)}" alt="" loading="lazy">
+                            <span class="cat-opt-name">${this.escapeHtml(pCat.name)}</span>
+                            <span class="cat-opt-count">${count}</span>
+                        </button>
+                    `;
+                }).join('');
+
+                grid.querySelectorAll('.category-parent-option-card').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        updateSelectionVisuals(btn.dataset.parentId);
+                    });
+                });
+            };
+
+            renderOptions();
+
+            if (searchInput) {
+                searchInput.value = '';
+                searchInput.oninput = () => {
+                    renderOptions(searchInput.value.trim());
+                };
+            }
+        }
+
+        updateSelectionVisuals(cat.parent_id || null);
+
+        // 弹出动画激活
+        modal.style.display = 'flex';
+        modal.offsetHeight; // trigger reflow
+        modal.classList.add('active');
+    },
+
+    closeCategoryParentModal: function () {
+        const modal = document.getElementById('categoryParentPickerModal');
+        if (modal) {
+            modal.classList.remove('active');
+            setTimeout(() => {
+                if (!modal.classList.contains('active')) {
+                    modal.style.display = 'none';
+                }
+            }, 200);
+        }
+        this._parentPickerTargetCategory = null;
+        this._selectedParentIdInModal = null;
+    },
+
+    saveCategoryParentFromModal: async function () {
+        const cat = this._parentPickerTargetCategory;
+        if (!cat) return;
+
+        const newParentId = this._selectedParentIdInModal || null;
+        let newParentName = '';
+        if (newParentId) {
+            const parentCat = this.categoryData.find(c => c.id === newParentId);
+            parentName = parentCat?.name || '';
+        }
+
+        this.closeCategoryParentModal();
+        await this.setCategoryParent(cat.id, newParentId, newParentName);
+    },
+
+    openCategoryIconCustomizer: function (categoryKey) {
+        this.closeCategoryContextMenu();
+        const cat = this.categoryData.find(c => c.name === categoryKey || c.id === categoryKey);
+        if (!cat) return;
+
+        this._iconCustomizerTargetCategory = cat;
+        const modal = document.getElementById('categoryIconCustomizerModal');
+        const subtitle = document.getElementById('categoryIconModalSubtitle');
+        const preview = document.getElementById('categoryIconCurrentPreview');
+        const customUrlInput = document.getElementById('categoryIconCustomUrlInput');
+        const presetsGrid = document.getElementById('categoryIconPresetsGrid');
+        if (!modal) return;
+
+        if (subtitle) subtitle.textContent = `为分类【${cat.name}】自定义展示图标`;
+
+        const currentIconUrl = this.resolveCategoryIconUrl(cat) || '/assets/favicon.svg';
+        if (preview) preview.src = currentIconUrl;
+        if (customUrlInput) customUrlInput.value = cat.icon_url || '';
+
+        const presets = [
+            { name: 'Gemini', icon: '/assets/affiliate-poster-icons/gemini.png' },
+            { name: 'Claude', icon: '/assets/affiliate-poster-icons/claude.png' },
+            { name: 'ChatGPT', icon: '/assets/affiliate-poster-icons/gpt.png' },
+            { name: 'Apple ID', icon: '/assets/affiliate-poster-icons/apple-id.svg' },
+            { name: '谷歌邮箱', icon: '/assets/affiliate-poster-icons/gmail.png' },
+            { name: 'Telegram', icon: 'https://xiareng.cc/assets/cache/general/image/2026-06-03/887a95445c80001b836e033dfc96aefe.gif' },
+            { name: 'Twitter/X', icon: 'https://xiareng.cc/assets/cache/general/image/202608280328199135825.jpg' },
+            { name: 'TikTok', icon: 'https://xiareng.cc/assets/cache/general/image/202608282100277454204.png' },
+            { name: 'Instagram', icon: 'https://xiareng.cc/assets/cache/general/image/202608282032204664123.png' },
+            { name: 'Threads', icon: 'https://xiareng.cc/assets/cache/general/image/202608282035556231552.jpg' },
+            { name: 'LinkedIn', icon: 'https://xiareng.cc/assets/cache/general/image/202608280327037859504.png' },
+            { name: 'LINE/Kakao', icon: 'https://xiareng.cc/assets/cache/general/image/202609090349395858414.webp' },
+            { name: 'WhatsApp', icon: 'https://xiareng.cc/assets/cache/general/image/2026-09-09/e3d9a6aa1ff9e820d90686a386ce7a04.webp' },
+            { name: 'Facebook', icon: 'https://xiareng.cc/assets/cache/general/image/202608282053342883033.png' },
+            { name: 'YouTube/影音', icon: 'https://xiareng.cc/assets/static/images/smm/youtube.svg' },
+            { name: 'USDT/TRON', icon: '/assets/tg-network-icons/tron.svg' },
+            { name: 'API中转', icon: '/assets/affiliate-poster-icons/api-transfer.svg' },
+            { name: '雅虎邮箱', icon: 'https://xiareng.cc/assets/cache/user/1571/image/202609032352313890364.png' },
+            { name: '默认/其它', icon: '/assets/favicon.svg' }
+        ];
+
+        if (presetsGrid) {
+            presetsGrid.innerHTML = presets.map(p => `
+                <button type="button" class="category-preset-icon-btn${currentIconUrl === p.icon ? ' selected' : ''}" data-preset-icon="${this.escapeForAttr(p.icon)}" title="${this.escapeForAttr(p.name)}">
+                    <img src="${this.escapeForAttr(p.icon)}" alt="" loading="lazy">
+                    <span>${this.escapeHtml(p.name)}</span>
+                </button>
+            `).join('');
+
+            presetsGrid.querySelectorAll('.category-preset-icon-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    presetsGrid.querySelectorAll('.category-preset-icon-btn').forEach(b => b.classList.remove('selected'));
+                    btn.classList.add('selected');
+                    const selectedIcon = btn.dataset.presetIcon;
+                    if (customUrlInput) customUrlInput.value = selectedIcon;
+                    if (preview) preview.src = selectedIcon;
+                });
+            });
+        }
+
+        if (customUrlInput) {
+            customUrlInput.oninput = () => {
+                const url = customUrlInput.value.trim();
+                if (preview && url) preview.src = url;
+            };
+        }
+
+        const fileInput = document.getElementById('categoryIconLocalFileInput');
+        if (fileInput) {
+            fileInput.value = '';
+            fileInput.onchange = async () => {
+                const file = fileInput.files?.[0];
+                if (!file) return;
+
+                const uploadNotice = document.getElementById('categoryIconUploadNotice');
+                if (uploadNotice) uploadNotice.textContent = '正在上传到 Cloudflare R2...';
+
+                try {
+                    const r2Url = await ShopAdmin.uploadCategoryIconToR2(file, cat.name);
+                    if (customUrlInput) customUrlInput.value = r2Url;
+                    if (preview) preview.src = r2Url;
+                    if (uploadNotice) uploadNotice.textContent = '已成功上传并转存 R2！';
+                } catch (err) {
+                    console.warn('R2 upload failed, fallback to local preview:', err);
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const base64 = e.target.result;
+                        if (customUrlInput) customUrlInput.value = base64;
+                        if (preview) preview.src = base64;
+                    };
+                    reader.readAsDataURL(file);
+                    if (uploadNotice) uploadNotice.textContent = '本地上传已加载';
+                }
+            };
+        }
+
+        modal.style.display = 'flex';
+        modal.offsetHeight; // trigger reflow
+        modal.classList.add('active');
+    },
+
+    uploadCategoryIconToR2: async function (file, categoryName = '') {
+        const session = await this.getAdminSession();
+        if (!session?.access_token) {
+            throw new Error('请先登录管理员账号');
+        }
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error('读取文件失败'));
+            reader.onload = async (e) => {
+                try {
+                    const base64Data = e.target.result;
+                    const response = await fetch(
+                        window.getZaoyoeSupabaseFunctionUrl('upload-avatar'),
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${session.access_token}`,
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                userId: session.user.id,
+                                type: 'product',
+                                productId: `cat_icon_${Date.now()}`,
+                                imageData: base64Data
+                            })
+                        }
+                    );
+                    if (!response.ok) {
+                        const errJson = await response.json().catch(() => ({}));
+                        throw new Error(errJson.error || errJson.message || '上传 R2 失败');
+                    }
+                    const data = await response.json();
+                    const url = data.imageUrl || (typeof data.imageAsset === 'object' ? data.imageAsset.url : '') || base64Data;
+                    resolve(url);
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+    },
+
+    closeCategoryIconModal: function () {
+        const modal = document.getElementById('categoryIconCustomizerModal');
+        if (modal) {
+            modal.classList.remove('active');
+            setTimeout(() => {
+                if (!modal.classList.contains('active')) {
+                    modal.style.display = 'none';
+                }
+            }, 200);
+        }
+        this._iconCustomizerTargetCategory = null;
+    },
+
+    saveCategoryIconFromModal: async function () {
+        const cat = this._iconCustomizerTargetCategory;
+        if (!cat) return;
+        const customUrlInput = document.getElementById('categoryIconCustomUrlInput');
+        const iconUrl = customUrlInput?.value?.trim() || null;
+
+        if (!this.requireWritableSite({ label: '保存分类图标' })) return;
+
+        try {
+            await this.callAdminMutation('set_category_icon', {
+                categoryId: cat.id,
+                iconUrl: iconUrl || ''
+            });
+
+            cat.icon_url = iconUrl;
+            this.closeCategoryIconModal();
+            await this.renderProductCategoryFilters();
+            this.renderImportList();
+            this.notifyShopCatalogChanged('category_icon_updated', { categoryId: cat.id, iconUrl });
+        } catch (err) {
+            console.error('Failed to save category icon:', err);
+            alert('保存图标失败: ' + (err.message || '未知错误'));
+        }
+    },
+
+    resetCategoryIconFromModal: async function () {
+        const cat = this._iconCustomizerTargetCategory;
+        if (!cat) return;
+        const defaultIcon = this.getCategoryPredefinedIcon(cat.name);
+        const customUrlInput = document.getElementById('categoryIconCustomUrlInput');
+        const preview = document.getElementById('categoryIconCurrentPreview');
+        if (customUrlInput) customUrlInput.value = defaultIcon;
+        if (preview) preview.src = defaultIcon || '/assets/favicon.svg';
     },
 
     init: async function () {
@@ -8692,6 +9916,17 @@ Example output format:
         this.ensureDeliveryWorkspaceMounted();
         this.syncShopUrlState();
 
+        if (normalizedTab === 'products' && this.lastBatchImportTarget && (Date.now() - this.lastBatchImportTarget.timestamp < 600000)) {
+            const target = this.lastBatchImportTarget;
+            if (target.category) {
+                this.currentCategory = target.category;
+            }
+            if (target.status) {
+                this.currentStatusFilter = target.status;
+            }
+            this.lastBatchImportTarget = null;
+        }
+
         this.applyShopTabState(normalizedTab);
         const shouldLoadTab = options?.load !== false;
 
@@ -9901,7 +11136,36 @@ Example output format:
         listRowsContainer.innerHTML = '';
 
         if (!data || data.length === 0) {
-            listRowsContainer.innerHTML = '<div class="shop-list-empty">没有找到匹配的商品</div>';
+            const hasCat = this.currentCategory && this.currentCategory !== 'all';
+            if (hasCat && this.currentStatusFilter === 'active') {
+                listRowsContainer.innerHTML = `
+                    <div class="shop-list-empty">
+                        <div style="font-size:15px;font-weight:600;margin-bottom:6px;color:rgba(255,255,255,0.85);">
+                            该分类下暂无上架在售商品
+                        </div>
+                        <div style="font-size:13px;color:rgba(255,255,255,0.45);margin-bottom:12px;">
+                            商品可能已下架或处于草稿状态
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" data-shop-action="product-filter-status" data-status="deleted" style="display:inline-flex;align-items:center;gap:6px;">
+                            <i class="fas fa-trash" aria-hidden="true"></i> 查看该分类下的已下架/草稿商品
+                        </button>
+                    </div>`;
+            } else if (hasCat && this.currentStatusFilter === 'deleted') {
+                listRowsContainer.innerHTML = `
+                    <div class="shop-list-empty">
+                        <div style="font-size:15px;font-weight:600;margin-bottom:6px;color:rgba(255,255,255,0.85);">
+                            该分类下暂无已下架商品
+                        </div>
+                        <div style="font-size:13px;color:rgba(255,255,255,0.45);margin-bottom:12px;">
+                            所有商品均在上架在售中或尚未创建
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" data-shop-action="product-filter-status" data-status="active" style="display:inline-flex;align-items:center;gap:6px;">
+                            <i class="fas fa-eye" aria-hidden="true"></i> 查看该分类下的在售商品
+                        </button>
+                    </div>`;
+            } else {
+                listRowsContainer.innerHTML = '<div class="shop-list-empty">没有找到匹配的商品</div>';
+            }
             listRowsContainer.classList.remove('is-enter');
             void listRowsContainer.offsetWidth;
             listRowsContainer.classList.add('is-enter');
@@ -10151,16 +11415,41 @@ Example output format:
             ? ''
             : String(categorySelect ? categorySelect.value : (this.supplierCatalogCategoryKey || '')).trim();
         this.supplierCatalogCategoryKey = categoryKey;
-        return { providerId, accountKey, site, keywords, categoryKey };
+        const groupKey = this.supplierCatalogCategoryNeedsReselect
+            ? ''
+            : String(this.supplierCatalogGroupKey || '').trim();
+        const unlistedOnly = Boolean(document.getElementById('supplierCatalogUnlistedOnly')?.checked || this.supplierCatalogUnlistedOnly);
+        this.supplierCatalogUnlistedOnly = unlistedOnly;
+        return { providerId, accountKey, site, keywords, categoryKey, groupKey, unlistedOnly };
     },
 
     selectSupplierCatalogCategory: function (value) {
         const categoryKey = String(value || '').trim();
+        this.supplierCatalogExplicitAll = !categoryKey;
         const wasReselectRequired = this.supplierCatalogCategoryNeedsReselect;
         this.supplierCatalogCategoryNeedsReselect = false;
         this.supplierCatalogPreviousCategoryLabel = '';
         this.supplierCatalogCategoryKey = categoryKey === '__reselect__' ? '' : categoryKey;
+        if (this.supplierCatalogCategoryKey) {
+            this.supplierCatalogGroupKey = '';
+        }
+        const select = document.getElementById('supplierCatalogCategory');
+        if (select && select.value !== this.supplierCatalogCategoryKey) {
+            select.value = this.supplierCatalogCategoryKey;
+        }
         if (wasReselectRequired) this.renderSupplierCatalogFeedback('', 'info');
+        this.renderSupplierCatalogTree();
+    },
+
+    selectSupplierCatalogGroup: function (groupKey) {
+        this.supplierCatalogExplicitAll = false;
+        this.supplierCatalogCategoryNeedsReselect = false;
+        this.supplierCatalogPreviousCategoryLabel = '';
+        this.supplierCatalogGroupKey = String(groupKey || '').trim();
+        this.supplierCatalogCategoryKey = '';
+        const select = document.getElementById('supplierCatalogCategory');
+        if (select) select.value = '';
+        this.renderSupplierCatalogTree();
     },
 
     requireSupplierCatalogCategoryReselection: function (categoryKey, label = '') {
@@ -10172,11 +11461,14 @@ Example output format:
             ? String(previousCategory?.name || label || categoryKey).trim()
             : '';
         this.supplierCatalogCategoryKey = '';
+        this.supplierCatalogGroupKey = '';
+        this.renderSupplierCatalogTree();
     },
 
     clearSupplierCatalogSnapshot: function () {
         this.supplierCatalogSnapshot = null;
         this.supplierCatalogCategoryKey = '';
+        this.supplierCatalogGroupKey = '';
         this.supplierCatalogCategoryNeedsReselect = false;
         this.supplierCatalogPreviousCategoryLabel = '';
         const select = document.getElementById('supplierCatalogCategory');
@@ -10185,6 +11477,7 @@ Example output format:
             select.value = '';
             select.disabled = true;
         }
+        this.renderSupplierCatalogTree();
         this.renderSupplierCatalogSnapshotStatus();
     },
 
@@ -10196,6 +11489,139 @@ Example output format:
             && snapshot.site === query.site);
     },
 
+    renderSupplierCatalogTree: function () {
+        const treeContainer = document.getElementById('supplierCatalogTree');
+        const allBtn = document.getElementById('supplierCatalogTreeAllBtn');
+        if (!treeContainer) return;
+
+        const isXiareng = this.supplierCatalogProviderId === 'xiareng';
+        const snapshot = this.supplierCatalogSnapshot;
+        if (!isXiareng || !snapshot) {
+            treeContainer.innerHTML = '<div class="shop-supplier-tree__empty"><i class="fas fa-folder-open" style="margin-right:6px;"></i>选择供应商与账号后加载分类...</div>';
+            if (allBtn) {
+                allBtn.classList.remove('active');
+            }
+            return;
+        }
+
+        const categoryTree = snapshot.categoryTree;
+        const activeCategoryKey = this.supplierCatalogCategoryKey || '';
+        const activeGroupKey = this.supplierCatalogGroupKey || '';
+
+        let groups = [];
+        let standalone = [];
+
+        if (Array.isArray(categoryTree)) {
+            for (const node of categoryTree) {
+                if (!node) continue;
+                if (node.type === 'group') {
+                    groups.push({
+                        groupKey: node.groupKey,
+                        title: node.name || node.title || node.groupKey,
+                        categories: Array.isArray(node.children) ? node.children : (Array.isArray(node.categories) ? node.categories : []),
+                        totalItemCount: Number.isSafeInteger(node.itemCount) ? node.itemCount : (Number.isSafeInteger(node.totalItemCount) ? node.totalItemCount : 0)
+                    });
+                } else if (node.type === 'category' || node.categoryKey) {
+                    standalone.push(node);
+                }
+            }
+        } else if (categoryTree && typeof categoryTree === 'object') {
+            groups = Array.isArray(categoryTree.groups) ? categoryTree.groups : [];
+            standalone = Array.isArray(categoryTree.standalone) ? categoryTree.standalone : [];
+        }
+
+        if (!groups.length && !standalone.length && Array.isArray(snapshot.categories)) {
+            standalone = snapshot.categories;
+        }
+
+        if (allBtn) {
+            if (!activeCategoryKey && !activeGroupKey) {
+                allBtn.classList.add('active');
+            } else {
+                allBtn.classList.remove('active');
+            }
+        }
+
+        if (activeCategoryKey) {
+            for (const group of groups) {
+                if (group.categories?.some((c) => c.categoryKey === activeCategoryKey)) {
+                    this.supplierCatalogTreeExpandedGroups.add(group.groupKey);
+                    break;
+                }
+            }
+        } else if (activeGroupKey) {
+            this.supplierCatalogTreeExpandedGroups.add(activeGroupKey);
+        } else if (this.supplierCatalogTreeExpandedGroups.size === 0 && groups.length > 0) {
+            this.supplierCatalogTreeExpandedGroups.add(groups[0].groupKey);
+        }
+
+        const html = [];
+
+        for (const group of groups) {
+            const isExpanded = this.supplierCatalogTreeExpandedGroups.has(group.groupKey);
+            const isGroupActive = activeGroupKey === group.groupKey && !activeCategoryKey;
+            const subCategories = Array.isArray(group.categories) ? group.categories : [];
+            const groupItemCount = Number.isSafeInteger(group.totalItemCount) ? group.totalItemCount : 0;
+            const groupTitle = group.title || group.groupKey;
+            const groupIcon = this.resolveCategoryIconUrl({ name: groupTitle, icon_url: group.iconUrl });
+            const groupIconHtml = groupIcon
+                ? `<img src="${this.escapeForAttr(groupIcon)}" alt="" style="width:18px;height:18px;border-radius:4px;object-fit:cover;flex-shrink:0;margin-right:6px;" loading="lazy">`
+                : '<i class="fas fa-folder tree-folder-icon"></i>';
+
+            html.push(`
+                <div class="tree-category${isExpanded ? ' expanded' : ''}" data-group-key="${this.escapeForAttr(group.groupKey)}">
+                    <div class="tree-category-header${isGroupActive ? ' active' : ''}" data-shop-action="supplier-catalog-tree-group" data-group-key="${this.escapeForAttr(group.groupKey)}" title="点击展开并查看该分组商品">
+                        <i class="fas fa-chevron-right tree-chevron" data-shop-action="supplier-catalog-tree-toggle" data-group-key="${this.escapeForAttr(group.groupKey)}"></i>
+                        ${groupIconHtml}
+                        <span class="tree-category-name">${this.escapeHtml(groupTitle)}</span>
+                        <span class="tree-category-count${groupItemCount === 0 ? ' tree-category-count--danger' : ''}">${groupItemCount}</span>
+                    </div>
+                    <div class="tree-children">
+                        ${subCategories.map((cat) => {
+                            const isSelected = activeCategoryKey === cat.categoryKey;
+                            const count = Number.isSafeInteger(cat.itemCount) ? cat.itemCount : 0;
+                            const catIcon = this.resolveCategoryIconUrl({ name: cat.name, icon_url: cat.iconUrl });
+                            const catIconHtml = catIcon
+                                ? `<img src="${this.escapeForAttr(catIcon)}" alt="" style="width:16px;height:16px;border-radius:3px;object-fit:cover;flex-shrink:0;margin-right:6px;" loading="lazy">`
+                                : '<i class="fas fa-file-alt tree-doc-icon" style="margin-right:8px;opacity:0.6;font-size:13px;flex-shrink:0;"></i>';
+                            return `
+                                <div class="tree-subcategory-item${isSelected ? ' selected' : ''}" data-shop-action="supplier-catalog-tree-category" data-category-key="${this.escapeForAttr(cat.categoryKey)}" title="${this.escapeForAttr(cat.name || '')}">
+                                    ${catIconHtml}
+                                    <span class="tree-category-count${count === 0 ? ' tree-category-count--danger' : ''}" style="margin-right:8px;font-size:11px;padding:2px 7px;flex-shrink:0;">${count}</span>
+                                    <span class="tree-product-name" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;">${this.escapeHtml(cat.name || '未命名分类')}</span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `);
+        }
+
+        if (standalone.length > 0) {
+            html.push(`
+                <div class="tree-category standalone-categories" style="margin-top:6px;border-top:1px solid rgba(148,163,184,0.12);padding-top:6px;">
+                    ${standalone.map((cat) => {
+                        const isSelected = activeCategoryKey === cat.categoryKey;
+                        const count = Number.isSafeInteger(cat.itemCount) ? cat.itemCount : 0;
+                        const catIcon = this.resolveCategoryIconUrl({ name: cat.name, icon_url: cat.iconUrl });
+                        const catIconHtml = catIcon
+                            ? `<img src="${this.escapeForAttr(catIcon)}" alt="" style="width:16px;height:16px;border-radius:3px;object-fit:cover;flex-shrink:0;margin-right:6px;" loading="lazy">`
+                            : '<i class="fas fa-folder tree-folder-icon" style="margin-right:8px;font-size:13px;flex-shrink:0;"></i>';
+                        return `
+                            <div class="tree-subcategory-item${isSelected ? ' selected' : ''}" data-shop-action="supplier-catalog-tree-category" data-category-key="${this.escapeForAttr(cat.categoryKey)}" title="${this.escapeForAttr(cat.name || '')}">
+                                ${catIconHtml}
+                                <span class="tree-product-name" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;">${this.escapeHtml(cat.name || '未命名分类')}</span>
+                                <span class="tree-category-count${count === 0 ? ' tree-category-count--danger' : ''}" style="margin-left:8px;font-size:11px;padding:2px 7px;flex-shrink:0;">${count}</span>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `);
+        }
+
+        treeContainer.innerHTML = html.join('');
+    },
+
     renderSupplierCatalogSnapshotStatus: function () {
         const container = document.getElementById('supplierCatalogSnapshot');
         const status = document.getElementById('supplierCatalogSnapshotStatus');
@@ -10205,7 +11631,7 @@ Example output format:
         const isXiareng = this.supplierCatalogProviderId === 'xiareng';
         const query = this.getSupplierCatalogQuery();
         if (container) container.hidden = !isXiareng;
-        if (categoryField) categoryField.hidden = !isXiareng;
+        if (categoryField) categoryField.hidden = true;
         if (refreshButton) refreshButton.hidden = !isXiareng;
         if (!isXiareng || !status) return;
 
@@ -10249,6 +11675,7 @@ Example output format:
             syncedAt: payload.syncedAt,
             expiresAt: payload.expiresAt,
             categories,
+            categoryTree: payload.categoryTree || null,
             itemCount: Number.isSafeInteger(payload.snapshotItemCount) ? payload.snapshotItemCount : 0
         };
         const select = document.getElementById('supplierCatalogCategory');
@@ -10273,6 +11700,7 @@ Example output format:
                 select.value = this.supplierCatalogCategoryKey;
             }
         }
+        this.renderSupplierCatalogTree();
         this.renderSupplierCatalogSnapshotStatus();
     },
 
@@ -10294,6 +11722,8 @@ Example output format:
         this.supplierCatalogItems = [];
         this.supplierCatalogTotal = 0;
         this.supplierCatalogPage = 1;
+        this.supplierCatalogGroupKey = '';
+        this.supplierCatalogExplicitAll = false;
         this.clearSupplierCatalogSnapshot();
         if (providerChanged) {
             this.supplierCatalogAccountKey = '';
@@ -10308,6 +11738,7 @@ Example output format:
         this.renderSupplierCatalogRows();
         this.renderSupplierOrderLookupResult(null, '切换供应商、账号或站点后，请重新核对上游订单号。');
         this.renderSupplierCatalogSnapshotStatus();
+        this.renderSupplierCatalogTree();
         this.syncSupplierCatalogControls();
     },
 
@@ -10955,6 +12386,119 @@ Example output format:
         </div>`;
     },
 
+    loadSupplierDispatchConfig: async function () {
+        const modeEl = document.getElementById('supplierDispatchMode');
+        const threshEl = document.getElementById('supplierDispatchThreshold');
+        if (!modeEl || !threshEl) return;
+
+        try {
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/supplier-catalog', { action: 'dispatch-config' }),
+                {
+                    method: 'GET',
+                    headers: await this.getAdminAuthHeaders(),
+                    credentials: 'include',
+                    cache: 'no-store'
+                }
+            );
+            if (!response.ok) return;
+            const data = await response.json();
+            if (data?.success && data?.policy) {
+                const policy = data.policy;
+                modeEl.value = policy.mode || 'threshold';
+                threshEl.value = Number(policy.thresholdCny ?? 10.00).toFixed(2);
+                this.syncSupplierDispatchUI();
+            }
+        } catch (_) {}
+    },
+
+    syncSupplierDispatchUI: function () {
+        const modeEl = document.getElementById('supplierDispatchMode');
+        const threshField = document.getElementById('supplierDispatchThresholdField');
+        const threshEl = document.getElementById('supplierDispatchThreshold');
+        const badgeEl = document.getElementById('supplierDispatchModeBadge');
+        const summaryEl = document.getElementById('supplierDispatchSummaryText');
+        if (!modeEl || !badgeEl || !summaryEl) return;
+
+        const mode = modeEl.value;
+        const threshVal = Math.max(0, Number(threshEl?.value) || 0).toFixed(2);
+
+        if (mode === 'manual_all') {
+            if (threshField) threshField.style.display = 'none';
+            badgeEl.textContent = '全部人工审核 (链路 A)';
+            badgeEl.style.background = 'rgba(245, 158, 11, 0.15)';
+            badgeEl.style.color = '#fbbf24';
+            badgeEl.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+            summaryEl.innerHTML = '<i class="fas fa-hand-holding-dollar" aria-hidden="true"></i><span>分流规则：所有订单无论金额大小，均进入<strong>待审核采购队列（链路 A）</strong>，必须由管理员在后台核验后点击人工采购。</span>';
+        } else if (mode === 'auto_all') {
+            if (threshField) threshField.style.display = 'none';
+            badgeEl.textContent = '全自动秒级代采 (链路 B)';
+            badgeEl.style.background = 'rgba(16, 185, 129, 0.15)';
+            badgeEl.style.color = '#34d399';
+            badgeEl.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+            summaryEl.innerHTML = '<i class="fas fa-bolt" aria-hidden="true"></i><span>分流规则：所有订单无论金额大小，买家付款后均由系统<strong>全自动调用虾仁 API 秒级下单扣款并交付卡密（链路 B）</strong>。</span>';
+        } else {
+            if (threshField) threshField.style.display = '';
+            badgeEl.textContent = '智能分流模式';
+            badgeEl.style.background = 'rgba(99, 102, 241, 0.15)';
+            badgeEl.style.color = '#818cf8';
+            badgeEl.style.borderColor = 'rgba(99, 102, 241, 0.3)';
+            summaryEl.innerHTML = `<i class="fas fa-circle-info" aria-hidden="true"></i><span>分流规则：订单金额 <strong>&le; ¥${threshVal}</strong> 时走 <strong>链路 B</strong>（自动调用虾仁 API 秒级出卡）；订单金额 <strong>&gt; ¥${threshVal}</strong> 时走 <strong>链路 A</strong>（进入待采购订单，需管理员审核后点击人工采购）。</span>`;
+        }
+    },
+
+    saveSupplierDispatchConfig: async function () {
+        const modeEl = document.getElementById('supplierDispatchMode');
+        const threshEl = document.getElementById('supplierDispatchThreshold');
+        const saveBtn = document.getElementById('supplierDispatchSaveBtn');
+        if (!modeEl || !threshEl) return;
+
+        const mode = modeEl.value;
+        const num = Number(threshEl.value);
+        if (!Number.isFinite(num) || num < 0) {
+            this.showToast('请输入有效的阈值金额（大于等于 0）', 'error');
+            return;
+        }
+
+        const originalBtnHtml = saveBtn ? saveBtn.innerHTML : '';
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
+        }
+
+        try {
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/supplier-catalog'),
+                {
+                    method: 'POST',
+                    headers: await this.getAdminAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        action: 'dispatch-config',
+                        mode,
+                        thresholdCny: num,
+                        enabled: true
+                    })
+                }
+            );
+
+            const result = await response.json();
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || '保存分流配置失败');
+            }
+
+            this.showToast('分流策略与金额阈值已保存', 'success');
+            this.syncSupplierDispatchUI();
+        } catch (err) {
+            this.showToast(err.message || '保存配置失败', 'error');
+        } finally {
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = originalBtnHtml;
+            }
+        }
+    },
+
     loadSupplierCatalogAccounts: async function (query, requestToken) {
         const response = await (window.AdminApi?.fetch || fetch)(this.buildAdminShopUrl('shop/supplier-catalog', {
             action: 'accounts', providerId: query.providerId
@@ -10995,6 +12539,7 @@ Example output format:
                 this.requireSupplierCatalogCategoryReselection(oldCategoryKey, oldCategoryLabel);
             }
             query.categoryKey = '';
+            query.groupKey = '';
         }
         if (query.providerId === 'xiareng' && this.supplierCatalogCategoryNeedsReselect && !refresh) {
             this.supplierCatalogItems = [];
@@ -11039,16 +12584,25 @@ Example output format:
                     pageSize: this.supplierCatalogPageSize,
                     keywords: query.keywords
                 };
+                if (query.unlistedOnly) {
+                    params.unlistedOnly = '1';
+                }
                 if (query.providerId === 'xiareng') {
                     params.site = query.site;
                     if (refresh && attempt === 0) {
                         params.refresh = '1';
+                        this.supplierCatalogExplicitAll = false;
                     } else if (this.isSupplierCatalogSnapshotFor(query)) {
                         params.snapshotId = this.supplierCatalogSnapshot.snapshotId;
                         const categoryKey = this.supplierCatalogCategoryKey;
                         if (categoryKey && this.supplierCatalogSnapshot.categories.some((category) => category.categoryKey === categoryKey)) {
                             params.categoryKey = categoryKey;
+                        } else if (this.supplierCatalogGroupKey) {
+                            params.groupKey = this.supplierCatalogGroupKey;
                         }
+                    }
+                    if (!params.categoryKey && !params.groupKey && !params.keywords && !this.supplierCatalogExplicitAll) {
+                        params.defaultFirstCategory = '1';
                     }
                 }
                 const response = await (window.AdminApi?.fetch || fetch)(
@@ -11064,6 +12618,7 @@ Example output format:
                         this.requireSupplierCatalogCategoryReselection(query.categoryKey);
                         this.supplierCatalogSnapshot = null;
                         this.renderSupplierCatalogSnapshotStatus();
+                        this.renderSupplierCatalogTree();
                         this.supplierCatalogPage = 1;
                         pageToLoad = 1;
                         this.renderSupplierCatalogFeedback(
@@ -11084,6 +12639,9 @@ Example output format:
             if (!payload) throw new Error('供应商目录暂不可用，请刷新后重试。');
             if (requestToken !== this.supplierCatalogRequestToken) return payload;
 
+            if (payload?.selectedCategoryKey && !this.supplierCatalogCategoryKey && !this.supplierCatalogGroupKey && !this.supplierCatalogExplicitAll) {
+                this.supplierCatalogCategoryKey = payload.selectedCategoryKey;
+            }
             if (query.providerId === 'xiareng') this.applySupplierCatalogSnapshot(payload, query);
             else this.clearSupplierCatalogSnapshot();
             if (retriedExpiredSnapshot) this.renderSupplierCatalogFeedback('', 'info');
@@ -11102,6 +12660,10 @@ Example output format:
             this.supplierCatalogItems = Array.isArray(payload.items) ? payload.items : [];
             this.supplierCatalogTotal = Math.max(0, Number(payload.total) || 0);
             this.supplierCatalogPage = Math.max(1, Number(payload.pageNo) || pageToLoad);
+            if (payload?.unlistedCount != null) {
+                const badge = document.getElementById('supplierCatalogUnlistedCountBadge');
+                if (badge) badge.textContent = String(payload.unlistedCount);
+            }
             this.renderSupplierCatalogRows();
             this.syncSupplierCatalogControls();
             return payload;
@@ -11123,10 +12685,29 @@ Example output format:
 
     formatSupplierCatalogDeliveryMethod: function (value) {
         return {
-            1: '自动发货',
+            0: '自动交付 (卡密)',
+            1: '人工发货 (代充/上号)',
             2: '人工发货',
             3: 'API 发货'
         }[Number(value)] || '上游未说明';
+    },
+
+    renderSupplierCatalogDeliveryBadge: function (item = {}) {
+        const rawLabel = String(item.deliveryLabel || '');
+        const isType1 = /类型\s*1\b/.test(rawLabel);
+        const hasWidget = item.variantRequirements?.hasWidget === true;
+        const reasons = Array.isArray(item.variantRequirements?.reasons) ? item.variantRequirements.reasons.join(' ') : '';
+        const hasManualReason = reasons.includes('人工发货') || reasons.includes('自定义填写项');
+        const textToScan = [item.name, item.description].filter(Boolean).join(' ');
+        const hasManualKeyword = ['客服上号', '联系客服', '人工上号', '人工发货', '代接码', '人工充值', '人工代充'].some((k) => textToScan.includes(k));
+
+        if (isType1 || hasWidget || hasManualReason || hasManualKeyword) {
+            return '<span class="shop-supplier-catalog__method list-chip--online" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;background:rgba(56,189,248,0.12);color:#38bdf8;border:1px solid rgba(56,189,248,0.25);" title="上游需人工上号/客服协助，导入后将自动设置为【人工发货】"><i class="fas fa-headset"></i>人工发货 (客服上号)</span>';
+        }
+        if (/类型\s*0\b/.test(rawLabel)) {
+            return '<span class="shop-supplier-catalog__method list-chip--auto" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;background:rgba(52,211,153,0.12);color:#34d399;border:1px solid rgba(52,211,153,0.25);"><i class="fas fa-bolt"></i>自动交付 (卡密)</span>';
+        }
+        return `<span class="shop-supplier-catalog__method">${this.escapeHtml(item.deliveryLabel || this.formatSupplierCatalogDeliveryMethod(item.deliveryMethod))}</span>`;
     },
 
     formatSupplierCatalogPrice: function (item = {}) {
@@ -11134,6 +12715,108 @@ Example output format:
         if (!rawPrice) return '—';
         const currency = this.escapeHtml(String(item.currency || '币种待核验').trim().toUpperCase());
         return `${this.escapeHtml(rawPrice)} ${currency}`;
+    },
+
+    formatSupplierCatalogDescriptionText: function (rawDescription = '') {
+        const raw = String(rawDescription || '').trim();
+        if (!raw) return '';
+        return raw
+            .replace(/<\/p\s*>|<br\s*\/?>/gi, ' · ')
+            .replace(/<\/?(?:p|a|strong|b|em|i|u|ul|ol|li|div|span)\b[^>]*>/gi, '')
+            .replace(/(?:\s*·\s*)+/g, ' · ')
+            .replace(/^\s*·\s*|\s*·\s*$/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    },
+
+    formatSupplierCatalogDescriptionHtml: function (rawDescription = '') {
+        const raw = String(rawDescription || '').trim();
+        if (!raw) return '<p>上游未提供描述。</p>';
+
+        // Only reconstructed tags enter the output. Link bodies stay in the text pipeline.
+        const allowedTags = [];
+        const tokenPrefix = `___SUPPLIER_${(globalThis.crypto?.randomUUID?.() || `${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/-/g, '')}_`;
+        const placeholder = (idx) => `${tokenPrefix}${idx}___`;
+        const protect = (tag) => { const idx = allowedTags.push(tag) - 1; return placeholder(idx); };
+        const escape = (value) => this.escapeHtml(value);
+        const decodeAttribute = (value) => String(value).replace(/&(?:#(x[0-9a-f]+|[0-9]+)|amp|quot|apos|lt|gt);/gi, (entity, numeric) => {
+            if (numeric) {
+                const code = numeric[0].toLowerCase() === 'x' ? parseInt(numeric.slice(1), 16) : Number(numeric);
+                return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : '\ufffd';
+            }
+            return { '&amp;': '&', '&quot;': '"', '&apos;': "'", '&lt;': '<', '&gt;': '>' }[entity.toLowerCase()];
+        });
+        const attribute = (attrs, name) => {
+            const match = attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*(["'])([\\s\\S]*?)\\1`, 'i'));
+            return match ? decodeAttribute(match[2]) : '';
+        };
+        const mediaUrl = (value) => {
+            const source = String(value || '').trim();
+            if (!source || /[\u0000-\u001f\u007f\\]/.test(source) || (/^[a-z][\w+.-]*:/i.test(source) && !/^https?:\/\//i.test(source))) return '';
+            try {
+                const url = new URL(/^https?:\/\//i.test(source) ? source : `https://xiareng.cc/${source.replace(/^\/+/, '')}`);
+                return /^https?:$/.test(url.protocol) && !url.username && !url.password ? url.href : '';
+            } catch (_) { return ''; }
+        };
+        const safeStyle = (value) => String(value).split(';').flatMap((declaration) => {
+            const pair = declaration.split(':');
+            if (pair.length !== 2) return [];
+            const name = pair[0].trim().toLowerCase(), content = pair[1].trim().toLowerCase();
+            let allowed = false;
+            if (/^(?:width|height|min-width|max-width|min-height|max-height|font-size|border-radius)$/.test(name)) {
+                allowed = /^(?:0|auto|\d{1,4}(?:\.\d{1,2})?(?:px|em|rem|%))$/.test(content);
+            } else if (/^(?:color|background-color)$/.test(name)) {
+                allowed = /^(?:#[0-9a-f]{3,8}|[a-z]{1,24}|rgba?\([\d.,%\s]+\))$/.test(content);
+            } else if (name === 'text-align') allowed = /^(?:left|right|center|justify|start|end)$/.test(content);
+            else if (name === 'font-weight') allowed = /^(?:normal|bold|[1-9]00)$/.test(content);
+            else if (name === 'font-style') allowed = /^(?:normal|italic|oblique)$/.test(content);
+            else if (name === 'text-decoration') allowed = /^(?:none|underline|line-through)$/.test(content);
+            return allowed ? [`${name}:${content}`] : [];
+        }).join(';');
+
+        let processed = raw.replace(/<img\b([^>]*)>/gi, (_, attrs) => {
+            const src = mediaUrl(attribute(attrs, 'src'));
+            if (!src) return '';
+            const alt = attribute(attrs, 'alt') || '商品详情图';
+            const style = safeStyle(attribute(attrs, 'style'));
+            return protect(`<img src="${escape(src)}" alt="${escape(alt)}"${style ? ` style="${escape(style)}"` : ''} loading="lazy">`);
+        });
+        processed = processed.replace(/<video\b([^>]*)>([\s\S]*?)<\/video>/gi, (_, attrs) => {
+            const src = mediaUrl(attribute(attrs, 'src'));
+            if (!src) return '';
+            const poster = mediaUrl(attribute(attrs, 'poster'));
+            return protect(`<video src="${escape(src)}"${poster ? ` poster="${escape(poster)}"` : ''} controls style="max-width:100%;border-radius:8px;"></video>`);
+        });
+        processed = processed.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_, attrs, linkText) => {
+            const hrefValue = attribute(attrs, 'href').trim();
+            const href = /^https?:\/\//i.test(hrefValue) ? mediaUrl(hrefValue) : '';
+            if (!href) return linkText;
+            return protect(`<a href="${escape(href)}" target="_blank" rel="noopener noreferrer">`) + linkText + protect('</a>');
+        });
+        // Preserve supported legacy formatting through the same CSS allowlist.
+        processed = processed.replace(/<font\b([^>]*)>/gi, (_, attrs) => {
+            const styles = [];
+            const sizeMatch = attrs.match(/(?:^|\s)size\s*=\s*(["']?)(\d+)\1/i);
+            if (sizeMatch) {
+                const sizeNum = parseInt(sizeMatch[2], 10);
+                const sizeMap = { 1: '12px', 2: '13px', 3: '14px', 4: '16px', 5: '18px', 6: '22px', 7: '28px' };
+                if (sizeMap[sizeNum]) styles.push(`font-size:${sizeMap[sizeNum]}`);
+                if (sizeNum >= 5) styles.push('font-weight:600');
+            }
+            const colorMatch = attrs.match(/(?:^|\s)color\s*=\s*(["']?)(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\1/i);
+            if (colorMatch) styles.push(`color:${colorMatch[2]}`);
+            styles.push(attribute(attrs, 'style'));
+            const style = safeStyle(styles.join(';'));
+            return protect(`<span${style ? ` style="${escape(style)}"` : ''}>`);
+        });
+        processed = processed.replace(/<\/font>/gi, () => protect('</span>'));
+        processed = processed.replace(/<center\b[^>]*>/gi, () => protect('<div style="text-align:center;">'));
+        processed = processed.replace(/<\/center>/gi, () => protect('</div>'));
+        processed = processed.replace(/<\/?(p|div|span|blockquote|h[1-6]|strong|b|em|i|u|s|del|code|pre|ul|ol|li|br|hr)\b[^>]*>/gi, (tag, name) =>
+            protect(tag.startsWith('</') ? `</${name.toLowerCase()}>` : `<${name.toLowerCase()}>`));
+        const escaped = escape(processed).replace(new RegExp(`${tokenPrefix}(\\d+)___`, 'g'), (_, index) => allowedTags[Number(index)] || '');
+
+        return /<(?:p|div|h[1-6]|ul|ol)/i.test(escaped) ? escaped : `<p>${escaped}</p>`;
     },
 
     renderSupplierCatalogRows: function () {
@@ -11152,22 +12835,26 @@ Example output format:
         tableBody.innerHTML = items.map((item) => {
             const goodsNo = String(item.providerGoodsId || '').trim();
             const selected = this.supplierCatalogSelectedGoodsNos.has(goodsNo);
-            const description = String(item.description || '').trim();
+            const statusTag = item.publicationStatus === 'published'
+                ? `<span class="shop-supplier-catalog__status-tag shop-supplier-catalog__status-tag--published" style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(46,213,115,0.15);color:#2ed573;margin-left:6px;"><i class="fas fa-check-circle" style="font-size:10px;"></i>已上架</span>`
+                : (item.publicationStatus === 'draft'
+                    ? `<span class="shop-supplier-catalog__status-tag shop-supplier-catalog__status-tag--draft" style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(255,165,2,0.15);color:#ffa502;margin-left:6px;"><i class="fas fa-file-pen" style="font-size:10px;"></i>草稿中</span>`
+                    : `<span class="shop-supplier-catalog__status-tag shop-supplier-catalog__status-tag--unimported" style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(99,102,241,0.15);color:#818cf8;margin-left:6px;"><i class="fas fa-sparkles" style="font-size:10px;"></i>未导入</span>`);
             return `
                 <tr class="shop-supplier-catalog__row${selected ? ' is-selected' : ''}">
                     <td class="shop-supplier-catalog__check-col" data-label="选择">
-                        <input type="checkbox" aria-label="选择 ${this.escapeForAttr(item.name || goodsNo)}" data-shop-change="supplier-catalog-item" data-goods-no="${this.escapeForAttr(goodsNo)}" ${this.supplierCatalogProviderId === 'xiareng' ? 'disabled title="请在详情中核对规格后导入"' : ''} ${selected ? 'checked' : ''}>
+                        <input type="checkbox" aria-label="选择 ${this.escapeForAttr(item.name || goodsNo)}" data-shop-change="supplier-catalog-item" data-goods-no="${this.escapeForAttr(goodsNo)}" ${selected ? 'checked' : ''}>
                     </td>
                     <td data-label="商品">
                         <div class="shop-supplier-catalog__product">
-                            <strong class="shop-supplier-catalog__product-name">${this.escapeHtml(item.name || '未命名商品')}</strong>
-                            ${description ? `<small class="shop-supplier-catalog__product-description">${this.escapeHtml(description.slice(0, 120))}</small>` : ''}
+                            <strong class="shop-supplier-catalog__product-name" title="${this.escapeForAttr(item.name || '')}">${this.escapeHtml(item.name || '未命名商品')}</strong>
+                            ${statusTag}
                         </div>
                     </td>
                     <td data-label="上游货号"><code>${this.escapeHtml(goodsNo || '—')}</code></td>
                     <td data-label="采购参考价"><span class="shop-supplier-catalog__price">${this.formatSupplierCatalogPrice(item)}</span></td>
                     <td data-label="起购数量">${item.minimumQuantity ? this.escapeHtml(String(item.minimumQuantity)) : '—'}</td>
-                    <td data-label="发货方式"><span class="shop-supplier-catalog__method">${this.escapeHtml(item.deliveryLabel || this.formatSupplierCatalogDeliveryMethod(item.deliveryMethod))}</span></td>
+                    <td data-label="发货方式">${this.renderSupplierCatalogDeliveryBadge(item)}</td>
                     <td data-label="操作">
                         <button type="button" class="btn btn-secondary shop-supplier-catalog__detail-button" data-shop-action="supplier-catalog-detail" data-goods-no="${this.escapeForAttr(goodsNo)}">
                             <i class="fas fa-eye"></i> 查看详情
@@ -11202,14 +12889,14 @@ Example output format:
             : null;
 
         if (selectAll) {
-            selectAll.disabled = this.supplierCatalogProviderId === 'xiareng' || this.supplierCatalogImportInFlight;
+            selectAll.disabled = !visibleGoodsNos.length || this.supplierCatalogImportInFlight;
             selectAll.checked = visibleGoodsNos.length > 0 && visibleGoodsNos.every((goodsNo) => this.supplierCatalogSelectedGoodsNos.has(goodsNo));
             selectAll.indeterminate = visibleGoodsNos.some((goodsNo) => this.supplierCatalogSelectedGoodsNos.has(goodsNo)) && !selectAll.checked;
         }
         if (importButton) {
             importButton.disabled = selectedCount === 0 || this.supplierCatalogImportInFlight;
         }
-        if (selectionCount) selectionCount.textContent = this.supplierCatalogProviderId === 'xiareng' ? '请打开详情核对规格后导入' : `已选 ${selectedCount} 项`;
+        if (selectionCount) selectionCount.textContent = `已选 ${selectedCount} 项`;
         for (const id of ['supplierCatalogProvider', 'supplierCatalogAccount', 'supplierCatalogSite']) {
             const select = document.getElementById(id);
             if (select) select.disabled = this.supplierCatalogImportInFlight;
@@ -11226,6 +12913,7 @@ Example output format:
         if (searchButton) searchButton.disabled = this.supplierCatalogLoading || this.supplierCatalogImportInFlight;
         if (refreshButton) refreshButton.disabled = this.supplierCatalogLoading || this.supplierCatalogImportInFlight;
         this.renderSupplierCatalogSnapshotStatus();
+        this.renderSupplierCatalogTree();
     },
 
     toggleSupplierCatalogItem: function (goodsNo, checked) {
@@ -11346,7 +13034,19 @@ Example output format:
         }
     },
 
-    importSupplierCatalogGoods: async function (goodsNos = null, { confirm = true, button = null, context = null, variants = {} } = {}) {
+    importSupplierCatalogGoods: async function (goodsNos = null, options = {}) {
+        const {
+            confirm = true,
+            button = null,
+            context = null,
+            variants = {},
+            multiVariants = null,
+            costCeilings = {},
+            markupMultiplier = null,
+            productCategory = null,
+            initialStatus = null,
+            salesConfig = null
+        } = options;
         const selectedGoodsNos = Array.isArray(goodsNos)
             ? [...new Set(goodsNos.map((value) => String(value || '').trim()).filter(Boolean))]
             : [...(this.supplierCatalogSelectedGoodsNos instanceof Set ? this.supplierCatalogSelectedGoodsNos : [])];
@@ -11385,8 +13085,16 @@ Example output format:
                         providerId: query.providerId,
                         accountKey: query.accountKey,
                         variants,
+                        ...(multiVariants ? { multiVariants } : {}),
+                        ...(costCeilings && Object.keys(costCeilings).length ? { costCeilings } : {}),
+                        ...(markupMultiplier != null ? { markupMultiplier } : {}),
                         site: query.site,
-                        goodsNos: selectedGoodsNos
+                        goodsNos: selectedGoodsNos,
+                        ...(productCategory ? { productCategory } : {}),
+                        categoryIconUrl: productCategory ? this.getCategoryIconUrl(productCategory) : null,
+                        ...(initialStatus ? { initialStatus } : {}),
+                        ...(salesConfig ? { salesConfig } : {}),
+                        ...(query.providerId === 'xiareng' ? { autoAllVariants: true } : {})
                     })
                 }
             );
@@ -11425,6 +13133,990 @@ Example output format:
             this.restoreActionButton(actionButton);
             this.syncSupplierCatalogControls();
             this.syncSupplierCatalogDetailControls();
+        }
+    },
+
+    openSupplierCatalogBatchModal: async function () {
+        const query = this.getSupplierCatalogQuery();
+        if (query.providerId !== 'xiareng') {
+            this.showToast('按分类批量导入目前仅支持虾仁供货商', 'warning');
+            return;
+        }
+
+        const snapshot = this.supplierCatalogSnapshot;
+        if (!snapshot?.snapshotId || !this.isSupplierCatalogSnapshotFor(query)) {
+            this.showToast('请先刷新并加载供应商目录快照后再进行批量导入', 'warning');
+            return;
+        }
+
+        const modal = document.getElementById('supplierCatalogBatchModal');
+        if (!modal) return;
+        modal.classList.add('active');
+        modal.setAttribute('aria-hidden', 'false');
+        this.syncBatchImportSalesModeControls();
+
+        const progressContainer = document.getElementById('batchImportProgressContainer');
+        if (progressContainer) {
+            progressContainer.style.display = 'none';
+        }
+        const startBtn = document.getElementById('batchImportStartBtn');
+        if (startBtn) {
+            startBtn.disabled = true;
+            startBtn.innerHTML = '<i class="fas fa-rocket"></i> 开始分步导入';
+            startBtn.onclick = null;
+        }
+        const cancelBtn = document.getElementById('batchImportCancelBtn');
+        if (cancelBtn) {
+            cancelBtn.textContent = '取消';
+        }
+
+        // Configure "Only current category" shortcut button
+        const activeCatKey = this.supplierCatalogCategoryKey;
+        const activeGroupKey = this.supplierCatalogGroupKey;
+        const currentBtn = document.getElementById('batchImportSelectCurrentBtn');
+        if (currentBtn) {
+            if (activeCatKey) {
+                const cat = (snapshot.categories || []).find((c) => c.categoryKey === activeCatKey);
+                const name = cat?.name || activeCatKey;
+                currentBtn.innerHTML = `<i class="fas fa-bullseye"></i> 仅选当前分类 (${this.escapeHtml(name.length > 10 ? name.slice(0, 10) + '…' : name)})`;
+                currentBtn.disabled = false;
+            } else if (activeGroupKey) {
+                currentBtn.innerHTML = `<i class="fas fa-bullseye"></i> 仅选当前分组 (${this.escapeHtml(activeGroupKey)})`;
+                currentBtn.disabled = false;
+            } else {
+                currentBtn.innerHTML = '<i class="fas fa-bullseye"></i> 仅选当前分类';
+                currentBtn.disabled = true;
+            }
+        }
+        const filterInput = document.getElementById('batchImportCategoryFilterInput');
+        if (filterInput) filterInput.value = '';
+
+        const tbody = document.getElementById('batchImportMatrixTableBody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:16px;color:#a0aec0;"><i class="fas fa-spinner fa-spin"></i> 正在读取上游分类商品总数...</td></tr>';
+
+        const catKeys = (snapshot.categories || []).map((c) => c.categoryKey).filter(Boolean);
+        try {
+            const res = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/supplier-catalog', {
+                    providerId: query.providerId,
+                    accountKey: query.accountKey,
+                    site: query.site,
+                    action: 'category-goods',
+                    snapshotId: snapshot.snapshotId,
+                    categoryKeys: catKeys.join(',')
+                }),
+                { credentials: 'include', cache: 'no-store' }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success || !data.categories) {
+                throw new Error(data.message || '提取分类商品失败');
+            }
+
+            this.supplierCatalogBatchCategoriesData = data.categories;
+            this.renderSupplierCatalogBatchMatrix(data.categories);
+            this.syncSupplierCatalogBatchModalSelection();
+        } catch (err) {
+            if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:16px;color:#ef4444;"><i class="fas fa-exclamation-circle"></i> ${this.escapeHtml(err.message || '读取失败')}</td></tr>`;
+        }
+    },
+
+    closeSupplierCatalogBatchModal: function () {
+        if (this.supplierCatalogBatchInFlight) {
+            if (!window.confirm('批量导入正在进行中，是否确定取消？已导入商品不会被撤销。')) {
+                return;
+            }
+            this.supplierCatalogBatchInFlight = false;
+        }
+        const modal = document.getElementById('supplierCatalogBatchModal');
+        if (modal) {
+            modal.classList.remove('active');
+            modal.setAttribute('aria-hidden', 'true');
+        }
+    },
+
+    findCategoryKeysForGroup: function (categoryTree, groupKey) {
+        if (!groupKey || !categoryTree) return [];
+        if (Array.isArray(categoryTree)) {
+            for (const node of categoryTree) {
+                if (!node) continue;
+                if (node.type === 'group' && node.groupKey === groupKey) {
+                    const cats = Array.isArray(node.children) ? node.children : (Array.isArray(node.categories) ? node.categories : []);
+                    return cats.map((c) => c.categoryKey).filter(Boolean);
+                }
+            }
+        } else if (categoryTree && typeof categoryTree === 'object') {
+            const groups = Array.isArray(categoryTree.groups) ? categoryTree.groups : [];
+            const grp = groups.find((g) => g.groupKey === groupKey);
+            if (grp && Array.isArray(grp.categories)) {
+                return grp.categories.map((c) => c.categoryKey).filter(Boolean);
+            }
+        }
+        return [];
+    },
+
+    renderSupplierCatalogBatchMatrix: function (categoriesMap) {
+        const tbody = document.getElementById('batchImportMatrixTableBody');
+        if (!tbody) return;
+
+        const localCats = (this.categoryData || []).map((c) => c.name).filter(Boolean);
+        const entries = Object.entries(categoriesMap || {});
+        if (!entries.length) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:16px;color:#a0aec0;">未找到可导入的分类。</td></tr>';
+            return;
+        }
+
+        const activeCatKey = this.supplierCatalogCategoryKey;
+        const activeGroupKey = this.supplierCatalogGroupKey;
+        const hasSpecificFilter = Boolean(activeCatKey || activeGroupKey);
+
+        let precheckedKeys = new Set();
+        if (activeCatKey) {
+            precheckedKeys.add(activeCatKey);
+        } else if (activeGroupKey && this.supplierCatalogSnapshot) {
+            const groupKeys = this.findCategoryKeysForGroup(this.supplierCatalogSnapshot.categoryTree, activeGroupKey);
+            precheckedKeys = new Set(groupKeys);
+        }
+
+        tbody.innerHTML = entries.map(([catKey, catInfo]) => {
+            const count = Array.isArray(catInfo.items) ? catInfo.items.length : 0;
+            const catName = catInfo.categoryName || catKey;
+            const isChecked = hasSpecificFilter ? precheckedKeys.has(catKey) : true;
+            const catIcon = catInfo.iconUrl || this.getCategoryIconUrl(catName);
+            const catIconHtml = catIcon
+                ? `<img src="${this.escapeForAttr(catIcon)}" alt="" style="width:18px;height:18px;border-radius:4px;object-fit:cover;flex-shrink:0;vertical-align:middle;margin-right:8px;" loading="lazy">`
+                : '';
+
+            const optionsHtml = [
+                `<option value="${this.escapeForAttr(catName)}" selected>新建/同名分类【${this.escapeHtml(catName)}】</option>`,
+                ...localCats.map((lc) => `<option value="${this.escapeForAttr(lc)}">归属到现有【${this.escapeHtml(lc)}】</option>`),
+                '<option value="other">归属到【其它 (other)】</option>'
+            ].join('');
+
+            return `
+                <tr class="batch-import-cat-row" data-cat-key="${this.escapeForAttr(catKey)}" data-cat-name="${this.escapeForAttr(catName.toLowerCase())}" style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <td style="text-align:center;"><input type="checkbox" class="batch-import-cat-check" data-shop-change="batch-import-cat-check" ${isChecked ? 'checked' : ''} style="accent-color:#6366f1;"></td>
+                    <td><div style="display:flex;align-items:center;">${catIconHtml}<strong style="color:#e2e8f0;">${this.escapeHtml(catName)}</strong></div></td>
+                    <td>
+                        <select class="batch-import-local-cat" style="width:100%;max-width:220px;padding:3px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);background:rgba(20,24,33,0.9);color:#fff;font-size:12px;">
+                            ${optionsHtml}
+                        </select>
+                    </td>
+                    <td style="text-align:center;"><span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,0.08);color:#cbd5e1;font-weight:600;">${count}</span></td>
+                    <td>
+                        <div style="display:flex;align-items:center;gap:4px;">
+                            <input type="number" class="batch-import-cat-mult" step="0.05" min="1" max="100" placeholder="继承全局" style="width:75px;padding:3px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.3);color:#fff;font-size:12px;text-align:center;">
+                            <span style="color:#a0aec0;font-size:11px;">倍</span>
+                        </div>
+                    </td>
+                    <td>
+                        <select class="batch-import-cat-channels" style="padding:3px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);background:rgba(20,24,33,0.9);color:#fff;font-size:12px;">
+                            <option value="inherit" selected>跟随全局配置</option>
+                            <option value="zpay">仅 支付宝/微信 (ZPay)</option>
+                            <option value="nowpayments">仅 USDT (NOWPayments)</option>
+                            <option value="all">支持全部支付通道</option>
+                        </select>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    },
+
+    filterSupplierCatalogBatchMatrix: function (keyword) {
+        const term = String(keyword || '').trim().toLowerCase();
+        const rows = document.querySelectorAll('.batch-import-cat-row');
+        rows.forEach((row) => {
+            const catName = row.dataset.catName || row.textContent.toLowerCase();
+            row.style.display = (!term || catName.includes(term)) ? '' : 'none';
+        });
+    },
+
+    setSupplierCatalogBatchMatrixAll: function (checked) {
+        const rows = document.querySelectorAll('.batch-import-cat-row');
+        rows.forEach((row) => {
+            if (row.style.display !== 'none') {
+                const cb = row.querySelector('.batch-import-cat-check');
+                if (cb) cb.checked = Boolean(checked);
+            }
+        });
+        this.syncSupplierCatalogBatchModalSelection();
+    },
+
+    setSupplierCatalogBatchMatrixOnlyCurrent: function () {
+        const activeCatKey = this.supplierCatalogCategoryKey;
+        const activeGroupKey = this.supplierCatalogGroupKey;
+        let targetKeys = new Set();
+        if (activeCatKey) {
+            targetKeys.add(activeCatKey);
+        } else if (activeGroupKey && this.supplierCatalogSnapshot) {
+            targetKeys = new Set(this.findCategoryKeysForGroup(this.supplierCatalogSnapshot.categoryTree, activeGroupKey));
+        }
+
+        const rows = document.querySelectorAll('.batch-import-cat-row');
+        rows.forEach((row) => {
+            const cb = row.querySelector('.batch-import-cat-check');
+            const catKey = row.dataset.catKey;
+            if (cb) {
+                cb.checked = targetKeys.size > 0 ? targetKeys.has(catKey) : true;
+            }
+        });
+        this.syncSupplierCatalogBatchModalSelection();
+    },
+
+    syncSupplierCatalogBatchModalSelection: function () {
+        const allChecks = Array.from(document.querySelectorAll('.batch-import-cat-check'));
+        const checkedBoxes = allChecks.filter((cb) => cb.checked);
+        const selectAll = document.getElementById('batchImportMatrixSelectAll');
+        if (selectAll) {
+            selectAll.checked = checkedBoxes.length === allChecks.length && allChecks.length > 0;
+            selectAll.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < allChecks.length;
+        }
+
+        const countEl = document.getElementById('batchImportSelectedCatCount');
+        if (countEl) countEl.textContent = String(checkedBoxes.length);
+
+        let totalItems = 0;
+        const categoriesMap = this.supplierCatalogBatchCategoriesData || {};
+        checkedBoxes.forEach((cb) => {
+            const row = cb.closest('.batch-import-cat-row');
+            const catKey = row?.dataset?.catKey;
+            if (catKey && categoriesMap[catKey]?.items) {
+                totalItems += categoriesMap[catKey].items.length;
+            }
+        });
+        const totalGoodsCountEl = document.getElementById('batchImportTotalGoodsCount');
+        if (totalGoodsCountEl) totalGoodsCountEl.textContent = String(totalItems);
+
+        const startBtn = document.getElementById('batchImportStartBtn');
+        if (startBtn) startBtn.disabled = checkedBoxes.length === 0;
+    },
+
+    syncBatchImportSalesModeControls: function () {
+        const modeEl = document.getElementById('batchImportSalesMode');
+        if (!modeEl) return;
+        const mode = Number(modeEl.value) || 3;
+        const baseGroup = document.getElementById('batchImportSalesBaseGroup');
+        const minGroup = document.getElementById('batchImportDailyMinGroup');
+        const maxGroup = document.getElementById('batchImportDailyMaxGroup');
+        const startGroup = document.getElementById('batchImportStartDateGroup');
+        const hint = document.getElementById('batchImportSalesModeHint');
+
+        if (mode === 3) {
+            if (baseGroup) baseGroup.style.display = 'none';
+            if (minGroup) minGroup.style.display = 'none';
+            if (maxGroup) maxGroup.style.display = 'none';
+            if (startGroup) startGroup.style.display = 'none';
+            if (hint) hint.textContent = '新导入商品将完全展示真实成交及上游销量';
+        } else if (mode === 1) {
+            if (baseGroup) baseGroup.style.display = 'block';
+            if (minGroup) minGroup.style.display = 'none';
+            if (maxGroup) maxGroup.style.display = 'none';
+            if (startGroup) startGroup.style.display = 'none';
+            if (hint) hint.textContent = '对外展示销量 = 真实成交量 + 统一销量基数';
+        } else if (mode === 2) {
+            if (baseGroup) baseGroup.style.display = 'block';
+            if (minGroup) minGroup.style.display = 'block';
+            if (maxGroup) maxGroup.style.display = 'block';
+            if (startGroup) startGroup.style.display = 'block';
+            if (hint) hint.textContent = '对外展示销量 = 每日在[最小值, 最大值]内随机累加 + 销量基数';
+            const startEl = document.getElementById('batchImportSalesStartDate');
+            if (startEl && !startEl.value) {
+                const todayStr = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+                startEl.value = todayStr;
+            }
+        }
+    },
+
+    syncSupplierImportSalesModeControls: function () {
+        const modeEl = document.getElementById('supplierImportSalesMode');
+        if (!modeEl) return;
+        const mode = Number(modeEl.value) || 3;
+        const baseGroup = document.getElementById('supplierImportSalesBaseGroup');
+        const dailyRow = document.getElementById('supplierImportDailyRandomRow');
+        const hint = document.getElementById('supplierImportSalesModeHint');
+
+        if (mode === 3) {
+            if (baseGroup) baseGroup.style.display = 'none';
+            if (dailyRow) dailyRow.style.display = 'none';
+            if (hint) hint.textContent = '完全展示真实下单及上游接口销量';
+        } else if (mode === 1) {
+            if (baseGroup) baseGroup.style.display = 'block';
+            if (dailyRow) dailyRow.style.display = 'none';
+            if (hint) hint.textContent = '对外展示销量 = 真实成交量（本地订单 + 上游接口销量） + 销量基数';
+        } else if (mode === 2) {
+            if (baseGroup) baseGroup.style.display = 'block';
+            if (dailyRow) dailyRow.style.display = 'block';
+            if (hint) hint.textContent = '对外展示销量 = 每日随机增量确定性累加 + 销量基数';
+            const startEl = document.getElementById('supplierImportSalesStartDate');
+            if (startEl && !startEl.value) {
+                const todayStr = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+                startEl.value = todayStr;
+            }
+        }
+    },
+
+    runChunkedSupplierCatalogBatchImport: async function () {
+        if (this.supplierCatalogBatchInFlight) return;
+        const query = this.getSupplierCatalogQuery();
+        const categoriesMap = this.supplierCatalogBatchCategoriesData || {};
+
+        const checkedBoxes = Array.from(document.querySelectorAll('.batch-import-cat-check:checked'));
+        if (!checkedBoxes.length) {
+            this.showToast('请至少勾选一个分类进行导入', 'warning');
+            return;
+        }
+
+        const scope = document.querySelector('input[name="batchImportScope"]:checked')?.value || 'all';
+        const limitPerCategory = scope === 'limit'
+            ? Math.max(1, parseInt(document.getElementById('batchImportLimitPerCategory')?.value || '20', 10))
+            : 0;
+        const autoAllVariants = document.getElementById('batchImportAutoAllVariants')?.checked !== false;
+
+        const globalMultiplier = parseFloat(document.getElementById('batchImportGlobalMultiplier')?.value || '1.2');
+        const ceilingStrategy = document.getElementById('batchImportCostCeilingStrategy')?.value || '1.0';
+        const costCeilingMultiplier = ceilingStrategy === 'none' ? null : parseFloat(ceilingStrategy);
+
+        const globalChannels = [];
+        if (document.getElementById('batchImportGlobalChannelZpay')?.checked) globalChannels.push('zpay');
+        if (document.getElementById('batchImportGlobalChannelNowpayments')?.checked) globalChannels.push('nowpayments');
+
+        const duplicatePolicy = document.querySelector('input[name="batchImportDupPolicy"]:checked')?.value || 'skip';
+        const initialStatus = document.querySelector('input[name="batchImportInitialStatus"]:checked')?.value || 'draft';
+
+        const batchSalesMode = Number(document.getElementById('batchImportSalesMode')?.value || 3);
+        const batchSalesBase = Math.max(0, parseInt(document.getElementById('batchImportSalesBase')?.value || '0', 10) || 0);
+        const batchDailyMin = Math.max(0, parseInt(document.getElementById('batchImportDailyRandomMin')?.value || '0', 10) || 0);
+        const batchDailyMax = Math.max(batchDailyMin, parseInt(document.getElementById('batchImportDailyRandomMax')?.value || '0', 10) || batchDailyMin);
+        const todayStr = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+        const batchStartDateRaw = document.getElementById('batchImportSalesStartDate')?.value.trim() || '';
+        const batchStartDate = /^\d{4}-\d{2}-\d{2}$/.test(batchStartDateRaw) ? batchStartDateRaw : (batchSalesMode === 2 ? todayStr : null);
+
+        const batchSalesConfig = {
+            mode: (batchSalesMode === 1 || batchSalesMode === 2 || batchSalesMode === 3) ? batchSalesMode : 3,
+            base_sales: batchSalesBase,
+            daily_random_min: batchDailyMin,
+            daily_random_max: batchDailyMax,
+            random_seed: '',
+            start_date: batchStartDate
+        };
+
+        const itemsToImport = [];
+        const markupMultipliers = {};
+        const categoryPaymentChannels = {};
+        const productCategories = {};
+
+        checkedBoxes.forEach((cb) => {
+            const row = cb.closest('.batch-import-cat-row');
+            if (!row) return;
+            const catKey = row.dataset.catKey;
+            const catInfo = categoriesMap[catKey];
+            if (!catInfo || !Array.isArray(catInfo.items)) return;
+
+            const targetLocalCat = row.querySelector('.batch-import-local-cat')?.value || catInfo.categoryName || 'other';
+            const catMultRaw = parseFloat(row.querySelector('.batch-import-cat-mult')?.value || '');
+            const catMult = Number.isFinite(catMultRaw) && catMultRaw >= 1 ? catMultRaw : globalMultiplier;
+
+            const channelMode = row.querySelector('.batch-import-cat-channels')?.value || 'inherit';
+            let catChannels = globalChannels;
+            if (channelMode === 'zpay') catChannels = ['zpay'];
+            else if (channelMode === 'nowpayments') catChannels = ['nowpayments'];
+            else if (channelMode === 'all') catChannels = ['zpay', 'nowpayments'];
+
+            const items = limitPerCategory > 0 ? catInfo.items.slice(0, limitPerCategory) : catInfo.items;
+            const seenGoodsNos = new Set();
+            items.forEach((item) => {
+                const goodsNo = item.providerGoodsId;
+                if (!goodsNo || seenGoodsNos.has(goodsNo)) return;
+                seenGoodsNos.add(goodsNo);
+                itemsToImport.push({
+                    goodsNo,
+                    name: item.name || goodsNo,
+                    category: targetLocalCat
+                });
+                markupMultipliers[goodsNo] = catMult;
+                categoryPaymentChannels[goodsNo] = catChannels;
+                productCategories[goodsNo] = targetLocalCat;
+            });
+        });
+
+        const categoryIcons = {};
+        for (const [catKey, catInfo] of Object.entries(this.supplierCatalogBatchCategoriesData || {})) {
+            const catName = catInfo?.categoryName || catKey;
+            const icon = catInfo?.iconUrl || this.getCategoryIconUrl(catName);
+            if (icon) {
+                categoryIcons[catName] = icon;
+                categoryIcons[catKey] = icon;
+            }
+        }
+
+        if (!itemsToImport.length) {
+            this.showToast('所选分类中没有有效商品可导入', 'warning');
+            return;
+        }
+
+        const progressContainer = document.getElementById('batchImportProgressContainer');
+        const progressBar = document.getElementById('batchImportProgressBar');
+        const progressPercent = document.getElementById('batchImportProgressPercent');
+        const progressStatusText = document.getElementById('batchImportProgressStatusText');
+        const totalCountEl = document.getElementById('batchImportTotalCount');
+        const successCountEl = document.getElementById('batchImportSuccessCount');
+        const skippedCountEl = document.getElementById('batchImportSkippedCount');
+        const failedCountEl = document.getElementById('batchImportFailedCount');
+        const startBtn = document.getElementById('batchImportStartBtn');
+
+        if (progressContainer) {
+            progressContainer.style.display = 'block';
+            if (typeof progressContainer.scrollIntoView === 'function') {
+                progressContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+        if (startBtn) {
+            startBtn.disabled = true;
+            startBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 导入中...';
+        }
+
+        const total = itemsToImport.length;
+        if (totalCountEl) totalCountEl.textContent = String(total);
+        let successCount = 0;
+        let skippedCount = 0;
+        let failedCount = 0;
+        let processedCount = 0;
+
+        this.supplierCatalogBatchInFlight = true;
+
+        const updateProgressUI = (activeItemName) => {
+            const pct = total > 0 ? Math.min(100, Math.round((processedCount / total) * 100)) : 0;
+            if (progressBar) progressBar.style.width = `${pct}%`;
+            if (progressPercent) progressPercent.textContent = `${pct}%`;
+            if (successCountEl) successCountEl.textContent = String(successCount);
+            if (skippedCountEl) skippedCountEl.textContent = String(skippedCount);
+            if (failedCountEl) failedCountEl.textContent = String(failedCount);
+            if (progressStatusText && processedCount < total) {
+                const currentNum = Math.min(processedCount + 1, total);
+                const safeName = activeItemName ? this.escapeHtml(activeItemName) : '准备中';
+                progressStatusText.innerHTML = `正在导入 (${currentNum}/${total})：<span style="color:#60a5fa;font-weight:600;">【${safeName}】</span>...`;
+            }
+        };
+
+        updateProgressUI(itemsToImport[0]?.name || '');
+
+        const CONCURRENCY = Math.min(2, total);
+        let queueIndex = 0;
+
+        const worker = async () => {
+            while (queueIndex < total) {
+                if (!this.supplierCatalogBatchInFlight) {
+                    break;
+                }
+                const currentItem = itemsToImport[queueIndex++];
+                if (!currentItem) break;
+
+                updateProgressUI(currentItem.name);
+
+                const payload = {
+                    action: 'import',
+                    providerId: query.providerId,
+                    accountKey: query.accountKey,
+                    site: query.site,
+                    goodsNos: [currentItem.goodsNo],
+                    autoAllVariants,
+                    ...(costCeilingMultiplier ? { costCeilingMultiplier } : {}),
+                    markupMultiplier: globalMultiplier,
+                    markupMultipliers,
+                    guestPaymentChannels: globalChannels,
+                    categoryPaymentChannels,
+                    productCategories,
+                    categoryIcons,
+                    duplicatePolicy,
+                    initialStatus,
+                    salesConfig: batchSalesConfig
+                };
+
+                try {
+                    const headers = await this.getAdminAuthHeaders();
+                    const res = await (window.AdminApi?.fetch || fetch)(
+                        this.buildAdminShopUrl('shop/supplier-catalog'),
+                        {
+                            method: 'POST',
+                            headers,
+                            credentials: 'include',
+                            body: JSON.stringify(payload)
+                        }
+                    );
+                    const data = await res.json().catch(() => ({}));
+                    if (Array.isArray(data.results) && data.results.length > 0) {
+                        const r = data.results[0];
+                        if (r.status === 'skipped' || r.status === 'already_imported') {
+                            skippedCount++;
+                        } else if (r.status === 'failed') {
+                            failedCount++;
+                        } else {
+                            successCount++;
+                        }
+                    } else if (data.success) {
+                        successCount++;
+                    } else {
+                        failedCount++;
+                    }
+                } catch (_) {
+                    failedCount++;
+                }
+
+                processedCount++;
+                updateProgressUI(itemsToImport[queueIndex]?.name || '');
+            }
+        };
+
+        try {
+            const workers = [];
+            for (let w = 0; w < CONCURRENCY; w++) {
+                workers.push(worker());
+            }
+            await Promise.all(workers);
+
+            if (!this.supplierCatalogBatchInFlight && processedCount < total) {
+                this.showToast('批量导入已由管理员中止', 'warning');
+            }
+
+            const targetCats = [...new Set(Object.values(productCategories).filter(Boolean))];
+            const primaryCat = targetCats[0] || '';
+            const statusLabel = initialStatus === 'published' ? '上架中' : '已下架';
+            const statusTargetFilter = initialStatus === 'published' ? 'active' : 'deleted';
+
+            this.lastBatchImportTarget = {
+                category: primaryCat,
+                categories: targetCats,
+                status: statusTargetFilter,
+                statusLabel,
+                count: successCount,
+                timestamp: Date.now()
+            };
+
+            const navigateToProducts = async () => {
+                this.closeSupplierCatalogBatchModal();
+                if (primaryCat) {
+                    this.currentCategory = primaryCat;
+                }
+                this.currentStatusFilter = statusTargetFilter;
+                await this.loadCategories({ force: true });
+                this.invalidateProductCache();
+                this.switchTab('products', { load: false });
+                this.filterStatus(statusTargetFilter);
+                if (primaryCat) {
+                    this.filterCategory(primaryCat);
+                }
+            };
+
+            if (progressStatusText) {
+                progressStatusText.innerHTML = `
+                    <div style="margin-bottom:8px;font-weight:600;color:#10b981;">
+                        <i class="fas fa-check-circle"></i> 批量导入完成！成功 ${successCount} 项，跳过 ${skippedCount} 项，失败 ${failedCount} 项。
+                    </div>
+                    <div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">
+                        商品已存入【${statusLabel}】列表${primaryCat ? `（分类：${this.escapeHtml(primaryCat)}）` : ''}。
+                    </div>
+                    <button type="button" class="btn" id="batchImportViewProductsBtn" style="padding:6px 14px;border-radius:6px;background:rgba(99,102,241,0.25);border:1px solid #6366f1;color:#fff;cursor:pointer;font-size:12px;">
+                        <i class="fas fa-arrow-right"></i> 立即前往【${statusLabel}】查看已导入商品
+                    </button>
+                `;
+
+                const viewBtn = document.getElementById('batchImportViewProductsBtn');
+                if (viewBtn) {
+                    viewBtn.onclick = navigateToProducts;
+                }
+            }
+
+            if (startBtn && successCount > 0) {
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<i class="fas fa-arrow-right"></i> 导入完成，立即前往查看';
+                startBtn.onclick = navigateToProducts;
+            }
+
+            const cancelBtn = document.getElementById('batchImportCancelBtn');
+            if (cancelBtn) {
+                cancelBtn.textContent = '留在当前目录';
+            }
+
+            if (progressContainer && typeof progressContainer.scrollIntoView === 'function') {
+                progressContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            this.showToast(`批量导入完成：成功 ${successCount} 项，跳过 ${skippedCount} 项，失败 ${failedCount} 项`, successCount > 0 ? 'success' : 'warning');
+
+            await this.loadCategories({ force: true });
+            this.invalidateProductCache();
+            if (typeof this.renderProductCategoryFilters === 'function') {
+                await this.renderProductCategoryFilters();
+            }
+            void this.loadSupplierCatalog({ page: 1 });
+        } finally {
+            this.supplierCatalogBatchInFlight = false;
+            if (startBtn && (!this.lastBatchImportTarget || this.lastBatchImportTarget.count === 0)) {
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<i class="fas fa-rocket"></i> 开始分步导入';
+            }
+        }
+    },
+
+    publishCurrentCategory: async function (actionButton = null) {
+        const category = String(this.currentCategory || '').trim();
+        const btn = (actionButton && actionButton.nodeType === 1)
+            ? actionButton
+            : (document.getElementById('categoryPublishAllBtn') || document.querySelector('[data-shop-action="category-publish-all"]'));
+
+        if (!category || category === 'all') {
+            this.showToast('请先选择一个具体分类', 'warning');
+            if (typeof this.showActionToast === 'function') {
+                this.showActionToast('请先选择一个具体分类', 'warning');
+            }
+            return;
+        }
+
+        if (!this.requireWritableSite({ label: '一键上架分类商品' })) {
+            return;
+        }
+
+        this.setActionButtonLoading(btn, '预检中...');
+
+        try {
+            const preflightRes = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/mutate'),
+                {
+                    method: 'POST',
+                    headers: await this.getAdminAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        action: 'batch_toggle_category_products',
+                        category,
+                        isActive: true,
+                        preflightOnly: true,
+                        site: this.getEditSite()
+                    })
+                }
+            );
+            const preflight = await preflightRes.json().catch(() => ({}));
+            if (!preflightRes.ok || !preflight.success) {
+                throw new Error(preflight.message || '分类预检失败');
+            }
+
+            const total = preflight.total || 0;
+            const eligible = preflight.eligibleCount || 0;
+            const excluded = preflight.excludedCount || 0;
+
+            if (eligible === 0) {
+                this.restoreActionButton(btn);
+                window.alert(`分类“${category}”下没有符合上架条件的商品（售价需大于0）。请先为商品设定售价后再尝试上架。`);
+                return;
+            }
+
+            let promptMsg = `【分类一键上架安全预检】\n分类“${category}”共有 ${total} 件商品：\n✓ 符合上架条件：${eligible} 件\n`;
+            if (excluded > 0) {
+                promptMsg += `⚠ 售价异常排除：${excluded} 件（售价未设置或为0，上架时将保持草稿）\n`;
+            }
+            promptMsg += `\n是否立即上架符合条件的 ${eligible} 件商品并启用货源？`;
+
+            if (!window.confirm(promptMsg)) {
+                this.restoreActionButton(btn);
+                return;
+            }
+
+            this.setActionButtonLoading(btn, '上架中...');
+
+            const res = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/mutate'),
+                {
+                    method: 'POST',
+                    headers: await this.getAdminAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        action: 'batch_toggle_category_products',
+                        category,
+                        isActive: true,
+                        preflightOnly: false,
+                        site: this.getEditSite()
+                    })
+                }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.message || '一键上架失败');
+            }
+
+            const successCount = data.updatedCount || eligible;
+            this.finishActionButton(btn, `已上架 (${successCount})`);
+            const toastMsg = `已成功上架分类“${category}”的 ${successCount} 件商品！${this.currentStatusFilter === 'deleted' ? '已自动切换至在售列表' : ''}`;
+            this.showToast(toastMsg, 'success');
+            if (typeof this.showActionToast === 'function') {
+                this.showActionToast(toastMsg, 'success');
+            }
+
+            this.invalidateProductCache();
+            if (this.currentStatusFilter === 'deleted') {
+                const activeTabBtn = document.getElementById('statusActiveBtn');
+                this.filterStatus('active', activeTabBtn);
+            } else {
+                await this.loadProducts();
+            }
+            this.productCategoryCountMap = {};
+            await this.loadCategories({ force: true });
+            void this.refreshCategoryCountsBackground();
+
+            this.notifyShopCatalogChanged('category_publish', { category, count: successCount });
+        } catch (err) {
+            this.failActionButton(btn, '上架失败');
+            this.showToast(err.message || '一键上架失败', 'error');
+            if (typeof this.showActionToast === 'function') {
+                this.showActionToast(err.message || '一键上架失败', 'error');
+            }
+        }
+    },
+
+    unpublishCurrentCategory: async function (actionButton = null) {
+        const category = String(this.currentCategory || '').trim();
+        const btn = (actionButton && actionButton.nodeType === 1)
+            ? actionButton
+            : (document.getElementById('categoryUnpublishAllBtn') || document.querySelector('[data-shop-action="category-unpublish-all"]'));
+
+        if (!category || category === 'all') {
+            this.showToast('请先选择一个具体分类', 'warning');
+            if (typeof this.showActionToast === 'function') {
+                this.showActionToast('请先选择一个具体分类', 'warning');
+            }
+            return;
+        }
+
+        if (!this.requireWritableSite({ label: '一键下架分类商品' })) {
+            return;
+        }
+
+        this.setActionButtonLoading(btn, '确认中...');
+
+        if (!window.confirm(`确认一键下架分类“${category}”下的全部商品？\n下架后前台商城将停止出售该分类商品，已下架商品可在【已下架/回收站】视图中随时查看与重新上架。`)) {
+            this.restoreActionButton(btn);
+            return;
+        }
+
+        this.setActionButtonLoading(btn, '下架中...');
+
+        try {
+            const res = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/mutate'),
+                {
+                    method: 'POST',
+                    headers: await this.getAdminAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        action: 'batch_toggle_category_products',
+                        category,
+                        isActive: false,
+                        site: this.getEditSite()
+                    })
+                }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.message || '一键下架失败');
+            }
+
+            const unpublishCount = data.updatedCount || 0;
+            this.finishActionButton(btn, `已下架 (${unpublishCount})`);
+            const toastMsg = `已成功下架分类“${category}”的 ${unpublishCount} 件商品！已自动为您切换至未上架列表查看。`;
+            this.showToast(toastMsg, 'success');
+            if (typeof this.showActionToast === 'function') {
+                this.showActionToast(toastMsg, 'success');
+            }
+
+            this.invalidateProductCache();
+            if (this.currentStatusFilter === 'active') {
+                const deletedTabBtn = document.getElementById('statusDeletedBtn');
+                this.filterStatus('deleted', deletedTabBtn);
+            } else {
+                await this.loadProducts();
+            }
+            this.productCategoryCountMap = {};
+            await this.loadCategories({ force: true });
+            void this.refreshCategoryCountsBackground();
+
+            this.notifyShopCatalogChanged('category_unpublish', { category, count: unpublishCount });
+        } catch (err) {
+            this.failActionButton(btn, '下架失败');
+            this.showToast(err.message || '一键下架失败', 'error');
+            if (typeof this.showActionToast === 'function') {
+                this.showActionToast(err.message || '一键下架失败', 'error');
+            }
+        }
+    },
+
+    batchToggleSelectedProducts: async function (isActive = true, actionButton = null) {
+        if (!this.requireWritableSite({ label: isActive ? '批量上架商品' : '批量下架商品' })) {
+            return;
+        }
+
+        const selectedIds = [...new Set(Array.from(document.querySelectorAll('.product-select-checkbox:checked'))
+            .map((cb) => cb.dataset.productId).filter(Boolean))];
+
+        if (selectedIds.length === 0) {
+            this.showToast('请先勾选要操作的商品', 'warning');
+            return;
+        }
+
+        const actionText = isActive ? '上架' : '下架';
+        if (!confirm(`确定要批量${actionText}已选中的 ${selectedIds.length} 个商品吗？`)) {
+            return;
+        }
+
+        this.setActionButtonLoading(actionButton, `${actionText}中...`);
+        this.emitCommandFeedback(`正在批量${actionText} ${selectedIds.length} 个商品...`, 'loading', {
+            source: 'shop-products',
+            persistent: true
+        });
+
+        try {
+            const res = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/mutate'),
+                {
+                    method: 'POST',
+                    headers: await this.getAdminAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        action: 'batch_toggle_products',
+                        productIds: selectedIds,
+                        isActive,
+                        site: this.getEditSite()
+                    })
+                }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.message || `批量${actionText}失败`);
+            }
+
+            this.closeProductBatchMenu();
+            this.invalidateProductCache();
+            await this.loadProducts();
+            await this.loadCategories({ force: true });
+            void this.refreshCategoryCountsBackground();
+
+            const successMessage = `成功${actionText} ${data.updatedCount || selectedIds.length} 个商品${data.excludedCount ? `（${data.excludedCount} 项未设定售价被跳过）` : ''}`;
+            this.finishActionButton(actionButton, `已${actionText}`);
+            this.showToast(successMessage, 'success');
+            if (typeof this.showActionToast === 'function') {
+                this.showActionToast(successMessage, 'success');
+            }
+            this.emitCommandFeedback(successMessage, 'saved', { source: 'shop-products' });
+            this.notifyShopCatalogChanged(isActive ? 'product_batch_publish' : 'product_batch_unpublish', { count: data.updatedCount || selectedIds.length });
+        } catch (err) {
+            console.error(`Batch ${actionText} failed:`, err);
+            const failureMessage = `${actionText}失败: ${err.message}`;
+            this.failActionButton(actionButton, `${actionText}失败`);
+            this.showToast(failureMessage, 'error', { durationMs: 5000 });
+            this.emitCommandFeedback(failureMessage, 'failed', { source: 'shop-products' });
+        }
+    },
+
+    openProductBatchEditModal: function () {
+        const checkedBoxes = Array.from(document.querySelectorAll('.product-select-checkbox:checked'));
+        const uniqueIds = [...new Set(checkedBoxes.map((cb) => cb.dataset.productId).filter(Boolean))];
+        if (!uniqueIds.length) {
+            this.showToast('请先勾选需要批量编辑的商品', 'warning');
+            return;
+        }
+
+        const countEl = document.getElementById('batchEditSelectedCount');
+        if (countEl) countEl.textContent = String(uniqueIds.length);
+
+        const modal = document.getElementById('productBatchEditModal');
+        if (modal) {
+            modal.classList.add('active');
+            modal.setAttribute('aria-hidden', 'false');
+        }
+        this.closeProductBatchMenu();
+    },
+
+    closeProductBatchEditModal: function () {
+        const modal = document.getElementById('productBatchEditModal');
+        if (modal) {
+            modal.classList.remove('active');
+            modal.setAttribute('aria-hidden', 'true');
+        }
+    },
+
+    submitProductBatchEdit: async function () {
+        const checkedBoxes = Array.from(document.querySelectorAll('.product-select-checkbox:checked'));
+        const productIds = [...new Set(checkedBoxes.map((cb) => cb.dataset.productId).filter(Boolean))];
+        if (!productIds.length) {
+            this.showToast('未选择任何商品', 'warning');
+            return;
+        }
+
+        const enableChannels = document.getElementById('batchEditEnableChannels')?.checked;
+        const enableMultiplier = document.getElementById('batchEditEnableMultiplier')?.checked;
+        const enableQuantity = document.getElementById('batchEditEnableQuantity')?.checked;
+
+        if (!enableChannels && !enableMultiplier && !enableQuantity) {
+            this.showToast('请至少勾选一项要批量调整的参数', 'warning');
+            return;
+        }
+
+        const payload = {
+            action: 'batch_update_products',
+            productIds
+        };
+
+        if (enableChannels) {
+            const channels = [];
+            if (document.getElementById('batchEditChannelZpay')?.checked) channels.push('zpay');
+            if (document.getElementById('batchEditChannelNowpayments')?.checked) channels.push('nowpayments');
+            const mode = document.querySelector('input[name="batchEditChannelMode"]:checked')?.value || 'replace';
+            payload.guestPaymentChannels = channels;
+            payload.paymentChannelMode = mode;
+        }
+
+        if (enableMultiplier) {
+            const multVal = parseFloat(document.getElementById('batchEditMultiplierValue')?.value || '1');
+            if (multVal >= 1) {
+                payload.markupMultiplier = multVal;
+                payload.recalculatePrices = document.getElementById('batchEditRecalculatePrices')?.checked;
+            }
+        }
+
+        if (enableQuantity) {
+            const minQty = parseInt(document.getElementById('batchEditMinQuantity')?.value || '1', 10);
+            if (minQty > 0) {
+                payload.minPurchaseQuantity = minQty;
+            }
+            const maxQty = parseInt(document.getElementById('batchEditMaxQuantity')?.value || '1', 10);
+            if (maxQty > 0) {
+                payload.maxPurchaseQuantity = maxQty;
+                payload.guestMaxQuantity = maxQty;
+            }
+        }
+
+        const submitBtn = document.getElementById('batchEditSubmitBtn');
+        if (submitBtn) submitBtn.disabled = true;
+
+        try {
+            const res = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/mutate'),
+                {
+                    method: 'POST',
+                    headers: await this.getAdminAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify(payload)
+                }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.message || '批量修改失败');
+            }
+
+            this.showToast(`已成功批量更新 ${data.updatedCount || productIds.length} 件商品的参数！`, 'success');
+            this.closeProductBatchEditModal();
+            this.invalidateProductCache();
+            await this.loadProducts();
+        } catch (err) {
+            this.showToast(err.message || '批量修改失败', 'error');
+        } finally {
+            if (submitBtn) submitBtn.disabled = false;
         }
     },
 
@@ -11487,32 +14179,281 @@ Example output format:
         const safeImageUrl = /^https:\/\//i.test(String(item.imageUrl || '').trim()) ? String(item.imageUrl).trim() : '';
         const requirements = item.variantRequirements;
         const isDraftCardItem = item.draftStatus === 1;
+        const defaultCostCeiling = String(item.currency || '').trim().toUpperCase() === 'CNY'
+            && /^\d{1,12}(?:\.\d{1,8})?$/.test(String(item.supplierUnitPrice ?? '').trim())
+            ? String(item.supplierUnitPrice).trim()
+            : '';
+        const currentCategories = Array.isArray(this.categoryData) && this.categoryData.length > 0
+            ? this.categoryData
+            : [
+                { name: 'other' },
+                { name: '邮箱' },
+                { name: '飞机' },
+                { name: '礼品卡' },
+                { name: 'Apple id' },
+                { name: 'Gemini' },
+                { name: 'Claude' },
+                { name: 'Chat Gpt' }
+            ];
+        const guessedCategory = this.guessBestShopCategory(item.name || '');
+        const categoryOptionsHtml = currentCategories.map((cat) => {
+            const isSelected = cat.name === guessedCategory;
+            return `<option value="${this.escapeForAttr(cat.name)}"${isSelected ? ' selected' : ''}>${this.escapeHtml(cat.name)}</option>`;
+        }).join('') || '<option value="other">其它 (other)</option>';
         body.innerHTML = `
             ${safeImageUrl ? `<img class="shop-supplier-catalog-detail-modal__image" src="${this.escapeForAttr(safeImageUrl)}" alt="">` : ''}
             <div class="shop-supplier-catalog-detail-modal__meta-grid">
                 <div><span>上游货号</span><strong><code>${this.escapeHtml(item.providerGoodsId || '—')}</code></strong></div>
                 <div><span>采购参考价</span><strong>${this.formatSupplierCatalogPrice(item)}</strong></div>
                 <div><span>起购数量</span><strong>${item.minimumQuantity ? this.escapeHtml(String(item.minimumQuantity)) : '—'}</strong></div>
-                <div><span>发货方式</span><strong>${this.escapeHtml(item.deliveryLabel || this.formatSupplierCatalogDeliveryMethod(item.deliveryMethod))}</strong></div>
+                <div><span>发货方式</span><strong>${this.renderSupplierCatalogDeliveryBadge(item)}</strong></div>
             </div>
             ${isDraftCardItem ? `<section class="shop-supplier-catalog-detail-modal__variant supplier-draft-card-preview">
-                <span>预选卡商品 · 只读</span>
+                <div class="shop-supplier-variant-header"><i class="fas fa-id-card"></i> <span>预选卡商品 · 只读</span></div>
                 <p>draft_status=1。卡片内容仅供分页核对，不会保存到本地商品，也不代表库存锁定、可采购或可交付。</p>
                 <button type="button" class="btn btn-secondary" data-shop-action="supplier-catalog-draft-cards">读取预选卡</button>
                 <div id="supplierCatalogDraftCards" role="status" aria-live="polite"></div>
             </section>` : requirements ? `<section class="shop-supplier-catalog-detail-modal__variant">
-                <span>规格与交付核验</span>
-                ${requirements.requiresRace ? `<label>商品种类<select id="supplierCatalogRace" data-shop-change="supplier-catalog-race"><option value="">请选择商品种类</option>${requirements.races.map((race) => `<option value="${this.escapeForAttr(race)}">${this.escapeHtml(race)}</option>`).join('')}</select></label>` : '<p>默认规格</p>'}
-                <p>${this.escapeHtml(requirements.reasons?.join('；') || '可保存为下架草稿；采购与交付能力尚未启用。')}</p>
-                <button type="button" class="btn btn-secondary" data-shop-action="supplier-catalog-preview" disabled>读取库存与询价</button>
+                <div class="shop-supplier-variant-header"><i class="fas fa-layer-group"></i> <span>规格与交付核验</span></div>
+                <div class="shop-supplier-variant-form-grid">
+                    ${requirements.requiresRace ? `
+                    <div class="shop-supplier-field-group shop-supplier-field-group--full">
+                        <label class="shop-supplier-field-label" for="supplierCatalogRace">
+                            <span>商品种类 / 规格</span>
+                            <span class="shop-supplier-field-hint">选择单规格或全部导入</span>
+                        </label>
+                        <select id="supplierCatalogRace" class="shop-supplier-custom-select" data-shop-change="supplier-catalog-race">
+                            <option value="">请选择商品种类</option>
+                            ${requirements.races.length > 1 ? `<option value="__all__">全部规格（自动匹配导入 ${requirements.races.length} 个规格 SKU）</option>` : ''}
+                            ${requirements.races.map((race) => `<option value="${this.escapeForAttr(race)}">${this.escapeHtml(race)}${requirements.racePrices?.[race] ? ` (成本 ¥${requirements.racePrices[race]})` : ''}</option>`).join('')}
+                        </select>
+                    </div>` : '<div class="shop-supplier-field-group shop-supplier-field-group--full"><p class="shop-supplier-default-spec-note">默认单一规格</p></div>'}
+
+                    <div class="shop-supplier-field-group">
+                        <label class="shop-supplier-field-label" for="supplierCatalogMarkupMultiplier">
+                            <span>涨价销售倍率</span>
+                            <span class="shop-supplier-field-hint">上架建议售价倍率</span>
+                        </label>
+                        <div class="shop-supplier-input-affix-wrapper">
+                            <input type="number" id="supplierCatalogMarkupMultiplier" class="modern-input shop-supplier-custom-input" step="0.01" min="1" max="100" placeholder="例如 1.25" value="1.20" data-shop-input="supplier-catalog-markup-multiplier" data-shop-change="supplier-catalog-markup-multiplier">
+                            <span class="shop-supplier-input-affix">倍</span>
+                        </div>
+                    </div>
+
+                    <div class="shop-supplier-field-group">
+                        <label class="shop-supplier-field-label" for="supplierCatalogCostCeiling">
+                            <span>单件采购上限 (CNY)</span>
+                            <span class="shop-supplier-field-hint">超额自动拦截</span>
+                        </label>
+                        <div class="shop-supplier-input-affix-wrapper">
+                            <input type="number" id="supplierCatalogCostCeiling" class="modern-input shop-supplier-custom-input shop-supplier-ceiling-input" step="0.01" min="0.01" max="100000" placeholder="例如 5.00" value="${this.escapeForAttr(defaultCostCeiling)}" data-shop-change="supplier-catalog-cost-ceiling">
+                            <span class="shop-supplier-input-affix">元</span>
+                        </div>
+                    </div>
+
+                    <div class="shop-supplier-field-group shop-supplier-field-group--full">
+                        <label class="shop-supplier-field-label" for="supplierCatalogCategory">
+                            <span>导入归属分类</span>
+                            <span class="shop-supplier-field-hint">选择保存至商城的商品分类</span>
+                        </label>
+                        <select id="supplierCatalogCategory" class="shop-supplier-custom-select">
+                            ${categoryOptionsHtml}
+                        </select>
+                    </div>
+
+                    <div class="shop-supplier-field-group shop-supplier-field-group--full">
+                        <div class="shop-supplier-price-calc-card">
+                            <div class="shop-supplier-price-calc-card__left">
+                                <span class="shop-supplier-price-calc-card__title"><i class="fas fa-tag"></i> 上架预售定价预览</span>
+                                <span id="supplierCatalogSalePriceFormula" class="shop-supplier-price-calc-card__formula">计算中…</span>
+                            </div>
+                            <div class="shop-supplier-price-calc-card__right">
+                                <span id="supplierCatalogSalePricePreview" class="shop-supplier-price-calc-card__price">¥0.00 CNY</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${requirements.races.length > 1 ? `
+                    <div id="supplierCatalogAllVariantsInfo" class="shop-supplier-field-group shop-supplier-field-group--full" style="display:none;">
+                        <p class="shop-supplier-variants-subheading"><i class="fas fa-list-check"></i> 将自动在商城生成单个草稿商品，并创建以下规格 SKU：</p>
+                        <div id="supplierCatalogVariantBadgesContainer" class="shop-supplier-variant-badges-grid"></div>
+                    </div>` : ''}
+
+                    <div class="shop-supplier-field-group shop-supplier-field-group--full" style="border-top:1px solid rgba(255,255,255,0.08);padding-top:12px;margin-top:6px;">
+                        <label class="shop-supplier-field-label">
+                            <span><i class="fas fa-chart-line" style="color:#6366f1;"></i> 销量展示设置</span>
+                            <span class="shop-supplier-field-hint" id="supplierImportSalesModeHint">完全展示真实下单及上游接口销量</span>
+                        </label>
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:10px;margin-top:6px;">
+                            <div>
+                                <select id="supplierImportSalesMode" class="shop-supplier-custom-select" data-shop-change="supplier-import-sales-mode">
+                                    <option value="3" selected>模式三：完全真实销量（默认）</option>
+                                    <option value="1">模式一：真实成交量 + 销量基数</option>
+                                    <option value="2">模式二：每日增加的随机种子数 + 销量基数</option>
+                                </select>
+                            </div>
+                            <div id="supplierImportSalesBaseGroup" style="display:none;">
+                                <div class="shop-supplier-input-affix-wrapper">
+                                    <input type="number" id="supplierImportSalesBase" class="modern-input shop-supplier-custom-input" min="0" placeholder="销量基数" value="0">
+                                    <span class="shop-supplier-input-affix">底数</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="supplierImportDailyRandomRow" style="display:none;margin-top:10px;">
+                            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;">
+                                <div>
+                                    <label class="shop-supplier-field-label" for="supplierImportDailyRandomMin" style="font-size:11px;">每日最少增加</label>
+                                    <input type="number" id="supplierImportDailyRandomMin" class="modern-input shop-supplier-custom-input" min="0" placeholder="10" value="10">
+                                </div>
+                                <div>
+                                    <label class="shop-supplier-field-label" for="supplierImportDailyRandomMax" style="font-size:11px;">每日最多增加</label>
+                                    <input type="number" id="supplierImportDailyRandomMax" class="modern-input shop-supplier-custom-input" min="0" placeholder="30" value="30">
+                                </div>
+                                <div>
+                                    <label class="shop-supplier-field-label" for="supplierImportRandomSeed" style="font-size:11px;">随机种子 (选填)</label>
+                                    <input type="text" id="supplierImportRandomSeed" class="modern-input shop-supplier-custom-input" placeholder="留空默认商品ID">
+                                </div>
+                                <div>
+                                    <label class="shop-supplier-field-label" for="supplierImportSalesStartDate" style="font-size:11px;">递增起始日期</label>
+                                    <input type="date" id="supplierImportSalesStartDate" class="modern-input shop-supplier-custom-input">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="shop-supplier-variant-actions">
+                    <button type="button" class="btn btn-secondary" data-shop-action="supplier-catalog-preview" disabled>读取库存与询价</button>
+                    <span class="shop-supplier-variant-note">${this.escapeHtml(requirements.reasons?.join('；') || '可保存为下架草稿；采购与交付能力尚未启用。')}</span>
+                </div>
                 <div id="supplierCatalogPreview" role="status" aria-live="polite"></div>
             </section>` : ''}
             <div class="shop-supplier-catalog-detail-modal__description">
-                <span>上游描述</span>
-                <p>${this.escapeHtml(item.description || '上游未提供描述。')}</p>
+                <div class="shop-supplier-catalog-detail-tabs" role="tablist" style="display:flex;gap:8px;margin-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:8px;">
+                    <button type="button" class="btn btn-sm btn-primary is-active" data-shop-action="supplier-detail-tab" data-tab="desc" style="font-weight:600;"><i class="fas fa-file-alt"></i> 商品详情 (使用说明)</button>
+                    <button type="button" class="btn btn-sm btn-secondary" data-shop-action="supplier-detail-tab" data-tab="notes" style="font-weight:600;"><i class="fas fa-clipboard-list"></i> 购买须知 (注意事项)</button>
+                </div>
+                <div id="supplierCatalogDetailTabDesc" class="shop-supplier-catalog-detail-modal__description-content">
+                    ${this.formatSupplierCatalogDescriptionHtml(item.description || '上游未提供描述。')}
+                </div>
+                <div id="supplierCatalogDetailTabNotes" class="shop-supplier-catalog-detail-modal__description-content" style="display:none;">
+                    ${this.formatSupplierCatalogDescriptionHtml(item.purchaseNotes || this.extractSupplierCatalogPurchaseNotes(item.description))}
+                </div>
             </div>
         `;
+        this.updateSupplierCatalogPriceCalculations();
         this.syncSupplierCatalogDetailControls();
+        this.syncSupplierImportSalesModeControls();
+    },
+
+    switchSupplierCatalogDetailTab: function (actionEl) {
+        const tab = actionEl?.dataset?.tab || 'desc';
+        const tabDesc = document.getElementById('supplierCatalogDetailTabDesc');
+        const tabNotes = document.getElementById('supplierCatalogDetailTabNotes');
+        document.querySelectorAll('[data-shop-action="supplier-detail-tab"]').forEach((btn) => {
+            const isActive = btn === actionEl;
+            btn.classList.toggle('is-active', isActive);
+            btn.classList.toggle('btn-primary', isActive);
+            btn.classList.toggle('btn-secondary', !isActive);
+        });
+        if (tabDesc) tabDesc.style.display = tab === 'desc' ? 'block' : 'none';
+        if (tabNotes) tabNotes.style.display = tab === 'notes' ? 'block' : 'none';
+    },
+
+    extractSupplierCatalogPurchaseNotes: function (rawDesc = '') {
+        const text = String(rawDesc || '').trim();
+        if (!text) return '';
+
+        let extracted = '';
+        const noticeBlockRegex = /<(?:p|div|li)[^>]*>(?:(?!<\/(?:p|div|li)>)[\s\S])*(?:注意事项|特别提醒|特别提示|温馨提示|特别注意|购前必读|购买须知|质保说明|售后说明|介意勿拍)[\s\S]*?<\/(?:p|div|li)>/gi;
+        const matchedBlocks = text.match(noticeBlockRegex);
+        if (matchedBlocks && matchedBlocks.length > 0) {
+            extracted = matchedBlocks.map((b) => b.trim()).filter(Boolean).join('\n');
+        } else {
+            const lines = text.replace(/<br\s*\/?>/gi, '\n').replace(/<\/?[^>]+(>|$)/g, '').split('\n');
+            const matchedLines = lines
+                .map((l) => l.trim())
+                .filter((l) => /(?:注意事项|特别提醒|特别提示|温馨提示|特别注意|购前必读|购买须知|质保说明|售后说明|介意勿拍)/i.test(l));
+            if (matchedLines.length > 0) {
+                extracted = matchedLines.map((l) => `<p>${this.escapeHtml(l)}</p>`).join('\n');
+            }
+        }
+
+        const standardNotes = [
+            '<p><strong>【购买须知】</strong></p>',
+            '<p>购买前请确认商品规格、数量和完整说明，价格及库存以本页实时显示为准。</p>',
+            '<ul>',
+            '<li>付款后，可在订单查询或会员购买记录中查看交付内容。</li>',
+            '<li>售后时长和适用条件以商品详情中的说明为准。</li>',
+            '<li>需要售后时，请通过对应订单提交工单，以便核对购买信息。</li>',
+            '</ul>'
+        ].join('\n');
+
+        return extracted
+            ? `<p><strong>【特别注意事项】</strong></p>\n${extracted}\n<hr />\n${standardNotes}`
+            : standardNotes;
+    },
+
+    updateSupplierCatalogPriceCalculations: function () {
+        const item = this.supplierCatalogDetailItem;
+        if (!item) return;
+
+        const raceSelect = document.getElementById('supplierCatalogRace');
+        const multiplierInput = document.getElementById('supplierCatalogMarkupMultiplier');
+        const ceilingInput = document.getElementById('supplierCatalogCostCeiling');
+        const formulaEl = document.getElementById('supplierCatalogSalePriceFormula');
+        const priceEl = document.getElementById('supplierCatalogSalePricePreview');
+        const variantsInfo = document.getElementById('supplierCatalogAllVariantsInfo');
+        const badgesContainer = document.getElementById('supplierCatalogVariantBadgesContainer');
+
+        const race = raceSelect?.value || '';
+        const multiplierRaw = multiplierInput?.value;
+        const multiplier = Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) >= 1
+            ? Number(multiplierRaw)
+            : 1.2;
+
+        const requirements = item.variantRequirements;
+        const baseItemCost = Number(item.supplierUnitPrice || 0);
+
+        if (race === '__all__' && requirements?.races?.length > 1) {
+            if (variantsInfo) variantsInfo.style.display = 'block';
+            if (formulaEl) {
+                formulaEl.textContent = `全部 ${requirements.races.length} 个规格均按 ${multiplier.toFixed(2)} 倍加价定价`;
+            }
+            if (priceEl) {
+                priceEl.textContent = '多规格分项定价';
+            }
+            if (badgesContainer) {
+                badgesContainer.innerHTML = requirements.races.map((rName) => {
+                    const rCost = Number(requirements.racePrices?.[rName] || baseItemCost || 0);
+                    const rSale = rCost > 0 ? (rCost * multiplier).toFixed(2) : '0.00';
+                    return `<span class="shop-supplier-variant-badge">
+                        <i class="fas fa-layer-group"></i>
+                        <strong>${this.escapeHtml(rName)}</strong>
+                        <span class="badge-cost">成本 ¥${this.escapeHtml(String(rCost))}</span>
+                        <i class="fas fa-arrow-right"></i>
+                        <span class="badge-sale">预售 ¥${rSale}</span>
+                    </span>`;
+                }).join('');
+            }
+        } else {
+            if (variantsInfo) variantsInfo.style.display = 'none';
+            const currentCost = race && requirements?.racePrices?.[race]
+                ? Number(requirements.racePrices[race])
+                : baseItemCost;
+            const salePrice = currentCost > 0 ? (currentCost * multiplier).toFixed(2) : '0.00';
+            if (formulaEl) {
+                formulaEl.textContent = currentCost > 0
+                    ? `采购成本 ¥${currentCost} × ${multiplier.toFixed(2)} 倍加价`
+                    : `按 ${multiplier.toFixed(2)} 倍加价定价`;
+            }
+            if (priceEl) {
+                priceEl.textContent = currentCost > 0 ? `¥${salePrice} CNY` : '成本待核验';
+            }
+            if (ceilingInput && ceilingInput.dataset?.userEdited !== '1' && currentCost > 0) {
+                ceilingInput.value = String(currentCost);
+            }
+        }
     },
 
     isSupplierCatalogDetailImportable: function (forImport = true) {
@@ -11523,16 +14464,24 @@ Example output format:
         if (!requirements) return true; // Existing provider's default variant.
         if (forImport && this.supplierCatalogDetailContext?.site !== 'cn') return false;
         if (!requirements.importable) return false;
+        if (!requirements.requiresRace) return true;
         const race = document.getElementById('supplierCatalogRace')?.value || '';
-        return !requirements.requiresRace || requirements.races.includes(race);
+        if (forImport && race === '__all__') return true;
+        return requirements.races.includes(race);
     },
 
     syncSupplierCatalogDetailControls: function () {
         const importButton = document.querySelector('[data-shop-action="supplier-catalog-import-detail"]');
+        const importPublishButton = document.querySelector('[data-shop-action="supplier-catalog-import-publish-detail"]');
         const isDraftCardItem = this.supplierCatalogDetailItem?.draftStatus === 1;
+        const isImportable = !isDraftCardItem && this.isSupplierCatalogDetailImportable();
         if (importButton) {
             importButton.hidden = isDraftCardItem;
-            importButton.disabled = isDraftCardItem || !this.isSupplierCatalogDetailImportable();
+            importButton.disabled = isDraftCardItem || !isImportable || this.supplierCatalogImportInFlight;
+        }
+        if (importPublishButton) {
+            importPublishButton.hidden = isDraftCardItem;
+            importPublishButton.disabled = isDraftCardItem || !isImportable || this.supplierCatalogImportInFlight;
         }
         const previewButton = document.querySelector('[data-shop-action="supplier-catalog-preview"]');
         if (previewButton) {
@@ -11543,6 +14492,13 @@ Example output format:
         if (draftCardsButton) draftCardsButton.disabled = this.supplierCatalogDraftCardsLoading;
         const race = document.getElementById('supplierCatalogRace');
         if (race) race.disabled = this.supplierCatalogImportInFlight;
+        const costCeiling = document.getElementById('supplierCatalogCostCeiling');
+        if (costCeiling) costCeiling.disabled = this.supplierCatalogImportInFlight;
+        if (typeof document?.querySelectorAll === 'function') {
+            document.querySelectorAll('.supplier-catalog-variant-check, .supplier-catalog-variant-ceiling, #supplierCatalogSelectAllVariants').forEach((el) => {
+                el.disabled = this.supplierCatalogImportInFlight;
+            });
+        }
     },
 
     previewSupplierCatalogDetail: async function () {
@@ -11568,6 +14524,10 @@ Example output format:
                     ? '报价为所选数量总价'
                     : '报价口径待核验';
                 output.textContent = `当前库存 ${payload.stock?.availableQuantity ?? '待确认'} · 数量 ${payload.quote?.quantity ?? 1} 报价 ${payload.quote?.amount ?? '待确认'} ${payload.quote?.currency || '（币种待核验）'}。${quoteBasis}；库存与报价均未锁定，不代表最终扣款或供货承诺。`;
+            }
+            const ceilingInput = document.getElementById('supplierCatalogCostCeiling');
+            if (ceilingInput && ceilingInput.dataset?.userEdited !== '1' && /^\d{1,12}(?:\.\d{1,8})?$/.test(String(payload.quote?.amount ?? '').trim())) {
+                ceilingInput.value = String(payload.quote.amount).trim();
             }
             return payload;
         } catch (error) {
@@ -11691,16 +14651,375 @@ Example output format:
             if (!response.ok || !payload.success) throw new Error('货源信息暂不可用，请稍后重新打开商品核对。');
             const mappings = Array.isArray(payload.mappings) ? payload.mappings : [];
             if (!mappings.length) return;
-            container.innerHTML = `<summary>货源与交付 · ${mappings.length} 条映射</summary><div>${mappings.map((mapping) => `<p><strong>${this.escapeHtml(mapping.accountName || mapping.providerId)}</strong> · <code>${this.escapeHtml(mapping.goodsNo)}</code>${mapping.variant?.race ? ` · ${this.escapeHtml(mapping.variant.race)}` : ''}<br>${mapping.enabled ? '映射已启用' : '映射未启用'} · ${mapping.site === 'intl' ? '国际站' : '国内站'}${mapping.snapshot?.supplierUnitPrice != null ? ` · 导入参考价 ${this.formatSupplierCatalogPrice(mapping.snapshot)}` : ''}</p>`).join('')}<p>目录参考与实际履约独立。虾仁采购、自动交付和游客购买仍未开放。</p></div>`;
+            this.currentProductSupplierMappings = mappings;
+            this.applySupplierAutoSyncToProductModal(this.editingProductSnapshot || {});
+            const firstImageUrl = mappings
+                .map((m) => String(m?.snapshot?.imageUrl || m?.imageUrl || '').trim())
+                .find(Boolean) || '';
+            const iconInput = document.getElementById('prodIcon');
+            if (firstImageUrl && iconInput && (!iconInput.value || iconInput.value === 'fas fa-box')) {
+                iconInput.value = firstImageUrl;
+                this.currentProductImageAsset = buildShopProductImageAssetFromUrl(firstImageUrl);
+                this.productIconUploadDirty = true;
+                this.productIconPreviewVersion = String(Date.now());
+                if (typeof this.updatePreview === 'function') {
+                    this.updatePreview();
+                }
+            }
+            container.innerHTML = `
+                <summary class="shop-supplier-summary__toggle">
+                    <div class="shop-supplier-summary__toggle-title">
+                        <i class="fas fa-boxes-packing"></i>
+                        <span>货源与交付</span>
+                        <span class="shop-supplier-summary__count">${mappings.length} 条映射</span>
+                    </div>
+                    <i class="fas fa-chevron-down shop-supplier-summary__chevron"></i>
+                </summary>
+                <div class="shop-supplier-summary__body">
+                    ${mappings.map((mapping) => {
+                        const mappingId = String(mapping.id || '').trim();
+                        const currentCeiling = mapping.snapshot?.costCeilingCny ?? mapping.snapshot?.supplierUnitPrice ?? '';
+                        const hasUpstreamDesc = Boolean(String(mapping.snapshot?.description || '').trim());
+                        const hasUpstreamImg = Boolean(String(mapping.snapshot?.imageUrl || mapping.imageUrl || '').trim());
+                        const providerName = mapping.accountName || (mapping.providerId === 'xiareng' ? '虾仁默认账号（只读）' : mapping.providerId);
+                        const isEnabled = mapping.enabled === true;
+                        const siteLabel = mapping.site === 'intl' ? '国际站' : '国内站';
+                        const referencePrice = mapping.snapshot?.supplierUnitPrice != null ? this.formatSupplierCatalogPrice(mapping.snapshot) : '--';
+                        const ceilingDisplay = mapping.snapshot?.costCeilingCny != null ? `${this.escapeHtml(String(mapping.snapshot.costCeilingCny))} CNY` : '按参考价';
+
+                        const multiplier = Number(mapping.snapshot?.markupMultiplier || 1.2);
+                        const cost = Number(mapping.snapshot?.supplierUnitPrice || 0);
+                        const calcSalePrice = cost > 0 ? (Math.round(cost * multiplier * 100) / 100).toFixed(2) : '--';
+
+                        const syncUsageBtn = hasUpstreamDesc && mappingId
+                            ? `<button type="button" class="btn btn-secondary btn-sm shop-supplier-action-btn" data-shop-action="supplier-mapping-sync-usage" data-mapping-id="${this.escapeForAttr(mappingId)}" title="将上游商品介绍重新填入使用说明"><i class="fas fa-arrows-rotate"></i> 同步详情到使用说明</button>`
+                            : '';
+                        const syncImgBtn = hasUpstreamImg && mappingId
+                            ? `<button type="button" class="btn btn-secondary btn-sm shop-supplier-action-btn" data-shop-action="supplier-mapping-sync-image" data-mapping-id="${this.escapeForAttr(mappingId)}" title="将上游商品封面重新填入商品图标"><i class="fas fa-image"></i> 同步上游图标</button>`
+                            : '';
+                        const applyPriceBtn = cost > 0 && mappingId
+                            ? `<button type="button" class="btn btn-secondary btn-sm shop-supplier-action-btn" data-shop-action="supplier-mapping-apply-multiplier" data-mapping-id="${this.escapeForAttr(mappingId)}" data-cost="${cost}" data-multiplier="${multiplier}" title="按倍率重新计算并填充商品售价"><i class="fas fa-calculator"></i> 应用倍率售价 (¥${calcSalePrice})</button>`
+                            : '';
+                        const ceilingEditor = mappingId
+                            ? `<div class="shop-supplier-mapping-ceiling">
+                                <div class="shop-supplier-ceiling-input-group">
+                                    <label class="shop-supplier-ceiling-label">单件采购单价上限 (CNY)</label>
+                                    <div class="shop-supplier-input-with-button">
+                                        <input type="number" step="0.01" min="0.01" max="100000" class="modern-input shop-supplier-custom-input shop-supplier-ceiling-input" value="${this.escapeForAttr(String(currentCeiling || ''))}" placeholder="按参考价" data-supplier-mapping-ceiling-input="${this.escapeForAttr(mappingId)}">
+                                        <button type="button" class="btn btn-secondary btn-sm shop-supplier-action-btn" data-shop-action="supplier-mapping-save-ceiling" data-mapping-id="${this.escapeForAttr(mappingId)}" data-product-id="${this.escapeForAttr(String(productId || ''))}"><i class="fas fa-floppy-disk"></i> 保存上限</button>
+                                    </div>
+                                </div>
+                                <div class="shop-supplier-sync-actions">
+                                    ${syncUsageBtn}${syncImgBtn}${applyPriceBtn}
+                                </div>
+                                <span data-supplier-mapping-ceiling-status="${this.escapeForAttr(mappingId)}" class="shop-supplier-ceiling-status" role="status"></span>
+                            </div>`
+                            : '';
+
+                        return `
+                        <div class="shop-supplier-mapping-card">
+                            <div class="shop-supplier-mapping-card__header">
+                                <div class="shop-supplier-mapping-card__identity">
+                                    <span class="shop-supplier-badge shop-supplier-badge--account">
+                                        <i class="fas fa-server"></i> ${this.escapeHtml(providerName)}
+                                    </span>
+                                    <span class="shop-supplier-mapping-card__goods-no" title="上游货号">
+                                        <code>${this.escapeHtml(mapping.goodsNo)}</code>
+                                    </span>
+                                    ${mapping.variant?.race ? `
+                                    <span class="shop-supplier-badge shop-supplier-badge--variant">
+                                        <i class="fas fa-layer-group"></i> ${this.escapeHtml(mapping.variant.race)}
+                                    </span>` : ''}
+                                </div>
+                                <div class="shop-supplier-mapping-card__tags">
+                                    <span class="shop-supplier-badge ${isEnabled ? 'shop-supplier-badge--enabled' : 'shop-supplier-badge--disabled'}">
+                                        ${isEnabled ? '<i class="fas fa-circle-check"></i> 映射已启用' : '<i class="fas fa-circle-pause"></i> 映射未启用'}
+                                    </span>
+                                    <span class="shop-supplier-badge shop-supplier-badge--site">
+                                        ${siteLabel}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="shop-supplier-mapping-card__metrics">
+                                <div class="shop-supplier-metric">
+                                    <span class="shop-supplier-metric__label">导入参考价</span>
+                                    <span class="shop-supplier-metric__value">${referencePrice}</span>
+                                </div>
+                                <div class="shop-supplier-metric">
+                                    <span class="shop-supplier-metric__label">当前采购上限</span>
+                                    <span class="shop-supplier-metric__value shop-supplier-metric__value--ceiling">${ceilingDisplay}</span>
+                                </div>
+                                <div class="shop-supplier-metric">
+                                    <span class="shop-supplier-metric__label">销售加价倍率</span>
+                                    <span class="shop-supplier-metric__value">${multiplier.toFixed(2)} 倍</span>
+                                </div>
+                                <div class="shop-supplier-metric">
+                                    <span class="shop-supplier-metric__label">倍率建议售价</span>
+                                    <span class="shop-supplier-metric__value shop-supplier-metric__value--sale">¥${calcSalePrice} CNY</span>
+                                </div>
+                                <div class="shop-supplier-metric shop-supplier-metric--auto-sync">
+                                    <span class="shop-supplier-metric__label">自动同步</span>
+                                    <span class="shop-supplier-metric__value shop-supplier-metric__value--sync">
+                                        <i class="fas fa-bolt"></i> 详情与图标已自动同步
+                                    </span>
+                                </div>
+                            </div>
+
+                            ${ceilingEditor}
+                        </div>`;
+                    }).join('')}
+                    <div class="shop-supplier-summary-footer">
+                        <i class="fas fa-circle-info"></i>
+                        <span>目录参考与实际履约独立。当上游实时报价超过所设单件采购单价上限时，系统将自动拦截下单。</span>
+                    </div>
+                </div>`;
             container.hidden = false;
         } catch (error) {
             if (token !== this.productSupplierSummaryToken) return;
-            container.innerHTML = '<summary>货源与交付</summary><p>货源信息暂不可用，请重新打开商品核对账号与映射。</p>';
+            container.innerHTML = `
+                <summary class="shop-supplier-summary__toggle">
+                    <div class="shop-supplier-summary__toggle-title">
+                        <i class="fas fa-boxes-packing"></i>
+                        <span>货源与交付</span>
+                    </div>
+                </summary>
+                <div class="shop-supplier-summary__body">
+                    <p style="margin:12px 0 0;font-size:13px;color:#94a3b8;">货源信息暂不可用，请重新打开商品核对账号与映射。</p>
+                </div>`;
             container.hidden = false;
         }
     },
 
-    importSupplierCatalogDetail: async function () {
+    applySupplierAutoSyncToProductModal: function (productData = {}) {
+        const mappings = Array.isArray(this.currentProductSupplierMappings) ? this.currentProductSupplierMappings : [];
+        if (!mappings.length) return;
+
+        const firstImageUrl = mappings
+            .map((m) => String(m?.snapshot?.imageUrl || m?.imageUrl || '').trim())
+            .find(Boolean) || '';
+        const firstDescription = mappings
+            .map((m) => String(m?.snapshot?.description || '').trim())
+            .find(Boolean) || '';
+
+        // 1. Icon Auto-Sync:
+        // Automatically sync upstream image if the product currently has no custom icon
+        // (empty or default 'fas fa-box'). Admin's custom edits take priority.
+        const iconInput = document.getElementById('prodIcon');
+        const currentIconValue = String(iconInput?.value || productData?.icon_url || '').trim();
+        const isDefaultOrEmptyIcon = !currentIconValue || currentIconValue === 'fas fa-box';
+
+        if (firstImageUrl && iconInput && isDefaultOrEmptyIcon) {
+            iconInput.value = firstImageUrl;
+            this.currentProductImageAsset = buildShopProductImageAssetFromUrl(firstImageUrl);
+            this.productIconUploadDirty = true;
+            this.productIconPreviewVersion = String(Date.now());
+            if (typeof this.updatePreview === 'function') {
+                this.updatePreview();
+            }
+        }
+
+        // 2. Usage Instructions Auto-Sync:
+        // Automatically sync upstream description if the product currently has no custom usage instructions.
+        // Also auto-restores if existing instructions match upstream text but were stripped of images by legacy editor.
+        // Admin's custom edits take priority.
+        const usageInput = document.getElementById('prodUsageInstructions');
+        const showUsageCheckbox = document.getElementById('prodShowUsageInstructions');
+        const currentUsageValue = String(usageInput?.value || productData?.usage_instructions || '').trim();
+
+        const normalizeTextContent = (html) => String(html || '')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/\u00A0/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const isDamagedStrippedCopy = Boolean(
+            currentUsageValue &&
+            firstDescription &&
+            firstDescription.includes('<img') &&
+            !currentUsageValue.includes('<img') &&
+            normalizeTextContent(currentUsageValue) === normalizeTextContent(firstDescription)
+        );
+
+        if (firstDescription && usageInput && (!currentUsageValue || isDamagedStrippedCopy)) {
+            usageInput.value = firstDescription;
+            if (showUsageCheckbox && !showUsageCheckbox.checked) {
+                showUsageCheckbox.checked = true;
+                if (typeof this.toggleUsageInstructions === 'function') {
+                    this.toggleUsageInstructions(true);
+                }
+            }
+            if (typeof this.syncRichTextEditorsFromInputs === 'function') {
+                this.syncRichTextEditorsFromInputs();
+            }
+            if (typeof this.refreshFormSectionHeight === 'function') {
+                this.refreshFormSectionHeight('usageInstructionsWrapper');
+            }
+        }
+
+        // 3. Price Auto-Fill:
+        // Automatically sync calculated markup price if the product price is currently 0 or empty.
+        // Admin's custom edits take priority.
+        const priceInput = document.getElementById('prodPrice');
+        const currentPriceValue = Number(priceInput?.value || productData?.price_cny || productData?.price || 0);
+        if ((!currentPriceValue || currentPriceValue <= 0) && priceInput) {
+            const firstMapping = mappings[0];
+            const cost = Number(firstMapping?.snapshot?.costPrice || firstMapping?.snapshot?.supplierUnitPrice || 0);
+            const mult = Number(firstMapping?.snapshot?.markupMultiplier || 1.2);
+            if (cost > 0) {
+                const autoSalePrice = (Math.round(cost * mult * 100) / 100).toFixed(2);
+                priceInput.value = autoSalePrice;
+                if (typeof this.updatePreview === 'function') {
+                    this.updatePreview();
+                }
+            }
+        }
+    },
+
+    syncSupplierMappingUsageInstructions: function (button) {
+        const mappingId = String(button?.dataset?.mappingId || '').trim();
+        const mappings = Array.isArray(this.currentProductSupplierMappings) ? this.currentProductSupplierMappings : [];
+        const mapping = mappings.find((m) => String(m?.id || '').trim() === mappingId) || mappings[0];
+        const desc = String(mapping?.snapshot?.description || '').trim();
+        const statusEl = mappingId ? document.querySelector(`[data-supplier-mapping-ceiling-status="${mappingId}"]`) : null;
+        if (!desc) {
+            if (statusEl) statusEl.textContent = '当前映射暂无上游商品详情快照';
+            return;
+        }
+        const usageInput = document.getElementById('prodUsageInstructions');
+        const showUsageCheckbox = document.getElementById('prodShowUsageInstructions');
+        if (usageInput) {
+            usageInput.value = desc;
+        }
+        if (showUsageCheckbox && !showUsageCheckbox.checked) {
+            showUsageCheckbox.checked = true;
+            if (typeof this.toggleUsageInstructions === 'function') {
+                this.toggleUsageInstructions(true);
+            }
+        }
+        if (typeof this.syncRichTextEditorsFromInputs === 'function') {
+            this.syncRichTextEditorsFromInputs();
+        }
+        if (typeof this.refreshFormSectionHeight === 'function') {
+            this.refreshFormSectionHeight('usageInstructionsWrapper');
+        }
+        if (statusEl) statusEl.textContent = '已填入下方「使用说明」富文本编辑器';
+    },
+
+    syncSupplierMappingImage: function (button) {
+        const mappingId = String(button?.dataset?.mappingId || '').trim();
+        const mappings = Array.isArray(this.currentProductSupplierMappings) ? this.currentProductSupplierMappings : [];
+        const mapping = mappings.find((m) => String(m?.id || '').trim() === mappingId) || mappings[0];
+        const imageUrl = String(mapping?.snapshot?.imageUrl || mapping?.imageUrl || '').trim();
+        const statusEl = mappingId ? document.querySelector(`[data-supplier-mapping-ceiling-status="${mappingId}"]`) : null;
+        if (!imageUrl) {
+            if (statusEl) statusEl.textContent = '当前映射暂无上游商品图标快照';
+            return;
+        }
+        const iconInput = document.getElementById('prodIcon');
+        if (iconInput) {
+            iconInput.value = imageUrl;
+        }
+        this.currentProductImageAsset = buildShopProductImageAssetFromUrl(imageUrl);
+        this.productIconUploadDirty = true;
+        this.productIconPreviewVersion = String(Date.now());
+        if (typeof this.updatePreview === 'function') {
+            this.updatePreview();
+        }
+        if (statusEl) statusEl.textContent = '已同步上游商品图标，保存商品后生效';
+        if (typeof this.showActionToast === 'function') {
+            this.showActionToast('已同步上游商品图标，保存商品后生效');
+        }
+    },
+
+    saveSupplierMappingCostCeiling: async function (button) {
+        const mappingId = String(button?.dataset?.mappingId || '').trim();
+        const productId = String(button?.dataset?.productId || '').trim();
+        if (!mappingId) return null;
+        const input = document.querySelector(`[data-supplier-mapping-ceiling-input="${mappingId}"]`);
+        const statusEl = document.querySelector(`[data-supplier-mapping-ceiling-status="${mappingId}"]`);
+        const rawValue = String(input?.value || '').trim();
+        if (!rawValue || !/^\d{1,12}(?:\.\d{1,8})?$/.test(rawValue) || Number(rawValue) <= 0 || Number(rawValue) > 100000) {
+            if (statusEl) statusEl.textContent = '请输入 0.01–100000 之间的有效单价上限';
+            return null;
+        }
+        if (button) button.disabled = true;
+        if (statusEl) statusEl.textContent = '保存中…';
+        try {
+            const headers = await this.getAdminAuthHeaders();
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/supplier-catalog'),
+                {
+                    method: 'POST',
+                    headers,
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        action: 'update-mapping-ceiling',
+                        mappingId,
+                        costCeilingCny: rawValue
+                    })
+                }
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || '保存采购单价上限失败。');
+            }
+            if (statusEl) statusEl.textContent = `已更新为 ${payload.costCeilingCny} CNY`;
+            if (productId) void this.loadProductSupplierSummary(productId);
+            return payload;
+        } catch (error) {
+            if (statusEl) statusEl.textContent = error.message || '保存采购单价上限失败。';
+            return null;
+        } finally {
+            if (button) button.disabled = false;
+        }
+    },
+
+    applySupplierMappingMultiplierToProduct: function (button) {
+        const mappingId = String(button?.dataset?.mappingId || '').trim();
+        const mappings = Array.isArray(this.currentProductSupplierMappings) ? this.currentProductSupplierMappings : [];
+        const mapping = mappings.find((m) => String(m?.id || '').trim() === mappingId) || mappings[0];
+        if (!mapping) return;
+
+        const cost = Number(button?.dataset?.cost || mapping.snapshot?.supplierUnitPrice || 0);
+        const mult = Number(button?.dataset?.multiplier || mapping.snapshot?.markupMultiplier || 1.2);
+        if (cost <= 0) {
+            const statusEl = document.querySelector(`[data-supplier-mapping-ceiling-status="${mappingId}"]`);
+            if (statusEl) statusEl.textContent = '参考成本未提供，无法计算倍率售价';
+            return;
+        }
+
+        const calculatedPrice = (Math.round(cost * mult * 100) / 100).toFixed(2);
+        const priceInput = document.getElementById('prodPrice');
+        if (priceInput) {
+            priceInput.value = calculatedPrice;
+        }
+
+        const targetRace = mapping.variant?.race || '';
+        document.querySelectorAll('#productSkusContainer .shop-product-sku-row').forEach((row) => {
+            const nameInput = row.querySelector('[data-product-sku-field="sku_name"]');
+            const priceEl = row.querySelector('[data-product-sku-field="price_cny"]');
+            if (priceEl) {
+                if (!targetRace || !nameInput || nameInput.value === targetRace || mappings.length === 1) {
+                    priceEl.value = calculatedPrice;
+                }
+            }
+        });
+
+        if (typeof this.updatePreview === 'function') {
+            this.updatePreview();
+        }
+
+        const statusEl = document.querySelector(`[data-supplier-mapping-ceiling-status="${mappingId}"]`);
+        if (statusEl) {
+            statusEl.textContent = `已应用倍率售价 ¥${calculatedPrice} CNY`;
+        }
+        if (typeof this.showActionToast === 'function') {
+            this.showActionToast(`已将倍率售价 ¥${calculatedPrice} 应用到商品售价`);
+        }
+    },
+
+    importSupplierCatalogDetail: async function ({ initialStatus = 'draft' } = {}) {
         const item = this.supplierCatalogDetailItem;
         if (item?.draftStatus === 1) {
             this.renderSupplierCatalogFeedback('预选卡商品只开放只读分页预览，不能导入。', 'warning');
@@ -11713,11 +15032,85 @@ Example output format:
         }
         if (!this.isSupplierCatalogDetailImportable()) return null;
         const detailToken = this.supplierCatalogDetailRequestToken;
+
         const race = document.getElementById('supplierCatalogRace')?.value || '';
+        const ceilingInput = document.getElementById('supplierCatalogCostCeiling');
+        const ceilingRaw = String(ceilingInput?.value || '').trim();
+        if (ceilingRaw && (!/^\d{1,12}(?:\.\d{1,8})?$/.test(ceilingRaw) || Number(ceilingRaw) <= 0 || Number(ceilingRaw) > 100000)) {
+            this.renderSupplierCatalogFeedback('单件自动采购单价上限需在 0.01 到 100000 CNY 之间。', 'warning');
+            return null;
+        }
+
+        const multiplierInput = document.getElementById('supplierCatalogMarkupMultiplier');
+        const multiplierRaw = String(multiplierInput?.value || '').trim();
+        const markupMultiplier = Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) >= 1
+            ? Number(multiplierRaw)
+            : 1.2;
+
+        const requirements = item.variantRequirements;
+        let multiVariants = null;
+        let variants = null;
+        let costCeilings = null;
+
+        if (race === '__all__' && Array.isArray(requirements?.races) && requirements.races.length > 0) {
+            const selectedVariants = requirements.races.map((rName) => {
+                const costPrice = Number(requirements.racePrices?.[rName] || item.supplierUnitPrice || 0);
+                const salePrice = costPrice > 0 ? Math.round(costPrice * markupMultiplier * 100) / 100 : costPrice;
+                return {
+                    race: rName,
+                    price: salePrice,
+                    costPrice,
+                    markupMultiplier,
+                    costCeiling: ceilingRaw || costPrice || undefined
+                };
+            });
+            multiVariants = { [goodsNo]: selectedVariants };
+            variants = { [goodsNo]: { race: selectedVariants[0]?.race || '', markupMultiplier, price: selectedVariants[0]?.price, costPrice: selectedVariants[0]?.costPrice } };
+            if (ceilingRaw || selectedVariants[0]?.costPrice) {
+                costCeilings = { [goodsNo]: ceilingRaw || selectedVariants[0].costPrice };
+            }
+        } else {
+            variants = { [goodsNo]: race ? { race } : {} };
+            if (ceilingRaw) costCeilings = { [goodsNo]: ceilingRaw };
+        }
+
+        const categorySelect = document.getElementById('supplierCatalogCategory');
+        const productCategory = categorySelect?.value || this.guessBestShopCategory(item?.name || '') || 'other';
+
+        const salesMode = Number(document.getElementById('supplierImportSalesMode')?.value || 3);
+        const salesBase = Math.max(0, parseInt(document.getElementById('supplierImportSalesBase')?.value || '0', 10) || 0);
+        const dailyMin = Math.max(0, parseInt(document.getElementById('supplierImportDailyRandomMin')?.value || '0', 10) || 0);
+        const dailyMax = Math.max(dailyMin, parseInt(document.getElementById('supplierImportDailyRandomMax')?.value || '0', 10) || dailyMin);
+        const randomSeed = document.getElementById('supplierImportRandomSeed')?.value.trim() || '';
+        const todayStr = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+        const startDateRaw = document.getElementById('supplierImportSalesStartDate')?.value.trim() || '';
+        const startDate = /^\d{4}-\d{2}-\d{2}$/.test(startDateRaw) ? startDateRaw : (salesMode === 2 ? todayStr : null);
+
+        const salesConfig = {
+            mode: (salesMode === 1 || salesMode === 2 || salesMode === 3) ? salesMode : 3,
+            base_sales: salesBase,
+            daily_random_min: dailyMin,
+            daily_random_max: dailyMax,
+            random_seed: randomSeed,
+            start_date: startDate
+        };
+
+        const isPublish = initialStatus === 'published';
+        const actionButton = isPublish
+            ? (document.querySelector('[data-shop-action="supplier-catalog-import-publish-detail"]') || document.querySelector('[data-shop-action="supplier-catalog-import-detail"]'))
+            : document.querySelector('[data-shop-action="supplier-catalog-import-detail"]');
+
         const result = await this.importSupplierCatalogGoods([goodsNo], {
             context: this.supplierCatalogDetailContext,
-            variants: { [goodsNo]: race ? { race } : {} },
-            button: document.querySelector('[data-shop-action="supplier-catalog-import-detail"]')
+            variants,
+            productCategory,
+            ...(multiVariants ? { multiVariants } : {}),
+            ...(costCeilings ? { costCeilings } : {}),
+            ...(markupMultiplier ? { markupMultiplier } : {}),
+            initialStatus,
+            salesConfig,
+            confirm: false,
+            button: actionButton
         });
         if (result?.success && detailToken === this.supplierCatalogDetailRequestToken) this.closeSupplierCatalogDetail();
         return result;
@@ -11764,18 +15157,26 @@ Example output format:
         this.productGridCache = new Map();
 
         try {
-            await this.loadCategories();
+            if (!this.categoryData || !this.categoryData.length || (this.currentCategory && !this.categoryData.some(c => c.name === this.currentCategory))) {
+                await this.loadCategories({ force: true });
+            } else {
+                await this.loadCategories();
+            }
             const normalizedCategory = this.normalizeCurrentProductCategory();
             this.syncProductCategoryFilterButtons();
-	            const payload = await this.loadShopProductsViaAdminApi({
-	                status: this.currentStatusFilter === 'active' ? 'active' : 'deleted',
-	                category: normalizedCategory || null,
-	                query: this.productSearchQuery || null,
-	                deliveryType: this.currentProductDeliveryFilter !== 'all' ? this.currentProductDeliveryFilter : null,
-	                fields: 'full',
-	                includeSkus: 'true',
-	                order: 'display_order_desc'
-	            });
+            const targetCategories = this.getCategoryAndDescendantNames(normalizedCategory);
+            const categoryQueryParam = targetCategories.length > 1
+                ? targetCategories.join(',')
+                : (normalizedCategory || null);
+            const payload = await this.loadShopProductsViaAdminApi({
+                status: this.currentStatusFilter === 'active' ? 'active' : 'deleted',
+                category: categoryQueryParam,
+                query: this.productSearchQuery || null,
+                deliveryType: this.currentProductDeliveryFilter !== 'all' ? this.currentProductDeliveryFilter : null,
+                fields: 'full',
+                includeSkus: 'true',
+                order: 'display_order_desc'
+            });
             const data = Array.isArray(payload?.rows) ? payload.rows : [];
             this.productGridCache = new Map((data || []).map((product) => [String(product.id || ''), { ...product }]));
 
@@ -11783,11 +15184,16 @@ Example output format:
             const cacheKey = `${this.currentStatusFilter}:${this.currentProductDeliveryFilter}:${this.productSearchQuery || ''}:${normalizedCategory || 'all'}`;
             this.shopProductCategoryCache.set(cacheKey, { data, timestamp: Date.now() });
 
-            if (this.currentCategory === 'all' && !this.productSearchQuery && this.currentProductDeliveryFilter === 'all') {
-                this.updateProductCategoryCountsFromProducts(data);
-            } else if (Object.keys(this.productCategoryCountMap || {}).length <= 1) {
-                void this.refreshCategoryCountsBackground();
+            if (!this.productSearchQuery && this.currentProductDeliveryFilter === 'all') {
+                if (this.currentCategory === 'all') {
+                    this.updateProductCategoryCountsFromProducts(data);
+                } else if (this.currentCategory) {
+                    this.productCategoryCountMap = this.productCategoryCountMap || {};
+                    this.productCategoryCountMap[this.currentCategory] = data.length;
+                    this.syncProductCategorySidebarCounts();
+                }
             }
+            void this.refreshCategoryCountsBackground();
 
             container.innerHTML = '';
 
@@ -12043,6 +15449,17 @@ Example output format:
         const count = uniqueIds.size;
         const countEl = document.getElementById('productBatchSelectedCount');
         if (countEl) countEl.textContent = count;
+
+        const publishBtn = document.getElementById('productBatchPublishSelectedBtn');
+        const unpublishBtn = document.getElementById('productBatchUnpublishSelectedBtn');
+        const publishCountSpan = document.getElementById('batchPublishCount');
+        const unpublishCountSpan = document.getElementById('batchUnpublishCount');
+
+        if (publishCountSpan) publishCountSpan.textContent = String(count);
+        if (unpublishCountSpan) unpublishCountSpan.textContent = String(count);
+
+        if (publishBtn) publishBtn.style.display = count > 0 ? 'inline-flex' : 'none';
+        if (unpublishBtn) unpublishBtn.style.display = count > 0 ? 'inline-flex' : 'none';
 
         const headSelectAll = document.getElementById('adminProductTableHeadSelectAll');
         if (headSelectAll) {
@@ -12367,7 +15784,7 @@ Example output format:
         this.setProductIconUploadStatus('正在上传商品图...', 'loading');
 
         try {
-            // 1. Compress image and generate the storefront card variant.
+            // 1. Generate compressed original, card and list thumbnail renditions.
             const compressedBlob = await this.compressImage(file);
             let cardImageData = '';
             try {
@@ -12380,6 +15797,19 @@ Example output format:
                 cardImageData = await this.blobToDataUrl(cardBlob);
             } catch (cardError) {
                 console.warn('Product card image variant generation failed:', cardError);
+            }
+
+            let thumbImageData = '';
+            try {
+                const thumbBlob = await this.compressImage(file, {
+                    maxWidth: SHOP_PRODUCT_IMAGE_THUMB_SIZE,
+                    maxHeight: SHOP_PRODUCT_IMAGE_THUMB_SIZE,
+                    quality: SHOP_PRODUCT_IMAGE_CARD_QUALITY,
+                    fit: 'cover'
+                });
+                thumbImageData = await this.blobToDataUrl(thumbBlob);
+            } catch (thumbError) {
+                console.warn('Product thumbnail generation failed:', thumbError);
             }
 
             // 2. Convert to Base64
@@ -12410,7 +15840,8 @@ Example output format:
                         type: 'product',
                         productId: productId,
                         imageData: base64Data,
-                        cardImageData
+                        cardImageData,
+                        thumbImageData
                     })
                 }
             );
@@ -12582,6 +16013,64 @@ Example output format:
         }
     },
 
+    guessBestShopCategory: function (name = '') {
+        const text = String(name || '').toLowerCase();
+        const categories = Array.isArray(this.categoryData) ? this.categoryData : [];
+        if (!categories.length) return 'other';
+
+        // 1. Telegram / 飞机
+        if (/tg|telegram|飞机/i.test(text)) {
+            const match = categories.find((c) => /飞机|telegram|tg/i.test(c.name));
+            if (match) return match.name;
+        }
+        // 2. 邮箱 (Gmail, Outlook, Hotmail, 谷歌, 微软等)
+        if (/gmail|谷歌|邮箱|outlook|hotmail|email|mail|微软/i.test(text)) {
+            const match = categories.find((c) => /邮箱|mail/i.test(c.name));
+            if (match) return match.name;
+        }
+        // 3. 礼品卡 (iTunes, 苹果礼品卡, gift card 等)
+        if (/礼品卡|gift|itunes|卡密|充值卡/i.test(text)) {
+            const match = categories.find((c) => /礼品卡/i.test(c.name));
+            if (match) return match.name;
+        }
+        // 4. Apple ID / 苹果账号
+        if (/apple\s*id|苹果\s*id|独享\s*id|海外\s*id/i.test(text)) {
+            const match = categories.find((c) => /apple/i.test(c.name));
+            if (match) return match.name;
+        }
+        // 5. Claude
+        if (/claude/i.test(text)) {
+            const match = categories.find((c) => /claude/i.test(c.name));
+            if (match) return match.name;
+        }
+        // 6. ChatGPT / OpenAI
+        if (/gpt|openai|chatgpt/i.test(text)) {
+            const match = categories.find((c) => /gpt|openai/i.test(c.name));
+            if (match) return match.name;
+        }
+        // 7. Gemini
+        if (/gemini/i.test(text)) {
+            const match = categories.find((c) => /gemini/i.test(c.name));
+            if (match) return match.name;
+        }
+        // 8. 影音
+        if (/影音|netflix|spotify|youtube/i.test(text)) {
+            const match = categories.find((c) => /影音/i.test(c.name));
+            if (match) return match.name;
+        }
+        // 9. 中转站 / API
+        if (/中转站|中转|api/i.test(text)) {
+            const match = categories.find((c) => /中转/i.test(c.name));
+            if (match) return match.name;
+        }
+
+        // Fallback to 'other' or '其它' or first category
+        const fallback = categories.find((c) => c.name === 'other')
+            || categories.find((c) => c.name === '其它')
+            || categories[0];
+        return fallback?.name || 'other';
+    },
+
     applyProductModalCategorySelection: async function (categoryName = 'other') {
         try {
             await (this.productCategoryDropdownPromise || Promise.resolve());
@@ -12589,10 +16078,27 @@ Example output format:
             console.warn('[ShopAdmin] Failed while waiting for category dropdown readiness:', error);
         }
 
-        const normalizedCategoryName = String(categoryName || 'other').trim() || 'other';
-        const categoryData = this.categoryData.find((cat) => cat.name === normalizedCategoryName);
-        const categoryColor = categoryData?.color || '#6b9ece';
-        this.selectCategory(normalizedCategoryName, categoryColor);
+        const rawCategory = String(categoryName || 'other').trim();
+        let categoryData = this.categoryData.find((cat) => cat.name === rawCategory);
+        let selectedName = rawCategory;
+        let selectedColor = categoryData?.color || '#6b9ece';
+
+        // If category is 'resource' or does not exist in shop_categories:
+        if (!categoryData || rawCategory === 'resource') {
+            const prodName = document.getElementById('prodName')?.value || this.editingProductSnapshot?.name || '';
+            const guessed = this.guessBestShopCategory(prodName);
+            const matchedCat = this.categoryData.find((c) => c.name === guessed);
+            const fallbackCat = matchedCat
+                || this.categoryData.find((cat) => cat.name === 'other')
+                || this.categoryData.find((cat) => cat.name === '其它')
+                || this.categoryData[0];
+            if (fallbackCat) {
+                selectedName = fallbackCat.name;
+                selectedColor = fallbackCat.color || '#6b9ece';
+            }
+        }
+
+        this.selectCategory(selectedName, selectedColor);
     },
 
     fillProductModalFromData: function (data, options = {}) {
@@ -12637,6 +16143,25 @@ Example output format:
             true
         );
         document.getElementById('prodSort').value = Number.isFinite(sortValue) ? sortValue : 0;
+        const minPurchaseQuantityInput = document.getElementById('prodMinPurchaseQuantity');
+        if (minPurchaseQuantityInput) {
+            minPurchaseQuantityInput.value = data.min_purchase_quantity != null
+                ? data.min_purchase_quantity
+                : '1';
+        }
+        const minQtyHint = document.getElementById('prodMinPurchaseQuantityHint');
+        const supplierMinQty = data.supplier_mapping?.import_snapshot?.minimumQuantity
+            || data.supplier_snapshot?.minimumQuantity
+            || data.supplier_minimum_quantity;
+        if (minQtyHint) {
+            if (supplierMinQty && Number(supplierMinQty) > 1) {
+                minQtyHint.textContent = `该商品关联上游供应商，上游起售数量为 ${supplierMinQty} 件，建议不低于该值`;
+                minQtyHint.style.color = '#f59e0b';
+            } else {
+                minQtyHint.textContent = '单笔订单最少购买数量，默认 1';
+                minQtyHint.style.color = '';
+            }
+        }
         document.getElementById('prodMaxPurchaseQuantity').value = data.max_purchase_quantity != null
             ? data.max_purchase_quantity
             : '';
@@ -12699,6 +16224,29 @@ Example output format:
             guest_payment_channels: data.guest_payment_channels
         });
 
+        const salesConfig = (data?.sales_config && typeof data.sales_config === 'object') ? data.sales_config : {};
+        const salesMode = Number(salesConfig.mode) || 3;
+        const salesBase = Number(salesConfig.base_sales) || 0;
+        const dailyMin = Number(salesConfig.daily_random_min) || 0;
+        const dailyMax = Number(salesConfig.daily_random_max) || 0;
+        const randomSeed = salesConfig.random_seed || '';
+        const todayStr = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+        const startDate = salesConfig.start_date || (salesMode === 2 ? todayStr : '');
+
+        const modeEl = document.getElementById('prodSalesMode');
+        if (modeEl) modeEl.value = String(salesMode);
+        const baseEl = document.getElementById('prodSalesBase');
+        if (baseEl) baseEl.value = String(salesBase);
+        const minEl = document.getElementById('prodDailyRandomMin');
+        if (minEl) minEl.value = String(dailyMin);
+        const maxEl = document.getElementById('prodDailyRandomMax');
+        if (maxEl) maxEl.value = String(dailyMax);
+        const seedEl = document.getElementById('prodRandomSeed');
+        if (seedEl) seedEl.value = randomSeed;
+        const startEl = document.getElementById('prodSalesStartDate');
+        if (startEl) startEl.value = startDate;
+        this.syncSalesModeControls();
+
         const showPurchaseNotes = this.getSiteScopedProductSwitchForEdit(data, 'show_purchase_notes', false);
         document.getElementById('prodShowPurchaseNotes').checked = showPurchaseNotes;
         this.togglePurchaseNotes(showPurchaseNotes);
@@ -12708,6 +16256,7 @@ Example output format:
         this.toggleUsageInstructions(showUsageInstructions);
 
         this.fillProductCopyFieldsForActiveLanguage(data);
+        this.applySupplierAutoSyncToProductModal(data);
         void this.applyProductModalCategorySelection(data.category || 'other');
     },
 
@@ -12828,6 +16377,34 @@ Example output format:
     // Toggle usage instructions textarea visibility with animation
     toggleUsageInstructions: function (show) {
         this.toggleFormSection('usageInstructionsWrapper', show);
+    },
+
+    syncSalesModeControls: function () {
+        const modeSelect = document.getElementById('prodSalesMode');
+        if (!modeSelect) return;
+        const mode = Number(modeSelect.value) || 3;
+        const baseGroup = document.getElementById('prodSalesBaseGroup');
+        const dailyRow = document.getElementById('prodSalesDailyRandomRow');
+        const hint = document.getElementById('prodSalesModeHint');
+
+        if (mode === 3) {
+            if (baseGroup) baseGroup.style.display = 'none';
+            if (dailyRow) dailyRow.style.display = 'none';
+            if (hint) hint.textContent = '展示完全真实的成交量（本地订单成交数 + 上游接口销量）。无需额外基数。';
+        } else if (mode === 1) {
+            if (baseGroup) baseGroup.style.display = '';
+            if (dailyRow) dailyRow.style.display = 'none';
+            if (hint) hint.textContent = '对外展示销量 = 真实成交量（本地订单 + 上游接口销量） + 销量基数。';
+        } else if (mode === 2) {
+            if (baseGroup) baseGroup.style.display = '';
+            if (dailyRow) dailyRow.style.display = 'flex';
+            if (hint) hint.textContent = '对外展示销量 = 每日随机增量确定性累加 + 销售基数。每天在[最小值, 最大值]内稳定递增。';
+            const startEl = document.getElementById('prodSalesStartDate');
+            if (startEl && !startEl.value) {
+                const todayStr = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+                startEl.value = todayStr;
+            }
+        }
     },
 
     normalizeGuestPaymentChannelTokens: function (value) {
@@ -13332,6 +16909,13 @@ Example output format:
 
             document.getElementById('prodDesc').value = '';
             document.getElementById('prodSort').value = '0';
+            const prodMinQtyInput = document.getElementById('prodMinPurchaseQuantity');
+            if (prodMinQtyInput) prodMinQtyInput.value = '1';
+            const prodMinQtyHint = document.getElementById('prodMinPurchaseQuantityHint');
+            if (prodMinQtyHint) {
+                prodMinQtyHint.textContent = '单笔订单最少购买数量，默认 1';
+                prodMinQtyHint.style.color = '';
+            }
             document.getElementById('prodMaxPurchaseQuantity').value = '';
             this.setOptionalInputValue('prodPurchaseLimit24hQuantity', '');
             this.setOptionalInputValue('prodPurchaseLimitWindowQuantity', '');
@@ -13359,6 +16943,20 @@ Example output format:
                 guest_max_quantity: 1,
                 guest_payment_channels: []
             });
+
+            const modeEl = document.getElementById('prodSalesMode');
+            if (modeEl) modeEl.value = '3';
+            const baseEl = document.getElementById('prodSalesBase');
+            if (baseEl) baseEl.value = '0';
+            const minEl = document.getElementById('prodDailyRandomMin');
+            if (minEl) minEl.value = '0';
+            const maxEl = document.getElementById('prodDailyRandomMax');
+            if (maxEl) maxEl.value = '0';
+            const seedEl = document.getElementById('prodRandomSeed');
+            if (seedEl) seedEl.value = '';
+            const startEl = document.getElementById('prodSalesStartDate');
+            if (startEl) startEl.value = '';
+            this.syncSalesModeControls();
 
             // Reset purchase notes
             document.getElementById('prodShowPurchaseNotes').checked = false;
@@ -13597,10 +17195,31 @@ Example output format:
                 return parsedValue;
             };
 
+            const minPurchaseQuantityRaw = (document.getElementById('prodMinPurchaseQuantity')?.value || '').trim();
+            let normalizedMinPurchaseQuantity = 1;
+            if (minPurchaseQuantityRaw !== '') {
+                const parsedMinPurchaseQuantity = Number.parseInt(minPurchaseQuantityRaw, 10);
+                if (!Number.isFinite(parsedMinPurchaseQuantity) || parsedMinPurchaseQuantity < 1 || parsedMinPurchaseQuantity > 9999) {
+                    const failureMessage = '起售数量必须是 1 到 9999 之间的整数';
+                    failSaveFeedback();
+                    this.setProductSaveInlineError(failureMessage);
+                    this.showActionToast(failureMessage, 'warning');
+                    return;
+                }
+                normalizedMinPurchaseQuantity = parsedMinPurchaseQuantity;
+            }
+
             if (maxPurchaseQuantityRaw !== '') {
                 const parsedMaxPurchaseQuantity = Number.parseInt(maxPurchaseQuantityRaw, 10);
                 if (!Number.isFinite(parsedMaxPurchaseQuantity) || parsedMaxPurchaseQuantity < 1 || parsedMaxPurchaseQuantity > 99) {
                     const failureMessage = '单次限购必须是 1 到 99 之间的整数';
+                    failSaveFeedback();
+                    this.setProductSaveInlineError(failureMessage);
+                    this.showActionToast(failureMessage, 'warning');
+                    return;
+                }
+                if (normalizedMinPurchaseQuantity > parsedMaxPurchaseQuantity) {
+                    const failureMessage = '起售数量不能大于单次限购数量';
                     failSaveFeedback();
                     this.setProductSaveInlineError(failureMessage);
                     this.showActionToast(failureMessage, 'warning');
@@ -13988,6 +17607,7 @@ Example output format:
                 image_assets: imageAsset,
                 category: document.getElementById('prodCategory').value,
                 display_order: normalizedSort,
+                min_purchase_quantity: normalizedMinPurchaseQuantity,
                 max_purchase_quantity: normalizedMaxPurchaseQuantity,
                 guest_max_quantity: normalizedGuestMaxPurchaseQuantity,
                 purchase_limit_24h_quantity: normalizedPurchaseLimit24hQuantity,
@@ -14074,6 +17694,24 @@ Example output format:
                 this.setProductSaveInlineError(message);
                 return;
             }
+
+            const salesMode = Number(document.getElementById('prodSalesMode')?.value || 3);
+            const salesBase = Math.max(0, parseInt(document.getElementById('prodSalesBase')?.value || '0', 10) || 0);
+            const dailyMin = Math.max(0, parseInt(document.getElementById('prodDailyRandomMin')?.value || '0', 10) || 0);
+            const dailyMax = Math.max(dailyMin, parseInt(document.getElementById('prodDailyRandomMax')?.value || '0', 10) || dailyMin);
+            const randomSeed = document.getElementById('prodRandomSeed')?.value.trim() || '';
+            const todayStr = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+            const startDateRaw = document.getElementById('prodSalesStartDate')?.value.trim() || '';
+            const startDate = /^\d{4}-\d{2}-\d{2}$/.test(startDateRaw) ? startDateRaw : (salesMode === 2 ? todayStr : null);
+
+            payload.sales_config = {
+                mode: (salesMode === 1 || salesMode === 2 || salesMode === 3) ? salesMode : 3,
+                base_sales: salesBase,
+                daily_random_min: dailyMin,
+                daily_random_max: dailyMax,
+                random_seed: randomSeed,
+                start_date: startDate
+            };
 
             try {
                 const validationPayload = id
@@ -14195,6 +17833,7 @@ Example output format:
                 this.invalidateProductCache();
                 this.loadProducts();
                 await this.renderProductCategoryFilters();
+                this.notifyShopCatalogChanged('product_save', { productId: id, name });
             } catch (err) {
                 console.error('[ShopAdmin] Save process completely failed:', err);
                 const failureMessage = this.getFriendlySaveErrorMessage(err);
@@ -22945,9 +26584,13 @@ Example output format:
             header.className = 'tree-category-header';
             header.dataset.category = catKey;
 
-            // Get dynamic color for this category
+            // Get dynamic color and icon for this category
             const folderColor = this.getCategoryColor(catKey);
             const safeCategoryName = this.escapeHtml(cat.name);
+            const catIcon = this.resolveCategoryIconUrl(cat);
+            const catIconHtml = catIcon
+                ? `<img src="${this.escapeForAttr(catIcon)}" alt="" class="tree-category-icon" style="width:18px;height:18px;border-radius:4px;object-fit:cover;flex-shrink:0;vertical-align:middle;margin-right:6px;" loading="lazy" onerror="this.outerHTML='<i class=\\'fas fa-folder tree-folder-icon ${this.buildCategoryColorClass(folderColor)}\\'></i>'">`
+                : `<i class="fas fa-folder tree-folder-icon ${this.buildCategoryColorClass(folderColor)}"></i>`;
             const visibilityBadge = isCategoryPublic
                 ? ''
                 : `<span class="tree-category-visibility tree-category-visibility--private" title="非管理员不可见">
@@ -22960,7 +26603,7 @@ Example output format:
                     <i class="fas fa-grip-vertical" aria-hidden="true"></i>
                 </button>
                 <i class="fas fa-chevron-right tree-chevron"></i>
-                <i class="fas fa-folder tree-folder-icon ${this.buildCategoryColorClass(folderColor)}"></i>
+                ${catIconHtml}
                 <span class="tree-category-name">${safeCategoryName}</span>
                 ${visibilityBadge}
                 <span class="tree-category-count">${cat.products.length}</span>
@@ -23501,25 +27144,29 @@ Example output format:
         this.contextMenuCategory = categoryKey;
         const menu = document.getElementById('categoryContextMenu');
         if (!menu) return;
-        const anchor = e.currentTarget
-            || Array.from(document.querySelectorAll('.tree-category-header')).find((element) => element.dataset.category === categoryKey)
-            || null;
-        if (!anchor) return;
 
         this.closeCategoryContextMenu();
-        anchor.appendChild(menu);
+        document.body.appendChild(menu);
         menu.classList.add('show');
+        menu.style.position = 'fixed';
+        menu.style.zIndex = '999999';
 
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
         const menuRect = menu.getBoundingClientRect();
-        const anchorRect = anchor.getBoundingClientRect();
-        const alignRight = anchorRect.left + menuRect.width > viewportWidth - 10;
-        const alignUp = anchorRect.bottom + menuRect.height > viewportHeight - 10 && anchorRect.top > menuRect.height + 10;
-        menu.classList.toggle('tree-context-menu--anchor-left', !alignRight);
-        menu.classList.toggle('tree-context-menu--anchor-right', alignRight);
-        menu.classList.toggle('tree-context-menu--anchor-down', !alignUp);
-        menu.classList.toggle('tree-context-menu--anchor-up', alignUp);
+
+        let left = (e.clientX !== undefined) ? e.clientX : 200;
+        let top = (e.clientY !== undefined) ? e.clientY : 200;
+
+        if (left + menuRect.width > viewportWidth - 12) {
+            left = Math.max(10, viewportWidth - menuRect.width - 12);
+        }
+        if (top + menuRect.height > viewportHeight - 12) {
+            top = Math.max(10, viewportHeight - menuRect.height - 12);
+        }
+
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
 
         // Highlight current color
         const currentColor = this.getCategoryColor(categoryKey);
@@ -23529,6 +27176,10 @@ Example output format:
 
         const currentCategory = this.categoryData.find(c => c.name === categoryKey || c.id === categoryKey);
         const isPublic = this.isCategoryPublic(currentCategory || categoryKey);
+        const clearParentItem = menu.querySelector('#menuClearCategoryParent');
+        if (clearParentItem) {
+            clearParentItem.style.display = (currentCategory?.parent_id || currentCategory?.parent_name) ? 'flex' : 'none';
+        }
         const visibilityItem = menu.querySelector('[data-shop-action="import-category-public-toggle"]');
         if (visibilityItem) {
             const icon = visibilityItem.querySelector('i');

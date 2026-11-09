@@ -7,7 +7,7 @@
     <title>KC GPT自动充值系统 | 控制台</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="/vendor/lucide/lucide-0.468.0.min.js"></script>
     <script>if (typeof lucide === 'undefined') { window.lucide = { createIcons: () => {} }; }</script>
     <script src="/grok-plan-catalog.js"></script>
     <script src="/card-parser.js"></script>
@@ -2449,7 +2449,7 @@
         onclick="if (event.target === this) closeSessionModal()">
         <div class="screenshot-modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
             <div class="screenshot-modal-header">
-                <h3 style="margin:0; font-size:16px; font-weight:600;">Session 详情</h3>
+                <h3 style="margin:0; font-size:16px; font-weight:600;">Session 详情（30 秒后自动清除）</h3>
                 <div style="display:flex; gap:8px; flex-wrap:wrap;">
                     <button type="button" class="btn btn-secondary" onclick="copySessionModalContent()"><i data-lucide="copy"></i> 复制</button>
                     <button type="button" class="btn btn-secondary" onclick="exportSessionModalContent()"><i data-lucide="download"></i> 导出</button>
@@ -4328,6 +4328,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         </div>
     </div>
 
+    <script src="/admin-security.js"></script>
     <script>
 
 
@@ -4773,6 +4774,9 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         }
 
         function redirectToLogin() {
+            closeSessionModal();
+            KcAdminSecurity.clear();
+            clearTotpSetup();
             clearAdminToken();
             location.href = adminLoginPath;
         }
@@ -4816,7 +4820,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` };
             let response;
             try {
-                response = await fetch(url, { ...options, headers });
+                response = await KcAdminSecurity.fetch(url, { ...options, headers }, token);
                 setAdminConnectionState(response.status < 500);
             } catch (error) {
                 setAdminConnectionState(false);
@@ -4840,8 +4844,22 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     throw new Error('管理员登录已失效，请重新登录');
                 }
             }
+            if (response.ok && response.headers.get('content-type')?.includes('application/json')) {
+                const result = await response.clone().json().catch(() => null);
+                if (result?.reauthenticate) { redirectToLogin(); throw new Error('安全配置已更新，请重新登录'); }
+            }
             return response;
         }
+
+        let pendingTotpId = '';
+        function clearTotpSetup() {
+            pendingTotpId = '';
+            const qr = document.getElementById('totp_qr_img'); if (qr) qr.removeAttribute('src');
+            const secret = document.getElementById('totp_secret_text'); if (secret) secret.textContent = '';
+            const code = document.getElementById('totp_confirm_code'); if (code) code.value = '';
+            const box = document.getElementById('totp_setup_box'); if (box) box.style.display = 'none';
+        }
+        document.addEventListener('visibilitychange', () => { if (document.hidden) clearTotpSetup(); });
 
         async function loadAdminSecurityStatus() {
             try {
@@ -4948,10 +4966,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     showMessage(data.message || '绑定失败', 'error');
                     return;
                 }
+                pendingTotpId = data.pendingId;
                 document.getElementById('totp_setup_box').style.display = 'block';
                 const qrImg = document.getElementById('totp_qr_img');
                 if (qrImg) {
-                    qrImg.src = data.qrCodeUrl || `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(data.otpauthUrl || '')}`;
+                    if (!/^data:image\/(?:gif|png);base64,[A-Za-z0-9+/=]+$/.test(data.qrCodeUrl || '')) throw new Error('无效的本地二维码');
+                    qrImg.src = data.qrCodeUrl;
                     qrImg.style.display = 'block';
                 }
                 document.getElementById('totp_secret_text').innerHTML = `
@@ -4970,12 +4990,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const res = await authFetch('/api/admin/2fa/confirm', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ code })
+                    body: JSON.stringify({ code, pendingId: pendingTotpId })
                 });
                 const data = await res.json();
                 showMessage(data.message || (data.success ? '已启用' : '失败'), data.success ? 'success' : 'error');
                 if (data.success) {
-                    document.getElementById('totp_setup_box').style.display = 'none';
+                    clearTotpSetup();
                     await loadAdminSecurityStatus();
                 }
             } catch (error) {
@@ -5133,6 +5153,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 );
                 return;
             }
+            const revealBillingBtn = event.target.closest('[data-reveal-billing]');
+            if (revealBillingBtn) {
+                event.preventDefault();
+                revealBillingSecret(revealBillingBtn.getAttribute('data-reveal-billing') || '');
+                return;
+            }
             const deleteBillingBtn = event.target.closest('[data-delete-billing]');
             if (deleteBillingBtn) {
                 event.preventDefault();
@@ -5142,6 +5168,10 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
 
         let sessionModalPayload = '';
         let sessionModalJobKey = '';
+        let sessionModalGeneration = 0;
+        let sessionModalTimer;
+        document.addEventListener('visibilitychange', () => { if (document.hidden) closeSessionModal(); });
+        window.addEventListener('pagehide', closeSessionModal);
 
         function formatSessionPayload(raw) {
             const text = String(raw || '').trim();
@@ -5175,6 +5205,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         }
 
         function closeSessionModal() {
+            sessionModalGeneration += 1;
+            clearTimeout(sessionModalTimer);
             const overlay = document.getElementById('session_modal_overlay');
             const body = document.getElementById('session_modal_body');
             const meta = document.getElementById('session_modal_meta');
@@ -5202,6 +5234,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 return;
             }
             closeSessionModal();
+            const epoch = sessionModalGeneration;
             overlay.classList.add('open');
             body.textContent = '加载中...';
             if (meta) {
@@ -5209,18 +5242,20 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             }
             try {
                 const { payload, meta: sessionMeta } = await fetchSessionPayload(jobKey);
+                if (epoch !== sessionModalGeneration || document.hidden) return;
                 if (!payload) {
                     body.textContent = '该记录未保存完整 Session（仅旧任务有摘要）。请重新提交一次开通以保存完整内容。';
                     return;
                 }
                 sessionModalJobKey = jobKey;
                 sessionModalPayload = formatSessionPayload(payload);
+                sessionModalTimer = setTimeout(closeSessionModal, 30_000);
                 body.textContent = sessionModalPayload;
                 if (meta) {
                     meta.textContent = `任务: ${jobKey} · CDK: ${sessionMeta.cdk_code || '-'} · ${sessionMeta.time || ''}`;
                 }
             } catch (error) {
-                body.textContent = `加载失败: ${error.message}`;
+                if (epoch === sessionModalGeneration && !document.hidden) body.textContent = `加载失败: ${error.message}`;
             }
         }
 
@@ -6499,8 +6534,9 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
 
         async function loadData(isInitial = false) {
             try {
-                const res = await authFetch('/api/admin/data');
+                const res = await authFetch('/api/admin/data', { stepUp: isInitial });
                 const data = await res.json();
+                if (!res.ok) return;
                 document.getElementById('stat_cpu_percent').innerText = `${Number(data.runtime?.system?.cpu?.percent || 0)}%`;
 
                 // Update NewAPI progress bars
@@ -6604,7 +6640,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 renderAutomationTable(window.__adminLogs);
 
                 try {
-                    await loadCdkList();
+                    await loadCdkList(isInitial);
                 } catch (cdkError) {
                     console.error('Failed to load CDK list in loadData', cdkError);
                 }
@@ -6615,8 +6651,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             }
         }
 
-        async function loadCdkList() {
-            const cdkRes = await authFetch('/api/admin/cdks');
+        async function loadCdkList(stepUp = true) {
+            const cdkRes = await authFetch('/api/admin/cdks', { stepUp });
             let cdkData = [];
             try {
                 cdkData = await cdkRes.json();
@@ -7790,6 +7826,16 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             box.classList.toggle('active');
         }
 
+        async function revealCardPoolSecret(id) {
+            try {
+                const response = await authFetch(`/api/admin/cards/${encodeURIComponent(id)}/secret`);
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || '读取失败');
+                await KcAdminSecurity.showSecret([data.card.card_number, data.card.card_expiry, data.card.card_cvc].join(' | '));
+                data.card = null;
+            } catch (error) { showMessage(error.message || '读取失败', 'error'); }
+        }
+
         async function loadCardPoolList() {
             try {
                 const res = await authFetch('/api/admin/cards');
@@ -7886,6 +7932,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <td style="text-align:center">${lastUsed}</td>
                     <td style="text-align:center">
                         <div style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">
+                            <button type="button" class="btn-unfreeze" onclick="revealCardPoolSecret(${Number(card.id)})" title="验证身份后查看凭证">查看凭证</button>
                             ${cooldownBtn}
                             ${freezeBtn}
                             <button class="btn-delete" onclick="deleteCardPoolItem(${card.id})" title="删除">
@@ -9600,7 +9647,9 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <td>${escapeHtml(r.amount != null ? Number(r.amount).toFixed(2) : '-')}</td>
                     <td>${escapeHtml(r.currency || '-')}</td>
                     <td>${escapeHtml(planLabel)}</td>
-                    <td style="font-family:monospace; font-size:12px;">${escapeHtml(r.cdk_code || '-')}</td>
+                    <td style="font-family:monospace; font-size:12px;">${escapeHtml(r.cdk_code || '-')}
+                        ${r.cdk_code ? `<button type="button" class="btn-unfreeze" data-reveal-billing="${escapeHtml(String(r.id))}" title="验证身份后查看 CDK">查看</button>` : ''}
+                    </td>
                     <td style="font-size:12px;">${escapeHtml(r.email || '-')}</td>
                     <td style="text-align:center"><span class="status-badge ${statusClass}">${statusText}</span></td>
                     <td style="text-align:center">
@@ -9611,6 +9660,16 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 </tr>`;
             }).join('');
             lucide.createIcons();
+        }
+
+        async function revealBillingSecret(id) {
+            try {
+                const response = await authFetch(`/api/admin/billing/${encodeURIComponent(id)}/secret`);
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || '读取失败');
+                await KcAdminSecurity.showSecret(data.cdk || '此账单无 CDK');
+                data.cdk = null;
+            } catch (error) { showMessage(error.message || '读取失败', 'error'); }
         }
 
         async function deleteBillingRecord(id) {

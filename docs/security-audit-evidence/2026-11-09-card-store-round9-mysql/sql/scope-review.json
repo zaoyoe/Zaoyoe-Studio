@@ -1,0 +1,27 @@
+{
+  "authorization": "Explicit, isolated local experiment only",
+  "new_database": "kc_fault_lab_88db804f71ff9b98",
+  "host": "127.0.0.1",
+  "port": 23316,
+  "fixture_file": "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/fixture.sql",
+  "effects": [
+    "Create one new lab database and five tables",
+    "Insert run marker",
+    "Create synthetic lab account with only database-local SELECT/INSERT/UPDATE/DELETE",
+    "Set disposable root account password over socket with networking disabled",
+    "12 cases only insert/update/delete synthetic rows in four lab business tables",
+    "SELECT/SHOW metadata and transaction/session control only during cases"
+  ],
+  "forbidden": [
+    "Production/shared databases/backups",
+    "Existing MySQL configuration and data",
+    "External payments and workers",
+    "DROP/TRUNCATE",
+    "Commit/push/PR/deploy"
+  ],
+  "runtime_sql_sources": [
+    "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs",
+    "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/mysql-store.js"
+  ],
+  "statement_audit": "Each actual driver SQL statement is persisted before sending; parameters are omitted."
+}

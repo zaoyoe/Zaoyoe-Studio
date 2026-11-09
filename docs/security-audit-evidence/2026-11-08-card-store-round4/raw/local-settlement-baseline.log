@@ -1,0 +1,30 @@
+✖ local settlement rolls back task result when CDK return fails (110.873417ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 256.229208
+
+✖ failing tests:
+
+test at tests/security-round4-kc-local-settlement.test.js:100:1
+✖ local settlement rolls back task result when CDK return fails (110.873417ms)
+  AssertionError [ERR_ASSERTION]: failed result must not commit separately from CDK return
+  + actual - expected
+  
+  + 'failed'
+  - 'running'
+  
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round4-kc-local-settlement.test.js:107:12)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'failed',
+    expected: 'running',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

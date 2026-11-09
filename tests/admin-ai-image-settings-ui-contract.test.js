@@ -217,7 +217,7 @@ test('admin studio loads and mutates AI image config through admin scoped APIs',
     assert.match(adminJs, /设为文本/);
     assert.match(adminJs, /设为生图/);
     assert.match(adminJs, /设为视频/);
-    assert.match(adminJs, /function renderAiImageVisibleModelPill\(model = '', group = 'image', selectedModels = \[\], providerId = '', modelDisplayNames = \{\}\) \{[\s\S]*data-provider-id="\$\{escapeHtml\(providerId \|\| ''\)\}"/);
+    assert.match(adminJs, /function renderAiImageVisibleModelPill\(model = '', group = 'image', selectedModels = \[\], providerId = '', modelDisplayNames = \{\}, baseUrl = ''\) \{[\s\S]*data-provider-id="\$\{escapeHtml\(providerId \|\| ''\)\}"/);
     assert.match(adminJs, /function renderAiImageDiscoveredModelButton\(model = '', group = 'unknown', providerId = ''\) \{[\s\S]*data-provider-id="\$\{escapeHtml\(providerId \|\| ''\)\}"/);
     assert.match(adminJs, /renderAiImageDiscoveredModelButton\(model, group\.group, provider\.providerId \|\| ''\)/);
     assert.match(adminJs, /function getAiImageProbeUpstreamText\(upstream = \{\}\)/);

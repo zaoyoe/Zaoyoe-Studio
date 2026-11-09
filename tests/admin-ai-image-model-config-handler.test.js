@@ -1673,3 +1673,35 @@ test('ai image model config handler deletes only stored config', async () => {
         assert.equal(res.json().success, true);
     });
 });
+
+
+test('ai image model discovery exposes Image 2.6 GIF settings on a non-BBLABU provider', async () => {
+    const baseUrl = 'https://relay.example.com/v1';
+    await withAiImageModelConfigHandler({
+        runtimeConfig: { source: 'stored', apiKey: 'test-image26-provider-key', baseUrl, model: 'gpt-image-2.6' }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async (url, options = {}) => {
+            state.fetchCalls.push({ url: String(url), options });
+            return { ok: true, status: 200, text: async () => JSON.stringify({ data: [{ id: 'gpt-image-2.6' }] }) };
+        };
+        try {
+            await handler({ method: 'POST', headers: {}, body: { action: 'discover-models', baseUrl, model: 'gpt-image-2.6' } }, res);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+        const payload = res.json();
+        assert.equal(res.statusCode, 200, JSON.stringify(payload));
+        assert.equal(payload.success, true);
+        assert.deepEqual(payload.discovery.imageModels, ['gpt-image-2.6']);
+        const profile = payload.discovery.models[0].mediaCapability;
+        assert.equal(profile.channel, 'openai-compatible');
+        assert.equal(profile.execution, 'ready');
+        assert.deepEqual(profile.formats, ['png', 'jpeg', 'webp', 'gif']);
+        assert.deepEqual(profile.gif.frameCount, [2, 64, 9]);
+        assert.deepEqual(profile.gif.frameDurationMs, [20, 2000, 200]);
+        assert.deepEqual(state.fetchCalls.map(call => call.url), [`${baseUrl}/models`]);
+        assert.equal(JSON.stringify(payload).includes('test-image26-provider-key'), false);
+    });
+});

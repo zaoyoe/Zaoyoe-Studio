@@ -1,0 +1,89 @@
+{
+  "scope": "Ten per-file dirty byte snapshots and two intermediate resume snapshots; not a complete workspace or database backup. /tmp retention is not guaranteed. No backup commit or stash. Exact round-only delta archived separately.",
+  "originals": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "snapshot_absolute_path": "/tmp/kc-round7-payment-hold-20261108-before/services/kc-pay-gpt/mysql-store.js",
+      "sha256": "0ed041dc69dd7195ec210ab527abb83ca50231c8f4bf31d87974f67914f713b1",
+      "bytes": 198133,
+      "verified": true
+    },
+    {
+      "path": "services/kc-pay-gpt/payment-retry.js",
+      "snapshot_absolute_path": "/tmp/kc-round7-payment-hold-20261108-before/services/kc-pay-gpt/payment-retry.js",
+      "sha256": "0b51dfb27a46985ac4d479d403122ffd2287e7aebbf14d6ad0a2755198ce5166",
+      "bytes": 50322,
+      "verified": true
+    },
+    {
+      "path": "services/kc-pay-gpt/stripe-protocol-payment.js",
+      "snapshot_absolute_path": "/tmp/kc-round7-payment-hold-20261108-before/services/kc-pay-gpt/stripe-protocol-payment.js",
+      "sha256": "93f1ec27ce315d8a03d8b94f1212c0f4345fc6fe6c4e3858245839dea4f68d47",
+      "bytes": 82706,
+      "verified": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "snapshot_absolute_path": "/tmp/kc-round7-payment-hold-20261108-before/services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "sha256": "c93789e2fa98ef0750c5bbd6c21710b654de0cf0ff0b3463a00bbdf2ae6dcb7c",
+      "bytes": 39256,
+      "verified": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "snapshot_absolute_path": "/tmp/kc-round7-payment-hold-20261108-before/services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "sha256": "f03b9dd4e9a3167ac2b1c635e0f435856eea0749bf10c234b85c993c3e18f520",
+      "bytes": 15319,
+      "verified": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "snapshot_absolute_path": "/tmp/kc-round7-payment-hold-20261108-before/services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "sha256": "52fc653bce8bdf60ae5b6ab3ce12ad754a964f9f82be49f30aa0ab78b5002942",
+      "bytes": 5381,
+      "verified": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/card-freeze.test.js",
+      "snapshot_absolute_path": "/tmp/kc-round7-payment-hold-20261108-before/services/kc-pay-gpt/test/card-freeze.test.js",
+      "sha256": "f755e50cd3f977fae49b73665d74706404571919bac00a439759ad6e8298c29f",
+      "bytes": 3130,
+      "verified": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+      "snapshot_absolute_path": "/tmp/kc-round7-payment-hold-20261108-before/services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+      "sha256": "73fd595fafd7b39433d4bf34da10a91f84395400fb06311eb1cddd0c0b93ba19",
+      "bytes": 6304,
+      "verified": true
+    },
+    {
+      "path": "tests/security-round5-kc-owner-locks.test.js",
+      "snapshot_absolute_path": "/tmp/kc-round7-payment-hold-20261108-before/tests/security-round5-kc-owner-locks.test.js",
+      "sha256": "39190f24f952590ca39ca3b8ca05a2e33db312ded95c37d26acbdc9820436e04",
+      "bytes": 14827,
+      "verified": true
+    },
+    {
+      "path": "tests/security-round6-kc-card-ownership.test.js",
+      "snapshot_absolute_path": "/tmp/kc-round7-regression-before-20261108/tests/security-round6-kc-card-ownership.test.js",
+      "sha256": "c43d1786e4cecbb445470eb24369fa32d9702ac4e48cb2f4e85ebf20d50229f2",
+      "bytes": 14224,
+      "verified": true
+    }
+  ],
+  "intermediate_resume_snapshots": [
+    {
+      "path": "services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+      "snapshot_absolute_path": "/tmp/kc-round7-resume-20261108/services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+      "sha256": "b671a782fb1eaff8df755929813d7504cc9242a42a61b7e731fb063e643cb799",
+      "verified": true
+    },
+    {
+      "path": "tests/security-round5-kc-owner-locks.test.js",
+      "snapshot_absolute_path": "/tmp/kc-round7-resume-20261108/tests/security-round5-kc-owner-locks.test.js",
+      "sha256": "39190f24f952590ca39ca3b8ca05a2e33db312ded95c37d26acbdc9820436e04",
+      "verified": true
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+[
+  {
+    "file": "services/kc-pay-gpt/mysql-store.js",
+    "command": [
+      "git",
+      "diff",
+      "--no-index",
+      "--check",
+      "/tmp/kc-local-settlement-20261108-backup/services/kc-pay-gpt/mysql-store.js",
+      "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/mysql-store.js"
+    ],
+    "exit_code": 1,
+    "output": ""
+  },
+  {
+    "file": "services/kc-pay-gpt/server.js",
+    "command": [
+      "git",
+      "diff",
+      "--no-index",
+      "--check",
+      "/tmp/kc-local-settlement-20261108-backup/services/kc-pay-gpt/server.js",
+      "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/server.js"
+    ],
+    "exit_code": 1,
+    "output": ""
+  },
+  {
+    "file": "services/kc-pay-gpt/test/recharge-routing.test.js",
+    "command": [
+      "git",
+      "diff",
+      "--no-index",
+      "--check",
+      "/tmp/kc-local-settlement-20261108-backup/services/kc-pay-gpt/test/recharge-routing.test.js",
+      "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/test/recharge-routing.test.js"
+    ],
+    "exit_code": 1,
+    "output": ""
+  },
+  {
+    "file": "tests/security-round4-kc-local-settlement.test.js",
+    "command": [
+      "git",
+      "diff",
+      "--no-index",
+      "--check",
+      "/dev/null",
+      "/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round4-kc-local-settlement.test.js"
+    ],
+    "exit_code": 1,
+    "output": ""
+  }
+]

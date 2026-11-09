@@ -1,0 +1,33 @@
+{
+  "kc": {
+    "status": "STATIC_REVIEW_ONLY",
+    "source": "services/kc-pay-gpt",
+    "Dockerfile": "services/kc-pay-gpt/Dockerfile",
+    "copy": {
+      "line": 43,
+      "instruction": "COPY . ."
+    },
+    "startup": {
+      "line": 58,
+      "instruction": "CMD [\"node\", \"server.js\"]"
+    },
+    "dockerignore_excludes_changed_runtime_file": false,
+    "host_compose_verified": false,
+    "docker_build": "NOT RUN",
+    "production_image_verified": false
+  },
+  "verify": {
+    "Dockerfile": "deploy/kvm4/verify-server.Dockerfile",
+    "copies_kc_source": false,
+    "implication": "A Vercel/Verify deployment alone would not establish that KC changes reached production."
+  },
+  "protected_production_paths": [
+    "/opt/kc-pay-gpt/.env",
+    "/opt/kc-pay-gpt/docker-compose.yml",
+    "/opt/kc-pay-gpt/data/",
+    "/opt/kc-pay-gpt/debug_screenshots/",
+    "/opt/kc-pay-gpt/product_files/",
+    "mysql_data volume"
+  ],
+  "deployment": "NOT RUN"
+}

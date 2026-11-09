@@ -52,6 +52,8 @@
     --admin-accent-bg: rgba(107, 158, 206, 0.1);
     --admin-danger: #ef4444;
     --admin-success: #22c55e;
+    --sidebar-scrollbar-thumb: rgba(15, 23, 42, 0.18);
+    --sidebar-scrollbar-thumb-hover: rgba(15, 23, 42, 0.32);
 }
 
 /* Dark Mode Overrides */
@@ -68,6 +70,8 @@
     --sidebar-accent: #ffffff;
     --sidebar-accent-bg: rgba(255, 255, 255, 0.09);
     --sidebar-item-hover: rgba(255, 255, 255, 0.05);
+    --sidebar-scrollbar-thumb: rgba(255, 255, 255, 0.18);
+    --sidebar-scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
 }
 
 /* Redundant Light Mode Block - ensuring consistent blue */
@@ -84,6 +88,8 @@
     --sidebar-text-hover: #1e293b;
     --sidebar-accent: #6b9ece;
     --sidebar-accent-bg: rgba(107, 158, 206, 0.1);
+    --sidebar-scrollbar-thumb: rgba(15, 23, 42, 0.18);
+    --sidebar-scrollbar-thumb-hover: rgba(15, 23, 42, 0.32);
 }
 
 /* Layout Container */
@@ -161,6 +167,42 @@
     flex-direction: column;
     gap: 4px;
     overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent !important;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track,
+.sidebar-nav::-webkit-scrollbar-corner {
+    background: transparent !important;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+    background: transparent !important;
+    border-radius: 999px;
+    transition: background-color 0.24s ease;
+}
+
+.sidebar-nav.admin-scrollbar-auto-hide--visible,
+.sidebar-nav:focus-within {
+    scrollbar-color: var(--sidebar-scrollbar-thumb, rgba(15, 23, 42, 0.18)) transparent !important;
+}
+
+.sidebar-nav.admin-scrollbar-auto-hide--visible::-webkit-scrollbar-thumb,
+.sidebar-nav:focus-within::-webkit-scrollbar-thumb {
+    background: var(--sidebar-scrollbar-thumb, rgba(15, 23, 42, 0.18)) !important;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover,
+.sidebar-nav.admin-scrollbar-auto-hide--visible::-webkit-scrollbar-thumb:hover,
+.sidebar-nav:focus-within::-webkit-scrollbar-thumb:hover {
+    background: var(--sidebar-scrollbar-thumb-hover, rgba(15, 23, 42, 0.32)) !important;
 }
 
 /* Sidebar Item */

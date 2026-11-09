@@ -649,26 +649,32 @@ function getVerifyRemainingTaskCount(balance, unitCost) {
 
 const VERIFY_PROVIDER_AIDONE = 'aidone';
 const VERIFY_PROVIDER_CATCARD = 'catcard';
+const VERIFY_PROVIDER_86AI = '86ai';
+const VERIFY_PROVIDER_VISIBILITY_ALL = 'all';
 const VERIFY_PROVIDER_VISIBILITY_BOTH = 'both';
 const VERIFY_PROVIDER_LABELS = {
     [VERIFY_PROVIDER_AIDONE]: '通道 1 · aidone',
-    [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free'
+    [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free',
+    [VERIFY_PROVIDER_86AI]: '通道 3 · 86AI Pro 开通'
 };
 const VERIFY_PROVIDER_DROPDOWN_LABELS = {
     [VERIFY_PROVIDER_VISIBILITY_BOTH]: '通道 1 + 通道 2',
+    [VERIFY_PROVIDER_VISIBILITY_ALL]: '全部三个通道',
     [VERIFY_PROVIDER_AIDONE]: '通道 1 · aidone',
-    [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free'
+    [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free',
+    [VERIFY_PROVIDER_86AI]: '通道 3 · 86AI Pro 开通'
 };
 
 function normalizeVerifyProvider(value, fallback = VERIFY_PROVIDER_AIDONE) {
     const normalized = String(value || '').trim().toLowerCase();
+    if (['86ai', '86ai_api'].includes(normalized)) return VERIFY_PROVIDER_86AI;
     if (['catcard', '1free', 'pixel', 'pixel_bridge', 'pixel_bridge_rest', 'qzz'].includes(normalized)) {
         return VERIFY_PROVIDER_CATCARD;
     }
     if (['aidone', 'primary', 'legacy', 'openapi', 'aidone_openapi'].includes(normalized)) {
         return VERIFY_PROVIDER_AIDONE;
     }
-    return fallback === VERIFY_PROVIDER_CATCARD ? VERIFY_PROVIDER_CATCARD : VERIFY_PROVIDER_AIDONE;
+    return [VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD, VERIFY_PROVIDER_86AI].includes(fallback) ? fallback : VERIFY_PROVIDER_AIDONE;
 }
 
 function getVerifyProviderDropdownLabel(provider) {
@@ -678,10 +684,11 @@ function getVerifyProviderDropdownLabel(provider) {
 
 function normalizeVerifyProviderVisibility(value, fallback = VERIFY_PROVIDER_VISIBILITY_BOTH) {
     const normalized = String(value || '').trim().toLowerCase();
-    if (normalized === VERIFY_PROVIDER_VISIBILITY_BOTH || normalized === 'dual' || normalized === 'all') {
+    if (normalized === VERIFY_PROVIDER_VISIBILITY_ALL) return VERIFY_PROVIDER_VISIBILITY_ALL;
+    if (normalized === VERIFY_PROVIDER_VISIBILITY_BOTH || normalized === 'dual') {
         return VERIFY_PROVIDER_VISIBILITY_BOTH;
     }
-    if (normalized === VERIFY_PROVIDER_AIDONE || normalized === VERIFY_PROVIDER_CATCARD) {
+    if ([VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD, VERIFY_PROVIDER_86AI].includes(normalized)) {
         return normalized;
     }
     return VERIFY_PROVIDER_VISIBILITY_BOTH;
@@ -767,6 +774,7 @@ function getVerifyProvidersConfig(config = {}) {
 function getVerifyProviderConfig(config = {}, provider = VERIFY_PROVIDER_AIDONE) {
     const providers = getVerifyProvidersConfig(config);
     const normalizedProvider = normalizeVerifyProvider(provider);
+    if (normalizedProvider === VERIFY_PROVIDER_86AI) return providers[VERIFY_PROVIDER_86AI] || {};
     if (normalizedProvider === VERIFY_PROVIDER_CATCARD) {
         return providers.catcard || providers['1free'] || providers.pixel || providers.pixel_bridge || {};
     }
@@ -812,6 +820,17 @@ function getCatcardExtractVerifyKeys(config = {}) {
     ]);
 }
 
+function get86aiVerifyCardCodes(config = {}) {
+    const providerConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_86AI);
+    return normalizeVerifyCredentialList([
+        providerConfig.card_codes,
+        providerConfig.cards,
+        providerConfig.apiKeys,
+        providerConfig.cdkeys,
+        config.verify_86ai_card_codes
+    ]);
+}
+
 function getActiveVerifyProvider(config = systemConfigCache['verify_settings'] || {}) {
     return normalizeVerifyProvider(
         config.active_provider
@@ -833,6 +852,7 @@ function getVerifyProviderVisibility(config = systemConfigCache['verify_settings
 
 function getActiveVerifyProviderKeys(config = systemConfigCache['verify_settings'] || {}) {
     const activeProvider = getActiveVerifyProvider(config);
+    if (activeProvider === VERIFY_PROVIDER_86AI) return get86aiVerifyCardCodes(config);
     if (activeProvider === VERIFY_PROVIDER_CATCARD) {
         return normalizeVerifyCredentialList([
             getCatcardSubscribeVerifyKeys(config),
@@ -916,6 +936,7 @@ function applyVerifyCredentialTextarea(elementId, configuredKeys = []) {
 }
 
 function getVerifyProviderStatusElement(provider) {
+    if (normalizeVerifyProvider(provider) === VERIFY_PROVIDER_86AI) return document.getElementById('cfgVerify86aiProviderStatus');
     const id = normalizeVerifyProvider(provider) === VERIFY_PROVIDER_CATCARD
         ? 'cfgVerifyCatcardProviderStatus'
         : 'cfgVerifyAidoneProviderStatus';
@@ -926,10 +947,10 @@ function syncVerifyProviderStatus(config = systemConfigCache['verify_settings'] 
     const activeProvider = getActiveVerifyProvider(config);
     const providerVisibility = getVerifyProviderVisibility(config);
     const isBothVisible = providerVisibility === VERIFY_PROVIDER_VISIBILITY_BOTH;
-    [VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD].forEach((provider) => {
+    [VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD, VERIFY_PROVIDER_86AI].forEach((provider) => {
         const element = getVerifyProviderStatusElement(provider);
         if (!element) return;
-        const isVisible = isBothVisible || providerVisibility === provider;
+        const isVisible = providerVisibility === VERIFY_PROVIDER_VISIBILITY_ALL || (isBothVisible && provider !== VERIFY_PROVIDER_86AI) || providerVisibility === provider;
         element.classList.toggle('is-active', isVisible);
         element.textContent = isVisible ? '前台展示' : '备用通道';
     });
@@ -950,6 +971,14 @@ function syncVerifyKeyPoolMaintenanceState() {
     }
 
     const quotaState = verifyMonitorState.quota || {};
+    if (quotaState.provider === '86ai' || quotaState.supported === false) {
+        cleanupButton.disabled = true;
+        cleanupButton.textContent = '清理失效 / 0 余额 key';
+        if (cleanupHint) {
+            cleanupHint.textContent = '86AI 通道使用卡密开通 Pro，不提供余额接口，卡密池由开通流程核销。';
+        }
+        return;
+    }
     const keyStates = normalizeVerifyQuotaKeyStates(quotaState.key_states);
     const removableStates = getZeroBalanceVerifyQuotaKeyStates(quotaState);
     const failedCount = keyStates.filter((item) => !item.ok).length;
@@ -1031,22 +1060,34 @@ function renderVerifyMonitorOverview() {
     const verifyConfig = getVerifySettingsSnapshot();
 
     if (quotaState.status === 'ready') {
-        const balance = Number(quotaState.balance || 0);
-        const tone = balance > 10 ? 'success' : balance > 0 ? 'warning' : 'danger';
-        const remainingUses = Number(quotaState.remaining_uses ?? balance);
-        const remainingExtractUses = Number(quotaState.remaining_extract_uses ?? remainingUses);
-        const remainingFullUses = Number(quotaState.remaining_full_uses ?? remainingUses);
-        const remainingExtractJobs = Number(quotaState.remaining_extract_jobs ?? getVerifyRemainingTaskCount(balance, 0.5));
-        const remainingFullJobs = Number(quotaState.remaining_full_jobs ?? getVerifyRemainingTaskCount(balance, 1));
-        const providerLabel = String(quotaState.provider_label || verifyConfig.activeProviderLabel || '').trim();
-        updateVerifyMonitorOverviewCard(
-            'verifyMonitorQuotaPanel',
-            'verifyMonitorQuotaValue',
-            'verifyMonitorQuotaMeta',
-            tone,
-            `${formatVerifyMonitorDecimal(remainingUses)} 额度`,
-            `${providerLabel ? `${providerLabel} · ` : ''}${Number(quotaState.key_count || 0) > 1 ? 'CDKey 池' : 'CDKey'}：${quotaState.key_name || '未命名'} · 提链 ${formatVerifyMonitorDecimal(remainingExtractUses)} 额度 / ${formatVerifyMonitorInteger(remainingExtractJobs)} 次 · 全流程 ${formatVerifyMonitorDecimal(remainingFullUses)} 额度 / ${formatVerifyMonitorInteger(remainingFullJobs)} 次 · 已用 ${formatVerifyMonitorInteger(quotaState.total_used)} 次`
-        );
+        if (quotaState.supported === false || quotaState.provider === '86ai' || verifyConfig.activeProvider === '86ai') {
+            const keyCount = Number(quotaState.key_count ?? (Array.isArray(verifyConfig.apiKeys) ? verifyConfig.apiKeys.length : 0));
+            updateVerifyMonitorOverviewCard(
+                'verifyMonitorQuotaPanel',
+                'verifyMonitorQuotaValue',
+                'verifyMonitorQuotaMeta',
+                keyCount > 0 ? 'neutral' : 'warning',
+                keyCount > 0 ? `已配置 ${keyCount} 张卡密` : '未配置卡密',
+                '86AI 通道按卡密交付，上游不提供余额查询接口；实际额度请在 86AI 平台核对。'
+            );
+        } else {
+            const balance = Number(quotaState.balance || 0);
+            const tone = balance > 10 ? 'success' : balance > 0 ? 'warning' : 'danger';
+            const remainingUses = Number(quotaState.remaining_uses ?? balance);
+            const remainingExtractUses = Number(quotaState.remaining_extract_uses ?? remainingUses);
+            const remainingFullUses = Number(quotaState.remaining_full_uses ?? remainingUses);
+            const remainingExtractJobs = Number(quotaState.remaining_extract_jobs ?? getVerifyRemainingTaskCount(balance, 0.5));
+            const remainingFullJobs = Number(quotaState.remaining_full_jobs ?? getVerifyRemainingTaskCount(balance, 1));
+            const providerLabel = String(quotaState.provider_label || verifyConfig.activeProviderLabel || '').trim();
+            updateVerifyMonitorOverviewCard(
+                'verifyMonitorQuotaPanel',
+                'verifyMonitorQuotaValue',
+                'verifyMonitorQuotaMeta',
+                tone,
+                `${formatVerifyMonitorDecimal(remainingUses)} 额度`,
+                `${providerLabel ? `${providerLabel} · ` : ''}${Number(quotaState.key_count || 0) > 1 ? 'CDKey 池' : 'CDKey'}：${quotaState.key_name || '未命名'} · 提链 ${formatVerifyMonitorDecimal(remainingExtractUses)} 额度 / ${formatVerifyMonitorInteger(remainingExtractJobs)} 次 · 全流程 ${formatVerifyMonitorDecimal(remainingFullUses)} 额度 / ${formatVerifyMonitorInteger(remainingFullJobs)} 次 · 已用 ${formatVerifyMonitorInteger(quotaState.total_used)} 次`
+            );
+        }
     } else if (quotaState.status === 'loading') {
         updateVerifyMonitorOverviewCard(
             'verifyMonitorQuotaPanel',
@@ -28664,7 +28705,7 @@ function setupNotificationsEventListeners() {
 
 const AdminRichTextEditor = (() => {
     const instances = new Map();
-    const richTextTagPattern = /<\/?(?:a|b|strong|i|em|u|div|p|br|font|span|ul|ol|li|h[1-6]|blockquote|pre)\b/i;
+    const richTextTagPattern = /<\/?(?:a|b|strong|i|em|u|div|p|br|font|span|ul|ol|li|h[1-6]|blockquote|pre|img|video|source)\b/i;
     const defaultEmojis = ['🎉', '📢', '⚠️', '✨', '🔥', '💡', '🎁', '❤️', '👍', '🚀', '🌟', '💯'];
     const defaultColors = [
         { value: '#ffffff', label: '白色' },
@@ -28685,9 +28726,9 @@ const AdminRichTextEditor = (() => {
         large: '1.18em'
     });
     const richTextAlignValues = new Set(['left', 'center', 'right']);
-    const richTextAllowedTags = new Set(['a', 'b', 'strong', 'i', 'em', 'u', 'br', 'div', 'p', 'span', 'ul', 'ol', 'li']);
+    const richTextAllowedTags = new Set(['a', 'b', 'strong', 'i', 'em', 'u', 'br', 'div', 'p', 'span', 'ul', 'ol', 'li', 'img', 'video', 'source']);
     const richTextBlockFallbackTags = new Set(['blockquote', 'pre', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th']);
-    const richTextDroppedTags = new Set(['script', 'style', 'meta', 'link', 'iframe', 'object', 'embed', 'img', 'svg', 'canvas', 'video', 'audio', 'source']);
+    const richTextDroppedTags = new Set(['script', 'style', 'meta', 'link', 'iframe', 'object', 'embed', 'svg', 'canvas', 'audio']);
     const richTextAllowedColorPattern = /^(#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\([^)]*\))$/i;
     const richTextExternalFontStyleProperties = new Set([
         'font',
@@ -28749,6 +28790,31 @@ const AdminRichTextEditor = (() => {
         return /^https?:\/\//i.test(normalizedUrl) ? normalizedUrl : '';
     }
 
+    function getSafeRichTextMediaUrl(value = '') {
+        const normalizedUrl = String(value || '').trim();
+        if (!normalizedUrl) return '';
+        if (/^https?:\/\//i.test(normalizedUrl) || normalizedUrl.startsWith('/') || normalizedUrl.startsWith('data:image/')) {
+            return normalizedUrl;
+        }
+        return '';
+    }
+
+    function sanitizeMediaInlineStyle(styleText = '') {
+        const allowedProps = new Set(['max-width', 'width', 'height', 'border-radius', 'display', 'margin', 'vertical-align', 'object-fit']);
+        return String(styleText || '')
+            .split(';')
+            .map(rule => rule.trim())
+            .filter(rule => {
+                const colonIdx = rule.indexOf(':');
+                if (colonIdx === -1) return false;
+                const prop = rule.slice(0, colonIdx).trim().toLowerCase();
+                const val = rule.slice(colonIdx + 1).trim();
+                if (!allowedProps.has(prop)) return false;
+                return !/javascript:|expression|behavior|url\(/i.test(val);
+            })
+            .join('; ');
+    }
+
     function applySanitizedRichTextAttributes(source, target) {
         if (!source || !target) return;
 
@@ -28756,6 +28822,62 @@ const AdminRichTextEditor = (() => {
             const safeUrl = getSafeRichTextLinkUrl(source.getAttribute('href'));
             if (safeUrl) {
                 target.setAttribute('href', safeUrl);
+            }
+        }
+
+        if (target.tagName === 'IMG') {
+            const safeSrc = getSafeRichTextMediaUrl(source.getAttribute('src'));
+            if (safeSrc) {
+                target.setAttribute('src', safeSrc);
+            }
+            const alt = source.getAttribute('alt');
+            if (alt) target.setAttribute('alt', alt);
+            const title = source.getAttribute('title');
+            if (title) target.setAttribute('title', title);
+            const loading = source.getAttribute('loading');
+            target.setAttribute('loading', loading || 'lazy');
+            const width = source.getAttribute('width');
+            if (width) target.setAttribute('width', width);
+            const height = source.getAttribute('height');
+            if (height) target.setAttribute('height', height);
+            const customStyle = sanitizeMediaInlineStyle(source.getAttribute('style') || '');
+            if (customStyle) {
+                target.setAttribute('style', customStyle);
+            } else {
+                target.style.maxWidth = '100%';
+                target.style.height = 'auto';
+            }
+        }
+
+        if (target.tagName === 'VIDEO') {
+            const safeSrc = getSafeRichTextMediaUrl(source.getAttribute('src'));
+            if (safeSrc) {
+                target.setAttribute('src', safeSrc);
+            }
+            const safePoster = getSafeRichTextMediaUrl(source.getAttribute('poster'));
+            if (safePoster) {
+                target.setAttribute('poster', safePoster);
+            }
+            if (source.hasAttribute('controls')) {
+                target.setAttribute('controls', '');
+            }
+            const customStyle = sanitizeMediaInlineStyle(source.getAttribute('style') || '');
+            if (customStyle) {
+                target.setAttribute('style', customStyle);
+            } else {
+                target.style.maxWidth = '100%';
+                target.style.borderRadius = '8px';
+            }
+        }
+
+        if (target.tagName === 'SOURCE') {
+            const safeSrc = getSafeRichTextMediaUrl(source.getAttribute('src'));
+            if (safeSrc) {
+                target.setAttribute('src', safeSrc);
+            }
+            const type = source.getAttribute('type');
+            if (type && /^video\//i.test(type)) {
+                target.setAttribute('type', type);
             }
         }
 
@@ -28827,6 +28949,34 @@ const AdminRichTextEditor = (() => {
 
         if (sourceTag === 'br') {
             parent.appendChild(document.createElement('br'));
+            return;
+        }
+
+        if (sourceTag === 'img') {
+            const cleanElement = document.createElement('img');
+            applySanitizedRichTextAttributes(node, cleanElement);
+            if (cleanElement.getAttribute('src')) {
+                parent.appendChild(cleanElement);
+            }
+            return;
+        }
+
+        if (sourceTag === 'source') {
+            const cleanElement = document.createElement('source');
+            applySanitizedRichTextAttributes(node, cleanElement);
+            if (cleanElement.getAttribute('src')) {
+                parent.appendChild(cleanElement);
+            }
+            return;
+        }
+
+        if (sourceTag === 'video') {
+            const cleanElement = document.createElement('video');
+            applySanitizedRichTextAttributes(node, cleanElement);
+            appendSanitizedRichTextChildren(node, cleanElement, options);
+            if (cleanElement.getAttribute('src') || cleanElement.querySelector('source')) {
+                parent.appendChild(cleanElement);
+            }
             return;
         }
 
@@ -29721,6 +29871,13 @@ function renderVerifyConfig() {
     const fullPriceInput = document.getElementById('cfgVerifyPriceFull');
     if (fullPriceInput) fullPriceInput.value = fullPrice;
 
+    const sub6Input = document.getElementById('cfgVerifyPriceSub6');
+    if (sub6Input) sub6Input.value = config.price_per_verify_sub6 || '';
+    const sub12Input = document.getElementById('cfgVerifyPriceSub12');
+    if (sub12Input) sub12Input.value = config.price_per_verify_sub12 || '';
+    const sub24Input = document.getElementById('cfgVerifyPriceSub24');
+    if (sub24Input) sub24Input.value = config.price_per_verify_sub24 || '';
+
     const enabledToggle = document.getElementById('cfgVerifyEnabled');
     if (enabledToggle) enabledToggle.checked = config.enabled !== false;
 
@@ -29765,6 +29922,29 @@ function renderVerifyConfig() {
 
     applyVerifyCredentialTextarea('cfgVerifyCatcardSubscribeKeys', getCatcardSubscribeVerifyKeys(config));
     applyVerifyCredentialTextarea('cfgVerifyCatcardExtractKeys', getCatcardExtractVerifyKeys(config));
+
+    const ai86ProviderConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_86AI);
+    const ai86EnabledToggle = document.getElementById('cfgVerify86aiEnabled');
+    if (ai86EnabledToggle) {
+        ai86EnabledToggle.checked = ai86ProviderConfig.enabled === true;
+    }
+
+    const proPriceInput = document.getElementById('cfgVerifyPriceProActivation');
+    if (proPriceInput) {
+        proPriceInput.value = Number(ai86ProviderConfig.price_per_pro_activation ?? ai86ProviderConfig.pricePerProActivation ?? config.price_per_pro_activation ?? 30);
+    }
+
+    const ai86ApiBaseInput = document.getElementById('cfgVerify86aiApiBase');
+    if (ai86ApiBaseInput) {
+        ai86ApiBaseInput.value = String(
+            ai86ProviderConfig.api_base_url
+            || ai86ProviderConfig.apiBaseUrl
+            || config.verify_86ai_api_base_url
+            || 'https://86ai.one'
+        ).trim().replace(/\/+$/, '');
+    }
+
+    applyVerifyCredentialTextarea('cfgVerify86aiCardCodes', get86aiVerifyCardCodes(config));
     config.providers = providersConfig;
     config.active_provider = activeProvider;
     config.verify_active_provider = activeProvider;
@@ -29897,14 +30077,20 @@ async function saveVerifyConfig(options = {}) {
     const catcardApiBaseInput = document.getElementById('cfgVerifyCatcardApiBase');
     const catcardSubscribeInput = document.getElementById('cfgVerifyCatcardSubscribeKeys');
     const catcardExtractInput = document.getElementById('cfgVerifyCatcardExtractKeys');
+    const proPriceInput = document.getElementById('cfgVerifyPriceProActivation');
+    const ai86EnabledToggle = document.getElementById('cfgVerify86aiEnabled');
+    const ai86ApiBaseInput = document.getElementById('cfgVerify86aiApiBase');
+    const ai86CardCodesInput = document.getElementById('cfgVerify86aiCardCodes');
     const preserveExistingWhenEmpty = options?.preserveExistingWhenEmpty !== false;
 
     const config = systemConfigCache['verify_settings'] || {};
     const previousProviders = getVerifyProvidersConfig(config);
     const previousAidoneConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_AIDONE);
     const previousCatcardConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_CATCARD);
+    const previous86aiConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_86AI);
     const extractPrice = Math.max(1, parseInt(priceInput?.value, 10) || Number(config.price_per_verify_extract || config.price_per_verify) || 10);
     const fullPrice = Math.max(extractPrice, parseInt(fullPriceInput?.value, 10) || Number(config.price_per_verify_full) || Math.round(extractPrice * 2));
+    const proPrice = Math.max(1, parseInt(proPriceInput?.value, 10) || Number(previous86aiConfig.price_per_pro_activation || config.price_per_pro_activation) || 30);
     const providerVisibility = normalizeVerifyProviderVisibility(
         getCustomDropdownSelectedValue('verifyProviderChannelDropdown', getVerifyProviderVisibility(config))
     );
@@ -29921,6 +30107,42 @@ async function saveVerifyConfig(options = {}) {
     if (fullPriceInput) {
         config.price_per_verify_full = fullPrice;
         fullPriceInput.value = fullPrice;
+    }
+
+    const sub6Input = document.getElementById('cfgVerifyPriceSub6');
+    const sub12Input = document.getElementById('cfgVerifyPriceSub12');
+    const sub24Input = document.getElementById('cfgVerifyPriceSub24');
+    const sub6Val = parseInt(sub6Input?.value, 10);
+    const sub12Val = parseInt(sub12Input?.value, 10);
+    const sub24Val = parseInt(sub24Input?.value, 10);
+
+    if (Number.isFinite(sub6Val) && sub6Val > 0) {
+        config.price_per_verify_sub6 = sub6Val;
+        config.pricePerVerifySub6 = sub6Val;
+    } else {
+        delete config.price_per_verify_sub6;
+        delete config.pricePerVerifySub6;
+    }
+
+    if (Number.isFinite(sub12Val) && sub12Val > 0) {
+        config.price_per_verify_sub12 = sub12Val;
+        config.pricePerVerifySub12 = sub12Val;
+    } else {
+        delete config.price_per_verify_sub12;
+        delete config.pricePerVerifySub12;
+    }
+
+    if (Number.isFinite(sub24Val) && sub24Val > 0) {
+        config.price_per_verify_sub24 = sub24Val;
+        config.pricePerVerifySub24 = sub24Val;
+    } else {
+        delete config.price_per_verify_sub24;
+        delete config.pricePerVerifySub24;
+    }
+
+    if (proPriceInput) {
+        config.price_per_pro_activation = proPrice;
+        proPriceInput.value = proPrice;
     }
 
     if (enabledToggle) {
@@ -29984,6 +30206,22 @@ async function saveVerifyConfig(options = {}) {
     config.verify_provider_catcard_subscribe_cdkeys = catcardSubscribeKeys;
     config.verify_provider_catcard_full_cdkeys = catcardSubscribeKeys;
     config.verify_provider_catcard_extract_cdkeys = catcardExtractKeys;
+
+    const raw86aiCards = normalizeVerifyCredentialList(ai86CardCodesInput?.value || '');
+    const final86aiCards = normalizeVerifyCredentialList([
+        ...raw86aiCards,
+        ...((preserveExistingWhenEmpty && !raw86aiCards.length)
+            ? [get86aiVerifyCardCodes(config)]
+            : [])
+    ]);
+    let ai86ApiBaseUrl = String(previous86aiConfig.api_base_url || previous86aiConfig.apiBaseUrl || config.verify_86ai_api_base_url || 'https://86ai.one').trim().replace(/\/+$/, '');
+    if (ai86ApiBaseInput) {
+        ai86ApiBaseUrl = String(ai86ApiBaseInput.value || '').trim().replace(/\/+$/, '') || 'https://86ai.one';
+        ai86ApiBaseInput.value = ai86ApiBaseUrl;
+    }
+    config.verify_86ai_api_base_url = ai86ApiBaseUrl;
+    config.verify_86ai_card_codes = final86aiCards;
+
     config.providers = {
         ...previousProviders,
         aidone: {
@@ -30014,6 +30252,19 @@ async function saveVerifyConfig(options = {}) {
                 ...Object.fromEntries(catcardSubscribeKeys.map((key) => [key, 'subscribe'])),
                 ...Object.fromEntries(catcardExtractKeys.map((key) => [key, 'extract_link']))
             }
+        },
+        [VERIFY_PROVIDER_86AI]: {
+            ...previous86aiConfig,
+            enabled: ai86EnabledToggle ? ai86EnabledToggle.checked : (previous86aiConfig.enabled === true),
+            label: VERIFY_PROVIDER_LABELS[VERIFY_PROVIDER_86AI],
+            adapter: '86ai_api',
+            api_base_url: ai86ApiBaseUrl,
+            card_codes: final86aiCards,
+            cards: final86aiCards,
+            apiKeys: final86aiCards,
+            cdkeys: final86aiCards,
+            price_per_pro_activation: proPrice,
+            pricePerProActivation: proPrice
         }
     };
     applyCustomDropdownValue(
@@ -30179,6 +30430,10 @@ async function checkVerifyQuota() {
         const headers = await getAdminConfigApiHeaders();
         const quotaUrl = new URL('/api/admin/settings/verify-monitor/quota', window.location.origin);
         quotaUrl.searchParams.set('site', getAdminSettingsConcreteSiteFilterValue());
+        const selectedChannelHint = getCustomDropdownSelectedValue('verifyProviderChannelDropdown', '');
+        if (selectedChannelHint) {
+            quotaUrl.searchParams.set('provider', selectedChannelHint);
+        }
         const res = await fetch(`${quotaUrl.pathname}${quotaUrl.search}`, {
             method: 'GET',
             headers,
@@ -30187,6 +30442,31 @@ async function checkVerifyQuota() {
         const data = await res.json().catch(() => ({}));
 
         if (res.ok && data.success) {
+            if (data.supported === false || data.provider === '86ai') {
+                const keyCount = Number(data.key_count ?? get86aiVerifyCardCodes(systemConfigCache['verify_settings'] || {}).length);
+                const quotaLabel = keyCount > 0 ? `已配置 ${keyCount} 张卡密` : '未配置卡密';
+                renderVerifyQuotaState(
+                    quotaEl,
+                    keyCount > 0 ? 'info' : 'warning',
+                    'fas fa-key',
+                    `${data.provider_label || '通道 3'} · ${quotaLabel}`,
+                    {
+                        emphasized: true,
+                        title: data.message || '86AI 通道专用于开通 Pro，按卡密核销，上游不提供余额接口；请在 86AI 平台核对额度。'
+                    }
+                );
+                verifyMonitorState.quota = {
+                    status: 'ready',
+                    provider: '86ai',
+                    provider_label: data.provider_label || '通道 3 · 86AI Pro 开通',
+                    supported: false,
+                    balance: null,
+                    key_count: keyCount,
+                    message: data.message || '86AI 不提供余额查询接口'
+                };
+                renderVerifyMonitorPanel();
+                return;
+            }
             const balance = Number(data.balance ?? data.credits ?? 0);
             const tone = balance > 5 ? 'success' : balance > 0 ? 'warning' : 'danger';
             const display = Number.isInteger(balance) ? balance : balance.toFixed(1);
@@ -30229,6 +30509,36 @@ async function checkVerifyQuota() {
                 message: ''
             };
         } else {
+            const currentVerifyConfig = systemConfigCache['verify_settings'] || {};
+            const is86aiActive = getActiveVerifyProvider(currentVerifyConfig) === VERIFY_PROVIDER_86AI
+                || getVerifyProviderVisibility(currentVerifyConfig) === VERIFY_PROVIDER_86AI
+                || selectedChannelHint === VERIFY_PROVIDER_86AI
+                || data?.provider === '86ai';
+            if (is86aiActive) {
+                const keyCount = get86aiVerifyCardCodes(currentVerifyConfig).length;
+                const quotaLabel = keyCount > 0 ? `已配置 ${keyCount} 张卡密` : '未配置卡密';
+                renderVerifyQuotaState(
+                    quotaEl,
+                    keyCount > 0 ? 'info' : 'warning',
+                    'fas fa-key',
+                    `通道 3 · 86AI Pro 开通 · ${quotaLabel}`,
+                    {
+                        emphasized: true,
+                        title: '86AI 通道专用于开通 Pro，按卡密核销，上游不提供余额接口；请在 86AI 平台核对额度。'
+                    }
+                );
+                verifyMonitorState.quota = {
+                    status: 'ready',
+                    provider: '86ai',
+                    provider_label: '通道 3 · 86AI Pro 开通',
+                    supported: false,
+                    balance: null,
+                    key_count: keyCount,
+                    message: '86AI 不提供余额查询接口'
+                };
+                renderVerifyMonitorPanel();
+                return verifyMonitorState.quota;
+            }
             const message = data.message || '查询失败';
             renderVerifyQuotaState(quotaEl, 'danger', 'fas fa-exclamation-triangle', message);
             verifyMonitorState.quota = {
@@ -30240,6 +30550,34 @@ async function checkVerifyQuota() {
             };
         }
     } catch (error) {
+        const currentVerifyConfig = systemConfigCache['verify_settings'] || {};
+        const is86aiActive = getActiveVerifyProvider(currentVerifyConfig) === VERIFY_PROVIDER_86AI
+            || getVerifyProviderVisibility(currentVerifyConfig) === VERIFY_PROVIDER_86AI;
+        if (is86aiActive) {
+            const keyCount = get86aiVerifyCardCodes(currentVerifyConfig).length;
+            const quotaLabel = keyCount > 0 ? `已配置 ${keyCount} 张卡密` : '未配置卡密';
+            renderVerifyQuotaState(
+                quotaEl,
+                keyCount > 0 ? 'info' : 'warning',
+                'fas fa-key',
+                `通道 3 · 86AI Pro 开通 · ${quotaLabel}`,
+                {
+                    emphasized: true,
+                    title: '86AI 通道专用于开通 Pro，按卡密核销，上游不提供余额接口；请在 86AI 平台核对额度。'
+                }
+            );
+            verifyMonitorState.quota = {
+                status: 'ready',
+                provider: '86ai',
+                provider_label: '通道 3 · 86AI Pro 开通',
+                supported: false,
+                balance: null,
+                key_count: keyCount,
+                message: '86AI 不提供余额查询接口'
+            };
+            renderVerifyMonitorPanel();
+            return verifyMonitorState.quota;
+        }
         const message = error?.name === 'AbortError'
             ? '查询超时'
             : (error.message || '网络错误');
@@ -30477,7 +30815,8 @@ async function refreshVerifyMonitor(force = false) {
         await Promise.allSettled([
             checkVerifyQuota(),
             loadVerifyQueueState(),
-            loadVerifyMonitor(force)
+            loadVerifyMonitor(force),
+            refreshVerifyActivationJobs(force)
         ]);
         renderVerifyMonitorPanel();
         return verifyMonitorState;
@@ -30487,6 +30826,245 @@ async function refreshVerifyMonitor(force = false) {
         return await refreshVerifyMonitor._loadingPromise;
     } finally {
         refreshVerifyMonitor._loadingPromise = null;
+    }
+}
+
+let verifyActivationJobsState = {
+    status: 'idle',
+    jobs: [],
+    message: ''
+};
+
+async function refreshVerifyActivationJobs(force = false) {
+    const listEl = document.getElementById('verifyMonitorActivationList');
+    const metaEl = document.getElementById('verifyMonitorActivationMeta');
+    if (!listEl) return;
+
+    verifyActivationJobsState.status = 'loading';
+    if (metaEl) metaEl.textContent = '正在获取任务...';
+
+    try {
+        const response = await fetch('/api/admin?route=settings/verify-activation-jobs', {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.success) {
+            throw new Error(data?.message || '获取开通任务失败');
+        }
+        verifyActivationJobsState.status = 'ready';
+        verifyActivationJobsState.jobs = Array.isArray(data.jobs) ? data.jobs : [];
+        renderVerifyActivationJobs(verifyActivationJobsState.jobs);
+    } catch (error) {
+        verifyActivationJobsState.status = 'error';
+        verifyActivationJobsState.message = error?.message || '加载开通任务异常';
+        if (metaEl) metaEl.textContent = '加载失败';
+        if (listEl) {
+            listEl.innerHTML = `<div class="verify-monitor-empty verify-monitor-empty--error">${escapeHtml(verifyActivationJobsState.message)}</div>`;
+        }
+    }
+}
+
+function renderVerifyActivationJobs(jobs = []) {
+    const listEl = document.getElementById('verifyMonitorActivationList');
+    const metaEl = document.getElementById('verifyMonitorActivationMeta');
+    if (!listEl) return;
+
+    const pendingCount = jobs.filter(j => ['verification_pending', 'outcome_unknown'].includes(j.status)).length;
+    if (metaEl) {
+        metaEl.textContent = `共 ${jobs.length} 条开通任务 · ${pendingCount} 条待核验`;
+    }
+
+    if (!jobs.length) {
+        listEl.innerHTML = '<div class="verify-monitor-empty">暂无 86AI Pro 开通任务记录。</div>';
+        return;
+    }
+
+    listEl.innerHTML = jobs.map(job => {
+        const isPending = ['verification_pending', 'outcome_unknown'].includes(job.status);
+        const statusBadgeClass = job.status === 'success'
+            ? 'badge--success'
+            : (job.status === 'failed' || job.status === 'cancelled'
+                ? 'badge--secondary'
+                : (isPending ? 'badge--warning' : 'badge--info'));
+
+        const statusText = job.status === 'verification_pending' ? '等待核验 Pro 权益'
+            : job.status === 'outcome_unknown' ? '结果待核实'
+            : job.status === 'queued' ? '排队中'
+            : job.status === 'running' ? '处理中'
+            : job.status === 'success' ? '开通成功 (已结算)'
+            : job.status === 'failed' ? '开通失败 (已退款)'
+            : job.status === 'cancelled' ? '已取消 (已退款)'
+            : job.status;
+
+        const actionButtons = [];
+        if (isPending) {
+            actionButtons.push(`
+                <button type="button" class="btn btn-sm btn-success" data-admin-action="settings-resolve-activation-job" data-job-action="confirm_success" data-job-id="${escapeHtml(job.job_id)}" data-job-version="${job.version}">
+                    <i class="fas fa-check"></i> 确认到账结算
+                </button>
+                <button type="button" class="btn btn-sm btn-danger" data-admin-action="settings-resolve-activation-job" data-job-action="confirm_failed" data-job-id="${escapeHtml(job.job_id)}" data-job-version="${job.version}">
+                    <i class="fas fa-times"></i> 确认未开通退款
+                </button>
+            `);
+        }
+        if (!job.terminal) {
+            actionButtons.push(`
+                <button type="button" class="btn btn-sm btn-secondary" data-admin-action="settings-resolve-activation-job" data-job-action="refresh" data-job-id="${escapeHtml(job.job_id)}">
+                    <i class="fas fa-sync-alt"></i> 查上游
+                </button>
+            `);
+        }
+        if (job.status === 'outcome_unknown' && !job.upstream_task_id) {
+            actionButtons.push(`
+                <button type="button" class="btn btn-sm btn-outline-primary" data-admin-action="settings-resolve-activation-job" data-job-action="bind" data-job-id="${escapeHtml(job.job_id)}" data-job-version="${job.version}">
+                    <i class="fas fa-link"></i> 绑上游号
+                </button>
+            `);
+        }
+
+        return `
+            <div class="verify-monitor-row verify-activation-job-row ${isPending ? 'verify-activation-job-row--pending' : ''}">
+                <div class="verify-monitor-row__main">
+                    <div class="verify-monitor-row__title">
+                        <strong>${escapeHtml(job.email || '未命名账号')}</strong>
+                        <span class="badge ${statusBadgeClass}">${statusText}</span>
+                        <span class="verify-monitor-tag">${job.price || 0} 积分 (${escapeHtml(job.billing_state || 'reserved')})</span>
+                    </div>
+                    <div class="verify-monitor-row__meta">
+                        <span>编号: ${escapeHtml(job.job_id)}</span>
+                        ${job.upstream_task_id ? `<span>上游 ID: ${job.upstream_task_id}</span>` : ''}
+                        <span>站点: ${escapeHtml(job.site || 'cn')}</span>
+                        <span>时间: ${escapeHtml(job.created_at ? new Date(job.created_at).toLocaleString() : '-')}</span>
+                        ${job.review_reason ? `<span class="text-warning">原因: ${escapeHtml(job.review_reason)}</span>` : ''}
+                        ${job.evidence_ref ? `<span>证据: ${escapeHtml(job.evidence_ref)}</span>` : ''}
+                    </div>
+                    ${job.message ? `<div class="verify-monitor-row__message">${escapeHtml(job.message)}</div>` : ''}
+                </div>
+                ${actionButtons.length ? `<div class="verify-activation-job-actions">${actionButtons.join('')}</div>` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+async function handleVerifyActivationJobAction(buttonEl) {
+    if (!buttonEl) return;
+    const action = buttonEl.dataset.jobAction;
+    const jobId = buttonEl.dataset.jobId;
+    const version = parseInt(buttonEl.dataset.jobVersion, 10);
+
+    if (!jobId || !action) return;
+
+    if (action === 'refresh') {
+        buttonEl.disabled = true;
+        buttonEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 查询中...';
+        try {
+            const res = await fetch('/api/admin?route=settings/verify-activation-jobs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'refresh', job_id: jobId })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || '查询失败');
+            if (typeof showToast === 'function') showToast('已更新上游最新状态', 'success');
+            await refreshVerifyActivationJobs(true);
+        } catch (err) {
+            if (typeof showToast === 'function') showToast(err.message || '查询异常', 'error');
+            buttonEl.disabled = false;
+            buttonEl.innerHTML = '<i class="fas fa-sync-alt"></i> 查上游';
+        }
+        return;
+    }
+
+    if (action === 'confirm_success') {
+        const evidence = window.prompt('请输入核验成功证据引用（如 ticket:123 或 case:user_confirmed）：', 'ticket:admin_confirmed');
+        if (!evidence || !evidence.trim()) return;
+        buttonEl.disabled = true;
+        try {
+            const res = await fetch('/api/admin?route=settings/verify-activation-jobs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'confirm_success',
+                    job_id: jobId,
+                    version,
+                    pro_confirmed: true,
+                    evidence_ref: evidence.trim()
+                })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || '确认结算失败');
+            if (typeof showToast === 'function') showToast('已确认开通成功，积分已结算扣除', 'success');
+            await refreshVerifyActivationJobs(true);
+        } catch (err) {
+            if (typeof showToast === 'function') showToast(err.message || '操作失败', 'error');
+            buttonEl.disabled = false;
+        }
+        return;
+    }
+
+    if (action === 'confirm_failed') {
+        const confirmRefund = window.confirm('确认该账号确实未开通 Google One Pro 并原路退回用户积分吗？');
+        if (!confirmRefund) return;
+        const evidence = window.prompt('请输入退款证据引用（如 ticket:upstream_failed 或 case:check_failed）：', 'ticket:admin_check_failed');
+        if (!evidence || !evidence.trim()) return;
+        buttonEl.disabled = true;
+        try {
+            const res = await fetch('/api/admin?route=settings/verify-activation-jobs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'confirm_failed',
+                    job_id: jobId,
+                    version,
+                    pro_not_active: true,
+                    upstream_closed: true,
+                    evidence_ref: evidence.trim()
+                })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || '确认退款失败');
+            if (typeof showToast === 'function') showToast('已确认未开通，积分已全额原路退还', 'success');
+            await refreshVerifyActivationJobs(true);
+        } catch (err) {
+            if (typeof showToast === 'function') showToast(err.message || '操作失败', 'error');
+            buttonEl.disabled = false;
+        }
+        return;
+    }
+
+    if (action === 'bind') {
+        const upstreamIdStr = window.prompt('请输入在 86AI 上游对应的数字任务编号 (upstream_task_id)：');
+        const upstreamTaskId = parseInt(upstreamIdStr, 10);
+        if (!Number.isSafeInteger(upstreamTaskId) || upstreamTaskId <= 0) {
+            if (typeof showToast === 'function') showToast('任务编号必须是有效正整数', 'error');
+            return;
+        }
+        const evidence = window.prompt('请输入绑定证据引用（如 ticket:upstream_manual_bind）：', 'ticket:upstream_bind');
+        if (!evidence || !evidence.trim()) return;
+        buttonEl.disabled = true;
+        try {
+            const res = await fetch('/api/admin?route=settings/verify-activation-jobs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'bind',
+                    job_id: jobId,
+                    version,
+                    upstream_task_id: upstreamTaskId,
+                    evidence_ref: evidence.trim()
+                })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || '绑定失败');
+            if (typeof showToast === 'function') showToast('已成功绑定上游任务号并排队查询', 'success');
+            await refreshVerifyActivationJobs(true);
+        } catch (err) {
+            if (typeof showToast === 'function') showToast(err.message || '操作失败', 'error');
+            buttonEl.disabled = false;
+        }
     }
 }
 
@@ -30678,6 +31256,8 @@ async function primeAdminAuditMonitorCommandCenterSummary(options = {}) {
 window.checkVerifyQuota = checkVerifyQuota;
 window.loadVerifyMonitor = loadVerifyMonitor;
 window.refreshVerifyMonitor = refreshVerifyMonitor;
+window.refreshVerifyActivationJobs = refreshVerifyActivationJobs;
+window.handleVerifyActivationJobAction = handleVerifyActivationJobAction;
 window.changeVerifyMonitorTaskPage = changeVerifyMonitorTaskPage;
 window.changeVerifyMonitorFailurePage = changeVerifyMonitorFailurePage;
 window.loadAdminAuditMonitor = loadAdminAuditMonitor;
@@ -30838,7 +31418,7 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
         const providerVisibility = normalizeVerifyProviderVisibility(value);
         config.provider_visibility = providerVisibility;
         config.verify_provider_visibility = providerVisibility;
-        if (providerVisibility !== VERIFY_PROVIDER_VISIBILITY_BOTH) {
+        if (providerVisibility !== VERIFY_PROVIDER_VISIBILITY_BOTH && providerVisibility !== VERIFY_PROVIDER_VISIBILITY_ALL) {
             config.active_provider = normalizeVerifyProvider(providerVisibility);
             config.verify_active_provider = config.active_provider;
         } else {
@@ -30852,6 +31432,22 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
             getVerifyProviderDropdownLabel(providerVisibility)
         );
         syncVerifyProviderStatus(config);
+        if (config.active_provider === VERIFY_PROVIDER_86AI) {
+            const quotaEl = document.getElementById('cfgVerifyQuota');
+            const keyCount = get86aiVerifyCardCodes(config).length;
+            if (quotaEl) {
+                renderVerifyQuotaState(
+                    quotaEl,
+                    keyCount > 0 ? 'info' : 'warning',
+                    'fas fa-key',
+                    `通道 3 · ${keyCount > 0 ? `已配置 ${keyCount} 张卡密` : '未配置卡密'}`,
+                    {
+                        emphasized: true,
+                        title: '86AI 通道专用于开通 Pro，按卡密核销，上游不提供余额接口；请在 86AI 平台核对额度。'
+                    }
+                );
+            }
+        }
         void saveVerifyConfig({
             successMessage: `Google One 已切换到 ${getVerifyProviderDropdownLabel(providerVisibility)}`
         });

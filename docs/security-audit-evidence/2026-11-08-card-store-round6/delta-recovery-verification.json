@@ -1,0 +1,144 @@
+{
+  "scope": "Round-only differences from seven dirty snapshots and two newly created tests; not a complete HEAD release manifest. Reverse and forward application occurred in a temporary byte copy only.",
+  "temporary_copy": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-round6-delta-recovery-mz6q0zdc",
+  "reverse_command": {
+    "command": [
+      "patch",
+      "-p1",
+      "-R",
+      "--batch",
+      "--fuzz=0",
+      "-i",
+      "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-08-card-store-round6/delta/round6-working-tree-delta.patch"
+    ],
+    "cwd": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-round6-delta-recovery-mz6q0zdc",
+    "exit": 0,
+    "stdout": "patching file 'services/kc-pay-gpt/mysql-store.js'\npatching file 'services/kc-pay-gpt/payment-retry.js'\npatching file 'services/kc-pay-gpt/test/mysql-card-cooldown.test.js'\npatching file 'services/kc-pay-gpt/test/payment-retry-safety.test.js'\npatching file 'services/kc-pay-gpt/test/payment-protocol-fallback.test.js'\npatching file 'services/kc-pay-gpt/index.js'\npatching file 'services/kc-pay-gpt/chatgpt.js'\npatching file 'tests/security-round6-kc-card-ownership.test.js'\npatching file 'tests/security-round6-kc-payment-callers.test.js'\n",
+    "stderr": ""
+  },
+  "restored_snapshots": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "expected_sha256": "edd981d433ecc3da800a6803c1a201ca822cebd0a5cceb2faa7fc261ccec28df",
+      "actual_sha256": "edd981d433ecc3da800a6803c1a201ca822cebd0a5cceb2faa7fc261ccec28df",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/payment-retry.js",
+      "expected_sha256": "0fb6600449f2368b1067be41df08a4f8a93710a50702d2b49c450a5e82948e83",
+      "actual_sha256": "0fb6600449f2368b1067be41df08a4f8a93710a50702d2b49c450a5e82948e83",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "expected_sha256": "92983aaa3df1c8a4d77277414b28289fd129370e0215104ef82ee1fb8c5c888d",
+      "actual_sha256": "92983aaa3df1c8a4d77277414b28289fd129370e0215104ef82ee1fb8c5c888d",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "expected_sha256": "5b331526aa6a0d0d896fc0725ed80b266d8c3bc816167475b308ce1e75a08909",
+      "actual_sha256": "5b331526aa6a0d0d896fc0725ed80b266d8c3bc816167475b308ce1e75a08909",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "expected_sha256": "a1b404188eed56f2ed0cdab445bcc5654df8b1bdac887da31c260c5025f7a1f3",
+      "actual_sha256": "a1b404188eed56f2ed0cdab445bcc5654df8b1bdac887da31c260c5025f7a1f3",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/index.js",
+      "expected_sha256": "e543c4f57f4f700f3f7d835bbcf45ecedb312dd90c34a9dc5cbe0e4dfee7a0bb",
+      "actual_sha256": "e543c4f57f4f700f3f7d835bbcf45ecedb312dd90c34a9dc5cbe0e4dfee7a0bb",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/chatgpt.js",
+      "expected_sha256": "761bcdde5ed03044ad0afbe87ec60e7ac2bb774135a1820fcc664d0ad20dd8c7",
+      "actual_sha256": "761bcdde5ed03044ad0afbe87ec60e7ac2bb774135a1820fcc664d0ad20dd8c7",
+      "matches": true
+    }
+  ],
+  "new_files_removed": [
+    {
+      "path": "tests/security-round6-kc-card-ownership.test.js",
+      "absent_after_reverse": true
+    },
+    {
+      "path": "tests/security-round6-kc-payment-callers.test.js",
+      "absent_after_reverse": true
+    }
+  ],
+  "forward_command": {
+    "command": [
+      "patch",
+      "-p1",
+      "--batch",
+      "--fuzz=0",
+      "-i",
+      "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-08-card-store-round6/delta/round6-working-tree-delta.patch"
+    ],
+    "cwd": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-round6-delta-recovery-mz6q0zdc",
+    "exit": 0,
+    "stdout": "patching file 'services/kc-pay-gpt/mysql-store.js'\npatching file 'services/kc-pay-gpt/payment-retry.js'\npatching file 'services/kc-pay-gpt/test/mysql-card-cooldown.test.js'\npatching file 'services/kc-pay-gpt/test/payment-retry-safety.test.js'\npatching file 'services/kc-pay-gpt/test/payment-protocol-fallback.test.js'\npatching file 'services/kc-pay-gpt/index.js'\npatching file 'services/kc-pay-gpt/chatgpt.js'\npatching file 'tests/security-round6-kc-card-ownership.test.js'\npatching file 'tests/security-round6-kc-payment-callers.test.js'\n",
+    "stderr": ""
+  },
+  "reapplied_sources": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "expected_sha256": "0ed041dc69dd7195ec210ab527abb83ca50231c8f4bf31d87974f67914f713b1",
+      "actual_sha256": "0ed041dc69dd7195ec210ab527abb83ca50231c8f4bf31d87974f67914f713b1",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/payment-retry.js",
+      "expected_sha256": "0b51dfb27a46985ac4d479d403122ffd2287e7aebbf14d6ad0a2755198ce5166",
+      "actual_sha256": "0b51dfb27a46985ac4d479d403122ffd2287e7aebbf14d6ad0a2755198ce5166",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "expected_sha256": "52fc653bce8bdf60ae5b6ab3ce12ad754a964f9f82be49f30aa0ab78b5002942",
+      "actual_sha256": "52fc653bce8bdf60ae5b6ab3ce12ad754a964f9f82be49f30aa0ab78b5002942",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "expected_sha256": "c93789e2fa98ef0750c5bbd6c21710b654de0cf0ff0b3463a00bbdf2ae6dcb7c",
+      "actual_sha256": "c93789e2fa98ef0750c5bbd6c21710b654de0cf0ff0b3463a00bbdf2ae6dcb7c",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "expected_sha256": "f03b9dd4e9a3167ac2b1c635e0f435856eea0749bf10c234b85c993c3e18f520",
+      "actual_sha256": "f03b9dd4e9a3167ac2b1c635e0f435856eea0749bf10c234b85c993c3e18f520",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/index.js",
+      "expected_sha256": "21ed32ea710e25d655079cf66434f24f1bdc86a71f2948edcb25e12a4c7a3458",
+      "actual_sha256": "21ed32ea710e25d655079cf66434f24f1bdc86a71f2948edcb25e12a4c7a3458",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/chatgpt.js",
+      "expected_sha256": "c50720bf0f6eecc4223e4e429f4ec9ecffa488ae15d3de946596fe7dcb7e8871",
+      "actual_sha256": "c50720bf0f6eecc4223e4e429f4ec9ecffa488ae15d3de946596fe7dcb7e8871",
+      "matches": true
+    },
+    {
+      "path": "tests/security-round6-kc-card-ownership.test.js",
+      "expected_sha256": "c43d1786e4cecbb445470eb24369fa32d9702ac4e48cb2f4e85ebf20d50229f2",
+      "actual_sha256": "c43d1786e4cecbb445470eb24369fa32d9702ac4e48cb2f4e85ebf20d50229f2",
+      "matches": true
+    },
+    {
+      "path": "tests/security-round6-kc-payment-callers.test.js",
+      "expected_sha256": "e2505a01acb904ec6cda98aabcec042ad645954c97e33bc98b20c542c11f535a",
+      "actual_sha256": "e2505a01acb904ec6cda98aabcec042ad645954c97e33bc98b20c542c11f535a",
+      "matches": true
+    }
+  ],
+  "status": "PASS"
+}

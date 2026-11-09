@@ -1,0 +1,38 @@
+{
+  "branch": "main",
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "origin_main": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "behind": 0,
+  "remote": "https://github.com/zaoyoe/Zaoyoe-Studio.git",
+  "latest_fetch": "Successful git fetch origin main observed in this continuation before archive writes.",
+  "initial_status_entries_expanded": 510,
+  "pre_archive_status_entries_expanded": 512,
+  "initial_status_rows_missing_before_archive": [],
+  "additional_pre_archive_rows": [
+    " M services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+    "?? tests/security-round5-kc-owner-locks.test.js"
+  ],
+  "index_sha256_before_archive": "0cffdc8f7b49154ec9082ca7c97b5b5a0be0c4df5dd6ae1c20526f9aca9130b7",
+  "staged_diff_before_archive": "",
+  "release_candidate": false,
+  "backup_scope": "Per-file dirty snapshots only, not a complete dirty checkout backup.",
+  "isolation": {
+    "launcher": "raw/run.py",
+    "node_guard": "raw/preload.cjs",
+    "environment": "Only PATH/TMPDIR/LANG/TZ inherited; synthetic session test key. No real .env reads performed.",
+    "guard": "Node filesystem .env reads and TCP/TLS/dgram connections blocked, including loopback.",
+    "limits": "Not an OS sandbox; not proof of complete Chromium/native-addon/independent-subprocess isolation. Cross-round accumulated blocked-reads logs not copied as round-specific evidence."
+  },
+  "not_run": [
+    "SQL execution",
+    "real database connections and InnoDB verification",
+    "real payment",
+    "Docker build",
+    "production configuration changes",
+    "SSH",
+    "production worker start",
+    "git stage/commit/push/PR/merge",
+    "deployment",
+    "main-site/TG/WAF/newAPI production acceptance"
+  ]
+}

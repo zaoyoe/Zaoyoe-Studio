@@ -28,6 +28,7 @@ const { validateOutsourceConfig, canonicalizeOutsourcePlan } = require('./gpt-ou
 const { createGptOutsourcingService } = require('./gpt-outsourcing-worker');
 const { createGptOutsourcingAdmin } = require('./gpt-outsourcing-admin');
 const { fingerprintSessionPayload, redactSensitiveText } = require('./session-security');
+const { issueTaskAccessToken, verifyTaskAccessToken } = require('./task-access');
 const { formatTaskErrorMessage, publicTaskUpdate } = require('./public/task-messages');
 const { resolveActivationInput, buildActivationCredentialEnv } = require('./activation-routing');
 const { reportTaskFailure } = require('./task-diagnostics');
@@ -42,7 +43,19 @@ const { classifyInterruptedTask, classifyAutoRenewCancellation, normalizePayment
     classifyClaudeNavigationFailure, classifyClaudeCheckoutReadinessFailure, classifyGrokFailure,
     classifyOpenAiCardMethodFailure, finalizeRetryAnalysis } = require('./task-safety');
 
+const captchaSecurity = require('./internal-captcha-security');
+// Ephemeral per-process key, inherited explicitly by checkout workers; never persisted or logged.
+const internalCaptchaToken = crypto.randomBytes(32).toString('hex');
+const { createPublicRequestGuard, securityHeaders } = require('./public-request-security');
 const app = express();
+app.disable('x-powered-by');
+app.use(securityHeaders);
+app.use((req, res, next) => {
+    if (['/api/cdk', '/api/run-process', '/api/admin/trigger-activation', '/api/public/task/']
+        .some(prefix => req.path.startsWith(prefix))) res.setHeader('Cache-Control', 'no-store');
+    next();
+});
+app.set('trust proxy', adminAuth.resolveTrustedProxyCidrs());
 const PORT = Number(process.env.PORT || 3000);
 const BIND_HOST = String(process.env.KC_BIND_HOST || '0.0.0.0').trim() || '0.0.0.0';
 const LOCAL_PREVIEW_ENABLED = process.env.KC_LOCAL_PREVIEW === '1';
@@ -56,7 +69,7 @@ const WS_HEARTBEAT_PONG_TYPE = 'pong';
 const ACCESS_DEACTIVATED_MESSAGES_URL = '';
 const ACCESS_DEACTIVATED_SYNC_KEY = '';
 const ACCESS_DEACTIVATED_SYNC_COOLDOWN_MS = 30 * 1000;
-const ADMIN_TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET || adminAuth.resolveAdminTokenSecret();
+adminAuth.resolveAdminTokenSecret(); // Fail startup if the signing key is missing or too short.
 
 function resolveLocalPreviewInfo() {
     const repoRoot = path.resolve(__dirname, '..', '..');
@@ -205,8 +218,8 @@ async function getSystemMetrics() {
 }
 
 function getClientIp(req) {
-    const forwarded = String(req.headers['x-forwarded-for'] || '').trim();
-    const rawIp = forwarded ? forwarded.split(',')[0].trim() : (req.ip || req.socket?.remoteAddress || '');
+    // Use the same explicit proxy trust boundary as admin authentication.
+    const rawIp = req.ip || req.socket?.remoteAddress || '';
     return String(rawIp || '')
         .replace(/^::ffff:/, '')
         .replace(/^::1$/, '127.0.0.1')
@@ -277,18 +290,28 @@ function broadcastToTask(jobKey, data) {
     if (clients) {
         const message = JSON.stringify(publicTaskUpdate(data));
         for (const client of clients) {
+            const access = client.taskAccess;
+            if (!access || access.jobKey !== jobKey || !verifyTaskAccessToken(jobKey, access.token)) {
+                clients.delete(client);
+                client.taskAccess = null;
+                continue;
+            }
             if (client.readyState === WebSocket.OPEN) {
                 client.send(message);
             }
         }
+        if (!clients.size) taskClients.delete(jobKey);
     }
 }
 
 // In-memory state for interactive human verification (透传给前端让充值用户点击)
 const interactiveCaptchaMap = new Map();
+setInterval(() => captchaSecurity.expireStates(interactiveCaptchaMap), 30_000).unref();
 
 function getOrCreateCaptchaState(jobKey) {
+    captchaSecurity.expireStates(interactiveCaptchaMap);
     if (!interactiveCaptchaMap.has(jobKey)) {
+        if (!captchaSecurity.validJobKey(jobKey) || interactiveCaptchaMap.size >= captchaSecurity.MAX_CAPTCHA_STATES) return null;
         interactiveCaptchaMap.set(jobKey, {
             jobKey,
             image: null,
@@ -427,19 +450,13 @@ function unsubscribeTaskClient(jobKey, ws) {
 }
 
 async function sendTaskSnapshot(ws, jobKey) {
+    const access = ws.taskAccess;
+    if (!access || access.jobKey !== jobKey || !verifyTaskAccessToken(jobKey, access.token)) return;
     const task = await store.getTaskStatus(jobKey);
-    if (!task || ws.readyState !== WebSocket.OPEN) {
+    if (!task || ws.readyState !== WebSocket.OPEN || ws.taskAccess !== access
+        || !verifyTaskAccessToken(jobKey, access.token)) {
         return;
     }
-
-    let storedMedia = { screenshots: [], videos: [] };
-    if (task.failure_screenshots) {
-        try {
-            const parsed = JSON.parse(task.failure_screenshots);
-            storedMedia = splitTaskMediaPaths(Array.isArray(parsed) ? parsed : []);
-        } catch (_) { /* ignore */ }
-    }
-    const media = extractTaskMediaFromOutput(task.raw_output || '');
 
     ws.send(JSON.stringify(publicTaskUpdate({
         type: 'snapshot',
@@ -449,12 +466,7 @@ async function sendTaskSnapshot(ws, jobKey) {
         progress: Number(task.progress || 0),
         paymentState: task.payment_state || 'not_started',
         recoveryRequired: Boolean(task.recovery_required),
-        cdkCode: task.cdk_code || null,
-        phone: task.phone || null,
-        cardLast4: task.card_last4 || null,
-        screenshots: [...new Set([...storedMedia.screenshots, ...media.screenshots])],
-        videos: [...new Set([...storedMedia.videos, ...media.videos])],
-        isTerminal: TERMINAL_TASK_STATUSES.has(task.status)
+        completed: TERMINAL_TASK_STATUSES.has(task.status)
     })));
 }
 
@@ -502,8 +514,11 @@ process.on('exit', () => cleanupProcesses());
 
 let storeReadyPromise = null;
 
+app.use('/api/internal', captchaSecurity.createInternalCaptchaAuth(internalCaptchaToken), express.json({ limit: '1600kb' }));
+
 const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || '15mb';
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
+app.use(createPublicRequestGuard());
 
 app.get('/__preview', (req, res) => {
     if (!LOCAL_PREVIEW_INFO) {
@@ -710,12 +725,7 @@ async function fireAdminSecurityNotification(event, payload = {}) {
 }
 
 function getBearerToken(req) {
-    const header = req.headers.authorization || '';
-    const [scheme, token] = header.split(' ');
-    if (scheme === 'Bearer' && token) {
-        return token.trim();
-    }
-    return (req.query?.token || '').trim() || null;
+    return adminAuth.getBearerToken(req);
 }
 
 async function authenticateAdmin(req, res, next) {
@@ -1425,7 +1435,7 @@ function runCheckoutScript(jobKey, scriptPath, env, attempt = 1, onProgress = nu
         }
         logTask(jobKey, `启动子进程 attempt=${attempt} script=${scriptPath}`);
         const child = spawn('node', [scriptPath], {
-            env,
+            env: { ...env, KC_INTERNAL_CAPTCHA_TOKEN: internalCaptchaToken, PORT: String(PORT) },
             windowsHide: true
         });
 
@@ -1599,10 +1609,9 @@ app.post('/api/admin/login', async (req, res) => {
             return res.status(401).json({ success: false, message: '邮箱或密码错误' });
         }
 
-        adminAuth.clearLoginAttempts(rate.key);
-
         const methods = adminAuth.resolveLogin2faMethods(authConfig, telegramSettings);
         if (!adminAuth.is2faRequired(authConfig, telegramSettings)) {
+            adminAuth.clearLoginAttempts(rate.key);
             const { token, payload } = issueAdminToken(authConfig.passwordVersion, authConfig.email);
             await logAdminSecurityEvent('login_success', {
                 ...clientMeta,
@@ -1647,7 +1656,8 @@ app.post('/api/admin/login', async (req, res) => {
             expiresAt: challenge.payload.exp
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        if (error.code === 'ADMIN_FACTOR_UNAVAILABLE') return res.status(503).json({ success: false, message: '管理员验证通道暂时不可用' });
+        return res.status(500).json({ success: false, message: '管理操作暂时不可用' });
     }
 });
 
@@ -1660,9 +1670,20 @@ app.post('/api/admin/login/send-tg-code', async (req, res) => {
 
     try {
         await ensureStoreReady();
+        const authConfig = await store.getAdminAuthConfig();
+        const telegramSettings = await store.getTelegramConfig();
+        const clientMeta = adminAuth.getClientMeta(req);
+        if (!adminAuth.validateLoginChallenge(challenge, authConfig, clientMeta)) {
+            return res.status(401).json({ success: false, message: '登录会话已失效，请重新登录' });
+        }
+        if (!adminAuth.resolveLogin2faMethods(authConfig, telegramSettings).includes('telegram')) {
+            return res.status(400).json({ success: false, message: '不支持的验证方式' });
+        }
+        if (!adminAuth.reserveTelegramCodeSend(challenge)) {
+            return res.status(429).json({ success: false, message: '验证码发送过于频繁，请稍后再试或重新登录' });
+        }
         const code = adminAuth.generateTelegramLoginCode();
         adminAuth.storeTelegramLoginCode(challenge.cid, code);
-        const clientMeta = adminAuth.getClientMeta(req);
         const sendResult = await sendTelegramLoginCode(store, code, {
             email: challenge.email,
             ip: clientMeta.ip || challenge.ip
@@ -1672,7 +1693,8 @@ app.post('/api/admin/login/send-tg-code', async (req, res) => {
         }
         return res.json({ success: true, message: '验证码已发送到管理员 Telegram' });
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        if (error.code === 'ADMIN_FACTOR_UNAVAILABLE') return res.status(503).json({ success: false, message: '管理员验证通道暂时不可用' });
+        return res.status(500).json({ success: false, message: '管理操作暂时不可用' });
     }
 });
 
@@ -1703,6 +1725,9 @@ app.post('/api/admin/login/verify-2fa', async (req, res) => {
         await ensureStoreReady();
         const authConfig = await store.getAdminAuthConfig();
         const telegramSettings = await store.getTelegramConfig();
+        if (!adminAuth.beginLoginChallengeAttempt(challenge, authConfig, clientMeta)) {
+            return res.status(401).json({ success: false, message: '登录会话已失效，请重新登录' });
+        }
         const methods = adminAuth.resolveLogin2faMethods(authConfig, telegramSettings);
         if (!methods.includes(method)) {
             return res.status(400).json({ success: false, message: '不支持的验证方式' });
@@ -1754,6 +1779,11 @@ app.post('/api/admin/login/verify-2fa', async (req, res) => {
             return res.status(401).json({ success: false, message: '验证码错误' });
         }
 
+        // Consume before any awaited logging or token issuance; concurrent replays fail closed.
+        if (!adminAuth.consumeLoginChallenge(challenge, authConfig, clientMeta)) {
+            return res.status(401).json({ success: false, message: '登录会话已失效，请重新登录' });
+        }
+        adminAuth.clearLoginAttempts(clientMeta.ip);
         adminAuth.clearLoginAttempts(rate.key);
         const { token, payload } = issueAdminToken(authConfig.passwordVersion, authConfig.email);
         await logAdminSecurityEvent('login_success', {
@@ -1779,7 +1809,8 @@ app.post('/api/admin/login/verify-2fa', async (req, res) => {
             email: authConfig.email
         }));
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        if (error.code === 'ADMIN_FACTOR_UNAVAILABLE') return res.status(503).json({ success: false, message: '管理员验证通道暂时不可用' });
+        return res.status(500).json({ success: false, message: '管理操作暂时不可用' });
     }
 });
 
@@ -1953,18 +1984,14 @@ app.post('/api/public/subscription/check', async (req, res) => {
 app.post('/api/internal/captcha-prompt', (req, res) => {
     try {
         const { jobKey, image, width, height, title, message, promptZh, promptEn, loading, contentReady, expiresAt } = req.body || {};
-        if (!jobKey) {
-            return res.status(400).json({ success: false, message: 'jobKey is required' });
-        }
-        if (!image && !loading) {
-            return res.status(400).json({ success: false, message: 'image is required when not loading' });
-        }
+        if (!captchaSecurity.validPrompt(req.body)) return res.status(400).json({ success: false, message: 'Invalid captcha prompt' });
 
         const state = getOrCreateCaptchaState(jobKey);
+        if (!state) return res.status(429).json({ success: false, message: 'Captcha capacity reached' });
         state.image = image || null;
         state.loading = Boolean(loading);
         state.contentReady = contentReady !== false && !state.loading;
-        state.expiresAt = Number(expiresAt) || state.expiresAt || 0;
+        state.expiresAt = Math.min(Number(expiresAt) || Date.now() + captchaSecurity.CAPTCHA_TTL_MS, Date.now() + captchaSecurity.CAPTCHA_TTL_MS);
         state.width = Number(width) || (state.image ? 400 : 0);
         state.height = Number(height) || (state.image ? 500 : 0);
         state.title = title || (state.loading ? '正在等待安全验证加载...' : '请协助完成人机验证');
@@ -2005,8 +2032,12 @@ app.post('/api/internal/captcha-prompt', (req, res) => {
 // 内部 API：Playwright 进程挂起等待前端用户点击（长轮询）
 app.get('/api/internal/captcha-wait-click/:jobKey', (req, res) => {
     const { jobKey } = req.params;
-    const timeoutMs = Math.min(Math.max(Number(req.query.timeout || 35000), 500), 60000);
-    const state = getOrCreateCaptchaState(jobKey);
+    const requestedTimeout = Number(req.query.timeout);
+    const timeoutMs = Number.isFinite(requestedTimeout) ? Math.min(Math.max(requestedTimeout, 500), 60000) : 35000;
+    captchaSecurity.expireStates(interactiveCaptchaMap);
+    const state = interactiveCaptchaMap.get(jobKey);
+    if (!captchaSecurity.validJobKey(jobKey) || !state?.active) return res.status(404).json({ success: false });
+    if (state.waitingRequests.length >= 1) return res.status(429).json({ success: false });
 
     if (state.pendingClicks && state.pendingClicks.length > 0) {
         const clickData = state.pendingClicks.shift();
@@ -2022,7 +2053,7 @@ app.get('/api/internal/captcha-wait-click/:jobKey', (req, res) => {
 
     state.waitingRequests.push({ res, timer });
 
-    req.on('close', () => {
+    res.on('close', () => {
         clearTimeout(timer);
         state.waitingRequests = state.waitingRequests.filter(item => item.res !== res);
     });
@@ -2032,6 +2063,7 @@ app.get('/api/internal/captcha-wait-click/:jobKey', (req, res) => {
 app.post('/api/internal/captcha-status', (req, res) => {
     try {
         const { jobKey, cleared, failed, reason, message } = req.body || {};
+        if (!captchaSecurity.validJobKey(jobKey) || [reason, message].some(value => value !== undefined && (typeof value !== 'string' || value.length > 2000))) return res.status(400).json({ success: false });
         if (!jobKey) {
             return res.status(400).json({ success: false, message: 'jobKey is required' });
         }
@@ -2066,32 +2098,7 @@ app.post('/api/internal/captcha-status', (req, res) => {
 });
 
 // 公开 API：前端用户点击坐标回传（HTTP 回退通道）
-app.post('/api/public/task/:jobKey/captcha-click', async (req, res) => {
-    const { jobKey } = req.params;
-    try {
-        if (await isCheckoutDiagnosticJob(jobKey)) return res.status(403).json({ success: false, message: '诊断任务需管理员二级验证' });
-    } catch (_) { return res.status(503).json({ success: false, message: '验证通道暂时不可用' }); }
-    const { ratioX, ratioY, clientX, clientY, frameSeq, points, submitPoint, action } = req.body || {};
-
-    const hasPoints = Array.isArray(points) && points.length > 0;
-    if (!hasPoints && (!Number.isFinite(Number(ratioX)) || !Number.isFinite(Number(ratioY)))) {
-        return res.status(400).json({ success: false, message: 'Invalid coordinates' });
-    }
-
-    const handled = notifyCaptchaClick(jobKey, { ratioX, ratioY, clientX, clientY, frameSeq, points, submitPoint, action });
-
-    broadcastToTask(jobKey, {
-        type: 'captcha_click_received',
-        jobKey,
-        ratioX: Number(ratioX || 0),
-        ratioY: Number(ratioY || 0),
-        pointsCount: hasPoints ? points.length : 0,
-        frameSeq: Number(frameSeq || 0),
-        handled
-    });
-
-    return res.json({ success: true, handled });
-});
+app.post('/api/public/task/:jobKey/captcha-click', publicCaptchaHandler('click'));
 
 app.use('/api/admin', authenticateAdmin);
 
@@ -2189,76 +2196,23 @@ app.get('/api/admin/login-logs', async (req, res) => {
     }
 });
 
-app.get('/api/admin/secondary/session', (req, res) => {
-    const token = String(req.headers['x-admin-secondary-token'] || '').trim();
-    const payload = adminAuth.verifySecondaryToken(token);
-    if (!payload) {
-        return res.json({ success: true, verified: false });
-    }
-    return res.json({
-        success: true,
-        verified: true,
-        expiresAt: payload.exp
-    });
-});
+const adminSecurity = require('./admin-security').createAdminSecurity({ store, ensureStoreReady, sendTelegramLoginCode });
+app.get('/api/admin/secondary/session', requireSecondaryAuth, (req, res) => res.json({ success: true, verified: true, expiresAt: req.secondaryAuth.exp }));
+app.post('/api/admin/secondary/challenge', adminSecurity.challenge);
+app.post('/api/admin/verify-secondary', adminSecurity.verify);
 
-app.post('/api/admin/verify-secondary', async (req, res) => {
-    const password = String(req.body?.password || '');
-    const clientMeta = adminAuth.getClientMeta(req);
-    if (!password) {
-        return res.status(400).json({ success: false, message: '请输入二级密码' });
-    }
-
-    try {
-        await ensureStoreReady();
-        const authConfig = await store.getAdminAuthConfig();
-        if (!verifyPassword(password, authConfig.secondaryPasswordHash)) {
-            await logAdminSecurityEvent('secondary_failed', {
-                ...clientMeta,
-                email: req.admin?.email || authConfig.email,
-                detail: '二级密码错误'
-            });
-            return res.status(401).json({ success: false, message: '二级密码错误' });
-        }
-
-        const { token, payload } = adminAuth.issueSecondaryToken(
-            authConfig.secondaryPasswordVersion,
-            clientMeta.ip
-        );
-        await logAdminSecurityEvent('secondary_success', {
-            ...clientMeta,
-            email: req.admin?.email || authConfig.email,
-            detail: '敏感模块解锁'
-        });
-        fireAdminSecurityNotification('admin_secondary_success', {
-            email: req.admin?.email || authConfig.email,
-            ip: clientMeta.ip,
-            fingerprint: clientMeta.fingerprint,
-            userAgent: clientMeta.userAgent,
-            message: '银行卡池/CDK/Session 模块已解锁'
-        });
-        return res.json({
-            success: true,
-            secondaryToken: token,
-            expiresAt: payload.exp
-        });
-    } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-app.post('/api/admin/security/2fa-mode', async (req, res) => {
+app.post('/api/admin/security/2fa-mode', requireSecondaryAuth, async (req, res) => {
     const mode = String(req.body?.mode || '').trim().toLowerCase();
     try {
         await ensureStoreReady();
-        const saved = await store.saveAdmin2faLoginMode(mode);
-        res.json({ success: true, login2faMode: saved, message: '登录验证方式已保存' });
+        const saved = await store.saveAdmin2faLoginMode(mode, req.admin.pv);
+        res.json({ success: true, login2faMode: saved, reauthenticate: true, message: '验证方式已更新，请重新登录' });
     } catch (error) {
         res.status(400).json({ success: false, message: error.message });
     }
 });
 
-app.post('/api/admin/security/paths', async (req, res) => {
+app.post('/api/admin/security/paths', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const saved = await store.saveAdminPaths({
@@ -2280,50 +2234,10 @@ app.post('/api/admin/security/paths', async (req, res) => {
     }
 });
 
-app.post('/api/admin/2fa/setup', async (req, res) => {
-    try {
-        await ensureStoreReady();
-        const authConfig = await store.getAdminAuthConfig();
-        let secret = String(authConfig.totpSecret || '').trim();
-        if (!secret || authConfig.totpEnabled) {
-            secret = adminAuth.generateTotpSecret();
-            await store.saveAdminTotpConfig({ secret, enabled: false });
-        }
-        const otpauthUrl = adminAuth.getTotpUri(authConfig.email, secret);
-        res.json({
-            success: true,
-            secret,
-            otpauthUrl,
-            qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(otpauthUrl)}`,
-            message: '请使用 Google Authenticator 扫码后输入验证码确认启用'
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
+app.post('/api/admin/2fa/setup', requireSecondaryAuth, adminSecurity.setup);
+app.post('/api/admin/2fa/confirm', requireSecondaryAuth, adminSecurity.confirm);
 
-app.post('/api/admin/2fa/confirm', async (req, res) => {
-    const code = String(req.body?.code || '').trim();
-    if (!code) {
-        return res.status(400).json({ success: false, message: '请输入 Authenticator 验证码' });
-    }
-    try {
-        await ensureStoreReady();
-        const authConfig = await store.getAdminAuthConfig();
-        if (!authConfig.totpSecret) {
-            return res.status(400).json({ success: false, message: '请先发起 2FA 绑定' });
-        }
-        if (!adminAuth.verifyTotpCode(authConfig.totpSecret, code)) {
-            return res.status(400).json({ success: false, message: '验证码错误，请重试' });
-        }
-        await store.saveAdminTotpConfig({ secret: authConfig.totpSecret, enabled: true });
-        res.json({ success: true, message: 'Google Authenticator 已启用' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-app.post('/api/admin/2fa/disable', async (req, res) => {
+app.post('/api/admin/2fa/disable', requireSecondaryAuth, async (req, res) => {
     const currentPassword = String(req.body?.currentPassword || '');
     const code = String(req.body?.code || '').trim();
     try {
@@ -2335,14 +2249,17 @@ app.post('/api/admin/2fa/disable', async (req, res) => {
         if (authConfig.totpEnabled && !adminAuth.verifyTotpCode(authConfig.totpSecret, code)) {
             return res.status(400).json({ success: false, message: 'Authenticator 验证码错误' });
         }
-        await store.saveAdminTotpConfig({ secret: '', enabled: false });
-        res.json({ success: true, message: 'Google Authenticator 已关闭' });
+        if (Number(authConfig.passwordVersion) !== Number(req.admin.pv)) {
+            return res.status(401).json({ success: false, message: '安全配置已变化，请重新登录' });
+        }
+        await store.disableAdminTotp(req.admin.pv);
+        res.json({ success: true, reauthenticate: true, message: 'Google Authenticator 已关闭，请重新登录' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
-app.post('/api/admin/change-secondary-password', async (req, res) => {
+app.post('/api/admin/change-secondary-password', requireSecondaryAuth, async (req, res) => {
     const currentPassword = String(req.body?.currentPassword || '');
     const newPassword = String(req.body?.newPassword || '').trim();
     if (!currentPassword) {
@@ -2375,7 +2292,7 @@ app.get('/api/admin/task-logs', async (req, res) => {
     }
 });
 
-app.get('/api/admin/data', async (req, res) => {
+app.get('/api/admin/data', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const data = await store.getAdminData();
@@ -2515,17 +2432,18 @@ app.get('/api/admin/sessions', requireSecondaryAuth, async (req, res) => {
 app.get('/api/admin/sessions/:jobKey', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
+        await store.insertAdminLoginLog({ event: 'session_secret_read', adminEmail: req.admin.email, ip: adminAuth.getClientMeta(req).ip, detail: `job_key=${String(req.params.jobKey).slice(0, 128)}` });
         const session = await store.getSessionByJobKey(req.params.jobKey);
         if (!session) {
             return res.status(404).json({ success: false, message: 'Session 记录不存在' });
         }
         res.json({ success: true, session });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+    } catch (_) {
+        res.status(503).json({ success: false, message: '敏感信息暂时不可用' });
     }
 });
 
-app.post('/api/admin/subscription/cancel-auto-renew', async (req, res) => {
+app.post('/api/admin/subscription/cancel-auto-renew', requireSecondaryAuth, async (req, res) => {
     try {
         const rawSession = String(req.body?.session || req.body?.token || '').trim().replace(/^\uFEFF/, '');
         if (!rawSession) {
@@ -2564,7 +2482,7 @@ app.post('/api/admin/subscription/cancel-auto-renew', async (req, res) => {
     }
 });
 
-app.post('/api/admin/subscription/enable-auto-renew', async (req, res) => {
+app.post('/api/admin/subscription/enable-auto-renew', requireSecondaryAuth, async (req, res) => {
     try {
         const rawSession = String(req.body?.session || req.body?.token || '').trim().replace(/^\uFEFF/, '');
         if (!rawSession) {
@@ -2774,11 +2692,11 @@ function notifyTaskOutcome({ event, email, cdk, jobKey, message }) {
     fireTelegramNotification(event, { email, cdk, jobKey, message });
 }
 
-app.post('/api/admin/telegram', async (req, res) => {
+app.post('/api/admin/telegram', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const body = req.body || {};
-        await store.saveTelegramConfig({
+        const result = await store.saveTelegramConfig({
             bot_token: body.bot_token,
             admin_chat_id: body.admin_chat_id,
             group_chat_id: body.group_chat_id,
@@ -2787,14 +2705,14 @@ app.post('/api/admin/telegram', async (req, res) => {
             on_success: Boolean(body.on_success),
             on_failure: Boolean(body.on_failure),
             on_card_pool_empty: Boolean(body.on_card_pool_empty)
-        });
-        res.json({ success: true, message: 'Telegram 通知配置已保存' });
+        }, req.admin.pv);
+        res.json({ success: true, reauthenticate: result.reauthenticate, message: result.reauthenticate ? '验证通道已更新，请重新登录' : 'Telegram 通知配置已保存' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
-app.post('/api/admin/telegram/test', async (req, res) => {
+app.post('/api/admin/telegram/test', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const result = await sendTelegramTest(store, req.body || {});
@@ -2807,7 +2725,7 @@ app.post('/api/admin/telegram/test', async (req, res) => {
     }
 });
 
-app.post('/api/admin/hcaptcha', async (req, res) => {
+app.post('/api/admin/hcaptcha', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const body = req.body || {};
@@ -2945,14 +2863,14 @@ app.get('/api/admin/hcaptcha/logs', async (req, res) => {
 const outsourceAdmin = createGptOutsourcingAdmin({ store, client: gptApi, service: gptOutsourcing,
     ensureStoreReady, log: message => logTask('', message, 'warn') });
 app.get('/api/admin/gpt-api', outsourceAdmin.getConfig);
-app.post('/api/admin/gpt-api', outsourceAdmin.saveConfig);
+app.post('/api/admin/gpt-api', requireSecondaryAuth, outsourceAdmin.saveConfig);
 app.post('/api/admin/gpt-api/test', outsourceAdmin.test);
 app.get('/api/admin/gpt-api/status', outsourceAdmin.status);
 app.get('/api/admin/gpt-api/orders', outsourceAdmin.orders);
 app.post('/api/admin/gpt-api/orders/:jobKey/recheck', requireSecondaryAuth, outsourceAdmin.recheck);
 app.post('/api/admin/gpt-api/orders/:jobKey/credentials', requireSecondaryAuth, outsourceAdmin.credentials);
 
-app.post('/api/admin/config', async (req, res) => {
+app.post('/api/admin/config', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const nextConfig = { ...(req.body || {}) };
@@ -2987,7 +2905,7 @@ app.get('/api/admin/region', async (req, res) => {
     }
 });
 
-app.put('/api/admin/region', async (req, res) => {
+app.put('/api/admin/region', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const regionCode = String(req.body?.region || '').toUpperCase();
@@ -3238,30 +3156,16 @@ app.post('/api/admin/checkout/captcha-drag/:jobKey', requireSecondaryAuth, async
 
 // ─── Card Pool Management API ───────────────────────────────────────────────
 
-app.get('/api/admin/cards', requireSecondaryAuth, async (req, res) => {
+app.get('/api/admin/cards', async (req, res) => {
     try {
         await ensureStoreReady();
-        const rows = await store.runQuery(
-            `SELECT id, card_number, card_expiry, card_cvc, card_holder,
-                    payment_holder_name, payment_address_line1, payment_address_city,
-                    payment_address_state, payment_address_postal, payment_address_id,
-                    is_active, usage_count, last_used_at, status, cooldown_until
-             FROM card_assets
-             ORDER BY sort_order ASC, id ASC`
-        );
+        const rows = await store.listAdminCardSummaries();
         const cards = rows.map((row) => ({
             id: row.id,
-            card_number: row.card_number || '',
-            card_expiry: row.card_expiry || '',
-            card_cvc: row.card_cvc || '',
-            last4: String(row.card_number || '').slice(-4),
-            card_holder: row.card_holder || '',
-            payment_holder_name: row.payment_holder_name || '',
-            payment_address_line1: row.payment_address_line1 || '',
-            payment_address_city: row.payment_address_city || '',
-            payment_address_state: row.payment_address_state || '',
-            payment_address_postal: row.payment_address_postal || '',
-            payment_address_id: row.payment_address_id || null,
+            card_number: `****${String(row.last4 || '')}`,
+            card_expiry: '',
+            card_cvc: '',
+            last4: String(row.last4 || ''),
             is_active: Number(row.is_active || 0),
             usage_count: Number(row.usage_count || 0),
             last_used_at: row.last_used_at || null,
@@ -3272,6 +3176,19 @@ app.get('/api/admin/cards', requireSecondaryAuth, async (req, res) => {
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
+});
+
+app.get('/api/admin/cards/:id/secret', requireSecondaryAuth, async (req, res) => {
+    if (!/^[1-9][0-9]{0,9}$/.test(req.params.id) || !Number.isSafeInteger(Number(req.params.id))) {
+        return res.status(400).json({ success: false, message: '无效卡片' });
+    }
+    try {
+        await store.insertAdminLoginLog({ event: 'card_secret_read', adminEmail: req.admin.email,
+            ip: adminAuth.getClientMeta(req).ip, detail: `card_id=${req.params.id}` });
+        const card = await store.getIdleCardSecret(req.params.id);
+        if (!card) return res.status(404).json({ success: false });
+        return res.json({ success: true, card });
+    } catch (_) { return res.status(503).json({ success: false, message: '敏感信息暂时不可用' }); }
 });
 
 app.post('/api/admin/cards/import', requireSecondaryAuth, async (req, res) => {
@@ -3304,19 +3221,15 @@ app.delete('/api/admin/cards/:id', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const cardId = Number(req.params.id);
-        if (!cardId || !Number.isFinite(cardId)) {
+        if (!/^[1-9][0-9]*$/.test(req.params.id) || !Number.isSafeInteger(cardId)) {
             return res.status(400).json({ success: false, error: '无效的卡片 ID' });
         }
-        const result = await store.runExecute(
-            `DELETE FROM card_assets WHERE id = ?`,
-            [cardId]
-        );
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ success: false, error: '卡片不存在' });
+        if (!await store.deleteIdleCardById(cardId)) {
+            return res.status(409).json({ success: false, error: '卡片不存在或仍被占用/待核账，不能删除' });
         }
         res.json({ success: true });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: '卡片删除未确认，请核对后重试' });
     }
 });
 
@@ -3324,34 +3237,15 @@ app.post('/api/admin/cards/:id/reset-cooldown', requireSecondaryAuth, async (req
     try {
         await ensureStoreReady();
         const cardId = Number(req.params.id);
-        if (!cardId || !Number.isFinite(cardId)) {
+        if (!/^[1-9][0-9]*$/.test(req.params.id) || !Number.isSafeInteger(cardId)) {
             return res.status(400).json({ success: false, error: '无效的卡片 ID' });
         }
-        const [card] = await store.runQuery(`SELECT id, status FROM card_assets WHERE id = ?`, [cardId]);
-        if (!card) {
-            return res.status(404).json({ success: false, error: '卡片不存在' });
-        }
-        if (card.status === '已冻结') {
-            return res.status(400).json({ success: false, error: '该银行卡当前处于已冻结状态，无法重置冷却；如需使用请先解冻卡片' });
-        }
-        const result = await store.runExecute(
-            `UPDATE card_assets
-             SET cooldown_until = NULL,
-                 daily_usage_count = 0,
-                 status = '正常',
-                 is_active = 1,
-                 in_use = 0,
-                 locked_at = NULL,
-                 locked_by = NULL
-             WHERE id = ? AND status <> '已冻结'`,
-            [cardId]
-        );
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ success: false, error: '卡片不存在或已被冻结' });
+        if (!await store.resetIdleCardCooldown(cardId)) {
+            return res.status(409).json({ success: false, error: '卡片不存在、已冻结或仍被占用/待核账，不能重置冷却' });
         }
         res.json({ success: true, message: '卡片已重置并恢复正常可用' });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: '冷却重置未确认，请核对后重试' });
     }
 });
 
@@ -3375,7 +3269,7 @@ app.post('/api/admin/cards/:id/freeze', requireSecondaryAuth, async (req, res) =
 
 // ─── Proxy Pool CRUD API ────────────────────────────────────────────────────
 
-app.get('/api/admin/proxies', async (req, res) => {
+app.get('/api/admin/proxies', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const proxies = await store.listProxyAssets();
@@ -3385,7 +3279,7 @@ app.get('/api/admin/proxies', async (req, res) => {
     }
 });
 
-app.post('/api/admin/proxies', async (req, res) => {
+app.post('/api/admin/proxies', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const input = req.body?.proxies ?? req.body?.proxy_url ?? req.body?.proxy ?? '';
@@ -3399,7 +3293,7 @@ app.post('/api/admin/proxies', async (req, res) => {
     }
 });
 
-app.put('/api/admin/proxies/:id', async (req, res) => {
+app.put('/api/admin/proxies/:id', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const id = req.params.id;
@@ -3416,7 +3310,7 @@ app.put('/api/admin/proxies/:id', async (req, res) => {
     }
 });
 
-app.post('/api/admin/proxies/:id/test', async (req, res) => {
+app.post('/api/admin/proxies/:id/test', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const row = await store.getProxyAssetById(req.params.id);
@@ -3431,7 +3325,7 @@ app.post('/api/admin/proxies/:id/test', async (req, res) => {
     }
 });
 
-app.delete('/api/admin/proxies', async (req, res) => {
+app.delete('/api/admin/proxies', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const onlyInactive = req.query?.type === 'inactive';
@@ -3442,7 +3336,7 @@ app.delete('/api/admin/proxies', async (req, res) => {
     }
 });
 
-app.delete('/api/admin/proxies/:id', async (req, res) => {
+app.delete('/api/admin/proxies/:id', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const result = await store.deleteProxyAsset(req.params.id);
@@ -3535,7 +3429,7 @@ app.delete('/api/admin/addresses/:id', async (req, res) => {
     }
 });
 
-app.post('/api/admin/change-password', async (req, res) => {
+app.post('/api/admin/change-password', requireSecondaryAuth, async (req, res) => {
     const currentPassword = String(req.body?.currentPassword || '');
     const newPassword = String(req.body?.newPassword || '').trim();
 
@@ -3683,7 +3577,19 @@ app.get('/api/admin/billing', async (req, res) => {
     }
 });
 
-app.get('/api/admin/billing/export', async (req, res) => {
+app.get('/api/admin/billing/:id/secret', requireSecondaryAuth, async (req, res) => {
+    if (!/^[1-9]\d{0,14}$/.test(req.params.id)) return res.status(400).json({ success: false, message: '无效的记录 ID' });
+    try {
+        await ensureStoreReady();
+        await store.insertAdminLoginLog({ event: 'billing_secret_read', adminEmail: req.admin.email,
+            ip: adminAuth.getClientMeta(req).ip, detail: `billing_id=${req.params.id}` });
+        const rows = await store.runQuery('SELECT cdk_code FROM billing_records WHERE id = ?', [req.params.id]);
+        if (!rows.length) return res.status(404).json({ success: false, message: '账单记录不存在' });
+        return res.json({ success: true, cdk: rows[0].cdk_code || '' });
+    } catch (_) { return res.status(503).json({ success: false, message: '敏感信息暂时不可用' }); }
+});
+
+app.get('/api/admin/billing/export', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const filters = {};
@@ -3692,12 +3598,14 @@ app.get('/api/admin/billing/export', async (req, res) => {
         if (req.query.card_last4) filters.cardLast4 = req.query.card_last4;
         if (req.query.plan_type) filters.planType = req.query.plan_type;
         if (req.query.status) filters.status = req.query.status;
+        await store.insertAdminLoginLog({ event: 'billing_export', adminEmail: req.admin.email,
+            ip: adminAuth.getClientMeta(req).ip, detail: 'sensitive_billing_csv' });
         const csv = await store.exportBillingRecordsCSV(filters);
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Content-Disposition', 'attachment; filename="billing_export.csv"');
         res.send(csv);
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+    } catch (_) {
+        res.status(503).json({ success: false, message: '账单导出暂时不可用' });
     }
 });
 
@@ -3712,7 +3620,7 @@ app.get('/api/admin/billing/summary/:cardLast4', async (req, res) => {
     }
 });
 
-app.delete('/api/admin/billing/failed', async (req, res) => {
+app.delete('/api/admin/billing/failed', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const deleted = await store.deleteFailedBillingRecords();
@@ -3722,7 +3630,7 @@ app.delete('/api/admin/billing/failed', async (req, res) => {
     }
 });
 
-app.delete('/api/admin/billing/:id', async (req, res) => {
+app.delete('/api/admin/billing/:id', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const id = Number(req.params.id);
@@ -3983,12 +3891,55 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
         const checkoutScript = path.join(__dirname, 'index.js');
         let finalRun = null;
         const allOutputs = [];
-        let shouldRollbackCdk = true;
+        let settlementClosed = false;
+        let persistenceUncertain = false;
+        let pendingUpdates = Promise.resolve();
         let observedPaymentState = 'not_started';
         let lastProgress = 0;
         const accountEmail = extractEmailFromSession(sessionRaw) || '';
         const platform = getPlatformForPlan(cdkDetails.plan_type);
         let lastUsedProxy = '';
+
+        const outputPaymentEvidence = output => {
+            const text = String(output || '');
+            return (text.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g) || [])
+                .reduce((previous, marker) => mergePaymentState(previous, marker.split(':')[1]),
+                    text.includes('支付结果未知') ? 'unknown' : 'not_started');
+        };
+        // stdout callbacks are asynchronous. Serialize their writes and queue
+        // final settlement behind them so a slow callback cannot overwrite it.
+        const persistLocal = (input, options = {}) => {
+            if (Object.prototype.hasOwnProperty.call(input, 'paymentState')) {
+                observedPaymentState = mergePaymentState(observedPaymentState, input.paymentState);
+            }
+            const operation = pendingUpdates.then(async () => {
+                if (settlementClosed && !options.annotate) {
+                    throw new Error('本地充值任务已结算或归属已变更，停止旧 worker 更新');
+                }
+                let result;
+                try {
+                    const uncertain = persistenceUncertain && !options.annotate;
+                    result = await store.updateLocalActivationTask(task.jobKey, {
+                        ...input, cdkCode: cdk,
+                        paymentState: uncertain ? mergePaymentState(observedPaymentState, 'unknown') : observedPaymentState,
+                        ...(uncertain ? { status: 'manual', recoveryRequired: true,
+                            message: '任务状态持久化未确认，已保留资产，需人工复核' } : {})
+                    }, options);
+                } catch (error) {
+                    persistenceUncertain = true;
+                    throw error;
+                }
+                if (!result.applied) {
+                    settlementClosed = true;
+                    throw new Error(`本地充值任务更新被拒绝: ${result.reason || 'TASK_CHANGED'}`);
+                }
+                observedPaymentState = mergePaymentState(observedPaymentState, result.paymentState);
+                if (options.finalize) settlementClosed = true;
+                return result;
+            });
+            pendingUpdates = operation.catch(() => {});
+            return operation;
+        };
 
         try {
             for (let attempt = 1; attempt <= MAX_PROCESS_ATTEMPTS; attempt += 1) {
@@ -4057,21 +4008,21 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                                     updatePayload.failureScreenshots = combined;
                                 }
                             }
-                            await store.updateTaskLog(task.jobKey, updatePayload);
+                            const savedProgress = await persistLocal(updatePayload);
                             broadcastToTask(task.jobKey, {
                                 type: 'progress',
                                 jobKey: task.jobKey,
                                 progress: runningProgress,
-                                status: 'running',
-                                message: '正在开通中',
+                                status: savedProgress.status,
+                                message: savedProgress.message || '正在开通中',
                                 cdkCode: cdk,
                                 screenshots: liveOutput ? extractTaskMediaFromOutput(liveOutput).screenshots : undefined,
                                 videos: liveOutput ? extractTaskMediaFromOutput(liveOutput).videos : undefined
                             });
                         }
                     }, async (state, message) => {
-                        observedPaymentState = normalizePaymentState(state);
-                        await store.updateTaskLog(task.jobKey, {
+                        observedPaymentState = mergePaymentState(observedPaymentState, state);
+                        await persistLocal({
                             status: state === 'unknown' ? 'manual' : 'running',
                             message: message || (state === 'started' ? '正在提交银行卡支付' : '支付状态已更新'),
                             cdkCode: cdk,
@@ -4085,11 +4036,9 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 allOutputs.push(`===== ATTEMPT ${attempt}${cardLast4 ? ` | CARD ${cardLast4}` : ''} =====\n${run.output}`);
                 finalRun = { ...run, output: allOutputs.join('\n\n') };
                 const attemptPaymentState = normalizePaymentState(
-                    run.analysis.paymentState
-                    || (run.output.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g)?.slice(-1)[0]?.split(':')[1])
-                    || (run.output.includes('支付结果未知') ? 'unknown' : 'not_started')
+                    mergePaymentState(run.analysis.paymentState || 'not_started', outputPaymentEvidence(run.output))
                 );
-                observedPaymentState = attemptPaymentState;
+                observedPaymentState = mergePaymentState(observedPaymentState, attemptPaymentState);
                 if (task.executionMode === 'local_card_pool'
                     && platform === 'chatgpt'
                     && sessionCooldownScopeKey
@@ -4103,8 +4052,8 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     }
                 }
                 if (attemptPaymentState) {
-                    await store.updateTaskLog(task.jobKey, {
-                        status: run.analysis.status === 'success' ? 'success' : 'running',
+                    await persistLocal({
+                        status: 'running',
                         paymentState: attemptPaymentState,
                         recoveryRequired: ['started', 'unknown'].includes(normalizePaymentState(attemptPaymentState)),
                         cdkCode: cdk,
@@ -4115,16 +4064,16 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     logTask(task.jobKey, '支付结果未知，停止后续自动重试并转人工复核', 'warn');
                 }
 
-                const currentStatus = run.analysis.status === 'success' ? 'success' : 'running';
+                const currentStatus = 'running';
                 const currentProgress = normalizeTaskProgress(
                     getCheckoutProgress(run.output, currentStatus),
                     currentStatus,
                     lastProgress
                 );
                 lastProgress = currentProgress;
-                await store.updateTaskLog(task.jobKey, {
+                const savedAttempt = await persistLocal({
                     status: currentStatus,
-                    message: currentStatus === 'success' ? '激活成功' : (attemptPaymentState === 'unknown' ? '支付结果未确认，转人工复核' : '正在开通中'),
+                    message: attemptPaymentState === 'unknown' ? '支付结果未确认，转人工复核' : '正在开通中',
                     rawOutput: finalRun.output,
                     progress: currentProgress,
                     cdkCode: cdk,
@@ -4137,13 +4086,13 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     type: 'progress',
                     jobKey: task.jobKey,
                     progress: currentProgress,
-                    status: currentStatus,
-                    message: currentStatus === 'success' ? '激活成功' : '正在开通中',
+                    status: savedAttempt.status,
+                    message: savedAttempt.message || '正在开通中',
                     cdkCode: cdk,
                     cardLast4
                 });
 
-                if (shouldRetainCdk({ paymentState: attemptPaymentState }) || !run.analysis.shouldRetry || attempt >= MAX_PROCESS_ATTEMPTS) {
+                if (persistenceUncertain || shouldRetainCdk({ paymentState: observedPaymentState }) || !run.analysis.shouldRetry || attempt >= MAX_PROCESS_ATTEMPTS) {
                     logTask(task.jobKey, `尝试 ${attempt} 结束，status=${run.analysis.status} shouldRetry=${run.analysis.shouldRetry}`);
                     break;
                 }
@@ -4153,152 +4102,17 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
 
             const rawOutput = finalRun?.output || '';
             const normalizedAnalysis = finalizeRetryAnalysis(finalRun?.analysis);
-            const outputPaymentState = rawOutput.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g)?.slice(-1)[0]?.split(':')[1]
-                || (rawOutput.includes('支付结果未知') ? 'unknown' : 'not_started');
-            const finalPaymentState = mergePaymentState(
-                outputPaymentState,
-                normalizedAnalysis?.paymentState || 'not_started'
-            );
-            const finalStatus = ['started', 'unknown'].includes(finalPaymentState)
-                ? 'manual'
-                : (normalizedAnalysis?.status || 'failed');
-            observedPaymentState = finalPaymentState;
-            if (shouldRetainCdk({ paymentState: finalPaymentState })) {
-                shouldRollbackCdk = false;
-            }
+            const outputPaymentState = outputPaymentEvidence(rawOutput);
+            let finalPaymentState = mergePaymentState(observedPaymentState, mergePaymentState(
+                outputPaymentState, normalizedAnalysis?.paymentState || 'not_started'));
+            let finalStatus = ['started', 'unknown'].includes(finalPaymentState)
+                ? 'manual' : (normalizedAnalysis?.status || 'failed');
+            let finalMessage = normalizedAnalysis?.message || null;
+            observedPaymentState = mergePaymentState(observedPaymentState, finalPaymentState);
 
             const finalProgress = normalizeTaskProgress(finalStatus === 'success' ? 100 : lastProgress, finalStatus, lastProgress);
             const taskMedia = extractTaskMediaFromOutput(rawOutput);
             const failureScreenshots = [...taskMedia.screenshots, ...taskMedia.videos];
-            await store.updateTaskLog(task.jobKey, {
-                status: finalStatus,
-                message: normalizedAnalysis?.message || null,
-                rawOutput,
-                cdkCode: cdk,
-                progress: finalProgress,
-                failureScreenshots,
-                paymentState: finalPaymentState || 'not_started',
-                recoveryRequired: ['started', 'unknown'].includes(normalizePaymentState(finalPaymentState))
-            });
-
-            broadcastToTask(task.jobKey, {
-                type: 'status',
-                jobKey: task.jobKey,
-                status: finalStatus,
-                message: normalizedAnalysis?.message,
-                paymentState: finalPaymentState,
-                recoveryRequired: ['started', 'unknown'].includes(finalPaymentState),
-                cdkCode: cdk,
-                progress: finalProgress,
-                screenshots: taskMedia.screenshots,
-                videos: taskMedia.videos
-            });
-
-            logTask(
-                task.jobKey,
-                `任务结束 status=${finalStatus} progress=${finalProgress} message=${normalizedAnalysis?.message || ''}`
-            );
-
-            if (finalStatus === 'success') {
-                shouldRollbackCdk = false;
-                let needsManualReview = false;
-                if (task.executionMode === 'local_card_pool' || !task.executionMode) {
-                    let autoRenewResult;
-                    try {
-                        const workerAutoRenew = extractAutoRenewResultFromOutput(rawOutput);
-                        if (workerAutoRenew) {
-                            autoRenewResult = workerAutoRenew;
-                        } else if (platform === 'chatgpt') {
-                            autoRenewResult = await cancelAutoRenew(token, {
-                                email: accountEmail,
-                                timezoneOffsetMin: -new Date().getTimezoneOffset(),
-                                proxy: lastUsedProxy
-                            });
-                        } else {
-                            autoRenewResult = {
-                                ok: false,
-                                data: { verificationUnknown: true },
-                                error: `${platform} 充值已完成，自动续费状态需人工核实`
-                            };
-                        }
-                    } catch (error) {
-                        autoRenewResult = {
-                            ok: false,
-                            error: `取消自动续费请求异常：${redactSensitiveText(error.message)}`,
-                            data: { verificationUnknown: true }
-                        };
-                    }
-                    const autoRenewData = autoRenewResult.data || {};
-                    const autoRenewClass = classifyAutoRenewCancellation(autoRenewResult);
-                    const autoRenewStatus = autoRenewClass === 'already_disabled' ? 'disabled'
-                        : (autoRenewClass === 'verification_unknown' ? 'verification_unknown' : 'failed');
-                    const autoRenewConfirmed = autoRenewStatus === 'disabled';
-                    const autoRenewMessage = autoRenewConfirmed
-                        ? '充值完成，自动续费已确认关闭'
-                        : (autoRenewData.message || autoRenewResult.error || '充值成功，但自动续费关闭状态未确认，请人工复核');
-                    needsManualReview = !autoRenewConfirmed;
-                    await store.updateTaskLog(task.jobKey, {
-                        status: needsManualReview ? 'manual' : 'success',
-                        message: needsManualReview ? '充值已完成，但自动续费关闭状态未确认，请联系客服人工复核' : '激活成功',
-                        autoRenewStatus,
-                        autoRenewMessage,
-                        paymentState: 'succeeded',
-                        recoveryRequired: needsManualReview
-                    });
-                    logTask(task.jobKey, `自动续费处理结果=${autoRenewStatus}`, autoRenewConfirmed ? 'info' : 'warn');
-                    if (needsManualReview) {
-                        notifyTaskOutcome({
-                            event: 'failure',
-                            email: accountEmail,
-                            cdk,
-                            jobKey: task.jobKey,
-                            message: '充值已完成，但自动续费关闭状态未确认，请联系客服人工复核'
-                        });
-                    }
-                }
-                if (!needsManualReview) {
-                    await store.resetCdkFailure(cdk);
-                }
-                if (clientIp && !needsManualReview) {
-                    await store.resetActivationAttemptFailure('ip', clientIp);
-                }
-                if (!needsManualReview) {
-                    notifyTaskOutcome({
-                        event: 'success',
-                        email: accountEmail,
-                        cdk,
-                        jobKey: task.jobKey,
-                        message: normalizedAnalysis?.message || '激活成功'
-                    });
-                }
-            } else if (isCardPoolExhaustedIssue(rawOutput, normalizedAnalysis)) {
-                notifyTaskOutcome({
-                    event: 'card_pool_empty',
-                    email: accountEmail,
-                    cdk,
-                    jobKey: task.jobKey,
-                    message: normalizedAnalysis?.message || '卡池资产枯竭'
-                });
-            } else if (finalStatus === 'failed' || finalStatus === 'manual') {
-                notifyTaskOutcome({
-                    event: 'failure',
-                    email: accountEmail,
-                    cdk,
-                    jobKey: task.jobKey,
-                    message: normalizedAnalysis?.message || '激活失败'
-                });
-            }
-
-            if (finalStatus === 'success') {
-                logTask(task.jobKey, `CDK ${cdk} 已成功核销`);
-            } else if (shouldRollbackCdk && finalPaymentState !== 'unknown') {
-                await store.markCdkUnused(cdk);
-                logTask(task.jobKey, `CDK ${cdk} 已回滚为未使用`);
-                await store.releaseCardsByOwner(task.jobKey).catch(() => {});
-            } else if (shouldRetainCdk({ paymentState: finalPaymentState })) {
-                logTask(task.jobKey, `CDK ${cdk} 保留，等待人工核对支付结果`, 'warn');
-            }
-
             if (isNoActivationEligibilityMessage(normalizedAnalysis?.message)) {
                 const cdkCooledDown = await store.recordCdkFailure(cdk);
                 const ipCooledDown = clientIp
@@ -4309,55 +4123,176 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     const cooldownParts = [];
                     if (cdkCooledDown) {
                         cooldownParts.push('该 CDK 已冷却 10 分钟');
-                        logTask(task.jobKey, `CDK ${cdk} 因连续无资格提交进入 10 分钟冷却`, 'warn');
+                        logTask(task.jobKey, `CDK [REDACTED] 因连续无资格提交进入 10 分钟冷却`, 'warn');
                     }
                     if (ipCooledDown) {
                         cooldownParts.push(`IP ${clientIp} 已冷却 10 分钟`);
                         logTask(task.jobKey, `IP ${clientIp} 因连续无资格提交进入 10 分钟冷却`, 'warn');
                     }
                     const cooldownMessage = `${normalizedAnalysis?.message || '该账号无激活权限,请更换账号重试'}（${cooldownParts.join('，')}）`;
-                    await store.updateTaskLog(task.jobKey, {
-                        status: finalStatus,
-                        message: cooldownMessage,
-                        rawOutput,
-                        cdkCode: cdk,
-                        progress: finalProgress
-                    });
-                    broadcastToTask(task.jobKey, {
-                        type: 'status',
-                        jobKey: task.jobKey,
-                        status: finalStatus,
-                        message: cooldownMessage,
-                        cdkCode: cdk,
-                        progress: finalProgress
-                    });
+                    finalMessage = cooldownMessage;
                 }
             }
+            // Payment completion and auto-renew confirmation are separate
+            // decisions. Persist a recoverable pending result before making
+            // the external cancellation request; a crash or failed annotation
+            // must not leave an unverified task advertised as successful.
+            const autoRenewPending = finalStatus === 'success' && finalPaymentState === 'succeeded'
+                && task.executionMode === 'local_card_pool' && !persistenceUncertain;
+            if (autoRenewPending) {
+                finalStatus = 'manual';
+                finalMessage = '充值已完成，正在核实自动续费状态，请勿重复充值';
+            } else if (['started', 'unknown'].includes(finalPaymentState)) {
+                finalMessage = '支付结果未确认，已保留 CDK 与银行卡，需人工复核，请勿重复充值';
+            }
+            const settlement = await persistLocal({
+                status: finalStatus,
+                message: finalMessage,
+                rawOutput,
+                cdkCode: cdk,
+                progress: finalProgress,
+                failureScreenshots,
+                paymentState: finalPaymentState || 'not_started',
+                recoveryRequired: autoRenewPending || ['started', 'unknown'].includes(normalizePaymentState(finalPaymentState)),
+                ...(autoRenewPending ? { autoRenewStatus: 'pending', autoRenewMessage: finalMessage } : {})
+            }, { finalize: true });
+            finalStatus = settlement.status;
+            finalPaymentState = settlement.paymentState;
+            finalMessage = settlement.message || finalMessage;
+
+            broadcastToTask(task.jobKey, {
+                type: 'status',
+                jobKey: task.jobKey,
+                status: finalStatus,
+                message: finalMessage,
+                paymentState: finalPaymentState,
+                recoveryRequired: settlement.recoveryRequired,
+                cdkCode: cdk,
+                progress: finalProgress,
+                screenshots: taskMedia.screenshots,
+                videos: taskMedia.videos
+            });
+
+            logTask(
+                task.jobKey,
+                `任务结算 status=${finalStatus} progress=${finalProgress} message=${finalMessage || ''}`
+            );
+
+            if (autoRenewPending && !persistenceUncertain && finalPaymentState === 'succeeded') {
+                let autoRenewResult;
+                try {
+                    const workerAutoRenew = extractAutoRenewResultFromOutput(rawOutput);
+                    if (workerAutoRenew) {
+                        autoRenewResult = workerAutoRenew;
+                    } else if (platform === 'chatgpt') {
+                        autoRenewResult = await cancelAutoRenew(token, {
+                            email: accountEmail,
+                            timezoneOffsetMin: -new Date().getTimezoneOffset(),
+                            proxy: lastUsedProxy
+                        });
+                    } else {
+                        autoRenewResult = {
+                            ok: false,
+                            data: { verificationUnknown: true },
+                            error: `${platform} 充值已完成，自动续费状态需人工核实`
+                        };
+                    }
+                } catch (error) {
+                    autoRenewResult = {
+                        ok: false,
+                        error: `取消自动续费请求异常：${redactSensitiveText(error.message)}`,
+                        data: { verificationUnknown: true }
+                    };
+                }
+                const autoRenewData = autoRenewResult.data || {};
+                const autoRenewClass = classifyAutoRenewCancellation(autoRenewResult);
+                const autoRenewStatus = autoRenewClass === 'already_disabled' ? 'disabled'
+                    : (autoRenewClass === 'verification_unknown' ? 'verification_unknown' : 'failed');
+                const autoRenewConfirmed = autoRenewStatus === 'disabled';
+                const autoRenewMessage = autoRenewConfirmed
+                    ? '充值完成，自动续费已确认关闭'
+                    : (autoRenewData.message || autoRenewResult.error || '充值成功，但自动续费关闭状态未确认，请人工复核');
+                const renewal = await persistLocal({
+                    status: autoRenewConfirmed ? 'success' : 'manual',
+                    message: autoRenewConfirmed ? '激活成功' : '充值已完成，但自动续费关闭状态未确认，请联系客服人工复核',
+                    autoRenewStatus,
+                    autoRenewMessage,
+                    paymentState: 'succeeded',
+                    recoveryRequired: !autoRenewConfirmed
+                }, { annotate: true });
+                finalStatus = renewal.status;
+                finalPaymentState = renewal.paymentState;
+                finalMessage = renewal.message;
+                broadcastToTask(task.jobKey, { type: 'status', jobKey: task.jobKey, cdkCode: cdk,
+                    status: finalStatus, message: finalMessage, paymentState: finalPaymentState,
+                    recoveryRequired: renewal.recoveryRequired, progress: finalProgress });
+                logTask(task.jobKey, `自动续费处理结果=${autoRenewStatus}`, autoRenewConfirmed ? 'info' : 'warn');
+            }
+            if (finalStatus === 'success') {
+                await store.resetCdkFailure(cdk);
+                if (clientIp) {
+                    await store.resetActivationAttemptFailure('ip', clientIp);
+                }
+                notifyTaskOutcome({
+                    event: 'success',
+                    email: accountEmail,
+                    cdk,
+                    jobKey: task.jobKey,
+                    message: finalMessage || '激活成功'
+                });
+            } else if (finalStatus === 'failed' && isCardPoolExhaustedIssue(rawOutput, normalizedAnalysis)) {
+                notifyTaskOutcome({
+                    event: 'card_pool_empty',
+                    email: accountEmail,
+                    cdk,
+                    jobKey: task.jobKey,
+                    message: finalMessage || '卡池资产枯竭'
+                });
+            } else if (finalStatus === 'failed' || finalStatus === 'manual') {
+                notifyTaskOutcome({
+                    event: 'failure',
+                    email: accountEmail,
+                    cdk,
+                    jobKey: task.jobKey,
+                    message: finalMessage || (finalStatus === 'manual' ? '需人工复核，请勿重复充值' : '激活失败')
+                });
+            }
+
+            if (finalStatus === 'success') {
+                logTask(task.jobKey, `CDK [REDACTED] 已成功核销`);
+            } else if (settlement.released) {
+                logTask(task.jobKey, `CDK [REDACTED] 已回滚为未使用`);
+                await store.releaseCardsByOwner(task.jobKey).catch(() => {});
+            } else if (shouldRetainCdk({ paymentState: finalPaymentState })) {
+                logTask(task.jobKey, `CDK [REDACTED] 保留，等待人工核对支付结果`, 'warn');
+            }
+
         } catch (bgError) {
             logTask(task.jobKey, `后台任务异常: ${redactSensitiveText(bgError.message)}`, 'error');
-            let retainCdk = !shouldRollbackCdk || shouldRetainCdk({ paymentState: observedPaymentState });
-            try {
-                const latestTask = await store.getTaskStatus(task.jobKey);
-                retainCdk = retainCdk || (latestTask && shouldRetainCdk({ paymentState: latestTask.payment_state }))
-                    || Boolean(latestTask?.recovery_required);
-            } catch (_) { retainCdk = true; }
+            // A refused/finished task belongs to another decision already. An
+            // uncertain write can only be retried through the same guarded
+            // transaction, with assets retained and no speculative notification.
+            if (settlementClosed) return;
+            const retainCdk = persistenceUncertain || shouldRetainCdk({ paymentState: observedPaymentState });
             const status = retainCdk ? 'manual' : 'failed';
-            const paymentState = retainCdk && observedPaymentState === 'not_started' ? 'unknown' : observedPaymentState;
-            const message = retainCdk ? '支付结果未确认，已保留 CDK 与银行卡，需人工复核' : bgError.message;
+            const paymentState = persistenceUncertain ? mergePaymentState(observedPaymentState, 'unknown') : observedPaymentState;
+            const message = retainCdk ? '支付结果未确认，已保留 CDK 与银行卡，需人工复核' : '任务执行异常，请稍后重试或联系客服';
             const update = { status, message, rawOutput: redactSensitiveText(bgError.message), cdkCode: cdk,
                 paymentState, recoveryRequired: retainCdk, progress: normalizeTaskProgress(lastProgress, status, lastProgress) };
+            let settlement;
             await reportTaskFailure({
-                persist: () => store.updateTaskLog(task.jobKey, update),
+                persist: async () => { settlement = await persistLocal(update, { finalize: true }); },
                 report: () => {
-                    broadcastToTask(task.jobKey, { ...update, type: 'status', jobKey: task.jobKey });
-                    notifyTaskOutcome({ event: 'failure', email: accountEmail, cdk, jobKey: task.jobKey, message });
+                    if (!settlement?.applied) return;
+                    const saved = { ...update, status: settlement.status, message: settlement.message || message,
+                        paymentState: settlement.paymentState, recoveryRequired: settlement.recoveryRequired };
+                    broadcastToTask(task.jobKey, { ...saved, type: 'status', jobKey: task.jobKey });
+                    notifyTaskOutcome({ event: 'failure', email: accountEmail, cdk, jobKey: task.jobKey, message: saved.message });
                 },
                 cleanup: async () => {
-                    if (!retainCdk) {
-                        await store.markCdkUnused(cdk);
-                        logTask(task.jobKey, `CDK ${cdk} 已回滚为未使用`);
-                    } else {
-                        logTask(task.jobKey, `CDK ${cdk} 保留，等待人工复核`, 'warn');
+                    if (settlement?.released) {
+                        logTask(task.jobKey, 'CDK [REDACTED] 已在任务结算事务中归还');
+                        await store.releaseCardsByOwner(task.jobKey);
                     }
                 },
                 onSecondaryError: (stage, error) => logTask(task.jobKey,
@@ -4379,18 +4314,20 @@ async function handleActivationRequest(req, res) {
     const rawSession = String(req.body?.session || req.body?.token || '').trim();
     const cdk = String(req.body?.cdk || '').trim();
     const clientIp = getClientIp(req);
-    console.log(`[Activation] 收到开通请求 path=${req.path} cdk=${cdk}`);
+    console.log(`[Activation] 收到开通请求 path=${req.path} cdk=[REDACTED]`);
     if (!rawSession) {
         return res.status(400).json({ success: false, message: '缺少登录凭证或 Session' });
     }
     if (!cdk) {
         return res.status(400).json({ success: false, message: '缺少 CDK' });
     }
-    let ownsCdkLock = false;
     let workerDispatched = false;
+    let capacityReservation = '';
+    let taskSlot = '';
+    let createdTaskKey = '';
     let activationStage = 'request_received';
     const rejectActivation = (statusCode, code, message) => {
-        logTask('', `充值请求未启动 stage=${activationStage} code=${code} cdk=${cdk}`, 'warn');
+        logTask('', `充值请求未启动 stage=${activationStage} code=${code} cdk=[REDACTED]`, 'warn');
         return res.status(statusCode).json({ success: false, message });
     };
     try {
@@ -4407,6 +4344,9 @@ async function handleActivationRequest(req, res) {
             return rejectActivation(429, 'CONCURRENCY_LIMIT', '当前任务过多，请稍后再试');
         }
 
+        capacityReservation = `admission:${crypto.randomUUID()}`;
+        reserveForegroundSlot(capacityReservation);
+
         activationStage = 'cdk_lookup';
         const cdkDetails = await store.verifyCdkDetails(cdk);
         const runningTask = cdkDetails ? await store.getRunningTaskByCdk(cdk) : null;
@@ -4414,6 +4354,7 @@ async function handleActivationRequest(req, res) {
             return res.json({
                 success: true,
                 jobKey: runningTask.job_key,
+                taskAccessToken: issueTaskAccessToken(runningTask.job_key),
                 message: '该 CDK 正在开通中，已为您恢复等待进度'
             });
         }
@@ -4502,73 +4443,97 @@ async function handleActivationRequest(req, res) {
             }
         }
 
-        activationStage = 'cdk_lock';
-        const lockSuccess = await store.markCdkUsed(cdk);
-        if (!lockSuccess) {
-            return rejectActivation(403, 'CDK_LOCK_UNAVAILABLE', 'CDK 不可用或正在被他人使用');
-        }
-        ownsCdkLock = true;
-
-        activationStage = 'task_create';
-        const task = await store.createTaskLog({
+        activationStage = 'task_admission';
+        const task = await store.createActivationTask({
+            expectedCdk: { platform: cdkDetails.platform, plan_type: cdkDetails.plan_type, payment_region: cdkDetails.payment_region },
             tokenPreview,
             sessionPayload: storedSession,
             cdkCode: cdk,
             phone: null,
             cardLast4: null,
-            status: 'running',
             progress: 8,
             executionMode
         });
+        if (!task.created) {
+            return res.json({
+                success: true, jobKey: task.jobKey, taskAccessToken: issueTaskAccessToken(task.jobKey),
+                message: '该 CDK 正在开通中，已为您恢复等待进度'
+            });
+        }
+        createdTaskKey = task.jobKey;
         Object.assign(task, { executionMode, tokenPreview, platform, planType });
 
-        logTask(task.jobKey, `任务已创建，CDK=${cdk} mode=${executionMode}`);
-        reserveForegroundSlot(task.jobKey);
+        logTask(task.jobKey, `任务已创建，CDK=[REDACTED] mode=${executionMode}`);
+        taskSlot = task.jobKey;
+        reserveForegroundSlot(taskSlot);
+        releaseForegroundSlot(capacityReservation);
+        capacityReservation = '';
 
         activationStage = 'worker_dispatch';
+        const providerSession = useGptApi ? JSON.parse(storedSession) : null;
+        // Crossing the dispatch boundary is enough to make the outcome uncertain.
+        // A synchronous throw must not release a CDK a worker may already own.
+        workerDispatched = true;
         if (useGptApi) {
-            runGptApiWorker({ task, token, session: JSON.parse(storedSession), cdk, planType }).catch((error) => {
+            runGptApiWorker({ task, token, session: providerSession, cdk, planType }).catch((error) => {
                 console.error(`[GPT API Worker] ${task.jobKey}:`, error);
             });
         } else {
             spawnActivationWorker({ task, token, sessionRaw: storedSession, cdk, cdkDetails, clientIp, sessionCooldownScopeKey });
         }
-        workerDispatched = true;
 
         return res.json({
             success: true,
             jobKey: task.jobKey,
+            taskAccessToken: issueTaskAccessToken(task.jobKey),
             message: '任务已启动，正在为您开通中...'
         });
     } catch (error) {
-        if (ownsCdkLock && !workerDispatched) {
-            try { await store.markCdkUnused(cdk); } catch (_) { }
+        if (createdTaskKey && !workerDispatched) {
+            try {
+                const cleanup = await store.retireSafeActivationTask(createdTaskKey);
+                if (!cleanup.released) logTask(createdTaskKey, '未启动任务未能安全返卡，CDK 保留待复核', 'warn');
+            } catch (cleanupError) {
+                // Includes unknown COMMIT outcomes: never fall back to an unscoped unlock.
+                logTask(createdTaskKey, `未启动任务收尾失败，CDK 保留待复核: ${redactSensitiveText(cleanupError.message)}`, 'error');
+            }
         }
         const safeError = redactSensitiveText(error.message);
         logTask('', `启动充值失败 stage=${activationStage} code=${redactSensitiveText(error.code || 'UNSPECIFIED')}: ${safeError}`, 'error');
         return res.status(error.statusCode || 500).json({ success: false,
             message: formatTaskErrorMessage('failed', safeError) });
+    } finally {
+        if (capacityReservation) releaseForegroundSlot(capacityReservation);
+        if (taskSlot && !workerDispatched) releaseForegroundSlot(taskSlot);
     }
 }
 
 app.post('/api/run-process', handleActivationRequest);
 
-app.post('/api/admin/trigger-activation', handleActivationRequest);
+app.post('/api/admin/trigger-activation', requireSecondaryAuth, handleActivationRequest);
 
-app.post('/api/public/task/:jobKey/captcha-drag', async (req, res) => {
-    const jobKey = decodeURIComponent(String(req.params.jobKey || '').trim());
-    try {
-        if (await isCheckoutDiagnosticJob(jobKey)) return res.status(403).json({ success: false, message: '诊断任务需管理员二级验证' });
-    } catch (_) { return res.status(503).json({ success: false, message: '验证通道暂时不可用' }); }
-    const body = req.body || {};
-    const fromRatioX = Number(body.fromRatioX ?? body.startRatioX ?? 0);
-    const fromRatioY = Number(body.fromRatioY ?? body.startRatioY ?? 0);
-    const toRatioX = Number(body.toRatioX ?? body.endRatioX ?? 0);
-    const toRatioY = Number(body.toRatioY ?? body.endRatioY ?? 0);
-    const frameSeq = body.frameSeq;
-    const handled = notifyCaptchaDrag(jobKey, { fromRatioX, fromRatioY, toRatioX, toRatioY, frameSeq });
-    return res.json({ success: true, handled });
-});
+function publicCaptchaHandler(kind) {
+    return async (req, res) => {
+        const jobKey = String(req.params.jobKey || '').trim();
+        const body = req.body || {};
+        if (!verifyTaskAccessToken(jobKey, body.taskAccessToken)) {
+            return res.status(403).json({ success: false, message: '任务访问凭证无效或已过期，请重新验证卡密' });
+        }
+        try {
+            if (await isCheckoutDiagnosticJob(jobKey)) return res.status(403).json({ success: false, message: '诊断任务需管理员二级验证' });
+        } catch (_) { return res.status(503).json({ success: false, message: '验证通道暂时不可用' }); }
+        // The diagnostic lookup may outlive the capability. Recheck at use.
+        if (!verifyTaskAccessToken(jobKey, body.taskAccessToken)) {
+            return res.status(403).json({ success: false, message: '任务访问凭证无效或已过期，请重新验证卡密' });
+        }
+        const handled = kind === 'drag' ? notifyCaptchaDrag(jobKey, { ...body,
+            fromRatioX: body.fromRatioX ?? body.startRatioX, fromRatioY: body.fromRatioY ?? body.startRatioY,
+            toRatioX: body.toRatioX ?? body.endRatioX, toRatioY: body.toRatioY ?? body.endRatioY
+        }) : notifyCaptchaClick(jobKey, body);
+        return res.json({ success: true, handled });
+    };
+}
+app.post('/api/public/task/:jobKey/captcha-drag', publicCaptchaHandler('drag'));
 
 app.post('/api/public/probe-account', async (req, res) => {
     try {
@@ -4703,6 +4668,7 @@ app.post('/api/verify-cdk', async (req, res) => {
                     is_bound_region: Boolean(cdkData.payment_region),
                     status: 'processing',
                     jobKey: runningTask.job_key,
+                taskAccessToken: issueTaskAccessToken(runningTask.job_key),
                     message: runningTask.message || '当前 CDK 正在开通中'
                 }
             });
@@ -4753,8 +4719,9 @@ app.post('/api/verify-cdk', async (req, res) => {
     }
 });
 
-app.get('/api/cdk/query', async (req, res) => {
-    const cdk = String(req.query.cdk || '').trim();
+app.get('/api/cdk/query', (req, res) => res.status(405).json({ success: false, message: '请使用 POST 查询' }));
+app.post('/api/cdk/query', async (req, res) => {
+    const cdk = String(req.body?.cdk || '').trim();
     if (!cdk) {
         return res.status(400).json({ success: false, message: '请输入查询激活码' });
     }
@@ -4778,6 +4745,7 @@ app.get('/api/cdk/query', async (req, res) => {
                 type: cdkData.type || '自助',
                 createdAt: cdkData.created_at,
                 jobKey: runningTask?.job_key || null,
+                taskAccessToken: runningTask ? issueTaskAccessToken(runningTask.job_key) : null,
                 usedAt: cdkData.used_at
                     ? new Date(cdkData.used_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
                     : null
@@ -4823,17 +4791,22 @@ async function start() {
             if (await recoverInterruptedCheckoutDiagnostic(staleTask)) continue;
             if (staleTask.execution_mode === 'third_party_api' || staleTask.gpt_api_order_id || staleTask.gpt_api_task_id) continue;
             const decision = classifyInterruptedTask(staleTask);
+            if (!decision.retainCdk && staleTask.cdk_code) {
+                const cleanup = await store.retireSafeActivationTask(staleTask.job_key, {
+                    allowDeclined: true, message: '服务重启导致任务中断，未提交支付，任务已安全结束'
+                });
+                if (cleanup.released) continue;
+                // A newer owner or newer payment evidence invalidates the startup snapshot.
+                // Keep the current row and CDK intact for review instead of overwriting them.
+                logTask(staleTask.job_key, '启动恢复未能确认安全返卡，保留任务及 CDK 待复核', 'warn');
+                continue;
+            }
             await store.updateTaskLog(staleTask.job_key, {
                 status: decision.status,
-                message: decision.retainCdk
-                    ? '服务重启导致任务中断，支付状态未确认，已保留 CDK 并转人工复核'
-                    : '服务重启导致任务中断，未提交支付，任务已安全结束',
+                message: '服务重启导致任务中断，支付状态未确认，已保留 CDK 并转人工复核',
                 paymentState: decision.paymentState,
-                recoveryRequired: decision.retainCdk
+                recoveryRequired: true
             });
-            if (!decision.retainCdk && staleTask.cdk_code) {
-                await store.markCdkUnused(staleTask.cdk_code);
-            }
         }
         await store.resetAllAssetLocks();
         console.log(`🔐 [任务恢复] 已处理 ${staleTasks.length} 条遗留任务，并安全清理可回收资产锁`);
@@ -4875,13 +4848,15 @@ async function start() {
     });
 
     // WebSocket Server Setup
-    const wss = new WebSocket.Server({ server });
+    const wss = new WebSocket.Server({ server, maxPayload: 64 * 1024 });
     wss.on('connection', (ws) => {
         let currentJobKey = null;
+        let subscriptionVersion = 0;
 
         ws.on('message', async (message) => {
             try {
                 const data = JSON.parse(message);
+                if (!data || typeof data !== 'object' || Array.isArray(data)) return;
                 if (data.type === WS_HEARTBEAT_PING_TYPE) {
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
@@ -4891,21 +4866,32 @@ async function start() {
                     }
                     return;
                 }
-                if (data.type === 'subscribe' && data.jobKey) {
+                if (data.type === 'subscribe') {
+                    const version = ++subscriptionVersion;
+                    unsubscribeTaskClient(currentJobKey, ws);
+                    currentJobKey = null;
+                    ws.taskAccess = null;
+                    if (!verifyTaskAccessToken(data.jobKey, data.taskAccessToken)) {
+                        unsubscribeTaskClient(currentJobKey, ws);
+                        currentJobKey = null;
+                        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', message: '任务访问凭证无效或已过期，请重新验证卡密' }));
+                        return;
+                    }
                     if (await isCheckoutDiagnosticJob(data.jobKey)) {
                         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', message: '诊断任务需管理员二级验证' }));
                         return;
                     }
-                    if (currentJobKey && currentJobKey !== data.jobKey) {
-                        unsubscribeTaskClient(currentJobKey, ws);
-                    }
+                    if (version !== subscriptionVersion || ws.readyState !== WebSocket.OPEN
+                        || !verifyTaskAccessToken(data.jobKey, data.taskAccessToken)) return;
                     currentJobKey = data.jobKey;
+                    const access = ws.taskAccess = { jobKey: data.jobKey, token: data.taskAccessToken };
                     if (!taskClients.has(currentJobKey)) {
                         taskClients.set(currentJobKey, new Set());
                     }
                     taskClients.get(currentJobKey).add(ws);
                     console.log(`Client subscribed to task: ${currentJobKey}`);
                     await sendTaskSnapshot(ws, currentJobKey);
+                    if (ws.taskAccess !== access || !verifyTaskAccessToken(data.jobKey, access.token)) return;
 
                     // 若该任务当前有人机验证等待，立即向订阅者推送验证画面
                     const captchaState = interactiveCaptchaMap.get(currentJobKey);
@@ -4929,7 +4915,15 @@ async function start() {
                     return;
                 }
                 if (data.type === 'captcha_click' && data.jobKey) {
+                    const version = subscriptionVersion;
+                    const access = ws.taskAccess;
+                    if (currentJobKey !== data.jobKey || access?.jobKey !== data.jobKey
+                        || access.token !== data.taskAccessToken
+                        || !verifyTaskAccessToken(data.jobKey, data.taskAccessToken)) return;
                     if (await isCheckoutDiagnosticJob(data.jobKey)) return;
+                    if (version !== subscriptionVersion || currentJobKey !== data.jobKey
+                        || ws.taskAccess !== access || ws.readyState !== WebSocket.OPEN
+                        || !verifyTaskAccessToken(data.jobKey, access.token)) return;
                     const handled = notifyCaptchaClick(data.jobKey, {
                         ratioX: data.ratioX,
                         ratioY: data.ratioY,
@@ -4954,7 +4948,15 @@ async function start() {
                     return;
                 }
                 if (data.type === 'captcha_drag' && data.jobKey) {
+                    const version = subscriptionVersion;
+                    const access = ws.taskAccess;
+                    if (currentJobKey !== data.jobKey || access?.jobKey !== data.jobKey
+                        || access.token !== data.taskAccessToken
+                        || !verifyTaskAccessToken(data.jobKey, data.taskAccessToken)) return;
                     if (await isCheckoutDiagnosticJob(data.jobKey)) return;
+                    if (version !== subscriptionVersion || currentJobKey !== data.jobKey
+                        || ws.taskAccess !== access || ws.readyState !== WebSocket.OPEN
+                        || !verifyTaskAccessToken(data.jobKey, access.token)) return;
                     const handled = notifyCaptchaDrag(data.jobKey, {
                         fromRatioX: data.fromRatioX ?? data.startRatioX,
                         fromRatioY: data.fromRatioY ?? data.startRatioY,
@@ -4978,6 +4980,8 @@ async function start() {
         });
 
         ws.on('close', () => {
+            subscriptionVersion += 1;
+            ws.taskAccess = null;
             unsubscribeTaskClient(currentJobKey, ws);
         });
     });

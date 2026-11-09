@@ -1,0 +1,26 @@
+{
+  "tracked_worktree_check": {
+    "command": [
+      "git",
+      "diff",
+      "--check",
+      "--",
+      "services/kc-pay-gpt/mysql-store.js",
+      "services/kc-pay-gpt/payment-retry.js",
+      "services/kc-pay-gpt/stripe-protocol-payment.js",
+      "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "services/kc-pay-gpt/test/card-freeze.test.js",
+      "services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+      "tests/security-round5-kc-owner-locks.test.js",
+      "tests/security-round6-kc-card-ownership.test.js",
+      "tests/security-round7-kc-payment-hold.test.js"
+    ],
+    "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "boundary": "git diff --check excludes untracked files. Delta roundtrip separately verifies all eleven paths including untracked tests; no empty-tree git apply result is treated as evidence."
+}

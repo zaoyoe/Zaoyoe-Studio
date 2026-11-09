@@ -1,0 +1,150 @@
+{
+  "round": "11",
+  "stage": "phase-B steps 2-3",
+  "base_head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "origin_main_behind_count": 0,
+  "sql_executed": false,
+  "deployment_started": false,
+  "ledger_live_wired": false,
+  "asset_guard_default": "off",
+  "files": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "bytes": 204380,
+      "sha256": "583269cf6677c437058f48b9b3141a9f86e7ffc92605134e26248a6e0d97cd2e"
+    },
+    {
+      "path": "services/kc-pay-gpt/server.js",
+      "bytes": 221749,
+      "sha256": "7ae55b916a33bd7eb56560e681978118bdcb9fc621f5a65859b3edc04833c5d6"
+    },
+    {
+      "path": "services/kc-pay-gpt/lib/payment-attempt-ledger.js",
+      "bytes": 15378,
+      "sha256": "88ed10c5a3fc51dbae36c50831b56476bd259d430b333ee9b8f64cc2ba9dcb55"
+    },
+    {
+      "path": "services/kc-pay-gpt/lib/payment-attempt-settlement.js",
+      "bytes": 14435,
+      "sha256": "0a0d205205fdc1efb8490f82475bb551830ad9fb9637a6c29cebb272185c8669"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/payment-attempt-ledger/20261109-settlement-DRAFT.sql",
+      "bytes": 2155,
+      "sha256": "5240ca9e508f9875fbc1206592cdc3114cddfcfb5adeaaf21e0dc73cda9fb70a"
+    },
+    {
+      "path": "tests/security-round11-kc-atomic-settlement.test.js",
+      "bytes": 19552,
+      "sha256": "f8a538548ed819722d072ec5251fc0bec427c8f9a38b4faad5a9a03b67ba56ad"
+    },
+    {
+      "path": "tests/security-round11-kc-asset-fence.test.js",
+      "bytes": 12459,
+      "sha256": "cae65ec22e59873d3acd27971d308df4637dffbe2821d7605c94f129758be890"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/payment-attempt-ledger/20261109-migration-preflight-READONLY.sql",
+      "bytes": 4054,
+      "sha256": "cfa445c5b4260f461c35b03c45c620d5f4d86e2ee9ced95f005fb10ac2aeb432"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/payment-attempt-ledger/20261109-payment-attempt-ledger-CANDIDATE-DRAFT.sql",
+      "bytes": 6551,
+      "sha256": "72cd874f208053144b333684cfa88ca031c8de9c2af4335e0abee9fc803e9bd2"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round11-settlement/migration-preflight-review.md",
+      "bytes": 8429,
+      "sha256": "ac4fd190722b942dd032182840f0f8ee798f1c4f1b433bb429125bb37ffc926e"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round11-settlement/kc-mysql-preflight-20261109-v4.tsv",
+      "bytes": 3757,
+      "sha256": "062ab28cc75b683cb4182fbd9236407e289e81017984afbfb602c0cdf55c16d0"
+    },
+    {
+      "path": "tests/security-round12-kc-migration-readiness.test.js",
+      "bytes": 3102,
+      "sha256": "79d80bd841a729b7094bbf4205ae6244e08a2b410d9b64e3968950b3078ed753"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round11-settlement/round12-migration-readiness.tap",
+      "bytes": 435,
+      "sha256": "708abcc6015b2bcd07c14c74bf2098ff4e8f61e3876f90fdccd7bf15cf310c5f"
+    },
+    {
+      "path": "docs/security-card-store-hardening-round11-2026-11-09.md",
+      "bytes": 5296,
+      "sha256": "af782c79edeed3b3d1efc67ae75dfb0d22baec7e0debb9669b5a089dc89ab4bf"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round11-settlement/round12-local-mysql84-compatibility.txt",
+      "bytes": 723,
+      "sha256": "802b4dd94ca71d3d584b95a6735c5be48ad4b98e5950f71e272580d9335bdfeb"
+    }
+  ],
+  "evidence": [
+    {
+      "log": "final-round11-all.tap",
+      "result": "649 PASS / 0 FAIL",
+      "command": "guarded node --test: round11 settlement + asset fence + rounds 6-8,10"
+    },
+    {
+      "log": "card-freeze-vitest.tap",
+      "result": "5 PASS / 0 FAIL",
+      "command": "guarded Vitest card-freeze contract"
+    },
+    {
+      "log": "round11-fence.tap",
+      "result": "79 PASS / 2 FAIL",
+      "status": "historical superseded; model omissions fixed in v3"
+    },
+    {
+      "log": "round11-fence-v2.tap",
+      "result": "80 PASS / 1 FAIL",
+      "status": "historical superseded; assertion range fixed in v3"
+    },
+    {
+      "log": "round11-fence-v3.tap",
+      "result": "80 PASS / 0 FAIL",
+      "status": "superseded by final combined run"
+    },
+    {
+      "log": "round11-settlement-v3.tap",
+      "result": "568 PASS / 0 FAIL",
+      "status": "superseded by final combined run"
+    },
+    {
+      "log": "round12-migration-readiness.tap",
+      "result": "4 PASS / 0 FAIL",
+      "command": "node --test tests/security-round12-kc-migration-readiness.test.js",
+      "status": "review-only migration evidence"
+    },
+    {
+      "log": "round12-local-mysql84-compatibility.txt",
+      "result": "PASS (MySQL 8.4.11 compatibility only)",
+      "command": "temporary local MySQL schema with synthetic fixtures; candidate DDL; cleanup verification",
+      "status": "does not replace required isolated MySQL 8.0.46 evidence"
+    }
+  ],
+  "live_preflight": {
+    "target": "KVM4 kc-pay-gpt-mysql",
+    "mysql_version": "8.0.46",
+    "database": "plus_papay",
+    "container_status": "healthy",
+    "result": "read-only success; no migration DDL executed",
+    "evidence": "kc-mysql-preflight-20261109-v4.tsv",
+    "sha256": "062ab28cc75b683cb4182fbd9236407e289e81017984afbfb602c0cdf55c16d0"
+  },
+  "follow_up": {
+    "status": "REVIEW",
+    "sql_executed": false,
+    "deployment_started": false,
+    "migration_candidate": "services/kc-pay-gpt/acceptance/payment-attempt-ledger/20261109-payment-attempt-ledger-CANDIDATE-DRAFT.sql",
+    "migration_candidate_sha256": "72cd874f208053144b333684cfa88ca031c8de9c2af4335e0abee9fc803e9bd2",
+    "next_gate": "isolated MySQL 8.0.46 real DDL, checkpoint rerun, index/CHECK/FK and interruption recovery verification",
+    "asset_guard": "off",
+    "live_ledger_wired": false
+  }
+}

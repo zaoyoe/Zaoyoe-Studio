@@ -1,0 +1,97 @@
+
+ RUN  v4.1.9 /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt
+
+stdout | test/chatgpt-billing.test.js > checkout API rejection handling > stops an expired token in api mode without navigating or UI fallback
+🧭 [步骤] 正在通过 API 创建 Checkout (country=US, currency=USD, plan=go)...
+⚡ [Sentinel] 前置令牌未命中，正在快速补签风控令牌 (≤4s)...
+
+stderr | test/chatgpt-billing.test.js > checkout API rejection handling > stops an expired token in api mode without navigating or UI fallback
+⚠️ [Sentinel] 快速补签跳过 (尝试原生发包): Sentinel 求解失败: proto2: Error: reqfail:{"e":"fetch failed","p":"gAAAAACWzMwMDAsIlN1biBOb3YgMDggMjAyNiAwOTozMjozNSBHTVQtMDUwMCAoQW1lcmljYS9OZXdfWW9yaykiLDQyOTQ3MDUxNTIsMiwiTW96aWxsYS81LjAgKE1hY2ludG9zaDsgSW50ZWwgTWFjIE9TIFggMTBfMTVfNykgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzEzMy4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiaHR0cHM6Ly9jaGF0Z3B0LmNvbS9zZW50aW5lbC8yMDI2MDgxMDkxM2Ivc2RrLmpzIixudWxsLCJlbi1VUyIsImVuLVVTLGVuLVVTLGVuIiw0MCwicmVxdWVzdE1JRElBY2Nlc3PiiJJmdW5jdGlvbiByZXF1ZXN0TUlESUFjY2VzcygpIHsgW25hdGl2ZSBjb2RlXSB9IiwidGl0bGUiLCJfX29haV9zb19zeDAiLDQyLjk5MzI4MTc4MzY5NzM4NCwiZGU4Y2YxZGYtNTBjOS00NjQyLWJiMDEtOTcwZGU3NjkxNDQ3IiwiIiw4LDE3OTQxNDgzNTU1NTQsMCwwLDAsMCwwLDAsMF0=~S","a":2,"flow":"chatgpt_checkout"}
+    at t.__proto2 (sentinel_sdk.js:6:36)
+    at async handleRequest (/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/sentinel/sentinel_bridge.js:534:17)
+    at async runOnce (/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/sentinel/sentinel_bridge.js:598:15)
+
+stdout | test/chatgpt-billing.test.js > checkout API rejection handling > stops an expired token in api mode without navigating or UI fallback
+⚡ [Sentinel] ✅ 风控令牌签发成功，已注入 Checkout 请求头
+[ChatGPT] 创建 Checkout Session: plan_name=chatgptgoplan, country=US, currency=USD, checkout_ui_mode=custom
+
+stderr | test/chatgpt-billing.test.js > checkout API rejection handling > stops an expired token in api mode without navigating or UI fallback
+[-] 订单创建失败 (Status: 401)
+    响应: token_expired; Your authentication token has expired.
+
+stdout | test/chatgpt-billing.test.js > checkout API rejection handling > stops an expired token in auto mode without navigating or UI fallback
+🧭 [步骤] 正在通过 API 创建 Checkout (country=US, currency=USD, plan=go)...
+⚡ [Sentinel] 前置令牌未命中，正在快速补签风控令牌 (≤4s)...
+
+stderr | test/chatgpt-billing.test.js > checkout API rejection handling > stops an expired token in auto mode without navigating or UI fallback
+⚠️ [Sentinel] 快速补签跳过 (尝试原生发包): Sentinel 求解失败: proto2: Error: reqfail:{"e":"fetch failed","p":"gAAAAACWzMwMDAsIlN1biBOb3YgMDggMjAyNiAwOTozMjozNSBHTVQtMDUwMCAoQW1lcmljYS9OZXdfWW9yaykiLDQyOTQ3MDUxNTIsMTUsIk1vemlsbGEvNS4wIChNYWNpbnRvc2g7IEludGVsIE1hYyBPUyBYIDEwXzE1XzcpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIENocm9tZS8xMzMuMC4wLjAgU2FmYXJpLzUzNy4zNiIsImh0dHBzOi8vY2hhdGdwdC5jb20vc2VudGluZWwvMjAyNjA4MTA5MTNiL3Nkay5qcyIsbnVsbCwiZW4tVVMiLCJlbi1VUyxlbi1VUyxlbiIsMjAsInVucmVnaXN0ZXJQcm90b2NvbEhhbmRsZXLiiJJmdW5jdGlvbiB1bnJlZ2lzdGVyUHJvdG9jb2xIYW5kbGVyKCkgeyBbbmF0aXZlIGNvZGVdIH0iLCJxdWVyeVNlbGVjdG9yQWxsIiwic2V0SW50ZXJ2YWwiLDIxLjkwOTA3NzM3NTQ4ODg3LCI1M2UxZDlmZC0zMzA2LTRkOGItOWRmMi0zYzkzNTM3NmNhMjQiLCIiLDgsMTc5NDE0ODM1NTc5OCwwLDAsMCwwLDAsMCwwXQ==~S","a":2,"flow":"chatgpt_checkout"}
+    at t.__proto2 (sentinel_sdk.js:6:36)
+    at async handleRequest (/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/sentinel/sentinel_bridge.js:534:17)
+    at async runOnce (/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/sentinel/sentinel_bridge.js:598:15)
+
+stdout | test/chatgpt-billing.test.js > checkout API rejection handling > stops an expired token in auto mode without navigating or UI fallback
+⚡ [Sentinel] ✅ 风控令牌签发成功，已注入 Checkout 请求头
+[ChatGPT] 创建 Checkout Session: plan_name=chatgptgoplan, country=US, currency=USD, checkout_ui_mode=custom
+
+stderr | test/chatgpt-billing.test.js > checkout API rejection handling > stops an expired token in auto mode without navigating or UI fallback
+[-] 订单创建失败 (Status: 401)
+    响应: token_expired; Your authentication token has expired.
+
+stdout | test/chatgpt-billing.test.js > checkout API rejection handling > stops an expired token in hybrid mode without navigating or UI fallback
+🧭 [步骤] 正在通过 API 创建 Checkout (country=US, currency=USD, plan=go)...
+⚡ [Sentinel] 前置令牌未命中，正在快速补签风控令牌 (≤4s)...
+
+stderr | test/chatgpt-billing.test.js > checkout API rejection handling > stops an expired token in hybrid mode without navigating or UI fallback
+⚠️ [Sentinel] 快速补签跳过 (尝试原生发包): Sentinel 求解失败: proto2: Error: reqfail:{"e":"fetch failed","p":"gAAAAACWzMwMDAsIlN1biBOb3YgMDggMjAyNiAwOTozMjozNiBHTVQtMDUwMCAoQW1lcmljYS9OZXdfWW9yaykiLDQyOTQ3MDUxNTIsNDAsIk1vemlsbGEvNS4wIChNYWNpbnRvc2g7IEludGVsIE1hYyBPUyBYIDEwXzE1XzcpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIENocm9tZS8xMzMuMC4wLjAgU2FmYXJpLzUzNy4zNiIsImh0dHBzOi8vY2hhdGdwdC5jb20vc2VudGluZWwvMjAyNjA4MTA5MTNiL3Nkay5qcyIsbnVsbCwiZW4tVVMiLCJlbi1VUyxlbi1VUyxlbiIsMjIsImdldFVzZXJNZWRpYeKIkmZ1bmN0aW9uIGdldFVzZXJNZWRpYSgpIHsgW25hdGl2ZSBjb2RlXSB9IiwiZG9jdW1lbnRVUkkiLCJfX29haV9zb19oIiwyMC40OTU5MjU0NzUzMjYwOTMsIjMzODcxYjViLTU3YTMtNDRkZS04MmI1LWMxNDhlZjE0ZjI4NCIsIiIsOCwxNzk0MTQ4MzU2MDAwLDAsMCwwLDAsMCwwLDBd~S","a":2,"flow":"chatgpt_checkout"}
+    at t.__proto2 (sentinel_sdk.js:6:36)
+    at async handleRequest (/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/sentinel/sentinel_bridge.js:534:17)
+    at async runOnce (/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/sentinel/sentinel_bridge.js:598:15)
+
+stdout | test/chatgpt-billing.test.js > checkout API rejection handling > stops an expired token in hybrid mode without navigating or UI fallback
+⚡ [Sentinel] ✅ 风控令牌签发成功，已注入 Checkout 请求头
+[ChatGPT] 创建 Checkout Session: plan_name=chatgptgoplan, country=US, currency=USD, checkout_ui_mode=custom
+
+stderr | test/chatgpt-billing.test.js > checkout API rejection handling > stops an expired token in hybrid mode without navigating or UI fallback
+[-] 订单创建失败 (Status: 401)
+    响应: token_expired; Your authentication token has expired.
+
+stdout | test/chatgpt-billing.test.js > checkout API rejection handling > does not retry or navigate after an unusual-activity checkout rejection
+🧭 [步骤] 正在通过 API 创建 Checkout (country=PH, currency=PHP, plan=plus)...
+⚡ [Sentinel] 前置令牌未命中，正在快速补签风控令牌 (≤4s)...
+
+stderr | test/chatgpt-billing.test.js > checkout API rejection handling > does not retry or navigate after an unusual-activity checkout rejection
+⚠️ [Sentinel] 快速补签跳过 (尝试原生发包): Sentinel 求解失败: proto2: Error: reqfail:{"e":"fetch failed","p":"gAAAAACWzMwMDAsIlN1biBOb3YgMDggMjAyNiAwOTozMjozNiBHTVQtMDUwMCAoQW1lcmljYS9OZXdfWW9yaykiLDQyOTQ3MDUxNTIsMCwiTW96aWxsYS81LjAgKE1hY2ludG9zaDsgSW50ZWwgTWFjIE9TIFggMTBfMTVfNykgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzEzMy4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiaHR0cHM6Ly9jaGF0Z3B0LmNvbS9zZW50aW5lbC8yMDI2MDgxMDkxM2Ivc2RrLmpzIixudWxsLCJlbi1VUyIsImVuLVVTLGVuLVVTLGVuIiwxOCwidW5yZWdpc3RlclByb3RvY29sSGFuZGxlcuKIkmZ1bmN0aW9uIHVucmVnaXN0ZXJQcm90b2NvbEhhbmRsZXIoKSB7IFtuYXRpdmUgY29kZV0gfSIsImRvY3VtZW50RWxlbWVudCIsIm9yaWdpbiIsMjMuNDY2NDAzMDUwODkwNTEzLCI2ZWFiY2Q3Yy0wYzY0LTQ4M2YtYmI4ZS05ZGMxNDBjZjc5OTAiLCIiLDgsMTc5NDE0ODM1NjIxNCwwLDAsMCwwLDAsMCwwXQ==~S","a":2,"flow":"chatgpt_checkout"}
+    at t.__proto2 (sentinel_sdk.js:6:36)
+    at async handleRequest (/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/sentinel/sentinel_bridge.js:534:17)
+    at async runOnce (/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/sentinel/sentinel_bridge.js:598:15)
+
+stdout | test/chatgpt-billing.test.js > checkout API rejection handling > does not retry or navigate after an unusual-activity checkout rejection
+⚡ [Sentinel] ✅ 风控令牌签发成功，已注入 Checkout 请求头
+[ChatGPT] 创建 Checkout Session: plan_name=chatgptplusplan, country=PH, currency=PHP, checkout_ui_mode=custom
+
+stderr | test/chatgpt-billing.test.js > checkout API rejection handling > does not retry or navigate after an unusual-activity checkout rejection
+[-] 订单创建失败 (Status: 400)
+    响应: Our systems have detected unusual activity. Please try again later.
+
+ ✓ test/chatgpt-billing.test.js (7 tests) 924ms
+stdout | test/chatgpt-checkout-team-promo.test.js > ChatGPT Team & Promo Campaign Protocol Integration > ChatGPT Checkout Payload Generation > builds Team checkout payload with team_workspace_purchase_modal and redirect mode
+[ChatGPT] 创建 Checkout Session: plan_name=chatgptteamplan, country=US, currency=USD, checkout_ui_mode=redirect
+
+stdout | test/chatgpt-checkout-team-promo.test.js > ChatGPT Team & Promo Campaign Protocol Integration > ChatGPT Checkout Payload Generation > builds Team checkout payload with team_workspace_purchase_modal and redirect mode
+✅ 订单创建成功 (session: cs_live_team_abc123...)
+    支付链接: https://pay.openai.com/c/pay/cs_live_team_abc123...
+
+stdout | test/chatgpt-checkout-team-promo.test.js > ChatGPT Team & Promo Campaign Protocol Integration > ChatGPT Checkout Payload Generation > builds Plus checkout payload with promo_campaign injected when promo requested
+[ChatGPT] 创建 Checkout Session: plan_name=chatgptplusplan, country=PH, currency=PHP, checkout_ui_mode=custom
+
+stdout | test/chatgpt-checkout-team-promo.test.js > ChatGPT Team & Promo Campaign Protocol Integration > ChatGPT Checkout Payload Generation > builds Plus checkout payload with promo_campaign injected when promo requested
+✅ 订单创建成功 (session: oaics_promo_abc123...)
+    支付链接: https://chatgpt.com/checkout/openai_llc/oaics_promo_abc123...
+
+ ✓ test/chatgpt-checkout-team-promo.test.js (11 tests) 28ms
+
+ Test Files  2 passed (2)
+      Tests  18 passed (18)
+   Start at  22:32:34
+   Duration  1.93s (transform 27ms, setup 0ms, import 561ms, tests 952ms, environment 0ms)
+

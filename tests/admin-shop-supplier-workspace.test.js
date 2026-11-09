@@ -82,6 +82,7 @@ function workspace() {
         'supplierCatalogPrevButton', 'supplierCatalogNextButton', 'supplierCatalogFeedback',
         'supplierCatalogDetailModal', 'supplierCatalogDetailBody', 'supplierCatalogDetailTitle',
         'supplierCatalogRace', 'supplierCatalogPreview', 'productSupplierSummary',
+        'supplierCatalogTree', 'supplierCatalogTreeAllBtn',
         'supplierOperationsPanel', 'supplierOperationsTableBody', 'supplierOperationsStatus'
     ];
     const elements = new Map(ids.map((id) => [id, id === 'supplierCatalogCategory' ? nativeSelectElement() : element()]));
@@ -92,7 +93,8 @@ function workspace() {
     const document = {
         readyState: 'loading', addEventListener() {},
         getElementById(id) { return elements.get(id) || null; },
-        querySelector(selector) { return actions.get(selector.match(/data-shop-action="([^"]+)"/)?.[1]) || null; }
+        querySelector(selector) { return actions.get(selector.match(/data-shop-action="([^"]+)"/)?.[1]) || null; },
+        querySelectorAll() { return []; }
     };
     const pending = [];
     const window = {
@@ -546,4 +548,202 @@ test('unavailable procurement history can retry and invalid site makes no reques
     await h.shop.loadSupplierOperations();
     assert.equal(h.pending.length, 2);
     assert.match(h.elements.get('supplierOperationsStatus').textContent, /国内站/);
+});
+
+test('tree selection updates groupKey or categoryKey and passes to query', async () => {
+    const h = workspace();
+    const snapshotPayload = {
+        snapshotId: '11111111-1111-4111-8111-111111111111',
+        syncedAt: '2026-11-03T00:00:00.000Z',
+        expiresAt: '2026-11-03T01:00:00.000Z',
+        snapshotItemCount: 10,
+        categories: [
+            { categoryId: 10, categoryKey: 'cat-10', name: 'Gemini 3.1pro', itemCount: 6 },
+            { categoryId: 20, categoryKey: 'cat-20', name: 'Other', itemCount: 4 }
+        ],
+        categoryTree: {
+            groups: [
+                {
+                    groupKey: 'gemini',
+                    title: 'Gemini',
+                    categories: [
+                        { categoryId: 10, categoryKey: 'cat-10', name: 'Gemini 3.1pro', itemCount: 6 }
+                    ],
+                    totalItemCount: 6
+                }
+            ],
+            standalone: [
+                { categoryId: 20, categoryKey: 'cat-20', name: 'Other', itemCount: 4 }
+            ],
+            totalCategories: 2
+        }
+    };
+    h.shop.applySupplierCatalogSnapshot(snapshotPayload, h.shop.getSupplierCatalogQuery());
+    assert.match(h.elements.get('supplierCatalogTree').innerHTML, /Gemini 3\.1pro/);
+    assert.match(h.elements.get('supplierCatalogTree').innerHTML, /data-group-key="gemini"/);
+
+    // Select category cat-10
+    h.shop.selectSupplierCatalogCategory('cat-10');
+    assert.equal(h.shop.supplierCatalogCategoryKey, 'cat-10');
+    assert.equal(h.shop.supplierCatalogGroupKey, '');
+    assert.equal(h.elements.get('supplierCatalogCategory').value, 'cat-10');
+
+    // Select group gemini
+    h.shop.selectSupplierCatalogGroup('gemini');
+    assert.equal(h.shop.supplierCatalogCategoryKey, '');
+    assert.equal(h.shop.supplierCatalogGroupKey, 'gemini');
+    assert.equal(h.elements.get('supplierCatalogCategory').value, '');
+
+    // Reset all
+    h.shop.selectSupplierCatalogCategory('');
+    h.shop.supplierCatalogGroupKey = '';
+    assert.equal(h.shop.supplierCatalogCategoryKey, '');
+    assert.equal(h.shop.supplierCatalogGroupKey, '');
+    assert.equal(h.shop.supplierCatalogExplicitAll, true);
+
+    // Test Array categoryTree format (from buildCategoryTree)
+    const arrayTreePayload = {
+        snapshotId: '22222222-2222-4222-8222-222222222222',
+        syncedAt: '2026-11-03T00:00:00.000Z',
+        expiresAt: '2026-11-03T01:00:00.000Z',
+        snapshotItemCount: 15,
+        categories: [
+            { categoryId: 101, categoryKey: 'cat-101', name: '谷歌邮箱自营', itemCount: 10 },
+            { categoryId: 102, categoryKey: 'cat-102', name: '独立分类', itemCount: 5 }
+        ],
+        categoryTree: [
+            {
+                type: 'group',
+                groupKey: 'xr-2',
+                name: '谷歌邮箱',
+                children: [
+                    { type: 'category', categoryKey: 'cat-101', name: '谷歌邮箱自营', itemCount: 10 }
+                ],
+                itemCount: 10
+            },
+            {
+                type: 'category',
+                categoryKey: 'cat-102',
+                name: '独立分类',
+                itemCount: 5
+            }
+        ]
+    };
+    h.shop.applySupplierCatalogSnapshot(arrayTreePayload, h.shop.getSupplierCatalogQuery());
+    const treeHtml = h.elements.get('supplierCatalogTree').innerHTML;
+    assert.match(treeHtml, /谷歌邮箱/);
+    assert.match(treeHtml, /谷歌邮箱自营/);
+    assert.match(treeHtml, /独立分类/);
+    assert.match(treeHtml, /data-group-key="xr-2"/);
+    assert.match(treeHtml, /data-category-key="cat-101"/);
+    assert.match(treeHtml, /data-category-key="cat-102"/);
+});
+
+test('multi-variant detail renders options and imports with multiVariants payload', async () => {
+    const h = workspace();
+    const multivariantItem = item('XR-MULTI', {
+        supplierUnitPrice: '10.00',
+        variantRequirements: {
+            importable: true,
+            requiresRace: true,
+            races: ['标准版', '高级版'],
+            racePrices: { '标准版': '10.00', '高级版': '25.00' },
+            reasons: []
+        }
+    });
+    h.shop.renderSupplierCatalogDetail(multivariantItem);
+    const bodyMarkup = h.elements.get('supplierCatalogDetailBody').innerHTML;
+    assert.match(bodyMarkup, /规格与交付核验/);
+    assert.match(bodyMarkup, /全部规格（自动匹配导入 2 个规格 SKU）/);
+    assert.match(bodyMarkup, /标准版/);
+    assert.match(bodyMarkup, /高级版/);
+    assert.match(bodyMarkup, /supplierCatalogAllVariantsInfo/);
+
+    // Test import with multiVariants passed to importSupplierCatalogGoods
+    const importing = h.shop.importSupplierCatalogGoods(['XR-MULTI'], {
+        context: { providerId: 'xiareng', accountKey: 'first', site: 'cn' },
+        variants: { 'XR-MULTI': { race: '标准版' } },
+        multiVariants: {
+            'XR-MULTI': [
+                { race: '标准版', price: '10.00', costCeiling: '10.00' },
+                { race: '高级版', price: '25.00', costCeiling: '25.00' }
+            ]
+        }
+    });
+    await new Promise(setImmediate);
+    const request = h.pending.at(-1);
+    assert.equal(request.options.method, 'POST');
+    const parsedBody = JSON.parse(request.options.body);
+    assert.deepEqual(parsedBody.multiVariants, {
+        'XR-MULTI': [
+            { race: '标准版', price: '10.00', costCeiling: '10.00' },
+            { race: '高级版', price: '25.00', costCeiling: '25.00' }
+        ]
+    });
+    assert.deepEqual(parsedBody.variants, { 'XR-MULTI': { race: '标准版' } });
+    request.resolve(response({ success: true, results: [{ goodsNo: 'XR-MULTI', status: 'imported_as_draft', productId: 'p-1', site: 'cn' }] }));
+    await importing;
+    assert.match(h.elements.get('supplierCatalogFeedback').innerHTML, /成功 1 项/);
+});
+
+test('Xiareng supplier catalog allows selecting items, selecting all, and importing selected items with autoAllVariants', async () => {
+    const h = workspace();
+    h.shop.supplierCatalogItems = [
+        { providerGoodsId: 'XR-ITEM-1', name: '商品1', price: '10', deliveryMethod: 1 },
+        { providerGoodsId: 'XR-ITEM-2', name: '商品2', price: '20', deliveryMethod: 1 }
+    ];
+    h.shop.renderSupplierCatalogRows();
+    const rowsHtml = h.elements.get('supplierCatalogTableBody').innerHTML;
+    assert.doesNotMatch(rowsHtml, /disabled title="请在详情中核对规格后导入"/);
+    assert.match(rowsHtml, /data-goods-no="XR-ITEM-1"/);
+
+    // Sync controls
+    h.shop.syncSupplierCatalogControls();
+    assert.equal(h.elements.get('supplierCatalogSelectAll').disabled, false);
+    assert.equal(h.elements.get('supplierCatalogSelectionCount').textContent, '已选 0 项');
+
+    // Select all
+    h.shop.selectAllSupplierCatalogPage(true);
+    assert.equal(h.shop.supplierCatalogSelectedGoodsNos.size, 2);
+    assert.equal(h.elements.get('supplierCatalogSelectAll').checked, true);
+    assert.equal(h.elements.get('supplierCatalogSelectionCount').textContent, '已选 2 项');
+    assert.equal(h.elements.get('supplierCatalogImportButton').disabled, false);
+
+    // Import selected items
+    const importing = h.shop.importSupplierCatalogGoods(null, { confirm: false });
+    await new Promise(setImmediate);
+    const request = h.pending.at(-1);
+    assert.equal(request.options.method, 'POST');
+    const parsed = JSON.parse(request.options.body);
+    assert.equal(parsed.action, 'import');
+    assert.deepEqual(parsed.goodsNos, ['XR-ITEM-1', 'XR-ITEM-2']);
+    assert.equal(parsed.autoAllVariants, true);
+    request.resolve(response({
+        success: true,
+        results: [
+            { goodsNo: 'XR-ITEM-1', status: 'imported_as_draft', productId: 'p-1', site: 'cn' },
+            { goodsNo: 'XR-ITEM-2', status: 'imported_as_draft', productId: 'p-2', site: 'cn' }
+        ]
+    }));
+    await importing;
+    assert.match(h.elements.get('supplierCatalogFeedback').innerHTML, /成功 2 项/);
+});
+
+test('batch import matrix preselects active category and supports group category lookup', () => {
+    const h = workspace();
+    const tree = [
+        {
+            type: 'group',
+            groupKey: 'grp-1',
+            categories: [
+                { categoryKey: 'cat-1' },
+                { categoryKey: 'cat-2' }
+            ]
+        }
+    ];
+    const catKeys = h.shop.findCategoryKeysForGroup(tree, 'grp-1');
+    assert.deepEqual([...catKeys], ['cat-1', 'cat-2']);
+
+    const emptyKeys = h.shop.findCategoryKeysForGroup(tree, 'nonexistent');
+    assert.deepEqual([...emptyKeys], []);
 });

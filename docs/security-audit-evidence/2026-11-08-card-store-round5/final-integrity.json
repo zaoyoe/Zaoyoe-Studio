@@ -1,0 +1,107 @@
+{
+  "scope": "Final read-only verification following round-5 archive creation; no staging, history mutation or deployment.",
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "origin_main": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "branch": "main",
+  "behind": 0,
+  "initial_expanded_status_rows": 510,
+  "all_initial_rows_preserved": true,
+  "initial_rows_missing": [],
+  "expanded_status_rows_observed_before_integrity_file": 549,
+  "additional_rows_before_integrity_file": [
+    " M services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/.gitignore",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/README.md",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/archive-procedure.py",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/backup-manifests/baseline.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/backup-manifests/initial.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/backup-manifests/review-tests.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/backup-verification.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/baseline-and-boundaries.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/baseline-status-expanded.txt",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/delta-recovery-verification.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/delta/round5-gpt-outsourcing-store.test.js.patch",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/delta/round5-mysql-store.js.patch",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/delta/round5-security-round5-kc-owner-locks.test.js.patch",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/delta/round5-working-tree-delta.patch",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/full-regression-comparison.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/log-pattern-scan.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/packaging-boundary.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw-provenance.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/baseline-final-44.tap",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/kc-full-command.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/kc-full.log",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/kc-regression-306.log",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/native-final-151.tap",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/native-regression-144.tap",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/owner-locks-after-37.tap",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/owner-locks-before-37.tap",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/owner-locks-initial-interrupted.tap",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/preload.cjs",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/run.py",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/syntax-results.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/ui-new-failures-command.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/ui-new-failures-rerun.log",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/source-manifest.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/status-before-archive-expanded.txt",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/verification-results.json",
+    "?? docs/security-audit-evidence/2026-11-08-card-store-round5/whitespace-results.json",
+    "?? docs/security-card-store-hardening-round5-2026-11-08.md",
+    "?? tests/security-round5-kc-owner-locks.test.js"
+  ],
+  "index_sha256_before_archive": "0cffdc8f7b49154ec9082ca7c97b5b5a0be0c4df5dd6ae1c20526f9aca9130b7",
+  "index_sha256_after_archive": "0cffdc8f7b49154ec9082ca7c97b5b5a0be0c4df5dd6ae1c20526f9aca9130b7",
+  "index_bytes_unchanged_during_archive": true,
+  "staged_diff": "",
+  "source_checks": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "sha256": "edd981d433ecc3da800a6803c1a201ca822cebd0a5cceb2faa7fc261ccec28df",
+      "matches_archive": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+      "sha256": "7ae006a5872cd8feeb20495203efe12b52816f081d4e7fdb4e600b013507e36a",
+      "matches_archive": true
+    },
+    {
+      "path": "tests/security-round5-kc-owner-locks.test.js",
+      "sha256": "39190f24f952590ca39ca3b8ca05a2e33db312ded95c37d26acbdc9820436e04",
+      "matches_archive": true
+    }
+  ],
+  "backup_checks": [
+    {
+      "path": "/tmp/kc-round5-owner-locks-20261108-before/services/kc-pay-gpt/mysql-store.js",
+      "matches_original_manifest": true
+    },
+    {
+      "path": "/tmp/kc-round5-owner-locks-20261108-before/services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+      "matches_original_manifest": true
+    },
+    {
+      "path": "/tmp/kc-round5-final-review-before/tests/security-round5-kc-owner-locks.test.js",
+      "matches_original_manifest": true
+    }
+  ],
+  "raw_log_copies_verified": 9,
+  "raw_logs_visible_to_git": [
+    "docs/security-audit-evidence/2026-11-08-card-store-round5/raw/kc-full.log",
+    "docs/security-audit-evidence/2026-11-08-card-store-round5/raw/kc-regression-306.log",
+    "docs/security-audit-evidence/2026-11-08-card-store-round5/raw/ui-new-failures-rerun.log"
+  ],
+  "historical_round2_full_json_hash_unchanged_from_archive_start": true,
+  "historical_report_hashes_observed_only": [
+    {
+      "path": "docs/security-card-store-hardening-round2-2026-11-08.md",
+      "sha256_observed_at_final_check": "55341a5f674003a96907a8df8c00b0ef0b921377b994249cff531df35cd70382"
+    },
+    {
+      "path": "docs/security-card-store-hardening-round4-2026-11-08.md",
+      "sha256_observed_at_final_check": "d2a063b38e0db210f681343b3ee52e1a7c524f5fced1ddeddff8e0e7b274d7db"
+    }
+  ],
+  "historical_write_policy": "Archive procedure writes round-5 paths only; no original round-2/round-4 evidence or reports were edited.",
+  "git_mutations": "NOT RUN: add, commit, push, PR, merge, reset, restore, clean, rebase, branch switch",
+  "production_effect": "NOT RUN; uncommitted local changes only"
+}

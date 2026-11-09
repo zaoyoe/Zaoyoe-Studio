@@ -1,0 +1,14 @@
+{
+  "absolute_path": "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/acceptance/payment-attempt-ledger/20261109-ledger-DRAFT.sql",
+  "sha256": "feaaad96e48bc507ba0679c06684baf589f324be003d5a4fa90c2c61442fe86d",
+  "status": "DRAFT / NOT EXECUTED",
+  "statement_count": 2,
+  "statements": [
+    "CREATE TABLE kc_local_payment_attempts",
+    "ALTER TABLE card_assets ADD payment_attempt_id and unique index"
+  ],
+  "engine_syntax_validation": "NOT RUN",
+  "real_constraint_validation": "NOT RUN",
+  "bootstrap_schema_unchanged": true,
+  "not_migration_authorization": true
+}

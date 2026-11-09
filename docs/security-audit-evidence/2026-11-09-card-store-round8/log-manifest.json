@@ -1,0 +1,92 @@
+[
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/offline-tests-01.log",
+    "bytes": 5552,
+    "sha256": "a5a4952dc749b16126f6e3d0afeec7674b3fabb0f171e31500ca41be81dfcaa5"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/offline-tests-02.log",
+    "bytes": 5733,
+    "sha256": "62db3122d51e4bbeee5432bfb55d20b08b72662e9d7a3f25253f08e65b5c280d"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/payment-hold-regression-01.log",
+    "bytes": 10948,
+    "sha256": "5a2179b55980c4f1fa6adce6d644323d63be413513804f040a842db97b391b74"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/plan-only-01.log",
+    "bytes": 8071,
+    "sha256": "2f5d73122b05722539697499a3b80e226c68187c53c99d6bfdd890f7176bbe95"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-cli.cjs.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-lab.cjs.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-plan.cjs.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-preload.cjs.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-safety.cjs.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-security-round8-kc-mysql-lab.test.js.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-store-loader.cjs.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-cli.cjs.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-lab.cjs.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-plan.cjs.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-preload.cjs.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-safety.cjs.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-security-round8-kc-mysql-lab.test.js.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-store-loader.cjs.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

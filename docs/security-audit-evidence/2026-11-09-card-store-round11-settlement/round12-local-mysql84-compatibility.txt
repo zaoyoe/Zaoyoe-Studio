@@ -1,0 +1,20 @@
+KC ROUND12 LOCAL COMPATIBILITY EVIDENCE
+status=COMPATIBILITY_ONLY
+production_sql_executed=false
+production_database_touched=false
+server_version=8.4.11
+engine=InnoDB
+fixture=synthetic_empty_card_assets_and_billing_records
+candidate=services/kc-pay-gpt/acceptance/payment-attempt-ledger/20261109-payment-attempt-ledger-CANDIDATE-DRAFT.sql
+
+checks:
+schema_tables=3
+single_fk=1
+card_fence_unique=1
+settled_receipt=settled_paid|billing_id=1|daily_count=1|cooled_down=0
+remaining_tables=3
+result=PASS
+cleanup=temporary_schema_dropped_and_verified_absent
+
+limitation=MySQL_8.4.11_only; this does not replace the required isolated MySQL_8.0.46 validation.
+No production card, billing, credential, token, or payment data was used.

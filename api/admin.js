@@ -97,6 +97,7 @@ const settingsPaymentChannelsHandler = require('../server/api-handlers/admin/set
 const settingsRecoveryReadinessHandler = require('../server/api-handlers/admin/settings/recovery-readiness');
 const settingsSecurityLocksHandler = require('../server/api-handlers/admin/settings/security-locks');
 const settingsSystemConfigHandler = require('../server/api-handlers/admin/settings/system-config');
+const settingsVerifyActivationJobsHandler = require('../server/api-handlers/admin/settings/verify-activation-jobs');
 const settingsVerifyMonitorHandler = require('../server/api-handlers/admin/settings/verify-monitor');
 const settingsVerifyMonitorQuotaHandler = require('../server/api-handlers/admin/settings/verify-monitor-quota');
 const settingsVerifyMonitorQueueHandler = require('../server/api-handlers/admin/settings/verify-monitor-queue');
@@ -188,6 +189,7 @@ const ROUTE_HANDLERS = {
     'settings/recovery-readiness': settingsRecoveryReadinessHandler,
     'settings/security-locks': settingsSecurityLocksHandler,
     'settings/system-config': settingsSystemConfigHandler,
+    'settings/verify-activation-jobs': settingsVerifyActivationJobsHandler,
     'settings/verify-monitor': settingsVerifyMonitorHandler,
     'settings/verify-monitor/quota': settingsVerifyMonitorQuotaHandler,
     'settings/verify-monitor/queue': settingsVerifyMonitorQueueHandler,

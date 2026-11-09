@@ -1,4 +1,6 @@
+const bblabuMedia = require('../_bblabu-media');
 const crypto = require('node:crypto');
+const mediaCapabilities = require('../../../js/ai-media-model-capabilities');
 const {
     resolveAiChatModelCapabilities,
     resolveAiChatImageInputPolicy
@@ -77,7 +79,7 @@ const PRICING_MODE_ALIASES = Object.freeze({
 });
 const SUPPORTED_BILLING_MODES = Object.freeze(new Set(['points', 'api']));
 const SUPPORTED_RESOLUTIONS = Object.freeze(new Set(['1k', '2k', '4k']));
-const SUPPORTED_VIDEO_RESOLUTIONS = Object.freeze(new Set(['480p', '720p', '1080p', '4k']));
+const SUPPORTED_VIDEO_RESOLUTIONS = Object.freeze(new Set(['480p', '720p', '768p', '1080p', '2k', '4k']));
 const MAX_REFERENCE_UPLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_REFERENCE_IMAGE_INPUTS = 16;
 const MAX_CHAT_ATTACHMENT_COUNT = 8;
@@ -160,6 +162,7 @@ const TASK_SELECT = [
     'points_ledger_reference_id',
     'api_base_url',
     'api_key_tail',
+    'api_key_fingerprint',
     'token_usage',
     'input_tokens',
     'output_tokens',
@@ -1236,6 +1239,9 @@ function serializePublicModelProvider(provider = {}) {
         chat_models: scopedChatModels,
         videoModels: scopedVideoModels,
         video_models: scopedVideoModels,
+        mediaCapabilities: Object.fromEntries([...scopedImageModels, ...scopedVideoModels].map(id => [id,
+            mediaCapabilities.resolve({ baseUrl: provider.baseUrl || provider.base_url || provider.apiBaseUrl || provider.api_base_url, model: id })
+        ]).filter(([, capability]) => capability)),
         modelDisplayNames,
         model_display_names: modelDisplayNames,
         visionModels,
@@ -1253,7 +1259,7 @@ function providerSupportsPublicModelGroup(provider = {}, group = 'image') {
     return (requestedGroup !== 'video' && providerGroup === 'both') || providerGroup === requestedGroup;
 }
 
-function serializeDiscoveredRuntimeModel(model = '', group = 'chat') {
+function serializeDiscoveredRuntimeModel(model = '', group = 'chat', baseUrl = '') {
     const id = normalizeText(model, 180);
     if (!id) return null;
     return {
@@ -1265,14 +1271,15 @@ function serializeDiscoveredRuntimeModel(model = '', group = 'chat') {
         protocol: 'openai-compatible',
         source: 'upstream_discovery',
         modelGroup: group,
-        model_group: group
+        model_group: group,
+        ...(group !== 'chat' ? { mediaCapability: mediaCapabilities.resolve({ baseUrl, model: id }) } : {})
     };
 }
 
-function serializeDiscoveredModelList(models = [], group = 'chat') {
+function serializeDiscoveredModelList(models = [], group = 'chat', baseUrl = '') {
     const seen = new Set();
     return (Array.isArray(models) ? models : [])
-        .map((model) => serializeDiscoveredRuntimeModel(model, group))
+        .map((model) => serializeDiscoveredRuntimeModel(model, group, baseUrl))
         .filter((model) => {
             const key = String(model?.id || '').toLowerCase();
             if (!key || seen.has(key)) return false;
@@ -1286,8 +1293,8 @@ function buildDiscoveredModelsPayload(discovery = {}, { apiBaseUrl = '', source 
     const rawImageModels = Array.isArray(discovery.imageModels) ? discovery.imageModels : [];
     const rawVideoModels = Array.isArray(discovery.videoModels) ? discovery.videoModels : [];
     const chatModels = serializeDiscoveredModelList(rawChatModels, 'chat');
-    const imageModels = serializeDiscoveredModelList(rawImageModels, 'image');
-    const videoModels = serializeDiscoveredModelList(rawVideoModels, 'video');
+    const imageModels = serializeDiscoveredModelList(rawImageModels, 'image', apiBaseUrl);
+    const videoModels = serializeDiscoveredModelList(rawVideoModels, 'video', apiBaseUrl);
     const availableModelCount = chatModels.length + imageModels.length + videoModels.length;
     const provider = {
         providerId: 'detected-upstream',
@@ -1305,6 +1312,9 @@ function buildDiscoveredModelsPayload(discovery = {}, { apiBaseUrl = '', source 
         chat_models: chatModels.map((model) => model.id),
         videoModels: videoModels.map((model) => model.id),
         video_models: videoModels.map((model) => model.id),
+        mediaCapabilities: Object.fromEntries([...imageModels, ...videoModels]
+            .filter((model) => model.mediaCapability)
+            .map((model) => [model.id, model.mediaCapability])),
         isActive: true,
         is_active: true,
         source: 'upstream_discovery'
@@ -1970,7 +1980,7 @@ function buildPricingEstimatePayload({
         model: normalizeText(matchedRule.model || '*', 120) || '*',
         resolution: normalizeText(matchedRule.resolution || '*', 20).toLowerCase() || '*',
         ratio: normalizeText(matchedRule.ratio || '*', 20).toLowerCase() || '*',
-        quantity: normalizePositiveInt(matchedRule.quantity, 1, { min: 1, max: 8 }),
+        quantity: normalizePositiveInt(matchedRule.quantity, 1, { min: 1, max: 10 }),
         points: normalizeNumber(matchedRule.points, 0),
         priority: Number(matchedRule.priority || 100),
         metadata: normalizeAiImagePricingMetadata(matchedRule.metadata || {}),
@@ -1991,7 +2001,7 @@ function buildPricingEstimatePayload({
                 providerId: normalizedProviderId,
                 resolution,
                 ratio,
-                quantity: normalizePositiveInt(quantity, 1, { min: 1, max: 8 })
+                quantity: normalizePositiveInt(quantity, 1, { min: 1, max: 10 })
             },
             matched_rule: normalizedMatchedRule,
             revision: normalizedMatchedRule?.updated_at || ''
@@ -2186,12 +2196,15 @@ function buildTaskPayload({
     apiKeyFingerprint,
     providerId = '',
     estimatedPoints,
-    pricing = null
+    pricing = null,
+    mediaCapability = null
 }) {
+    const mediaInput = mediaCapabilities.normalizeInput(body, mediaCapability);
+    body = { ...body, ...mediaInput };
     const referenceImage = body.referenceImage || body.reference_image || {};
     const parentTaskInput = normalizeText(body.parentTaskId || body.parent_task_id, 160);
     const conversationInput = normalizeText(body.conversationId || body.conversation_id, 160);
-    const videoSettings = VIDEO_MODES.has(mode) ? normalizeVideoSettings(body) : null;
+    const videoSettings = VIDEO_MODES.has(mode) ? (mediaInput.videoSettings || normalizeVideoSettings(body)) : null;
     const ratio = VIDEO_MODES.has(mode)
         ? videoSettings.ratio
         : (IMAGE_MODES.has(mode) ? normalizeRatio(body.ratio || body.aspectRatio || body.aspect_ratio, '1:1') : null);
@@ -2201,7 +2214,7 @@ function buildTaskPayload({
     const quantity = VIDEO_MODES.has(mode)
         ? 1
         : (IMAGE_MODES.has(mode)
-        ? normalizePositiveInt(body.quantity || body.count || body.n, 1, { min: 1, max: 8 })
+        ? normalizePositiveInt(body.quantity || body.count || body.n, 1, { min: 1, max: mediaCapability?.maxQuantity || 8 })
         : 1);
     const referenceImageUrl = normalizeText(body.referenceImageUrl || body.reference_image_url || referenceImage.url || referenceImage.imageUrl, 4000);
     const referenceImageStoragePath = normalizeText(body.referenceImageStoragePath || body.reference_image_storage_path || referenceImage.storagePath, 4000);
@@ -2215,8 +2228,8 @@ function buildTaskPayload({
         || body.model_provider_id
     );
     const referenceImageCount = (referenceImageUrl ? 1 : 0) + referenceImages.length;
-    if (referenceImageCount > MAX_REFERENCE_IMAGE_INPUTS) {
-        const error = new Error(`参考图最多 ${MAX_REFERENCE_IMAGE_INPUTS} 张（包含续作基底图）`);
+    if (referenceImageCount > (mediaCapability?.maxImages ?? mediaCapability?.references?.images ?? MAX_REFERENCE_IMAGE_INPUTS)) {
+        const error = new Error(`参考图最多 ${mediaCapability?.maxImages ?? mediaCapability?.references?.images ?? MAX_REFERENCE_IMAGE_INPUTS} 张（包含续作基底图）`);
         error.statusCode = 400;
         error.code = 'reference_image_limit_exceeded';
         throw error;
@@ -2281,6 +2294,7 @@ function buildTaskPayload({
                 camera_fixed: videoSettings.cameraFixed,
                 video_camera_fixed: videoSettings.cameraFixed
             } : {}),
+            ...mediaCapabilities.taskMetadata(mediaInput),
             reference_images: referenceImages,
             reference_image_count: referenceImageCount,
             pricing: pricing && typeof pricing === 'object' && !Array.isArray(pricing) ? pricing : {}
@@ -2475,9 +2489,14 @@ function serializeResult(row = {}) {
 function serializeTask(row = {}, results = [], { env = process.env } = {}) {
     const serializedResults = (Array.isArray(results) ? results : []).map(serializeResult);
     const status = row.status || 'queued';
-    const metadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+    const rawMetadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
         ? row.metadata
         : {};
+    const metadata = { ...rawMetadata };
+    if (metadata.provider_async) {
+        metadata.provider_async = { ...metadata.provider_async };
+        delete metadata.provider_async.credential_fingerprint;
+    }
     const referenceImages = Array.isArray(metadata.reference_images) ? metadata.reference_images : [];
     const estimatedPoints = normalizeBillablePoints(row.estimated_points, 0);
     const chargedPoints = normalizeBillablePoints(row.charged_points, 0);
@@ -2598,7 +2617,7 @@ function getExpectedRecoverableResultCount(task = {}) {
     const mode = normalizeText(task.mode, 40).toLowerCase();
     if (mode === 'video') return 1;
     if (!['text', 'image', 'agent'].includes(mode)) return 0;
-    return normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
+    return normalizePositiveInt(task.quantity, 1, { min: 1, max: 10 });
 }
 
 function shouldRecoverRunningTaskWithResults(task = {}, results = []) {
@@ -2661,14 +2680,14 @@ function estimateQueueRuntimeSeconds(task = {}) {
         '1k': 1
     }[String(task.resolution || '').trim().toLowerCase()] || 1;
     const modeMultiplier = String(task.mode || '').trim() === 'image' ? 1.15 : 1;
-    const quantity = normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
+    const quantity = normalizePositiveInt(task.quantity, 1, { min: 1, max: 10 });
     return Math.round(DEFAULT_QUEUE_ESTIMATE_SECONDS * resolutionMultiplier * modeMultiplier * quantity);
 }
 
 function getQueueWorkerConcurrency(env = {}) {
     return readPositiveIntEnv(env, ['AI_IMAGE_WORKER_CONCURRENCY'], DEFAULT_QUEUE_WORKER_CONCURRENCY, {
         min: 1,
-        max: 8
+        max: 10
     });
 }
 
@@ -3747,7 +3766,7 @@ function normalizeChatImageReferences(body = {}) {
 	    const references = normalizeReferenceImages(body)
 	        .map((item) => normalizeText(item.url || item.imageUrl || item.image, 4000))
 	        .filter(Boolean);
-	    return Array.from(new Set([primaryUrl, ...references].filter(Boolean))).slice(0, MAX_REFERENCE_IMAGE_INPUTS);
+	    return Array.from(new Set([primaryUrl, ...references].filter(Boolean))).slice(0, 51);
 	}
 
 function normalizeChatAttachments(value = []) {
@@ -3764,7 +3783,7 @@ function normalizeChatAttachments(value = []) {
         normalized.push({
             name: normalizeText(item.name || item.fileName || item.file_name || '附件', 180) || '附件',
             mimeType: normalizeText(item.mimeType || item.mime_type || item.type, 120),
-            size: normalizePositiveInt(item.size || item.bytes, 0, { min: 0, max: 80 * 1024 * 1024 }),
+            size: normalizePositiveInt(item.size || item.bytes, 0, { min: 0, max: 100 * 1024 * 1024 }),
             text: clippedText
         });
         totalChars += clippedText.length;
@@ -3800,7 +3819,7 @@ function buildChatUserContent({ prompt = '', imageUrls = [], attachments = [] } 
     const urls = (Array.isArray(imageUrls) ? imageUrls : [])
         .map((url) => normalizeText(url, 4000))
         .filter(Boolean)
-        .slice(0, MAX_REFERENCE_IMAGE_INPUTS);
+        .slice(0, 51);
     if (!urls.length) return text;
     return [
         { type: 'text', text },
@@ -5012,8 +5031,20 @@ function createAiImageHandlers({
             const apiKey = resolvedUserApiKey.apiKey;
             const preflightStartedAt = Date.now();
 
+            const capabilityConfig = (IMAGE_MODES.has(mode) || VIDEO_MODES.has(mode))
+                ? (billingMode === 'api' ? { baseUrl: apiBaseUrl, model } : await resolveExecutorRuntimeConfig({
+                    supabase, env, task: { site, mode, model, billing_mode: billingMode, metadata: { provider_id: providerId } }
+                })) : null;
+            const mediaCapability = capabilityConfig ? mediaCapabilities.resolve(capabilityConfig) : null;
+            if (mediaCapability && mediaCapability.kind && mediaCapability.kind !== (VIDEO_MODES.has(mode) ? 'video' : 'image')) {
+                const error = new Error('所选型号与任务类型不匹配');
+                error.statusCode = 400;
+                error.code = 'ai_media_model_kind_mismatch';
+                throw error;
+            }
             const previewPayload = buildTaskPayload({
                 body,
+                mediaCapability,
                 userId: user.id,
                 site,
                 mode,
@@ -5076,6 +5107,7 @@ function createAiImageHandlers({
             const estimatedPoints = pricingEstimate.estimatedPoints;
             const taskPayload = configureAiWorkbenchBillingV2TaskPayload(buildTaskPayload({
                 body,
+                mediaCapability,
                 userId: user.id,
                 site,
                 mode,
@@ -5122,7 +5154,14 @@ function createAiImageHandlers({
                 res.setHeader('Server-Timing', `preflight;dur=${preflightMs}, admission;dur=${admission.elapsedMs}`);
             }
 
-            if (admission.duplicate) {
+            const resumeApiVideo = admission.duplicate && billingMode === 'api'
+                && preparedTask.billing_mode === 'api' && preparedTask.status === 'queued'
+                && bblabuMedia.isResumableVideo(preparedTask)
+                && preparedTask.model === model && preparedTask.site === site
+                && normalizeApiBaseUrl(preparedTask.api_base_url) === normalizeApiBaseUrl(apiBaseUrl)
+                && preparedTask.api_key_fingerprint === resolvedUserApiKey.apiKeyFingerprint
+                && (!preparedTask.metadata?.next_poll_at || Date.parse(preparedTask.metadata.next_poll_at) <= Date.now());
+            if (admission.duplicate && !resumeApiVideo) {
                 const results = await loadTaskResults(supabase, preparedTask);
                 return sendJson(res, 200, {
                     success: preparedTask.status === 'succeeded' || preparedTask.status === 'queued' || preparedTask.status === 'running',
@@ -5156,7 +5195,7 @@ function createAiImageHandlers({
                     : await loadTaskResults(supabase, execution.task);
 
                 return sendJson(res, 200, {
-                    success: execution.task?.status === 'succeeded',
+                    success: ['succeeded', 'queued', 'running'].includes(execution.task?.status),
                     task: serializeTask(execution.task, results),
                     task_id: execution.task?.id || preparedTask.id,
                     status: execution.task?.status || preparedTask.status,
@@ -7167,7 +7206,8 @@ function createAiImageHandlers({
                         vendorLabel: provider.vendorLabel || provider.vendor_label || '',
                         vendor_label: provider.vendorLabel || provider.vendor_label || '',
                         vendor: provider.vendor,
-                        protocol: provider.protocol
+                        protocol: provider.protocol,
+                        mediaCapability: provider.mediaCapabilities?.[model] || null
                     }))),
                 chat_models: modelProviders
                     .filter((provider) => providerSupportsPublicModelGroup(provider, 'chat'))
@@ -7197,7 +7237,8 @@ function createAiImageHandlers({
                         vendorLabel: provider.vendorLabel || provider.vendor_label || '',
                         vendor_label: provider.vendorLabel || provider.vendor_label || '',
                         vendor: provider.vendor,
-                        protocol: provider.protocol
+                        protocol: provider.protocol,
+                        mediaCapability: provider.mediaCapabilities?.[model] || null
                     })))
             });
         } catch (error) {

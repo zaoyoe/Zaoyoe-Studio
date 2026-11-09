@@ -884,7 +884,11 @@ function displayMessages(messages) {
         if (skeletonContainer) skeletonContainer.classList.add('hidden');
         const emptyState = document.getElementById('emptyState');
         setGuestbookEmptyStateVisible(emptyState, true);
-        container.innerHTML = '';
+        if (typeof window.renderMessages === 'function') {
+            window.renderMessages([]);
+        } else {
+            container.innerHTML = '';
+        }
         markGuestbookContainerReady(container);
         return;
     }

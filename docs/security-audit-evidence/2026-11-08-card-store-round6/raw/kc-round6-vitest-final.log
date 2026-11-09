@@ -1,0 +1,761 @@
+
+ RUN  v4.1.9 /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using button controls and waits for the form
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using button controls and waits for the form
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using button controls and waits for the form
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using button controls and waits for the form
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using button controls and waits for the form
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 1104ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using tab controls and waits for the form
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using tab controls and waits for the form
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using tab controls and waits for the form
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using tab controls and waits for the form
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using tab controls and waits for the form
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 952ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using radio controls and waits for the form
+[Stripe] 🔘 检测到收银台多支付方式，正在点击选中「Card」信用卡选项...
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using radio controls and waits for the form
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches PayPal to Card exactly once using radio controls and waits for the form
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 997ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > handles external radio labels without treating the label and input as two different Card options
+[Stripe] 🔘 检测到收银台多支付方式，正在点击选中「Card」信用卡选项...
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > handles external radio labels without treating the label and input as two different Card options
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > handles external radio labels without treating the label and input as two different Card options
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 1010ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > leaves an already selected Card form intact
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > leaves an already selected Card form intact
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 465ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > ignores a hidden earlier Card option and never clicks a wallet or submit button
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > ignores a hidden earlier Card option and never clicks a wallet or submit button
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > ignores a hidden earlier Card option and never clicks a wallet or submit button
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > ignores a hidden earlier Card option and never clicks a wallet or submit button
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > ignores a hidden earlier Card option and never clicks a wallet or submit button
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 946ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > detects a payment picker rendered after the initial scan
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=0, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > detects a payment picker rendered after the initial scan
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > detects a payment picker rendered after the initial scan
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > detects a payment picker rendered after the initial scan
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > detects a payment picker rendered after the initial scan
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > detects a payment picker rendered after the initial scan
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 1392ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > selects Card inside a visible Stripe Payment iframe and excludes an unrelated frame
+[Stripe/Card-method] contexts=2, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > selects Card inside a visible Stripe Payment iframe and excludes an unrelated frame
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > selects Card inside a visible Stripe Payment iframe and excludes an unrelated frame
+[Stripe/Card-method] contexts=2, paymentAccessory=0, cardOptions=1, otherSelected=false
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > selects Card inside a visible Stripe Payment iframe and excludes an unrelated frame
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (iframe 字段，探测与填写 748ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches and fills the labelled Card control in a payment accessory-target iframe
+[Stripe/Card-method] contexts=2, paymentAccessory=1, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches and fills the labelled Card control in a payment accessory-target iframe
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches and fills the labelled Card control in a payment accessory-target iframe
+[Stripe/Card-method] contexts=2, paymentAccessory=1, cardOptions=1, otherSelected=false
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > switches and fills the labelled Card control in a payment accessory-target iframe
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (iframe 字段，探测与填写 751ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > accepts exact Card label text inside a main-document button with an icon and longer accessible name
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > accepts exact Card label text inside a main-document button with an icon and longer accessible name
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > accepts exact Card label text inside a main-document button with an icon and longer accessible name
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > accepts exact Card label text inside a main-document button with an icon and longer accessible name
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > accepts exact Card label text inside a main-document button with an icon and longer accessible name
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 960ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > detects other-method selection copy combined with a longer description and never fills stale fields
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > detects other-method selection copy combined with a longer description and never fills stale fields
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > excludes address accessory surfaces from both method selection and semantic card filling
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=0, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > excludes wallet accessory surfaces from both method selection and semantic card filling
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=0, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > excludes unmarked accessory surfaces from both method selection and semantic card filling
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=0, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > excludes wrong element accessory surfaces from both method selection and semantic card filling
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=0, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > excludes conflicting marker accessory surfaces from both method selection and semantic card filling
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=0, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > does not inspect or fill Card controls from an untrusted frame https://js.stripe.com.evil.test
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=0, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > does not inspect or fill Card controls from an untrusted frame https://js.stripe.com:444
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=0, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > blocks missing Card selection without filling stale fields or submitting
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=0, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > blocks disabled Card selection without filling stale fields or submitting
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > blocks ambiguous Card selection without filling stale fields or submitting
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=2, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > blocks unchanged Card selection without filling stale fields or submitting
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > blocks unchanged Card selection without filling stale fields or submitting
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > waits for all three fields after switching, including a delayed CVC
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > waits for all three fields after switching, including a delayed CVC
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > waits for all three fields after switching, including a delayed CVC
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > waits for all three fields after switching, including a delayed CVC
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI checkout Card method before card field discovery > waits for all three fields after switching, including a delayed CVC
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 1196ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] Step 0: 等待 Checkout 支付页就绪...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] OpenAI checkout 页面，核验 Card 付款方式后再填卡
+[Stripe] Step 2: 填写信用卡字段（iframe 自动识别）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe/Card-method] contexts=2, paymentAccessory=1, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe/Card-method] contexts=2, paymentAccessory=1, cardOptions=1, otherSelected=false
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (iframe 字段，探测与填写 732ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] Step 5: 等待账单地址表单展示 (美区需详细地址)...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] Step 6: 核验账单地址与免税金额...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+  [Stripe] 开始填写账单地址（必填项）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+  [Stripe] 填地址前应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+  [Stripe] ✅ 账单表单已完整，跳过重复填写
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+  [Stripe] ✅ 免税应付金额确认: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] ✅ 免税后应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] ✅ OpenAI 账单地址及免税金额校验通过，姓名: Offline Customer
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] Step 8: 检查服务协议...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] 提交前确认应付: USD 200
+[Stripe] Step 9: 点击订阅/支付...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] ✅ 已点击提交按钮 (role=Upgrade to Pro/Plus)
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] Step 9.5: 并行等待 hCaptcha 弹层或拒付结果（最长 45s）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+[Stripe] ❌ 提交后快速检测到拒付（未出现验证）: Your card was declined
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 1
+📸 [Stripe] 截图已保存: /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/debug_screenshots/stripe/payment_declined_1794147806675.png
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] 换卡重试 #2：更换卡号并重新提交...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] Step 2 (重试): 填写新信用卡...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe/Card-method] contexts=2, paymentAccessory=1, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe/Card-method] contexts=2, paymentAccessory=1, cardOptions=1, otherSelected=false
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (iframe 字段，探测与填写 730ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] Step 5: 等待账单地址表单展示 (美区需详细地址)...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] Step 6: 核验账单地址与免税金额...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+  [Stripe] 开始填写账单地址（必填项）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+  [Stripe] 填地址前应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+  [Stripe] ✅ 账单表单已完整，跳过重复填写
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+  [Stripe] ✅ 免税应付金额确认: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] ✅ 免税后应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] ✅ OpenAI 账单地址及免税金额校验通过，姓名: Offline Customer
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] Step 8: 检查服务协议...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] 提交前确认应付: USD 200
+[Stripe] Step 9: 点击订阅/支付...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] ✅ 已点击提交按钮 (role=Upgrade to Pro/Plus)
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] Step 9.5: 并行等待 hCaptcha 弹层或拒付结果（最长 45s）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+[Stripe] ❌ 提交后快速检测到拒付（未出现验证）: Your card was declined
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > selects the payment accessory Card and submits only once on card attempt 2
+📸 [Stripe] 截图已保存: /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/debug_screenshots/stripe/payment_declined_1794147810999.png
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] Step 0: 等待 Checkout 支付页就绪...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] OpenAI checkout 页面，核验 Card 付款方式后再填卡
+[Stripe] Step 2: 填写信用卡字段（iframe 自动识别）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe/Card-method] contexts=2, paymentAccessory=1, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe/Card-method] contexts=2, paymentAccessory=1, cardOptions=1, otherSelected=false
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (iframe 字段，探测与填写 740ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] Step 5: 等待账单地址表单展示 (美区需详细地址)...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] Step 6: 核验账单地址与免税金额...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+  [Stripe] 开始填写账单地址（必填项）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+  [Stripe] 填地址前应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+  [Stripe] ✅ 账单表单已完整，跳过重复填写
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+  [Stripe] ✅ 免税应付金额确认: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] ✅ 免税后应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] ✅ OpenAI 账单地址及免税金额校验通过，姓名: Offline Customer
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] Step 8: 检查服务协议...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] ✅ 已勾选 Team Business Terms 服务协议
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] 提交前确认应付: USD 200
+[Stripe] Step 9: 点击订阅/支付...
+
+stderr | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+[Stripe] ❌ 支付流程异常: ChatGPT 收银台付款方式已变化或无法确认 Card，尚未提交付款 [OPENAI_CARD_METHOD_CHANGED]
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > rechecks an accessory payment picker changed back to PayPal before submission
+📸 [Stripe] 截图已保存: /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/debug_screenshots/stripe/payment_exception_1794147813169.png
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] Step 0: 等待 Checkout 支付页就绪...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] OpenAI checkout 页面，核验 Card 付款方式后再填卡
+[Stripe] Step 2: 填写信用卡字段（iframe 自动识别）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 937ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] Step 5: 等待账单地址表单展示 (美区需详细地址)...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] Step 6: 核验账单地址与免税金额...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+  [Stripe] 开始填写账单地址（必填项）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+  [Stripe] 填地址前应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+  [Stripe] ✅ 账单表单已完整，跳过重复填写
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+  [Stripe] ✅ 免税应付金额确认: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] ✅ 免税后应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] ✅ OpenAI 账单地址及免税金额校验通过，姓名: Offline Customer
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] Step 8: 检查服务协议...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] 提交前确认应付: USD 200
+[Stripe] Step 9: 点击订阅/支付...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] ✅ 已点击提交按钮 (role=Upgrade to Pro/Plus)
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] Step 9.5: 并行等待 hCaptcha 弹层或拒付结果（最长 45s）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+[Stripe] ❌ 提交后快速检测到拒付（未出现验证）: Your card was declined
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 1
+📸 [Stripe] 截图已保存: /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/debug_screenshots/stripe/payment_declined_1794147816877.png
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] 换卡重试 #2：更换卡号并重新提交...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] Step 2 (重试): 填写新信用卡...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 974ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] Step 5: 等待账单地址表单展示 (美区需详细地址)...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] Step 6: 核验账单地址与免税金额...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+  [Stripe] 开始填写账单地址（必填项）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+  [Stripe] 填地址前应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+  [Stripe] ✅ 账单表单已完整，跳过重复填写
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+  [Stripe] ✅ 免税应付金额确认: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] ✅ 免税后应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] ✅ OpenAI 账单地址及免税金额校验通过，姓名: Offline Customer
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] Step 8: 检查服务协议...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] 提交前确认应付: USD 200
+[Stripe] Step 9: 点击订阅/支付...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] ✅ 已点击提交按钮 (role=Upgrade to Pro/Plus)
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] Step 9.5: 并行等待 hCaptcha 弹层或拒付结果（最长 45s）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+[Stripe] ❌ 提交后快速检测到拒付（未出现验证）: Your card was declined
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > uses Card and submits exactly once on card attempt 2
+📸 [Stripe] 截图已保存: /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/debug_screenshots/stripe/payment_declined_1794147821308.png
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] Step 0: 等待 Checkout 支付页就绪...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] OpenAI checkout 页面，核验 Card 付款方式后再填卡
+[Stripe] Step 2: 填写信用卡字段（iframe 自动识别）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 934ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] Step 5: 等待账单地址表单展示 (美区需详细地址)...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] Step 6: 核验账单地址与免税金额...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+  [Stripe] 开始填写账单地址（必填项）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+  [Stripe] 填地址前应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+  [Stripe] ✅ 账单表单已完整，跳过重复填写
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+  [Stripe] ✅ 免税应付金额确认: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] ✅ 免税后应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] ✅ OpenAI 账单地址及免税金额校验通过，姓名: Offline Customer
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] Step 8: 检查服务协议...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] ✅ 已勾选 Team Business Terms 服务协议
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] 提交前确认应付: USD 200
+[Stripe] Step 9: 点击订阅/支付...
+
+stderr | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+[Stripe] ❌ 支付流程异常: ChatGPT 收银台付款方式已变化或无法确认 Card，尚未提交付款 [OPENAI_CARD_METHOD_CHANGED]
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when method changes during checkout preparation
+📸 [Stripe] 截图已保存: /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/debug_screenshots/stripe/payment_exception_1794147823718.png
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] Step 0: 等待 Checkout 支付页就绪...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] OpenAI checkout 页面，核验 Card 付款方式后再填卡
+[Stripe] Step 2: 填写信用卡字段（iframe 自动识别）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=true
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] 正在单次选择 ChatGPT 的 Card 付款方式...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe/Card-method] contexts=1, paymentAccessory=0, cardOptions=1, otherSelected=false
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] ✅ Card 可用银行卡表单已确认
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] ✅ 卡号/有效期/CVC 已填写 (页面字段，探测与填写 952ms)
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] Step 5: 等待账单地址表单展示 (美区需详细地址)...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] Step 6: 核验账单地址与免税金额...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+  [Stripe] 开始填写账单地址（必填项）...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+  [Stripe] 填地址前应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+  [Stripe] ✅ 账单表单已完整，跳过重复填写
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+  [Stripe] ✅ 免税应付金额确认: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] ✅ 免税后应付: USD 200
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] ✅ OpenAI 账单地址及免税金额校验通过，姓名: Offline Customer
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] Step 8: 检查服务协议...
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] ✅ 已勾选 Team Business Terms 服务协议
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] ✅ Email 输入框已有值: offline@example.test
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] 提交前确认应付: USD 200
+[Stripe] Step 9: 点击订阅/支付...
+
+stderr | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+[Stripe] ❌ 支付流程异常: ChatGPT 信用卡字段已变化或填写不完整，尚未提交付款 [OPENAI_CARD_FIELDS_CHANGED]
+
+stdout | test/openai-payment-method.test.js > OpenAI Card method submission safety > stops before submission when fields changes during checkout preparation
+📸 [Stripe] 截图已保存: /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/debug_screenshots/stripe/payment_exception_1794147826193.png
+
+ ✓ test/openai-payment-method.test.js (37 tests) 43019ms
+     ✓ switches PayPal to Card exactly once using button controls and waits for the form  1462ms
+     ✓ switches PayPal to Card exactly once using tab controls and waits for the form  1046ms
+     ✓ switches PayPal to Card exactly once using radio controls and waits for the form  1103ms
+     ✓ handles external radio labels without treating the label and input as two different Card options  1105ms
+     ✓ leaves an already selected Card form intact  559ms
+     ✓ ignores a hidden earlier Card option and never clicks a wallet or submit button  1042ms
+     ✓ detects a payment picker rendered after the initial scan  1493ms
+     ✓ selects Card inside a visible Stripe Payment iframe and excludes an unrelated frame  827ms
+     ✓ switches and fills the labelled Card control in a payment accessory-target iframe  830ms
+     ✓ accepts exact Card label text inside a main-document button with an icon and longer accessible name  1055ms
+     ✓ detects other-method selection copy combined with a longer description and never fills stale fields  841ms
+     ✓ excludes address accessory surfaces from both method selection and semantic card filling  585ms
+     ✓ excludes wallet accessory surfaces from both method selection and semantic card filling  590ms
+     ✓ excludes unmarked accessory surfaces from both method selection and semantic card filling  590ms
+     ✓ excludes wrong element accessory surfaces from both method selection and semantic card filling  584ms
+     ✓ excludes conflicting marker accessory surfaces from both method selection and semantic card filling  587ms
+     ✓ does not inspect or fill Card controls from an untrusted frame https://js.stripe.com.evil.test  578ms
+     ✓ does not inspect or fill Card controls from an untrusted frame https://js.stripe.com:444  583ms
+     ✓ blocks missing Card selection without filling stale fields or submitting  824ms
+     ✓ blocks disabled Card selection without filling stale fields or submitting  838ms
+     ✓ blocks unchanged Card selection without filling stale fields or submitting  829ms
+     ✓ waits for all three fields after switching, including a delayed CVC  1289ms
+     ✓ selects the payment accessory Card and submits only once on card attempt 1  3655ms
+     ✓ selects the payment accessory Card and submits only once on card attempt 2  4315ms
+     ✓ rechecks an accessory payment picker changed back to PayPal before submission  2205ms
+     ✓ uses Card and submits exactly once on card attempt 1  3674ms
+     ✓ uses Card and submits exactly once on card attempt 2  4463ms
+     ✓ stops before submission when method changes during checkout preparation  2410ms
+     ✓ stops before submission when fields changes during checkout preparation  2481ms
+ ✓ test/payment-retry-safety.test.js (100 tests) 106ms
+ ✓ test/mysql-card-cooldown.test.js (28 tests) 103ms
+ ✓ test/recharge-routing.test.js (71 tests) 151ms
+ ✓ test/card-freeze.test.js (5 tests) 63ms
+ ✓ test/payment-protocol-fallback.test.js (12 tests) 33ms
+ ✓ test/gpt-api-client.test.js (37 tests) 21ms
+stdout | test/stripe-protocol-payment.test.js > Stripe pure protocol payment integration > syncCheckoutBillingTax coordinates /taxes and /update_tax_id for Oregon tax-free billing
+⚡ [协议支付] 正在向 ChatGPT 同步免税账单地址 (国家=US, 州=Oregon, 币种=PHP)...
+
+stdout | test/stripe-protocol-payment.test.js > Stripe pure protocol payment integration > syncCheckoutBillingTax coordinates /taxes and /update_tax_id for Oregon tax-free billing
+⚡ [协议支付] ✅ 免税地址与税务状态同步成功！总金额: PHP 982.14 (税额: 0)
+
+stderr | test/stripe-protocol-payment.test.js > Stripe pure protocol payment integration > executeWithProxyRetry automatically rotates proxy SID upon transient socket/TLS failure
+🔄 [协议网络] 代理出现瞬态握手故障 (Client network socket disconnected before secure TLS connection was established)，正在就地轮换出口 SID 重试 (尝试 2/3)...
+
+ ✓ test/stripe-protocol-payment.test.js (5 tests) 13ms
+ ✓ test/task-safety.test.js (56 tests) 8ms
+ ✓ test/payment-decline-dictionary.test.js (11 tests) 4ms
+
+ Test Files  10 passed (10)
+      Tests  362 passed (362)
+   Start at  22:23:02
+   Duration  45.92s (transform 234ms, setup 0ms, import 803ms, tests 43.52s, environment 1ms)
+

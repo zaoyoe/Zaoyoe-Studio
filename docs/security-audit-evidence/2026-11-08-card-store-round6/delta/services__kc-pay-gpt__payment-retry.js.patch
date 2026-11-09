@@ -1,0 +1,124 @@
+--- a/services/kc-pay-gpt/payment-retry.js
++++ b/services/kc-pay-gpt/payment-retry.js
+@@ -10,6 +10,7 @@
+  * 4. 成功 → 绑定地址/姓名到卡片、标记地址已绑定
+  */
+ 
++const { randomBytes } = require('node:crypto');
+ const store = require('./mysql-store');
+ const { completeStripeCardPayment, readCheckoutDueAmount, waitForCheckoutDueAmount, estimateTaxFreeAmount } = require('./stripe-payment');
+ const { ensureChatGptProUsageTier } = require('./pricing-checkout');
+@@ -203,9 +204,21 @@
+         : (region === 'US' ? '美国免税' : regionConfig.label || region);
+     progress(`已选取${addressLabel}账单地址 (${addressSource}): ${address.line1}, ${address.city}, ${address.state}`);
+ 
+-    const ownerKey = options?.ownerKey
+-        ? `payment_${String(options.ownerKey).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48)}`
+-        : (cdkCode ? `payment_${cdkCode}_${Date.now()}` : `payment_debug_${Date.now()}`);
++    const suppliedOwner = options?.ownerKey;
++    if (suppliedOwner !== undefined && (typeof suppliedOwner !== 'string' || !/^[a-zA-Z0-9_-]{1,48}$/.test(suppliedOwner))) {
++        await persistPaymentState('not_started');
++        return { success: false, error: '支付任务归属标识无效，已停止支付', code: 'ASSET_LOCK_OWNER_INVALID',
++            manualIntervention: true, paymentState: 'not_started', screenshots: [] };
++    }
++    // Debug calls get a bounded random owner, never a CDK or a timestamp alias.
++    const ownerKey = suppliedOwner === undefined ? `payment_debug_${randomBytes(16).toString('hex')}` : `payment_${suppliedOwner}`;
++    const requireCardReleased = async (cardId) => {
++        if (await store.releaseCard(cardId, ownerKey) !== 1) {
++            const error = new Error('银行卡锁归属已变化，已停止自动操作，需人工核对');
++            error.code = 'CARD_LOCK_OWNERSHIP_LOST';
++            throw error;
++        }
++    };
+ 
+     const screenshots = [];
+     const declinedLast4s = [];
+@@ -353,6 +366,12 @@
+         let prewarmedTokens = null;
+ 
+         if (!protocolOnly && cardAttempt === 1 && options?.prewarmedPayment?.card) {
++            // A prewarmed card must carry the receipt returned by reserveCard.
++            if (options.prewarmedPayment.card.ownerKey !== ownerKey) {
++                await persistPaymentState('not_started');
++                return { success: false, error: '预热银行卡锁归属不匹配，已停止支付', code: 'CARD_LOCK_OWNERSHIP_LOST',
++                    manualIntervention: true, paymentState: 'not_started', screenshots: [] };
++            }
+             card = options.prewarmedPayment.card;
+             options.prewarmedPayment.consumed = true;
+             prewarmedTokens = options.prewarmedPayment.tokenPromise;
+@@ -386,7 +405,7 @@
+         const cardValidation = validateCardNumber(card.card_number);
+         if (!cardValidation.valid) {
+             progress(`卡片 ...${cardLast4} 本地校验未通过 (${cardValidation.error})，标记已报废并更换下一张`);
+-            await store.markCardExhausted(card.id);
++            await store.markCardExhausted(card.id, ownerKey);
+             declinedLast4s.push(cardLast4);
+             cardAttempt -= 1;
+             continue;
+@@ -685,6 +704,10 @@
+                 captchaRequired: paymentResult.captchaRequired,
+                 error: paymentResult.error
+             });
++            // A submitted/terminal result owns its recovery path before any
++            // callback or bookkeeping can throw. Only confirmed pre-submit
++            // failures may use finally's ordinary release.
++            cardHandled = paymentState !== 'not_started';
+             await persistPaymentState(paymentState, paymentState === 'unknown'
+                 ? '支付结果未知，暂停自动重试并保留 CDK 与银行卡供人工复核'
+                 : '');
+@@ -705,12 +728,12 @@
+                 progress(`实际扣款金额（免税后）: ${billedCurrency} ${billedAmount}`);
+ 
+                 const holderName = paymentResult.holderName || card.card_holder || billingHolderName || '';
+-                await store.bindCardPaymentProfile(card.id, { holderName, address });
++                await store.bindCardPaymentProfile(card.id, { holderName, address }, ownerKey);
+                 if (address.id) {
+                     await markAddressBound(address.id, card.id);
+                 }
+-                await store.recordCardUsage(card.id);
+-                await store.releaseCard(card.id);
++                await store.recordCardUsage(card.id, ownerKey);
++                await requireCardReleased(card.id);
+                 cardHandled = true;
+                 await store.createBillingRecord({
+                     card_number: card.card_number,
+@@ -750,7 +773,7 @@
+                 // Even if bookkeeping fails, an unresolved submitted payment must
+                 // never reach finally's normal release path.
+                 cardHandled = true;
+-                await store.quarantineCardForReview(card.id);
++                await store.quarantineCardForReview(card.id, 'payment_result_unknown', ownerKey);
+                 await store.createBillingRecord({
+                     card_number: card.card_number,
+                     card_last4: cardLast4,
+@@ -783,9 +806,10 @@
+                 cardHandled = true;
+                 progress(`Stripe 拒绝支付 [${lastError}]，将卡片置入 30 分钟智能冷却避让 (ID: ${card.id}, ...${cardLast4})`);
+                 try {
+-                    await store.cooldownCard(card.id, 30, 'Stripe拒付');
++                    await store.cooldownCard(card.id, 30, ownerKey);
+                 } catch (error) {
+-                    await store.quarantineCardForReview(card.id, 'decline_cooldown_failed');
++                    if (error?.code === 'CARD_LOCK_OWNERSHIP_LOST') throw error;
++                    await store.quarantineCardForReview(card.id, 'decline_cooldown_failed', ownerKey);
+                     throw error;
+                 }
+                 await store.createBillingRecord({
+@@ -851,7 +875,7 @@
+             }
+ 
+             // 非银行拒付：立即将卡片安全释放回卡池，保证处于正常可用状态
+-            await store.releaseCard(card.id, true);
++            await requireCardReleased(card.id);
+             cardHandled = true;
+ 
+             progress(`卡片 ...${cardLast4} 已恢复可用状态（非卡片问题，无需报废或冷却）`);
+@@ -868,7 +892,7 @@
+             };
+         } finally {
+             if (card?.id && !cardHandled) {
+-                await store.releaseCard(card.id, true).catch(() => { });
++                await store.releaseCard(card.id, ownerKey).catch(() => { });
+             }
+         }
+     }

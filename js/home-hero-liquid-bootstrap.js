@@ -276,6 +276,8 @@
         }
         gl.uniform1f(paletteLoc, paletteMix);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
+        // Optional mobile subscriber copies before the WebGL buffer is discarded.
+        canvas.__mobileGlassFrame?.();
 
         if (!reducedMotion) {
             runtime.frame = window.requestAnimationFrame(drawScene);
@@ -325,6 +327,7 @@
                 ctx2d.fillRect(0, 0, w, h);
             }
             ctx2d.globalCompositeOperation = 'source-over';
+            canvas.__mobileGlassFrame?.();
             if (!reducedMotion) {
                 runtime.frame = window.requestAnimationFrame(paint2D);
             }

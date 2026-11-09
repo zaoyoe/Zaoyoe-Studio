@@ -1,0 +1,133 @@
+{
+  "status": "PASS",
+  "scope": "Final targeted offline tests only. Not a KC full-suite result, live MySQL, payment or production verification.",
+  "final_runs": [
+    {
+      "id": "native-regression-fixture-fixed",
+      "pass_count": 477,
+      "fail_count": 0,
+      "exit_code": 0,
+      "files": [
+        "tests/security-round2-kc-activation.test.js",
+        "tests/security-round2-kc-credentials.test.js",
+        "tests/security-round2-kc-public-guard.test.js",
+        "tests/security-round3-kc-activation-atomic.test.js",
+        "tests/security-round4-kc-local-settlement.test.js",
+        "tests/security-round5-kc-owner-locks.test.js",
+        "tests/security-round6-kc-card-ownership.test.js",
+        "tests/security-round6-kc-payment-callers.test.js",
+        "tests/security-round7-kc-payment-hold.test.js"
+      ],
+      "log": "logs/kc-round7-native-regression-fixture-fixed.log"
+    },
+    {
+      "id": "kc-regression",
+      "pass_count": 506,
+      "fail_count": 0,
+      "exit_code": 0,
+      "files": [
+        "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+        "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+        "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+        "services/kc-pay-gpt/test/card-freeze.test.js",
+        "services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+        "services/kc-pay-gpt/test/openai-payment-method.test.js",
+        "services/kc-pay-gpt/test/recharge-routing.test.js",
+        "services/kc-pay-gpt/test/gpt-api-client.test.js",
+        "services/kc-pay-gpt/test/task-safety.test.js",
+        "services/kc-pay-gpt/test/payment-decline-dictionary.test.js",
+        "services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+        "services/kc-pay-gpt/test/gpt-outsourcing-worker.test.js",
+        "services/kc-pay-gpt/test/gpt-outsourcing-recovery.test.js",
+        "services/kc-pay-gpt/test/gpt-outsourcing.test.js",
+        "services/kc-pay-gpt/test/recharge-captcha-bridge.test.js"
+      ],
+      "log": "logs/kc-round7-kc-regression.log"
+    },
+    {
+      "id": "chatgpt-regression",
+      "pass_count": 18,
+      "fail_count": 0,
+      "exit_code": 0,
+      "files": [
+        "services/kc-pay-gpt/test/chatgpt-billing.test.js",
+        "services/kc-pay-gpt/test/chatgpt-checkout-team-promo.test.js"
+      ],
+      "log": "logs/kc-round7-chatgpt-regression.log"
+    }
+  ],
+  "final_unique_actual_test_files": 26,
+  "final_pass_count": 1001,
+  "final_fail_count": 0,
+  "missing_selector": {
+    "requested": "test/chatgpt-protocol-first.test.js",
+    "actual_execution": "NOT RUN: file does not exist; Vitest silently ignored selector. Two existing ChatGPT files subsequently executed separately."
+  },
+  "intermediate_runs": [
+    {
+      "log": "kc-round7-initial-vitest.log",
+      "pass_count": 149,
+      "fail_count": 27,
+      "exit_code": 1,
+      "reason": "Existing service test expectations before adaptation to persistent-hold API; historical failure preserved."
+    },
+    {
+      "log": "kc-round7-vitest-adapted.log",
+      "pass_count": 174,
+      "fail_count": 2,
+      "exit_code": 1,
+      "reason": "Intermediate service test adaptation; historical failure preserved."
+    },
+    {
+      "log": "kc-round7-vitest-helper-fix.log",
+      "pass_count": 176,
+      "fail_count": 0,
+      "exit_code": 0,
+      "reason": "Adapted six-file intermediate regression; overlaps final tests."
+    },
+    {
+      "log": "kc-round7-fault-vitest-first.log",
+      "pass_count": 192,
+      "fail_count": 2,
+      "exit_code": 1,
+      "reason": "New full-module protocol test fixture used incorrect require base; corrected createRequire URL."
+    },
+    {
+      "log": "kc-round7-fault-vitest-path-fix.log",
+      "pass_count": 194,
+      "fail_count": 0,
+      "exit_code": 0,
+      "reason": "Corrected protocol test require base; overlaps final tests."
+    },
+    {
+      "log": "kc-round7-model-first.log",
+      "pass_count": 163,
+      "fail_count": 0,
+      "exit_code": 0,
+      "reason": "Initial round7 offline store model; overlaps final tests."
+    },
+    {
+      "log": "kc-round7-native-regression.log",
+      "pass_count": 462,
+      "fail_count": 15,
+      "exit_code": 1,
+      "reason": "Round6 offline SQL parser did not enforce new status IN predicates; added IN parsing without deleting assertions."
+    }
+  ],
+  "early_command_provenance": "Exact early shell invocations were not completely retained; counts and exit codes from preserved logs and prior session record. Do not reconstruct a claimed shell transcript.",
+  "prior_round6": "710 targeted PASS historical record unchanged",
+  "prior_kc_full_suite": {
+    "files": 71,
+    "pass_count": 1672,
+    "fail_count": 40,
+    "exit_code": 1,
+    "this_round": "NOT RUN"
+  },
+  "not_run": [
+    "Real MySQL concurrency/deadlock/disconnect/ambiguous COMMIT/crash recovery",
+    "Real payments and provider idempotency",
+    "KC production artifact and worker",
+    "Main site, TG, NewAPI, WAF and production permissions"
+  ],
+  "isolation": "Clean synthetic test environment and Node fs/net/tls/dgram guards. Not an OS/native addon/Chromium/independent-child-process sandbox. ChatGPT logs include Sentinel network failure; no broad external-network absence claim."
+}

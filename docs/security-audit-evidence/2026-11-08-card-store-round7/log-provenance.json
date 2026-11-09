@@ -1,0 +1,312 @@
+{
+  "boundary": "Finite regex heuristic, not proof of absence of secrets. No matched values printed. Redacted copies are not byte-original logs. Originals remain in /tmp with recorded hashes; retention not guaranteed.",
+  "patterns": {
+    "pan_13_19": "(?<!\\d)(?:\\d[ -]?){12,18}\\d(?!\\d)",
+    "jwt": "\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}",
+    "secret_key": "\\b(?:sk_(?:live|test)_[A-Za-z0-9]+|gh[pousr]_[A-Za-z0-9]+|sb_secret_[A-Za-z0-9_-]+|AKIA[A-Z0-9]{16})",
+    "long_opaque": "[A-Za-z0-9_~+/=-]{100,}",
+    "card_security_field": "(?i)[\"\\']?(?:cvc|cvv|card_number|password|access_token|authorization)[\"\\']?\\s*[:=]\\s*[\"\\']?[^\\s,\\'\"}]{3,}"
+  },
+  "files": [
+    {
+      "original_absolute_path": "/tmp/kc-round7-chatgpt-regression.log",
+      "original_sha256": "fc35a15e8d5169a5642d2f0e312dfa47026d9e08600b27df92c933c02c99afdf",
+      "original_bytes": 10267,
+      "archive_relative_path": "logs/kc-round7-chatgpt-regression.log",
+      "archive_sha256": "5bb74c7a5522461207205c375dc588e66e17d7d1d33ebb9041cf70ad5c035ca9",
+      "archive_bytes": 7811,
+      "kind": "redacted-copy",
+      "original_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 4,
+        "card_security_field": 0
+      },
+      "redaction_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 4,
+        "card_security_field": 0
+      },
+      "post_redaction_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "original_absolute_path": "/tmp/kc-round7-fault-vitest-first.log",
+      "original_sha256": "9367b55f910ff4a51405f0b5e046dd7d088bcf00aad14fb19b4a12ceea23ed5e",
+      "original_bytes": 3290,
+      "archive_relative_path": "logs/kc-round7-fault-vitest-first.log",
+      "archive_sha256": "9367b55f910ff4a51405f0b5e046dd7d088bcf00aad14fb19b4a12ceea23ed5e",
+      "archive_bytes": 3290,
+      "kind": "byte-identical-original",
+      "original_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "redaction_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "post_redaction_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "original_absolute_path": "/tmp/kc-round7-fault-vitest-path-fix.log",
+      "original_sha256": "f097aaecf1ecf8e07cf4c2701c34b859612f6aaa762115bbc1dae091c3df04a3",
+      "original_bytes": 1509,
+      "archive_relative_path": "logs/kc-round7-fault-vitest-path-fix.log",
+      "archive_sha256": "f097aaecf1ecf8e07cf4c2701c34b859612f6aaa762115bbc1dae091c3df04a3",
+      "archive_bytes": 1509,
+      "kind": "byte-identical-original",
+      "original_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "redaction_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "post_redaction_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "original_absolute_path": "/tmp/kc-round7-initial-vitest.log",
+      "original_sha256": "a6e14960d76788ba94eb502e8304f9a53a55a7dda33cea5fc4ecb37f9405737b",
+      "original_bytes": 37282,
+      "archive_relative_path": "logs/kc-round7-initial-vitest.log",
+      "archive_sha256": "184ad9dd65e77d8ac04c337440dac363d44a4b8534cc63cb4f09476605858b88",
+      "archive_bytes": 37276,
+      "kind": "redacted-copy",
+      "original_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 1
+      },
+      "redaction_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 1
+      },
+      "post_redaction_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "original_absolute_path": "/tmp/kc-round7-kc-regression.log",
+      "original_sha256": "4fa0fb521fdfbbbc917398af5856348ee3acf1e7184908b0a1c81ae548b61291",
+      "original_bytes": 58773,
+      "archive_relative_path": "logs/kc-round7-kc-regression.log",
+      "archive_sha256": "145b6ec9bb2f8e88f98a0607eabb625c5393937a497255dbce36c12cc83474a7",
+      "archive_bytes": 58245,
+      "kind": "redacted-copy",
+      "original_pattern_counts": {
+        "pan_13_19": 7,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 7,
+        "card_security_field": 0
+      },
+      "redaction_counts": {
+        "pan_13_19": 7,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 7,
+        "card_security_field": 0
+      },
+      "post_redaction_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "original_absolute_path": "/tmp/kc-round7-model-first.log",
+      "original_sha256": "d3a75806704036f03526a3afbc48f896237fe8b0eb1e25426a02ee9e74ccf69a",
+      "original_bytes": 14182,
+      "archive_relative_path": "logs/kc-round7-model-first.log",
+      "archive_sha256": "d3a75806704036f03526a3afbc48f896237fe8b0eb1e25426a02ee9e74ccf69a",
+      "archive_bytes": 14182,
+      "kind": "byte-identical-original",
+      "original_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "redaction_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "post_redaction_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "original_absolute_path": "/tmp/kc-round7-native-regression-fixture-fixed.log",
+      "original_sha256": "b65e0ce29e12e820065b26d81beed3d30f46a6226afcf761d62c1af3d9ce9a8d",
+      "original_bytes": 41337,
+      "archive_relative_path": "logs/kc-round7-native-regression-fixture-fixed.log",
+      "archive_sha256": "d67224fb475d8ca203729f60ad117c235b7178fe9a81498fe6b445187cb25ecd",
+      "archive_bytes": 41361,
+      "kind": "redacted-copy",
+      "original_pattern_counts": {
+        "pan_13_19": 6,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "redaction_counts": {
+        "pan_13_19": 6,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "post_redaction_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "original_absolute_path": "/tmp/kc-round7-native-regression.log",
+      "original_sha256": "a2786b9ff14f0b9aef3ef69d8888449ab7174d37c6cb8cd858765f883ae1b4cf",
+      "original_bytes": 51613,
+      "archive_relative_path": "logs/kc-round7-native-regression.log",
+      "archive_sha256": "00f75d78e0c4c549d717a8b2b8df26d8f50f9f95deaeb7e5bc250d1b2f9f9145",
+      "archive_bytes": 51637,
+      "kind": "redacted-copy",
+      "original_pattern_counts": {
+        "pan_13_19": 6,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "redaction_counts": {
+        "pan_13_19": 6,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "post_redaction_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "original_absolute_path": "/tmp/kc-round7-vitest-adapted.log",
+      "original_sha256": "9f8d5b5da348f13f11dfb65642db335e7530e9af1d3e4ed72f5aa2e364b1877b",
+      "original_bytes": 14026,
+      "archive_relative_path": "logs/kc-round7-vitest-adapted.log",
+      "archive_sha256": "9f8d5b5da348f13f11dfb65642db335e7530e9af1d3e4ed72f5aa2e364b1877b",
+      "archive_bytes": 14026,
+      "kind": "byte-identical-original",
+      "original_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "redaction_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "post_redaction_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "original_absolute_path": "/tmp/kc-round7-vitest-helper-fix.log",
+      "original_sha256": "0cde9d584708e10320d6907ffd30c8fb18a77c8dc93555f8e090938797d805b4",
+      "original_bytes": 1508,
+      "archive_relative_path": "logs/kc-round7-vitest-helper-fix.log",
+      "archive_sha256": "0cde9d584708e10320d6907ffd30c8fb18a77c8dc93555f8e090938797d805b4",
+      "archive_bytes": 1508,
+      "kind": "byte-identical-original",
+      "original_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "redaction_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      },
+      "post_redaction_pattern_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    }
+  ]
+}

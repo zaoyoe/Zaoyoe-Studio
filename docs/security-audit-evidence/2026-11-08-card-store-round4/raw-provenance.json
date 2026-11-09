@@ -1,0 +1,237 @@
+{
+  "copied_at_utc": "2026-11-08T12:53:25.650327+00:00",
+  "copies": [
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-baseline.log",
+      "archive": "raw/local-settlement-baseline.log",
+      "sha256": "820148377cb83c3ae85301f7bb2fef2a390ab8e0d5b42d77da3cafe940221fc2",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-store.log",
+      "archive": "raw/local-settlement-store.log",
+      "sha256": "5e86263e8c95988cbc346a14acff5007649640ce9483cb52196598eb21a7ae84",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-native-initial.log",
+      "archive": "raw/local-settlement-native-initial.log",
+      "sha256": "bfd6ba3221919c30e29d00f34e0f56d7c0657a7759106b3e6f6d564da1cd70fe",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-routing-initial.log",
+      "archive": "raw/local-settlement-routing-initial.log",
+      "sha256": "eb79f7a46f7f794ee13a8c4bc04b64b1ea1462b04ce043bcdb8de300d47990e6",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-legacy-unknown-red.log",
+      "archive": "raw/local-settlement-legacy-unknown-red.log",
+      "sha256": "ef6bc46377163768e2cbe18f9bad0d801c4e3854d078b948c0ae04d2a034f07d",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-routing-refined.log",
+      "archive": "raw/local-settlement-routing-refined.log",
+      "sha256": "ffcd9552961050192a0137c32be7945e9c3403bc2bbf2a285b039b318f906845",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-renewal-red.log",
+      "archive": "raw/local-settlement-renewal-red.log",
+      "sha256": "5e507d36dc8064c12b64a0d2467df71dfa0ebf261703b9b169a4db85818b9a88",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-renewal-fixed.log",
+      "archive": "raw/local-settlement-renewal-fixed.log",
+      "sha256": "cf8a07911de53e77014ae335f23f3ce313bdbefa4716ed21f1e6d7efc023aba5",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-native-final.log",
+      "archive": "raw/local-settlement-native-final.log",
+      "sha256": "e7e6885e8b570fd9e4937e66c88447ef8ed7390edd7ed9fdc4d4d26cf43d489f",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-kc-final.log",
+      "archive": "raw/local-settlement-kc-final.log",
+      "sha256": "035370c277638f617b73b05951a84891b7105a44cec293ab95d966cc3cefe648",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-exception-message-red.log",
+      "archive": "raw/local-settlement-exception-message-red.log",
+      "sha256": "b1c183f0bfcfdd10edb95788d942e95101dc26c30623e58f4b6f1078e336dd95",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-kc-final-v2.log",
+      "archive": "raw/local-settlement-kc-final-v2.log",
+      "sha256": "cca27b6ed92419b338dbaf9b2bb51d7a9d214fe4d02f80e3f84327b45340bf56",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-syntax-results.json",
+      "archive": "raw/local-settlement-syntax-results.json",
+      "sha256": "bdadcedf474736e9d484772d86db1c89490d23662e1bde8b57089107e9ac2e7e",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-syntax-store.log",
+      "archive": "raw/local-settlement-syntax-store.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-syntax-worker.log",
+      "archive": "raw/local-settlement-syntax-worker.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-syntax-routing-test.log",
+      "archive": "raw/local-settlement-syntax-routing-test.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-syntax-settlement-test.log",
+      "archive": "raw/local-settlement-syntax-settlement-test.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-whitespace-results.json",
+      "archive": "raw/local-settlement-whitespace-results.json",
+      "sha256": "89e2839291c3bfc352c1fe0df7894166ac7985b44ec62e1fe6cc4a3214acd1f3",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-whitespace-probes.json",
+      "archive": "raw/local-settlement-whitespace-probes.json",
+      "sha256": "71a1c8733e6e099e66e0df84e9bcfd41b9706a6d8fdd3b62dd12c6e157b2668c",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/run.py",
+      "archive": "raw/run.py",
+      "sha256": "3fbef5365d0b6779881f5ea667379c6b9f9804d1e6c84b47a8a59a02738cfe6c",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/preload.cjs",
+      "archive": "raw/preload.cjs",
+      "sha256": "d87e682b933d9a57ab604efce87a4b57f9b5df497b48e30d4f36cea4bf71a625",
+      "byte_identical": true,
+      "kind": "original local test/check log or isolation tool; not rerun during archival"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/round4-mysql-store.js.patch",
+      "archive": "delta/round4-mysql-store.js.patch",
+      "sha256": "018d8edb25bca7b03050617b5920b7aca1d5f57d9608546a664932238acb1496",
+      "byte_identical": true,
+      "kind": "round4 delta against pre-round dirty file backup; new test against empty file"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/round4-server.js.patch",
+      "archive": "delta/round4-server.js.patch",
+      "sha256": "33694bbf2e984805665f412568dbf680e76afb0d4f80ba9b8fea82ca9a2df76a",
+      "byte_identical": true,
+      "kind": "round4 delta against pre-round dirty file backup; new test against empty file"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/round4-recharge-routing.test.js.patch",
+      "archive": "delta/round4-recharge-routing.test.js.patch",
+      "sha256": "c8136acfcce06d4dca39a2bb6eaff25a715c9a0b56d4d808c55e0251fa6ada6b",
+      "byte_identical": true,
+      "kind": "round4 delta against pre-round dirty file backup; new test against empty file"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/round4-security-round4-kc-local-settlement.test.js.patch",
+      "archive": "delta/round4-security-round4-kc-local-settlement.test.js.patch",
+      "sha256": "b6645e672cfab99d596c52153e1da2a6d093e67dc020d09769337309cb73d16f",
+      "byte_identical": true,
+      "kind": "round4 delta against pre-round dirty file backup; new test against empty file"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/round4-working-tree-delta.patch",
+      "archive": "delta/round4-working-tree-delta.patch",
+      "sha256": "68fe85bc530f5ab6ece5df23b164a01c02c2452418214a5306bd63ed5e6713b5",
+      "byte_identical": true,
+      "kind": "combined final round4 delta against pre-round dirty files, not against HEAD"
+    },
+    {
+      "source": "/tmp/kc-local-settlement-20261108-backup/git-status-before.txt",
+      "archive": "baseline-status-expanded.txt",
+      "sha256": "8876f88c91f0288bf3bea4ebcfe6a8db0800e93d75d08f7b84ffc2c1cabb0f81",
+      "byte_identical": true,
+      "kind": "pre-round expanded dirty path listing"
+    },
+    {
+      "source": "/tmp/kc-local-settlement-20261108-backup/baseline.json",
+      "archive": "backup-manifests/baseline.json",
+      "sha256": "b202ce1c64856bb74b3056c8855f3be458e7b895e8365382b463befe612cfdad",
+      "byte_identical": true,
+      "kind": "pre-round baseline record"
+    },
+    {
+      "source": "/tmp/kc-local-settlement-20261108-backup/manifest.json",
+      "archive": "backup-manifests/initial.json",
+      "sha256": "3f0ceb74c895c95854818968f5318da5cbb307c495707ba2a1ba73e0c7a4d374",
+      "byte_identical": true,
+      "kind": "original pre-edit per-file backup manifest"
+    },
+    {
+      "source": "/tmp/kc-round4-pending-renewal-implementation-before/manifest.json",
+      "archive": "backup-manifests/pending-renewal.json",
+      "sha256": "bbf230b27ff6ff095c362ff845e775fc3e29329befb371edb208c9277e2f04d4",
+      "byte_identical": true,
+      "kind": "original pre-edit per-file backup manifest"
+    },
+    {
+      "source": "/tmp/kc-round4-worker-error-before/manifest.json",
+      "archive": "backup-manifests/worker-error.json",
+      "sha256": "cbbdf83331a4428d8c493d18a7f916ca7e5ff2a2d1a132471a0b5d98d6a49d79",
+      "byte_identical": true,
+      "kind": "original pre-edit per-file backup manifest"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/local-settlement-backup-verification.json",
+      "archive": "backup-verification.json",
+      "sha256": "edf075096453d89d987b5c9210dee9577e8da8c9365886916dc7fbfafbb6215d",
+      "byte_identical": true,
+      "kind": "archive-time readback and comparison with previously recorded hashes"
+    },
+    {
+      "source": "/tmp/security-test-isolation-20261108/archive-round4.py",
+      "archive": "archive-procedure.py",
+      "sha256": "d920848db9283294ad808ae2082ee13dd0d5065e8332319f8f69efe143666488",
+      "byte_identical": true,
+      "kind": "archive-time procedure; refuses to overwrite existing archive"
+    }
+  ],
+  "excluded": "Cumulative blocked-reads.jsonl from other runs/rounds; not a dedicated round4 boundary log."
+}

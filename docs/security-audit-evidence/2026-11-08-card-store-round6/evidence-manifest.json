@@ -1,0 +1,215 @@
+{
+  "scope": "SHA256 inventory excludes this manifest itself; no cryptographic signature or immutability claim.",
+  "files": [
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/.gitignore",
+      "bytes": 79,
+      "sha256": "928f2ec132512313271ede0a058f0f8fe42e60fa268f3d0f9873ee1345e29458"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/README.md",
+      "bytes": 2883,
+      "sha256": "f6263c1d408b6f294d13426723afdf891e406d140844a0393ce22f41bad2af40"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/archive-inclusion-verification.json",
+      "bytes": 7471,
+      "sha256": "c7b9392159e29e3afb637538f53b5b6222c9f7c2eb92bc5585b9aaab7d57d858"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/archive-procedure.py",
+      "bytes": 30660,
+      "sha256": "f47246fc6b36d527a27057e2023d3205ec01d86750c7630f44b088c8a0ca69d5"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/backup-manifests/baseline.json",
+      "bytes": 341,
+      "sha256": "73ad2b69a1076e27255d8fee53578e2485ef0f31bffd3a92f82399a1da5f004f"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/backup-manifests/manifest.json",
+      "bytes": 1372,
+      "sha256": "f18c43e23c2b635ea505f70a53b610e3b157e89580bbb531a1e28ced1d7f78b6"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/backup-verification.json",
+      "bytes": 3610,
+      "sha256": "dc3546b1587d4bdd6804f94a6ee52986823acc2c0e4c12ba126aab78c4298530"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/baseline-and-boundaries.json",
+      "bytes": 1793,
+      "sha256": "dcd00718684a7cd57eaeff1d7fa7c40d09df9ad007b82fe2a08ad097b7893cc6"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/baseline-status-expanded.txt",
+      "bytes": 30264,
+      "sha256": "ba15cf21159aad12165987d36f0bef43ca04967d4c481a56e08d46a43397a885"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/delta-recovery-verification.json",
+      "bytes": 7064,
+      "sha256": "346973bdaaab69831fd0c273befdfb58ab3c50bf55cf2e28fffecdbfd9ab0b5a"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/delta/round6-working-tree-delta.patch",
+      "bytes": 64185,
+      "sha256": "b3d746b8c194d307e1d5161d4e82d6c7716ef2df155a1453d688884accb9c771"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__chatgpt.js.patch",
+      "bytes": 1147,
+      "sha256": "27144259c9e98e9d4e62a5cf19e6b12005b50409ed02309265fe3230992df65b"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__index.js.patch",
+      "bytes": 747,
+      "sha256": "00dfa24804f9ff8014a419693bc40400daf23e37fcc8bcc7b7a43b3339b69e19"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__mysql-store.js.patch",
+      "bytes": 13128,
+      "sha256": "c60e1e2be6fd82b4faf1aee2d4fd0a4e3ec5865894ec9631bb1dc98b8aafd9c3"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__payment-retry.js.patch",
+      "bytes": 6755,
+      "sha256": "591d8414b6effe88d633174f36562072ced356a2af008a6ac62ecd1324b53445"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__test__mysql-card-cooldown.test.js.patch",
+      "bytes": 2690,
+      "sha256": "85a1467a4a372fa751d6ac7953bcb205eae481d0af1cd3488cc5454cbf7e3ab9"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__test__payment-protocol-fallback.test.js.patch",
+      "bytes": 957,
+      "sha256": "2e32a4794ced164985728cc273185226ffe680b3ed62018949bcbbe2862dfcf9"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__test__payment-retry-safety.test.js.patch",
+      "bytes": 20330,
+      "sha256": "9deef79bb9b0f70714c355ad33d39cfa72e35d62e99baa90d9e2bfaace00d88e"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/delta/tests__security-round6-kc-card-ownership.test.js.patch",
+      "bytes": 14551,
+      "sha256": "ea2047888129248c0d4f24ffd53d54b731dabe6bacc444d1e0d3cef819856f48"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/delta/tests__security-round6-kc-payment-callers.test.js.patch",
+      "bytes": 3880,
+      "sha256": "a3fb1cd1791adc12ea7b9732aef54188311d872d11243b3040f81c04d4f21af2"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/final-integrity.json",
+      "bytes": 9868,
+      "sha256": "96a2f7b8f5ce46a5fed4ec2f4f086c6ee80dbc7107bef04eeb9a8b3a04f9cbfd"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/log-pattern-scan.json",
+      "bytes": 2880,
+      "sha256": "525e36f6ec251f4b48a81bb37aaae9b034a3736d55b98db5bc1bfc6deb5c97af"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/packaging-boundary.json",
+      "bytes": 1270,
+      "sha256": "d12183823ee50820b1521a7fa3aa7a59ddaed04a15e1ab18916f0355d970ac38"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw-provenance.json",
+      "bytes": 3239,
+      "sha256": "daba93a7c2a257f7940ea2a6e9a7d01e6a77ff8772e4e9397cc8786a5aff13cb"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-baseline-native.log",
+      "bytes": 124925,
+      "sha256": "222bf72552b132ea5f964bf479077a6c21e19b168d03244679d1abce5d251abe"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-caller-compatibility-final.log",
+      "bytes": 1229,
+      "sha256": "280bcfa9bac90ff2647438f8c456fbab6abf126e6d55f9a6796835fdcbcd83a0"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-chatgpt-regression-final.log",
+      "bytes": 10279,
+      "sha256": "d3303b7470e15659a7e142265a8fae58a99966431f44573b4d7c014739a3f3f9"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-native-after.log",
+      "bytes": 33289,
+      "sha256": "c37385d7530be146f8d9276e6e97e1eeba567e0c7de806bc332956fc73339a7f"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-native-final.log",
+      "bytes": 65649,
+      "sha256": "f57232ec6132f6793f8d70f65f14dc430ea25bd3287ec24c69bd2587a7932d19"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-native-first.log",
+      "bytes": 124928,
+      "sha256": "932fa0e384ee05973e84c011c503d6df02d5f8c7217a2f061d10c0781c5a17c8"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-retry-before-callback-fix.log",
+      "bytes": 16291,
+      "sha256": "4db66a48293798e6ac5aaf493fef1045fb179914a111f3fb27883c96be703f92"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-vitest-adapted.log",
+      "bytes": 419,
+      "sha256": "ab9ef745fc2b1d2dfc7649f366e3d3c2f4d320b82a54bc931cc2fbca8e35da10"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-vitest-after-callback-fix.log",
+      "bytes": 419,
+      "sha256": "b8042dec52cfb41f1d02cef6f56ea438ed40a6fb1fb943a3ba90f1886e2f32f7"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-vitest-final.log",
+      "bytes": 58499,
+      "sha256": "eb1e3f5e482240e32582c0a395f603d4fc609adb3c04320276a63ceaf01afaa2"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/preload.cjs",
+      "bytes": 1438,
+      "sha256": "d87e682b933d9a57ab604efce87a4b57f9b5df497b48e30d4f36cea4bf71a625"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/run.py",
+      "bytes": 1099,
+      "sha256": "3fbef5365d0b6779881f5ea667379c6b9f9804d1e6c84b47a8a59a02738cfe6c"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/syntax-results.json",
+      "bytes": 1064,
+      "sha256": "7175faafe5b29b7fa9aba6b188b410fe0574909add247904f97888cd4e83099d"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/source-manifest.json",
+      "bytes": 4860,
+      "sha256": "2e712d51c9a2581a209bbd4fe7730f1cdbba1440c826f9f36c8a9d45f62f5a90"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/status-before-archive-expanded.txt",
+      "bytes": 30683,
+      "sha256": "09e7475b0f54b5a4c1e64322b9aa9311fe085d5871a6fe75c068d32b64f3c9a4"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/verification-results.json",
+      "bytes": 5360,
+      "sha256": "d90d466a17122c7ea5dad2d2f82724f0292c6460774f7179a120e0f3a614b666"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/whitespace-results.json",
+      "bytes": 4958,
+      "sha256": "f8cefbb8720fb8c735b0fe9fb7ab026acc517159c38ad0c6a099750a5f314e92"
+    },
+    {
+      "path": "docs/security-card-store-hardening-round6-2026-11-08.md",
+      "bytes": 10599,
+      "sha256": "0531afbc46995c5456489b037845e5f1f1dd50f0f3abe36070e36952671bfa7a"
+    }
+  ]
+}

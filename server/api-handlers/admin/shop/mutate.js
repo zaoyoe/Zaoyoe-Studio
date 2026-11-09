@@ -15,6 +15,11 @@ const {
     normalizeCdk,
     isCdkInventoryType
 } = require('../../../../api/_lib/shop-cdk-secrets');
+const {
+    syncSupplierProductStock
+} = require('../../../integrations/suppliers/stock-sync');
+const { uploadRemoteMediaToR2 } = require('./_r2-media');
+const { matchCategoryIconUrl } = require('../../../integrations/suppliers/xiareng/category-groups');
 
 async function countAvailableInventory(supabase, productId, skuId = '') {
     let query = supabase
@@ -1879,6 +1884,7 @@ const PRODUCT_SCHEMA_COMPATIBILITY_FIELDS = [
     'usage_instructions',
     'show_usage_instructions',
     'show_product_description',
+    'min_purchase_quantity',
     'max_purchase_quantity',
     'purchase_limit_24h_quantity',
     'purchase_limit_window_quantity',
@@ -1900,6 +1906,7 @@ const PRODUCT_SCHEMA_COMPATIBILITY_FIELDS = [
     'flash_sale_start_intl',
     'flash_sale_end',
     'flash_sale_end_intl',
+    'sales_config',
     'name_en',
     'description_en',
     'image_assets'
@@ -2026,6 +2033,10 @@ function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missin
         removeFields(['show_product_description']);
     }
 
+    if (hasMissing('sales_config')) {
+        removeFields(['sales_config']);
+    }
+
     if (hasMissing('description_intl', 'description_intl_zh', 'show_product_description_intl')) {
         removeFields(['description_intl', 'description_intl_zh', 'show_product_description_intl']);
     }
@@ -2042,6 +2053,10 @@ function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missin
             'purchase_limit_window_minutes',
             'per_account_purchase_limit'
         ]);
+    }
+
+    if (hasMissing('min_purchase_quantity')) {
+        removeFields(['min_purchase_quantity']);
     }
 
     if (hasMissing('max_purchase_quantity')) {
@@ -2195,6 +2210,46 @@ async function writeProductRowWithSchemaFallback(supabase, {
     };
 }
 
+function getCstDateString(date = new Date()) {
+    const d = new Date(date);
+    const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+    const cst = new Date(utc + (3600000 * 8));
+    const year = cst.getFullYear();
+    const month = String(cst.getMonth() + 1).padStart(2, '0');
+    const day = String(cst.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function normalizeProductSalesConfig(config) {
+    if (!config || typeof config !== 'object') {
+        return null;
+    }
+    const rawMode = Number.parseInt(String(config.mode), 10);
+    const mode = (rawMode === 1 || rawMode === 2 || rawMode === 3) ? rawMode : 3;
+    const baseSales = Math.max(0, Number.parseInt(String(config.base_sales ?? 0), 10) || 0);
+    const dailyMin = Math.max(0, Number.parseInt(String(config.daily_random_min ?? 0), 10) || 0);
+    const dailyMax = Math.max(0, Number.parseInt(String(config.daily_random_max ?? 0), 10) || 0);
+    const randomSeed = typeof config.random_seed === 'string'
+        ? config.random_seed.trim().slice(0, 100)
+        : (config.random_seed != null ? String(config.random_seed).trim().slice(0, 100) : '');
+
+    let startDate = null;
+    if (typeof config.start_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(config.start_date.trim())) {
+        startDate = config.start_date.trim();
+    } else if (mode === 2) {
+        startDate = getCstDateString();
+    }
+
+    return {
+        mode,
+        base_sales: baseSales,
+        daily_random_min: dailyMin,
+        daily_random_max: dailyMax,
+        random_seed: randomSeed,
+        start_date: startDate
+    };
+}
+
 function prepareProductPayloadForWritableSite(payload = {}, { productId = '', site = 'cn' } = {}) {
     const nextPayload = { ...(payload && typeof payload === 'object' ? payload : {}) };
     const writableSite = site === 'intl' ? 'intl' : 'cn';
@@ -2202,6 +2257,10 @@ function prepareProductPayloadForWritableSite(payload = {}, { productId = '', si
 
     if (!nextPayload.updated_at) {
         nextPayload.updated_at = new Date().toISOString();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(nextPayload, 'sales_config')) {
+        nextPayload.sales_config = normalizeProductSalesConfig(nextPayload.sales_config);
     }
 
     if (Object.prototype.hasOwnProperty.call(nextPayload, 'price_points')) {
@@ -2309,6 +2368,7 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
     const manualDelivery = normalizeBoolean(safePayload.manual_delivery, false);
     const webhookTarget = normalizeText(safePayload.webhook_target, 2000);
     const isActive = normalizeBoolean(safePayload.is_active, true);
+    const minPurchaseQuantity = normalizePositiveInteger(safePayload.min_purchase_quantity);
     const maxPurchaseQuantity = normalizePositiveInteger(safePayload.max_purchase_quantity);
     const guestMaxQuantity = normalizePositiveInteger(safePayload.guest_max_quantity);
     const purchaseLimit24hQuantity = normalizePositiveInteger(safePayload.purchase_limit_24h_quantity);
@@ -2323,12 +2383,12 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
     const purchaseNotesIntl = normalizeText(safePayload.purchase_notes_intl, 4000);
     const purchaseNotesIntlZh = normalizeText(safePayload.purchase_notes_intl_zh, 4000);
     const showUsageInstructions = normalizeBoolean(safePayload.show_usage_instructions, false);
-    const usageInstructions = normalizeText(safePayload.usage_instructions, 4000);
-    const usageInstructionsZh = normalizeText(safePayload.usage_instructions_zh, 4000);
-    const usageInstructionsEn = normalizeText(safePayload.usage_instructions_en, 4000);
+    const usageInstructions = normalizeText(safePayload.usage_instructions, 32000);
+    const usageInstructionsZh = normalizeText(safePayload.usage_instructions_zh, 32000);
+    const usageInstructionsEn = normalizeText(safePayload.usage_instructions_en, 32000);
     const showUsageInstructionsIntl = normalizeBoolean(safePayload.show_usage_instructions_intl, false);
-    const usageInstructionsIntl = normalizeText(safePayload.usage_instructions_intl, 4000);
-    const usageInstructionsIntlZh = normalizeText(safePayload.usage_instructions_intl_zh, 4000);
+    const usageInstructionsIntl = normalizeText(safePayload.usage_instructions_intl, 32000);
+    const usageInstructionsIntlZh = normalizeText(safePayload.usage_instructions_intl_zh, 32000);
 
     if (!name) {
         appendProductValidationIssue(blockingIssues, 'blocking', 'name_required', '商品名称不能为空。', 'name');
@@ -2336,6 +2396,18 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
 
     if (!category) {
         appendProductValidationIssue(blockingIssues, 'blocking', 'category_required', '请选择商品分类。', 'category');
+    }
+
+    if (Object.prototype.hasOwnProperty.call(safePayload, 'min_purchase_quantity')) {
+        if (minPurchaseQuantity === null || minPurchaseQuantity < 1 || minPurchaseQuantity > 9999) {
+            appendProductValidationIssue(
+                blockingIssues,
+                'blocking',
+                'min_purchase_quantity_invalid',
+                '起售数量必须是 1 到 9999 之间的整数。',
+                'min_purchase_quantity'
+            );
+        }
     }
 
     if (Object.prototype.hasOwnProperty.call(safePayload, 'guest_max_quantity')) {
@@ -2348,6 +2420,20 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
                 'guest_max_quantity'
             );
         }
+    }
+
+    if (
+        Number.isFinite(minPurchaseQuantity)
+        && Number.isFinite(maxPurchaseQuantity)
+        && minPurchaseQuantity > maxPurchaseQuantity
+    ) {
+        appendProductValidationIssue(
+            blockingIssues,
+            'blocking',
+            'purchase_limit_conflict',
+            '起售数量不能大于单次限购数量，请先调整配置。',
+            'min_purchase_quantity'
+        );
     }
 
     if (
@@ -2372,6 +2458,19 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
             '填写 N 分钟累计上限时，必须同时填写 N 分钟。',
             'purchase_limit_window_minutes'
         );
+    }
+
+    if (safePayload.sales_config) {
+        const sc = safePayload.sales_config;
+        if (sc.mode === 2 && sc.daily_random_min > sc.daily_random_max) {
+            appendProductValidationIssue(
+                blockingIssues,
+                'blocking',
+                'sales_config_range_invalid',
+                '每日销量递增最小值不能大于最大值。',
+                'sales_config'
+            );
+        }
     }
 
     if (deliveryType === 'API') {
@@ -2590,7 +2689,7 @@ async function tryRpcProductReorder(supabase, assignments = []) {
     return data && typeof data === 'object' ? data : {};
 }
 
-module.exports = async (req, res) => {
+const handleShopMutation = async (req, res) => {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
         return sendJson(res, 405, { success: false, message: 'Method not allowed' });
@@ -2697,6 +2796,20 @@ module.exports = async (req, res) => {
                 });
             }
 
+            const supplierSync = await syncSupplierProductStock(supabase, {
+                productId: savedProduct.id,
+                site: writableSite,
+                enableMappings: savedProduct.is_active === true
+            });
+            if (supplierSync?.isSupplierProduct) {
+                savedProduct.stock_count = supplierSync.stockCount;
+                savedSkus = savedSkus.map((sku) => (
+                    Object.prototype.hasOwnProperty.call(supplierSync.skuStockMap || {}, sku.id)
+                        ? { ...sku, stock_count: supplierSync.skuStockMap[sku.id] }
+                        : sku
+                ));
+            }
+
             await runWithTransientSupabaseRetry(
                 () => writeAdminAuditLog({
                     supabase,
@@ -2775,6 +2888,17 @@ module.exports = async (req, res) => {
                 });
             }
 
+            if (nextStatus === true) {
+                const supplierSync = await syncSupplierProductStock(supabase, {
+                    productId: data[0].id,
+                    site: writableSite,
+                    enableMappings: true
+                });
+                if (supplierSync?.isSupplierProduct) {
+                    data[0].stock_count = supplierSync.stockCount;
+                }
+            }
+
             await writeAdminAuditLog({
                 supabase,
                 adminId: user.id,
@@ -2839,25 +2963,463 @@ module.exports = async (req, res) => {
             });
         }
 
+        if (action === 'batch_toggle_category_products') {
+            const category = normalizeText(body.category, 120);
+            const isActive = Boolean(body.isActive);
+            const preflightOnly = Boolean(body.preflightOnly);
+
+            if (!category) {
+                return sendJson(res, 400, { success: false, message: 'category is required' });
+            }
+
+            const { data: rows, error: rowsError } = await supabase
+                .from('shop_products')
+                .select('id, name, price_points, price_points_intl, is_active, category')
+                .eq('category', category);
+
+            if (rowsError) {
+                return sendJson(res, 400, { success: false, message: rowsError.message });
+            }
+
+            if (!rows?.length) {
+                return sendJson(res, 404, { success: false, message: '该分类下暂无商品' });
+            }
+
+            if (isActive) {
+                const productIds = rows.map((r) => r.id);
+                const { data: skus } = await supabase
+                    .from('shop_product_skus')
+                    .select('id, product_id, sku_name, price_points, price_points_intl, is_active')
+                    .in('product_id', productIds);
+
+                const skusByProduct = new Map();
+                for (const sku of (skus || [])) {
+                    if (!skusByProduct.has(sku.product_id)) {
+                        skusByProduct.set(sku.product_id, []);
+                    }
+                    skusByProduct.get(sku.product_id).push(sku);
+                }
+
+                const isIntl = writableSite === 'intl';
+                const eligible = [];
+                const excluded = [];
+
+                for (const p of rows) {
+                    const basePrice = isIntl ? Number(p.price_points_intl || p.price_points || 0) : Number(p.price_points || 0);
+                    const prodSkus = skusByProduct.get(p.id) || [];
+                    const hasValidSkuPrice = prodSkus.length > 0 && prodSkus.some((s) => (isIntl ? Number(s.price_points_intl || s.price_points || 0) : Number(s.price_points || 0)) > 0);
+
+                    if (basePrice <= 0 && !hasValidSkuPrice) {
+                        excluded.push({
+                            id: p.id,
+                            name: p.name,
+                            reason: '未设定有效售价（售价需大于0）'
+                        });
+                    } else {
+                        eligible.push(p);
+                    }
+                }
+
+                if (preflightOnly) {
+                    return sendJson(res, 200, {
+                        success: true,
+                        preflight: true,
+                        total: rows.length,
+                        eligibleCount: eligible.length,
+                        excludedCount: excluded.length,
+                        excludedDetails: excluded
+                    });
+                }
+
+                if (!eligible.length) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        message: '该分类下没有符合上架条件的商品（售价需大于0）',
+                        total: rows.length,
+                        eligibleCount: 0,
+                        excludedCount: excluded.length,
+                        excludedDetails: excluded
+                    });
+                }
+
+                const eligibleIds = eligible.map((p) => p.id);
+                const { error: updateError } = await supabase
+                    .from('shop_products')
+                    .update({ is_active: true })
+                    .in('id', eligibleIds);
+
+                if (updateError) {
+                    return sendJson(res, 400, { success: false, message: updateError.message });
+                }
+
+                try {
+                    await supabase
+                        .from('shop_supplier_product_mappings')
+                        .update({ is_enabled: true })
+                        .in('product_id', eligibleIds);
+                } catch (_) {}
+
+                await writeAdminAuditLog({
+                    supabase,
+                    adminId: user.id,
+                    module: 'shop',
+                    site: writableSite,
+                    actionType: 'shop.category.publish',
+                    details: {
+                        category,
+                        total: rows.length,
+                        updated_count: eligible.length,
+                        excluded_count: excluded.length
+                    }
+                });
+
+                return sendJson(res, 200, {
+                    success: true,
+                    total: rows.length,
+                    updatedCount: eligible.length,
+                    excludedCount: excluded.length,
+                    excludedDetails: excluded
+                });
+            } else {
+                const { error: updateError } = await supabase
+                    .from('shop_products')
+                    .update({ is_active: false })
+                    .eq('category', category);
+
+                if (updateError) {
+                    return sendJson(res, 400, { success: false, message: updateError.message });
+                }
+
+                await writeAdminAuditLog({
+                    supabase,
+                    adminId: user.id,
+                    module: 'shop',
+                    site: writableSite,
+                    actionType: 'shop.category.unpublish',
+                    details: {
+                        category,
+                        updated_count: rows.length
+                    }
+                });
+
+                return sendJson(res, 200, {
+                    success: true,
+                    total: rows.length,
+                    updatedCount: rows.length
+                });
+            }
+        }
+
+        if (action === 'batch_toggle_products') {
+            const productIds = normalizeStringArray(body.productIds, 160);
+            const isActive = Boolean(body.isActive);
+
+            if (!productIds.length) {
+                return sendJson(res, 400, { success: false, message: '请至少选择一个商品' });
+            }
+
+            const { data: rows, error: rowsError } = await supabase
+                .from('shop_products')
+                .select('id, name, price_points, price_points_intl, is_active')
+                .in('id', productIds);
+
+            if (rowsError) {
+                return sendJson(res, 400, { success: false, message: rowsError.message });
+            }
+
+            if (!rows?.length) {
+                return sendJson(res, 404, { success: false, message: '未找到选中的商品' });
+            }
+
+            if (isActive) {
+                const isIntl = writableSite === 'intl';
+                const { data: skus } = await supabase
+                    .from('shop_product_skus')
+                    .select('id, product_id, sku_name, price_points, price_points_intl')
+                    .in('product_id', productIds);
+
+                const skusByProduct = new Map();
+                for (const sku of (skus || [])) {
+                    if (!skusByProduct.has(sku.product_id)) skusByProduct.set(sku.product_id, []);
+                    skusByProduct.get(sku.product_id).push(sku);
+                }
+
+                const eligible = [];
+                const excluded = [];
+                for (const p of rows) {
+                    const basePrice = isIntl ? Number(p.price_points_intl || p.price_points || 0) : Number(p.price_points || 0);
+                    const prodSkus = skusByProduct.get(p.id) || [];
+                    const hasValidSkuPrice = prodSkus.length > 0 && prodSkus.some((s) => (isIntl ? Number(s.price_points_intl || s.price_points || 0) : Number(s.price_points || 0)) > 0);
+
+                    if (basePrice <= 0 && !hasValidSkuPrice) {
+                        excluded.push({ id: p.id, name: p.name, reason: '未设定有效售价' });
+                    } else {
+                        eligible.push(p.id);
+                    }
+                }
+
+                if (!eligible.length) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        message: '选中的商品未设定有效售价（售价需大于0），无法上架'
+                    });
+                }
+
+                const { error: updateError } = await supabase
+                    .from('shop_products')
+                    .update({ is_active: true })
+                    .in('id', eligible);
+
+                if (updateError) {
+                    return sendJson(res, 400, { success: false, message: updateError.message });
+                }
+
+                try {
+                    await supabase
+                        .from('shop_supplier_product_mappings')
+                        .update({ is_enabled: true })
+                        .in('product_id', eligible);
+                } catch (_) {}
+
+                await writeAdminAuditLog({
+                    supabase,
+                    adminId: user.id,
+                    module: 'shop',
+                    site: writableSite,
+                    actionType: 'shop.product.batch_publish',
+                    details: {
+                        product_ids: eligible,
+                        count: eligible.length,
+                        excluded_count: excluded.length
+                    }
+                });
+
+                return sendJson(res, 200, {
+                    success: true,
+                    updatedCount: eligible.length,
+                    excludedCount: excluded.length
+                });
+            } else {
+                const { error: updateError } = await supabase
+                    .from('shop_products')
+                    .update({ is_active: false })
+                    .in('id', productIds);
+
+                if (updateError) {
+                    return sendJson(res, 400, { success: false, message: updateError.message });
+                }
+
+                try {
+                    await supabase
+                        .from('shop_supplier_product_mappings')
+                        .update({ is_enabled: false })
+                        .in('product_id', productIds);
+                } catch (_) {}
+
+                await writeAdminAuditLog({
+                    supabase,
+                    adminId: user.id,
+                    module: 'shop',
+                    site: writableSite,
+                    actionType: 'shop.product.batch_unpublish',
+                    details: {
+                        product_ids: productIds,
+                        count: productIds.length
+                    }
+                });
+
+                return sendJson(res, 200, {
+                    success: true,
+                    updatedCount: productIds.length
+                });
+            }
+        }
+
+        if (action === 'batch_update_products') {
+            const productIds = normalizeStringArray(body.productIds, 160);
+            if (!productIds.length) {
+                return sendJson(res, 400, { success: false, message: 'productIds is required' });
+            }
+
+            const { data: rows, error: rowsError } = await supabase
+                .from('shop_products')
+                .select('id, name, is_active, category, guest_payment_channels, price_points, price_points_intl')
+                .in('id', productIds);
+
+            if (rowsError) {
+                return sendJson(res, 400, { success: false, message: rowsError.message });
+            }
+            if (!rows?.length) {
+                return sendJson(res, 404, { success: false, message: '未找到指定商品' });
+            }
+
+            const hasChannels = Array.isArray(body.guestPaymentChannels);
+            const channelMode = body.paymentChannelMode === 'append' ? 'append' : 'replace';
+            const hasAllowGuest = typeof body.allowGuestPurchase === 'boolean';
+            const hasMinQty = Number.isSafeInteger(Number(body.minPurchaseQuantity)) && Number(body.minPurchaseQuantity) > 0;
+            const hasGuestMaxQty = Number.isSafeInteger(Number(body.guestMaxQuantity)) && Number(body.guestMaxQuantity) > 0;
+            const hasMaxQty = Number.isSafeInteger(Number(body.maxPurchaseQuantity)) && Number(body.maxPurchaseQuantity) > 0;
+            const hasShowUsage = typeof body.showUsageInstructions === 'boolean';
+            const rawMultiplier = body.markupMultiplier;
+            const hasMultiplier = Number.isFinite(Number(rawMultiplier)) && Number(rawMultiplier) >= 1;
+            const markupMultiplier = hasMultiplier ? Number(rawMultiplier) : null;
+            const recalculatePrices = Boolean(body.recalculatePrices);
+
+            let mappingsByProduct = new Map();
+            if (hasMultiplier && recalculatePrices) {
+                const { data: mappings } = await supabase
+                    .from('shop_supplier_product_mappings')
+                    .select('id, product_id, sku_id, import_snapshot')
+                    .in('product_id', productIds);
+                if (Array.isArray(mappings)) {
+                    for (const m of mappings) {
+                        if (!mappingsByProduct.has(m.product_id)) {
+                            mappingsByProduct.set(m.product_id, []);
+                        }
+                        mappingsByProduct.get(m.product_id).push(m);
+                    }
+                }
+            }
+
+            const isIntl = writableSite === 'intl';
+            const priceField = isIntl ? 'price_points_intl' : 'price_points';
+
+            for (const row of rows) {
+                const patch = {};
+
+                if (hasChannels) {
+                    let channelsToSet = body.guestPaymentChannels;
+                    if (channelMode === 'append') {
+                        const existing = Array.isArray(row.guest_payment_channels) ? row.guest_payment_channels : [];
+                        channelsToSet = [...new Set([...existing, ...body.guestPaymentChannels])];
+                    }
+                    patch.guest_payment_channels = channelsToSet;
+                    if (channelsToSet.length > 0) {
+                        patch.allow_guest_purchase = true;
+                    }
+                }
+
+                if (hasAllowGuest) {
+                    patch.allow_guest_purchase = body.allowGuestPurchase;
+                }
+                if (hasMinQty) {
+                    patch.min_purchase_quantity = Number(body.minPurchaseQuantity);
+                }
+                if (hasGuestMaxQty) {
+                    patch.guest_max_quantity = Number(body.guestMaxQuantity);
+                }
+                if (hasMaxQty) {
+                    patch.max_purchase_quantity = Number(body.maxPurchaseQuantity);
+                }
+                if (hasShowUsage) {
+                    patch.show_usage_instructions = body.showUsageInstructions;
+                }
+
+                if (hasMultiplier && recalculatePrices) {
+                    const prodMappings = mappingsByProduct.get(row.id) || [];
+                    if (prodMappings.length > 0) {
+                        const baseCost = Number(prodMappings[0].import_snapshot?.supplierUnitPrice || 0);
+                        if (baseCost > 0) {
+                            const newPrice = Math.ceil(baseCost * markupMultiplier);
+                            patch[priceField] = newPrice;
+                        }
+                    }
+                }
+
+                if (Object.keys(patch).length > 0) {
+                    await supabase
+                        .from('shop_products')
+                        .update(patch)
+                        .eq('id', row.id);
+                }
+
+                if (hasMultiplier && recalculatePrices) {
+                    const prodMappings = mappingsByProduct.get(row.id) || [];
+                    for (const m of prodMappings) {
+                        const cost = Number(m.import_snapshot?.supplierUnitPrice || 0);
+                        if (cost > 0 && m.sku_id) {
+                            const newSkuPrice = Math.ceil(cost * markupMultiplier);
+                            await supabase
+                                .from('shop_product_skus')
+                                .update({ [priceField]: newSkuPrice })
+                                .eq('id', m.sku_id);
+                            const curSnap = typeof m.import_snapshot === 'object' && m.import_snapshot ? m.import_snapshot : {};
+                            await supabase
+                                .from('shop_supplier_product_mappings')
+                                .update({
+                                    import_snapshot: {
+                                        ...curSnap,
+                                        markupMultiplier,
+                                        price: newSkuPrice
+                                    }
+                                })
+                                .eq('id', m.id);
+                        }
+                    }
+                }
+            }
+
+            await writeAdminAuditLog({
+                supabase,
+                adminId: user.id,
+                module: 'shop',
+                site: writableSite,
+                actionType: 'shop.product.batch_update',
+                details: {
+                    product_ids: productIds,
+                    updated_count: rows.length,
+                    has_channels: hasChannels,
+                    has_multiplier: hasMultiplier
+                }
+            });
+
+            return sendJson(res, 200, {
+                success: true,
+                updatedCount: rows.length
+            });
+        }
+
         if (action === 'create_category') {
             const name = normalizeText(body.name, 120);
             const color = normalizeCategoryColor(body.color, '#6b9ece');
+            let iconUrl = normalizeText(body.icon_url || body.iconUrl, 500);
 
             if (!name) {
                 return sendJson(res, 400, { success: false, message: 'name is required' });
             }
 
+            if (!iconUrl) {
+                iconUrl = matchCategoryIconUrl(name);
+            }
+            if (iconUrl && iconUrl.startsWith('http') && !iconUrl.includes('r2.cloudflarestorage') && !iconUrl.includes('media.zaoyoe.com') && !iconUrl.includes('r2.fatherkey.com')) {
+                try {
+                    iconUrl = await uploadRemoteMediaToR2(iconUrl, { env: process.env, keyPrefix: 'shop/categories/icons' });
+                } catch (_) {}
+            }
+
             const sortOrder = await getNextCategorySortOrder(supabase);
-            const result = await supabase
+            const insertPayload = {
+                name,
+                color,
+                sort_order: sortOrder,
+                is_public: true,
+                ...(iconUrl ? { icon_url: iconUrl } : {})
+            };
+
+            let result = await supabase
                 .from('shop_categories')
-                .insert({
-                    name,
-                    color,
-                    sort_order: sortOrder,
-                    is_public: true
-                })
+                .insert(insertPayload)
                 .select('*')
                 .limit(1);
+
+            if (result.error && String(result.error?.message || '').includes('icon_url')) {
+                delete insertPayload.icon_url;
+                result = await supabase
+                    .from('shop_categories')
+                    .insert(insertPayload)
+                    .select('*')
+                    .limit(1);
+            }
 
             if (result.error || !result.data?.length) {
                 return sendJson(res, 400, {
@@ -2961,6 +3523,191 @@ module.exports = async (req, res) => {
             return sendJson(res, 200, {
                 success: true,
                 category: updatedCategory
+            });
+        }
+
+        if (action === 'set_category_icon') {
+            const categoryId = normalizeText(body.categoryId, 160);
+            let nextIcon = normalizeText(body.icon_url || body.iconUrl, 500);
+
+            if (!categoryId) {
+                return sendJson(res, 400, {
+                    success: false,
+                    message: 'categoryId is required'
+                });
+            }
+
+            const { data: categoryRow, error: categoryError } = await supabase
+                .from('shop_categories')
+                .select('*')
+                .eq('id', categoryId)
+                .single();
+
+            if (categoryError || !categoryRow) {
+                return sendJson(res, 404, { success: false, message: '分类不存在' });
+            }
+
+            if (nextIcon && nextIcon.startsWith('http') && !nextIcon.includes('r2.cloudflarestorage') && !nextIcon.includes('media.zaoyoe.com') && !nextIcon.includes('r2.fatherkey.com')) {
+                try {
+                    nextIcon = await uploadRemoteMediaToR2(nextIcon, { env: process.env, keyPrefix: 'shop/categories/icons' });
+                } catch (_) {}
+            }
+
+            try {
+                await supabase
+                    .from('shop_categories')
+                    .update({ icon_url: nextIcon || null })
+                    .eq('id', categoryId);
+            } catch (_) {}
+
+            const updatedCategory = {
+                ...categoryRow,
+                icon_url: nextIcon || null
+            };
+
+            await writeAdminAuditLog({
+                supabase,
+                adminId: user.id,
+                module: 'shop',
+                site: writableSite,
+                actionType: 'shop.category.icon',
+                details: {
+                    category_id: categoryId,
+                    name: categoryRow.name,
+                    icon_url: nextIcon || null
+                }
+            });
+
+            return sendJson(res, 200, {
+                success: true,
+                category: updatedCategory
+            });
+        }
+
+        if (action === 'set_category_parent') {
+            const categoryId = normalizeText(body.categoryId, 160);
+            const parentId = normalizeText(body.parentId || body.parent_id, 160) || null;
+            const parentName = normalizeText(body.parentName || body.parent_name, 120) || null;
+
+            if (!categoryId) {
+                return sendJson(res, 400, { success: false, message: 'categoryId is required' });
+            }
+
+            if (parentId && parentId === categoryId) {
+                return sendJson(res, 400, { success: false, message: '不能将分类自身设为父分类' });
+            }
+
+            const { data: categoryRow, error: categoryError } = await supabase
+                .from('shop_categories')
+                .select('*')
+                .eq('id', categoryId)
+                .single();
+
+            if (categoryError || !categoryRow) {
+                return sendJson(res, 404, { success: false, message: '分类不存在' });
+            }
+
+            // Update shop_categories if parent_id column exists
+            try {
+                await supabase
+                    .from('shop_categories')
+                    .update({ parent_id: parentId })
+                    .eq('id', categoryId);
+            } catch (_) {}
+
+            // Persist to system_config for 100% resilient storage
+            let updatedHierarchy = {};
+            try {
+                let configLoaded = false;
+                try {
+                    const { data: configRow } = await supabase
+                        .from('system_config')
+                        .select('config_value')
+                        .eq('config_key', 'shop_category_hierarchy')
+                        .maybeSingle();
+                    if (configRow?.config_value && typeof configRow.config_value === 'object') {
+                        updatedHierarchy = { ...configRow.config_value };
+                        configLoaded = true;
+                    }
+                } catch (_) {}
+
+                if (!configLoaded) {
+                    try {
+                        const { data: fallbackRow } = await supabase
+                            .from('system_config')
+                            .select('value')
+                            .eq('key', 'shop_category_hierarchy')
+                            .maybeSingle();
+                        if (fallbackRow?.value && typeof fallbackRow.value === 'object') {
+                            updatedHierarchy = { ...fallbackRow.value };
+                        }
+                    } catch (_) {}
+                }
+
+                if (parentId) {
+                    updatedHierarchy[categoryId] = { parentId, parentName: parentName || '' };
+                    if (categoryRow.name) {
+                        updatedHierarchy[categoryRow.name] = { parentId, parentName: parentName || '' };
+                    }
+                } else {
+                    delete updatedHierarchy[categoryId];
+                    if (categoryRow.name) {
+                        delete updatedHierarchy[categoryRow.name];
+                    }
+                }
+
+                let upsertSuccess = false;
+                try {
+                    const { error: upErr } = await supabase
+                        .from('system_config')
+                        .upsert({
+                            config_key: 'shop_category_hierarchy',
+                            config_value: updatedHierarchy,
+                            description: '商品分类层级映射',
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'config_key' });
+                    if (!upErr) upsertSuccess = true;
+                } catch (_) {}
+
+                if (!upsertSuccess) {
+                    try {
+                        await supabase
+                            .from('system_config')
+                            .upsert({
+                                key: 'shop_category_hierarchy',
+                                value: updatedHierarchy,
+                                updated_at: new Date().toISOString()
+                            });
+                    } catch (_) {}
+                }
+            } catch (cfgErr) {
+                console.warn('Failed to update shop_category_hierarchy in system_config:', cfgErr);
+            }
+
+            await writeAdminAuditLog({
+                supabase,
+                adminId: user.id,
+                module: 'shop',
+                site: writableSite,
+                actionType: 'shop.category.parent',
+                details: {
+                    category_id: categoryId,
+                    name: categoryRow.name,
+                    parent_id: parentId,
+                    parent_name: parentName
+                }
+            });
+
+            return sendJson(res, 200, {
+                success: true,
+                categoryId,
+                parentId,
+                parentName,
+                category: {
+                    ...categoryRow,
+                    parent_id: parentId,
+                    parent_name: parentName
+                }
             });
         }
 
@@ -4175,3 +4922,6 @@ module.exports = async (req, res) => {
         });
     }
 };
+
+handleShopMutation.validateProductPayload = validateProductPayload;
+module.exports = handleShopMutation;

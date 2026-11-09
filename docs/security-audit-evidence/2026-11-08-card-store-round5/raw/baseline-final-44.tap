@@ -1,0 +1,812 @@
+TAP version 13
+# Subtest: local cleanup releases only the canonical complete payment owner: job-1
+not ok 1 - local cleanup releases only the canonical complete payment owner: job-1
+  ---
+  duration_ms: 69.581833
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:118:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    8 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 8
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:124:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3)
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: AbC_-123
+not ok 2 - local cleanup releases only the canonical complete payment owner: AbC_-123
+  ---
+  duration_ms: 0.877208
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:118:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    8 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 8
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:124:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: gptapi_job-1
+not ok 3 - local cleanup releases only the canonical complete payment owner: gptapi_job-1
+  ---
+  duration_ms: 0.740417
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:118:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    8 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 8
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:124:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: local cleanup releases only the canonical complete payment owner: XXXXXXXXXXXXXXXXXXXX
+not ok 4 - local cleanup releases only the canonical complete payment owner: XXXXXXXXXXXXXXXXXXXX
+  ---
+  duration_ms: 0.77425
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:118:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    8 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 8
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:124:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: invalid owner cannot widen cleanup: null
+ok 5 - invalid owner cannot widen cleanup: null
+  ---
+  duration_ms: 0.636333
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: undefined
+ok 6 - invalid owner cannot widen cleanup: undefined
+  ---
+  duration_ms: 0.579708
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: ""
+ok 7 - invalid owner cannot widen cleanup: ""
+  ---
+  duration_ms: 0.563625
+  type: 'test'
+  ...
+# Subtest: invalid owner cannot widen cleanup: "%"
+not ok 8 - invalid owner cannot widen cleanup: "%"
+  ---
+  duration_ms: 0.691125
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:130:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    2 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 2
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:132:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: invalid owner cannot widen cleanup: "_%"
+not ok 9 - invalid owner cannot widen cleanup: "_%"
+  ---
+  duration_ms: 0.63325
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:130:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    2 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 2
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:132:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: invalid owner cannot widen cleanup: "job%1"
+not ok 10 - invalid owner cannot widen cleanup: "job%1"
+  ---
+  duration_ms: 1.036416
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:130:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:132:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: invalid owner cannot widen cleanup: "job 1"
+not ok 11 - invalid owner cannot widen cleanup: "job 1"
+  ---
+  duration_ms: 0.665209
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:130:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    invalid owner must not issue SQL
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:133:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: invalid owner cannot widen cleanup: " job-1"
+not ok 12 - invalid owner cannot widen cleanup: " job-1"
+  ---
+  duration_ms: 0.962625
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:130:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    invalid owner must not issue SQL
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:133:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: invalid owner cannot widen cleanup: "job-1\\n"
+not ok 13 - invalid owner cannot widen cleanup: "job-1\\n"
+  ---
+  duration_ms: 0.789292
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:130:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    invalid owner must not issue SQL
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:133:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: invalid owner cannot widen cleanup: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+not ok 14 - invalid owner cannot widen cleanup: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  ---
+  duration_ms: 0.723375
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:130:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    invalid owner must not issue SQL
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:133:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: invalid owner cannot widen cleanup: 123
+not ok 15 - invalid owner cannot widen cleanup: 123
+  ---
+  duration_ms: 0.624209
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:130:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    invalid owner must not issue SQL
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:133:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: invalid owner cannot widen cleanup: {}
+not ok 16 - invalid owner cannot widen cleanup: {}
+  ---
+  duration_ms: 0.644708
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:130:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    invalid owner must not issue SQL
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:133:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: invalid owner cannot widen cleanup: ["job-1"]
+not ok 17 - invalid owner cannot widen cleanup: ["job-1"]
+  ---
+  duration_ms: 0.582333
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:130:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:132:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: retirement follows CDK then fresh task lock order
+not ok 18 - retirement follows CDK then fresh task lock order
+  ---
+  duration_ms: 2.03
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:138:5'
+  failureType: 'testCodeFailure'
+  error: 'the first locking read must lock the CDK'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: 'SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE'
+  operator: 'match'
+  stack: |-
+    assertCdkFirst (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:104:12)
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:141:9)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: retirement aborts if the task CDK changes after discovery
+not ok 19 - retirement aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 2.15725
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:144:5'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ACTIVATION_TASK_BINDING_CHANGED'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:146:9)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: retirement rejects a replacement task using the same job key
+not ok 20 - retirement rejects a replacement task using the same job key
+  ---
+  duration_ms: 0.924042
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:152:5'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ACTIVATION_TASK_BINDING_CHANGED'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:154:9)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: retirement waits for a CDK holder without holding a task lock
+not ok 21 - retirement waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 1.051708
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:160:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    a competing CDK holder must be free to lock the task
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:168:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: save follows CDK then fresh task lock order
+not ok 22 - save follows CDK then fresh task lock order
+  ---
+  duration_ms: 4.169292
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:138:5'
+  failureType: 'testCodeFailure'
+  error: 'the first locking read must lock the CDK'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: 'SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE'
+  operator: 'match'
+  stack: |-
+    assertCdkFirst (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:104:12)
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:141:9)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: save aborts if the task CDK changes after discovery
+not ok 23 - save aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 2.510542
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:144:5'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ACTIVATION_TASK_BINDING_CHANGED'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:146:9)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: save rejects a replacement task using the same job key
+not ok 24 - save rejects a replacement task using the same job key
+  ---
+  duration_ms: 0.816791
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:152:5'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ACTIVATION_TASK_BINDING_CHANGED'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:154:9)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: save waits for a CDK holder without holding a task lock
+not ok 25 - save waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 0.70575
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:160:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    the operation must lock the CDK
+    
+    false !== true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:167:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserve follows CDK then fresh task lock order
+not ok 26 - reserve follows CDK then fresh task lock order
+  ---
+  duration_ms: 0.781292
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:138:5'
+  failureType: 'testCodeFailure'
+  error: 'the first locking read must lock the CDK'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: 'SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE'
+  operator: 'match'
+  stack: |-
+    assertCdkFirst (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:104:12)
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:141:9)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserve aborts if the task CDK changes after discovery
+not ok 27 - reserve aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 0.603083
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:144:5'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ACTIVATION_TASK_BINDING_CHANGED'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:146:9)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserve rejects a replacement task using the same job key
+not ok 28 - reserve rejects a replacement task using the same job key
+  ---
+  duration_ms: 0.582209
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:152:5'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ACTIVATION_TASK_BINDING_CHANGED'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:154:9)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserve waits for a CDK holder without holding a task lock
+not ok 29 - reserve waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 0.663083
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:160:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    a competing CDK holder must be free to lock the task
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:168:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: finalize follows CDK then fresh task lock order
+not ok 30 - finalize follows CDK then fresh task lock order
+  ---
+  duration_ms: 0.807791
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:138:5'
+  failureType: 'testCodeFailure'
+  error: 'the first locking read must lock the CDK'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: 'SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE'
+  operator: 'match'
+  stack: |-
+    assertCdkFirst (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:104:12)
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:141:9)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: finalize aborts if the task CDK changes after discovery
+not ok 31 - finalize aborts if the task CDK changes after discovery
+  ---
+  duration_ms: 0.608
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:144:5'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ACTIVATION_TASK_BINDING_CHANGED'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:146:9)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: finalize rejects a replacement task using the same job key
+not ok 32 - finalize rejects a replacement task using the same job key
+  ---
+  duration_ms: 0.586084
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:152:5'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ACTIVATION_TASK_BINDING_CHANGED'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:154:9)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: finalize waits for a CDK holder without holding a task lock
+not ok 33 - finalize waits for a CDK holder without holding a task lock
+  ---
+  duration_ms: 0.763208
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:160:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    a competing CDK holder must be free to lock the task
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:168:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: retirement evaluates the fresh payment evidence after locking
+not ok 34 - retirement evaluates the fresh payment evidence after locking
+  ---
+  duration_ms: 0.598292
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:177:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:179:12)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: retirement retains assets when fresh task evidence changes: execution_mode
+not ok 35 - retirement retains assets when fresh task evidence changes: execution_mode
+  ---
+  duration_ms: 0.64825
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:188:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:190:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: retirement retains assets when fresh task evidence changes: gpt_api_order_id
+not ok 36 - retirement retains assets when fresh task evidence changes: gpt_api_order_id
+  ---
+  duration_ms: 0.913458
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:188:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:190:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: retirement retains assets when fresh task evidence changes: recovery_required
+not ok 37 - retirement retains assets when fresh task evidence changes: recovery_required
+  ---
+  duration_ms: 0.66425
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:188:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:190:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: missing task never releases assets
+ok 38 - missing task never releases assets
+  ---
+  duration_ms: 1.276959
+  type: 'test'
+  ...
+# Subtest: missing CDK still permits legacy hold without releasing assets
+not ok 39 - missing CDK still permits legacy hold without releasing assets
+  ---
+  duration_ms: 0.685458
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:201:1'
+  failureType: 'testCodeFailure'
+  error: 'the first locking read must lock the CDK'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: 'SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE'
+  operator: 'match'
+  stack: |-
+    assertCdkFirst (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:104:12)
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:204:5)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: legacy task without CDK can be held but cannot settle
+ok 40 - legacy task without CDK can be held but cannot settle
+  ---
+  duration_ms: 0.997375
+  type: 'test'
+  ...
+# Subtest: case-insensitive task lookup cannot authorize a different job ID
+not ok 41 - case-insensitive task lookup cannot authorize a different job ID
+  ---
+  duration_ms: 0.727375
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:216:1'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ACTIVATION_TASK_BINDING_CHANGED'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:218:5)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: deleted task after discovery cannot authorize a release
+ok 42 - deleted task after discovery cannot authorize a release
+  ---
+  duration_ms: 0.630542
+  type: 'test'
+  ...
+# Subtest: inactive CDK refuses provider card reservation
+ok 43 - inactive CDK refuses provider card reservation
+  ---
+  duration_ms: 0.616833
+  type: 'test'
+  ...
+# Subtest: write failure after CDK-first retirement rolls back and releases the connection
+not ok 44 - write failure after CDK-first retirement rolls back and releases the connection
+  ---
+  duration_ms: 0.704667
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:232:1'
+  failureType: 'testCodeFailure'
+  error: 'the first locking read must lock the CDK'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: 'SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE'
+  operator: 'match'
+  stack: |-
+    assertCdkFirst (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:104:12)
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round5-kc-owner-locks.test.js:235:5)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+1..44
+# tests 44
+# suites 0
+# pass 7
+# fail 37
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 228.12025

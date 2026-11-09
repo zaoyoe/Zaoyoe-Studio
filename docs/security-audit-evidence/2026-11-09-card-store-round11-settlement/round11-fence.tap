@@ -1,0 +1,119 @@
+✔ release: legacy path cannot mutate or select a fenced card in enforce mode (69.172208ms)
+✔ release: guard off issues no draft-column SQL against an unmigrated schema (0.975709ms)
+✔ runtimeRelease: legacy path cannot mutate or select a fenced card in enforce mode (0.725959ms)
+✔ runtimeRelease: guard off issues no draft-column SQL against an unmigrated schema (0.806708ms)
+✔ staleCleanup: legacy path cannot mutate or select a fenced card in enforce mode (1.778ms)
+✔ staleCleanup: guard off issues no draft-column SQL against an unmigrated schema (0.754625ms)
+✔ startupCleanup: legacy path cannot mutate or select a fenced card in enforce mode (0.73725ms)
+✔ startupCleanup: guard off issues no draft-column SQL against an unmigrated schema (0.647292ms)
+✔ ownerCleanup: legacy path cannot mutate or select a fenced card in enforce mode (0.698875ms)
+✔ ownerCleanup: guard off issues no draft-column SQL against an unmigrated schema (1.017333ms)
+✔ markStarted: legacy path cannot mutate or select a fenced card in enforce mode (1.024791ms)
+✔ markStarted: guard off issues no draft-column SQL against an unmigrated schema (0.640667ms)
+✔ complete: legacy path cannot mutate or select a fenced card in enforce mode (0.656166ms)
+✔ complete: guard off issues no draft-column SQL against an unmigrated schema (0.57825ms)
+✔ cooldown: legacy path cannot mutate or select a fenced card in enforce mode (0.626ms)
+✔ cooldown: guard off issues no draft-column SQL against an unmigrated schema (0.566667ms)
+✔ quarantine: legacy path cannot mutate or select a fenced card in enforce mode (1.294417ms)
+✔ quarantine: guard off issues no draft-column SQL against an unmigrated schema (0.832208ms)
+✔ exhausted: legacy path cannot mutate or select a fenced card in enforce mode (0.913625ms)
+✔ exhausted: guard off issues no draft-column SQL against an unmigrated schema (0.707291ms)
+✔ usage: legacy path cannot mutate or select a fenced card in enforce mode (0.890791ms)
+✔ usage: guard off issues no draft-column SQL against an unmigrated schema (1.853125ms)
+✔ profile: legacy path cannot mutate or select a fenced card in enforce mode (0.71425ms)
+✔ profile: guard off issues no draft-column SQL against an unmigrated schema (0.61075ms)
+✔ freeze: legacy path cannot mutate or select a fenced card in enforce mode (0.63275ms)
+✔ freeze: guard off issues no draft-column SQL against an unmigrated schema (0.583167ms)
+✔ unfreeze: legacy path cannot mutate or select a fenced card in enforce mode (0.706ms)
+✔ unfreeze: guard off issues no draft-column SQL against an unmigrated schema (0.5565ms)
+✔ resetCooldown: legacy path cannot mutate or select a fenced card in enforce mode (0.632458ms)
+✔ resetCooldown: guard off issues no draft-column SQL against an unmigrated schema (0.606791ms)
+✔ deleteById: legacy path cannot mutate or select a fenced card in enforce mode (0.539833ms)
+✔ deleteById: guard off issues no draft-column SQL against an unmigrated schema (0.514834ms)
+✔ deleteByPan: legacy path cannot mutate or select a fenced card in enforce mode (0.560041ms)
+✔ deleteByPan: guard off issues no draft-column SQL against an unmigrated schema (0.5015ms)
+✔ bulkEmpty: legacy path cannot mutate or select a fenced card in enforce mode (0.736417ms)
+✔ bulkEmpty: guard off issues no draft-column SQL against an unmigrated schema (0.52ms)
+✔ bulkUpdate: legacy path cannot mutate or select a fenced card in enforce mode (0.719125ms)
+✔ bulkUpdate: guard off issues no draft-column SQL against an unmigrated schema (0.835958ms)
+✔ legacyIncrement: legacy path cannot mutate or select a fenced card in enforce mode (0.633667ms)
+✔ legacyIncrement: guard off issues no draft-column SQL against an unmigrated schema (0.591917ms)
+✔ reserve: legacy path cannot mutate or select a fenced card in enforce mode (0.631167ms)
+✔ reserve: guard off issues no draft-column SQL against an unmigrated schema (0.593417ms)
+✔ runtimeReserve: legacy path cannot mutate or select a fenced card in enforce mode (0.646959ms)
+✔ runtimeReserve: guard off issues no draft-column SQL against an unmigrated schema (0.569791ms)
+✔ availability: legacy path cannot mutate or select a fenced card in enforce mode (0.576084ms)
+✔ availability: guard off issues no draft-column SQL against an unmigrated schema (0.525959ms)
+✖ runtimeSnapshot: legacy path cannot mutate or select a fenced card in enforce mode (1.055875ms)
+✖ runtimeSnapshot: guard off issues no draft-column SQL against an unmigrated schema (0.686334ms)
+✔ providerReserve: legacy path cannot mutate or select a fenced card in enforce mode (2.266625ms)
+✔ providerReserve: guard off issues no draft-column SQL against an unmigrated schema (0.761708ms)
+✔ providerFinalize: legacy path cannot mutate or select a fenced card in enforce mode (1.61775ms)
+✔ providerFinalize: guard off issues no draft-column SQL against an unmigrated schema (0.722333ms)
+✔ enforce mode with missing schema fails closed, with no unguarded retry (0.781125ms)
+✔ invalid mode cannot silently disable the guard (1.100541ms)
+✔ deleteById: admin safety applies without ledger schema {"in_use":1,"locked_by":"payment_JobA"} (0.705792ms)
+✔ deleteById: admin safety applies without ledger schema {"in_use":0,"locked_by":"payment_JobA"} (0.563916ms)
+✔ deleteById: admin safety applies without ledger schema {"status":"支付处理中"} (0.529917ms)
+✔ deleteById: admin safety applies without ledger schema {"status":"待人工复核"} (0.553625ms)
+✔ deleteById: admin safety applies without ledger schema {"status":"支付结果未知"} (0.696833ms)
+✔ deleteByPan: admin safety applies without ledger schema {"in_use":1,"locked_by":"payment_JobA"} (0.614708ms)
+✔ deleteByPan: admin safety applies without ledger schema {"in_use":0,"locked_by":"payment_JobA"} (0.578583ms)
+✔ deleteByPan: admin safety applies without ledger schema {"status":"支付处理中"} (0.592417ms)
+✔ deleteByPan: admin safety applies without ledger schema {"status":"待人工复核"} (0.506375ms)
+✔ deleteByPan: admin safety applies without ledger schema {"status":"支付结果未知"} (0.526083ms)
+✔ resetCooldown: admin safety applies without ledger schema {"in_use":1,"locked_by":"payment_JobA"} (0.541792ms)
+✔ resetCooldown: admin safety applies without ledger schema {"in_use":0,"locked_by":"payment_JobA"} (0.507375ms)
+✔ resetCooldown: admin safety applies without ledger schema {"status":"支付处理中"} (0.485958ms)
+✔ resetCooldown: admin safety applies without ledger schema {"status":"待人工复核"} (0.513208ms)
+✔ resetCooldown: admin safety applies without ledger schema {"status":"支付结果未知"} (0.503166ms)
+✔ freeze: admin safety applies without ledger schema {"in_use":1,"locked_by":"payment_JobA"} (0.561583ms)
+✔ freeze: admin safety applies without ledger schema {"in_use":0,"locked_by":"payment_JobA"} (0.494083ms)
+✔ freeze: admin safety applies without ledger schema {"status":"支付处理中"} (0.50875ms)
+✔ freeze: admin safety applies without ledger schema {"status":"待人工复核"} (0.4825ms)
+✔ freeze: admin safety applies without ledger schema {"status":"支付结果未知"} (0.552ms)
+✔ reset cannot unfreeze an idle card (0.524416ms)
+✔ deleteById: an idle unbound card remains administrable (0.556209ms)
+✔ resetCooldown: an idle unbound card remains administrable (0.6995ms)
+✔ bulk update cannot turn a blocked existing PAN into a duplicate insert (0.788292ms)
+✔ ambiguous duplicate PAN rows abort the entire batch (0.631042ms)
+✔ ledger-linked billing records are excluded from legacy delete paths (0.644125ms)
+✔ admin routes use safe store methods and no longer clear ownership directly (0.637917ms)
+ℹ tests 81
+ℹ suites 0
+ℹ pass 79
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 238.944792
+
+✖ failing tests:
+
+test at tests/security-round11-kc-asset-fence.test.js:109:5
+✖ runtimeSnapshot: legacy path cannot mutate or select a fenced card in enforce mode (1.055875ms)
+  AssertionError [ERR_ASSERTION]: unexpected error MySQL 执行失败: unmodelled SQL: SELECT phone, sms_api_key, usage_count FROM phone_assets WHERE is_active = 1 ORDER BY usage_count ASC, id ASC LIMIT 1
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round11-kc-asset-fence.test.js:114:20)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at tests/security-round11-kc-asset-fence.test.js:121:5
+✖ runtimeSnapshot: guard off issues no draft-column SQL against an unmigrated schema (0.686334ms)
+  AssertionError [ERR_ASSERTION]: unexpected error MySQL 执行失败: unmodelled SQL: SELECT phone, sms_api_key, usage_count FROM phone_assets WHERE is_active = 1 ORDER BY usage_count ASC, id ASC LIMIT 1
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round11-kc-asset-fence.test.js:126:20)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

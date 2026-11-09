@@ -1,0 +1,65 @@
+{
+  "final": {
+    "files": 3,
+    "exit": 0,
+    "log": "logs/offline-final-02.log",
+    "breakdown": {
+      "new_ledger_model": 128,
+      "round8_offline_guard": 80,
+      "round7_hold_model": 119
+    },
+    "tests": 327,
+    "pass": 327,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "earlier_runs_not_accumulated": {
+    "ledger-tests-01.log": {
+      "tests": 97,
+      "pass": 97,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "ledger-tests-02.log": {
+      "tests": 109,
+      "pass": 109,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "offline-final-01.log": {
+      "tests": 326,
+      "pass": 326,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    }
+  },
+  "syntax": {
+    "files": 2,
+    "pass": 2,
+    "fail": 0,
+    "exit": 0,
+    "logs": [
+      "logs/syntax-ledger.log",
+      "logs/syntax-test.log"
+    ]
+  },
+  "new_mysql_ddl_acceptance": "NOT RUN",
+  "new_ledger_real_transactions": "NOT RUN",
+  "new_ledger_production_wiring": "NOT RUN",
+  "historical_full_kc_suite": {
+    "status": "NOT RERUN",
+    "files": 71,
+    "pass": 1672,
+    "fail": 40,
+    "exit": 1
+  },
+  "operation_failure": "coverage-backup-failure.json; not counted as test success or as a successful backup"
+}

@@ -8064,3 +8064,191 @@ test('ai image task prefs updates pin hide and clear accent without creating emp
     assert.deepEqual(payload.prefs.pinnedTaskIds, [ownedTaskId]);
     assert.deepEqual(payload.prefs.taskAccentById, {});
 });
+
+for (const scenario of ['resume', 'before-next-poll', 'different-key', 'different-base']) {
+    test(`BBLABU API video ${scenario}: reuses the stored task without exposing credential fingerprints`, async () => {
+        const crypto = require('node:crypto');
+        const apiKey = 'sk-bblabu-video-original-test-key';
+        const baseUrl = 'https://api.bblabu.cn/v1';
+        const started = new Date(Date.now() - 60000).toISOString();
+        const existingTask = {
+            id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', site: 'cn', user_id: 'user-ai-1',
+            client_task_id: 'client-bblabu-stable-id', mode: 'video', billing_mode: 'api', status: 'queued',
+            model: 'sd16-seedance-2.0', api_model_group: 'video', ratio: '16:9', resolution: '720p',
+            quantity: 1, prompt: 'original prompt', estimated_points: 0, charged_points: 0,
+            api_base_url: baseUrl,
+            api_key_fingerprint: `sha256:${crypto.createHash('sha256').update(apiKey).digest('hex').slice(0, 24)}`,
+            provider_task_id: 'bblabu-saved-upstream-id', started_at: started, created_at: started, updated_at: started,
+            metadata: { output: 'video', duration: 5, provider_base_url: baseUrl,
+                provider_async: { source: 'bblabu-videos', provider_base_url: baseUrl,
+                    credential_fingerprint: crypto.createHash('sha256').update(apiKey).digest('hex'), submitted_at: started },
+                next_poll_at: new Date(Date.now() + (scenario === 'before-next-poll' ? 60000 : -1000)).toISOString() }
+        };
+        const state = { fastAdmissionEnabled: true, tasks: [existingTask], apiBaseUrls: [baseUrl, 'https://api.bblabu.ai/v1'].map((url, index) => ({
+            id: `bblabu-base-${index}`, site: 'all', label: 'BBLABU', base_url: url, is_active: true, display_order: index
+        })) };
+        const requests = [];
+        const { handlers } = createHandlers({ state,
+            env: { AI_IMAGE_ALLOWED_API_BASE_URLS: `${baseUrl},https://api.bblabu.ai/v1` },
+            fetchImpl: async (url, options) => {
+                requests.push({ url, method: options.method });
+                assert.equal(options.method, 'GET');
+                assert.equal(url, `${baseUrl}/videos/bblabu-saved-upstream-id`);
+                return { ok: true, status: 200, headers: { get: () => 'application/json' },
+                    text: async () => JSON.stringify({ id: 'bblabu-saved-upstream-id', status: 'processing' }) };
+            },
+            body: { site: 'cn', billingMode: 'api', mode: 'video', output: 'video', apiModelGroup: 'video',
+                model: existingTask.model, ratio: '1:1', resolution: '1080p', videoDuration: 10,
+                prompt: 'edited duplicate prompt must not replace original', clientTaskId: existingTask.client_task_id,
+                apiBaseUrl: scenario === 'different-base' ? 'https://api.bblabu.ai/v1' : baseUrl,
+                apiKey: scenario === 'different-key' ? 'sk-bblabu-different-test-key' : apiKey }
+        });
+        const res = createMockResponse();
+        await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+        const payload = res.json();
+        assert.equal(res.statusCode, 200, JSON.stringify(payload));
+        assert.equal(payload.success, true);
+        assert.equal(payload.task.id, existingTask.id);
+        assert.equal(payload.task.status, 'queued');
+        assert.equal(payload.task.prompt, 'original prompt');
+        assert.equal(payload.task.ratio, '16:9');
+        assert.equal(state.insertedTasks.length, 0);
+        assert.equal(requests.length, scenario === 'resume' ? 1 : 0);
+        assert.equal(Object.hasOwn(payload.task, 'api_key_fingerprint'), false);
+        assert.equal(Object.hasOwn(payload.task.metadata.provider_async, 'credential_fingerprint'), false);
+        assert.ok(state.tasks[0].metadata.provider_async.credential_fingerprint);
+    });
+}
+
+for (const [resolution, wireResolution] of [['768p', '768P'], ['2k', '2K']]) {
+    test(`BBLABU MiniMax ${resolution} survives admission, task persistence and upstream serialization`, async () => {
+        const baseUrl = 'https://api.bblabu.cn/v1';
+        const state = { fastAdmissionEnabled: true, apiBaseUrls: [{
+            id: 'bblabu-base-minimax', site: 'all', label: 'BBLABU',
+            base_url: baseUrl, is_active: true, display_order: 0
+        }] };
+        const requests = [];
+        const { handlers } = createHandlers({ state,
+            body: { site: 'cn', billingMode: 'api', mode: 'video', output: 'video', apiModelGroup: 'video',
+                model: 'mm5-minimax-h3', ratio: '16:9', resolution, videoDuration: 6,
+                prompt: 'slow camera movement', clientTaskId: `client-minimax-${resolution}`,
+                apiBaseUrl: baseUrl, apiKey: 'sk-bblabu-minimax-test-key' },
+            fetchImpl: async (url, options = {}) => {
+                requests.push({ url, method: options.method, body: JSON.parse(options.body) });
+                assert.equal(url, `${baseUrl}/videos`);
+                assert.equal(options.method, 'POST');
+                return { ok: true, status: 200, headers: { get: () => 'application/json' },
+                    text: async () => JSON.stringify({ id: `minimax-${resolution}`, status: 'queued' }) };
+            }
+        });
+        const res = createMockResponse();
+        await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+        const payload = res.json();
+        assert.equal(res.statusCode, 200, JSON.stringify(payload));
+        assert.equal(payload.success, true);
+        assert.equal(payload.task.status, 'queued');
+        assert.equal(payload.task.resolution, resolution);
+        assert.equal(state.insertedTasks.length, 1);
+        assert.equal(state.tasks[0].resolution, resolution);
+        assert.equal(state.tasks[0].provider_task_id, `minimax-${resolution}`);
+        assert.equal(requests.length, 1);
+        assert.equal(requests[0].body.model, 'mm5-minimax-h3');
+        assert.equal(requests[0].body.resolution, wireResolution);
+        assert.equal(state.rpcCalls.some(call => call.name === 'fn_authorize_ai_workbench_points'), false);
+    });
+}
+
+
+for (const baseUrl of ['https://new.fatherkey.com/v1', 'https://relay.example.com/v1']) {
+    test(`Image 2.6 public discovery exposes GIF controls for ${baseUrl}`, async () => {
+        const { handlers } = createHandlers({
+            state: { apiBaseUrls: [{ id: 'relay-image26', site: 'all', label: 'Relay', base_url: baseUrl, is_active: true }] },
+            body: { site: 'cn', apiBaseUrl: baseUrl, apiKey: 'test-image26-discovery-key' },
+            fetchImpl: async (url) => {
+                assert.equal(url, `${baseUrl}/models`);
+                return { ok: true, status: 200, text: async () => JSON.stringify({ data: [{ id: 'gpt-image-2.6' }] }) };
+            }
+        });
+        const res = createMockResponse();
+        await handlers.models({ method: 'POST', url: '/api/public/ai-image/models' }, res);
+        const payload = res.json();
+        assert.equal(res.statusCode, 200, JSON.stringify(payload));
+        const model = payload.image_models.find(item => item.id === 'gpt-image-2.6');
+        assert.ok(model);
+        assert.equal(model.mediaCapability.channel, 'openai-compatible');
+        assert.deepEqual(model.mediaCapability.formats, ['png', 'jpeg', 'webp', 'gif']);
+        assert.deepEqual(model.mediaCapability.gif.frameCount, [2, 64, 9]);
+        assert.deepEqual(model.mediaCapability.gif.frameDurationMs, [20, 2000, 200]);
+        assert.deepEqual(payload.model_providers[0].mediaCapabilities[model.id], model.mediaCapability);
+        assert.deepEqual(payload.image_model_providers[0].mediaCapabilities[model.id], model.mediaCapability);
+    });
+}
+
+for (const billingMode of ['api', 'points']) {
+    for (const outputFormat of ['gif', 'png']) {
+        test(`Image 2.6 ${billingMode} admission persists ${outputFormat} settings on another upstream`, async () => {
+            const baseUrl = 'https://relay.example.com/v1';
+            const state = { fastAdmissionEnabled: true, apiBaseUrls: [{ id: 'relay-image26', site: 'all', label: 'Relay', base_url: baseUrl, is_active: true }] };
+            const requests = [];
+            const gif = Buffer.from('47494638396101000100800000ff00000000ff21ff0b4e45545343415045322e30030100000021f904000a0000002c000000000100010000020244010021f90400140000002c00000000010001000002024c01003b', 'hex');
+            const { handlers } = createHandlers({ state,
+                env: { AI_IMAGE_API_BASE_URL: baseUrl, AI_IMAGE_API_KEY: 'test-image26-provider-key', AI_IMAGE_MODEL: 'gpt-image-2.6' },
+                body: { site: 'cn', billingMode, mode: 'text', output: 'image', apiModelGroup: 'image',
+                    model: 'gpt-image-2.6', ratio: '1:1', resolution: '1k', quantity: 1,
+                    prompt: 'A moving red dot', clientTaskId: `image26-${billingMode}-${outputFormat}`,
+                    outputFormat, frameCount: 12, frameDurationMs: 160,
+                    apiBaseUrl: baseUrl, apiKey: 'test-image26-user-key' },
+                fetchImpl: async (url, options = {}) => {
+                    assert.equal(url, `${baseUrl}/images/generations`);
+                    requests.push(JSON.parse(options.body));
+                    return { ok: true, status: 200, text: async () => JSON.stringify({ data: [{ b64_json: gif.toString('base64') }] }) };
+                },
+                uploadImageBuffer: async (buffer, context) => {
+                    assert.deepEqual(buffer, gif);
+                    assert.equal(context.mimeType, 'image/gif');
+                    return { image_url: 'https://cdn.example.com/image26.gif', storage_path: 'image26.gif' };
+                }
+            });
+            const res = createMockResponse();
+            await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+            const payload = res.json();
+            assert.equal(res.statusCode, 200, JSON.stringify(payload));
+            assert.equal(payload.success, true);
+            assert.equal(payload.task.status, billingMode === 'points' ? 'queued' : 'succeeded');
+            const admitted = state.rpcCalls.find(call => call.name === 'fn_admit_ai_workbench_task').args.p_task;
+            assert.equal(admitted.metadata.output_format, outputFormat);
+            assert.equal(admitted.metadata.media_capability.channel, 'openai-compatible');
+            assert.equal(state.insertedTasks.length, 1);
+            assert.equal(state.tasks[0].metadata.output_format, outputFormat);
+            for (const metadata of [admitted.metadata, state.tasks[0].metadata, payload.task.metadata]) {
+                assert.equal(metadata.frame_count, outputFormat === 'gif' ? 12 : undefined);
+                assert.equal(metadata.frame_duration_ms, outputFormat === 'gif' ? 160 : undefined);
+            }
+            assert.equal(requests.length, billingMode === 'points' ? 0 : 1);
+            if (requests.length) {
+                assert.equal(requests[0].output_format, outputFormat);
+                assert.equal(requests[0].frame_count, outputFormat === 'gif' ? 12 : undefined);
+                assert.equal(requests[0].frame_duration_ms, outputFormat === 'gif' ? 160 : undefined);
+            }
+        });
+    }
+    for (const invalid of [{ frameCount: 1 }, { frameCount: 65 }, { frameDurationMs: 19 }, { frameDurationMs: 2001 }]) {
+        test(`Image 2.6 ${billingMode} rejects invalid GIF settings before admission: ${JSON.stringify(invalid)}`, async () => {
+            const baseUrl = 'https://new.fatherkey.com/v1';
+            const state = { fastAdmissionEnabled: true };
+            const { handlers } = createHandlers({ state,
+                env: { AI_IMAGE_API_BASE_URL: baseUrl, AI_IMAGE_API_KEY: 'test-image26-provider-key', AI_IMAGE_MODEL: 'gpt-image-2.6' },
+                body: { site: 'cn', billingMode, mode: 'text', output: 'image', model: 'gpt-image-2.6',
+                    prompt: 'A moving dot', outputFormat: 'gif', frameCount: 12, frameDurationMs: 160,
+                    apiBaseUrl: baseUrl, apiKey: 'test-image26-user-key', ...invalid },
+                fetchImpl: async () => assert.fail('Invalid GIF settings must never reach the upstream')
+            });
+            const res = createMockResponse();
+            await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+            assert.equal(res.statusCode, 400, JSON.stringify(res.json()));
+            assert.equal(res.json().code, 'ai_media_parameter_invalid');
+            assert.equal((state.insertedTasks || []).length, 0);
+            assert.equal((state.rpcCalls || []).some(call => ['fn_admit_ai_workbench_task', 'fn_authorize_ai_workbench_points'].includes(call.name)), false);
+        });
+    }
+}

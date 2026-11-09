@@ -1,0 +1,10 @@
+{
+  "status": "FAIL",
+  "stage": "original git status preservation assertion",
+  "exception": "?? tests/nav-glass-foreground-motion.test.js",
+  "current_exists": false,
+  "tracked": false,
+  "ignored": false,
+  "source": "unattributed out-of-scope worktree change; this task did not edit this path",
+  "action": "Stop feature edits, preserve original status snapshot and report REVIEW. Do not restore/reset or convert to PASS."
+}

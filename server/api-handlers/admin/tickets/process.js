@@ -65,6 +65,24 @@ function getTicketStatusLabel(status) {
     return normalized;
 }
 
+function normalizeText(value, maxLength = 4000) {
+    return String(value || '').trim().slice(0, Math.max(0, maxLength));
+}
+
+function extractOrderIdFromText(text = '') {
+    const str = String(text || '');
+    if (!str) return '';
+    const bracketMatch = str.match(/\[关联订单[:：]\s*([A-Za-z0-9_-]+)\]/i);
+    if (bracketMatch && bracketMatch[1]) return bracketMatch[1].trim();
+    const prefixMatch = str.match(/(?:关联订单号?|订单号?)[：:\s]+([A-Za-z0-9_-]+)/i);
+    if (prefixMatch && prefixMatch[1]) return prefixMatch[1].trim();
+    const gsMatch = str.match(/\b(GS\d{14,}[A-Za-z0-9]*)\b/i);
+    if (gsMatch && gsMatch[1]) return gsMatch[1].trim();
+    const uuidMatch = str.match(/\b([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\b/i);
+    if (uuidMatch && uuidMatch[1]) return uuidMatch[1].trim();
+    return '';
+}
+
 function buildTicketProcessError(statusCode, message, extra = {}) {
     const error = new Error(message || 'Ticket processing failed');
     error.statusCode = Number(statusCode) || 500;
@@ -364,12 +382,18 @@ async function syncLinkedOpsAlertCase({
 
 async function processTicketWithContext({
     supabase,
+    financialSupabase = null,
     user,
     ticketId = '',
     newStatus = '',
     adminReply = '',
     internalNote = '',
     doRefund = false,
+    orderId = '',
+    cardContent = '',
+    autoFulfill = false,
+    action = '',
+    reissueCard = false,
     source = 'ticket.process',
     adminSite = 'all'
 } = {}) {
@@ -378,6 +402,10 @@ async function processTicketWithContext({
     const normalizedAdminReply = String(adminReply || '').trim();
     const normalizedInternalNote = String(internalNote || '').trim();
     const normalizedDoRefund = Boolean(doRefund);
+    const normalizedOrderId = String(orderId || '').trim();
+    const normalizedCardContent = normalizeText(cardContent, 2000);
+    const isAutoFulfill = Boolean(autoFulfill);
+    const isReissue = action === 'reissue_card' || Boolean(reissueCard);
 
     if (!supabase || !user?.id) {
         throw buildTicketProcessError(500, '缺少工单处理上下文');
@@ -387,7 +415,7 @@ async function processTicketWithContext({
         throw buildTicketProcessError(400, 'ticketId and newStatus are required');
     }
 
-    if (!['RESOLVED', 'REJECTED'].includes(normalizedNewStatus)) {
+    if (!['RESOLVED', 'REJECTED', 'PENDING'].includes(normalizedNewStatus)) {
         throw buildTicketProcessError(400, 'Unsupported ticket status');
     }
 
@@ -408,52 +436,159 @@ async function processTicketWithContext({
     }
     const { data: ticket, error: ticketError } = await ticketQuery.single();
 
-    if (ticketError || !ticket) {
+    if (ticketError || !ticket || ticket.id !== normalizedTicketId
+        || (adminSite !== 'all' && ticket.site !== adminSite)) {
         throw buildTicketProcessError(404, '找不到该工单数据');
     }
 
     const currentStatus = normalizeTicketStatus(ticket.status);
-    if (currentStatus !== 'PENDING') {
+    const isFollowup = ['reply', 'followup'].includes(action) && Boolean(normalizedAdminReply)
+        && !normalizedDoRefund && !isReissue;
+    if (currentStatus !== 'PENDING'
+        && (normalizedDoRefund || isReissue || (!isFollowup && currentStatus === normalizedNewStatus))) {
         throw buildTicketProcessError(409, `工单当前状态为${getTicketStatusLabel(currentStatus)}，不能重复处理`, {
             ticket
         });
     }
 
+    const hasFinancialAction = normalizedDoRefund || isReissue;
+    if (hasFinancialAction && (!financialSupabase || typeof financialSupabase.rpc !== 'function')) {
+        throw buildTicketProcessError(503, '订单操作需要可信后台服务，请稍后重试');
+    }
+    if (normalizedDoRefund && isReissue) {
+        throw buildTicketProcessError(400, '退款和补发必须分别处理');
+    }
+    if (isReissue && (normalizedNewStatus !== 'RESOLVED'
+        || (isAutoFulfill ? Boolean(normalizedCardContent) : !normalizedCardContent))) {
+        throw buildTicketProcessError(400, '补发需选择库存补发或填写卡密，并将工单标记为已解决');
+    }
+
+    // A support message is untrusted input. Financial operations must resolve an
+    // actual order in the ticket's site, and a member order must belong to its owner.
+    const orderRef = ticket.order_id || normalizedOrderId || extractOrderIdFromText(ticket.description);
+    const isGuestOrder = Boolean(orderRef && String(orderRef).startsWith('GS'));
+    const ticketSite = String(ticket.site || (adminSite !== 'all' ? adminSite : '')).toLowerCase();
+    let linkedOrder = null;
+    if (hasFinancialAction) {
+        if (!orderRef) throw buildTicketProcessError(400, '当前工单没有关联订单，无法执行订单操作');
+        if (isGuestOrder && !['cn', 'intl'].includes(ticketSite)) {
+            throw buildTicketProcessError(409, '游客工单缺少有效站点，请先核验订单');
+        }
+        let orderQuery = financialSupabase.from(isGuestOrder ? 'guest_shop_orders' : 'shop_orders')
+            .select(isGuestOrder ? 'id,order_no,site,total_amount' : 'id,user_id,site');
+        orderQuery = orderQuery.eq(isGuestOrder ? 'order_no' : 'id', orderRef);
+        if (ticketSite) orderQuery = orderQuery.eq('site', ticketSite);
+        if (!isGuestOrder) {
+            if (!ticket.user_id) throw buildTicketProcessError(409, '会员订单需要核验工单所属账号');
+            orderQuery = orderQuery.eq('user_id', ticket.user_id);
+        }
+        const orderResult = await orderQuery.single();
+        linkedOrder = orderResult?.data;
+        if (orderResult?.error || !linkedOrder || !['cn', 'intl'].includes(linkedOrder.site)
+            || (ticketSite && linkedOrder.site !== ticketSite)
+            || (isGuestOrder ? linkedOrder.order_no !== orderRef
+                : linkedOrder.id !== orderRef || linkedOrder.user_id !== ticket.user_id)) {
+            throw buildTicketProcessError(409, '关联订单的站点或所属账号不符，请先核验订单');
+        }
+    }
+
+    async function runGuestOrderOperation(name, reason) {
+        let result;
+        try {
+            result = await financialSupabase.rpc(name, {
+                p_order_id: linkedOrder.id,
+                p_reason: reason,
+                p_admin_id: user.id,
+                p_expected_site: linkedOrder.site
+            });
+        } catch (_) {
+            // An unknown outcome must be reconciled; never synthesize a refund,
+            // rewrite payment status, or retry a money/inventory operation here.
+            throw buildTicketProcessError(503, '订单操作结果未确认，请到游客订单管理核验后再处理');
+        }
+        const rows = Array.isArray(result?.data) ? result.data : [result?.data];
+        const row = rows.length === 1 ? rows[0] : null;
+        if (result?.error || !row || row.order_id !== linkedOrder.id || row.order_no !== linkedOrder.order_no
+            || (name === 'fn_guest_shop_admin_queue_refund'
+                ? row.refund_status !== 'pending'
+                : row.fulfillment_status !== 'delivered')) {
+            throw buildTicketProcessError(409, '订单操作未获确认，请到游客订单管理核验状态');
+        }
+        return row;
+    }
+
+    if (isReissue) {
+        if (isAutoFulfill) {
+            if (!isGuestOrder) throw buildTicketProcessError(400, '会员订单请通过订单管理补发库存');
+            await runGuestOrderOperation('fn_guest_shop_admin_manual_fulfill',
+                normalizedAdminReply.length >= 8 ? normalizedAdminReply : '管理员工单快捷补发库存');
+        }
+        const reissueNote = normalizedCardContent ? `[已补发新卡密]\n${normalizedCardContent}` : '[已执行库存补发]';
+        const updatedNotes = [ticket.admin_notes, normalizedAdminReply, reissueNote].filter(Boolean).join('\n\n');
+        let reissueUpdate = supabase.from('shop_tickets').update({
+            status: 'RESOLVED', admin_notes: updatedNotes, updated_at: new Date().toISOString()
+        }).eq('id', normalizedTicketId);
+        if (ticketSite) reissueUpdate = reissueUpdate.eq('site', ticketSite);
+        reissueUpdate = reissueUpdate.eq('status', ticket.status);
+        if (ticket.updated_at) reissueUpdate = reissueUpdate.eq('updated_at', ticket.updated_at);
+        const reissueResult = await reissueUpdate.select('*');
+        if (reissueResult?.error || reissueResult?.data?.length !== 1
+            || reissueResult.data[0].id !== normalizedTicketId
+            || (ticketSite && reissueResult.data[0].site !== ticketSite)) {
+            throw buildTicketProcessError(409, '补发操作后工单未确认更新，请先核验订单，勿重复补发');
+        }
+        await writeAdminAuditLog({
+            supabase: financialSupabase, adminId: user.id, actionType: 'ticket.reissue',
+            module: 'tickets', site: linkedOrder.site,
+            details: { ticket_id: normalizedTicketId, order_id: linkedOrder.id, auto_fulfill: isAutoFulfill }
+        });
+        return { success: true, reissued: true, message: '卡密补发成功并已完成工单', ticket: reissueResult.data[0] };
+    }
+
     let refundAmount = 0;
     let refundDuplicate = false;
-
+    let guestRefundQueued = false;
     if (normalizedDoRefund) {
-        if (!ticket.order_id) {
-            throw buildTicketProcessError(400, '当前工单没有关联订单，无法执行退款');
+        if (isGuestOrder) {
+            await runGuestOrderOperation('fn_guest_shop_admin_queue_refund',
+                normalizedAdminReply.length >= 8 ? normalizedAdminReply
+                    : `工单售后退款 (${String(normalizedTicketId).substring(0, 8)})`);
+            guestRefundQueued = true;
+        } else {
+            const refundResult = await applyShopOrderRefund({
+                supabase: financialSupabase, adminId: user.id, orderId: linkedOrder.id,
+                targetStatus: 'frozen', remark: normalizedAdminReply || `工单处理退款 (${String(normalizedTicketId).substring(0, 8)})`,
+                ...(ticketSite ? { requestedSite: ticketSite } : {})
+            });
+            refundAmount = refundResult.refundedAmount;
+            refundDuplicate = refundResult.duplicate === true;
         }
+    }
 
-        const refundResult = await applyShopOrderRefund({
-            supabase,
-            adminId: user.id,
-            orderId: ticket.order_id,
-            targetStatus: 'frozen',
-            remark: normalizedAdminReply || `工单处理退款 (${String(normalizedTicketId).substring(0, 8)})`
-        });
-
-        refundAmount = refundResult.refundedAmount;
-        refundDuplicate = refundResult.duplicate === true;
+    const nowIso = new Date().toISOString();
+    const nowTimeStr = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+    let combinedAdminNotes = normalizedAdminReply || ticket.admin_notes || null;
+    if (ticket.admin_notes && normalizedAdminReply) {
+        combinedAdminNotes = `${ticket.admin_notes}\n\n[客服回复 ${nowTimeStr}]:\n${normalizedAdminReply}`;
     }
 
     let updateQuery = supabase
         .from('shop_tickets')
         .update({
             status: normalizedNewStatus,
-            admin_notes: normalizedAdminReply || null,
-            updated_at: new Date().toISOString()
+            admin_notes: combinedAdminNotes,
+            updated_at: nowIso
         })
         .eq('id', normalizedTicketId);
-    if (adminSite !== 'all') {
-        updateQuery = updateQuery.eq('site', adminSite);
-    }
+    if (ticketSite) updateQuery = updateQuery.eq('site', ticketSite);
+    updateQuery = updateQuery.eq('status', ticket.status);
+    if (ticket.updated_at) updateQuery = updateQuery.eq('updated_at', ticket.updated_at);
     const { data: updatedRows, error: updateError } = await updateQuery.select('*');
-
-    if (updateError || !updatedRows?.length) {
-        throw buildTicketProcessError(400, updateError?.message || '更新失败：工单不存在或您没有管理员权限修改它');
+    if (updateError || updatedRows?.length !== 1 || updatedRows[0].id !== normalizedTicketId
+        || (ticketSite && updatedRows[0].site !== ticketSite)) {
+        throw buildTicketProcessError(409, normalizedDoRefund
+            ? '退款请求后工单更新未确认，请先到订单管理核验，勿重复退款'
+            : '工单已变化或更新未确认，请刷新后核验');
     }
 
     const updatedTicket = updatedRows[0];
@@ -466,7 +601,8 @@ async function processTicketWithContext({
     if (normalizedAdminReply) {
         notifContent += `管理员回复: ${normalizedAdminReply}`;
     }
-    if (normalizedDoRefund && !refundDuplicate && refundAmount > 0) {
+    if (guestRefundQueued) notifContent += '\n游客现金退款申请已受理，实际到账以支付渠道结果为准。';
+    if (normalizedDoRefund && !refundDuplicate && !guestRefundQueued && refundAmount > 0) {
         notifContent += `${normalizedAdminReply ? '\n' : ''}已退回 ${Math.max(0, Math.round(refundAmount))} 积分。`;
     }
 
@@ -493,7 +629,7 @@ async function processTicketWithContext({
                 ticket_status: normalizedNewStatus,
                 ticket_status_label: getTicketStatusLabel(normalizedNewStatus),
                 order_id: sanitizeText(ticket.order_id, 160) || null,
-                refunded: normalizedDoRefund && !refundDuplicate,
+                refunded: normalizedDoRefund && !refundDuplicate && !guestRefundQueued,
                 refund_amount: refundAmount
             }
         });
@@ -510,7 +646,7 @@ async function processTicketWithContext({
             ticketId: normalizedTicketId,
             newStatus: normalizedNewStatus,
             adminReply: normalizedAdminReply,
-            doRefund: normalizedDoRefund && !refundDuplicate,
+            doRefund: normalizedDoRefund && !refundDuplicate && !guestRefundQueued,
             refundAmount
         });
     } catch (opsAlertSyncError) {
@@ -530,7 +666,7 @@ async function processTicketWithContext({
             ticketId: normalizedTicketId,
             newStatus: normalizedNewStatus,
             adminReply: normalizedAdminReply,
-            doRefund: normalizedDoRefund && !refundDuplicate,
+            doRefund: normalizedDoRefund && !refundDuplicate && !guestRefundQueued,
             refundAmount
         });
     } catch (chatSyncError) {
@@ -589,10 +725,11 @@ async function processTicketWithContext({
             public_reply: normalizedAdminReply || null,
             has_public_reply: Boolean(normalizedAdminReply),
             has_internal_note: Boolean(normalizedInternalNote),
-            refunded: normalizedDoRefund && !refundDuplicate,
+            refunded: normalizedDoRefund && !refundDuplicate && !guestRefundQueued,
             refund_amount: refundAmount,
             refund_duplicate: refundDuplicate,
-            refund_outcome: refundDuplicate
+            guest_refund_queued: guestRefundQueued,
+            refund_outcome: guestRefundQueued ? 'queued' : refundDuplicate
                 ? 'duplicate'
                 : (normalizedDoRefund && refundAmount > 0 ? 'refunded' : 'not_requested'),
             linked_ops_alert_case: linkedOpsAlertCase,
@@ -610,6 +747,7 @@ async function processTicketWithContext({
         ticket: updatedTicket,
         refundAmount,
         refundDuplicate,
+        guestRefundQueued,
         linkedOpsAlertCase,
         linkedChatSession,
         linkedCommentWorkflow
@@ -625,15 +763,25 @@ async function adminTicketsProcessHandler(req, res) {
     try {
         const { supabase, user } = await requireAdmin(req, { permission: 'tickets.manage' });
         const body = await parseJsonBody(req);
+        const hasFinancialAction = Boolean(body.doRefund || body.action === 'reissue_card'
+            || body.reissueCard || body.reissue_card || body.autoFulfill || body.auto_fulfill);
+        const financialContext = hasFinancialAction
+            ? await requireAdmin(req, { permission: 'shop.manage' }) : null;
         const adminSite = normalizeTicketAdminSite(body.site || req.adminSite, 'all');
         const result = await processTicketWithContext({
             supabase,
+            financialSupabase: financialContext?.adminSupabase || null,
             user,
             ticketId: body.ticketId,
-            newStatus: body.newStatus,
+            newStatus: body.newStatus || (body.action === 'reissue_card' ? 'RESOLVED' : ''),
             adminReply: body.adminReply,
             internalNote: body.internalNote,
             doRefund: body.doRefund,
+            orderId: body.orderId || body.order_id,
+            cardContent: body.cardContent || body.card_content,
+            autoFulfill: body.autoFulfill || body.auto_fulfill,
+            action: body.action,
+            reissueCard: body.reissueCard || body.reissue_card,
             source: 'ticket.process',
             adminSite
         });

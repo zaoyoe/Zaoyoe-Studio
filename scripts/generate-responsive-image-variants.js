@@ -4,6 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
 const sharp = require('sharp');
+const { createHash } = require('node:crypto');
+const vm = require('node:vm');
+const { buildProductImageVariants } = require('../server/api-handlers/admin/shop/_product-image-assets');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const SERVER_ENV_PATH = path.join(ROOT_DIR, 'server/.env');
@@ -32,14 +35,11 @@ const PROMPT_VARIANTS = [
         quality: 80
     }
 ];
-const PRODUCT_CARD_VARIANT = {
-    id: 'card',
-    outputDir: path.join(ROOT_DIR, 'assets/products-card'),
-    publicDir: '/assets/products-card',
-    width: 480,
-    height: 320,
-    quality: 78
-};
+const PRODUCT_VARIANTS = ['card', 'thumb'].map((id) => ({
+    id,
+    outputDir: path.join(ROOT_DIR, `assets/products-${id}`),
+    publicDir: `/assets/products-${id}`
+}));
 const PROMPT_MANIFEST_PATH = path.join(ROOT_DIR, 'js/prompt-image-variants.js');
 const SHOP_MANIFEST_PATH = path.join(ROOT_DIR, 'js/shop-image-variants.js');
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
@@ -68,7 +68,8 @@ function parseArgs(argv = []) {
         products: false,
         dryRun: false,
         activeProductsOnly: true,
-        productLimit: Infinity
+        productLimit: Infinity,
+        catalogFile: ''
     };
 
     for (let index = 0; index < argv.length; index += 1) {
@@ -95,6 +96,12 @@ function parseArgs(argv = []) {
         }
         if (value === '--dry-run') {
             args.dryRun = true;
+            continue;
+        }
+        if (value === '--catalog-file') {
+            if (!argv[index + 1]) throw new Error('--catalog-file requires a JSON file');
+            args.catalogFile = path.resolve(argv[++index]);
+            args.products = true;
             continue;
         }
         if (value === '--product-limit') {
@@ -196,46 +203,31 @@ async function generatePromptVariants(options = {}) {
     writePromptManifest(variantFilesById, dryRun);
 }
 
-function normalizeProductVariantFilename(product) {
-    const id = String(product?.id || '').trim();
-    if (id) {
-        return `${id}.webp`;
-    }
-    const sourceUrl = String(product?.icon_url || '').trim();
-    const parsed = new URL(sourceUrl);
-    const basename = path.basename(parsed.pathname).replace(/\.[^.]+$/, '');
-    return `${basename || 'product'}.webp`;
-}
-
 function isProductImageSource(value) {
-    const source = String(value || '').trim();
-    return source.startsWith('http://') || source.startsWith('https://');
+    return /^https?:\/\//i.test(String(value || '').trim());
 }
 
 async function downloadBuffer(url) {
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+    const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of response.body) {
+        size += chunk.length;
+        if (size > 12 * 1024 * 1024) throw new Error('Product image exceeds size limit');
+        chunks.push(chunk);
     }
-    return Buffer.from(await response.arrayBuffer());
-}
-
-async function buildProductCardVariant(sourceBuffer, outputPath, variant) {
-    return sharp(sourceBuffer, { failOn: 'none' })
-        .rotate()
-        .resize(variant.width, variant.height, {
-            fit: 'cover',
-            position: 'center',
-            withoutEnlargement: false
-        })
-        .webp({
-            quality: variant.quality,
-            effort: 5
-        })
-        .toFile(outputPath);
+    return Buffer.concat(chunks);
 }
 
 async function fetchProducts(options = {}) {
+    if (options.catalogFile) {
+        const catalog = JSON.parse(fs.readFileSync(options.catalogFile, 'utf8'));
+        const products = Array.isArray(catalog) ? catalog : (catalog.products || catalog.data?.products);
+        if (!Array.isArray(products)) throw new Error('Catalog file must contain a products array');
+        return products.filter((product) => options.activeProductsOnly === false || product.is_active !== false)
+            .slice(0, options.productLimit);
+    }
     const envSources = [
         process.env,
         readEnvFile(LOCAL_ENV_PATH),
@@ -264,7 +256,7 @@ async function fetchProducts(options = {}) {
 
     let query = supabase
         .from('shop_products')
-        .select('id, name, icon_url, is_active')
+        .select('id, name, icon_url, image_assets, is_active')
         .not('icon_url', 'is', null)
         .order('display_order', { ascending: false });
 
@@ -283,55 +275,82 @@ async function fetchProducts(options = {}) {
     return Array.isArray(data) ? data : [];
 }
 
-function writeShopManifest(cardMap, dryRun = false) {
+function readShopManifest() {
+    if (!fs.existsSync(SHOP_MANIFEST_PATH)) return { variants: {} };
+    const sandbox = { window: {} };
+    vm.runInNewContext(fs.readFileSync(SHOP_MANIFEST_PATH, 'utf8'), sandbox, { timeout: 1000 });
+    return sandbox.window.__SHOP_IMAGE_VARIANTS__ || { variants: {} };
+}
+
+function writeShopManifest(variants, dryRun = false) {
     const payload = {
-        version: '20260430_RESPONSIVE_IMAGE_VARIANTS_1',
-        basePaths: {
-            card: PRODUCT_CARD_VARIANT.publicDir
-        },
-        variants: {
-            card: cardMap
-        }
+        version: '20261107_PRODUCT_IMAGE_VARIANTS_3',
+        basePaths: Object.fromEntries(PRODUCT_VARIANTS.map((variant) => [variant.id, variant.publicDir])),
+        variants: Object.fromEntries(Object.entries(variants).map(([id, map]) => [id,
+            Object.fromEntries(Object.entries(map).sort(([a], [b]) => a.localeCompare(b)))
+        ]))
     };
     const source = `// Generated by scripts/generate-responsive-image-variants.js\n(function () {\n    'use strict';\n\n    window.__SHOP_IMAGE_VARIANTS__ = Object.freeze(${JSON.stringify(payload, null, 4)});\n}());\n`;
-
     if (dryRun) {
         console.log(`[dry-run] would write ${path.relative(ROOT_DIR, SHOP_MANIFEST_PATH)}`);
         return;
     }
-
     fs.writeFileSync(SHOP_MANIFEST_PATH, source);
 }
 
 async function generateProductVariants(options = {}) {
     const { dryRun = false } = options;
-    const products = (await fetchProducts(options))
-        .filter((product) => isProductImageSource(product?.icon_url));
-    const cardMap = {};
+    const products = await fetchProducts(options);
+    const sources = [...new Set(products.map((product) => String(product.image_assets?.original || product.icon_url || '').trim()))]
+        .filter(isProductImageSource);
+    const existing = readShopManifest();
+    // Preserve previous mappings only when their bundled asset still exists.
+    const variants = Object.fromEntries(PRODUCT_VARIANTS.map(({ id, publicDir }) => [id,
+        Object.fromEntries(Object.entries(existing.variants?.[id] || {}).filter(([, file]) =>
+            file.startsWith(`${publicDir}/`) && fs.existsSync(path.join(ROOT_DIR, file))))
+    ]));
+    const processed = new Map();
+    let generated = 0;
+    let animated = 0;
+    let skipped = 0;
+    let failed = 0;
+    let sourceBytes = 0;
+    let thumbBytes = 0;
+    console.log(`Product variants: ${products.length} products, ${sources.length} distinct image URLs`);
+    for (const variant of PRODUCT_VARIANTS) ensureDir(variant.outputDir, dryRun);
 
-    console.log(`🛒 Product card variants: ${products.length} product images`);
-    ensureDir(PRODUCT_CARD_VARIANT.outputDir, dryRun);
-
-    for (const product of products) {
-        const sourceUrl = String(product.icon_url || '').trim();
-        const outputFilename = normalizeProductVariantFilename(product);
-        const outputPath = path.join(PRODUCT_CARD_VARIANT.outputDir, outputFilename);
-        cardMap[sourceUrl] = `${PRODUCT_CARD_VARIANT.publicDir}/${outputFilename}`;
-
-        if (dryRun) {
-            continue;
-        }
-
+    for (const sourceUrl of sources) {
+        if (dryRun) continue;
         try {
-            const sourceBuffer = await downloadBuffer(sourceUrl);
-            await buildProductCardVariant(sourceBuffer, outputPath, PRODUCT_CARD_VARIANT);
+            const buffer = await downloadBuffer(sourceUrl);
+            const digest = createHash('sha256').update(buffer).digest('hex');
+            if (!processed.has(digest)) processed.set(digest, await buildProductImageVariants(buffer));
+            const images = processed.get(digest);
+            if (!images) {
+                // Never replace an animated cover with a static rendition, even from an old manifest.
+                for (const variant of PRODUCT_VARIANTS) delete variants[variant.id][sourceUrl];
+                skipped += 1;
+                continue;
+            }
+            for (const variant of PRODUCT_VARIANTS) {
+                const bytes = images[variant.id];
+                const filename = `${createHash('sha256').update(bytes).digest('hex').slice(0, 20)}.webp`;
+                fs.writeFileSync(path.join(variant.outputDir, filename), bytes);
+                variants[variant.id][sourceUrl] = `${variant.publicDir}/${filename}`;
+            }
+            if (((await sharp(images.thumb).metadata()).pages || 1) > 1) animated += 1;
+            sourceBytes += buffer.length;
+            thumbBytes += images.thumb.length;
+            generated += 1;
         } catch (error) {
-            console.warn(`⚠️  Failed product image variant for ${product.name || product.id}: ${error.message}`);
-            delete cardMap[sourceUrl];
+            failed += 1;
+            console.warn(`Failed product image ${new URL(sourceUrl).pathname}: ${error.message}`);
         }
     }
-
-    writeShopManifest(cardMap, dryRun);
+    writeShopManifest(variants, dryRun);
+    const report = { generated, animated, skipped, failed, sourceBytes, thumbBytes };
+    console.log(`Product variant result: ${JSON.stringify(report)}`);
+    return report;
 }
 
 async function main() {
@@ -348,7 +367,9 @@ async function main() {
     console.log('✅ Responsive image variant generation complete');
 }
 
-main().catch((error) => {
+module.exports = { parseArgs, generateProductVariants, readShopManifest };
+
+if (require.main === module) main().catch((error) => {
     console.error('❌ Responsive image variant generation failed:', error);
-    process.exit(1);
+    process.exitCode = 1;
 });

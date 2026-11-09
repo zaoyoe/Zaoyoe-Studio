@@ -1,0 +1,37 @@
+{
+  "generatedAt": "2026-11-08T08:54:03.243020+00:00",
+  "report": "docs/security-card-store-attack-audit-2026-11-08.md",
+  "reportSha256": "87bb79f9aad31b22186e834885b5400fd3775a8509d215d6ce3a838ec6603b79",
+  "files": [
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store/guest-media-focused-tests-result.json",
+      "sha256": "822ae60bf44b9ec96ccbd8676225a916e195ded00979d1d870fe5e6431cede3e",
+      "bytes": 575
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store/guest-media-focused-tests.tap",
+      "sha256": "5258fb7d6ae73de923adea3c2ae88fa22e2a62b62e8cf928ade9cd907f61bc97",
+      "bytes": 32410
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store/isolated-probes-result.json",
+      "sha256": "71faffdc42b3427bb6e4a953969124b187639233e4a9c3f741fe7e8b19c94811",
+      "bytes": 1552
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store/media-import-isolated-probe-result.json",
+      "sha256": "93c61ce201095c83a3b90c9ac976d282571e285be0bab95d6b2abde61f94d256",
+      "bytes": 830
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store/public-page-headers.json",
+      "sha256": "1dd08908a14ec34f7a2a5776f494551deb93f799e4065cd850d8eba82017d36d",
+      "bytes": 4191
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store/source-manifest.json",
+      "sha256": "af8c003f71a1f66ecd8d5c6dccb01a6e885d29bb9bcfb777302a7de4e8dc1689",
+      "bytes": 6338
+    }
+  ]
+}

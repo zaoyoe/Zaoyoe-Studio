@@ -1,0 +1,12 @@
+[
+  {
+    "path": "api/_lib/payments/zpay-amount.js",
+    "sha256": "a6bdd6297ed02c1bf60a0f13565867aca7bad761a0ddf8e9d4157c94732187dc",
+    "backup": "/tmp/security-hardening-20261108-round2-amount-final-before/api/_lib/payments/zpay-amount.js"
+  },
+  {
+    "path": "tests/provider-adapters-zpay-refund.test.js",
+    "sha256": "1e4447fc53225e8bbc11da1b55d76e0ce0913fb2ea3e5db08baab7bafceed4d3",
+    "backup": "/tmp/security-hardening-20261108-round2-amount-final-before/tests/provider-adapters-zpay-refund.test.js"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+    "sha256": "99bf8e87ed95cfa43c4d4102fa1561c8c9c90b6407ad664dd7c3e3ff210cf3c7",
+    "backup": "/tmp/security-hardening-20261108-round2-routing-fixture-before/services/kc-pay-gpt/test/recharge-routing.test.js"
+  }
+]

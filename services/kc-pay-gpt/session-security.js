@@ -71,6 +71,8 @@ function redactSensitiveText(value) {
         /(["']?(?:access[_-]?token|id[_-]?token|refresh[_-]?token|session[_-]?token|chatgpt_token|chatgpt_session_json)["']?\s*[:=]\s*["']?)([^\s,"'};]+(?:\s[^\n,"'}]*)?)/gi,
         '$1[REDACTED]'
     );
+    text = text.replace(/(["']?(?:cdk(?:[_-]?code)?|taskAccessToken|task[_-]?access[_-]?token)["']?\s*[:=]\s*["']?)[^\s,"'};&]+/gi, '$1[REDACTED]');
+    text = text.replace(/(\bCDK\s+)[A-Za-z0-9_-]+/g, '$1[REDACTED]');
     text = text.replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[REDACTED]');
     text = text.replace(/\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, '[JWT_REDACTED]');
     text = text.replace(/\b(?:\d[ -]*?){13,19}\b/g, '[CARD_REDACTED]');

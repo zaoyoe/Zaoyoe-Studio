@@ -13,16 +13,29 @@ const {
 const { normalizeCaptchaPlatformApiUrl, DEFAULT_API_URL: CAPTCHA_PLATFORM_DEFAULT_URL, resolveCaptchaPlatformCredentials } = require('./captcha-platform');
 const { encryptSessionPayload, decryptSessionPayload, fingerprintSessionPayload, redactSensitiveText } = require('./session-security');
 
+const { sealCredential, openCredential } = require('./credential-security');
+const { normalizePaymentState, mergePaymentState, shouldRetainCdk } = require('./task-safety');
+
 const DB_HOST = process.env.DB_HOST || '127.0.0.1';
 const DB_PORT = Number(process.env.DB_PORT || 3306);
 const DB_NAME = process.env.DB_NAME || 'gpt';
 const DB_USER = process.env.DB_USER || 'root';
 const DB_PASSWORD = process.env.DB_PASSWORD || '';
 
+// Asset guard only; this does not enable or import the new payment ledger.
+// Off never references a draft-schema column. Enforce has no schema fallback.
+const ATTEMPT_ASSET_GUARD = process.env.KC_PAYMENT_ATTEMPT_ASSET_GUARD || 'off';
+if (!['off', 'enforce'].includes(ATTEMPT_ASSET_GUARD)) throw new Error('KC_ATTEMPT_ASSET_GUARD_INVALID');
+const LEGACY_CARD_FENCE_SQL = ATTEMPT_ASSET_GUARD === 'enforce'
+    ? ' AND card_assets.payment_attempt_id IS NULL' : '';
+const LEGACY_BILLING_FENCE_SQL = ATTEMPT_ASSET_GUARD === 'enforce'
+    ? ' AND local_payment_attempt_id IS NULL' : '';
+const IDLE_ADMIN_CARD_SQL = "in_use = 0 AND locked_by IS NULL AND status IN ('正常', '已冻结', '已报废')";
+
 const SCHEMA_PATH = path.join(__dirname, 'mysql-schema.sql');
 const DEFAULT_ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'admin@vru.cc').trim().toLowerCase();
-const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || 'admin123');
-const DEFAULT_ADMIN_SECONDARY_PASSWORD = String(process.env.ADMIN_SECONDARY_PASSWORD || 'admin123');
+const { resolveInitialAdminPasswordHash } = require('./admin-auth');
+const DEFAULT_ADMIN_SECONDARY_PASSWORD = String(process.env.ADMIN_SECONDARY_PASSWORD || crypto.randomBytes(32).toString('hex'));
 const DEFAULT_ADMIN_LOGIN_PATH = String(process.env.ADMIN_LOGIN_PATH || 'admin-login').trim().toLowerCase();
 const DEFAULT_ADMIN_PANEL_PATH = String(process.env.ADMIN_PANEL_PATH || 'admin').trim().toLowerCase();
 const { normalizeAdminPaths } = require('./admin-paths');
@@ -120,7 +133,9 @@ async function withTransaction(callback) {
         await connection.commit();
         return result;
     } catch (error) {
-        await connection.rollback();
+        // A disconnect can also make ROLLBACK fail. Preserve the original
+        // write/COMMIT error; neither outcome authorizes a separate unlock.
+        try { await connection.rollback(); } catch (_) { /* original error wins */ }
         throw error;
     } finally {
         connection.release();
@@ -155,13 +170,15 @@ function normalizeCdks(cdks) {
 }
 
 async function initializeBaseData() {
+    const existing = await runQuery("SELECT config_value FROM app_config WHERE config_key = 'admin_password_hash' LIMIT 1");
+    const initialPasswordHash = resolveInitialAdminPasswordHash(existing[0]?.config_value);
     await runExecute(
         `INSERT INTO app_config (config_key, config_value)
          VALUES (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)
          ON DUPLICATE KEY UPDATE config_value = app_config.config_value;`,
         [
             'proxy', '',
-            'admin_password_hash', createPasswordHash(DEFAULT_ADMIN_PASSWORD),
+            'admin_password_hash', initialPasswordHash,
             'admin_password_version', '1',
             'admin_email', DEFAULT_ADMIN_EMAIL,
             'admin_secondary_password_hash', createPasswordHash(DEFAULT_ADMIN_SECONDARY_PASSWORD),
@@ -945,6 +962,7 @@ async function getAdminData() {
         runQuery(
             `SELECT card_number, card_expiry, card_cvc, usage_count, is_active, status
              FROM card_assets
+             WHERE 1 = 1${LEGACY_CARD_FENCE_SQL}
              ORDER BY sort_order ASC, id ASC`
         ),
         listAdminTaskLogs(200),
@@ -1162,22 +1180,25 @@ async function saveConfig(config = {}) {
                 const cardPlaceholders = cardNumbers.map(() => '?').join(', ');
                 await runExecute(
                     `DELETE FROM card_assets
-                     WHERE in_use = 0 AND card_number NOT IN (${cardPlaceholders})`,
+                     WHERE ${IDLE_ADMIN_CARD_SQL}${LEGACY_CARD_FENCE_SQL} AND card_number NOT IN (${cardPlaceholders})`,
                     cardNumbers,
                     { connection }
                 );
                 for (const card of cardPool) {
-                    const result = await runExecute(
-                        `UPDATE card_assets
-                         SET card_expiry = ?,
-                             card_cvc = ?,
-                             sort_order = ?,
-                             is_active = ?
-                         WHERE card_number = ?`,
-                        [card[1], card[2], card[3], card[4], card[0]],
-                        { connection }
-                    );
-                    if (result.affectedRows === 0) {
+                    // PAN is not unique in the legacy schema. A blocked/no-op
+                    // UPDATE must never be interpreted as permission to INSERT.
+                    const existing = await runQuery(
+                        `SELECT id FROM card_assets WHERE card_number = ? FOR UPDATE`,
+                        [card[0]], { connection });
+                    if (existing.length > 1) throw cardLockOwnershipLost();
+                    if (existing.length === 1) {
+                        const result = await runExecute(
+                            `UPDATE card_assets
+                             SET card_expiry = ?, card_cvc = ?, sort_order = ?, is_active = ?
+                             WHERE id = ? AND ${IDLE_ADMIN_CARD_SQL}${LEGACY_CARD_FENCE_SQL}`,
+                            [card[1], card[2], card[3], card[4], existing[0].id], { connection });
+                        requireOwnedCardChange(result);
+                    } else {
                         await runExecute(
                             `INSERT INTO card_assets (card_number, card_expiry, card_cvc, sort_order, is_active)
                              VALUES (?, ?, ?, ?, ?)`,
@@ -1187,7 +1208,7 @@ async function saveConfig(config = {}) {
                     }
                 }
             } else {
-                await runExecute(`DELETE FROM card_assets WHERE in_use = 0`, [], { connection });
+                await runExecute(`DELETE FROM card_assets WHERE ${IDLE_ADMIN_CARD_SQL}${LEGACY_CARD_FENCE_SQL}`, [], { connection });
             }
         }
     });
@@ -1570,21 +1591,103 @@ async function deleteCardAsset(cardNumber) {
         `UPDATE card_assets
          SET is_active = 0,
              status = '已报废'
-         WHERE card_number = ?`,
+         WHERE card_number = ? AND ${IDLE_ADMIN_CARD_SQL}${LEGACY_CARD_FENCE_SQL}`,
         [String(cardNumber)]
     );
 }
 
+async function listAdminCardSummaries() {
+    return runQuery(
+        `SELECT id, RIGHT(card_number, 4) AS last4,
+                is_active, usage_count, last_used_at, status, cooldown_until
+         FROM card_assets
+         WHERE 1 = 1${LEGACY_CARD_FENCE_SQL}
+         ORDER BY sort_order ASC, id ASC`
+    );
+}
+
+async function getIdleCardSecret(cardId) {
+    const id = requireOwnedAssetId(cardId, 'admin');
+    const rows = await runQuery(
+        `SELECT id, card_number, card_expiry, card_cvc
+         FROM card_assets
+         WHERE id = ? AND in_use = 0 AND locked_by IS NULL
+           AND status IN ('正常', '已冻结', '已报废')${LEGACY_CARD_FENCE_SQL}`,
+        [id]
+    );
+    return rows[0] || null;
+}
+
+async function deleteIdleCardById(cardId) {
+    const id = requireOwnedAssetId(cardId, 'admin');
+    const result = await runExecute(
+        `DELETE FROM card_assets WHERE id = ? AND ${IDLE_ADMIN_CARD_SQL}${LEGACY_CARD_FENCE_SQL}`, [id]);
+    return Number(result?.affectedRows || 0) === 1;
+}
+
+async function resetIdleCardCooldown(cardId) {
+    const id = requireOwnedAssetId(cardId, 'admin');
+    const result = await runExecute(
+        `UPDATE card_assets SET cooldown_until = NULL, daily_usage_count = 0,
+             status = '正常', is_active = 1
+         WHERE id = ? AND in_use = 0 AND locked_by IS NULL
+           AND status IN ('正常', '已报废')${LEGACY_CARD_FENCE_SQL}`, [id]);
+    return Number(result?.affectedRows || 0) === 1;
+}
+
+// Task-owned mutations must compare the complete owner in the same SQL statement.
+// Never sanitize/truncate it: two distinct task IDs must not share a lock owner.
+function requireAssetLockOwner(ownerKey) {
+    if (typeof ownerKey !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(ownerKey)) {
+        const error = new Error('资产锁归属标识无效，已停止自动操作');
+        error.code = 'ASSET_LOCK_OWNER_INVALID';
+        throw error;
+    }
+    return ownerKey;
+}
+
+function requireOwnedAssetId(assetId, ownerKey) {
+    requireAssetLockOwner(ownerKey);
+    const id = Number(assetId);
+    if (!(typeof assetId === 'number' || (typeof assetId === 'string' && /^[1-9][0-9]*$/.test(assetId)))
+        || !Number.isSafeInteger(id) || id <= 0) {
+        const error = new Error('资产 ID 无效，已停止自动操作');
+        error.code = 'ASSET_LOCK_ID_INVALID';
+        throw error;
+    }
+    return id;
+}
+
+function cardLockOwnershipLost() {
+    const error = new Error('银行卡锁归属已变化，已停止自动操作，需人工核对');
+    error.code = 'CARD_LOCK_OWNERSHIP_LOST';
+    return error;
+}
+
+function requireOwnedCardChange(result) {
+    if (Number(result?.affectedRows || 0) !== 1) throw cardLockOwnershipLost();
+    return 1;
+}
+
+const OWNED_NORMAL_CARD_SQL = `id = ? AND is_active = 1 AND status = '正常' AND in_use = 1
+           AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)${LEGACY_CARD_FENCE_SQL}`;
+// Ordinary releases deliberately exclude payment holds. Only a confirmed
+// settlement may transition a hold back to the reusable pool.
+const OWNED_PAYMENT_CARD_SQL = `id = ? AND is_active = 1 AND status IN ('正常', '支付处理中') AND in_use = 1
+           AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)${LEGACY_CARD_FENCE_SQL}`;
+
+
 // 在事务里挑一个未占用资产并立即标记 in_use；无可用资产时返回 null 而不是阻塞。
 // 用 FOR UPDATE SKIP LOCKED 避免两个并发任务同时抢同一行。
 async function reserveAssetRow(connection, table, columns, ownerKey) {
+    requireAssetLockOwner(ownerKey);
     const staleThreshold = new Date(Date.now() - ASSET_LOCK_STALE_MS);
     const colList = ['id', ...columns].join(', ');
     const [rows] = await connection.query(
         `SELECT ${colList}
          FROM ${table}
          WHERE is_active = 1
-           AND ${table === 'card_assets' ? "in_use = 0 AND status = '正常' AND (cooldown_until IS NULL OR cooldown_until < NOW())" : '(in_use = 0 OR locked_at IS NULL OR locked_at < ?)'}
+           AND ${table === 'card_assets' ? "in_use = 0 AND locked_by IS NULL AND status = '正常' AND (cooldown_until IS NULL OR cooldown_until < NOW())" + LEGACY_CARD_FENCE_SQL : '(in_use = 0 OR locked_at IS NULL OR locked_at < ?)'}
          ORDER BY usage_count ASC, COALESCE(locked_at, '1970-01-01') ASC, id ASC
          LIMIT 1
          FOR UPDATE SKIP LOCKED`,
@@ -1596,19 +1699,21 @@ async function reserveAssetRow(connection, table, columns, ownerKey) {
     }
 
     const row = rows[0];
-    await connection.query(
+    const [reserved] = await connection.query(
         `UPDATE ${table}
          SET in_use = 1,
              locked_at = CURRENT_TIMESTAMP,
              locked_by = ?
-         WHERE id = ?`,
-        [String(ownerKey || '').slice(0, 64) || null, row.id]
+         WHERE id = ?${table === 'card_assets' ? " AND is_active = 1 AND in_use = 0 AND locked_by IS NULL AND status = '正常'" + LEGACY_CARD_FENCE_SQL : ''}`,
+        [ownerKey, row.id]
     );
+    if (table === 'card_assets') requireOwnedCardChange(reserved);
 
     return row;
 }
 
 async function reserveRuntimeAssets(ownerKey = '') {
+    requireAssetLockOwner(ownerKey);
     return withTransaction(async (connection) => {
         const [cardRow] = await Promise.all([
             reserveAssetRow(connection, 'card_assets', ['card_number', 'card_expiry', 'card_cvc', 'card_holder', 'usage_count'], ownerKey)
@@ -1622,6 +1727,7 @@ async function reserveRuntimeAssets(ownerKey = '') {
             : '';
 
         return {
+            ownerKey,
             phoneAssetId: null,
             cardAssetId: cardRow?.id || null,
             phone: { phone: '', key: '', usage_count: 0 },
@@ -1639,27 +1745,33 @@ async function reserveRuntimeAssets(ownerKey = '') {
     });
 }
 
-async function releaseAssetById(table, id) {
-    if (!id) {
-        return;
-    }
-    await runExecute(
+async function releaseAssetById(table, id, ownerKey) {
+    const assetId = requireOwnedAssetId(id, ownerKey);
+    if (!['card_assets', 'phone_assets'].includes(table)) throw new Error('无效的资产类型');
+    const result = await runExecute(
         `UPDATE ${table}
          SET in_use = 0,
              locked_at = NULL,
              locked_by = NULL
-         WHERE id = ?`,
-        [Number(id)]
+         WHERE id = ? AND is_active = 1 AND in_use = 1
+           ${table === 'card_assets' ? "AND status = '正常'" : ''}
+           AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)${table === 'card_assets' ? LEGACY_CARD_FENCE_SQL : ''}`,
+        [assetId, ownerKey]
     );
+    return Number(result?.affectedRows || 0);
 }
 
-async function releaseRuntimeAssets({ phoneAssetId, cardAssetId } = {}) {
+async function releaseRuntimeAssets({ phoneAssetId, cardAssetId, ownerKey } = {}) {
+    requireAssetLockOwner(ownerKey);
+    // Validate both IDs before issuing either UPDATE, avoiding partial cleanup
+    // caused by malformed input. Ownership is still checked atomically per row.
+    if (phoneAssetId != null) requireOwnedAssetId(phoneAssetId, ownerKey);
+    if (cardAssetId != null) requireOwnedAssetId(cardAssetId, ownerKey);
     const tasks = [];
-    if (phoneAssetId) tasks.push(releaseAssetById('phone_assets', phoneAssetId));
-    if (cardAssetId) tasks.push(releaseAssetById('card_assets', cardAssetId));
-    if (tasks.length) {
-        await Promise.all(tasks);
-    }
+    if (phoneAssetId != null) tasks.push(releaseAssetById('phone_assets', phoneAssetId, ownerKey));
+    if (cardAssetId != null) tasks.push(releaseAssetById('card_assets', cardAssetId, ownerKey));
+    const counts = await Promise.all(tasks);
+    return counts.reduce((sum, count) => sum + count, 0);
 }
 
 // 兜底：把超过 ASSET_LOCK_STALE_MS 仍未释放的锁强制清理（任务进程崩溃后回收用）
@@ -1679,6 +1791,18 @@ const GPT_API_PROTECTED_CARD_SQL = `NOT EXISTS (
       AND ${GPT_API_UNSETTLED_TASK_SQL}
 )`;
 
+// Missing/debug/active/uncertain local task records are not evidence of a
+// no-charge outcome. Match the full owner byte-for-byte, even on CI collations.
+const LOCAL_PAYMENT_RECLAIMABLE_CARD_SQL = `(LEFT(LOWER(COALESCE(card_assets.locked_by, '')), 8) <> 'payment_'
+    OR EXISTS (
+        SELECT 1 FROM task_logs local_task
+        WHERE CAST(card_assets.locked_by AS BINARY) = CAST(CONCAT('payment_', local_task.job_key) AS BINARY)
+          AND local_task.execution_mode = 'local_card_pool'
+          AND local_task.status IN ('failed', 'cancelled')
+          AND local_task.payment_state IN ('not_started', 'declined')
+          AND local_task.recovery_required = 0
+    ))`;
+
 async function releaseStaleAssetLocks() {
     const staleThreshold = new Date(Date.now() - ASSET_LOCK_STALE_MS);
     const [phoneResult, cardResult, poolResult] = await Promise.all([
@@ -1691,8 +1815,9 @@ async function releaseStaleAssetLocks() {
         runExecute(
             `UPDATE card_assets
              SET in_use = 0, locked_at = NULL, locked_by = NULL
-             WHERE in_use = 1 AND status NOT IN ('待人工复核', '支付结果未知') AND (locked_at IS NULL OR locked_at < ?)
-               AND ${GPT_API_PROTECTED_CARD_SQL}`,
+             WHERE in_use = 1 AND status = '正常' AND (locked_at IS NULL OR locked_at < ?)
+               AND ${LOCAL_PAYMENT_RECLAIMABLE_CARD_SQL}
+               AND ${GPT_API_PROTECTED_CARD_SQL}${LEGACY_CARD_FENCE_SQL}`,
             [staleThreshold]
         ),
         runExecute(
@@ -1714,18 +1839,9 @@ async function releaseStaleAssetLocks() {
 
 // 启动时先把所有 in_use 标记彻底重置（崩溃重启场景）
 async function resetAllAssetLocks() {
-    const staleTasks = await listStaleRunningTasks(0);
-    const protectedOwners = new Set(staleTasks
-        .filter((task) => task.execution_mode === 'local_card_pool' && ['started', 'unknown', 'succeeded'].includes(String(task.payment_state || '').toLowerCase()))
-        .map((task) => String(task.job_key || '')));
-    const protectedLike = [...protectedOwners].map((key) => `payment_${key}`);
-    if (protectedLike.length) {
-        const placeholders = protectedLike.map(() => '?').join(',');
-        await runExecute(`UPDATE card_assets SET status = '待人工复核' WHERE in_use = 1 AND locked_by IN (${placeholders})`, protectedLike);
-    }
     await Promise.all([
         runExecute(`UPDATE phone_assets SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE in_use = 1`),
-        runExecute(`UPDATE card_assets SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE in_use = 1 AND status NOT IN ('待人工复核', '支付结果未知') AND ${GPT_API_PROTECTED_CARD_SQL}`),
+        runExecute(`UPDATE card_assets SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE in_use = 1 AND status = '正常' AND ${LOCAL_PAYMENT_RECLAIMABLE_CARD_SQL} AND ${GPT_API_PROTECTED_CARD_SQL}${LEGACY_CARD_FENCE_SQL}`),
         runExecute(`UPDATE pool_emails SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE registered = 0 AND in_use = 1`)
     ]);
 }
@@ -2163,6 +2279,7 @@ async function getRuntimeAssets() {
              FROM card_assets
              WHERE is_active = 1
                AND status = '正常'
+               AND in_use = 0 AND locked_by IS NULL${LEGACY_CARD_FENCE_SQL}
              ORDER BY usage_count ASC, id ASC
              LIMIT 1`
         ),
@@ -2201,7 +2318,8 @@ async function incrementAssetSuccessCount({ phone, cardNumber }) {
             runExecute(
                 `UPDATE card_assets
                  SET usage_count = usage_count + 1
-                 WHERE card_number = ? AND is_active = 1`,
+                 WHERE card_number = ? AND is_active = 1 AND in_use = 0 AND locked_by IS NULL
+                   AND status = '正常'${LEGACY_CARD_FENCE_SQL}`,
                 [String(cardNumber)]
             )
         );
@@ -2598,30 +2716,42 @@ async function saveHcaptchaConfig(config = {}, options = {}) {
     }
 }
 
-async function saveTelegramConfig(config = {}) {
-    const existing = await getTelegramConfig();
-    const notifyAdmin = config.notify_admin ? '1' : '0';
-    const notifyGroup = config.notify_group ? '1' : '0';
-    const onSuccess = config.on_success ? '1' : '0';
-    const onFailure = config.on_failure ? '1' : '0';
-    const onCardPoolEmpty = config.on_card_pool_empty ? '1' : '0';
-    const botToken = String(config.bot_token || '').trim() || existing.bot_token || '';
-
-    await runExecute(
-        `INSERT INTO app_config (config_key, config_value)
-         VALUES (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)
-         ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
-        [
-            'telegram_bot_token', botToken,
-            'telegram_admin_chat_id', String(config.admin_chat_id || '').trim(),
+async function lockAdminSecurityVersion(connection, expectedVersion) {
+    const rows = await runQuery('SELECT config_value FROM app_config WHERE config_key = ? FOR UPDATE',
+        ['admin_password_version'], { connection });
+    if (!Number.isInteger(expectedVersion) || Number(rows[0]?.config_value) !== expectedVersion) {
+        throw new Error('安全配置已变化，请重新登录');
+    }
+}
+async function revokeAdminSecurityVersion(connection, version) {
+    await runExecute('UPDATE app_config SET config_value = ? WHERE config_key = ?',
+        [String(version + 1), 'admin_password_version'], { connection });
+    await runExecute('DELETE FROM app_config WHERE config_key = ?', ['admin_totp_pending'], { connection });
+}
+async function saveTelegramConfig(config = {}, expectedVersion) {
+    return withTransaction(async connection => {
+        await lockAdminSecurityVersion(connection, expectedVersion);
+        const rows = await runQuery(`SELECT config_key, config_value FROM app_config
+            WHERE config_key IN ('telegram_bot_token', 'telegram_admin_chat_id')`, [], { connection });
+        const existing = Object.fromEntries(rows.map(row => [row.config_key, row.config_value]));
+        const botToken = String(config.bot_token || '').trim() || existing.telegram_bot_token || '';
+        const adminChatId = String(config.admin_chat_id || '').trim();
+        if (Boolean(botToken) !== Boolean(adminChatId)) throw new Error('Telegram 验证通道必须完整配置');
+        const changed = botToken !== (existing.telegram_bot_token || '') || adminChatId !== (existing.telegram_admin_chat_id || '');
+        await runExecute(`INSERT INTO app_config (config_key, config_value)
+            VALUES (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)
+            ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`, [
+            'telegram_bot_token', botToken, 'telegram_admin_chat_id', adminChatId,
             'telegram_group_chat_id', String(config.group_chat_id || '').trim(),
-            'telegram_notify_admin', notifyAdmin,
-            'telegram_notify_group', notifyGroup,
-            'telegram_on_success', onSuccess,
-            'telegram_on_failure', onFailure,
-            'telegram_on_card_pool_empty', onCardPoolEmpty
-        ]
-    );
+            'telegram_notify_admin', config.notify_admin ? '1' : '0',
+            'telegram_notify_group', config.notify_group ? '1' : '0',
+            'telegram_on_success', config.on_success ? '1' : '0',
+            'telegram_on_failure', config.on_failure ? '1' : '0',
+            'telegram_on_card_pool_empty', config.on_card_pool_empty ? '1' : '0'
+        ], { connection });
+        if (changed) await revokeAdminSecurityVersion(connection, expectedVersion);
+        return { reauthenticate: changed };
+    });
 }
 
 async function getMaxConcurrentActivations() {
@@ -2686,7 +2816,7 @@ async function getAdminAuthConfig() {
         passwordVersion: Math.max(1, Number(map.admin_password_version || 1)),
         secondaryPasswordHash: String(map.admin_secondary_password_hash || ''),
         secondaryPasswordVersion: Math.max(1, Number(map.admin_secondary_password_version || 1)),
-        totpSecret: String(map.admin_totp_secret || ''),
+        totpSecret: openCredential(String(map.admin_totp_secret || ''), 'admin_totp_secret'),
         totpEnabled: String(map.admin_totp_enabled || '0') === '1',
         notifyAdminLogin: String(map.telegram_on_admin_login || '1') !== '0',
         login2faMode: ['either', 'totp', 'telegram'].includes(String(map.admin_2fa_login_mode || '').trim().toLowerCase())
@@ -2695,18 +2825,23 @@ async function getAdminAuthConfig() {
     };
 }
 
-async function saveAdmin2faLoginMode(mode) {
+async function saveAdmin2faLoginMode(mode, expectedVersion) {
     const normalized = String(mode || '').trim().toLowerCase();
-    if (!['either', 'totp', 'telegram'].includes(normalized)) {
-        throw new Error('无效的登录验证方式');
-    }
-    await runExecute(
-        `INSERT INTO app_config (config_key, config_value)
-         VALUES (?, ?)
-         ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
-        ['admin_2fa_login_mode', normalized]
-    );
-    return normalized;
+    if (!['either', 'totp', 'telegram'].includes(normalized)) throw new Error('无效的登录验证方式');
+    return withTransaction(async connection => {
+        await lockAdminSecurityVersion(connection, expectedVersion);
+        const rows = await runQuery(`SELECT config_key, config_value FROM app_config
+            WHERE config_key IN ('admin_totp_enabled', 'admin_totp_secret', 'telegram_bot_token', 'telegram_admin_chat_id')`, [], { connection });
+        const values = Object.fromEntries(rows.map(row => [row.config_key, row.config_value]));
+        if (normalized === 'totp' && !(values.admin_totp_enabled === '1' && values.admin_totp_secret)
+            || normalized === 'telegram' && !(values.telegram_bot_token && values.telegram_admin_chat_id)) {
+            throw new Error('请先绑定所选验证方式');
+        }
+        await runExecute(`INSERT INTO app_config (config_key, config_value) VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`, ['admin_2fa_login_mode', normalized], { connection });
+        await revokeAdminSecurityVersion(connection, expectedVersion);
+        return normalized;
+    });
 }
 
 async function getAdminPaths() {
@@ -2780,11 +2915,55 @@ async function saveAdminTotpConfig({ secret, enabled }) {
              VALUES (?, ?), (?, ?)
              ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
             [
-                'admin_totp_secret', String(secret || ''),
+                'admin_totp_secret', sealCredential(String(secret || ''), 'admin_totp_secret'),
                 'admin_totp_enabled', enabled ? '1' : '0'
             ],
             { connection }
         );
+    });
+}
+
+// Store pending enrollment separately; an unfinished setup never changes the active factor.
+async function savePendingAdminTotp(pending) {
+    return withTransaction(async connection => {
+        await lockAdminSecurityVersion(connection, pending.passwordVersion);
+        await runExecute(`INSERT INTO app_config (config_key, config_value) VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
+            ['admin_totp_pending', sealCredential(JSON.stringify(pending), 'admin_totp_pending')], { connection });
+    });
+}
+
+async function getPendingAdminTotp() {
+    const rows = await runQuery('SELECT config_value FROM app_config WHERE config_key = ?', ['admin_totp_pending']);
+    const plaintext = openCredential(String(rows[0]?.config_value || ''), 'admin_totp_pending');
+    try { return JSON.parse(plaintext || 'null'); } catch (_) { return null; }
+}
+async function commitPendingAdminTotp(expected) {
+    return withTransaction(async connection => {
+        await lockAdminSecurityVersion(connection, expected.passwordVersion);
+        const rows = await runQuery(`SELECT config_key, config_value FROM app_config
+            WHERE config_key IN ('admin_password_version', 'admin_totp_pending') ORDER BY config_key FOR UPDATE`, [], { connection });
+        const values = Object.fromEntries(rows.map(row => [row.config_key, row.config_value]));
+        const pending = JSON.parse(openCredential(String(values.admin_totp_pending || ''), 'admin_totp_pending') || 'null');
+        if (!pending || pending.pendingId !== expected.pendingId || pending.binding !== expected.binding
+            || pending.expiresAt <= Date.now() || Number(values.admin_password_version) !== pending.passwordVersion) throw new Error('Enrollment expired');
+        await runExecute(`INSERT INTO app_config (config_key, config_value) VALUES (?, ?), (?, ?), (?, ?)
+            ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`, [
+            'admin_totp_secret', sealCredential(pending.secret, 'admin_totp_secret'), 'admin_totp_enabled', '1',
+            'admin_password_version', String(pending.passwordVersion + 1)], { connection });
+        await runExecute('DELETE FROM app_config WHERE config_key = ?', ['admin_totp_pending'], { connection });
+    });
+}
+async function disableAdminTotp(expectedVersion) {
+    return withTransaction(async connection => {
+        await lockAdminSecurityVersion(connection, expectedVersion);
+        await runExecute(`INSERT INTO app_config (config_key, config_value) VALUES (?, ?), (?, ?)
+            ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
+            ['admin_totp_secret', '', 'admin_totp_enabled', '0'], { connection });
+        // An intentional removal must also remove the now-impossible mandatory policy.
+        await runExecute(`UPDATE app_config SET config_value = 'either'
+            WHERE config_key = 'admin_2fa_login_mode' AND config_value = 'totp'`, [], { connection });
+        await revokeAdminSecurityVersion(connection, expectedVersion);
     });
 }
 
@@ -2853,10 +3032,10 @@ async function updateAdminPassword(password) {
     };
 }
 
-async function createTaskLog({ tokenPreview, sessionPayload, cdkCode, phone, cardLast4, status, progress = 0, paymentState = 'not_started', executionMode = 'legacy_unknown' }) {
+async function createTaskLog({ tokenPreview, sessionPayload, cdkCode, phone, cardLast4, status, progress = 0, paymentState = 'not_started', executionMode = 'legacy_unknown' }, options = {}) {
     const now = new Date();
     const displayTime = now.toLocaleString('zh-CN', { hour12: false });
-    const jobKey = `${now.getTime()}-${Math.random().toString(36).slice(2, 10)}`;
+    const jobKey = crypto.randomBytes(24).toString('base64url');
     const message = String(status) === 'running' ? '正在开通中' : null;
     const sessionRaw = sessionPayload ? String(sessionPayload) : '';
     const encryptedSession = encryptSessionPayload(sessionRaw);
@@ -2881,10 +3060,123 @@ async function createTaskLog({ tokenPreview, sessionPayload, cdkCode, phone, car
             Number(progress || 0),
             displayTime,
             String(paymentState || 'not_started')
-        ]
+        ],
+        options
     );
 
     return { jobKey, displayTime };
+}
+
+
+function activationAdmissionError(code, message, statusCode = 403) {
+    return Object.assign(new Error(message), { code, statusCode });
+}
+
+async function getBlockingActivationTask(connection, cdkCode, excludeJobKey = '') {
+    const rows = await runQuery(
+        `SELECT provider_task.* FROM task_logs provider_task
+         WHERE provider_task.cdk_code = ? AND provider_task.job_key <> ?
+           AND (provider_task.status IN ('running', 'manual') OR provider_task.recovery_required = 1
+             OR COALESCE(provider_task.payment_state, 'unknown') NOT IN ('not_started', 'declined', 'succeeded')
+             OR ((provider_task.execution_mode = 'third_party_api' OR provider_task.gpt_api_order_id IS NOT NULL
+                 OR provider_task.gpt_api_task_id IS NOT NULL) AND ${GPT_API_UNSETTLED_TASK_SQL}))
+         ORDER BY provider_task.id DESC LIMIT 1 FOR UPDATE`,
+        [String(cdkCode), String(excludeJobKey)], { connection }
+    );
+    return rows[0] || null;
+}
+
+// CDK consumption and its recoverable task must commit together. An uncertain
+// COMMIT result is deliberately propagated: callers must never compensate by CDK alone.
+async function createActivationTask({ expectedCdk, ...input }) {
+    const bindingFields = ['platform', 'plan_type', 'payment_region'];
+    if (!input.cdkCode || !expectedCdk || bindingFields.some(key => !Object.prototype.hasOwnProperty.call(expectedCdk, key))
+        || !['local_card_pool', 'third_party_api'].includes(input.executionMode)) {
+        throw activationAdmissionError('ACTIVATION_INPUT_INVALID', '充值任务绑定信息不完整', 400);
+    }
+    return withTransaction(async connection => {
+        const cdks = await runQuery(
+            `SELECT *, (cooldown_until > CURRENT_TIMESTAMP) AS activation_cooling_down
+             FROM cdk_codes WHERE cdk_code = ? LIMIT 1 FOR UPDATE`, [String(input.cdkCode)], { connection });
+        const cdk = cdks[0];
+        if (!cdk || Number(cdk.is_active) !== 1 || cdk.type !== '自助') {
+            throw activationAdmissionError('CDK_UNAVAILABLE', 'CDK 无效、已使用或非自助激活码');
+        }
+        const blockingTask = await getBlockingActivationTask(connection, input.cdkCode);
+        if (blockingTask?.status === 'running') {
+            return { created: false, jobKey: blockingTask.job_key };
+        }
+        if (cdk.used_at || blockingTask) {
+            throw activationAdmissionError('CDK_LOCK_UNAVAILABLE', 'CDK 不可用或存在待复核任务');
+        }
+        if (Number(cdk.activation_cooling_down) === 1) {
+            throw activationAdmissionError('CDK_COOLDOWN', 'CDK 仍在安全冷却中，请稍后重试');
+        }
+        if (bindingFields.some(key => String(cdk[key] ?? '') !== String(expectedCdk[key] ?? ''))) {
+            throw activationAdmissionError('CDK_BINDING_CHANGED', 'CDK 套餐配置已变更，请刷新后重试', 409);
+        }
+        const consumed = await runExecute(
+            `UPDATE cdk_codes SET used_at = CURRENT_TIMESTAMP
+             WHERE cdk_code = ? AND is_active = 1 AND used_at IS NULL`, [String(input.cdkCode)], { connection });
+        if (consumed.affectedRows !== 1) {
+            throw activationAdmissionError('CDK_LOCK_UNAVAILABLE', 'CDK 不可用或正在被他人使用');
+        }
+        const task = await createTaskLog({ ...input, status: 'running', paymentState: 'not_started' }, { connection });
+        return { ...task, created: true };
+    });
+}
+
+// A non-locking read only locates the CDK. Authorization always uses the fresh
+// task read after locking that CDK, matching admission and local settlement.
+// If the binding changes, abort instead of acquiring a second CDK out of order.
+async function lockActivationTaskCdkFirst(connection, jobKey) {
+    const key = String(jobKey);
+    const hints = await runQuery('SELECT * FROM task_logs WHERE job_key = ? LIMIT 1', [key], { connection });
+    const hint = hints[0];
+    if (!hint) return { task: null, cdk: null };
+    if (hint.job_key !== key) {
+        throw activationAdmissionError('ACTIVATION_TASK_BINDING_CHANGED', '充值任务归属已变更，请重新核验', 409);
+    }
+    const cdkCode = hint.cdk_code;
+    const cdks = cdkCode
+        ? await runQuery('SELECT * FROM cdk_codes WHERE cdk_code = ? LIMIT 1 FOR UPDATE', [cdkCode], { connection }) : [];
+    const tasks = await runQuery('SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE', [key], { connection });
+    const task = tasks[0];
+    if (task && (task.job_key !== key || task.id !== hint.id || task.cdk_code !== cdkCode)) {
+        throw activationAdmissionError('ACTIVATION_TASK_BINDING_CHANGED', '充值任务归属已变更，请重新核验', 409);
+    }
+    return { task: task || null, cdk: cdks[0] || null };
+}
+
+// Only a current, provably safe task may return its own CDK. Provider evidence,
+// unknown payment outcomes and newer task owners all require a retained lock.
+async function retireSafeActivationTask(jobKey, { message = '任务未能启动，请稍后重试', allowDeclined = false } = {}) {
+    if (!jobKey) return { released: false, reason: 'TASK_MISSING' };
+    return withTransaction(async connection => {
+        const { task, cdk } = await lockActivationTaskCdkFirst(connection, jobKey);
+        const safeState = task?.payment_state === 'not_started'
+            || (allowDeclined && task?.execution_mode === 'local_card_pool' && task?.payment_state === 'declined');
+        if (!task || !task.cdk_code || task.status !== 'running' || Number(task.recovery_required) !== 0 || !safeState
+            || !['local_card_pool', 'third_party_api'].includes(task.execution_mode)
+            || task.gpt_api_order_id != null || task.gpt_api_task_id != null || task.gpt_api_raw != null) {
+            return { released: false, reason: 'TASK_REQUIRES_REVIEW' };
+        }
+        const owners = await runQuery('SELECT job_key FROM task_logs WHERE cdk_code = ? ORDER BY id DESC LIMIT 1 FOR UPDATE', [task.cdk_code], { connection });
+        if (!cdk || !cdk.used_at || Number(cdk.is_active) !== 1 || owners[0]?.job_key !== String(jobKey)
+            || await getBlockingActivationTask(connection, task.cdk_code, jobKey)) {
+            return { released: false, reason: 'CDK_OWNER_MISMATCH' };
+        }
+        const retired = await runExecute(
+            `UPDATE task_logs SET status = 'failed', message = ?, progress = 0,
+                finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP), last_heartbeat_at = CURRENT_TIMESTAMP,
+                session_payload = NULL, session_payload_encrypted = NULL
+             WHERE job_key = ? AND status = 'running'`, [redactSensitiveText(message).slice(0, 255), String(jobKey)], { connection });
+        if (retired.affectedRows !== 1) throw activationAdmissionError('ACTIVATION_RETIRE_CONFLICT', '充值任务收尾状态已变更', 409);
+        const released = await runExecute(
+            'UPDATE cdk_codes SET used_at = NULL WHERE cdk_code = ? AND used_at IS NOT NULL', [task.cdk_code], { connection });
+        if (released.affectedRows !== 1) throw activationAdmissionError('ACTIVATION_RELEASE_CONFLICT', '充值卡密归属已变更', 409);
+        return { released: true };
+    });
 }
 
 async function getTaskStatus(jobKey) {
@@ -2949,12 +3241,12 @@ async function updateTaskLog(jobKey, {
     gptApiOrderId, gptApiTaskId, gptApiRaw, gptApiTopupCode, autoRenewStatus,
     executionMode,
     autoRenewMessage, paymentState, recoveryRequired
-}) {
+}, options = {}) {
     const screenshotsJson = Array.isArray(failureScreenshots)
         ? JSON.stringify(failureScreenshots)
         : null;
-    const terminal = ['success', 'failed', 'manual', 'maintenance', 'cancelled'].includes(String(status));
-    await runExecute(
+    const terminal = options.terminal ?? ['success', 'failed', 'manual', 'maintenance', 'cancelled'].includes(String(status));
+    return runExecute(
         `UPDATE task_logs
          SET status = ?,
              message = COALESCE(?, message),
@@ -2996,8 +3288,69 @@ async function updateTaskLog(jobKey, {
             recoveryRequired == null ? null : (recoveryRequired ? 1 : 0),
             terminal ? 1 : 0,
             String(jobKey)
-        ]
+        ],
+        options
     );
+}
+
+// Ordinary worker updates are bound to the current local task owner. Keep the
+// result, Session deletion and any safe CDK return on one connection/COMMIT.
+// An uncertain COMMIT must propagate; callers may not compensate by CDK alone.
+async function updateLocalActivationTask(jobKey, input = {}, { finalize = false, annotate = false } = {}) {
+    const key = String(jobKey || '');
+    const cdkCode = String(input.cdkCode || '');
+    if (!key || !cdkCode || (finalize && annotate)) return { applied: false, released: false, reason: 'INVALID_INPUT' };
+    return withTransaction(async connection => {
+        // Match admission: CDK -> task -> latest owner -> other blockers.
+        const cdks = await runQuery('SELECT * FROM cdk_codes WHERE cdk_code = ? LIMIT 1 FOR UPDATE', [cdkCode], { connection });
+        const tasks = await runQuery('SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE', [key], { connection });
+        const row = tasks[0];
+        if (!row || row.cdk_code !== cdkCode || row.execution_mode !== 'local_card_pool'
+            || row.gpt_api_order_id != null || row.gpt_api_task_id != null || row.gpt_api_raw != null
+            || !cdks[0]?.used_at || Number(cdks[0].is_active) !== 1) {
+            return { applied: false, released: false, reason: 'LOCAL_TASK_REQUIRES_REVIEW' };
+        }
+        const owners = await runQuery('SELECT job_key FROM task_logs WHERE cdk_code = ? ORDER BY id DESC LIMIT 1 FOR UPDATE', [cdkCode], { connection });
+        if (owners[0]?.job_key !== key) return { applied: false, released: false, reason: 'CDK_OWNER_MISMATCH' };
+        if (annotate) {
+            // Only the successful task may record its post-payment auto-renew
+            // result. This path never returns a CDK or reopens a finished task.
+            if (!row.finished_at || !['success', 'manual'].includes(row.status) || row.payment_state !== 'succeeded'
+                || !['success', 'manual'].includes(input.status) || input.paymentState !== 'succeeded') {
+                return { applied: false, released: false, reason: 'ANNOTATION_REFUSED' };
+            }
+        } else if (row.finished_at || !['running', 'manual'].includes(row.status)
+            || !(finalize ? ['success', 'failed', 'manual'] : ['running', 'manual']).includes(input.status)) {
+            return { applied: false, released: false, reason: 'TASK_ALREADY_SETTLED_OR_INVALID' };
+        }
+        const paymentState = mergePaymentState(row.payment_state,
+            Object.prototype.hasOwnProperty.call(input, 'paymentState') ? normalizePaymentState(input.paymentState) : row.payment_state);
+        const confirmedSuccess = (finalize || annotate) && input.status === 'success' && paymentState === 'succeeded';
+        const retain = shouldRetainCdk({ paymentState }) || Boolean(row.recovery_required) || Boolean(input.recoveryRequired);
+        const recoveryRequired = confirmedSuccess ? false : retain || input.status === 'success';
+        const status = annotate ? input.status : (recoveryRequired ? 'manual' : input.status);
+        const released = finalize && status === 'failed' && !recoveryRequired;
+        if (released && await getBlockingActivationTask(connection, cdkCode, key)) {
+            return { applied: false, released: false, reason: 'OTHER_TASK_REQUIRES_REVIEW' };
+        }
+        const message = status === 'manual' && input.status !== 'manual'
+            ? '支付结果或任务状态需人工复核，已保留 CDK 与银行卡' : input.message;
+        const updated = await updateTaskLog(key, {
+            status, message, cdkCode, paymentState, recoveryRequired,
+            rawOutput: input.rawOutput, progress: input.progress, phone: input.phone, cardLast4: input.cardLast4,
+            failureScreenshots: input.failureScreenshots, autoRenewStatus: input.autoRenewStatus, autoRenewMessage: input.autoRenewMessage
+        }, { connection, terminal: finalize || annotate });
+        if (updated.affectedRows !== 1) throw activationAdmissionError('LOCAL_SETTLEMENT_CONFLICT', '充值任务状态已变更', 409);
+        if (finalize) {
+            const cleared = await runExecute('UPDATE task_logs SET session_payload = NULL, session_payload_encrypted = NULL WHERE job_key = ?', [key], { connection });
+            if (cleared.affectedRows !== 1) throw activationAdmissionError('LOCAL_SESSION_CONFLICT', '充值任务凭证清理未确认', 409);
+        }
+        if (released) {
+            const returned = await runExecute('UPDATE cdk_codes SET used_at = NULL WHERE cdk_code = ? AND used_at IS NOT NULL AND is_active = 1', [cdkCode], { connection });
+            if (returned.affectedRows !== 1) throw activationAdmissionError('LOCAL_RELEASE_CONFLICT', '充值卡密归属已变更', 409);
+        }
+        return { applied: true, released, status, paymentState, recoveryRequired, message };
+    });
 }
 
 async function listStaleRunningTasks(maxAgeMs = 15 * 60 * 1000) {
@@ -3301,7 +3654,7 @@ async function hasAvailableCard() {
          FROM card_assets
          WHERE is_active = 1
            AND in_use = 0
-           AND status = '正常'
+           AND status = '正常' AND locked_by IS NULL${LEGACY_CARD_FENCE_SQL}
            AND (cooldown_until IS NULL OR cooldown_until < NOW())
          LIMIT 1`
     );
@@ -3309,13 +3662,14 @@ async function hasAvailableCard() {
 }
 
 async function reserveCard(ownerKey) {
+    requireAssetLockOwner(ownerKey);
     return withTransaction(async (connection) => {
         const [rows] = await connection.query(
             `SELECT id, card_number, card_expiry, card_cvc, card_holder, usage_count
              FROM card_assets
              WHERE is_active = 1
                AND in_use = 0
-               AND status = '正常'
+               AND status = '正常' AND locked_by IS NULL${LEGACY_CARD_FENCE_SQL}
                AND (cooldown_until IS NULL OR cooldown_until < NOW())
              ORDER BY usage_count ASC, COALESCE(last_used_at, '1970-01-01') ASC, id ASC
              LIMIT 1
@@ -3327,16 +3681,19 @@ async function reserveCard(ownerKey) {
         }
 
         const row = rows[0];
-        await connection.query(
+        const [reserved] = await connection.query(
             `UPDATE card_assets
              SET in_use = 1,
                  locked_at = CURRENT_TIMESTAMP,
                  locked_by = ?
-             WHERE id = ?`,
-            [String(ownerKey || '').slice(0, 64) || null, row.id]
+             WHERE id = ? AND is_active = 1 AND in_use = 0 AND locked_by IS NULL
+               AND status = '正常'${LEGACY_CARD_FENCE_SQL}`,
+            [ownerKey, row.id]
         );
+        requireOwnedCardChange(reserved);
 
         return {
+            ownerKey,
             id: row.id,
             card_number: row.card_number,
             card_expiry: row.card_expiry,
@@ -3347,47 +3704,64 @@ async function reserveCard(ownerKey) {
     });
 }
 
-/**
- * 释放卡片锁定。
- * @param {number} cardId - 卡片 ID
- */
-async function quarantineCardForReview(cardId, reason = 'payment_result_unknown') {
-    if (!cardId) return;
-    await runExecute(
+/** Durable barrier: must succeed before any payment submission. No idempotent
+ * re-entry: a repeated callback must not authorize a second external attempt. */
+async function markCardPaymentStarted(cardId, ownerKey) {
+    const id = requireOwnedAssetId(cardId, ownerKey);
+    const result = await runExecute(
+        `UPDATE card_assets SET status = '支付处理中'
+         WHERE ${OWNED_NORMAL_CARD_SQL}`,
+        [id, ownerKey]
+    );
+    return requireOwnedCardChange(result);
+}
+
+/** Call only after confirmed success and its billing record have been saved. */
+async function completeCardPayment(cardId, ownerKey) {
+    const id = requireOwnedAssetId(cardId, ownerKey);
+    const result = await runExecute(
+        `UPDATE card_assets SET status = '正常', in_use = 0, locked_at = NULL, locked_by = NULL
+         WHERE id = ? AND is_active = 1 AND status = '支付处理中' AND in_use = 1
+           AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)${LEGACY_CARD_FENCE_SQL}`,
+        [id, ownerKey]
+    );
+    return requireOwnedCardChange(result);
+}
+
+/** Move an unresolved payment's own card to manual review. */
+async function quarantineCardForReview(cardId, reason = 'payment_result_unknown', ownerKey) {
+    const id = requireOwnedAssetId(cardId, ownerKey);
+    const result = await runExecute(
         `UPDATE card_assets
          SET is_active = 0, status = '待人工复核', in_use = 1,
              locked_by = CONCAT('manual_review:', ?)
-         WHERE id = ?`,
-        [String(reason).slice(0, 40), Number(cardId)]
+         WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+        [String(reason).slice(0, 40), id, ownerKey]
     );
+    return requireOwnedCardChange(result);
 }
 
-async function releaseCard(cardId) {
-    if (!cardId) {
-        return;
-    }
-    await runExecute(
-        `UPDATE card_assets
-         SET in_use = 0,
-             locked_at = NULL,
-             locked_by = NULL
-         WHERE id = ?`,
-        [Number(cardId)]
-    );
+// Returning zero is an idempotent no-op: never release a later task's card.
+async function releaseCard(cardId, ownerKey) {
+    return releaseAssetById('card_assets', cardId, ownerKey);
 }
 
 /**
- * 释放指定 ownerKey (通常为 jobKey) 持有的未完成卡片锁
+ * Local-worker cleanup accepts the original jobKey and only releases its
+ * canonical payment owner. Do not infer legacy/debug/provider ownership by
+ * substring, sanitizing or truncation; ambiguous locks require manual review.
  */
-async function releaseCardsByOwner(ownerKey) {
-    if (!ownerKey) return 0;
+async function releaseCardsByOwner(jobKey) {
+    if (typeof jobKey !== 'string' || !/^[a-zA-Z0-9_-]{1,48}$/.test(jobKey)) return 0;
     const res = await runExecute(
         `UPDATE card_assets
          SET in_use = 0,
              locked_at = NULL,
              locked_by = NULL
-         WHERE in_use = 1 AND status = '正常' AND (locked_by = ? OR locked_by LIKE ?)`,
-        [ownerKey, `%${ownerKey}%`]
+         WHERE in_use = 1 AND status = '正常'
+           AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)
+           AND ${LOCAL_PAYMENT_RECLAIMABLE_CARD_SQL}${LEGACY_CARD_FENCE_SQL}`,
+        [`payment_${jobKey}`]
     );
     return Number(res?.affectedRows || 0);
 }
@@ -3398,42 +3772,41 @@ async function releaseCardsByOwner(ownerKey) {
  * @param {number} cardId - 卡片 ID
  * @param {number} minutes - 冷却分钟数
  */
-async function cooldownCard(cardId, minutes = 30) {
-    const id = Number(cardId);
+async function cooldownCard(cardId, minutes = 30, ownerKey) {
+    const id = requireOwnedAssetId(cardId, ownerKey);
     const duration = Number(minutes);
-    if (!Number.isSafeInteger(id) || id <= 0) return;
     if (!Number.isSafeInteger(duration) || duration <= 0 || duration > 24 * 60) {
         throw new Error('卡片冷却时长无效');
     }
-    await runExecute(
+    const result = await runExecute(
         `UPDATE card_assets
          SET cooldown_until = GREATEST(COALESCE(cooldown_until, NOW()), DATE_ADD(NOW(), INTERVAL ? MINUTE)),
-             in_use = 0,
+             status = '正常', in_use = 0,
              locked_at = NULL,
              locked_by = NULL
-         WHERE id = ? AND is_active = 1 AND status = '正常'`,
-        [duration, id]
+         WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+        [duration, id, ownerKey]
     );
+    return requireOwnedCardChange(result);
 }
 
 /**
  * 将卡片标记为已报废（Stripe 明确拒绝）。
  * @param {number} cardId - 卡片 ID
  */
-async function markCardExhausted(cardId) {
-    if (!cardId) {
-        return;
-    }
-    await runExecute(
+async function markCardExhausted(cardId, ownerKey) {
+    const id = requireOwnedAssetId(cardId, ownerKey);
+    const result = await runExecute(
         `UPDATE card_assets
          SET is_active = 0,
              status = '已报废',
              in_use = 0,
              locked_at = NULL,
              locked_by = NULL
-         WHERE id = ?`,
-        [Number(cardId)]
+         WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+        [id, ownerKey]
     );
+    return requireOwnedCardChange(result);
 }
 
 /**
@@ -3445,7 +3818,7 @@ async function markCardExhausted(cardId) {
  */
 async function setCardFrozen(cardId, freeze = true) {
     const id = Number(cardId);
-    if (!id || !Number.isFinite(id)) {
+    if (!Number.isSafeInteger(id) || id <= 0) {
         return { success: false, error: '无效的卡片 ID' };
     }
     const shouldFreeze = Boolean(freeze);
@@ -3456,11 +3829,12 @@ async function setCardFrozen(cardId, freeze = true) {
                  status = '已冻结',
                  locked_at = NULL,
                  locked_by = NULL
-             WHERE id = ?`,
+             WHERE id = ? AND in_use = 0 AND status IN ('正常', '已冻结', '已报废')
+               AND locked_by IS NULL${LEGACY_CARD_FENCE_SQL}`,
             [id]
         );
         if (result.affectedRows === 0) {
-            return { success: false, error: '卡片不存在' };
+            return { success: false, error: '卡片不存在或仍被占用/待核账，不能冻结或解冻' };
         }
         return { success: true, is_frozen: true, message: '卡片已冻结，将不可被调用' };
     } else {
@@ -3471,11 +3845,12 @@ async function setCardFrozen(cardId, freeze = true) {
                  cooldown_until = NULL,
                  locked_at = NULL,
                  locked_by = NULL
-             WHERE id = ?`,
+             WHERE id = ? AND in_use = 0 AND status = '已冻结'
+               AND locked_by IS NULL${LEGACY_CARD_FENCE_SQL}`,
             [id]
         );
         if (result.affectedRows === 0) {
-            return { success: false, error: '卡片不存在' };
+            return { success: false, error: '卡片不存在或仍被占用/待核账，不能冻结或解冻' };
         }
         return { success: true, is_frozen: false, message: '卡片已解冻，已恢复正常调用' };
     }
@@ -3490,23 +3865,21 @@ async function setCardFrozen(cardId, freeze = true) {
  * @param {number} cardId - 卡片 ID
  * @returns {{ dailyUsageCount: number, cooledDown: boolean }} 更新后的日使用次数及是否触发冷却
  */
-async function recordCardUsage(cardId) {
-    if (!cardId) {
-        return { dailyUsageCount: 0, cooledDown: false };
-    }
+async function recordCardUsage(cardId, ownerKey) {
+    const id = requireOwnedAssetId(cardId, ownerKey);
 
     return withTransaction(async (connection) => {
         // 获取当前卡片状态
         const [rows] = await connection.query(
             `SELECT daily_usage_count, daily_usage_reset_at
              FROM card_assets
-             WHERE id = ?
+             WHERE ${OWNED_PAYMENT_CARD_SQL}
              FOR UPDATE`,
-            [Number(cardId)]
+            [id, ownerKey]
         );
 
         if (!rows.length) {
-            return { dailyUsageCount: 0, cooledDown: false };
+            throw cardLockOwnershipLost();
         }
 
         const row = rows[0];
@@ -3519,37 +3892,40 @@ async function recordCardUsage(cardId) {
         if (!resetAt || resetAt < twentyFourHoursAgo) {
             // 24h 窗口过期或未设置，重置计数
             newDailyCount = 1;
-            await connection.query(
+            const [result] = await connection.query(
                 `UPDATE card_assets
                  SET daily_usage_count = 1,
                      daily_usage_reset_at = NOW(),
                      usage_count = usage_count + 1,
                      last_used_at = NOW()
-                 WHERE id = ?`,
-                [Number(cardId)]
+                 WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+                [id, ownerKey]
             );
+            requireOwnedCardChange(result);
         } else {
             // 在 24h 窗口内，递增
             newDailyCount = Number(row.daily_usage_count || 0) + 1;
-            await connection.query(
+            const [result] = await connection.query(
                 `UPDATE card_assets
                  SET daily_usage_count = daily_usage_count + 1,
                      usage_count = usage_count + 1,
                      last_used_at = NOW()
-                 WHERE id = ?`,
-                [Number(cardId)]
+                 WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+                [id, ownerKey]
             );
+            requireOwnedCardChange(result);
         }
 
         // 检查是否需要冷却
         let cooledDown = false;
         if (newDailyCount >= 3) {
-            await connection.query(
+            const [result] = await connection.query(
                 `UPDATE card_assets
                  SET cooldown_until = DATE_ADD(NOW(), INTERVAL 24 HOUR)
-                 WHERE id = ?`,
-                [Number(cardId)]
+                 WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+                [id, ownerKey]
             );
+            requireOwnedCardChange(result);
             cooledDown = true;
         }
 
@@ -3562,12 +3938,12 @@ async function recordCardUsage(cardId) {
  * @param {number} cardId
  * @param {{ holderName?: string, address?: object }} profile
  */
-async function bindCardPaymentProfile(cardId, profile = {}) {
-    if (!cardId) return;
+async function bindCardPaymentProfile(cardId, profile = {}, ownerKey) {
+    const id = requireOwnedAssetId(cardId, ownerKey);
     const holderName = String(profile.holderName || '').trim();
     const address = profile.address || {};
     const addressId = Number(address.id) > 0 ? Number(address.id) : null;
-    await runExecute(
+    const result = await runExecute(
         `UPDATE card_assets
          SET payment_holder_name = ?,
              payment_address_line1 = ?,
@@ -3575,7 +3951,7 @@ async function bindCardPaymentProfile(cardId, profile = {}) {
              payment_address_state = ?,
              payment_address_postal = ?,
              payment_address_id = ?
-         WHERE id = ?`,
+         WHERE ${OWNED_PAYMENT_CARD_SQL}`,
         [
             holderName,
             String(address.line1 || ''),
@@ -3583,9 +3959,11 @@ async function bindCardPaymentProfile(cardId, profile = {}) {
             String(address.state || ''),
             String(address.postal_code || ''),
             addressId,
-            Number(cardId)
+            id,
+            ownerKey
         ]
     );
+    return requireOwnedCardChange(result);
 }
 
 // ─── Card Import ─────────────────────────────────────────────────────────────
@@ -3824,9 +4202,9 @@ async function listBillingRecords(filters = {}, page = 1, pageSize = 20) {
 
     const offset = (page - 1) * pageSize;
     const records = await runQuery(
-        `SELECT id, payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id,
-                protocol_attempt_id, stripe_payment_intent_id, stripe_payment_method_id, stripe_confirmation_token_hash,
-                cdk_code, email, status, error_code, error_message, created_at
+        `SELECT id, payment_time, CONCAT('****', card_last4) AS card_number, card_last4, amount, currency, plan_type,
+                CASE WHEN cdk_code IS NULL OR cdk_code = '' THEN NULL ELSE '[已隐藏]' END AS cdk_code,
+                email, status, error_code, created_at
          FROM billing_records
          ${whereClause}
          ORDER BY payment_time DESC
@@ -3870,7 +4248,7 @@ async function exportBillingRecordsCSV(filters = {}) {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const rows = await runQuery(
-        `SELECT payment_time, card_number, card_last4, amount, currency, plan_type, stripe_session_id,
+        `SELECT payment_time, CONCAT('****', card_last4) AS card_number, card_last4, amount, currency, plan_type, stripe_session_id,
                 protocol_attempt_id, stripe_payment_intent_id, stripe_payment_method_id, stripe_confirmation_token_hash,
                 cdk_code, email, status, error_code, error_message
          FROM billing_records
@@ -3905,7 +4283,8 @@ async function exportBillingRecordsCSV(filters = {}) {
             row.error_code || '',
             row.error_message || ''
         ].map((field) => {
-            const str = String(field);
+            const raw = String(field);
+            const str = /^[=+@\-\t\r]/.test(raw) ? `'${raw}` : raw;
             // CSV 字段包含逗号、引号或换行时需要引号包裹
             if (str.includes(',') || str.includes('"') || str.includes('\n')) {
                 return `"${str.replace(/"/g, '""')}"`;
@@ -3919,7 +4298,7 @@ async function exportBillingRecordsCSV(filters = {}) {
 
 async function deleteBillingRecord(id) {
     const result = await runExecute(
-        `DELETE FROM billing_records WHERE id = ?`,
+        `DELETE FROM billing_records WHERE id = ?${LEGACY_BILLING_FENCE_SQL}`,
         [Number(id)]
     );
     return result.affectedRows > 0;
@@ -3927,7 +4306,7 @@ async function deleteBillingRecord(id) {
 
 async function deleteFailedBillingRecords() {
     const result = await runExecute(
-        `DELETE FROM billing_records WHERE status = 'failed'`
+        `DELETE FROM billing_records WHERE status = 'failed'${LEGACY_BILLING_FENCE_SQL}`
     );
     return Number(result.affectedRows || 0);
 }
@@ -4052,12 +4431,11 @@ function mergeGptApiAttempt(previous, patch, jobKey) {
 }
 
 async function lockGptApiTask(connection, jobKey, { allowLegacy = false } = {}) {
-    const [rows] = await connection.query('SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE', [String(jobKey)]);
-    const task = rows[0];
+    const { task, cdk } = await lockActivationTaskCdkFirst(connection, jobKey);
     if (!task || (task.execution_mode !== 'third_party_api' && !(allowLegacy && (task.gpt_api_order_id || task.gpt_api_task_id)))) {
         throw gptApiStoreError('GPT_API_TASK_INVALID', '外包充值任务不存在或模式不一致');
     }
-    return task;
+    return { task, cdk };
 }
 
 async function writeGptApiEnvelope(connection, jobKey, attempt, lastResponse) {
@@ -4090,7 +4468,7 @@ async function getGptApiAttempt(jobKey) {
 
 async function saveGptApiAttempt(jobKey, patch = {}) {
     return withTransaction(async (connection) => {
-        const task = await lockGptApiTask(connection, jobKey);
+        const { task } = await lockGptApiTask(connection, jobKey);
         const envelope = parseGptApiEnvelope(task.gpt_api_raw);
         const attempt = mergeGptApiAttempt(envelope.attempt, patch, jobKey);
         await writeGptApiEnvelope(connection, jobKey, attempt, patch.lastResponse === undefined ? envelope.lastResponse : patch.lastResponse);
@@ -4100,39 +4478,36 @@ async function saveGptApiAttempt(jobKey, patch = {}) {
 
 async function reserveGptApiCard(jobKey, attemptPatch = {}) {
     return withTransaction(async (connection) => {
-        const task = await lockGptApiTask(connection, jobKey);
+        const { task, cdk } = await lockGptApiTask(connection, jobKey);
         const envelope = parseGptApiEnvelope(task.gpt_api_raw);
         const attempt = mergeGptApiAttempt(envelope.attempt, attemptPatch, jobKey);
         if (attempt.dispatchStarted || GPT_API_FINAL_OUTCOMES.has(attempt.settlement)) {
             throw gptApiStoreError('GPT_API_ALREADY_DISPATCHED', '订单已派发或结算，不能重新取卡');
         }
-        const [cdkRows] = await connection.query(
-            'SELECT cdk_code, used_at FROM cdk_codes WHERE cdk_code = ? AND is_active = 1 FOR UPDATE',
-            [task.cdk_code]
-        );
         const [ownerRows] = await connection.query(
             `SELECT job_key FROM task_logs WHERE cdk_code = ?
              ORDER BY id DESC LIMIT 1 FOR UPDATE`,
             [task.cdk_code]
         );
-        if (!cdkRows.length || !cdkRows[0].used_at || ownerRows[0]?.job_key !== String(jobKey)) {
+        if (!cdk || Number(cdk.is_active) !== 1 || !cdk.used_at || ownerRows[0]?.job_key !== String(jobKey)) {
             throw gptApiStoreError('GPT_API_CDK_OWNER_MISMATCH', 'CDK 已被其他任务占用，已停止取卡');
         }
         const owner = `gptapi_${jobKey}`;
         let rows;
         if (attempt.cardAssetId) {
             [rows] = await connection.query(
-                'SELECT * FROM card_assets WHERE id = ? AND in_use = 1 AND locked_by = ? LIMIT 1 FOR UPDATE',
+                `SELECT * FROM card_assets WHERE id = ? AND in_use = 1 AND locked_by = ?${LEGACY_CARD_FENCE_SQL} LIMIT 1 FOR UPDATE`,
                 [attempt.cardAssetId, owner]);
             if (!rows.length) throw gptApiStoreError('GPT_API_CARD_OWNER_MISMATCH', '原订单银行卡锁不匹配，已停止');
         } else {
             [rows] = await connection.query(
                 `SELECT id, card_number, card_expiry, card_cvc, card_holder, usage_count FROM card_assets
-                 WHERE is_active = 1 AND in_use = 0 AND status = '正常'
+                 WHERE is_active = 1 AND in_use = 0 AND status = '正常' AND locked_by IS NULL${LEGACY_CARD_FENCE_SQL}
                    AND (cooldown_until IS NULL OR cooldown_until < NOW())
                  ORDER BY usage_count ASC, COALESCE(last_used_at, '1970-01-01') ASC, id ASC LIMIT 1 FOR UPDATE SKIP LOCKED`);
             if (!rows.length) return null;
-            await connection.query('UPDATE card_assets SET in_use = 1, locked_at = CURRENT_TIMESTAMP, locked_by = ? WHERE id = ?', [owner, rows[0].id]);
+            const [reserved] = await connection.query(`UPDATE card_assets SET in_use = 1, locked_at = CURRENT_TIMESTAMP, locked_by = ? WHERE id = ? AND in_use = 0 AND locked_by IS NULL AND is_active = 1 AND status = '正常'${LEGACY_CARD_FENCE_SQL}`, [owner, rows[0].id]);
+            requireOwnedCardChange(reserved);
         }
         const card = rows[0];
         attempt.cardAssetId = Number(card.id);
@@ -4145,7 +4520,7 @@ async function reserveGptApiCard(jobKey, attemptPatch = {}) {
 async function finalizeGptApiAttempt(jobKey, { outcome, record = {}, message = '', paymentState } = {}) {
     if (!['success', 'no_charge', 'hold'].includes(outcome)) throw gptApiStoreError('GPT_API_OUTCOME_INVALID', '外包结算状态无效');
     return withTransaction(async (connection) => {
-        const task = await lockGptApiTask(connection, jobKey, { allowLegacy: outcome === 'hold' });
+        const { task, cdk } = await lockGptApiTask(connection, jobKey, { allowLegacy: outcome === 'hold' });
         const envelope = parseGptApiEnvelope(task.gpt_api_raw);
         const previous = envelope.attempt;
         if (GPT_API_FINAL_OUTCOMES.has(previous?.settlement)) {
@@ -4155,13 +4530,12 @@ async function finalizeGptApiAttempt(jobKey, { outcome, record = {}, message = '
         const attempt = mergeGptApiAttempt(previous, record, jobKey);
         let guardCode = '';
         let card = null;
-        // Lock the CDK row before checking its latest task owner. A late old
-        // response cannot roll back a new task that has already claimed it.
-        const [cdks] = await connection.query('SELECT * FROM cdk_codes WHERE cdk_code = ? LIMIT 1 FOR UPDATE', [task.cdk_code]);
+        // CDK and task are already locked in admission order. A late response
+        // may not release resources held by a newer task.
         const [owners] = await connection.query('SELECT job_key FROM task_logs WHERE cdk_code = ? ORDER BY id DESC LIMIT 1 FOR UPDATE', [task.cdk_code]);
-        if (!cdks.length || owners[0]?.job_key !== String(jobKey)) guardCode = 'GPT_API_CDK_OWNER_MISMATCH';
+        if (!cdk || owners[0]?.job_key !== String(jobKey)) guardCode = 'GPT_API_CDK_OWNER_MISMATCH';
         if (attempt.cardAssetId) {
-            const [cards] = await connection.query('SELECT * FROM card_assets WHERE id = ? LIMIT 1 FOR UPDATE', [attempt.cardAssetId]);
+            const [cards] = await connection.query(`SELECT * FROM card_assets WHERE id = ?${LEGACY_CARD_FENCE_SQL} LIMIT 1 FOR UPDATE`, [attempt.cardAssetId]);
             card = cards[0];
             if (!card || Number(card.in_use) !== 1 || card.locked_by !== `gptapi_${jobKey}`) guardCode = 'GPT_API_CARD_OWNER_MISMATCH';
         } else if (attempt.dispatchStarted && outcome !== 'hold') {
@@ -4187,15 +4561,19 @@ async function finalizeGptApiAttempt(jobKey, { outcome, record = {}, message = '
                     const resetAt = card.daily_usage_reset_at ? new Date(card.daily_usage_reset_at) : null;
                     const reset = !resetAt || resetAt < new Date(now.getTime() - 24 * 60 * 60 * 1000);
                     const dailyUsageCount = reset ? 1 : Number(card.daily_usage_count || 0) + 1;
-                    await connection.query(
+                    const [usage] = await connection.query(
                         `UPDATE card_assets SET daily_usage_count = ?, daily_usage_reset_at = ?, usage_count = usage_count + 1,
-                         last_used_at = NOW(), cooldown_until = CASE WHEN ? THEN GREATEST(COALESCE(cooldown_until, NOW()), DATE_ADD(NOW(), INTERVAL 24 HOUR)) ELSE cooldown_until END WHERE id = ? AND locked_by = ?`,
+                         last_used_at = NOW(), cooldown_until = CASE WHEN ? THEN GREATEST(COALESCE(cooldown_until, NOW()), DATE_ADD(NOW(), INTERVAL 24 HOUR)) ELSE cooldown_until END WHERE id = ? AND locked_by = ? AND in_use = 1${LEGACY_CARD_FENCE_SQL}`,
                         [dailyUsageCount, reset ? now : resetAt, dailyUsageCount >= 3 ? 1 : 0, card.id, `gptapi_${jobKey}`]);
+                    requireOwnedCardChange(usage);
                     cardUsage = { dailyUsageCount, cooledDown: dailyUsageCount >= 3 };
                 }
             }
-            if (card) await connection.query(
-                'UPDATE card_assets SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE id = ? AND locked_by = ?', [card.id, `gptapi_${jobKey}`]);
+            if (card) {
+                const [released] = await connection.query(
+                    `UPDATE card_assets SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE id = ? AND locked_by = ? AND in_use = 1${LEGACY_CARD_FENCE_SQL}`, [card.id, `gptapi_${jobKey}`]);
+                requireOwnedCardChange(released);
+            }
         }
         await writeGptApiEnvelope(connection, jobKey, attempt, record.lastResponse === undefined ? envelope.lastResponse : record.lastResponse);
         const status = outcome === 'hold' ? 'manual' : outcome === 'success' ? 'success' : 'failed';
@@ -4262,6 +4640,7 @@ module.exports = {
     updateAdminEmail,
     updateAdminSecondaryPassword,
     saveAdminTotpConfig,
+    savePendingAdminTotp, getPendingAdminTotp, commitPendingAdminTotp, disableAdminTotp,
     saveAdmin2faLoginMode,
     getAdminPaths,
     saveAdminPaths,
@@ -4284,6 +4663,10 @@ module.exports = {
     resetActivationAttemptFailure,
     deletePhoneAsset,
     deleteCardAsset,
+    listAdminCardSummaries,
+    getIdleCardSecret,
+    deleteIdleCardById,
+    resetIdleCardCooldown,
     bulkImportPoolEmails,
     listPoolEmails,
     getPoolEmailCredentials,
@@ -4332,12 +4715,15 @@ module.exports = {
     getMaintenanceModeState,
     setMaintenanceModeState,
     createTaskLog,
+    createActivationTask,
+    retireSafeActivationTask,
     deleteTaskLogByJobKey,
     deleteTaskMediaFiles,
     getBillingOverviewStats,
     getTaskStatus,
     getRunningTaskByCdk,
     updateTaskLog,
+    updateLocalActivationTask,
     listRecentGptApiOrders,
     listProducts,
     addProduct,
@@ -4356,6 +4742,8 @@ module.exports = {
     reserveCard,
     hasAvailableCard,
     releaseCard,
+    markCardPaymentStarted,
+    completeCardPayment,
     releaseCardsByOwner,
     cooldownCard,
     quarantineCardForReview,

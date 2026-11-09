@@ -1,0 +1,42 @@
+[
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/cli.cjs",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-cli.cjs.log"
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-lab.cjs.log"
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/plan.cjs",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-plan.cjs.log"
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/safety.cjs",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-safety.cjs.log"
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/store-loader.cjs",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-store-loader.cjs.log"
+  },
+  {
+    "path": "tests/security-round8-kc-mysql-lab.test.js",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-security-round8-kc-mysql-lab.test.js.log"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/preload.cjs",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-preload.cjs.log"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/run.py",
+    "exit": 0,
+    "check": "ast.parse; no execution"
+  }
+]

@@ -9,6 +9,7 @@
 
     let currentAnnouncementElement = null;
     let currentAnnouncementAckKey = '';
+    let announcementThemeCleanup = null;
     let announcementOwnsScrollLock = false;
     let announcementOverflowRestore = null;
     const acknowledgedAnnouncementKeys = new Set();
@@ -128,6 +129,7 @@
     }
 
     function clearCurrentAnnouncement() {
+        stopAnnouncementThemeSync();
         ParticleSystem.stop();
 
         if (currentAnnouncementElement) {
@@ -153,6 +155,7 @@
         ParticleSystem.stop();
 
         if (element === currentAnnouncementElement) {
+            stopAnnouncementThemeSync();
             currentAnnouncementElement = null;
         }
 
@@ -775,10 +778,36 @@
         return 'dark';
     }
 
+    function stopAnnouncementThemeSync() {
+        announcementThemeCleanup?.();
+        announcementThemeCleanup = null;
+    }
+
     function applyAnnouncementTheme(rootEl, context = {}) {
+        stopAnnouncementThemeSync();
         if (!rootEl) return;
-        const theme = resolveAnnouncementTheme(context);
-        rootEl.setAttribute('data-announcement-theme', theme);
+        // Resolve before insertion so the first frame already has the final material.
+        const syncTheme = () => {
+            const theme = resolveAnnouncementTheme(context);
+            if (rootEl.getAttribute('data-announcement-theme') !== theme) {
+                rootEl.setAttribute('data-announcement-theme', theme);
+            }
+        };
+        syncTheme();
+        const requested = String(context.theme || 'auto').trim().toLowerCase();
+        if (requested === 'light' || requested === 'dark') return;
+
+        const observer = typeof MutationObserver === 'function' ? new MutationObserver(syncTheme) : null;
+        observer?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+        if (document.body) observer?.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        const systemTheme = window.matchMedia?.('(prefers-color-scheme: light)');
+        if (systemTheme?.addEventListener) systemTheme.addEventListener('change', syncTheme);
+        else systemTheme?.addListener?.(syncTheme);
+        announcementThemeCleanup = () => {
+            observer?.disconnect();
+            if (systemTheme?.removeEventListener) systemTheme.removeEventListener('change', syncTheme);
+            else systemTheme?.removeListener?.(syncTheme);
+        };
     }
 
     // Inject required CSS if not already present
@@ -795,9 +824,9 @@
                 left: 0;
                 right: 0;
                 bottom: 0;
-                background: var(--app-modal-backdrop, rgba(31, 76, 118, 0.20));
-                backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
-                -webkit-backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
+                background: rgba(0, 0, 0, 0.20);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
                 z-index: 99999;
                 display: flex;
                 align-items: center;
@@ -852,11 +881,94 @@
                 border-radius: 28px;
                 width: min(92vw, 620px);
                 max-width: 620px;
+                /* Header, body and footer own spacing; avoid shared surface padding. */
+                padding: 0;
                 color: #fff;
                 box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
                 animation: modalPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
                 overflow: hidden;
                 position: relative;
+            }
+
+            /* 20261108_ANNOUNCEMENT_MODAL_LIQUID_GLASS_RING_1 */
+            .zaoyoe-announcement-ring {
+                --glass-ring-width: 8px;
+                --glass-radius: 28px;
+                --glass-blur: 12px;
+                --glass-saturation: 145%;
+                --glass-panel: #0b0e14;
+                --glass-outline: rgba(255, 255, 255, 0.30);
+                --glass-highlight: rgba(255, 255, 255, 0.36);
+                width: min(92vw, 620px);
+                max-width: 620px;
+                box-sizing: border-box !important;
+                padding: var(--glass-ring-width, 8px) !important;
+                border-radius: var(--glass-radius, 28px) !important;
+                background:
+                    linear-gradient(
+                        145deg,
+                        rgba(255, 255, 255, 0.24),
+                        rgba(255, 255, 255, 0.10) 54%,
+                        rgba(255, 255, 255, 0.18)
+                    ) !important;
+                border: 1px solid var(--glass-outline) !important;
+                backdrop-filter: var(--dng-filter, blur(var(--glass-blur, 12px)) saturate(var(--glass-saturation, 145%))) !important;
+                -webkit-backdrop-filter: var(--dng-webkit-filter, blur(var(--glass-blur, 12px)) saturate(var(--glass-saturation, 145%))) !important;
+                box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5) !important;
+                animation: modalPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+                display: flex;
+            }
+
+            @media (max-width: 520px) {
+                .zaoyoe-announcement-ring {
+                    --glass-ring-width: 7px;
+                    --glass-blur: 10px;
+                }
+            }
+
+            .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-ring {
+                --glass-panel: #fcfdff;
+                --glass-outline: rgba(255, 255, 255, 0.56);
+                --glass-highlight: rgba(255, 255, 255, 0.68);
+                background:
+                    linear-gradient(
+                        145deg,
+                        rgba(255, 255, 255, 0.34),
+                        rgba(255, 255, 255, 0.18) 54%,
+                        rgba(255, 255, 255, 0.26)
+                    ) !important;
+                border: 1px solid var(--glass-outline) !important;
+                box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18) !important;
+            }
+
+            .zaoyoe-announcement-ring > .zaoyoe-announcement-modal.glass-ring__surface {
+                width: 100% !important;
+                max-width: 100% !important;
+                border-radius: max(0px, calc(var(--glass-radius, 28px) - var(--glass-ring-width, 8px))) !important;
+                background: #0b0e14 !important;
+                border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18) !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+                animation: none !important;
+            }
+
+            .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-ring > .zaoyoe-announcement-modal.glass-ring__surface {
+                --announcement-header-icon-color: #000;
+                background: #fcfdff !important;
+                border: 1px solid rgba(255, 255, 255, 0.84) !important;
+                box-shadow: 0 2px 8px rgba(48, 42, 31, 0.045) !important;
+                color: #0f172a !important;
+            }
+
+            .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-ring > .zaoyoe-announcement-modal.glass-ring__surface .zaoyoe-announcement-title {
+                color: #0f172a !important;
+            }
+
+            .zaoyoe-announcement-overlay.announcement-modal-force-hidden .zaoyoe-announcement-ring {
+                display: none !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
             }
             
             .zaoyoe-announcement-header {
@@ -872,7 +984,7 @@
             
             .zaoyoe-announcement-header i {
                 font-size: 1.65rem;
-                color: #6b9ece;
+                color: var(--announcement-header-icon-color, #fff);
             }
             
             .zaoyoe-announcement-title {
@@ -916,6 +1028,19 @@
                 z-index: 10;
             }
             
+            /* Compact modal spacing without changing banner or toast cards. */
+            .zaoyoe-announcement-modal .zaoyoe-announcement-header {
+                padding: 20px 18px 0;
+            }
+
+            .zaoyoe-announcement-modal .zaoyoe-announcement-body {
+                padding: 14px 18px;
+            }
+
+            .zaoyoe-announcement-modal .zaoyoe-announcement-footer {
+                padding: 0 18px 18px;
+            }
+
             /* 磨砂玻璃按钮 */
             .zaoyoe-announcement-ack-btn {
                 padding: 10px 36px;
@@ -938,11 +1063,8 @@
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             }
 
-            [data-theme="dark"] .zaoyoe-announcement-overlay,
             .zaoyoe-announcement-overlay[data-announcement-theme="dark"] {
-                background: var(--app-modal-backdrop, rgba(34, 41, 52, 0.48));
-                backdrop-filter: var(--app-modal-backdrop-filter, blur(6px) saturate(106%));
-                -webkit-backdrop-filter: var(--app-modal-backdrop-filter, blur(6px) saturate(106%));
+                background: rgba(0, 0, 0, 0.48);
             }
 
             [data-theme="dark"] .zaoyoe-announcement-modal {
@@ -1066,9 +1188,9 @@
 
             /* ===== Light theme override for announcement modal/banner/toast ===== */
             .zaoyoe-announcement-overlay[data-announcement-theme="light"] {
-                background: var(--app-modal-backdrop, rgba(31, 76, 118, 0.20));
-                backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
-                -webkit-backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
+                background: rgba(0, 0, 0, 0.20);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
             }
             .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-modal {
                 background: rgba(255, 255, 255, 0.92);
@@ -1082,7 +1204,7 @@
                 border-bottom-color: rgba(15, 23, 42, 0.06);
             }
             .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-header i {
-                color: #6b9ece;
+                color: #000;
             }
             .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-title {
                 color: #0f172a;
@@ -1133,7 +1255,7 @@
                 color: #1f2937;
             }
             .zaoyoe-announcement-toast[data-announcement-theme="light"] .zaoyoe-announcement-header i {
-                color: #6b9ece;
+                color: #000;
             }
             .zaoyoe-announcement-toast[data-announcement-theme="light"] .zaoyoe-announcement-title {
                 color: #0f172a;
@@ -1314,22 +1436,21 @@
                 }
 
                 .zaoyoe-announcement-modal .zaoyoe-announcement-header {
-                    padding: 24px 14px 0;
+                    padding: 18px 12px 0;
                 }
 
                 .zaoyoe-announcement-modal .zaoyoe-announcement-body {
-                    padding: 14px 14px 14px;
+                    padding: 12px;
                 }
 
                 .zaoyoe-announcement-modal .zaoyoe-announcement-text {
-                    padding: 20px 22px;
+                    padding: 16px 18px;
                     font-size: 1rem;
                     max-height: 52vh;
                 }
 
                 .zaoyoe-announcement-modal .zaoyoe-announcement-footer {
-                    padding-top: 0;
-                    padding-bottom: 20px;
+                    padding: 0 12px 16px;
                 }
 
                 .zaoyoe-announcement-modal .zaoyoe-announcement-ack-btn {
@@ -1880,6 +2001,15 @@
         }
     }
 
+    function applyAnnouncementTitle(element, context = {}) {
+        const title = String(context.announcementConfig?.announcement_title || '').trim() || '站内公告';
+        const titleElement = element.querySelector('.zaoyoe-announcement-title');
+        if (titleElement) {
+            titleElement.textContent = title;
+        }
+        element.querySelector('[role="dialog"]')?.setAttribute('aria-label', title);
+    }
+
     function showBannerAnnouncement(color, size, content, ackKey, decoration, context = {}) {
         injectAnnouncementStyles();
 
@@ -1909,20 +2039,23 @@
         const overlay = document.createElement('div');
         overlay.className = 'zaoyoe-announcement-overlay';
         overlay.innerHTML = `
-            <div class="zaoyoe-announcement-modal">
-                ${decorationHTML}
-                <div class="zaoyoe-announcement-header">
-                    <i class="fas fa-bullhorn"></i>
-                    <span class="zaoyoe-announcement-title">站内公告</span>
-                </div>
-                <div class="zaoyoe-announcement-body">
-                    <div class="zaoyoe-announcement-text">${content}</div>
-                </div>
-                <div class="zaoyoe-announcement-footer">
-                    <button class="zaoyoe-announcement-ack-btn" data-announcement-action="acknowledge">已读</button>
+            <div class="glass-ring glass-ring--shell zaoyoe-announcement-ring">
+                <div class="zaoyoe-announcement-modal glass-ring__surface" role="dialog" aria-modal="true" aria-label="站内公告">
+                    ${decorationHTML}
+                    <div class="zaoyoe-announcement-header">
+                        <i class="fas fa-bullhorn"></i>
+                        <span class="zaoyoe-announcement-title">站内公告</span>
+                    </div>
+                    <div class="zaoyoe-announcement-body">
+                        <div class="zaoyoe-announcement-text">${content}</div>
+                    </div>
+                    <div class="zaoyoe-announcement-footer">
+                        <button class="zaoyoe-announcement-ack-btn" data-announcement-action="acknowledge">已读</button>
+                    </div>
                 </div>
             </div>
         `;
+        applyAnnouncementTitle(overlay, context);
         applyAnnouncementTheme(overlay, context);
         hydrateDecorationParticleStyles(overlay);
         bindAnnouncementActions(overlay, ackKey, { ...context, dismissOnBackdrop: true });
@@ -1957,6 +2090,7 @@
                 <button class="zaoyoe-announcement-ack-btn" data-announcement-action="acknowledge">已读</button>
             </div>
         `;
+        applyAnnouncementTitle(toast, context);
         applyAnnouncementTheme(toast, context);
         hydrateDecorationParticleStyles(toast);
         bindAnnouncementActions(toast, ackKey, context);

@@ -1,0 +1,183 @@
+
+ RUN  v4.1.9 /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt
+
+ ✓ test/payment-protocol-fallback.test.js (12 tests) 18ms
+ ✓ test/card-freeze.test.js (5 tests) 65ms
+stdout | test/stripe-protocol-payment.test.js > Stripe pure protocol payment integration > syncCheckoutBillingTax coordinates /taxes and /update_tax_id for Oregon tax-free billing
+⚡ [协议支付] 正在向 ChatGPT 同步免税账单地址 (国家=US, 州=Oregon, 币种=PHP)...
+
+stdout | test/stripe-protocol-payment.test.js > Stripe pure protocol payment integration > syncCheckoutBillingTax coordinates /taxes and /update_tax_id for Oregon tax-free billing
+⚡ [协议支付] ✅ 免税地址与税务状态同步成功！总金额: PHP 982.14 (税额: 0)
+
+stderr | test/stripe-protocol-payment.test.js > Stripe pure protocol payment integration > executeWithProxyRetry automatically rotates proxy SID upon transient socket/TLS failure
+🔄 [协议网络] 代理出现瞬态握手故障 (Client network socket disconnected before secure TLS connection was established)，正在就地轮换出口 SID 重试 (尝试 2/3)...
+
+ ✓ test/stripe-protocol-payment.test.js (5 tests) 10ms
+ ✓ test/mysql-card-cooldown.test.js (28 tests) 82ms
+ ✓ test/gpt-outsourcing-store.test.js (26 tests) 97ms
+ ❯ test/payment-retry-safety.test.js (100 tests | 2 failed) 102ms
+     ✓ does not reserve a card when currency is missing or mismatched ({"checkoutDue":null,"expectedCode":"CHECKOUT_CURRENCY_UNCONFIRMED"}) 5ms
+     ✓ does not reserve a card when currency is missing or mismatched ({"checkoutDue":{"amount":20,"currency":"USD"},"expectedCode":"PAYMENT_CURRENCY_MISMATCH"}) 1ms
+     ✓ does not reserve a card when currency is missing or mismatched ({"checkoutDue":{"amount":20,"currency":null},"expectedCode":"CHECKOUT_CURRENCY_UNCONFIRMED"}) 1ms
+     ✓ does not reserve a card when checkout currency cannot be read 1ms
+     ✓ does not reserve a card when checkout amount does not match expected plan amount (pro_200 vs $100) 1ms
+     ✓ does not submit or rotate a card when Checkout navigation fails 2ms
+     ✓ passes the verified card region and currency to the payment driver 1ms
+     ✓ does not classify a pre-submit currency guard as a decline or rotate the reserved card 2ms
+     ✓ does not rotate cards when the required tax-free amount is not reached 1ms
+     ✓ composes the real mixed-state address pool with grok_bundle_plus_monthly before reserving a card 3ms
+     ✓ composes the real mixed-state address pool with grok_bundle_plus_annual before reserving a card 2ms
+     ✓ composes the real mixed-state address pool with grok_bundle_premium_monthly before reserving a card 1ms
+     ✓ composes the real mixed-state address pool with grok_bundle_premium_annual before reserving a card 1ms
+     ✓ composes the real mixed-state address pool with grok_bundle_super_monthly before reserving a card 2ms
+     ✓ composes the real mixed-state address pool with grok_bundle_super_annual before reserving a card 2ms
+     ✓ composes the real mixed-state address pool with grok_bundle_ultra_monthly before reserving a card 1ms
+     ✓ composes the real mixed-state address pool with grok_bundle_ultra_annual before reserving a card 1ms
+     ✓ composes an Oregon-only fallback before card reservation when the pool is empty or unavailable (false) 1ms
+     ✓ composes an Oregon-only fallback before card reservation when the pool is empty or unavailable (true) 1ms
+     ✓ composes the actual picker but rejects malformed Oregon pool data before reserving a card 1ms
+     ✓ limits grok_bundle_plus_monthly to the Oregon address policy 1ms
+     ✓ limits grok_bundle_plus_annual to the Oregon address policy 1ms
+     ✓ limits grok_bundle_premium_monthly to the Oregon address policy 1ms
+     ✓ limits grok_bundle_premium_annual to the Oregon address policy 1ms
+     ✓ limits grok_bundle_super_monthly to the Oregon address policy 1ms
+     ✓ limits grok_bundle_super_annual to the Oregon address policy 1ms
+     ✓ limits grok_bundle_ultra_monthly to the Oregon address policy 2ms
+     ✓ limits grok_bundle_ultra_annual to the Oregon address policy 1ms
+     ✓ stops an unsupported or missing address null before reserving any card 1ms
+     ✓ stops an unsupported or missing address {"country":"US","state":"Delaware","line1":"123 Fixture Street","city":"Dover","postal_code":"19901"} before reserving any card 1ms
+     ✓ stops an unsupported or missing address {"country":"CA","state":"OR","line1":"123 Fixture Street","city":"Fixture","postal_code":"97000"} before reserving any card 1ms
+     ✓ stops an unsupported or missing address {"country":"US","state":"OR","line1":" ","city":"Fixture","postal_code":"97000"} before reserving any card 1ms
+     ✓ stops an unsupported or missing address {"country":"US","state":"OR","line1":"123 Fixture Street","city":"","postal_code":"97000"} before reserving any card 1ms
+     ✓ stops an unsupported or missing address {"country":"US","state":"OR","line1":"123 Fixture Street","city":"Fixture","postal_code":""} before reserving any card 1ms
+     ✓ stops an unsupported or missing address {"country":"US","state":"OR","line1":"123 Fixture Street","city":"Fixture","postal_code":"not-a-zip"} before reserving any card 1ms
+     ✓ stops an unsupported or missing address {"country":"US","state":"OR","line1":"123 Fixture Street","city":"Fixture","postal_code":"97000","line2":5} before reserving any card 1ms
+     ✓ stops PH/PHP before address selection or card reservation 1ms
+     ✓ stops US/CAD before address selection or card reservation 1ms
+     ✓ does not touch the card pool when no supported address can be obtained 1ms
+     ✓ preserves the default regional policy for {"platform":"chatgpt","planType":"plus"} 1ms
+     ✓ preserves the default regional policy for {"platform":"claude","planType":"claude_pro"} 1ms
+     ✓ preserves the default regional policy for {"platform":"grok","planType":"supergrok"} 1ms
+     ✓ preserves the default regional policy for {"platform":"grok","planType":"grok_bundle_unknown_monthly"} 1ms
+     ✓ preserves the default regional policy for {"platform":"chatgpt","planType":"grok_bundle_plus_monthly"} 1ms
+     ✓ binds the same canonical address used by payment after a confirmed success 1ms
+     ✓ quarantines a submitted verification failure without retry or release 1ms
+     ✓ releases a verification failure that occurred before submission 1ms
+     ✓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: 无法唯一确认 Card [OPENAI_CARD_METHOD_AMBIGUOUS] 1ms
+     ✓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: Card 尚未选中 [OPENAI_CARD_METHOD_NOT_SELECTED] 1ms
+     ✓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: 找不到 Card [OPENAI_CARD_METHOD_NOT_FOUND] 1ms
+     ✓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: 付款方式无法确认 [OPENAI_CARD_METHOD_CHANGED] 1ms
+     ✓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: ChatGPT 信用卡字段已变化或填写不完整，尚未提交付款 [OPENAI_CARD_FIELDS_CHANGED] 1ms
+     ✓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: 无法定位完整的信用卡输入框，尚未提交付款 [OPENAI_CARD_FIELDS_NOT_READY] 1ms
+     ✓ releases an unsubmitted guard failure without cooldown, rotation or a pending charge record: 信用卡字段未完整写入，尚未提交付款 [OPENAI_CARD_FIELDS_INCOMPLETE] 1ms
+     ✓ retains an already submitted payment when a card-field guard error is returned 1ms
+     ✓ does not release after unknown-result bookkeeping failure: {"failRecord":true} 1ms
+     ✓ does not release after unknown-result bookkeeping failure: {"failQuarantine":true} 1ms
+     ✓ preserves submission even when the payment driver throws 1ms
+     ✓ does not infer a native bank decline from unrelated text after submission 1ms
+     ✓ records actual native first-period amount and retains assets on unknown result 1ms
+     ✓ releases an unsubmitted native scope failure without treating it as a card decline 1ms
+     ✓ rotates a native card only for a correlated explicit official decline 1ms
+     ✓ cools down an explicitly declined card before billing-record failure and never releases or rotates it 1ms
+     ✓ retains a declined card when cooldown persistence fails, including quarantine failure (false) 1ms
+     ✓ retains a declined card when cooldown persistence fails, including quarantine failure (true) 1ms
+     ✓ uses the same owner for reservation and a confirmed unsubmitted release 1ms
+     × holds the same owner before submission and completes only after success billing 8ms
+     ✓ passes the owner to unknown-result quarantine without ordinary release or rotation 1ms
+     ✓ cools down under the owner before looking for another card 1ms
+     ✓ rejects invalid explicit owner before reserving or paying ("") 1ms
+     ✓ rejects invalid explicit owner before reserving or paying (" bad") 1ms
+     ✓ rejects invalid explicit owner before reserving or paying ("bad ") 1ms
+     ✓ rejects invalid explicit owner before reserving or paying ("a/b") 1ms
+     ✓ rejects invalid explicit owner before reserving or paying ("a.b") 1ms
+     ✓ rejects invalid explicit owner before reserving or paying ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") 1ms
+     ✓ rejects invalid explicit owner before reserving or paying (null) 1ms
+     ✓ rejects invalid explicit owner before reserving or paying (7) 1ms
+     ✓ rejects invalid explicit owner before reserving or paying ({}) 1ms
+     ✓ gives independent debug invocations bounded random owners without embedding the CDK 1ms
+     ✓ refuses prewarm without an exact matching receipt (undefined) 1ms
+     ✓ refuses prewarm without an exact matching receipt (null) 1ms
+     ✓ refuses prewarm without an exact matching receipt ("payment_other_job") 1ms
+     ✓ refuses prewarm without an exact matching receipt ("payment_fixture_job ") 1ms
+     ✓ refuses prewarm without an exact matching receipt ("payment_Fixture_job") 1ms
+     ✓ consumes and releases prewarm only when its receipt matches 1ms
+     ✓ passes the owner to invalid-card retirement before trying another reservation 1ms
+     ✓ stops immediately if invalid-card retirement loses ownership 1ms
+     ✓ stops success bookkeeping on ownership loss in bindCardPaymentProfile 1ms
+     ✓ stops success bookkeeping on ownership loss in recordCardUsage 1ms
+     ✓ stops success bookkeeping on ownership loss in completeCardPayment 1ms
+     × stops on a zero-row completion after preserving the success billing record 2ms
+     ✓ stops a confirmed-unsubmitted zero-row release without trying another card 1ms
+     ✓ never releases or rotates after unknown-result quarantine loses ownership 1ms
+     ✓ stops a decline on ownership loss without attempting fallback mutation or rotation 1ms
+     ✓ retains the card if the succeeded result callback fails before bookkeeping 1ms
+     ✓ retains the card if the unknown result callback fails before bookkeeping 1ms
+     ✓ retains the card if the declined result callback fails before bookkeeping 1ms
+     ✓ retains a successful payment card when bindCardPaymentProfile persistence fails 1ms
+     ✓ retains a successful payment card when recordCardUsage persistence fails 1ms
+     ✓ keeps cleanup owner-qualified on an exception before any payment submission 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/payment-retry-safety.test.js > round6 card ownership through payment retry > holds the same owner before submission and completes only after success billing
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      1,
+      "payment_fixture_job",
+    ]
+
+
+Number of calls: 1
+
+ ❯ test/payment-retry-safety.test.js:404:41
+    402|         expect(f.store.markCardPaymentStarted).toHaveBeenCalledExactly…
+    403|         expect(f.store.completeCardPayment).toHaveBeenCalledExactlyOnc…
+    404|         expect(f.store.releaseCard).not.toHaveBeenCalled();
+       |                                         ^
+    405|         expect(f.store.createBillingRecord.mock.invocationCallOrder[0]…
+    406|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/payment-retry-safety.test.js > round6 card ownership through payment retry > stops on a zero-row completion after preserving the success billing record
+AssertionError: promise resolved "Object{ success: true, …(9) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "cardLast4": "card",
++   "holderName": "",
++   "protocol_attempt_id": null,
++   "screenshots": [],
++   "stripe_confirmation_token_hash": null,
++   "stripe_payment_intent_id": null,
++   "stripe_payment_method_id": null,
++   "stripe_session_id": null,
++   "subscriptionId": null,
++   "success": true,
+  }
+
+ ❯ test/payment-retry-safety.test.js:491:30
+    489|         const f = harness({ paymentResponse: success });
+    490|         f.store.completeCardPayment.mockResolvedValue(0);
+    491|         await expect(f.run()).rejects.toMatchObject({ code: 'CARD_LOCK…
+       |                              ^
+    492|         expect(f.store.createBillingRecord).toHaveBeenCalledOnce();
+    493|         expect(f.store.completeCardPayment).toHaveBeenCalledOnce();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 5 passed (6)
+      Tests  2 failed | 174 passed (176)
+   Start at  23:23:11
+   Duration  358ms (transform 169ms, setup 0ms, import 324ms, tests 374ms, environment 0ms)
+

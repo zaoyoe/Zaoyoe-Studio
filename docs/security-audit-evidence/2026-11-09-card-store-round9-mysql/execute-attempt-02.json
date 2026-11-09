@@ -1,0 +1,5 @@
+{
+  "exit": 1,
+  "reason": "Quote reserved identity alias after read-only diagnosis; original failure retained. No fixture re-execution or data cleanup before retry.",
+  "log": "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/execute-02.log"
+}

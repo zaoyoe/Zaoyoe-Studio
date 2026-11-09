@@ -98,13 +98,54 @@ test('verify server accepts the documented reference image upload size', () => {
 test('prompts page loads ai image workbench assets', () => {
     const promptsSource = fs.readFileSync(path.resolve(__dirname, '../prompts.html'), 'utf8');
     assert.match(promptsSource, /<link[^>]+href="css\/ai-image-workbench\.css\?v=[^"]+"/);
-    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260802_AI_WORKBENCH_RAIL_MODES_8/);
+    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20261108_BBLABU_MEDIA_1/);
     assert.match(promptsSource, /modelPricing=20260729_AI_MODEL_PRICING_36/);
     assert.match(promptsSource, /js\/ai-chat-model-capabilities\.js\?v=20260802_AI_CHAT_IMAGE_INPUT_POLICY_1/);
-    assert.match(promptsSource, /v=20260802_AI_WORKBENCH_RAIL_MODES_5/);
+    assert.match(promptsSource, /v=20261108_IMAGE26_ALL_PROVIDERS_2/);
     assert.match(promptsSource, /legalPolicies=20260730_AI_WORKBENCH_LEGAL_2/);
     assert.match(promptsSource, /workbenchPerf=20260729_AI_WORKBENCH_SCROLL_PERF_2/);
     assert.match(promptsSource, /<script[^>]+src="js\/ai-image-workbench\.js\?v=[^"]+"[^>]+defer><\/script>/);
+});
+
+test('current media capability definitions load before their consumers in all entrypoints', () => {
+    for (const [entrypoint, consumer] of [
+        ['prompts.html', 'js/ai-image-workbench.js?v=20261108_IMAGE26_ALL_PROVIDERS_2'],
+        ['workbench.html', 'js/ai-image-workbench.js?v=20261108_IMAGE26_ALL_PROVIDERS_2'],
+        ['model-standards.html', 'js/model-standards-media.js?']
+    ]) {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', entrypoint), 'utf8');
+        const capabilityScript = html.indexOf('src="js/ai-media-model-capabilities.js?v=20261108_IMAGE26_ALL_PROVIDERS_2');
+        const consumerScript = html.indexOf(`src="${consumer}`);
+        assert.ok(capabilityScript > 0 && capabilityScript < consumerScript, entrypoint);
+    }
+});
+
+test('Image 2.6 controls resolve for any configured API channel and points models without server capability metadata', () => {
+    const match = source.match(/function getMediaCapability\(mode = inferWorkbenchMode\(\)\) \{[\s\S]*?\n    \}/);
+    assert.ok(match);
+    const state = { billingMode: 'api', apiBaseUrl: 'https://relay.example.com/v1' };
+    let model = 'gpt-image-2.6';
+    let selectedOption = { id: model, mediaCapability: null };
+    const context = {
+        state, global: { AIMediaModelCapabilities: require('../js/ai-media-model-capabilities') },
+        isTextVisionMode: mode => mode === 'chat', inferWorkbenchMode: () => 'text',
+        isConfiguredApiBaseUrl: () => !!state.apiBaseUrl,
+        getActiveModelValue: () => model, getSelectedModelOption: () => selectedOption
+    };
+    vm.runInNewContext(`${match[0]}; globalThis.resolveCapability = getMediaCapability;`, context);
+    assert.ok(context.resolveCapability().formats.includes('gif'));
+    assert.equal(context.resolveCapability('chat'), null);
+    state.apiBaseUrl = '';
+    assert.equal(context.resolveCapability(), null);
+    state.billingMode = 'points';
+    assert.ok(context.resolveCapability().formats.includes('gif'));
+    assert.equal(context.resolveCapability().gif.frameCount[2], 9);
+    assert.equal(context.resolveCapability().gif.frameDurationMs[2], 200);
+    selectedOption = { ...selectedOption, mediaCapability: { execution: 'review' } };
+    assert.equal(context.resolveCapability().execution, 'review');
+    selectedOption = null;
+    model = 'gpt-image-2';
+    assert.equal(context.resolveCapability(), null);
 });
 
 test('ai image workbench keeps one compact terms entry visible in the sidebar', () => {
@@ -127,7 +168,9 @@ test('ai image workbench keeps one compact terms entry visible in the sidebar', 
     assert.match(cssSource, /\.ai-image-rail-legal-link:hover,\s*\.ai-image-rail-legal-link:focus-visible\s*\{[\s\S]*border-color:\s*rgba\(95, 143, 188, 0\.38\);/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-legal-link\s*\{[\s\S]*font-size:\s*15px;/);
     assert.match(cssSource, /\.ai-image-history-sidebar\.is-collapsed:hover \.ai-image-rail-legal-link::after\s*\{[\s\S]*opacity: 1;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-legal--mobile\s*\{[\s\S]*display: grid;[\s\S]*grid-template-columns: auto;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-legal--desktop\s*\{[\s\S]*display: flex !important;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-legal--mobile[\s\S]*display: none !important;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-history-expanded \.ai-image-rail-legal\s*\{[\s\S]*display: none !important;/);
 });
 
 test('ai image workbench exposes chat image and video switches in the sidebar rail', () => {
@@ -146,10 +189,10 @@ test('ai image workbench exposes chat image and video switches in the sidebar ra
     assert.match(cssSource, /html\[data-theme="dark"\] \.ai-image-rail-mode-btn\.is-active,[\s\S]*border-color: transparent;[\s\S]*background: transparent;/);
     assert.match(cssSource, /\.ai-image-rail-btn\.ai-image-rail-mode-btn:not\(:disabled\):hover,[\s\S]*border-color: transparent;[\s\S]*color: var\(--aiw-blue\);[\s\S]*background: transparent;/);
     assert.match(cssSource, /\.ai-image-rail-mode-btn i\s*\{[\s\S]*width: 26px;[\s\S]*min-width: 26px;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-mode-switcher\s*\{[\s\S]*position: absolute;[\s\S]*top: 50%;[\s\S]*left: 50%;[\s\S]*transform: translate\(-50%, -50%\);/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-mode-switcher\s*\{[\s\S]*position: absolute;[\s\S]*left: 50%;[\s\S]*transform: translate\(-50%,\s*-50%\);/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-btn\.ai-image-rail-mode-btn,[\s\S]*border-color: transparent;[\s\S]*background: transparent;[\s\S]*box-shadow: none;/);
     assert.match(cssSource, /\.ai-image-rail-mode-btn\.is-disabled,[\s\S]*\.ai-image-rail-mode-btn:disabled\s*\{[\s\S]*cursor: not-allowed;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-mode-switcher\s*\{[\s\S]*flex-direction: row;[\s\S]*margin: 0;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-mode-switcher\s*\{[\s\S]*flex-direction: row;[\s\S]*margin: 0 !important;/);
 });
 
 test('ai image dock drops behind the auth sheet while login is open', () => {
@@ -192,7 +235,7 @@ test('ai image workbench does not persist user API key to localStorage snapshot'
     assert.equal(/chatAttachments\s*:/.test(persistStateMatch[0]), false);
     assert.match(persistStateMatch[0], /runtimeApiModelCacheByBaseUrl: serializeRuntimeModelCache\(\)/);
     assert.match(source, /const apiKey = String\(state\.apiKey \|\| ''\)\.trim\(\);/);
-    assert.match(source, /if \(task\.billingMode === 'api' && apiKey\) \{[\s\S]*?payload\.apiKey = apiKey;/);
+    assert.match(source, /if \(task\.billingMode === 'api' && apiKey && normalizeApiBaseUrl\(task\.apiBaseUrl\) === normalizeApiBaseUrl\(state\.apiBaseUrl\)\) \{[\s\S]*?payload\.apiKey = apiKey;/);
     assert.match(source, /updateStoredApiKeyStatuses\(pricingPayload\.storedApiKeys \|\| pricingPayload\.stored_api_keys \|\| \[\]\)/);
 });
 
@@ -423,8 +466,11 @@ test('ai image workbench can discover upstream API models and refresh runtime op
     assert.match(cssSource, /\.ai-image-model-provider\.is-active > \.ai-image-model-provider-trigger\s*\{[\s\S]*font-weight: 900;/);
     assert.match(cssSource, /\.ai-image-model-provider\.is-active > \.ai-image-model-provider-trigger::before\s*\{[\s\S]*content: "";/);
     assert.doesNotMatch(cssSource, /\.ai-image-model-provider:hover > \.ai-image-model-provider-trigger,\s*\.ai-image-model-provider:focus-within > \.ai-image-model-provider-trigger,\s*\.ai-image-model-provider\.is-active > \.ai-image-model-provider-trigger/);
-    assert.match(cssSource, /\.ai-image-main-tools \.ai-image-model-submenu\s*\{[\s\S]*display: none;/);
-    assert.match(cssSource, /\.ai-image-main-tools \.ai-image-model-provider\.is-open > \.ai-image-model-submenu\s*\{[\s\S]*display: grid;/);
+    assert.match(cssSource, /\.ai-image-main-tools \.ai-image-model-menu\s*\{[\s\S]*position: absolute;[\s\S]*max-width: 156px;/);
+    assert.match(cssSource, /\.ai-image-main-tools \.ai-image-model-submenu\s*\{[\s\S]*position: absolute;[\s\S]*left: calc\(100% \+ 8px\);/);
+    assert.match(cssSource, /\.ai-image-main-tools \.ai-image-model-provider\.is-open > \.ai-image-model-submenu\s*\{[\s\S]*opacity: 1;/);
+    assert.match(cssSource, /\.ai-image-model-menu:has\(\.ai-image-model-provider:hover\)\s*\.ai-image-model-provider:not\(:hover\)\s*>\s*\.ai-image-model-submenu/);
+    assert.match(source, /openModelProvider = providerId;[\s\S]*menu\.querySelectorAll\('\.ai-image-model-provider'\)/);
 });
 
 test('ai image workbench keeps same model IDs when they belong to different providers', () => {
@@ -789,7 +835,7 @@ test('ai image workbench disables mobile pinch zoom only while open', () => {
     assert.match(source, /global\.addEventListener\?\.\('gesturestart', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gesturechange', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gestureend', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
-    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260802_AI_WORKBENCH_RAIL_MODES_5/);
+    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20261108_IMAGE26_ALL_PROVIDERS_2/);
 });
 
 test('ai image result cards always render compressed preview instead of original source', () => {
@@ -998,6 +1044,8 @@ test('ai image workbench treats legacy billing trace gaps as reloadable records'
     assert.match(cssSource, /\.ai-image-dock-task\.is-reloading/);
     assert.match(cssSource, /\.ai-image-reload-dot/);
     assert.match(cssSource, /\.ai-image-inline-reloading-visual/);
+    assert.match(cssSource, /\.ai-image-inline-reloading-visual::after\s*\{[\s\S]*aiw-skeleton-shimmer/);
+    assert.match(cssSource, /\.ai-image-result--reloading \.ai-image-result-resolution\s*\{[\s\S]*display:\s*none/);
     assert.match(cssSource, /\.ai-image-inline-reloading-visual span\s*\{[\s\S]*top: min\(78%, calc\(100% - 82px\)\);/);
     assert.match(cssSource, /\.ai-image-inline-reloading-visual span\s*\{[\s\S]*transform: translate\(-50%, -50%\);/);
     assert.match(cssSource, /\.ai-image-inline-reloading-visual span\s*\{[\s\S]*background|\.ai-image-inline-reloading-visual span\s*\{[\s\S]*text-shadow:/);
@@ -1214,7 +1262,8 @@ test('ai image workbench keeps progress stable across polling and exposes cancel
     assert.match(source, /isCannotCancelChargedMessage\(state\.composerError\)/);
     assert.match(source, /const composerWarningChanged = syncCannotCancelComposerWarning\(\)/);
     assert.match(source, /function getTasksSnapshotSignature\(tasks = state\.tasks\)/);
-    assert.match(source, /const tasksChanged = mergeRemoteTasks\(payload\.tasks \|\| payload\.records \|\| \[\]\)/);
+    assert.match(source, /let tasksChanged = mergeRemoteTasks\(payload\.tasks \|\| payload\.records \|\| \[\]\)/);
+    assert.match(source, /tasksChanged = \(await resumeBblabuApiVideos\(\)\) \|\| tasksChanged;/);
     assert.match(source, /const previewChanged = syncImagePreviewFromTasks\(\)/);
     assert.match(source, /if \(tasksChanged \|\| activityChanged \|\| previewChanged\)/);
     assert.match(source, /function syncRenderedProgressBars\(\)/);
@@ -1663,9 +1712,10 @@ test('ai image workbench streams api chat in the current conversation thread', (
     assert.doesNotMatch(cssSource, /\.ai-image-chat-bubble/);
 });
 
-test('ai image workbench explains model-specific upload standards above the plus button', () => {
+test('ai image workbench exposes model standards link in the sidebar rail above terms of service', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
     assert.match(source, /function getComposerUploadReferenceStandard\(mode = inferWorkbenchMode\(\)\)/);
+    assert.match(source, /function isDocumentedImageEditModel\(canonicalModelId = ''\)/);
     assert.match(source, /function getSelectedModelOption\(mode = inferWorkbenchMode\(\)\)[\s\S]*model\.providerId === providerId/);
     assert.match(source, /function getChatModelOption\(modelId = getActiveModelValue\('chat'\), providerId = getStoredModelProviderId\('chat'\)\)/);
     assert.match(source, /当前渠道已通过读图自检/);
@@ -1679,19 +1729,19 @@ test('ai image workbench explains model-specific upload standards above the plus
     assert.match(source, /MP4、MOV、WebM，最多 3 个，建议 3-10 秒/);
     assert.match(source, /MP3、M4A、WAV、AAC、OGG，最多 1 个，建议 2-15 秒且小于 15 MB/);
     assert.match(source, /当前工作台加号仅直接上传图片；视频和音频需先取得公网 URL/);
-    assert.match(source, /supportsDocumentedImageEdits = \['gpt-image-2', 'gpt-image-2-all'\]\.includes/);
+    assert.match(source, /supportsDocumentedImageEdits = isDocumentedImageEditModel\(canonicalModelId\)/);
     assert.match(source, /上游字段为 image 或 image\[\]/);
     assert.match(source, /上游未注明上限；当前工作台最多 \$\{MAX_REFERENCE_IMAGE_INPUTS\} 张/);
     assert.match(source, /MAX_VIDEO_REFERENCE_IMAGE_INPUTS = 4/);
     assert.match(source, /const imageInputLimit = getReferenceImageInputLimit\(inferredMode\);[\s\S]*const availableSlots = Math\.max\(0, imageInputLimit - getReferenceInputCount\(\)\)/);
-    assert.match(source, /当前\$\{isVideoMode\(inferredMode\) \? '视频模型' : '模型'\}最多读取 \$\{referenceImageInputLimit\} 张参考图/);
-    assert.match(source, /class="ai-image-upload-help-trigger"[\s\S]*aria-describedby="\$\{tooltipId\}"/);
-    assert.match(source, /class="ai-image-upload-help-tooltip" id="\$\{tooltipId\}" role="tooltip"/);
-    assert.match(source, /<div class="ai-image-main-attach-action">\s*\$\{uploadHelpHtml\}\s*\$\{uploadButtonHtml\}/);
-    assert.match(cssSource, /\.ai-image-main-attach-action\s*\{[\s\S]*flex-direction: column;[\s\S]*gap: 2px/);
-    assert.match(cssSource, /\.ai-image-upload-help-tooltip\s*\{[\s\S]*bottom: calc\(100% \+ 6px\);[\s\S]*width: min\(350px, calc\(100vw - 40px\)\)/);
-    assert.match(cssSource, /\.ai-image-upload-help:hover \.ai-image-upload-help-tooltip/);
-    assert.match(cssSource, /\.ai-image-upload-help:focus-within \.ai-image-upload-help-tooltip/);
+    assert.match(source, /class="ai-image-rail-standards-link ai-image-rail-legal-link" href="\/model-standards\.html" target="_blank" rel="noopener noreferrer"/);
+    assert.match(source, /data-rail-tooltip="模型与文件规范"/);
+    assert.match(source, /class="[^"]*ai-image-rail-standards-icon[^"]*"/);
+    assert.match(source, /fa-circle-exclamation/);
+    assert.match(cssSource, /\.ai-image-rail-standards-icon/);
+    assert.match(cssSource, /\.ai-image-rail-legal\s*\{[\s\S]*gap: 4px;/);
+    assert.match(cssSource, /\.ai-image-rail-standards-link:hover \.ai-image-rail-standards-icon,\s*\.ai-image-rail-standards-link:focus-visible \.ai-image-rail-standards-icon\s*\{[\s\S]*transform:\s*none;/);
+    assert.match(cssSource, /\.ai-image-history-rail \.ai-image-rail-footer \.ai-image-rail-legal-link,\s*\.ai-image-history-rail \.ai-image-rail-footer \.ai-image-rail-wallet\s*\{[\s\S]*width:\s*42px;\s*height:\s*42px;/);
 });
 
 test('ai image workbench progressively reveals large chat deltas without changing text', () => {
@@ -1747,7 +1797,7 @@ test('ai image workbench shows accepted state with queue ETA after submit', () =
 
 test('ai image pending overlay uses simple live status instead of repeating title', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
-    const renderInlineMatch = source.match(/function renderInlineTaskPreview\(task, label = '继续生成', \{ showPrompt = true, forceBusy = false, navigationAnchor = false, imageSlot = null, stepLabel = '' \} = \{\}\) \{[\s\S]*?\n    \}/);
+    const renderInlineMatch = source.match(/function renderInlineTaskPreview\(task, label = '继续生成', \{ showPrompt = true, forceBusy = false, navigationAnchor = false, imageSlot = null, stepLabel = '', showMeta = false \} = \{\}\) \{[\s\S]*?\n    \}/);
     assert.ok(renderInlineMatch, 'renderInlineTaskPreview should be present');
     assert.match(renderInlineMatch[0], /getTaskCurrentStepLabel\(task\)/);
     assert.match(renderInlineMatch[0], /getTaskSlotImageLabel\(task, imageSlot\)/);
@@ -1760,6 +1810,8 @@ test('ai image pending overlay uses simple live status instead of repeating titl
     assert.match(source, /data-aiw-live-status-step-label="\$\{escapeHtml\(item\.stepLabel\)\}"/);
     assert.match(source, /getTaskProgressBadge\(task\)/);
     assert.match(cssSource, /\.ai-image-result-pending-meta\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto auto/);
+    assert.match(cssSource, /\.ai-image-result-pending-meta\s*\{[\s\S]*display:\s*none/);
+    assert.match(cssSource, /\.ai-image-result--pending \.ai-image-result-resolution[\s\S]*display:\s*none/);
     assert.match(cssSource, /\.ai-image-result-pending-copy\s*\{[\s\S]*display: none/);
 });
 
@@ -1776,7 +1828,7 @@ test('ai image result thread does not repeat original prompt above the first ima
     assert.match(source, /ai-image-result-sequence/);
     assert.match(cssSource, /\.ai-image-result-grid--single\s*\{[\s\S]*min\(220px, 100%\)/);
     assert.match(cssSource, /\.ai-image-result-grid--single\.ai-image-result-grid--wide\s*\{[\s\S]*min\(560px, 100%\)/);
-    assert.match(cssSource, /\.ai-image-result-grid--thread\s*\{[\s\S]*repeat\(auto-fit, minmax\(min\(220px, 100%\), min\(220px, 100%\)\)\)/);
+    assert.match(cssSource, /\.ai-image-result-grid--thread\s*\{[\s\S]*minmax\(0,\s*100%\)/);
     assert.match(source, /const resultGridModeClass = threadTasks\.some\(\(item\) => isVideoMode\(item\.mode\)\) \? 'ai-image-result-grid--video' : ''/);
     assert.match(source, /const resultGridRatioClass = threadTasks\.some\(\(item\) => getResultGridRatioClass\(item\) === 'ai-image-result-grid--wide'\) \? 'ai-image-result-grid--wide' : ''/);
     assert.match(source, /const awaitingVideoResult = isVideoMode\(item\.mode\) && item\.status === 'succeeded'/);
@@ -1789,9 +1841,11 @@ test('ai image result thread does not repeat original prompt above the first ima
     assert.match(source, /const anchoredTaskIds = new Set\(\)/);
     assert.match(source, /const navigationAnchor = Boolean\(taskId && !anchoredTaskIds\.has\(taskId\)\)/);
     assert.match(source, /stepLabel: entry\.forceBusy && entry\.task\?\.status === 'succeeded' \? '结果同步中' : ''/);
-    assert.match(source, /renderInlineTaskReloadingPreview\(entry\.task, '记录重新加载中', \{ showPrompt: false, navigationAnchor \}\)/);
+    assert.match(source, /renderInlineTaskReloadingPreview\(entry\.task, '记录重新加载中', \{\s*showPrompt: false,\s*navigationAnchor,\s*showMeta: !entry\.taskIndex\s*\}\)/);
     assert.match(source, /imageEntries\.some\(\(entry\) => entry\.type === 'pending' \|\| entry\.type === 'reloading'\)/);
     assert.match(source, /renderTaskImageEntry\(entry, index, aspect, \{ navigationAnchor \}\)/);
+    assert.match(source, /const topMetaHtml = \(showMeta && !showPrompt\)[\s\S]*?ai-image-thread-meta--card/);
+    assert.match(cssSource, /\.ai-image-thread-meta\s*\{[\s\S]*min-height:\s*24px/);
 });
 
 test('ai image composer extends beyond the result track on desktop', () => {
@@ -1826,9 +1880,10 @@ test('ai image workbench uses a stable full-screen mobile layout', () => {
     assert.doesNotMatch(cssSource, /\.ai-image-layout\.is-history-open \.ai-image-stage,\s*\n\s*\.ai-image-layout\.is-history-open \.ai-image-main-composer\s*\{[\s\S]*filter: blur/);
     assert.match(cssSource, /\.ai-image-sidebar-toggle-chevron--narrow\s*\{[\s\S]*display: none;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-brand\s*\{[\s\S]*width: 42px;[\s\S]*height: 42px;[\s\S]*border: 1px solid transparent;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-history-sidebar\.is-expanded \.ai-image-rail-brand\s*\{[\s\S]*order: 20;[\s\S]*margin-left: auto;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-sidebar-toggle-chevron--wide\s*\{[\s\S]*display: none;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-sidebar-toggle-chevron--narrow\s*\{[\s\S]*display: inline-flex;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-history-sidebar\.is-expanded \.ai-image-rail-brand\s*\{[\s\S]*order: 0;[\s\S]*margin-left: 0;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-sidebar-toggle-chevron--narrow\s*\{[\s\S]*display: none !important;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-brand \.ai-image-rail-icon-panel--wide\s*\{[\s\S]*display: none !important;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-brand \.ai-image-rail-icon-panel--narrow\s*\{[\s\S]*display: inline-flex !important;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-brand:hover,[\s\S]*\.ai-image-rail-brand:focus-visible,[\s\S]*\.ai-image-rail-brand\.is-sidebar-open:hover,[\s\S]*\.ai-image-rail-brand\.is-sidebar-open:focus-visible\s*\{[\s\S]*border-color: transparent;[\s\S]*box-shadow: none;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-shell:has\(\.ai-image-chat-nav-layer\) \.ai-image-result-view\s*\{[\s\S]*padding-top: 42px;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-result-grid--chat\s*\{[\s\S]*min-height: 0;[\s\S]*align-content: start;/);
@@ -1872,12 +1927,12 @@ test('ai image workbench uses a stable full-screen mobile layout', () => {
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \[data-aiw-select="model"\],[\s\S]*\.ai-image-main-tools \[data-aiw-select="apiModel"\]\s*\{[\s\S]*order: 3;[\s\S]*width: 126px;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-cost\s*\{[\s\S]*grid-column: 2;[\s\S]*align-self: end;[\s\S]*margin-left: 0;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-select-trigger,[\s\S]*\.ai-image-main-tools \.ai-image-capability-control\s*\{[\s\S]*height: 30px;[\s\S]*min-height: 30px;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-wallet\s*\{[\s\S]*display: none;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-close\s*\{[\s\S]*display: inline-flex;[\s\S]*margin-left: auto;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-history-sidebar\.is-expanded \.ai-image-rail-close\s*\{[\s\S]*display: none;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*?\.ai-image-rail-wallet\s*\{[\s\S]*?display: inline-flex !important;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*?\.ai-image-rail-close\s*\{[\s\S]*?display: inline-flex;[\s\S]*?margin-left: auto;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*?\.ai-image-history-sidebar\.is-expanded \.ai-image-rail-close\s*\{[\s\S]*?display: inline-flex;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-dock\s*\{[\s\S]*bottom: max\(54px, env\(safe-area-inset-bottom, 0px\) \+ 42px\);/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-select-menu,[\s\S]*\.ai-image-capability-menu\s*\{[\s\S]*position: fixed;[\s\S]*right: auto;[\s\S]*bottom: calc\(var\(--aiw-mobile-layout-height, 100dvh\) - var\(--aiw-mobile-composer-top, 168px\) \+ 6px\);[\s\S]*left: 50%;[\s\S]*width: min\(240px, calc\(100vw - 32px\)\);[\s\S]*box-shadow: 0 6px 16px rgba\(15, 23, 42, 0\.08\), 0 1px 2px rgba\(15, 23, 42, 0\.05\);[\s\S]*transform: translateX\(-50%\);/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-model-menu\s*\{[\s\S]*width: min\(320px, calc\(100vw - 32px\)\);[\s\S]*min-width: min\(260px, calc\(100vw - 32px\)\);/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-model-menu\s*\{[\s\S]*position: absolute;[\s\S]*max-width: 156px;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-image-settings-menu,[\s\S]*\.ai-image-video-settings-menu,[\s\S]*\.ai-image-chat-settings-menu\s*\{[\s\S]*position: fixed;[\s\S]*bottom: calc\(var\(--aiw-mobile-layout-height, 100dvh\) - var\(--aiw-mobile-composer-top, 168px\) \+ 6px\);[\s\S]*width: min\(360px, calc\(100vw - 32px\)\);[\s\S]*overflow-y: auto;[\s\S]*touch-action: pan-y;[\s\S]*box-shadow: 0 6px 16px rgba\(15, 23, 42, 0\.08\), 0 1px 2px rgba\(15, 23, 42, 0\.05\);/);
     assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-select-menu,[\s\S]*\.ai-image-capability-menu\s*\{[\s\S]*bottom: calc\(var\(--aiw-mobile-layout-height, 100dvh\) - var\(--aiw-mobile-composer-top, 152px\) \+ 6px\);/);
     assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-image-settings-menu,[\s\S]*\.ai-image-video-settings-menu,[\s\S]*\.ai-image-chat-settings-menu\s*\{[\s\S]*bottom: calc\(var\(--aiw-mobile-layout-height, 100dvh\) - var\(--aiw-mobile-composer-top, 152px\) \+ 6px\);/);
@@ -1909,7 +1964,8 @@ test('ai image previews keep image cards compact while video cards are larger', 
     assert.match(cssSource, /\.ai-image-result-grid\s*\{[\s\S]*gap: 14px/);
     assert.match(cssSource, /\.ai-image-result-grid\s*\{[\s\S]*justify-content: start/);
     assert.match(cssSource, /\.ai-image-result-grid--video\s*\{[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(min\(320px, 100%\), min\(320px, 100%\)\)\)/);
-    assert.match(cssSource, /\.ai-image-result-grid--video\.ai-image-result-grid--single,\s*\n\.ai-image-result-grid--video\.ai-image-result-grid--thread\s*\{[\s\S]*min\(320px, 100%\)/);
+    assert.match(cssSource, /\.ai-image-result-grid--video\.ai-image-result-grid--single\s*\{[\s\S]*min\(320px, 100%\)/);
+    assert.match(cssSource, /\.ai-image-result-grid--video\.ai-image-result-grid--thread.*?\.ai-image-thread-step:not\(\.ai-image-thread-step--prompt\)\s*\{[\s\S]*width:\s*min\(320px, 100%\);/);
     assert.match(source, /const resultGridModeClass = isVideoMode\(task\.mode\) \? 'ai-image-result-grid--video' : ''/);
     assert.match(source, /const resultGridRatioClass = getResultGridRatioClass\(task\)/);
     assert.match(source, /function getResultGridRatioClass\(task = \{\}\)/);
@@ -1973,15 +2029,18 @@ test('ai image workbench clears composer references after a referenced task succ
     assert.match(source, /maybeClearComposerReferencesAfterTaskSuccess\(nextTask, previous \|\| \{\}\)/);
 });
 
-test('ai image result prompt only applies fade mask when text is likely overflowing', () => {
+test('ai image result prompt clamps to 3 lines by default, supports expand toggle, and has bottom-right copy button like chat', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
     assert.match(source, /const promptOverflowClass = promptText\.length > 72 \? ' is-overflowing' : '';/);
-    assert.match(source, /<div class="ai-image-result-prompt\$\{promptOverflowClass\}">/);
+    assert.match(source, /<div class="ai-image-result-prompt\$\{promptOverflowClass\}\$\{expandedPromptClass\}">/);
+    assert.match(source, /data-aiw-action="toggle-prompt-expand"/);
     assert.match(cssSource, /\.ai-image-result-prompt::after\s*\{[\s\S]*display: none;/);
     assert.match(cssSource, /\.ai-image-result-prompt\.is-overflowing::after\s*\{[\s\S]*display: block;/);
-    assert.match(cssSource, /\.ai-image-result-prompt-copy\s*\{[\s\S]*border: 0;/);
-    assert.match(cssSource, /\.ai-image-result-prompt-copy\s*\{[\s\S]*background: transparent;/);
-    assert.match(cssSource, /\.ai-image-result-prompt-copy:hover,\s*\.ai-image-result-prompt-copy:focus-visible,\s*\.ai-image-result-prompt-copy\.is-copied\s*\{[\s\S]*transform: translateY\(-2px\);/);
+    assert.match(cssSource, /\.ai-image-result-prompt p[\s\S]*-webkit-line-clamp: 3;/);
+    assert.match(cssSource, /\.ai-image-result-prompt\.is-expanded p[\s\S]*-webkit-line-clamp: unset;/);
+    assert.match(cssSource, /\.ai-image-result-prompt-copy\s*\{[\s\S]*position: absolute;[\s\S]*right: 0;[\s\S]*bottom: 0;/);
+    assert.match(cssSource, /\.ai-image-result-prompt-copy\s*\{[\s\S]*border: 1px solid var\(--aiw-border\);/);
+    assert.match(cssSource, /\.ai-image-result-prompt-copy\s*\{[\s\S]*background: var\(--aiw-surface-strong\);/);
 });
 
 test('ai image workbench keeps cancel action in the composer instead of duplicate preview controls', () => {
@@ -2019,7 +2078,7 @@ test('ai image workbench stops inline progress visuals after task failure', () =
     assert.match(source, /const showStoppedPreview = isStopped && pendingPreviewCount > 0/);
     assert.match(source, /type: 'stopped'/);
     assert.match(source, /entry\.type === 'stopped' \? \(task\.status === 'cancelled' \? '生成已取消' : '生成失败'\) : '生成中'/);
-    assert.match(source, /<button class="ai-image-result-prompt-copy" type="button" data-aiw-action="copy-task-prompt" data-task-id="\$\{escapeHtml\(task\.id\)\}"/);
+    assert.match(source, /<button class="ai-image-result-prompt-copy[^"]*" type="button" data-aiw-action="copy-task-prompt" data-task-id="\$\{escapeHtml\(task\.id\)\}"/);
     assert.doesNotMatch(source, /ai-image-result-pending-overlay--stopped/);
     assert.doesNotMatch(source, /ai-image-inline-failure/);
     assert.match(source, /data-aiw-tip=/);
@@ -2042,12 +2101,22 @@ test('ai image workbench stops inline progress visuals after task failure', () =
 test('ai image workbench shows one continuation prompt for multi-image continuation tasks', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
     assert.match(source, /function renderTaskContinuationPrompt\(entry, \{ navigationAnchor = false \} = \{\}\)/);
+    assert.match(source, /function renderImageDownloadAction\(entry, \{ className = '' \} = \{\}\)/);
     assert.match(source, /if \(entry\.taskIndex && navigationAnchor\) \{\s*return \[\s*renderTaskContinuationPrompt\(entry, \{ navigationAnchor \}\),\s*renderTaskImageEntry\(entry, index, aspect, \{ navigationAnchor: false \}\)\s*\]\.join\(''\);/);
+    assert.match(source, /if \(entry\.taskIndex && navigationAnchor\) \{\s*return \[\s*renderTaskContinuationPrompt\(entry, \{ navigationAnchor \}\),\s*renderInlineTaskPreview\(entry\.task, '生成中', \{[\s\S]*?navigationAnchor: false/);
     assert.doesNotMatch(source, /const promptBlock = entry\.taskIndex/);
     assert.match(source, /const navigationAnchor = Boolean\(taskId && !anchoredTaskIds\.has\(taskId\)\)/);
     assert.match(source, /renderTaskImageEntry\(entry, index, aspect, \{ navigationAnchor \}\)/);
+    assert.match(source, /renderImageDownloadAction\(entry, \{\s*className:\s*'ai-image-result-actions--thread-meta'\s*\}\)/);
     assert.match(cssSource, /\.ai-image-thread-step--prompt\s*\{[\s\S]*grid-column: 1 \/ -1;/);
+    assert.match(cssSource, /\.ai-image-thread-step--prompt\s*\{[\s\S]*justify-content:\s*flex-end;/);
     assert.match(cssSource, /\.ai-image-thread-step--prompt \.ai-image-thread-prompt\s*\{[\s\S]*max-width: min\(560px, 100%\);/);
+    assert.match(cssSource, /\.ai-image-result-actions--thread-meta\s*\{/);
+    assert.match(cssSource, /\.ai-image-thread-meta--card\s*\{/);
+    assert.match(source, /ai-image-thread-meta--card/);
+    assert.match(cssSource, /\.ai-image-result-media \.ai-image-result-actions\s*\{[\s\S]*display:\s*none !important;/);
+    assert.match(cssSource, /\.ai-image-result-resolution\s*\{[\s\S]*display:\s*none !important;/);
+    assert.match(cssSource, /@keyframes aiw-skeleton-shimmer\s*\{[\s\S]*transform:\s*translateX\(-100%\);[\s\S]*transform:\s*translateX\(100%\);/);
 });
 
 test('ai image result aspect uses video ratio metadata for video tasks', () => {
@@ -2243,6 +2312,12 @@ test('ai image workbench opens model pricing from points billing in the main con
     assert.match(cssSource, /\.ai-image-model-price-table--text \.ai-image-model-price-row/);
     assert.match(cssSource, /\.ai-image-model-price-unavailable\s*\{[\s\S]*grid-column: 2 \/ -1;/);
     assert.match(cssSource, /@media \(max-width: 720px\) \{[\s\S]*\.ai-image-model-price-table-head\s*\{[\s\S]*display: none;/);
+    assert.match(source, /loadRemoteConfig\(\{\s*force:\s*true\s*\}\)/);
+    assert.match(source, /loadModelPricing\(\{\s*force:\s*true\s*\}\)/);
+    assert.match(source, /data-aiw-action="refresh-model-pricing"/);
+    assert.match(source, /class="ai-image-model-price-channel"/);
+    assert.match(cssSource, /\.ai-image-model-pricing-refresh\s*\{/);
+    assert.match(cssSource, /\.ai-image-model-price-channel\s*\{/);
 });
 
 test('ai image history supports multi-select delete pin and accent controls', () => {
@@ -2292,6 +2367,8 @@ test('ai image history supports multi-select delete pin and accent controls', ()
     assert.doesNotMatch(source, /state\.activeTaskId = taskId;\s*markTaskThreadSeen\(taskId\);\s*openSelect = '';\s*render\(\);\s*persistState\(\);/);
     assert.match(source, /toggleAllHistorySelections\(\);\s*renderPreservingHistoryScroll\(renderHistoryPanelOnly\);/);
     assert.match(source, /setHistorySelectionMode\(!historySelectionMode\);\s*renderPreservingHistoryScroll\(renderHistoryPanelOnly\);/);
+    assert.match(source, /currentExpanded\.innerHTML = nextExpanded\.innerHTML/);
+    assert.match(source, /const savedScrollTop = currentScroll\?\.scrollTop \|\| 0/);
     assert.match(source, /isHistoryTaskDeleted\(task\)/);
     assert.match(source, /left\.isPinned !== right\.isPinned/);
     assert.match(cssSource, /\.ai-image-history-bulkbar/);
@@ -2304,4 +2381,11 @@ test('ai image history supports multi-select delete pin and accent controls', ()
     assert.match(cssSource, /\.ai-image-task-row\.has-accent-green/);
     assert.match(cssSource, /\.ai-image-task-row\.has-accent-gold/);
     assert.match(cssSource, /\.ai-image-task-row\.has-accent-rose/);
+});
+
+test('ai image workbench does not automatically attach continuation image on page refresh or restore', () => {
+    assert.match(source, /function restoreState\(\) \{[\s\S]*?state\.continuationImage = null;/);
+    assert.match(source, /function persistState\(\) \{[\s\S]*?continuationImage: null/);
+    assert.match(source, /function getContinuationSourceTask\(\) \{\s*return null;\s*\}/);
+    assert.match(source, /<button type="button" data-aiw-action="clear-reference" aria-label="清除参考图片"><i class="fas fa-xmark"><\/i><\/button>/);
 });

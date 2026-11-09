@@ -1,0 +1,61 @@
+{
+  "boundary": "working-tree local tool, not a release commit",
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "files": [
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/README.md",
+      "bytes": 7547,
+      "sha256": "2642b5f3a067381097ccb17b56d4fb164c2c8b6448aca68202d5397e4acdb738"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/cli.cjs",
+      "bytes": 1226,
+      "sha256": "88114dceb85b257f9760e2e4ac13b8975b1c3e7e1e46b33cb8e749267dc80fd6"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/fixture.sql",
+      "bytes": 5822,
+      "sha256": "1949fcf408ea1126ac4524fc0532a935c5430fc82cce30dcd4bd2ed2fdb590e3"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs",
+      "bytes": 19547,
+      "sha256": "9819abce572eefc2a8180dc2586a476305267f9ba25bfa1ce755ad19b8d5d120"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/plan.cjs",
+      "bytes": 1878,
+      "sha256": "079d1db4d82e193c47ca84d004b1a7f2ef6c3bf27dd34f791946a2ef05edca5c"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/safety.cjs",
+      "bytes": 4171,
+      "sha256": "ba62db8c59528947083b8f45f97a758e6a03b1c3c6c4d636e9c5846e1755fc76"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/store-loader.cjs",
+      "bytes": 3125,
+      "sha256": "425987bce97895a841965f37714561939c6a0307605666f26867103180f29851"
+    },
+    {
+      "path": "tests/security-round8-kc-mysql-lab.test.js",
+      "bytes": 20150,
+      "sha256": "d067cd6f65eb3ab2cfed354afba1b0b9a65aa8785491531746966c4975b3fd5a"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/preload.cjs",
+      "bytes": 1359,
+      "sha256": "d4671c80c91d0eb54d7394a4eea756fc32ed083f41a222ec0bbdef8408dc47c7"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/run.py",
+      "bytes": 1381,
+      "sha256": "f944548e20d3b4e47ce3cc0c964ad3bd3f9087f2bc7f0855e2c40b59ce4dfdb5"
+    },
+    {
+      "path": "docs/security-card-store-hardening-round8-2026-11-09.md",
+      "bytes": 5885,
+      "sha256": "611253c494967759d410ca0d45d8ea6a5461e30bc187c6bc2d2bdeac6f7a0700"
+    }
+  ]
+}

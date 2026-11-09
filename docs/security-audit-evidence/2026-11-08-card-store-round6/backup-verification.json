@@ -1,0 +1,70 @@
+{
+  "scope": "Seven per-file pre-change dirty byte snapshots, not a complete workspace or database backup. Snapshot bytes remain at the recorded /tmp paths; /tmp retention is not guaranteed. The archive stores manifests and exact round deltas. No backup commit or stash created.",
+  "entries": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "bytes": 195360,
+      "sha256": "edd981d433ecc3da800a6803c1a201ca822cebd0a5cceb2faa7fc261ccec28df",
+      "snapshot_absolute_path": "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/mysql-store.js",
+      "observed_sha256": "edd981d433ecc3da800a6803c1a201ca822cebd0a5cceb2faa7fc261ccec28df",
+      "verified": true,
+      "observed_bytes": 195360
+    },
+    {
+      "path": "services/kc-pay-gpt/payment-retry.js",
+      "bytes": 48645,
+      "sha256": "0fb6600449f2368b1067be41df08a4f8a93710a50702d2b49c450a5e82948e83",
+      "snapshot_absolute_path": "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/payment-retry.js",
+      "observed_sha256": "0fb6600449f2368b1067be41df08a4f8a93710a50702d2b49c450a5e82948e83",
+      "verified": true,
+      "observed_bytes": 48645
+    },
+    {
+      "path": "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "bytes": 5101,
+      "sha256": "92983aaa3df1c8a4d77277414b28289fd129370e0215104ef82ee1fb8c5c888d",
+      "snapshot_absolute_path": "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "observed_sha256": "92983aaa3df1c8a4d77277414b28289fd129370e0215104ef82ee1fb8c5c888d",
+      "verified": true,
+      "observed_bytes": 5101
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "bytes": 27535,
+      "sha256": "5b331526aa6a0d0d896fc0725ed80b266d8c3bc816167475b308ce1e75a08909",
+      "snapshot_absolute_path": "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "observed_sha256": "5b331526aa6a0d0d896fc0725ed80b266d8c3bc816167475b308ce1e75a08909",
+      "verified": true,
+      "observed_bytes": 27535
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "bytes": 15219,
+      "sha256": "a1b404188eed56f2ed0cdab445bcc5654df8b1bdac887da31c260c5025f7a1f3",
+      "snapshot_absolute_path": "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "observed_sha256": "a1b404188eed56f2ed0cdab445bcc5654df8b1bdac887da31c260c5025f7a1f3",
+      "verified": true,
+      "observed_bytes": 15219
+    },
+    {
+      "path": "services/kc-pay-gpt/index.js",
+      "bytes": 65029,
+      "sha256": "e543c4f57f4f700f3f7d835bbcf45ecedb312dd90c34a9dc5cbe0e4dfee7a0bb",
+      "snapshot_phase": "before caller compatibility follow-up; original five snapshots preserved",
+      "snapshot_absolute_path": "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/index.js",
+      "observed_sha256": "e543c4f57f4f700f3f7d835bbcf45ecedb312dd90c34a9dc5cbe0e4dfee7a0bb",
+      "verified": true,
+      "observed_bytes": 65029
+    },
+    {
+      "path": "services/kc-pay-gpt/chatgpt.js",
+      "bytes": 31176,
+      "sha256": "761bcdde5ed03044ad0afbe87ec60e7ac2bb774135a1820fcc664d0ad20dd8c7",
+      "snapshot_phase": "before caller compatibility follow-up; original five snapshots preserved",
+      "snapshot_absolute_path": "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/chatgpt.js",
+      "observed_sha256": "761bcdde5ed03044ad0afbe87ec60e7ac2bb774135a1820fcc664d0ad20dd8c7",
+      "verified": true,
+      "observed_bytes": 31176
+    }
+  ]
+}

@@ -182,6 +182,19 @@ body.chat-widget-bootstrap-loading .chat-widget-fab {
     pointer-events: none !important;
 }
 
+body.home-page .chat-widget-fab,
+body.home-page [data-chat-widget-fab],
+body.home-page [data-chat-widget-placeholder="1"],
+body.verify-page .chat-widget-fab,
+body.verify-page [data-chat-widget-fab],
+body.verify-page [data-chat-widget-placeholder="1"] {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    transform: none !important;
+}
+
 html.chat-widget-open,
 body.chat-widget-open,
 html.chat-widget-bootstrap-scroll-locked,

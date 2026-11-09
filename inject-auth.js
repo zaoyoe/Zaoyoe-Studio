@@ -13,7 +13,7 @@
     const LEGACY_AUTH_STYLE_IDS = ['force-auth-styles', 'force-google-btn-slim-style'];
     const PRIMARY_VIEWS = new Set(['login', 'register']);
     const AUTH_SHEET_RESIZE_DURATION_MS = 320;
-    const AUTH_SHEET_RESIZE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+    const AUTH_SHEET_RESIZE_EASING = 'ease-out';
     const PERSONAL_MESSAGE_BUTTON_LABEL = '打开个人消息';
     const PERSONAL_MESSAGE_BUTTON_UNREAD_LABEL = '打开个人消息（有未读）';
     const VIEW_META = {
@@ -483,46 +483,101 @@
             <div id="userDropdown" class="avatar-dropdown auth-dropdown-layer ${isLoggedIn ? 'is-authenticated' : 'is-guest'}" data-auth-state="${isLoggedIn ? 'authenticated' : 'guest'}" aria-hidden="true">
                 <div class="dropdown-header">
                     <button type="button" class="dropdown-notif-btn" id="dropdownNotifBtn" data-auth-action="notifications" aria-label="${PERSONAL_MESSAGE_BUTTON_LABEL}" title="${PERSONAL_MESSAGE_BUTTON_LABEL}">
-                        <i class="far fa-bell"></i>
+                        <svg class="dropdown-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
+                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
+                        </svg>
                         <span id="dropdownNotifBadge" class="dropdown-notif-badge"></span>
                     </button>
                     <button type="button" class="dropdown-lang-btn" id="dropdownLangBtn" data-auth-action="language">
-                        <span class="lang-icon lang-zh">中</span>
-                        <span class="lang-icon lang-en">A</span>
+                        <span class="lang-icon lang-zh" aria-hidden="true">
+                            <svg class="dropdown-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="5" y="7.5" width="14" height="8.5" rx="2"></rect>
+                                <path d="M12 3.5v17"></path>
+                            </svg>
+                        </span>
+                        <span class="lang-icon lang-en" aria-hidden="true">
+                            <svg class="dropdown-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m5.5 19 5.2-14h2.6l5.2 14"></path>
+                                <path d="M7.6 14.2h8.8"></path>
+                            </svg>
+                        </span>
                     </button>
                     <button type="button" class="theme-toggle-btn" data-auth-action="theme">
-                        <span class="theme-icon sun-icon">☀️</span>
-                        <span class="theme-icon moon-icon">🌙</span>
+                        <span class="theme-icon sun-icon" aria-hidden="true">
+                            <svg class="dropdown-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="4"></circle>
+                                <path d="M12 2.5v2.2M12 19.3v2.2M5.28 5.28l1.56 1.56M17.16 17.16l1.56 1.56M2.5 12h2.2M19.3 12h2.2M5.28 18.72l1.56-1.56M17.16 6.84l1.56-1.56"></path>
+                            </svg>
+                        </span>
+                        <span class="theme-icon moon-icon" aria-hidden="true">
+                            <svg class="dropdown-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                            </svg>
+                        </span>
                     </button>
                 </div>
 
                 <div class="dropdown-actions">
                     <button type="button" class="dropdown-action auth-user-only" data-auth-action="profile"${userOnlyAttrs}>
-                        <i class="fas fa-user"></i>
+                        <span class="dropdown-action-icon" aria-hidden="true">
+                            <svg class="dropdown-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="8" r="4"></circle>
+                                <path d="M5.5 20a6.5 6.5 0 0 1 13 0"></path>
+                            </svg>
+                        </span>
                         <span data-i18n="common.profile">个人资料</span>
                     </button>
                     <button type="button" class="dropdown-action" data-auth-action="wallet">
-                        <i class="fas fa-wallet"></i>
+                        <span class="dropdown-action-icon" aria-hidden="true">
+                            <svg class="dropdown-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path>
+                                <rect x="15" y="9" width="6" height="6" rx="1.5"></rect>
+                                <circle cx="17.5" cy="12" r="0.8" fill="currentColor" stroke="none"></circle>
+                            </svg>
+                        </span>
                         <span data-i18n="wallet.title">我的钱包</span>
                     </button>
                     <button type="button" class="dropdown-action" data-auth-action="orders">
-                        <i class="fas fa-box-open"></i>
+                        <span class="dropdown-action-icon" aria-hidden="true">
+                            <svg class="dropdown-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M16.5 9.4 7.55 4.24"></path>
+                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                                <polyline points="3.29 7 12 12 20.71 7"></polyline>
+                                <line x1="12" y1="22" x2="12" y2="12"></line>
+                            </svg>
+                        </span>
                         <span data-i18n="wallet.myOrders">我的订单</span>
                     </button>
-                    <button type="button" class="dropdown-action auth-user-only" data-auth-action="switch-account"${userOnlyAttrs}>
-                        <i class="fas fa-exchange-alt"></i>
-                        <span data-i18n="auth.switchAccount">切换账户</span>
-                    </button>
                     <button type="button" class="dropdown-action auth-user-only auth-display-none" id="enterStudioBtn" data-auth-action="studio"${userOnlyAttrs}>
-                        <i class="fas fa-palette"></i>
+                        <span class="dropdown-action-icon" aria-hidden="true">
+                            <svg class="dropdown-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="7" height="7" rx="1.8"></rect>
+                                <rect x="14" y="3" width="7" height="7" rx="1.8"></rect>
+                                <rect x="3" y="14" width="7" height="7" rx="1.8"></rect>
+                                <path d="m17.5 13.5 1.1 2.4 2.4 1.1-2.4 1.1-1.1 2.4-1.1-2.4-2.4-1.1 2.4-1.1 1.1-2.4z"></path>
+                            </svg>
+                        </span>
                         <span data-i18n="admin.enterStudio">Enter Studio</span>
                     </button>
                     <button type="button" class="dropdown-action auth-user-only" data-auth-action="logout"${userOnlyAttrs}>
-                        <i class="fas fa-sign-out-alt"></i>
+                        <span class="dropdown-action-icon" aria-hidden="true">
+                            <svg class="dropdown-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                <polyline points="16 17 21 12 16 7"></polyline>
+                                <line x1="21" y1="12" x2="9" y2="12"></line>
+                            </svg>
+                        </span>
                         <span data-i18n="common.logout">退出登录</span>
                     </button>
                     <button type="button" class="dropdown-action auth-guest-only" data-auth-action="login"${guestOnlyAttrs}>
-                        <i class="fas fa-sign-in-alt"></i>
+                        <span class="dropdown-action-icon" aria-hidden="true">
+                            <svg class="dropdown-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                                <polyline points="10 17 15 12 10 7"></polyline>
+                                <line x1="15" y1="12" x2="3" y2="12"></line>
+                            </svg>
+                        </span>
                         <span data-i18n="common.login">登录</span>
                     </button>
                 </div>
@@ -541,18 +596,42 @@
             inputAttributes = ''
         } = options;
 
+        const isPassword = type === 'password';
         const proxyPlaceholderAttr = placeholderKey ? ` data-i18n="${placeholderKey}"` : '';
-        const inputPlaceholderAttr = placeholderKey ? ` data-i18n-placeholder="${placeholderKey}"` : '';
-        const className = ['auth-sheet-input', inputClass, 'auth-sheet-input--canonical', 'auth-sheet-input--parked']
+        const className = ['auth-sheet-input', inputClass, 'auth-sheet-input--canonical']
             .filter(Boolean)
             .join(' ');
+        const labelSpans = [...placeholder].map((char, index) => `<span style="--i: ${index};">${char}</span>`).join('');
 
         return `
-            <button type="button" class="auth-sheet-input-proxy${proxyClass ? ` ${proxyClass}` : ''}" data-auth-proxy-for="${id}" aria-controls="authInputPlane" aria-label="${placeholder}">
-                <span class="auth-sheet-input-proxy-value" data-auth-proxy-value></span>
-                <span class="auth-sheet-input-proxy-placeholder"${proxyPlaceholderAttr}>${placeholder}</span>
-            </button>
-            <input type="${type}" id="${id}" class="${className}" placeholder="${placeholder}"${inputPlaceholderAttr} data-auth-canonical-input data-auth-proxy-source="${id}" aria-hidden="true" tabindex="-1"${inputAttributes ? ` ${inputAttributes.trim()}` : ''}>
+            <div class="lbi" data-field="${placeholder}" data-corner="20">
+                <div class="lbi-box">
+                    <svg class="lbi-ring" viewBox="0 0 380 48" aria-hidden="true">
+                        <path class="lbi-left" d=""></path>
+                        <path class="lbi-right" d=""></path>
+                        <path class="lbi-gap lbi-gap-left" pathLength="1" d=""></path>
+                        <path class="lbi-gap lbi-gap-right" pathLength="1" d=""></path>
+                    </svg>
+                    <label class="lbi-label" for="${id}"${proxyPlaceholderAttr} data-lbi-prepared="${placeholder}">${labelSpans}</label>
+                    <button type="button" class="auth-sheet-input-proxy${proxyClass ? ` ${proxyClass}` : ''}" data-auth-proxy-for="${id}" aria-controls="authInputPlane" aria-label="${placeholder}" style="display:none !important;" tabindex="-1" aria-hidden="true">
+                        <span class="auth-sheet-input-proxy-value" data-auth-proxy-value></span>
+                    </button>
+                    <input type="${type}" id="${id}" class="${className}" data-auth-canonical-input data-auth-proxy-source="${id}" autocomplete="off" readonly${inputAttributes ? ` ${inputAttributes.trim()}` : ''}>
+                    ${isPassword ? `
+                    <button class="lbi-eye" type="button" aria-label="${t('auth.showPassword', '显示密码')}" data-show="false" tabindex="-1">
+                        <svg class="lbi-eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+                            <circle cx="12" cy="12" r="3" />
+                        </svg>
+                        <svg class="lbi-eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M4 10.5c2.4 3.8 5.6 5.5 8 5.5s5.6-1.7 8-5.5" />
+                            <path d="M6.5 13.5l-2 2.5" />
+                            <path d="M12 16v3" />
+                            <path d="M17.5 13.5l2 2.5" />
+                        </svg>
+                    </button>` : ''}
+                </div>
+            </div>
         `;
     }
 
@@ -561,10 +640,11 @@
             <div id="loginModal" class="auth-sheet-overlay login-overlay" data-auth-current-view="login" hidden aria-hidden="true" style="display: none;">
                 <div class="auth-sheet-backdrop" data-auth-backdrop></div>
                 <div class="auth-sheet-stage">
-                    <section class="auth-sheet" role="dialog" aria-modal="true" aria-labelledby="authSheetTitle">
-                        <div class="auth-sheet-surface" aria-hidden="true"></div>
+                    <div class="glass-ring glass-ring--shell auth-sheet-ring">
+                        <section class="auth-sheet glass-ring__surface" role="dialog" aria-modal="true" aria-labelledby="authSheetTitle">
+                            <div class="auth-sheet-surface" aria-hidden="true"></div>
 
-                        <div class="auth-sheet-motion-shell">
+                            <div class="auth-sheet-motion-shell">
                             <div class="auth-sheet-drag-zone" data-auth-drag-zone>
                                 <div class="auth-sheet-handle" aria-hidden="true"></div>
                             </div>
@@ -607,25 +687,26 @@
 
                                             <form id="loginForm" class="auth-sheet-form" autocomplete="off" novalidate>
                                                 <div class="auth-sheet-field">
-                                                    <span class="auth-sheet-label" data-i18n="auth.emailLabel">邮箱</span>
                                                     ${buildPortaledInputControlHTML({
                                                         id: 'login-email',
                                                         type: 'email',
                                                         placeholder: t('auth.emailPlaceholder', '邮箱地址'),
                                                         placeholderKey: 'auth.emailPlaceholder',
-                                                        inputAttributes: 'autocomplete="username email" autocapitalize="off" autocorrect="off" spellcheck="false" data-auth-form="loginForm" required'
+                                                        inputAttributes: 'data-canonical-autocomplete="username email" autocapitalize="off" autocorrect="off" spellcheck="false" data-auth-form="loginForm" required'
                                                     })}
                                                 </div>
 
                                                 <div class="auth-sheet-field">
-                                                    <span class="auth-sheet-label" data-i18n="auth.passwordPlaceholder">密码</span>
                                                     ${buildPortaledInputControlHTML({
                                                         id: 'login-password',
                                                         type: 'password',
                                                         placeholder: t('auth.passwordPlaceholder', '密码'),
                                                         placeholderKey: 'auth.passwordPlaceholder',
-                                                        inputAttributes: 'autocomplete="current-password" data-auth-form="loginForm" required'
+                                                        inputAttributes: 'data-canonical-autocomplete="current-password" data-auth-form="loginForm" required'
                                                     })}
+                                                </div>
+                                                <div class="auth-hp-guard" style="opacity:0;position:absolute;top:0;left:0;height:0;width:0;z-index:-1;pointer-events:none;" aria-hidden="true">
+                                                    <input type="text" name="auth_security_checkpoint" class="auth-security-hp" tabindex="-1" autocomplete="off" value="">
                                                 </div>
                                             </form>
 
@@ -639,46 +720,43 @@
                                         </div>
                                     </div>
 
+                                    <div id="authTurnstileSlotLogin" class="auth-turnstile-slot"></div>
                                     <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="login" form="loginForm" data-i18n="common.login">登录</button>
                                 </section>
 
                                 <section id="registerView" class="auth-sheet-view auth-sheet-view--primary" data-auth-view="register" hidden>
                                     <form id="registerForm" class="auth-sheet-form" autocomplete="off" novalidate>
                                         <div class="auth-sheet-field">
-                                            <span class="auth-sheet-label" data-i18n="auth.usernamePlaceholder">用户名</span>
                                             ${buildPortaledInputControlHTML({
                                                 id: 'reg-username',
                                                 type: 'text',
                                                 placeholder: t('auth.usernamePlaceholder', '用户名'),
                                                 placeholderKey: 'auth.usernamePlaceholder',
-                                                inputAttributes: 'autocomplete="off" data-auth-form="registerForm" required'
+                                                inputAttributes: 'name="reg_username" data-canonical-autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-auth-form="registerForm" required'
                                             })}
                                         </div>
 
                                         <div class="auth-sheet-field">
-                                            <span class="auth-sheet-label" data-i18n="auth.emailLabel">邮箱</span>
                                             ${buildPortaledInputControlHTML({
                                                 id: 'reg-email',
                                                 type: 'email',
                                                 placeholder: t('auth.emailPlaceholder', '邮箱地址'),
                                                 placeholderKey: 'auth.emailPlaceholder',
-                                                inputAttributes: 'autocomplete="off" data-auth-form="registerForm" required'
+                                                inputAttributes: 'name="reg_email" data-canonical-autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-auth-form="registerForm" required'
                                             })}
                                         </div>
 
                                         <div class="auth-sheet-field">
-                                            <span class="auth-sheet-label" data-i18n="auth.setPassword">设置密码</span>
                                             ${buildPortaledInputControlHTML({
                                                 id: 'reg-password',
                                                 type: 'password',
                                                 placeholder: t('auth.setPassword', '设置密码'),
                                                 placeholderKey: 'auth.setPassword',
-                                                inputAttributes: 'autocomplete="new-password" data-auth-form="registerForm" required'
+                                                inputAttributes: 'name="reg_new_password" data-canonical-autocomplete="new-password" data-auth-form="registerForm" required'
                                             })}
                                         </div>
 
                                         <div class="auth-sheet-field auth-sheet-field--code">
-                                            <span class="auth-sheet-label" data-i18n="auth.codeLabel">验证码</span>
                                             <div class="auth-sheet-inline-group auth-sheet-inline-group--code">
                                                 ${buildPortaledInputControlHTML({
                                                     id: 'reg-code',
@@ -687,7 +765,7 @@
                                                     placeholderKey: 'auth.codeLabel',
                                                     inputClass: 'auth-sheet-input--code',
                                                     proxyClass: 'auth-sheet-input-proxy--code',
-                                                    inputAttributes: 'maxlength="6" autocomplete="off" data-auth-form="registerForm" required'
+                                                    inputAttributes: 'name="reg_verify_code" maxlength="6" data-canonical-autocomplete="off" data-auth-form="registerForm" required'
                                                 })}
                                                 <button type="button" class="auth-sheet-secondary verify-code-btn" id="sendBtn" data-auth-send-code data-i18n="auth.getShort">获取</button>
                                             </div>
@@ -700,8 +778,12 @@
                                                 <a href="/privacy.html" target="_blank" rel="noopener noreferrer" data-i18n="auth.privacyPolicy">隐私政策</a>
                                             </span>
                                         </label>
+                                        <div class="auth-hp-guard" style="opacity:0;position:absolute;top:0;left:0;height:0;width:0;z-index:-1;pointer-events:none;" aria-hidden="true">
+                                            <input type="text" name="auth_security_checkpoint" class="auth-security-hp" tabindex="-1" autocomplete="off" value="">
+                                        </div>
                                     </form>
 
+                                    <div id="authTurnstileSlotRegister" class="auth-turnstile-slot"></div>
                                     <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="register" form="registerForm" data-i18n="auth.createAccount">创建账号</button>
                                 </section>
 
@@ -710,17 +792,20 @@
 
                                     <form id="resetForm" class="auth-sheet-form" novalidate>
                                         <div class="auth-sheet-field">
-                                            <span class="auth-sheet-label" data-i18n="auth.emailLabel">邮箱</span>
                                             ${buildPortaledInputControlHTML({
                                                 id: 'reset-email',
                                                 type: 'email',
                                                 placeholder: t('auth.emailPlaceholder', '邮箱地址'),
                                                 placeholderKey: 'auth.emailPlaceholder',
-                                                inputAttributes: 'autocomplete="email" data-auth-form="resetForm" required'
+                                                inputAttributes: 'data-canonical-autocomplete="email" data-auth-form="resetForm" required'
                                             })}
+                                        </div>
+                                        <div class="auth-hp-guard" style="opacity:0;position:absolute;top:0;left:0;height:0;width:0;z-index:-1;pointer-events:none;" aria-hidden="true">
+                                            <input type="text" name="auth_security_checkpoint" class="auth-security-hp" tabindex="-1" autocomplete="off" value="">
                                         </div>
                                     </form>
 
+                                    <div id="authTurnstileSlotReset" class="auth-turnstile-slot"></div>
                                     <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="reset" form="resetForm" data-i18n="auth.recover">找回</button>
 
                                     <div class="auth-sheet-inline-row auth-sheet-inline-row--center">
@@ -730,6 +815,7 @@
                             </div>
                         </div>
                     </section>
+                    </div>
                 </div>
                 <div id="authInputPlane" class="auth-input-plane" aria-hidden="true"></div>
             </div>
@@ -786,7 +872,7 @@
         const inputProxyStyle = window.getComputedStyle(inputProxy);
         const inputProxyHeight = Number.parseFloat(inputProxyStyle.height) || 0;
 
-        return sheetStyle.display === 'grid'
+        return (sheetStyle.display === 'grid' || sheetStyle.display === 'flex')
             && inputProxyHeight >= 40
             && inputProxyStyle.borderRadius !== '0px';
     }
@@ -880,6 +966,7 @@
 
         if (!document.getElementById('loginModal')) {
             document.body.insertAdjacentHTML('beforeend', buildAuthSheetHTML());
+            initLbiFields();
         }
 
         const pendingAuthUser = window.__ZAOYOE_PENDING_AUTH_USER__;
@@ -979,6 +1066,90 @@
     function warmRegisterDependencies() {
         ensureRegisterDependencies().catch((error) => {
             console.warn('⚠️ Failed to warm register dependencies:', error?.message || error);
+        });
+    }
+
+    const SUPABASE_VENDOR_SRC = './vendor/supabase/2.95.3/supabase.js?v=20260519_VENDOR_PUBLIC_1';
+    const SUPABASE_RUNTIME_CONFIG_API = '/api/runtime/supabase-config';
+    const SUPABASE_RUNTIME_CONFIG_SRC = './js/runtime-supabase-config.js?v=20260510_REALTIME_GRACEFUL_FALLBACK_1';
+    const SUPABASE_CLIENT_SRC = './supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1';
+    const SUPABASE_AUTH_FUNCTIONS_SRC = './supabase-auth-functions.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';
+    const TURNSTILE_CLIENT_SRC = './js/turnstile-client.js?v=20261107_TURNSTILE_SECURITY_1';
+
+    let authRuntimePromise = null;
+
+    function mountTurnstileForCurrentView(viewId) {
+        if (!window.ZaoyoeSecurity) return;
+        const targetView = String(viewId || 'login').toLowerCase();
+        const capitalized = targetView.charAt(0).toUpperCase() + targetView.slice(1);
+        const slot = document.getElementById(`authTurnstileSlot${capitalized}`);
+        const activeForm = document.querySelector(`[data-auth-view="${targetView}"] form`);
+        if (activeForm && typeof window.ZaoyoeSecurity.markFormRenderTime === 'function') {
+            window.ZaoyoeSecurity.markFormRenderTime(activeForm);
+        }
+        if (slot && typeof window.ZaoyoeSecurity.mountTurnstile === 'function') {
+            window.ZaoyoeSecurity.mountTurnstile(slot, {
+                action: targetView,
+                size: 'flexible',
+                autoDismiss: true,
+                dismissDelayMs: 600
+            });
+        }
+    }
+
+    function ensureAuthRuntime() {
+        if (typeof window.triggerGoogleLogin === 'function' && typeof window.handleLogin === 'function') {
+            return Promise.resolve();
+        }
+
+        if (!authRuntimePromise) {
+            authRuntimePromise = (async () => {
+                if (typeof window.supabase === 'undefined' && typeof window.createClient === 'undefined') {
+                    await loadScript(SUPABASE_VENDOR_SRC);
+                }
+
+                if (typeof window.requireZaoyoeSupabaseConfig !== 'function') {
+                    try {
+                        await loadScript(SUPABASE_RUNTIME_CONFIG_API);
+                    } catch (_) {
+                        // ignore API failure and proceed to client config
+                    }
+                    await loadScript(SUPABASE_RUNTIME_CONFIG_SRC);
+                }
+
+                if (typeof window.ZaoyoeSecurity === 'undefined') {
+                    try {
+                        await loadScript(TURNSTILE_CLIENT_SRC);
+                    } catch (_) {
+                        // ignore failure to load security helper
+                    }
+                }
+
+                if (!window.supabase || typeof window.supabase.auth === 'undefined') {
+                    await loadScript(SUPABASE_CLIENT_SRC);
+                }
+
+                if (typeof window.triggerGoogleLogin !== 'function') {
+                    await loadScript(SUPABASE_AUTH_FUNCTIONS_SRC);
+                }
+            })().catch((error) => {
+                authRuntimePromise = null;
+                throw error;
+            });
+        }
+
+        return authRuntimePromise;
+    }
+
+    function warmAuthRuntime() {
+        ensureMarkup();
+        ensureStyles();
+        ensureAuthSheetStylesReady().catch(() => {});
+        if (typeof window.ZaoyoeSecurity === 'undefined') {
+            loadScript(TURNSTILE_CLIENT_SRC).catch(() => {});
+        }
+        ensureAuthRuntime().catch((error) => {
+            console.warn('⚠️ Failed to warm auth runtime:', error?.message || error);
         });
     }
 
@@ -1271,6 +1442,190 @@
         return input.value || '';
     }
 
+    function updateLbiField(root) {
+        if (!root) return;
+        const label = root.querySelector('.lbi-label');
+        const input = root.querySelector('.auth-sheet-input');
+        const box = root.querySelector('.lbi-box');
+        const ring = root.querySelector('.lbi-ring');
+        if (!label || !input || !box || !ring) return;
+
+        const currentText = (label.textContent || '').trim();
+        if (label.dataset.lbiPrepared !== currentText) {
+            label.dataset.lbiPrepared = currentText;
+            if (currentText) {
+                label.replaceChildren(...[...currentText].map((character, index) => {
+                    const span = document.createElement('span');
+                    span.textContent = character;
+                    span.style.setProperty('--i', String(index));
+                    return span;
+                }));
+            }
+        }
+
+        const corner = Number(root.dataset.corner || 20);
+        const boxRect = box.getBoundingClientRect();
+        const W = Math.round(boxRect.width) || 380;
+        const H = Math.round(boxRect.height) || 48;
+        const S = 0.78;
+        const IN = 0.75;
+
+        ring.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+        const r = Math.min(H / 2, Math.max(0, corner));
+        const up = root.dataset.focus === 'true' || Boolean(input.value && input.value.length > 0);
+        const lx = Math.max(16, r + 6);
+        const x0 = Math.max(r, lx - 5);
+        const labelWidth = label.offsetWidth || (currentText ? currentText.length * 15 : 44);
+        const x1 = Math.min(W - r, Math.max(x0 + 10, Math.round(lx + labelWidth * S + 5)));
+        const a = Math.max(0, r - IN);
+        const R = W - IN;
+        const B = H - IN;
+        const mid = Math.round(W / 2);
+        const nm = Math.round((x0 + x1) / 2);
+
+        root.dataset.up = String(up);
+        root.dataset.filled = String(Boolean(input.value && input.value.length > 0));
+        box.style.borderRadius = `${r}px`;
+        box.style.setProperty('--lbi-x', `${lx}px`);
+
+        const right = r > 0
+            ? `M${x1},${IN} ${x1 < W - r ? `L${W - r},${IN} ` : ''}A${a},${a} 0 0 1 ${R},${r} L${R},${H - r} A${a},${a} 0 0 1 ${W - r},${B} L${mid},${B}`
+            : `M${x1},${IN} L${R},${IN} L${R},${B} L${mid},${B}`;
+        const left = r > 0
+            ? `M${x0},${IN} ${x0 > r ? `L${r},${IN} ` : ''}A${a},${a} 0 0 0 ${IN},${r} L${IN},${H - r} A${a},${a} 0 0 0 ${r},${B} L${mid},${B}`
+            : `M${x0},${IN} L${IN},${IN} L${IN},${B} L${mid},${B}`;
+
+        const pathRight = root.querySelector('.lbi-right');
+        const pathLeft = root.querySelector('.lbi-left');
+        const pathGapLeft = root.querySelector('.lbi-gap-left');
+        const pathGapRight = root.querySelector('.lbi-gap-right');
+
+        if (pathRight) pathRight.setAttribute('d', right);
+        if (pathLeft) pathLeft.setAttribute('d', left);
+        if (pathGapLeft) pathGapLeft.setAttribute('d', `M${nm},${IN} L${x0},${IN}`);
+        if (pathGapRight) pathGapRight.setAttribute('d', `M${nm},${IN} L${x1},${IN}`);
+
+        const hasEye = Boolean(root.querySelector('.lbi-eye'));
+        input.style.paddingRight = hasEye ? '48px' : `${lx}px`;
+        input.style.paddingLeft = `${lx}px`;
+    }
+
+    function updateAllLbiFields() {
+        document.querySelectorAll('#loginModal .lbi').forEach(updateLbiField);
+    }
+
+    let lbiFlip = 0;
+    function unlockLbiInput(targetInput) {
+        if (!targetInput) return;
+        if (targetInput.hasAttribute('readonly')) {
+            targetInput.removeAttribute('readonly');
+        }
+        const targetAuto = targetInput.dataset.canonicalAutocomplete;
+        if (targetAuto) {
+            targetInput.setAttribute('autocomplete', targetAuto);
+        }
+        if (targetInput.id === 'login-email') {
+            const pass = document.getElementById('login-password');
+            if (pass && pass.hasAttribute('readonly')) {
+                pass.removeAttribute('readonly');
+                if (pass.dataset.canonicalAutocomplete) {
+                    pass.setAttribute('autocomplete', pass.dataset.canonicalAutocomplete);
+                }
+            }
+        }
+    }
+
+    function lockLbiInput(targetInput) {
+        if (!targetInput || targetInput.value) return;
+        targetInput.setAttribute('readonly', 'readonly');
+        targetInput.setAttribute('autocomplete', 'off');
+    }
+
+    function initLbiFields() {
+        const overlay = document.getElementById('loginModal');
+        if (!overlay) return;
+
+        overlay.querySelectorAll('.lbi').forEach((root) => {
+            const input = root.querySelector('.auth-sheet-input');
+            const box = root.querySelector('.lbi-box');
+            const label = root.querySelector('.lbi-label');
+            const eye = root.querySelector('.lbi-eye');
+
+            if (typeof ResizeObserver !== 'undefined' && box && !root._lbiRo) {
+                root._lbiRo = new ResizeObserver(() => updateLbiField(root));
+                root._lbiRo.observe(box);
+            }
+
+            if (!input || root.dataset.lbiBound === 'true') {
+                updateLbiField(root);
+                return;
+            }
+            root.dataset.lbiBound = 'true';
+
+            input.addEventListener('pointerdown', () => unlockLbiInput(input));
+            input.addEventListener('touchstart', () => unlockLbiInput(input), { passive: true });
+            input.addEventListener('keydown', () => {
+                unlockLbiInput(input);
+                input.dataset.userTyped = '1';
+            });
+            input.addEventListener('focus', () => {
+                unlockLbiInput(input);
+                root.dataset.focus = 'false';
+                requestAnimationFrame(() => {
+                    root.dataset.focus = 'true';
+                    updateLbiField(root);
+                });
+            });
+            input.addEventListener('blur', () => {
+                root.dataset.focus = 'false';
+                lockLbiInput(input);
+                updateLbiField(root);
+            });
+            input.addEventListener('input', () => {
+                updateLbiField(root);
+            });
+            input.addEventListener('change', () => {
+                updateLbiField(root);
+            });
+
+            box?.addEventListener('pointerdown', (event) => {
+                if (event.target.closest('.lbi-eye') || event.target.closest('.auth-sheet-input-proxy')) return;
+                unlockLbiInput(input);
+            });
+            box?.addEventListener('click', (event) => {
+                if (event.target.closest('.lbi-eye') || event.target.closest('.auth-sheet-input-proxy')) return;
+                unlockLbiInput(input);
+                input.focus();
+            });
+            label?.addEventListener('pointerdown', () => unlockLbiInput(input));
+            label?.addEventListener('click', () => {
+                unlockLbiInput(input);
+                input.focus();
+            });
+
+            if (eye) {
+                eye.addEventListener('pointerdown', (e) => e.preventDefault());
+                eye.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const isShown = eye.dataset.show === 'true';
+                    const nextShown = !isShown;
+                    eye.dataset.show = String(nextShown);
+                    lbiFlip = 1 - lbiFlip;
+                    input.dataset.flip = String(lbiFlip);
+                    input.type = nextShown ? 'text' : 'password';
+                    input.style.webkitTextSecurity = nextShown ? 'none' : 'disc';
+                    eye.setAttribute('aria-label', nextShown ? t('auth.hidePassword', '隐藏密码') : t('auth.showPassword', '显示密码'));
+                    updateLbiField(root);
+                    input.focus();
+                });
+            }
+
+            updateLbiField(root);
+        });
+    }
+
     function updateInputProxyDisplay(input) {
         if (!input?.id) return;
         const proxy = getProxyForInputId(input.id);
@@ -1284,12 +1639,14 @@
         }
 
         proxy.classList.toggle('is-filled', hasValue);
+        updateLbiField(input.closest('.lbi'));
     }
 
     function syncAllInputProxyDisplays() {
         document.querySelectorAll('#loginModal [data-auth-canonical-input]').forEach((input) => {
             updateInputProxyDisplay(input);
         });
+        updateAllLbiFields();
     }
 
     function syncAuthInputInteractionMode() {
@@ -1303,24 +1660,15 @@
 
         overlay.querySelectorAll('[data-auth-canonical-input]').forEach((input) => {
             resetPortaledInputStyles(input);
-
-            if (desktopNativeInputs) {
-                input.classList.remove('auth-sheet-input--parked', 'auth-sheet-input--portaled', 'auth-sheet-input--proxy-hidden');
-                input.removeAttribute('aria-hidden');
-                input.removeAttribute('tabindex');
-                return;
-            }
-
-            if (portalState.input === input) return;
-
-            input.classList.add('auth-sheet-input--parked');
-            input.classList.remove('auth-sheet-input--portaled', 'auth-sheet-input--proxy-hidden');
-            input.setAttribute('aria-hidden', 'true');
-            input.setAttribute('tabindex', '-1');
+            input.classList.remove('auth-sheet-input--parked', 'auth-sheet-input--portaled', 'auth-sheet-input--proxy-hidden');
+            input.removeAttribute('aria-hidden');
+            input.removeAttribute('tabindex');
         });
 
         overlay.querySelectorAll('[data-auth-proxy-for]').forEach((proxy) => {
-            proxy.classList.toggle('auth-sheet-input-proxy--desktop-hidden', desktopNativeInputs);
+            proxy.classList.add('auth-sheet-input-proxy--desktop-hidden');
+            proxy.setAttribute('aria-hidden', 'true');
+            proxy.setAttribute('tabindex', '-1');
         });
 
         if (desktopNativeInputs) {
@@ -1624,6 +1972,8 @@
         if (shouldAnimateResize) {
             animateAuthSheetResize(fromHeight);
         }
+
+        mountTurnstileForCurrentView(viewId);
     }
 
     function animateAuthSheetResize(fromHeight) {
@@ -1715,6 +2065,37 @@
             view.classList.toggle('is-active', isActive);
         });
 
+        document.querySelectorAll('#loginModal [data-auth-canonical-input]').forEach((input) => {
+            if (!input.dataset.userTyped) {
+                input.value = '';
+                lockLbiInput(input);
+            }
+        });
+
+        if (viewId === 'register') {
+            const clearUnwantedAutofill = () => {
+                if (sheetState.view !== 'register') return;
+                const regForm = document.getElementById('registerForm');
+                if (!regForm) return;
+                let cleared = false;
+                regForm.querySelectorAll('input:not([type="checkbox"])').forEach((input) => {
+                    if (input.value && !input.dataset.userTyped) {
+                        input.value = '';
+                        lockLbiInput(input);
+                        cleared = true;
+                    }
+                });
+                if (cleared) {
+                    updateAllLbiFields();
+                }
+            };
+            clearUnwantedAutofill();
+            window.setTimeout(clearUnwantedAutofill, 40);
+            window.setTimeout(clearUnwantedAutofill, 120);
+        }
+
+        updateAllLbiFields();
+
         deactivateActivePortaledInput({ blur: false });
 
         if (PRIMARY_VIEWS.has(viewId)) {
@@ -1736,6 +2117,8 @@
         if (shouldAnimateResize) {
             animateAuthSheetResize(fromHeight);
         }
+
+        mountTurnstileForCurrentView(viewId);
     }
 
     function renderAuthMessage(message, type = 'error') {
@@ -1843,6 +2226,9 @@
 
         overlay.querySelectorAll('[data-auth-canonical-input]').forEach((input) => {
             input.value = '';
+            input.setAttribute('readonly', 'readonly');
+            input.setAttribute('autocomplete', 'off');
+            delete input.dataset.userTyped;
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new Event('change', { bubbles: true }));
         });
@@ -1971,6 +2357,7 @@
     }
 
     function handleInjectedAuthClick(event) {
+        warmAuthRuntime();
         if (event) {
             event.preventDefault();
             event.stopPropagation();
@@ -1996,6 +2383,7 @@
     }
 
     function requestLoginFromDropdown(viewId = 'login') {
+        warmAuthRuntime();
         closeDropdown();
 
         if (typeof window.requestLoginModalOpen === 'function') {
@@ -2047,7 +2435,9 @@
         if (hasInitialMessage) {
             renderAuthMessage(initialMessage, initialMessageType);
         }
+        initLbiFields();
         syncAllInputProxyDisplays();
+        updateAllLbiFields();
         syncTabIndicator(sheetState.view, { immediate: true });
 
         window.requestAnimationFrame(() => {
@@ -2072,6 +2462,7 @@
 
         overlayCloseDisabledUntil = Date.now() + 240;
         warmRegisterDependencies();
+        warmAuthRuntime();
         renderGoogleDebugBadge();
 
         if (typeof window.prefetchGooglePopupCloseShell === 'function') {
@@ -2199,7 +2590,30 @@
 
             if (event.target.closest('[data-auth-google]')) {
                 clearAuthMessage();
-                window.triggerGoogleLogin?.();
+                if (typeof window.triggerGoogleLogin === 'function') {
+                    window.triggerGoogleLogin();
+                    return;
+                }
+
+                const googleBtn = event.target.closest('[data-auth-google]');
+                if (googleBtn) googleBtn.disabled = true;
+                showAuthMessage(t('auth.openingGoogleWindow', '正在打开授权窗口...'), 'info');
+
+                ensureAuthRuntime()
+                    .then(() => {
+                        if (googleBtn) googleBtn.disabled = false;
+                        clearAuthMessage();
+                        if (typeof window.triggerGoogleLogin === 'function') {
+                            window.triggerGoogleLogin();
+                        } else {
+                            showAuthMessage(t('auth.googleServiceUnavailable', 'Google 登录服务暂不可用，请稍后重试。'));
+                        }
+                    })
+                    .catch((error) => {
+                        if (googleBtn) googleBtn.disabled = false;
+                        console.error('Failed to load auth runtime for Google login:', error);
+                        showAuthMessage(t('auth.loginServiceFailed', '登录服务加载失败，请检查网络后重试。'));
+                    });
                 return;
             }
 
@@ -2220,21 +2634,114 @@
         });
 
         overlay.querySelector('#loginForm')?.addEventListener('submit', (event) => {
+            if (window.ZaoyoeSecurity?.isHoneypotTriggered?.(event.target)) {
+                event.preventDefault();
+                event.stopPropagation();
+                console.warn('[Security] Submission rejected by honeypot.');
+                return;
+            }
+            if (window.ZaoyoeSecurity?.isSubmissionTooFast?.(event.target, 500)) {
+                event.preventDefault();
+                event.stopPropagation();
+                console.warn('[Security] Submission rejected: unnatural speed.');
+                return;
+            }
+            document.querySelectorAll('#loginForm [data-auth-canonical-input]').forEach(unlockLbiInput);
             stabilizeAuthSheetForSubmit();
             clearAuthMessage({ reserveSpace: true, animate: false });
-            window.handleLogin?.(event);
+            if (typeof window.handleLogin === 'function') {
+                window.handleLogin(event);
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            ensureAuthRuntime()
+                .then(() => {
+                    document.querySelectorAll('#loginForm [data-auth-canonical-input]').forEach(unlockLbiInput);
+                    if (typeof window.handleLogin === 'function') {
+                        window.handleLogin(event);
+                    } else {
+                        showAuthMessage(t('auth.loginServiceFailed', '登录服务加载失败，请稍后重试。'));
+                    }
+                })
+                .catch((error) => {
+                    console.error('Failed to load auth runtime for login:', error);
+                    showAuthMessage(t('auth.loginServiceFailed', '登录服务加载失败，请稍后重试。'));
+                });
         });
 
         overlay.querySelector('#registerForm')?.addEventListener('submit', (event) => {
+            if (window.ZaoyoeSecurity?.isHoneypotTriggered?.(event.target)) {
+                event.preventDefault();
+                event.stopPropagation();
+                console.warn('[Security] Submission rejected by honeypot.');
+                return;
+            }
+            if (window.ZaoyoeSecurity?.isSubmissionTooFast?.(event.target, 500)) {
+                event.preventDefault();
+                event.stopPropagation();
+                console.warn('[Security] Submission rejected: unnatural speed.');
+                return;
+            }
+            document.querySelectorAll('#registerForm [data-auth-canonical-input]').forEach(unlockLbiInput);
             stabilizeAuthSheetForSubmit();
             clearAuthMessage({ reserveSpace: true, animate: false });
-            window.handleRegister?.(event);
+            if (typeof window.handleRegister === 'function') {
+                window.handleRegister(event);
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            ensureAuthRuntime()
+                .then(() => {
+                    document.querySelectorAll('#registerForm [data-auth-canonical-input]').forEach(unlockLbiInput);
+                    if (typeof window.handleRegister === 'function') {
+                        window.handleRegister(event);
+                    } else {
+                        showAuthMessage(t('auth.loginServiceFailed', '注册服务加载失败，请稍后重试。'));
+                    }
+                })
+                .catch((error) => {
+                    console.error('Failed to load auth runtime for register:', error);
+                    showAuthMessage(t('auth.loginServiceFailed', '注册服务加载失败，请稍后重试。'));
+                });
         });
 
         overlay.querySelector('#resetForm')?.addEventListener('submit', (event) => {
+            if (window.ZaoyoeSecurity?.isHoneypotTriggered?.(event.target)) {
+                event.preventDefault();
+                event.stopPropagation();
+                console.warn('[Security] Submission rejected by honeypot.');
+                return;
+            }
+            if (window.ZaoyoeSecurity?.isSubmissionTooFast?.(event.target, 500)) {
+                event.preventDefault();
+                event.stopPropagation();
+                console.warn('[Security] Submission rejected: unnatural speed.');
+                return;
+            }
+            document.querySelectorAll('#resetForm [data-auth-canonical-input]').forEach(unlockLbiInput);
             stabilizeAuthSheetForSubmit();
             clearAuthMessage({ reserveSpace: true, animate: false });
-            window.handlePasswordReset?.(event);
+            if (typeof window.handlePasswordReset === 'function') {
+                window.handlePasswordReset(event);
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            ensureAuthRuntime()
+                .then(() => {
+                    document.querySelectorAll('#resetForm [data-auth-canonical-input]').forEach(unlockLbiInput);
+                    if (typeof window.handlePasswordReset === 'function') {
+                        window.handlePasswordReset(event);
+                    } else {
+                        showAuthMessage(t('auth.loginServiceFailed', '重置服务加载失败，请稍后重试。'));
+                    }
+                })
+                .catch((error) => {
+                    console.error('Failed to load auth runtime for reset:', error);
+                    showAuthMessage(t('auth.loginServiceFailed', '重置服务加载失败，请稍后重试。'));
+                });
         });
 
         overlay.querySelectorAll('[data-auth-canonical-input]').forEach((input) => {
@@ -2357,6 +2864,7 @@
             syncAuthInputInteractionMode();
             scheduleActivePortaledInputPosition();
             syncTabIndicator(sheetState.view);
+            updateAllLbiFields();
         });
 
         overlay.dataset.bound = '1';
@@ -2425,6 +2933,9 @@
     function bindGlobalEvents() {
         const authBtn = document.getElementById('authBtn');
         if (authBtn && authBtn.dataset.bound !== '1') {
+            authBtn.addEventListener('mouseenter', () => warmAuthRuntime(), { once: true });
+            authBtn.addEventListener('focus', () => warmAuthRuntime(), { once: true });
+            authBtn.addEventListener('touchstart', () => warmAuthRuntime(), { once: true, passive: true });
             authBtn.addEventListener('click', (event) => {
                 if (typeof window.handleAuthClick === 'function' && window.handleAuthClick !== handleInjectedAuthClick) {
                     window.handleAuthClick(event);
@@ -2718,6 +3229,10 @@
             window.i18n.applyTranslations();
         }
         refreshVisibleAuthMessageTranslation();
+        document.querySelectorAll('#loginModal .lbi-label').forEach((lbl) => {
+            delete lbl.dataset.lbiPrepared;
+        });
+        updateAllLbiFields();
     });
 
     if (document.readyState === 'loading') {

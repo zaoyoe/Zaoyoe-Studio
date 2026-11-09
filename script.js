@@ -388,15 +388,31 @@ function formatAuthPopupText(key, fallback, vars = {}) {
 
 // Function 1: Send Verification Code
 function sendVerificationCode() {
+    // 0. Honeypot & Bot Checks
+    if (window.ZaoyoeSecurity?.isHoneypotTriggered?.('#registerForm')) {
+        console.warn('[Security] Bot detected by honeypot in sendVerificationCode');
+        return;
+    }
+    if (window.ZaoyoeSecurity?.isSubmissionTooFast?.(document.getElementById('registerForm'), 500)) {
+        console.warn('[Security] Verification code request too fast');
+        return;
+    }
+
     const emailInput = document.getElementById('reg-email');
     const sendBtn = document.getElementById('sendBtn');
-    const email = emailInput.value;
+    const email = emailInput?.value?.trim();
     const sendingLabel = authPopupT('auth.sendingCode', '发送中...');
     const idleLabel = authPopupT('auth.getShort', '获取');
 
     // 1. Validate email format
     if (!email || !email.includes('@')) {
         showAuthMessageOrAlert(authPopupT('auth.invalidEmailNotice', '请先填写正确的邮箱地址！'));
+        return;
+    }
+
+    // 1.1 Turnstile Verification (if enabled)
+    if (window.ZaoyoeSecurity?.isTurnstileEnabled?.() && !window.ZaoyoeSecurity?.getTurnstileToken?.()) {
+        showAuthMessageOrAlert(authPopupT('auth.captchaRequired', '请先完成人机安全验证后再发送验证码。'));
         return;
     }
 

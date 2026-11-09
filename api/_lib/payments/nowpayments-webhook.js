@@ -498,6 +498,27 @@ function resolveNowpaymentsAmountVerification(metadata = {}, payload = {}) {
     };
 }
 
+// Only an authenticated provider response can establish receipt. Echoed price
+// fields alone are insufficient, including for legacy fixed-FX orders.
+function authenticatedReceiptMatches(metadata, payload) {
+    const { decimalUnits } = require('../../../server/tg/nowpayments-gateway');
+    const exact = payload[EXACT_AMOUNTS] || payload;
+    const expected = decimalUnits(metadata.pay_amount_text ?? metadata.pay_amount ?? metadata.expected_pay_amount);
+    const received = decimalUnits(exact.actually_paid);
+    const quote = decimalUnits(metadata.price_amount_text ?? metadata.price_amount);
+    const receivedQuote = decimalUnits(exact.price_amount);
+    const requested = decimalUnits(exact.pay_amount);
+    const payCurrency = normalizeCurrencyCode(metadata.pay_currency);
+    const priceCurrency = normalizeCurrencyCode(metadata.price_currency);
+    return expected !== null && received !== null && received >= expected
+        && requested === expected && quote !== null && receivedQuote === quote
+        && Boolean(payCurrency) && normalizeCurrencyCode(payload.pay_currency) === payCurrency
+        && (!payload.actually_paid_currency || normalizeCurrencyCode(payload.actually_paid_currency) === payCurrency)
+        && Boolean(priceCurrency) && normalizeCurrencyCode(payload.price_currency) === priceCurrency
+        && (!metadata.pay_address || payload.pay_address === metadata.pay_address)
+        && usdtNetworks.paymentMemo(payload) === (metadata.payin_extra_id || '');
+}
+
 async function handleNowpaymentsWebhook({
     req,
     res,
@@ -556,35 +577,16 @@ async function handleNowpaymentsWebhook({
     const invoiceId = sanitizeText(payload.invoice_id, '', 120);
     const transactionId = pickNowpaymentsTransactionId(payload);
     const statusRaw = sanitizeText(payload.payment_status, '', 40).toLowerCase();
-    const eventKey = nowpaymentsProvider.buildEventKey({
+    let eventKey = nowpaymentsProvider.buildEventKey({
         providerOrderNo: orderNo || invoiceId,
         transactionId,
         status: statusRaw,
         payload
     });
 
+    let ownsEvent = false;
     try {
-        const eventInsert = await recordPaymentEvent(supabase, {
-            provider: 'nowpayments',
-            provider_order_no: orderNo || null,
-            event_key: eventKey,
-            event_type: 'webhook',
-            signature_valid: false,
-            payload,
-            processing_result: 'received'
-        });
-
-        if (eventInsert.duplicate) {
-            console.log('[NOWPayments] Duplicate webhook ignored:', eventKey);
-            return sendPlainText(res, 200, 'success');
-        }
-
         if (!orderNo) {
-            await finalizePaymentEvent(supabase, eventKey, {
-                processing_result: 'invalid_order_no',
-                error_message: 'missing order_id',
-                response_status: 400
-            });
             return sendPlainText(res, 400, 'missing order_id');
         }
 
@@ -604,23 +606,62 @@ async function handleNowpaymentsWebhook({
             receivedSignature: getHeaderValue(req, 'x-nowpayments-sig')
         });
         if (signatureCheck.supported === false && signatureCheck.reason === 'missing_secret') {
-            await finalizePaymentEvent(supabase, eventKey, {
-                processing_result: 'missing_nowpayments_ipn_secret',
-                error_message: 'NOWPAYMENTS_IPN_SECRET is not configured',
-                response_status: 503
-            });
             return sendPlainText(res, 503, 'payment webhook not configured');
         }
 
+        // Invalid notifications get their own audit identity and cannot occupy
+        // the legitimate provider event key.
+        if (signatureCheck.valid !== true) {
+            eventKey = `invalid:${require('node:crypto').createHash('sha256').update(JSON.stringify(payload)).digest('hex')}`;
+        }
+        const savedId = String(metadata.payment_id || metadata.nowpayments_payment_id || metadata.provider_payment_id || '');
+        if (signatureCheck.valid === true && paymentOrder?.id
+            && Object.prototype.hasOwnProperty.call(payload, 'payment_id')
+            && String((payload[EXACT_AMOUNTS] || payload).payment_id ?? '') !== savedId) {
+            return sendPlainText(res, 409, 'payment identity mismatch');
+        }
+        if (signatureCheck.valid === true && normalizeNowpaymentsPaymentStatus(payload.payment_status) === 'paid' && paymentOrder?.id) {
+            try {
+                if (!savedId) throw new Error('missing_saved_payment_id');
+                const query = await nowpaymentsProvider.queryOrder({ runtimeContext,
+                    providerOrderNo: paymentOrder.provider_order_no, paymentId: savedId, metadata });
+                let raw = query?.responsePayload || {};
+                if (query?.responseText) {
+                    const parsed = require('../../../server/tg/nowpayments-gateway').parsePaymentJson(query.responseText);
+                    raw = parsed.data;
+                    Object.defineProperty(raw, EXACT_AMOUNTS, { value: parsed.exact });
+                }
+                if (query?.supported !== true || String((raw[EXACT_AMOUNTS] || raw).payment_id ?? (raw[EXACT_AMOUNTS] || raw).id ?? '') !== savedId
+                    || raw.order_id !== paymentOrder.provider_order_no || raw.payment_status !== 'finished'
+                    || !authenticatedReceiptMatches(metadata, raw)
+                    || ((metadata.fx_mode === 'market' || metadata.native_usdt === true)
+                        && !resolveNowpaymentsAmountVerification(metadata, raw).valid)
+                    || usdtNetworks.paymentMemo(raw) !== (metadata.payin_extra_id || '')) throw new Error('query_unconfirmed');
+            } catch (_) {
+                return sendPlainText(res, 503, 'payment query unconfirmed');
+            }
+        }
+        const eventInsert = await recordPaymentEvent(supabase, {
+            provider: 'nowpayments',
+            provider_order_no: orderNo || null,
+            event_key: eventKey,
+            event_type: 'webhook',
+            signature_valid: false,
+            payload,
+            processing_result: 'received'
+        });
+
+        if (eventInsert.duplicate) {
+            console.log('[NOWPayments] Duplicate webhook ignored:', eventKey);
+            return sendPlainText(res, 200, 'success');
+        }
+
+        ownsEvent = true;
         const signatureValid = signatureCheck.valid === true;
         const paymentState = normalizeNowpaymentsPaymentStatus(payload.payment_status);
         const amountVerification = resolveNowpaymentsAmountVerification(metadata, payload);
         const expectedPriceAmount = amountVerification.expectedPriceAmount;
         const webhookPriceAmount = amountVerification.webhookPriceAmount;
-        const expectedPayCurrency = normalizeCurrencyCode(metadata.pay_currency) || 'usdtbsc';
-        const webhookPayCurrency = normalizeCurrencyCode(payload.pay_currency);
-        const expectedPriceCurrency = normalizeCurrencyCode(metadata.price_currency) || 'usd';
-        const webhookPriceCurrency = normalizeCurrencyCode(payload.price_currency);
         const amountValid = amountVerification.valid === true;
         const currencyValid = amountVerification.payCurrencyValid && amountVerification.priceCurrencyValid;
         let processingResult = paymentState === 'paid' ? 'pending_review' : `ignored_${paymentState}`;
@@ -679,7 +720,7 @@ async function handleNowpaymentsWebhook({
             processingResult = 'processed_paid';
         }
 
-        if (paymentOrder?.id) {
+        if (paymentOrder?.id && signatureValid) {
             const nowIso = new Date().toISOString();
             const existingMetadata = paymentOrder.provider_metadata && typeof paymentOrder.provider_metadata === 'object'
                 ? paymentOrder.provider_metadata
@@ -687,7 +728,6 @@ async function handleNowpaymentsWebhook({
             const existingRawPayload = paymentOrder.raw_payload && typeof paymentOrder.raw_payload === 'object'
                 ? paymentOrder.raw_payload
                 : {};
-            const immutableQuote = existingMetadata.fx_mode === 'market' || existingMetadata.native_usdt === true;
             const isAmountMismatch = processingResult === 'amount_mismatch';
             const isPendingReview = processingResult === 'pending_review';
             const nextStatus = processingResult === 'processed_paid'
@@ -724,19 +764,15 @@ async function handleNowpaymentsWebhook({
                 provider_metadata: mergePaymentObjects(existingMetadata, {
                     provider_order_no: orderNo,
                     invoice_id: invoiceId || existingMetadata.invoice_id || null,
-                    payment_id: immutableQuote
-                        ? existingMetadata.payment_id : (sanitizeText(payload.payment_id, '', 120) || existingMetadata.payment_id || null),
+                    payment_id: savedId || null,
                     parent_payment_id: sanitizeText(payload.parent_payment_id, '', 120) || null,
                     purchase_id: sanitizeText(payload.purchase_id, '', 120) || null,
                     payment_status: paymentState,
                     payment_status_raw: statusRaw || null,
-                    pay_currency: immutableQuote
-                        ? existingMetadata.pay_currency : (webhookPayCurrency || existingMetadata.pay_currency || null),
-                    price_currency: immutableQuote
-                        ? existingMetadata.price_currency : (webhookPriceCurrency || existingMetadata.price_currency || null),
+                    pay_currency: existingMetadata.pay_currency || null,
+                    price_currency: existingMetadata.price_currency || null,
                     price_amount_webhook: webhookPriceAmount || null,
-                    pay_amount: immutableQuote
-                        ? existingMetadata.pay_amount : (roundCurrencyAmount(payload.pay_amount ?? 0) || null),
+                    pay_amount: existingMetadata.pay_amount ?? existingMetadata.expected_pay_amount ?? null,
                     actually_paid: roundCurrencyAmount(payload.actually_paid ?? 0) || null,
                     outcome_amount: roundCurrencyAmount(payload.outcome_amount ?? 0) || null,
                     outcome_currency: sanitizeText(payload.outcome_currency, '', 40).toLowerCase() || null,
@@ -824,7 +860,7 @@ async function handleNowpaymentsWebhook({
         return sendPlainText(res, 200, 'success');
     } catch (error) {
         console.error('[NOWPayments] Webhook error:', error);
-        await finalizePaymentEvent(supabase, eventKey, {
+        if (ownsEvent) await finalizePaymentEvent(supabase, eventKey, {
             processing_result: 'webhook_exception',
             error_message: error.message,
             response_status: 500
@@ -856,6 +892,7 @@ module.exports = {
     createNowpaymentsWebhookHandler,
     handleNowpaymentsWebhook,
     _private: {
+        authenticatedReceiptMatches,
         buildRequestNetworkContext,
         collectWebhookPayload,
         deriveNowpaymentsPointBreakdown,

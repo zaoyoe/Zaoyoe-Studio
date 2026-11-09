@@ -1,0 +1,22 @@
+{
+  "status": "STATIC REVIEW ONLY",
+  "runtime_files": [
+    "services/kc-pay-gpt/mysql-store.js",
+    "services/kc-pay-gpt/payment-retry.js",
+    "services/kc-pay-gpt/stripe-protocol-payment.js"
+  ],
+  "docker_copy": "services/kc-pay-gpt/Dockerfile uses COPY . .; .dockerignore does not exclude the three changed runtime files.",
+  "files": [
+    {
+      "path": "services/kc-pay-gpt/Dockerfile",
+      "sha256": "023ebb80f6d25aa857053f4dc8026f55674af45ea34529a7311559af53e5fa4e"
+    },
+    {
+      "path": "services/kc-pay-gpt/.dockerignore",
+      "sha256": "5a5023d9e6dbae10022ba839347d5dab25b09016dbfaf629017cc54818890b80"
+    }
+  ],
+  "image_build": "NOT RUN",
+  "production_artifact": "NOT RUN",
+  "boundary": "KC is independently deployed to /opt/kc-pay-gpt. Vercel or Verify success would not demonstrate KC inclusion. No protected host env, compose or data touched. No schema migration or SQL. Protocol callback is optional; current production caller passes the gate, not a guarantee for future callers."
+}

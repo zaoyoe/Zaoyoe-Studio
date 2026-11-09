@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3f5f4" />
+    <title>计件器 · Rolling counter</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #222827;
+        background: #f3f5f4;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-width: 320px;
+        min-height: 100vh;
+        margin: 0;
+      }
+
+      button, input { font: inherit; }
+
+      .page {
+        width: min(100% - 64px, 1040px);
+        min-height: 100vh;
+        margin-inline: auto;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .topbar {
+        min-height: 76px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #dce2df;
+      }
+
+      .wordmark {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #3b4542;
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .mark {
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        border-radius: 7px;
+        background: #dcebe3;
+        color: #2e6a4c;
+      }
+
+      .mark svg { width: 13px; height: 13px; }
+
+      .license {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #717b77;
+        font-size: 12px;
+      }
+
+      .license::before {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #55916e;
+        content: "";
+      }
+
+      main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding-block: 72px 88px;
+      }
+
+      .intro { margin-bottom: 54px; }
+
+      .eyebrow {
+        margin: 0 0 14px;
+        color: #648071;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        color: #222827;
+        font-size: 42px;
+        font-weight: 570;
+        line-height: 1.12;
+        letter-spacing: 0;
+      }
+
+      .lede {
+        max-width: 520px;
+        margin: 14px 0 0;
+        color: #737d79;
+        font-size: 15px;
+        line-height: 1.55;
+      }
+
+      .stage {
+        min-height: 210px;
+        display: grid;
+        place-items: center;
+        padding: 34px 24px;
+        border: 1px solid #dce2df;
+        border-radius: 10px;
+        background: #edf1ef;
+      }
+
+      .stage-note {
+        margin: 18px 0 0;
+        color: #8a9490;
+        font-size: 11px;
+        text-align: center;
+      }
+
+      /* ══ Rolling counter ══════════════════════════════════
+         A number between a minus and a plus. Every digit is a strip
+         of 0–9 behind a window, and changing the number rolls the
+         strips to their new digits like an odometer.
+
+         ── EACH COLUMN COUNTS, IT DOES NOT SHOW ────────────
+         A column's target is the number of whole tens, hundreds…
+         in the value. This lets 9 → 10 move the ones forward one
+         more step while the tens moves forward one, instead of a
+         strip running backward through eight digits.
+
+         ── ONE SPRING PER COLUMN, AND THEY GO IN TURN ─────
+         The ones move first and each column to the left follows a
+         little later, so a carry reads as a carry through the number. */
+      .rct {
+        --card: #ffffff;
+        --fill-on: #222827;
+        --fill-slab: #ffffff;
+        --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --ink: #222827;
+        --pane-edge: #d4dcda;
+        --signal: #57916d;
+
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 0;
+        padding: 5px;
+        border-radius: var(--rct-r);
+        background: var(--fill-slab, var(--card));
+        color: var(--fill-on, var(--ink));
+        font-family: var(--font-ui);
+        box-shadow: 0 12px 28px rgba(40, 60, 50, 0.08), 0 0 0 1px rgba(40, 60, 50, 0.03);
+      }
+
+      /* The slab's inset keeps the button and the digit window
+         concentric as the corner radius changes. */
+      .rct-btn {
+        width: 46px;
+        height: var(--rct-cell);
+        display: grid;
+        flex: none;
+        place-items: center;
+        padding: 0;
+        border: 0;
+        border-radius: var(--rct-in);
+        background: color-mix(in srgb, var(--fill-on) 6%, var(--fill-slab));
+        color: inherit;
+        cursor: pointer;
+        transition: scale 200ms cubic-bezier(0.3, 0.9, 0.4, 1), background-color 160ms ease;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .rct-btn:hover { background: color-mix(in srgb, var(--fill-on) 10%, var(--fill-slab)); }
+      .rct-btn:active { scale: 0.9; transition-duration: 110ms; }
+      .rct-btn svg { width: 16px; height: 16px; }
+
+      .rct-btn:focus-visible,
+      .rct-num:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px var(--fill-slab), 0 0 0 4px var(--signal);
+      }
+
+      /* The number hugs its digits and the buttons hug the number.
+         A column arriving or leaving animates its own width, so the
+         slab grows and shrinks with the count. */
+      .rct-num {
+        min-width: 74px;
+        height: var(--rct-cell);
+        display: flex;
+        justify-content: center;
+        padding: 0 14px;
+        border-radius: 8px;
+        font-size: 30px;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.02em;
+        line-height: var(--rct-cell);
+        cursor: ns-resize;
+        touch-action: none;
+        user-select: none;
+        mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent);
+      }
+
+      .rct-pair { display: flex; }
+
+      .rct-col {
+        width: 0;
+        height: var(--rct-cell);
+        overflow: hidden;
+        opacity: 0;
+        transition: width 320ms cubic-bezier(0.3, 1.2, 0.4, 1), opacity 220ms ease;
+      }
+
+      .rct-col[data-on] { width: 0.64em; opacity: 1; }
+
+      .rct-strip {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        will-change: transform, filter;
+      }
+
+      .rct-strip > span { height: var(--rct-cell); }
+
+      .rct-sep {
+        width: 0;
+        overflow: hidden;
+        opacity: 0;
+        transition: width 320ms cubic-bezier(0.3, 1.2, 0.4, 1), opacity 220ms ease;
+      }
+
+      .rct-sep[data-on] { width: 0.26em; opacity: 1; }
+
+      .control-panel {
+        margin-top: 54px;
+        padding-top: 20px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 26px;
+        border-top: 1px solid #dce2df;
+      }
+
+      .control { min-width: 0; }
+
+      .control-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .control label {
+        color: #6f7975;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .control output {
+        color: #87918d;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      input[type="range"] {
+        width: 100%;
+        height: 18px;
+        margin: 0;
+        appearance: none;
+        background: transparent;
+        cursor: ew-resize;
+      }
+
+      input[type="range"]::-webkit-slider-runnable-track {
+        height: 3px;
+        border-radius: 99px;
+        background: #d1d9d5;
+      }
+
+      input[type="range"]::-webkit-slider-thumb {
+        width: 14px;
+        height: 14px;
+        margin-top: -5px;
+        appearance: none;
+        border: 2px solid #f3f5f4;
+        border-radius: 50%;
+        background: #57916d;
+        box-shadow: 0 0 0 1px #57916d;
+      }
+
+      input[type="range"]::-moz-range-track {
+        height: 3px;
+        border-radius: 99px;
+        background: #d1d9d5;
+      }
+
+      input[type="range"]::-moz-range-thumb {
+        width: 10px;
+        height: 10px;
+        border: 2px solid #f3f5f4;
+        border-radius: 50%;
+        background: #57916d;
+        box-shadow: 0 0 0 1px #57916d;
+      }
+
+      input[type="range"]:focus-visible {
+        outline: 2px solid #57916d;
+        outline-offset: 3px;
+      }
+
+      .shape-control {
+        margin-top: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+
+      .shape-label {
+        color: #6f7975;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .segmented {
+        display: inline-grid;
+        grid-template-columns: repeat(3, minmax(74px, 1fr));
+        gap: 3px;
+        padding: 3px;
+        border: 1px solid #dce2df;
+        border-radius: 8px;
+        background: #eaeeec;
+      }
+
+      .segmented button {
+        min-height: 31px;
+        padding: 0 12px;
+        border: 0;
+        border-radius: 5px;
+        background: transparent;
+        color: #707a76;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .segmented button[aria-pressed="true"] {
+        background: #fff;
+        color: #2b3430;
+        box-shadow: 0 1px 2px #202a2414;
+      }
+
+      .segmented button:focus-visible {
+        outline: 2px solid #57916d;
+        outline-offset: 2px;
+      }
+
+      footer {
+        min-height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid #dce2df;
+        color: #8b9490;
+        font-size: 11px;
+      }
+
+      footer span:last-child { color: #6e7974; }
+
+      @media (max-width: 700px) {
+        .page { width: min(100% - 40px, 520px); }
+        main { padding-block: 54px 64px; }
+        h1 { font-size: 36px; }
+        .intro { margin-bottom: 44px; }
+        .stage { min-height: 190px; padding-inline: 10px; }
+        .control-panel { grid-template-columns: 1fr; gap: 18px; }
+        .shape-control { margin-top: 40px; }
+      }
+
+      @media (max-width: 380px) {
+        .page { width: calc(100% - 32px); }
+        .shape-control { align-items: flex-start; flex-direction: column; gap: 12px; }
+        .segmented { width: 100%; }
+        .stage { transform: scale(0.92); transform-origin: center; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .rct-btn, .rct-col, .rct-sep { transition-duration: 160ms; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <div class="wordmark">
+          <span class="mark" aria-hidden="true">
+            <svg viewBox="0 0 16 16"><path d="M3 4.5h10M3 8h6M3 11.5h8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+          </span>
+          <span>Bencho / Components</span>
+        </div>
+        <span class="license">MIT licensed</span>
+      </header>
+
+      <main>
+        <section class="intro" aria-labelledby="title">
+          <p class="eyebrow">数字组件 · 01</p>
+          <h1 id="title">计件器</h1>
+          <p class="lede">每个数字都像里程表一样独立滚动，进位时从个位开始依次落位。</p>
+        </section>
+
+        <section class="stage" aria-label="计件器预览">
+          <div>
+            <div
+              class="rct"
+              data-stroke="on"
+              style="--rct-r: 16px; --rct-in: 11px; --rct-cell: 46px;"
+            >
+              <button type="button" class="rct-btn" data-dir="-1" aria-label="减少">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" /></svg>
+              </button>
+
+              <div
+                class="rct-num"
+                role="spinbutton"
+                aria-valuenow="95"
+                aria-valuemin="0"
+                aria-valuemax="99999"
+                aria-label="计数。上下拖动数字以改变数值。"
+                tabindex="0"
+              >
+                <span class="rct-pair">
+                  <span class="rct-col" data-place="4"><span class="rct-strip"></span></span>
+                </span>
+                <span class="rct-pair">
+                  <span class="rct-col" data-place="3"><span class="rct-strip"></span></span>
+                  <span class="rct-sep">,</span>
+                </span>
+                <span class="rct-pair"><span class="rct-col" data-place="2"><span class="rct-strip"></span></span></span>
+                <span class="rct-pair"><span class="rct-col" data-place="1"><span class="rct-strip"></span></span></span>
+                <span class="rct-pair"><span class="rct-col" data-place="0"><span class="rct-strip"></span></span></span>
+              </div>
+
+              <button type="button" class="rct-btn" data-dir="1" aria-label="增加">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" /></svg>
+              </button>
+            </div>
+            <p class="stage-note">点击、按住，或上下拖动数字</p>
+          </div>
+        </section>
+
+        <section class="control-panel" aria-label="动画参数">
+          <div class="control">
+            <div class="control-head"><label for="bounce">弹性</label><output id="bounce-output">45</output></div>
+            <input id="bounce" type="range" min="0" max="100" value="45" />
+          </div>
+          <div class="control">
+            <div class="control-head"><label for="stagger">错位</label><output id="stagger-output">45 ms</output></div>
+            <input id="stagger" type="range" min="0" max="120" value="45" />
+          </div>
+          <div class="control">
+            <div class="control-head"><label for="blur">滚动模糊</label><output id="blur-output">50</output></div>
+            <input id="blur" type="range" min="0" max="100" value="50" />
+          </div>
+        </section>
+
+        <div class="shape-control">
+          <span class="shape-label">外框圆角</span>
+          <div class="segmented" role="group" aria-label="外框圆角">
+            <button type="button" data-corner="10" aria-pressed="false">柔和</button>
+            <button type="button" data-corner="16" aria-pressed="true">圆润</button>
+            <button type="button" data-corner="28" aria-pressed="false">胶囊</button>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <span>BENCHO · INTERACTION STUDY</span>
+        <span>Preview</span>
+      </footer>
+    </div>
+
+    <script>
+      (() => {
+        /* ── inlined from lab/spring ─────────────────────────
+           One spring per column. Frames, not milliseconds: the
+           damping is raised to dt so a dropped frame decays the
+           same amount of energy as the frames it replaced. */
+        const CELL = 46;
+        const PX = 12;
+        const PAD = 5;
+        const PLACES = 5;
+        const MAX = 10 ** PLACES - 1;
+        const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+        const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
+        const root = document.querySelector(".rct");
+        const number = root.querySelector(".rct-num");
+        const buttons = [...root.querySelectorAll(".rct-btn")];
+        const columns = [...root.querySelectorAll(".rct-col")].sort((a, b) => Number(a.dataset.place) - Number(b.dataset.place));
+        const strips = columns.map((column) => {
+          const strip = column.querySelector(".rct-strip");
+          strip.replaceChildren(...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((digit) => {
+            const cell = document.createElement("span");
+            cell.textContent = digit;
+            return cell;
+          }));
+          return strip;
+        });
+
+        let value = 95;
+        let raf = 0;
+        let fling = 0;
+        let knobs = { bounce: 45, stagger: 45, blur: 50 };
+        const cols = Array.from({ length: PLACES }, (_, place) => {
+          const digitCount = Math.floor(value / 10 ** place);
+          return { pos: digitCount, vel: 0, target: digitCount, due: [], next: [] };
+        });
+
+        const springOf = (tune) => ({
+          /* stiffness: how hard it is pulled toward the target */
+          k: 0.08 + (tune / 100) * 0.16,
+          /* decay, per frame: how much of the velocity survives */
+          d: 0.62 + (tune / 100) * 0.2,
+        });
+
+        const paint = () => {
+          cols.forEach((column, place) => {
+            const modulo = ((column.pos % 10) + 10) % 10;
+            const smear = Math.min(3, Math.abs(column.vel) * 2.4) * (knobs.blur / 50);
+            strips[place].style.transform = `translateY(${-modulo * CELL}px)`;
+            strips[place].style.filter = smear > 0.15 ? `blur(${smear.toFixed(2)}px)` : "";
+          });
+        };
+
+        const updateVisibleColumns = () => {
+          const shown = Math.max(1, String(value).length);
+          columns.forEach((column) => {
+            column.toggleAttribute("data-on", Number(column.dataset.place) < shown);
+          });
+          root.querySelector(".rct-sep").toggleAttribute("data-on", shown > 3);
+          number.setAttribute("aria-valuenow", String(value));
+        };
+
+        const run = () => {
+          if (raf) return;
+          let previous = 0;
+          const tick = (time) => {
+            const dt = previous ? clamp((time - previous) / 16.67, 0, 2.5) : 1;
+            previous = time;
+            const { k, d } = springOf(knobs.bounce);
+            const now = performance.now();
+            let busy = false;
+
+            for (const column of cols) {
+              /* Targets that have waited their turn. */
+              while (column.due.length && column.due[0] <= now) {
+                column.due.shift();
+                column.target = column.next.shift();
+              }
+              if (column.due.length) busy = true;
+
+              /* A far-away column jumps most of the way in whole
+                 turns first, so a flick never spins the ones column
+                 for a second. */
+              const gap = column.target - column.pos;
+              if (Math.abs(gap) > 24) column.pos += Math.round((gap - Math.sign(gap) * 24) / 10) * 10;
+              column.vel += (column.target - column.pos) * k * dt;
+              column.vel *= Math.pow(d, dt);
+              column.pos += column.vel * dt;
+
+              if (Math.abs(column.target - column.pos) < 0.004 && Math.abs(column.vel) < 0.004) {
+                column.pos = column.target;
+                column.vel = 0;
+              } else {
+                busy = true;
+              }
+            }
+
+            paint();
+            raf = busy ? requestAnimationFrame(tick) : 0;
+          };
+          raf = requestAnimationFrame(tick);
+        };
+
+        const bump = (amount) => {
+          const next = clamp(value + amount, 0, MAX);
+          if (next === value) return;
+          value = next;
+          updateVisibleColumns();
+          const now = performance.now();
+
+          cols.forEach((column, place) => {
+            const target = Math.floor(value / 10 ** place);
+            if (still) {
+              column.pos = column.target = target;
+              column.vel = 0;
+              column.due = [];
+              column.next = [];
+              return;
+            }
+            column.due.push(now + place * knobs.stagger);
+            column.next.push(target);
+          });
+
+          if (still) paint();
+          else run();
+        };
+
+        /* ── holding a button ───────────────────────────────
+           A press starts one step. Holding it repeats, then switches
+           to tens after a second and a half. */
+        const hold = { timer: 0, since: 0 };
+        const release = () => {
+          clearTimeout(hold.timer);
+          hold.timer = 0;
+        };
+        const press = (direction) => {
+          release();
+          bump(direction);
+          hold.since = performance.now();
+          const repeat = () => {
+            const elapsed = performance.now() - hold.since;
+            bump(direction * (elapsed > 1500 ? 10 : 1));
+            hold.timer = window.setTimeout(repeat, elapsed > 900 ? 55 : 90);
+          };
+          hold.timer = window.setTimeout(repeat, 380);
+        };
+
+        buttons.forEach((button) => {
+          const direction = Number(button.dataset.dir);
+          button.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+            press(direction);
+          });
+          ["pointerup", "pointerleave", "pointercancel"].forEach((eventName) => button.addEventListener(eventName, release));
+          button.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              bump(direction);
+            }
+          });
+        });
+
+        /* ── taking the number itself ────────────────────────
+           Drag up for more, down for less. Release while moving
+           and the accumulated velocity carries the number onward. */
+        let drag = null;
+        const steps = (accumulator) => {
+          const stepCount = accumulator > 0 ? Math.floor(accumulator / PX) : Math.ceil(accumulator / PX);
+          if (stepCount) bump(stepCount);
+          return accumulator - stepCount * PX;
+        };
+
+        number.addEventListener("pointerdown", (event) => {
+          cancelAnimationFrame(fling);
+          try { number.setPointerCapture(event.pointerId); } catch { /* scripted pointer */ }
+          drag = { y: event.clientY, acc: 0, velocity: 0, time: performance.now() };
+        });
+
+        number.addEventListener("pointermove", (event) => {
+          if (!drag) return;
+          const now = performance.now();
+          const deltaY = drag.y - event.clientY;
+          drag.y = event.clientY;
+          const deltaTime = Math.max(1, now - drag.time);
+          drag.time = now;
+          drag.velocity = drag.velocity * 0.6 + (deltaY / deltaTime) * 0.4;
+          drag.acc = steps(drag.acc + deltaY);
+        });
+
+        const endDrag = (event) => {
+          const current = drag;
+          drag = null;
+          try { number.releasePointerCapture(event.pointerId); } catch { /* never captured */ }
+          if (!current || still) return;
+          let velocity = performance.now() - current.time > 90 ? 0 : current.velocity * 16.67;
+          if (Math.abs(velocity) < 2) return;
+          let accumulator = current.acc;
+          const coast = () => {
+            accumulator = steps(accumulator + velocity);
+            velocity *= 0.94;
+            if (Math.abs(velocity) > 0.4) fling = requestAnimationFrame(coast);
+          };
+          fling = requestAnimationFrame(coast);
+        };
+
+        number.addEventListener("pointerup", endDrag);
+        number.addEventListener("pointercancel", endDrag);
+        number.addEventListener("keydown", (event) => {
+          if (event.key === "ArrowUp") { event.preventDefault(); bump(1); }
+          if (event.key === "ArrowDown") { event.preventDefault(); bump(-1); }
+        });
+
+        /* The preview exposes the component's tuning knobs. */
+        const controls = {
+          bounce: document.querySelector("#bounce"),
+          stagger: document.querySelector("#stagger"),
+          blur: document.querySelector("#blur"),
+        };
+        const outputs = {
+          bounce: document.querySelector("#bounce-output"),
+          stagger: document.querySelector("#stagger-output"),
+          blur: document.querySelector("#blur-output"),
+        };
+        Object.entries(controls).forEach(([name, input]) => {
+          input.addEventListener("input", () => {
+            knobs[name] = Number(input.value);
+            outputs[name].textContent = name === "stagger" ? `${input.value} ms` : input.value;
+            if (name === "blur") paint();
+          });
+        });
+
+        document.querySelectorAll("[data-corner]").forEach((button) => {
+          button.addEventListener("click", () => {
+            const corner = Number(button.dataset.corner);
+            root.style.setProperty("--rct-r", `${corner}px`);
+            root.style.setProperty("--rct-in", `${Math.max(0, corner - PAD)}px`);
+            document.querySelectorAll("[data-corner]").forEach((item) => {
+              item.setAttribute("aria-pressed", String(item === button));
+            });
+          });
+        });
+
+        updateVisibleColumns();
+        paint();
+        window.addEventListener("pagehide", () => {
+          release();
+          cancelAnimationFrame(raf);
+          cancelAnimationFrame(fling);
+        });
+      })();
+    </script>
+  </body>
+</html>

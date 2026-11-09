@@ -1,0 +1,4 @@
+/* Keep the static Hero readable when JavaScript is disabled. */
+[data-home-hero-text-pending] {
+    visibility: visible;
+}

@@ -1,0 +1,150 @@
+--- a/services/kc-pay-gpt/mysql-store.js
++++ b/services/kc-pay-gpt/mysql-store.js
+@@ -3015,14 +3015,34 @@
+     });
+ }
+ 
++// A non-locking read only locates the CDK. Authorization always uses the fresh
++// task read after locking that CDK, matching admission and local settlement.
++// If the binding changes, abort instead of acquiring a second CDK out of order.
++async function lockActivationTaskCdkFirst(connection, jobKey) {
++    const key = String(jobKey);
++    const hints = await runQuery('SELECT * FROM task_logs WHERE job_key = ? LIMIT 1', [key], { connection });
++    const hint = hints[0];
++    if (!hint) return { task: null, cdk: null };
++    if (hint.job_key !== key) {
++        throw activationAdmissionError('ACTIVATION_TASK_BINDING_CHANGED', '充值任务归属已变更，请重新核验', 409);
++    }
++    const cdkCode = hint.cdk_code;
++    const cdks = cdkCode
++        ? await runQuery('SELECT * FROM cdk_codes WHERE cdk_code = ? LIMIT 1 FOR UPDATE', [cdkCode], { connection }) : [];
++    const tasks = await runQuery('SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE', [key], { connection });
++    const task = tasks[0];
++    if (task && (task.job_key !== key || task.id !== hint.id || task.cdk_code !== cdkCode)) {
++        throw activationAdmissionError('ACTIVATION_TASK_BINDING_CHANGED', '充值任务归属已变更，请重新核验', 409);
++    }
++    return { task: task || null, cdk: cdks[0] || null };
++}
++
+ // Only a current, provably safe task may return its own CDK. Provider evidence,
+ // unknown payment outcomes and newer task owners all require a retained lock.
+ async function retireSafeActivationTask(jobKey, { message = '任务未能启动，请稍后重试', allowDeclined = false } = {}) {
+     if (!jobKey) return { released: false, reason: 'TASK_MISSING' };
+     return withTransaction(async connection => {
+-        // Match the existing provider settlement lock order: task -> CDK -> owner.
+-        const tasks = await runQuery('SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE', [String(jobKey)], { connection });
+-        const task = tasks[0];
++        const { task, cdk } = await lockActivationTaskCdkFirst(connection, jobKey);
+         const safeState = task?.payment_state === 'not_started'
+             || (allowDeclined && task?.execution_mode === 'local_card_pool' && task?.payment_state === 'declined');
+         if (!task || !task.cdk_code || task.status !== 'running' || Number(task.recovery_required) !== 0 || !safeState
+@@ -3030,9 +3050,8 @@
+             || task.gpt_api_order_id != null || task.gpt_api_task_id != null || task.gpt_api_raw != null) {
+             return { released: false, reason: 'TASK_REQUIRES_REVIEW' };
+         }
+-        const cdks = await runQuery('SELECT * FROM cdk_codes WHERE cdk_code = ? LIMIT 1 FOR UPDATE', [task.cdk_code], { connection });
+         const owners = await runQuery('SELECT job_key FROM task_logs WHERE cdk_code = ? ORDER BY id DESC LIMIT 1 FOR UPDATE', [task.cdk_code], { connection });
+-        if (!cdks[0] || !cdks[0].used_at || Number(cdks[0].is_active) !== 1 || owners[0]?.job_key !== String(jobKey)
++        if (!cdk || !cdk.used_at || Number(cdk.is_active) !== 1 || owners[0]?.job_key !== String(jobKey)
+             || await getBlockingActivationTask(connection, task.cdk_code, jobKey)) {
+             return { released: false, reason: 'CDK_OWNER_MISMATCH' };
+         }
+@@ -3600,17 +3619,20 @@
+ }
+ 
+ /**
+- * 释放指定 ownerKey (通常为 jobKey) 持有的未完成卡片锁
++ * Local-worker cleanup accepts the original jobKey and only releases its
++ * canonical payment owner. Do not infer legacy/debug/provider ownership by
++ * substring, sanitizing or truncation; ambiguous locks require manual review.
+  */
+-async function releaseCardsByOwner(ownerKey) {
+-    if (!ownerKey) return 0;
++async function releaseCardsByOwner(jobKey) {
++    if (typeof jobKey !== 'string' || !/^[a-zA-Z0-9_-]{1,48}$/.test(jobKey)) return 0;
+     const res = await runExecute(
+         `UPDATE card_assets
+          SET in_use = 0,
+              locked_at = NULL,
+              locked_by = NULL
+-         WHERE in_use = 1 AND status = '正常' AND (locked_by = ? OR locked_by LIKE ?)`,
+-        [ownerKey, `%${ownerKey}%`]
++         WHERE in_use = 1 AND status = '正常'
++           AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)`,
++        [`payment_${jobKey}`]
+     );
+     return Number(res?.affectedRows || 0);
+ }
+@@ -4276,12 +4298,11 @@
+ }
+ 
+ async function lockGptApiTask(connection, jobKey, { allowLegacy = false } = {}) {
+-    const [rows] = await connection.query('SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE', [String(jobKey)]);
+-    const task = rows[0];
++    const { task, cdk } = await lockActivationTaskCdkFirst(connection, jobKey);
+     if (!task || (task.execution_mode !== 'third_party_api' && !(allowLegacy && (task.gpt_api_order_id || task.gpt_api_task_id)))) {
+         throw gptApiStoreError('GPT_API_TASK_INVALID', '外包充值任务不存在或模式不一致');
+     }
+-    return task;
++    return { task, cdk };
+ }
+ 
+ async function writeGptApiEnvelope(connection, jobKey, attempt, lastResponse) {
+@@ -4314,7 +4335,7 @@
+ 
+ async function saveGptApiAttempt(jobKey, patch = {}) {
+     return withTransaction(async (connection) => {
+-        const task = await lockGptApiTask(connection, jobKey);
++        const { task } = await lockGptApiTask(connection, jobKey);
+         const envelope = parseGptApiEnvelope(task.gpt_api_raw);
+         const attempt = mergeGptApiAttempt(envelope.attempt, patch, jobKey);
+         await writeGptApiEnvelope(connection, jobKey, attempt, patch.lastResponse === undefined ? envelope.lastResponse : patch.lastResponse);
+@@ -4324,22 +4345,18 @@
+ 
+ async function reserveGptApiCard(jobKey, attemptPatch = {}) {
+     return withTransaction(async (connection) => {
+-        const task = await lockGptApiTask(connection, jobKey);
++        const { task, cdk } = await lockGptApiTask(connection, jobKey);
+         const envelope = parseGptApiEnvelope(task.gpt_api_raw);
+         const attempt = mergeGptApiAttempt(envelope.attempt, attemptPatch, jobKey);
+         if (attempt.dispatchStarted || GPT_API_FINAL_OUTCOMES.has(attempt.settlement)) {
+             throw gptApiStoreError('GPT_API_ALREADY_DISPATCHED', '订单已派发或结算，不能重新取卡');
+         }
+-        const [cdkRows] = await connection.query(
+-            'SELECT cdk_code, used_at FROM cdk_codes WHERE cdk_code = ? AND is_active = 1 FOR UPDATE',
+-            [task.cdk_code]
+-        );
+         const [ownerRows] = await connection.query(
+             `SELECT job_key FROM task_logs WHERE cdk_code = ?
+              ORDER BY id DESC LIMIT 1 FOR UPDATE`,
+             [task.cdk_code]
+         );
+-        if (!cdkRows.length || !cdkRows[0].used_at || ownerRows[0]?.job_key !== String(jobKey)) {
++        if (!cdk || Number(cdk.is_active) !== 1 || !cdk.used_at || ownerRows[0]?.job_key !== String(jobKey)) {
+             throw gptApiStoreError('GPT_API_CDK_OWNER_MISMATCH', 'CDK 已被其他任务占用，已停止取卡');
+         }
+         const owner = `gptapi_${jobKey}`;
+@@ -4369,7 +4386,7 @@
+ async function finalizeGptApiAttempt(jobKey, { outcome, record = {}, message = '', paymentState } = {}) {
+     if (!['success', 'no_charge', 'hold'].includes(outcome)) throw gptApiStoreError('GPT_API_OUTCOME_INVALID', '外包结算状态无效');
+     return withTransaction(async (connection) => {
+-        const task = await lockGptApiTask(connection, jobKey, { allowLegacy: outcome === 'hold' });
++        const { task, cdk } = await lockGptApiTask(connection, jobKey, { allowLegacy: outcome === 'hold' });
+         const envelope = parseGptApiEnvelope(task.gpt_api_raw);
+         const previous = envelope.attempt;
+         if (GPT_API_FINAL_OUTCOMES.has(previous?.settlement)) {
+@@ -4379,11 +4396,10 @@
+         const attempt = mergeGptApiAttempt(previous, record, jobKey);
+         let guardCode = '';
+         let card = null;
+-        // Lock the CDK row before checking its latest task owner. A late old
+-        // response cannot roll back a new task that has already claimed it.
+-        const [cdks] = await connection.query('SELECT * FROM cdk_codes WHERE cdk_code = ? LIMIT 1 FOR UPDATE', [task.cdk_code]);
++        // CDK and task are already locked in admission order. A late response
++        // may not release resources held by a newer task.
+         const [owners] = await connection.query('SELECT job_key FROM task_logs WHERE cdk_code = ? ORDER BY id DESC LIMIT 1 FOR UPDATE', [task.cdk_code]);
+-        if (!cdks.length || owners[0]?.job_key !== String(jobKey)) guardCode = 'GPT_API_CDK_OWNER_MISMATCH';
++        if (!cdk || owners[0]?.job_key !== String(jobKey)) guardCode = 'GPT_API_CDK_OWNER_MISMATCH';
+         if (attempt.cardAssetId) {
+             const [cards] = await connection.query('SELECT * FROM card_assets WHERE id = ? LIMIT 1 FOR UPDATE', [attempt.cardAssetId]);
+             card = cards[0];

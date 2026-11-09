@@ -1,0 +1,117 @@
+--- a/services/kc-pay-gpt/mysql-store.js
++++ b/services/kc-pay-gpt/mysql-store.js
+@@ -14,6 +14,7 @@
+ const { encryptSessionPayload, decryptSessionPayload, fingerprintSessionPayload, redactSensitiveText } = require('./session-security');
+ 
+ const { sealCredential, openCredential } = require('./credential-security');
++const { normalizePaymentState, mergePaymentState, shouldRetainCdk } = require('./task-safety');
+ 
+ const DB_HOST = process.env.DB_HOST || '127.0.0.1';
+ const DB_PORT = Number(process.env.DB_PORT || 3306);
+@@ -122,7 +123,9 @@
+         await connection.commit();
+         return result;
+     } catch (error) {
+-        await connection.rollback();
++        // A disconnect can also make ROLLBACK fail. Preserve the original
++        // write/COMMIT error; neither outcome authorizes a separate unlock.
++        try { await connection.rollback(); } catch (_) { /* original error wins */ }
+         throw error;
+     } finally {
+         connection.release();
+@@ -3108,12 +3111,12 @@
+     gptApiOrderId, gptApiTaskId, gptApiRaw, gptApiTopupCode, autoRenewStatus,
+     executionMode,
+     autoRenewMessage, paymentState, recoveryRequired
+-}) {
++}, options = {}) {
+     const screenshotsJson = Array.isArray(failureScreenshots)
+         ? JSON.stringify(failureScreenshots)
+         : null;
+-    const terminal = ['success', 'failed', 'manual', 'maintenance', 'cancelled'].includes(String(status));
+-    await runExecute(
++    const terminal = options.terminal ?? ['success', 'failed', 'manual', 'maintenance', 'cancelled'].includes(String(status));
++    return runExecute(
+         `UPDATE task_logs
+          SET status = ?,
+              message = COALESCE(?, message),
+@@ -3155,8 +3158,69 @@
+             recoveryRequired == null ? null : (recoveryRequired ? 1 : 0),
+             terminal ? 1 : 0,
+             String(jobKey)
+-        ]
+-    );
++        ],
++        options
++    );
++}
++
++// Ordinary worker updates are bound to the current local task owner. Keep the
++// result, Session deletion and any safe CDK return on one connection/COMMIT.
++// An uncertain COMMIT must propagate; callers may not compensate by CDK alone.
++async function updateLocalActivationTask(jobKey, input = {}, { finalize = false, annotate = false } = {}) {
++    const key = String(jobKey || '');
++    const cdkCode = String(input.cdkCode || '');
++    if (!key || !cdkCode || (finalize && annotate)) return { applied: false, released: false, reason: 'INVALID_INPUT' };
++    return withTransaction(async connection => {
++        // Match admission: CDK -> task -> latest owner -> other blockers.
++        const cdks = await runQuery('SELECT * FROM cdk_codes WHERE cdk_code = ? LIMIT 1 FOR UPDATE', [cdkCode], { connection });
++        const tasks = await runQuery('SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE', [key], { connection });
++        const row = tasks[0];
++        if (!row || row.cdk_code !== cdkCode || row.execution_mode !== 'local_card_pool'
++            || row.gpt_api_order_id != null || row.gpt_api_task_id != null || row.gpt_api_raw != null
++            || !cdks[0]?.used_at || Number(cdks[0].is_active) !== 1) {
++            return { applied: false, released: false, reason: 'LOCAL_TASK_REQUIRES_REVIEW' };
++        }
++        const owners = await runQuery('SELECT job_key FROM task_logs WHERE cdk_code = ? ORDER BY id DESC LIMIT 1 FOR UPDATE', [cdkCode], { connection });
++        if (owners[0]?.job_key !== key) return { applied: false, released: false, reason: 'CDK_OWNER_MISMATCH' };
++        if (annotate) {
++            // Only the successful task may record its post-payment auto-renew
++            // result. This path never returns a CDK or reopens a finished task.
++            if (!row.finished_at || !['success', 'manual'].includes(row.status) || row.payment_state !== 'succeeded'
++                || !['success', 'manual'].includes(input.status) || input.paymentState !== 'succeeded') {
++                return { applied: false, released: false, reason: 'ANNOTATION_REFUSED' };
++            }
++        } else if (row.finished_at || !['running', 'manual'].includes(row.status)
++            || !(finalize ? ['success', 'failed', 'manual'] : ['running', 'manual']).includes(input.status)) {
++            return { applied: false, released: false, reason: 'TASK_ALREADY_SETTLED_OR_INVALID' };
++        }
++        const paymentState = mergePaymentState(row.payment_state,
++            Object.prototype.hasOwnProperty.call(input, 'paymentState') ? normalizePaymentState(input.paymentState) : row.payment_state);
++        const confirmedSuccess = (finalize || annotate) && input.status === 'success' && paymentState === 'succeeded';
++        const retain = shouldRetainCdk({ paymentState }) || Boolean(row.recovery_required) || Boolean(input.recoveryRequired);
++        const recoveryRequired = confirmedSuccess ? false : retain || input.status === 'success';
++        const status = annotate ? input.status : (recoveryRequired ? 'manual' : input.status);
++        const released = finalize && status === 'failed' && !recoveryRequired;
++        if (released && await getBlockingActivationTask(connection, cdkCode, key)) {
++            return { applied: false, released: false, reason: 'OTHER_TASK_REQUIRES_REVIEW' };
++        }
++        const message = status === 'manual' && input.status !== 'manual'
++            ? '支付结果或任务状态需人工复核，已保留 CDK 与银行卡' : input.message;
++        const updated = await updateTaskLog(key, {
++            status, message, cdkCode, paymentState, recoveryRequired,
++            rawOutput: input.rawOutput, progress: input.progress, phone: input.phone, cardLast4: input.cardLast4,
++            failureScreenshots: input.failureScreenshots, autoRenewStatus: input.autoRenewStatus, autoRenewMessage: input.autoRenewMessage
++        }, { connection, terminal: finalize || annotate });
++        if (updated.affectedRows !== 1) throw activationAdmissionError('LOCAL_SETTLEMENT_CONFLICT', '充值任务状态已变更', 409);
++        if (finalize) {
++            const cleared = await runExecute('UPDATE task_logs SET session_payload = NULL, session_payload_encrypted = NULL WHERE job_key = ?', [key], { connection });
++            if (cleared.affectedRows !== 1) throw activationAdmissionError('LOCAL_SESSION_CONFLICT', '充值任务凭证清理未确认', 409);
++        }
++        if (released) {
++            const returned = await runExecute('UPDATE cdk_codes SET used_at = NULL WHERE cdk_code = ? AND used_at IS NOT NULL AND is_active = 1', [cdkCode], { connection });
++            if (returned.affectedRows !== 1) throw activationAdmissionError('LOCAL_RELEASE_CONFLICT', '充值卡密归属已变更', 409);
++        }
++        return { applied: true, released, status, paymentState, recoveryRequired, message };
++    });
+ }
+ 
+ async function listStaleRunningTasks(maxAgeMs = 15 * 60 * 1000) {
+@@ -4501,6 +4565,7 @@
+     getTaskStatus,
+     getRunningTaskByCdk,
+     updateTaskLog,
++    updateLocalActivationTask,
+     listRecentGptApiOrders,
+     listProducts,
+     addProduct,

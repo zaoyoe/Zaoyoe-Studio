@@ -413,7 +413,7 @@ class ChatGPTService {
 
         // 委托 payment-retry.js 处理完整的支付重试逻辑
         // 包含：地区配置获取、免税地址选取、卡池分配、表单填写、重试换卡、账单记录
-        const result = await executePaymentWithRetry(page, { planType, cdkCode, email, ownerKey: process.env.JOB_KEY || cdkCode || undefined });
+        const result = await executePaymentWithRetry(page, { planType, cdkCode, email, ownerKey: process.env.JOB_KEY || undefined });
 
         if (result.success) {
             console.log(`✅ [ChatGPT] 支付成功！`);
@@ -507,7 +507,7 @@ async function activateSubscription({ page, accessToken, planType, cdkCode, emai
     notify('Checkout 页面已打开，开始信用卡支付...');
 
     // Step 4: Execute payment with card pool retry logic
-    const result = await executePaymentWithRetry(page, { planType, cdkCode, email, ownerKey: process.env.JOB_KEY || cdkCode || undefined });
+    const result = await executePaymentWithRetry(page, { planType, cdkCode, email, ownerKey: process.env.JOB_KEY || undefined });
 
     if (result.success) {
         notify('支付成功！');

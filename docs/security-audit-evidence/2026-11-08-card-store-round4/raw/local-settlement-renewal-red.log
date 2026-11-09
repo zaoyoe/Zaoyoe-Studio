@@ -1,0 +1,162 @@
+
+ RUN  v4.1.9 /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt
+
+ ❯ test/recharge-routing.test.js (67 tests | 2 failed) 416ms
+     ✓ 'grok' uses only its own credential checks and execution mode 13ms
+     ✓ 'claude' uses only its own credential checks and execution mode 3ms
+     ✓ 'chatgpt' uses only its own credential checks and execution mode 3ms
+     ✓ preserves full ChatGPT Session JSON in local mode 4ms
+     ✓ fails closed before locking the CDK when the outsourced channel is enabled without an API key 5ms
+     ✓ rejects missing API key before creating an outsourced task or routing to local payment 5ms
+     ✓ rejects missing endpoint before creating an outsourced task or routing to local payment 3ms
+     ✓ rejects mismatched currency before creating an outsourced task or routing to local payment 4ms
+     ✓ rejects unmapped current plan before creating an outsourced task or routing to local payment 7ms
+     ✓ 'grok' does not depend on GPT supplier configuration 2ms
+     ✓ 'claude' does not depend on GPT supplier configuration 1ms
+     ✓ rejects wrong browser platform before locking any CDK 2ms
+     ✓ rejects profile JSON instead of login cookie before locking any CDK 2ms
+     ✓ rejects irrelevant cookie before locking any CDK 3ms
+     ✓ does not unlock an unrelated active CDK when its lookup fails 2ms
+     ✓ never unlocks by CDK when atomic admission fails or its commit outcome is unknown 5ms
+     ✓ records card-pool rejection for 'grok' without leaking internal instructions or starting a task 3ms
+     ✓ records card-pool rejection for 'claude' without leaking internal instructions or starting a task 7ms
+     ✓ records card-pool rejection for 'chatgpt' without leaking internal instructions or starting a task 2ms
+     ✓ records Claude credential rejection without logging the submitted credential 6ms
+     ✓ does not expose raw diagnostics when restoring an existing task 1ms
+     ✓ rejects a conflicting database platform and retired Grok plan before reserving assets 7ms
+     ✓ rejects a cooled-down local ChatGPT Session before locking its CDK 2ms
+     ✓ does not apply the local Session cooldown to third-party ChatGPT checkout 3ms
+     ✓ 'grok' reaches the matching payment adapter with its exact CDK plan 164ms
+     ✓ 'claude' reaches the matching payment adapter with its exact CDK plan 5ms
+     ✓ 'chatgpt' reaches the matching payment adapter with its exact CDK plan 1ms
+     ✓ falls back to UI Checkout when API checkout fails in CHECKOUT_MODE=api 9ms
+     ✓ falls back to UI Checkout when API checkout fails in CHECKOUT_MODE=auto 4ms
+     ✓ falls back to UI Checkout when API checkout fails in CHECKOUT_MODE=hybrid 3ms
+     ✓ uses protocol preparation and browser confirmation when FAST_PROTOCOL_ENABLED=false 7ms
+     ✓ uses protocol preparation and browser confirmation when FAST_PROTOCOL_ENABLED=0 3ms
+     ✓ keeps explicit hybrid confirmation in the browser even when fast protocol is enabled 4ms
+     ✓ keeps successful protocol preparation free of browser work in pure protocol mode 2ms
+     ✓ stops pure protocol API failure before browser or payment 3ms
+     ✓ stops when required pure protocol capabilities are unavailable 3ms
+     ✓ stops hybrid preparation failure without payment or browser fallback: {"protocolSessionOk":false} 3ms
+     ✓ stops hybrid preparation failure without payment or browser fallback: {"protocolRegionOk":false} 1ms
+     ✓ stops hybrid API CHECKOUT_UNUSUAL_ACTIVITY without UI fallback 6ms
+     ✓ stops hybrid API ACCOUNT_ALREADY_SUBSCRIBED without UI fallback 2ms
+     ✓ stops hybrid API CHECKOUT_AUTH_ERROR without UI fallback 3ms
+     ✓ keeps real recharge directly on UI Checkout when CHECKOUT_MODE=ui 3ms
+     ✓ stops a tampered task plan before installing credentials or opening checkout 2ms
+     ✓ does not open checkout when official Grok authentication rejects the cookie 1ms
+     ✓ dispatches Grok raw cookies and clears inherited GPT credentials 6ms
+     ✓ retains started even when saving the state fails 2ms
+     ✓ retains unknown even when saving the state fails 1ms
+     ✓ retains succeeded even when saving the state fails 3ms
+     ✓ cools a ChatGPT Session after unusual activity only before payment starts 8ms
+     ✓ does not set Session cooldown for another platform 5ms
+     ✓ does not set Session cooldown for third-party API mode 1ms
+     ✓ does not set Session cooldown for payment already started 1ms
+     ✓ does not set Session cooldown for ordinary checkout failure 2ms
+     ✓ retains assets after a transient persistence failure and only reports the saved manual result 3ms
+     ✓ stops refused settlement without a fallback unlock or completion notice: {"refuseAt":1} 2ms
+     ✓ stops refused settlement without a fallback unlock or completion notice: {"refuseFinal":true} 2ms
+     ✓ retains assets after a rejected final write and only reports a confirmed manual settlement 4ms
+     ✓ does not compensate or report completion when the final commit response is lost 1ms
+     ✓ uses persisted stronger evidence when the worker fails before payment 1ms
+     ✓ serializes unawaited stdout callbacks before finalization and does not downgrade payment evidence 2ms
+     ✓ preserves a started marker even when a single output chunk ends with declined 2ms
+     ✓ retains assets when legacy output reports an unknown payment without a state marker 3ms
+     ✓ accepts affirmative success after an earlier legacy unknown-payment message 3ms
+     × reports affirmative success only after settlement and safely annotates auto-renew confirmation 14ms
+     × does not unlock or send a success notice when saving the auto-renew result fails 14ms
+     ✓ keeps payment completed when auto-renew needs review 4ms
+     ✓ closes the context with recording disabled and continues cleanup after close failure 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/recharge-routing.test.js > server dispatch and interruption preserve payment resources > reports affirmative success only after settlement and safely annotates auto-renew confirmation
+AssertionError: expected 8 to be greater than 10
+ ❯ test/recharge-routing.test.js:531:109
+    529|         const renewalSaved = h.events.findIndex(event => event.type ==…
+    530|         expect(renewalSaved).toBeGreaterThan(saved);
+    531|         expect(h.events.findIndex(event => event.type === 'broadcast' …
+       |                                                                                                             ^
+    532|         expect(h.events[saved].result).toMatchObject({ status: 'manual…
+    533|         expect(h.events[renewalSaved].result).toMatchObject({ status: …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/recharge-routing.test.js > server dispatch and interruption preserve payment resources > does not unlock or send a success notice when saving the auto-renew result fails
+AssertionError: expected "vi.fn()" to not be called with arguments: [ 'fixture-job', ObjectContaining{…} ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+    "fixture-job",
+-   ObjectContaining {
+-     "status": "success",
++   {
++     "cdkCode": "OFFLINE-CDK",
++     "jobKey": "fixture-job",
++     "message": "正在进行第 1 次尝试...",
++     "progress": 8,
++     "status": "running",
++     "type": "progress",
+    },
+  ]
+
+  2nd vi.fn() call:
+
+  [
+    "fixture-job",
+-   ObjectContaining {
+-     "status": "success",
++   {
++     "cardLast4": null,
++     "cdkCode": "OFFLINE-CDK",
++     "jobKey": "fixture-job",
++     "message": "支付结果或任务状态需人工复核，已保留 CDK 与银行卡",
++     "progress": 10,
++     "status": "manual",
++     "type": "progress",
+    },
+  ]
+
+  3rd vi.fn() call:
+
+  [
+    "fixture-job",
+-   ObjectContaining {
++   {
++     "cdkCode": "OFFLINE-CDK",
++     "jobKey": "fixture-job",
++     "message": "offline fixture",
++     "paymentState": "succeeded",
++     "progress": 100,
++     "recoveryRequired": false,
++     "screenshots": [],
+      "status": "success",
++     "type": "status",
++     "videos": [],
+    },
+  ]
+
+
+Number of calls: 3
+
+ ❯ test/recharge-routing.test.js:546:47
+    544|             expect.objectContaining({ status: 'success', paymentState:…
+    545|         expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
+    546|         expect(h.sandbox.broadcastToTask).not.toHaveBeenCalledWith('fi…
+       |                                               ^
+    547|         const lastSaved = h.events.filter(event => event.type === 'sav…
+    548|         expect(lastSaved.result).toMatchObject({ status: 'manual', pay…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 65 passed (67)
+   Start at  20:25:19
+   Duration  1.38s (transform 281ms, setup 0ms, import 543ms, tests 416ms, environment 0ms)
+

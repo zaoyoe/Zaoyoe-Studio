@@ -1,0 +1,77 @@
+{
+  "scope": "Limited shape scan of copied logs, not a proof that every secret format is absent.",
+  "results": [
+    {
+      "path": "raw/owner-locks-initial-interrupted.tap",
+      "pattern_counts": {
+        "userinfo_url": 0,
+        "jwt": 0,
+        "private_key": 0
+      }
+    },
+    {
+      "path": "raw/owner-locks-before-37.tap",
+      "pattern_counts": {
+        "userinfo_url": 0,
+        "jwt": 0,
+        "private_key": 0
+      }
+    },
+    {
+      "path": "raw/owner-locks-after-37.tap",
+      "pattern_counts": {
+        "userinfo_url": 0,
+        "jwt": 0,
+        "private_key": 0
+      }
+    },
+    {
+      "path": "raw/native-regression-144.tap",
+      "pattern_counts": {
+        "userinfo_url": 0,
+        "jwt": 0,
+        "private_key": 0
+      }
+    },
+    {
+      "path": "raw/baseline-final-44.tap",
+      "pattern_counts": {
+        "userinfo_url": 0,
+        "jwt": 0,
+        "private_key": 0
+      }
+    },
+    {
+      "path": "raw/native-final-151.tap",
+      "pattern_counts": {
+        "userinfo_url": 0,
+        "jwt": 0,
+        "private_key": 0
+      }
+    },
+    {
+      "path": "raw/kc-regression-306.log",
+      "pattern_counts": {
+        "userinfo_url": 0,
+        "jwt": 0,
+        "private_key": 0
+      }
+    },
+    {
+      "path": "raw/kc-full.log",
+      "pattern_counts": {
+        "userinfo_url": 0,
+        "jwt": 0,
+        "private_key": 0
+      }
+    },
+    {
+      "path": "raw/ui-new-failures-rerun.log",
+      "pattern_counts": {
+        "userinfo_url": 0,
+        "jwt": 0,
+        "private_key": 0
+      }
+    }
+  ]
+}

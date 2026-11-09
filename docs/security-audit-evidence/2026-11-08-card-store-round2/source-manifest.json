@@ -1,0 +1,301 @@
+{
+  "archivedAt": "2026-11-08T10:30:21.287Z",
+  "root": "/Volumes/chao/AI/xianyu_profit_calculator",
+  "note": "Hashes describe current working-tree files. Runtime files can contain prior uncommitted work; this is not a round2-only diff or a clean release commit. Regression-only files are not claimed as round2 modifications.",
+  "files": [
+    {
+      "path": "api/_lib/payments/provider-adapters.js",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 68813,
+      "sha256": "93d048f94157d76799b137a7c3905335e9faa14c9657bf358bd162a21fdeded3",
+      "gitStatusAtArchive": "M api/_lib/payments/provider-adapters.js"
+    },
+    {
+      "path": "api/_lib/payments/zpay-amount.js",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 1404,
+      "sha256": "8e0220622395188d64fdcba2de5d4563949de921087a57e8b3ae74f8604bfb1c",
+      "gitStatusAtArchive": "?? api/_lib/payments/zpay-amount.js"
+    },
+    {
+      "path": "api/_lib/payments/zpay-webhook.js",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 29963,
+      "sha256": "06b008a94078f40a952d6f31e4c9d91fd956ae2969cc3d536e401b84e7409c5f",
+      "gitStatusAtArchive": "M api/_lib/payments/zpay-webhook.js"
+    },
+    {
+      "path": "js/admin-shop.js",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 1446015,
+      "sha256": "709bc627b5a3972f47f12feb4329a9a57270ee4b550313dd001328e0459c6ae7",
+      "gitStatusAtArchive": "M js/admin-shop.js"
+    },
+    {
+      "path": "server/api-handlers/admin/shop/_product-image-assets.js",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 6622,
+      "sha256": "45a91114aa46e79c548cf2fcb81957edacd15ceeba903aaf191c14b4fed89d1e",
+      "gitStatusAtArchive": "?? server/api-handlers/admin/shop/_product-image-assets.js"
+    },
+    {
+      "path": "server/api-handlers/admin/shop/_r2-media.js",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 6903,
+      "sha256": "7e3c009365dc99ad10080c6afe88ba2ea33b9cbfd6c0bd2b1486c9ca503d63c0",
+      "gitStatusAtArchive": "?? server/api-handlers/admin/shop/_r2-media.js"
+    },
+    {
+      "path": "server/api-handlers/admin/shop/_remote-media-security.js",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 6469,
+      "sha256": "fb611ea4fee11a285dd6f72335df55dc7ff73dcfc99d4f5bef0f5987995af777",
+      "gitStatusAtArchive": "?? server/api-handlers/admin/shop/_remote-media-security.js"
+    },
+    {
+      "path": "server/api-handlers/admin/shop/supplier-catalog.js",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 127004,
+      "sha256": "4e20c13f3562bec0516a5a06ab1e16723839a6acd3308aebd270824b300cda2f",
+      "gitStatusAtArchive": "M server/api-handlers/admin/shop/supplier-catalog.js"
+    },
+    {
+      "path": "services/kc-pay-gpt/.env.example",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 3928,
+      "sha256": "3b993bfb35707e040d3e061e74dc2559b975aea063c1251e2851caf0415d0727",
+      "gitStatusAtArchive": "M services/kc-pay-gpt/.env.example"
+    },
+    {
+      "path": "services/kc-pay-gpt/credential-security.js",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 3514,
+      "sha256": "3dde372f68b2e1b1d8a620781733a961787bb1008163ff90c4cc91242e224fcf",
+      "gitStatusAtArchive": "?? services/kc-pay-gpt/credential-security.js"
+    },
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 182966,
+      "sha256": "fa94509edeb320c5f8e6f99d0312d2037821066961cdf9ac2ebd45b1bb47dd6f",
+      "gitStatusAtArchive": "M services/kc-pay-gpt/mysql-store.js"
+    },
+    {
+      "path": "services/kc-pay-gpt/public-request-security.js",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 4350,
+      "sha256": "7094fb8341cfb058d94fd6012902422049c99199796c81807c8725a636222f33",
+      "gitStatusAtArchive": "?? services/kc-pay-gpt/public-request-security.js"
+    },
+    {
+      "path": "services/kc-pay-gpt/public/index.html",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 178473,
+      "sha256": "f5cd17fc547f43665e596f49cbcff9b2786664b537415b90650d0a13b72233df",
+      "gitStatusAtArchive": "M services/kc-pay-gpt/public/index.html"
+    },
+    {
+      "path": "services/kc-pay-gpt/server.js",
+      "role": "round2_runtime_or_sample_config",
+      "bytes": 220089,
+      "sha256": "119c7d6de78b7079fe730aef342d677cb378ad11ce8498ad2ce00fee16db0ddb",
+      "gitStatusAtArchive": "M services/kc-pay-gpt/server.js"
+    },
+    {
+      "path": "services/kc-pay-gpt/test/billing-form.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 35986,
+      "sha256": "46a55d7ec32f0a30f97eb3e1f8077073e3b5e9f55931ed558c353905fda3a18a",
+      "gitStatusAtArchive": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/test/claude-navigation.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 15949,
+      "sha256": "cc9d6143a725bd28b2ed66326a6c5d3e4307f6dc80f1ca69e9d567ec824ffaed",
+      "gitStatusAtArchive": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/test/claude-payment-flow.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 8118,
+      "sha256": "65bab7d687b68211374d8d98cbaaf5dafdff77fb4ac9d9828f29003c385e6046",
+      "gitStatusAtArchive": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/test/grok-native-flow.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 56036,
+      "sha256": "e6017f15cc8c1b28d87f6a37930d4a65f5699d8d04032712be8d7de3ca88b2e1",
+      "gitStatusAtArchive": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+      "role": "round2_test_or_fixture",
+      "bytes": 30948,
+      "sha256": "25b4fb536dbedf88ecce53e3f2fcc3f69e08af8856d65e226bd1a0c37c73ec1e",
+      "gitStatusAtArchive": "M services/kc-pay-gpt/test/recharge-routing.test.js"
+    },
+    {
+      "path": "tests/admin-shop-supplier-catalog-handler.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 71417,
+      "sha256": "8b369de31c0d60b70752c1beb34cbbabc4cbfc42db90eec579be0bbfc1681a62",
+      "gitStatusAtArchive": "M tests/admin-shop-supplier-catalog-handler.test.js"
+    },
+    {
+      "path": "tests/guest-shop-order-access-endpoints.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 63764,
+      "sha256": "ac2abfc93ce2b247578b38a3afa1669e1ba9078fbbcc4a533f7428f55d0c54c9",
+      "gitStatusAtArchive": ""
+    },
+    {
+      "path": "tests/guest-shop-payment-adapter.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 43973,
+      "sha256": "8367358c9a28b12fc732861de5c03571177842dac91bdd6f81b8ccec5385e0af",
+      "gitStatusAtArchive": "M tests/guest-shop-payment-adapter.test.js"
+    },
+    {
+      "path": "tests/guest-shop-security.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 17722,
+      "sha256": "f900fee2e7589b059181dc740fe4769b5bbc00493a3b68d0001149c0fa9a9885",
+      "gitStatusAtArchive": ""
+    },
+    {
+      "path": "tests/guest-shop-webhook.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 40526,
+      "sha256": "68719d7792bbf4e8b44ee1718d03c0877abdc584234868c3cbdd9d3bc95f3267",
+      "gitStatusAtArchive": "M tests/guest-shop-webhook.test.js"
+    },
+    {
+      "path": "tests/payment-public-zpay-webhook-endpoint.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 2926,
+      "sha256": "8a5b4d1deeb2d874a42f2145c41646730c30b0a77cce82135932205813c338fb",
+      "gitStatusAtArchive": ""
+    },
+    {
+      "path": "tests/payment-zpay-webhook-handler.test.js",
+      "role": "round2_test_or_fixture",
+      "bytes": 34402,
+      "sha256": "928e90cd3e06ce6c3d85594a24ed327e1cfee0f5b951ba25784056057e2f8d8c",
+      "gitStatusAtArchive": "M tests/payment-zpay-webhook-handler.test.js"
+    },
+    {
+      "path": "tests/provider-adapters-zpay-refund.test.js",
+      "role": "round2_test_or_fixture",
+      "bytes": 10041,
+      "sha256": "1e4447fc53225e8bbc11da1b55d76e0ce0913fb2ea3e5db08baab7bafceed4d3",
+      "gitStatusAtArchive": "M tests/provider-adapters-zpay-refund.test.js"
+    },
+    {
+      "path": "tests/security-round2-kc-activation.test.js",
+      "role": "round2_test_or_fixture",
+      "bytes": 12464,
+      "sha256": "9b639239765b1f786afbf65110ef51a25110860ed7b10b5ad43912bc123e71c0",
+      "gitStatusAtArchive": "?? tests/security-round2-kc-activation.test.js"
+    },
+    {
+      "path": "tests/security-round2-kc-credentials.test.js",
+      "role": "round2_test_or_fixture",
+      "bytes": 11238,
+      "sha256": "d83e88db72b8fa3e84828cfa5fd589856f1f81fc49ebfd7c2efac9fbd55c4b38",
+      "gitStatusAtArchive": "?? tests/security-round2-kc-credentials.test.js"
+    },
+    {
+      "path": "tests/security-round2-kc-public-guard.test.js",
+      "role": "round2_test_or_fixture",
+      "bytes": 4564,
+      "sha256": "a2e3f5ad5a1839b076a868e1de0c6e1293c6bb3f8405adfc7993647a421555c5",
+      "gitStatusAtArchive": "?? tests/security-round2-kc-public-guard.test.js"
+    },
+    {
+      "path": "tests/security-round2-media-download.test.js",
+      "role": "round2_test_or_fixture",
+      "bytes": 11480,
+      "sha256": "947ecbd64a5e511981f62cea13dddae8057945d62ee9f2a29f03431a3ce83be8",
+      "gitStatusAtArchive": "?? tests/security-round2-media-download.test.js"
+    },
+    {
+      "path": "tests/security-round2-supplier-rich-text.test.js",
+      "role": "round2_test_or_fixture",
+      "bytes": 5803,
+      "sha256": "587a61fce2c17e5a23e7062bfb313428e2c00a81f3f0d5ffceab646d0c6cde4c",
+      "gitStatusAtArchive": "?? tests/security-round2-supplier-rich-text.test.js"
+    },
+    {
+      "path": "tests/security-round2-zpay-amount.test.js",
+      "role": "round2_test_or_fixture",
+      "bytes": 2153,
+      "sha256": "70721055abb7b2538efc25feb177c49a76dc045a7d1eeb7cb1ee28fd3e9a825e",
+      "gitStatusAtArchive": "?? tests/security-round2-zpay-amount.test.js"
+    },
+    {
+      "path": "tests/shop-product-image-assets.test.js",
+      "role": "round2_test_or_fixture",
+      "bytes": 15762,
+      "sha256": "7f85a259cc067c9062f1be6f073b490c82a56896fd4e6e29c6f0745b0855f3f3",
+      "gitStatusAtArchive": "?? tests/shop-product-image-assets.test.js"
+    },
+    {
+      "path": "tests/shop-product-image-upload.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 5953,
+      "sha256": "593833b2466481867ba9873c9fe4140e15bc08a79d717460a24b411b64628474",
+      "gitStatusAtArchive": "?? tests/shop-product-image-upload.test.js"
+    },
+    {
+      "path": "tests/shop-supplier-media-r2-and-markup.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 12066,
+      "sha256": "fb3047da9c3434f6a4c635cc5ef173db9a08589f3c12f98bab9b38156e844891",
+      "gitStatusAtArchive": "?? tests/shop-supplier-media-r2-and-markup.test.js"
+    },
+    {
+      "path": "tests/tg-authenticated-payment-query-contract.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 2006,
+      "sha256": "9f5e57897c611d72aa262bf99ae99989a1b6a61c0dfeb33129d00d5e8aa02b51",
+      "gitStatusAtArchive": "?? tests/tg-authenticated-payment-query-contract.test.js"
+    },
+    {
+      "path": "tests/tg-payment-gateway.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 12370,
+      "sha256": "6f22b02134dfb001036a416b29f614a33ca053bc0e1426a0c076fa1872880b2e",
+      "gitStatusAtArchive": "M tests/tg-payment-gateway.test.js"
+    },
+    {
+      "path": "tests/tg-purchase-payment-completion-contract.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 6442,
+      "sha256": "caf96eb3e886d6d2b95dd357cea57b8dde2dbf5e51edc6ec3bdde6dc961ab4aa",
+      "gitStatusAtArchive": ""
+    },
+    {
+      "path": "tests/tg-zpay-reconciliation-contract.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 5095,
+      "sha256": "bf1b9b41e5fe1370fcc130fff7ad3015acc022af42634d05f78f79dc82b52d66",
+      "gitStatusAtArchive": ""
+    },
+    {
+      "path": "tests/zpay-checkout-flow.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 34067,
+      "sha256": "40936e2a49ee70094118850d53b0078ba8225709adf5b824367aebcd8b433f3c",
+      "gitStatusAtArchive": ""
+    },
+    {
+      "path": "tests/zpay-provider.test.js",
+      "role": "regression_test_only_not_claimed_as_round2_edit",
+      "bytes": 10784,
+      "sha256": "c9fad24e1e5fff5642ce4bff45abaeaed45147c5e18617680b5eb890e0f5d79f",
+      "gitStatusAtArchive": ""
+    }
+  ]
+}

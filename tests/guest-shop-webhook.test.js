@@ -42,7 +42,7 @@ function createSupabaseStub(options = {}) {
         expected_amount: '12.34',
         provider_order_no: 'ZPAY-TRADE-1',
         checkout_reference: 'https://zpay.example/pay/1',
-        provider_metadata: {}
+        provider_metadata: { trade_no: 'ZPAY-TRADE-1' }
     };
     const state = {
         payment: { ...defaultPayment, ...(options.payment || {}) },
@@ -146,12 +146,28 @@ function makeNowpaymentsRequest(fields = {}) {
 function createHandlers(options = {}) {
     const supabase = createSupabaseStub(options);
     const provider = options.provider || 'zpay';
-    const paymentAdapter = options.paymentAdapter || {
+    const paymentAdapter = {
+        async queryGuestPayment({ provider, merchantOrderNo, metadata }) {
+            if (options.queryError) throw options.queryError;
+            if (provider === 'zpay') {
+                const receipt = { code: 1, pid: '10001', out_trade_no: merchantOrderNo, trade_no: 'ZPAY-TRADE-1', type: 'alipay', money: '12.34', trade_status: 'TRADE_SUCCESS', ...options.queryPatch };
+                return { supported: true, provider, merchant_order_no: receipt.out_trade_no,
+                    status: receipt.trade_status === 'TRADE_SUCCESS' ? 'paid' : 'pending', amount: receipt.money, response_payload: receipt };
+            }
+            const receipt = { payment_id: metadata.payment_id, order_id: merchantOrderNo, payment_status: 'finished',
+                pay_amount: metadata.pay_amount_text || metadata.pay_amount, actually_paid: metadata.pay_amount_text || metadata.pay_amount, pay_currency: metadata.pay_currency || 'usdtbsc', price_amount: metadata.price_amount_text || metadata.price_amount,
+                price_currency: metadata.price_currency || 'usd', pay_address: metadata.pay_address, extra_id: metadata.payin_extra_id || '', ...options.queryPatch };
+            return { supported: true, provider, merchant_order_no: receipt.order_id, status: receipt.payment_status === 'finished' ? 'paid' : 'pending',
+                pay_currency: receipt.pay_currency, network_verified: true, price_amount: receipt.price_amount, provider_currency: receipt.price_currency,
+                actually_paid_text: receipt.actually_paid, response_payload: receipt };
+        },
+        ...(options.paymentAdapter || {
         async verifyGuestWebhook({ payload }) {
             return {
                 valid: provider === 'nowpayments'
                     ? true
                     : payload.sign === 'valid-signature',
+                merchant_id: '10001',
                 signature_version: provider === 'nowpayments' ? 'HMAC-SHA512' : 'MD5'
             };
         },
@@ -177,6 +193,7 @@ function createHandlers(options = {}) {
             return {
                 merchant_order_no: payload.out_trade_no,
                 provider_order_no: 'ZPAY-TRADE-1',
+                transaction_id: payload.trade_no,
                 event_key: 'zpay-business-event',
                 purpose: 'shop_direct',
                 currency: 'CNY',
@@ -184,6 +201,7 @@ function createHandlers(options = {}) {
                 final_status: 'paid'
             };
         }
+        })
     };
     const handlers = createGuestShopHandlers({
         admin: {
@@ -212,7 +230,7 @@ for (const currency of ['usdtbsc', 'usdtton', 'usdtmatic', 'usdttrc20']) test(`g
     const secret = 'network-webhook-test-secret-12345678';
     const paymentAdapter = createGuestShopPaymentAdapter({ supabase: {}, env: { APP_ENV: 'test', APP_BASE_URL: 'https://www.fatherkey.com' },
         config: { providers: { nowpayments: { enabled: true, pay_currency: currency, cny_to_usd_rate: .14 } } },
-        fetchImpl: async () => { throw Error('webhook must not create a payment'); },
+        fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ payment_id: '1234567890', order_id: ORDER_NO, payment_status: 'finished', price_amount: '1.73', price_currency: currency, pay_amount: '1.73', actually_paid: '1.73', pay_currency: currency, ...(currency === 'usdtton' ? { extra_id: '556677' } : {}) }) }),
         resolveSecrets: async () => ({ nowpayments_api_key: 'network-webhook-test-key-12345678', nowpayments_ipn_secret: secret }) });
     const memo = currency === 'usdtton' ? '556677' : '';
     for (const failure of ['', 'network', 'memo', 'amount']) {
@@ -351,6 +369,7 @@ test('NOWPayments payment_id can locate the payment row without allowing merchan
         provider_order_no: 'GS-NOW-000001',
         checkout_reference: 'NP-PAYMENT-LOOKUP-1',
         provider_metadata: {
+            payment_id: 'NP-PAYMENT-LOOKUP-1', pay_currency: 'usdtbsc',
             price_amount: '1.73',
             price_currency: 'usd',
             pay_amount: '1.73',
@@ -473,6 +492,7 @@ test('NOWPayments webhook compares actually_paid as exact decimal text at the qu
         provider_order_no: 'GS-NOW-PRECISION',
         checkout_reference: 'NP-PRECISION-1',
         provider_metadata: {
+            payment_id: 'NP-PRECISION-1', pay_currency: 'usdtbsc',
             price_amount: '1.73',
             price_currency: 'usd',
             pay_amount: '1.73',
@@ -516,7 +536,7 @@ test('NOWPayments webhook compares actually_paid as exact decimal text at the qu
         const { handlers, state } = makePrecisionHandlers();
         const response = createResponse();
         await handlers.webhook(makeNowpaymentsRequest({
-            payment_id: `NP-PRECISION-${actuallyPaid}`,
+            payment_id: 'NP-PRECISION-1',
             order_id: 'GS-NOW-PRECISION',
             actually_paid: actuallyPaid
         }), response, 'nowpayments');
@@ -543,6 +563,7 @@ test('NOWPayments parser USD quote still binds against stored CNY settlement', a
         provider_order_no: 'GS-NOW-CNY-SETTLE',
         checkout_reference: 'NP-CNY-SETTLE-1',
         provider_metadata: {
+            payment_id: 'NP-CNY-SETTLE-1', pay_currency: 'usdtbsc',
             price_amount: '1.73',
             price_currency: 'usd',
             pay_amount: '1.73',
@@ -607,6 +628,7 @@ test('NOWPayments webhook verifies and settles order with price_currency usdtbsc
         provider_order_no: 'GS-NOW-USDTBSC-SETTLE',
         checkout_reference: 'NP-USDTBSC-SETTLE-1',
         provider_metadata: {
+            payment_id: 'NP-USDTBSC-SETTLE-1', pay_currency: 'usdtbsc',
             price_amount: '1.52',
             price_currency: 'usdtbsc',
             pay_amount: '1.52',
@@ -675,7 +697,7 @@ test('a NOWPayments callback that hits a ZPay merchant order is rejected unbound
         expected_amount: '12.34',
         provider_order_no: 'ZPAY-TRADE-1',
         checkout_reference: 'https://zpay.example/pay/1',
-        provider_metadata: {}
+        provider_metadata: { trade_no: 'ZPAY-TRADE-1' }
     };
     const { handlers, state } = createHandlers({
         provider: 'nowpayments',
@@ -733,7 +755,7 @@ test('a ZPay callback that hits a NOWPayments merchant order is rejected unbound
         expected_amount: '12.34',
         provider_order_no: 'NP-INTL-1',
         checkout_reference: 'NP-INTL-1',
-        provider_metadata: {}
+        provider_metadata: { trade_no: 'ZPAY-TRADE-1' }
     };
     const { handlers, state } = createHandlers({
         provider: 'zpay',
@@ -751,4 +773,126 @@ test('a ZPay callback that hits a NOWPayments merchant order is rejected unbound
     assert.equal(state.events[0].merchant_order_no, ORDER_NO);
     assert.equal(state.events[0].processing_status, 'rejected');
     assert.match(state.events[0].event_key, /^zpay:invalid-bucket:/u);
+});
+
+for (const [name, patch] of [
+    ['success code', { code: 0 }], ['merchant', { pid: 'other-merchant' }],
+    ['order', { out_trade_no: 'other-order' }], ['channel', { type: 'wxpay' }],
+    ['trade', { trade_no: 'other-trade' }], ['missing trade', { trade_no: '' }],
+    ['total', { money: '12.33' }], ['currency', { currency: 'USD' }],
+    ['pending status', { trade_status: 'WAIT_BUYER_PAY' }]
+]) test(`ZPay guest query binds ${name} before reserving an event and accepts a corrected retry`, async () => {
+    const options = { queryPatch: patch };
+    const { handlers, state } = createHandlers(options);
+    const rejected = createResponse();
+    await handlers.webhook(makeRequest('valid-signature'), rejected, 'zpay');
+    assert.equal(rejected.statusCode, 503);
+    assert.equal(state.events.length, 0); assert.equal(state.rpcCalls.length, 0);
+    options.queryPatch = {};
+    const retry = createResponse();
+    await handlers.webhook(makeRequest('valid-signature'), retry, 'zpay');
+    assert.equal(retry.statusCode, 200); assert.equal(retry.payload.accepted, true);
+    assert.equal(state.events.length, 1); assert.equal(state.rpcCalls.length, 1);
+});
+
+test('guest query outage leaves the business event available for the later legitimate callback', async () => {
+    const options = { queryError: new Error('private provider credential') };
+    const { handlers, state } = createHandlers(options);
+    const rejected = createResponse();
+    await handlers.webhook(makeRequest('valid-signature'), rejected, 'zpay');
+    assert.equal(rejected.statusCode, 503); assert.equal(state.events.length, 0); assert.equal(state.rpcCalls.length, 0);
+    assert.ok(!JSON.stringify(rejected.payload).includes('private provider credential'));
+    options.queryError = null;
+    const retry = createResponse();
+    await handlers.webhook(makeRequest('valid-signature'), retry, 'zpay');
+    assert.equal(retry.statusCode, 200); assert.equal(retry.payload.accepted, true);
+    assert.equal(state.events.length, 1); assert.equal(state.rpcCalls.length, 1);
+});
+
+
+function realNowpaymentsQueryFixture() {
+    const { createGuestShopPaymentAdapter } = require('../api/_lib/payments/guest-shop-adapter');
+    const { buildNowpaymentsIpnSignature } = require('../api/_lib/payments/nowpayments');
+    const secret = 'query-matrix-fake-ipn-secret-12345678';
+    const receipt = { payment_id: '9007199254740993123', order_id: ORDER_NO, payment_status: 'finished',
+        pay_currency: 'usdtton', price_currency: 'usdtton', pay_amount: '1.73', price_amount: '1.73',
+        actually_paid: '1.73', pay_address: 'EQ' + 'a'.repeat(46), extra_id: '556677' };
+    const control = { patch: {}, error: null, queries: [] };
+    function rawJson(payload) {
+        return JSON.stringify(payload).replace(/"(payment_id|pay_amount|price_amount|actually_paid)":"([0-9]+(?:\.[0-9]+)?)"/g, '"$1":$2');
+    }
+    const paymentAdapter = createGuestShopPaymentAdapter({ supabase: {},
+        env: { APP_ENV: 'test', APP_BASE_URL: 'https://www.fatherkey.com' },
+        config: { providers: { nowpayments: { enabled: true, pay_currency: 'usdtton', cny_to_usd_rate: .14 } } },
+        resolveSecrets: async () => ({ nowpayments_api_key: 'query-matrix-fake-api-key-12345678', nowpayments_ipn_secret: secret }),
+        fetchImpl: async (url) => {
+            control.queries.push(String(url));
+            if (control.error) throw control.error;
+            return { ok: true, status: 200, text: async () => rawJson({ ...receipt, ...control.patch }) };
+        }
+    });
+    const { handlers, state } = createHandlers({ provider: 'nowpayments', paymentAdapter, payment: {
+        provider: 'nowpayments', channel: 'usdtton', provider_order_no: ORDER_NO,
+        provider_metadata: { payment_id: receipt.payment_id, pay_currency: receipt.pay_currency,
+            price_currency: receipt.price_currency, pay_amount_text: receipt.pay_amount, price_amount: 1.73,
+            price_amount_text: receipt.price_amount, pay_address: receipt.pay_address, payin_extra_id: receipt.extra_id }
+    } });
+    const rawBody = rawJson(receipt);
+    const request = () => ({ method: 'POST', headers: { 'content-type': 'application/json',
+        'x-nowpayments-sig': buildNowpaymentsIpnSignature(JSON.parse(rawBody), secret) }, body: Buffer.from(rawBody) });
+    return { handlers, state, control, request, paymentId: receipt.payment_id };
+}
+
+for (const [name, patch] of [
+    ['payment ID', { payment_id: '9007199254740993124' }],
+    ['missing payment ID', { payment_id: undefined }],
+    ['merchant order', { order_id: 'another-order' }],
+    ['missing merchant order', { order_id: undefined }],
+    ['pending payment', { payment_status: 'confirming' }],
+    ['missing status', { payment_status: undefined }],
+    ['requested crypto amount', { pay_amount: '1.730000000000000001' }],
+    ['underpayment by one atomic unit', { actually_paid: '1.729999999999999999' }],
+    ['missing actual paid amount', { actually_paid: undefined }],
+    ['actual paid currency', { actually_paid_currency: 'usdtbsc' }],
+    ['payment network', { pay_currency: 'usdtbsc' }],
+    ['quote amount', { price_amount: '1.730000000000000001' }],
+    ['quote currency', { price_currency: 'usd' }],
+    ['destination address', { pay_address: 'EQ' + 'b'.repeat(46) }],
+    ['missing destination address', { pay_address: undefined }],
+    ['Memo', { extra_id: 'wrong-memo' }],
+    ['missing Memo', { extra_id: undefined }]
+]) test(`real NOWPayments guest query rejects ${name} without consuming the callback and accepts a corrected retry`, async () => {
+    const { handlers, state, control, request, paymentId } = realNowpaymentsQueryFixture();
+    control.patch = patch;
+    const rejected = createResponse();
+    await handlers.webhook(request(), rejected, 'nowpayments');
+    assert.equal(rejected.statusCode, 503, JSON.stringify(rejected.payload));
+    assert.equal(state.events.length, 0);
+    assert.equal(state.rpcCalls.length, 0);
+    assert.match(control.queries[0], new RegExp('/payment/' + paymentId + '$'));
+    control.patch = {};
+    const retry = createResponse();
+    await handlers.webhook(request(), retry, 'nowpayments');
+    assert.equal(retry.statusCode, 200, JSON.stringify(retry.payload));
+    assert.equal(retry.payload.accepted, true);
+    assert.equal(state.events.length, 1);
+    assert.equal(state.rpcCalls.length, 1);
+});
+
+test('real NOWPayments guest query outage keeps retry possible and hides provider error details', async () => {
+    const { handlers, state, control, request } = realNowpaymentsQueryFixture();
+    control.error = new Error('private-provider-credential');
+    const rejected = createResponse();
+    await handlers.webhook(request(), rejected, 'nowpayments');
+    assert.equal(rejected.statusCode, 503);
+    assert.equal(state.events.length, 0);
+    assert.equal(state.rpcCalls.length, 0);
+    assert.ok(!JSON.stringify(rejected.payload).includes('private-provider-credential'));
+    control.error = null;
+    const retry = createResponse();
+    await handlers.webhook(request(), retry, 'nowpayments');
+    assert.equal(retry.statusCode, 200);
+    assert.equal(retry.payload.accepted, true);
+    assert.equal(state.events.length, 1);
+    assert.equal(state.rpcCalls.length, 1);
 });

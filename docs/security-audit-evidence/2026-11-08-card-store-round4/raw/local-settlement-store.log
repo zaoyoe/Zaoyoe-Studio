@@ -1,0 +1,40 @@
+✔ local settlement rolls back task result when CDK return fails (125.93675ms)
+✔ safe failure returns only its CDK and clears Session in the same transaction (1.169292ms)
+✔ local settlement rollback preserves both rows on task_write (1.673292ms)
+✔ local settlement rollback preserves both rows on task_cas (5.036291ms)
+✔ local settlement rollback preserves both rows on session_clear (2.584334ms)
+✔ local settlement rollback preserves both rows on release_cas (1.211125ms)
+✔ persisted started cannot be downgraded by a safe failure (1.801083ms)
+✔ persisted unknown cannot be downgraded by a safe failure (2.132375ms)
+✔ persisted succeeded cannot be downgraded by a safe failure (1.220333ms)
+✔ persisted null cannot be downgraded by a safe failure (2.660375ms)
+✔ persisted unrecognized cannot be downgraded by a safe failure (3.854917ms)
+✔ refuses incompatible, completed or foreign task {"execution_mode":"third_party_api"} (1.368417ms)
+✔ refuses incompatible, completed or foreign task {"execution_mode":"legacy_unknown"} (1.195875ms)
+✔ refuses incompatible, completed or foreign task {"gpt_api_order_id":"offline-provider-order"} (2.476958ms)
+✔ refuses incompatible, completed or foreign task {"gpt_api_task_id":"offline-provider-task"} (0.726416ms)
+✔ refuses incompatible, completed or foreign task {"gpt_api_raw":"{}"} (0.919792ms)
+✔ refuses incompatible, completed or foreign task {"cdk_code":"OTHER-CDK"} (0.827375ms)
+✔ refuses incompatible, completed or foreign task {"status":"failed","finished_at":"offline-finished"} (0.69875ms)
+✔ refuses incompatible, completed or foreign task {"status":"success","payment_state":"succeeded","finished_at":"offline-finished"} (5.193584ms)
+✔ refuses incompatible, completed or foreign task {"status":"cancelled"} (1.5785ms)
+✔ refuses incompatible, completed or foreign task {"status":"maintenance"} (0.884ms)
+✔ unavailable CDK does not become reusable {"used_at":null} (1.237083ms)
+✔ unavailable CDK does not become reusable {"is_active":0} (1.620041ms)
+✔ late old task cannot return or modify a newer owner CDK (1.693542ms)
+✔ another unresolved task blocks safe release even if current task is newest (5.988875ms)
+✔ duplicate completion is idempotent and a late payment callback cannot resurrect it (1.779416ms)
+✔ concurrent finalizations return the CDK once in the offline serial model (2.919542ms)
+✔ intermediate unknown state stays recoverable until an affirmative success (1.071125ms)
+✔ post-success auto-renew annotation can require review without returning CDK (1.6995ms)
+✔ commit uncertainty before_apply never triggers a separate CDK unlock (1.326458ms)
+✔ commit uncertainty after_apply never triggers a separate CDK unlock (1.016917ms)
+✔ rollback failure does not replace the original transaction failure (1.060042ms)
+ℹ tests 32
+ℹ suites 0
+ℹ pass 32
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 375.806208

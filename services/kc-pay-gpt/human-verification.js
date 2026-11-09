@@ -2464,6 +2464,9 @@ async function attemptInteractiveUserCaptcha(page, phase = 'interactive', option
 
     const serverPort = process.env.PORT || 3100;
     const baseUrl = `http://127.0.0.1:${serverPort}`;
+    const internalToken = process.env.KC_INTERNAL_CAPTCHA_TOKEN;
+    if (!internalToken) return false;
+    const internalHttp = axios.create({ headers: { 'x-kc-internal-token': internalToken }, proxy: false, maxRedirects: 0 });
     const verifyOpts = options.verifyOpts || {};
     const timeoutMs = Number(options.maxWaitMs || process.env.CAPTCHA_INTERACTIVE_TIMEOUT_MS || 90000);
     const deadline = Date.now() + timeoutMs;
@@ -2479,7 +2482,7 @@ async function attemptInteractiveUserCaptcha(page, phase = 'interactive', option
     async function replaceDragChallenge(targetInfo) {
         if (!isDragChallenge(targetInfo)) return false;
         // 不透传拖动题的截图；换题与用户操作共用原会话截止时间。
-        await axios.post(`${baseUrl}/api/internal/captcha-prompt`, {
+        await internalHttp.post(`${baseUrl}/api/internal/captcha-prompt`, {
             jobKey, image: null, loading: true, contentReady: false,
             expiresAt: deadline,
             title: '正在更换题型…',
@@ -2503,7 +2506,7 @@ async function attemptInteractiveUserCaptcha(page, phase = 'interactive', option
     while (Date.now() < deadline) {
         if (await isVerificationCleared(page, verifyOpts)) {
             captchaLog(phase, '[Interactive] 验证已通过，退出交互透传');
-            await axios.post(`${baseUrl}/api/internal/captcha-status`, { jobKey, cleared: true }, { timeout: 5000 }).catch(() => {});
+            await internalHttp.post(`${baseUrl}/api/internal/captcha-status`, { jobKey, cleared: true }, { timeout: 5000 }).catch(() => {});
             return true;
         }
 
@@ -2513,7 +2516,7 @@ async function attemptInteractiveUserCaptcha(page, phase = 'interactive', option
             await page.waitForTimeout(1000);
             if (await isVerificationCleared(page, verifyOpts)) {
                 captchaLog(phase, '[Interactive] 验证已自行通过');
-                await axios.post(`${baseUrl}/api/internal/captcha-status`, { jobKey, cleared: true }, { timeout: 5000 }).catch(() => {});
+                await internalHttp.post(`${baseUrl}/api/internal/captcha-status`, { jobKey, cleared: true }, { timeout: 5000 }).catch(() => {});
                 return true;
             }
             targetInfo = await findVisibleCaptchaClip(page);
@@ -2530,7 +2533,7 @@ async function attemptInteractiveUserCaptcha(page, phase = 'interactive', option
             if (await browserVerifyFailedLoc.isVisible({ timeout: 150 }).catch(() => false)) {
                 const failText = String(await browserVerifyFailedLoc.innerText().catch(() => '') || '官方收银台提示：我们无法验证您的浏览器').trim();
                 captchaLog(phase, `[Interactive] 官方收银台已明确提示浏览器验证失败（${failText}），立即熔断退出交互透传`);
-                await axios.post(`${baseUrl}/api/internal/captcha-status`, {
+                await internalHttp.post(`${baseUrl}/api/internal/captcha-status`, {
                     jobKey,
                     cleared: false,
                     failed: true,
@@ -2551,7 +2554,7 @@ async function attemptInteractiveUserCaptcha(page, phase = 'interactive', option
             if (await declineLoc.isVisible({ timeout: 200 }).catch(() => false)) {
                 const declineText = String(await declineLoc.innerText().catch(() => '') || '无法完成此次购买').trim();
                 captchaLog(phase, `[Interactive] 收银台已明确提示拒付（${declineText}），人机验证实际已通过，立即结束协助并转交卡池换卡`);
-                await axios.post(`${baseUrl}/api/internal/captcha-status`, { jobKey, cleared: true }, { timeout: 5000 }).catch(() => {});
+                await internalHttp.post(`${baseUrl}/api/internal/captcha-status`, { jobKey, cleared: true }, { timeout: 5000 }).catch(() => {});
                 return { cleared: true, paymentDeclined: true, declineMsg: declineText };
             }
         } catch (_) {}
@@ -2561,11 +2564,11 @@ async function attemptInteractiveUserCaptcha(page, phase = 'interactive', option
             captchaLog(phase, `[Interactive] 当前无可见人机验证弹窗 (${noTargetCount}/5)，严禁推送收银台页面（防止泄露卡密信息）`, 'info');
             if (noTargetCount >= 5) {
                 captchaLog(phase, '[Interactive] 连续 5 次未检测到可见验证弹窗，判定当前无阻断性人机验证，安全退出交互透传', 'warn');
-                await axios.post(`${baseUrl}/api/internal/captcha-status`, { jobKey, cleared: true }, { timeout: 5000 }).catch(() => {});
+                await internalHttp.post(`${baseUrl}/api/internal/captcha-status`, { jobKey, cleared: true }, { timeout: 5000 }).catch(() => {});
                 return { cleared: true, skipped: true, via: 'no-visible-captcha-timeout' };
             }
             try {
-                await axios.post(`${baseUrl}/api/internal/captcha-prompt`, {
+                await internalHttp.post(`${baseUrl}/api/internal/captcha-prompt`, {
                     jobKey,
                     image: null,
                     loading: true,
@@ -2692,14 +2695,14 @@ async function attemptInteractiveUserCaptcha(page, phase = 'interactive', option
 
         // 推送精准裁剪后的验证画面至前端（用户仅能看到验证码本身，并填满前端视窗）
         try {
-            await axios.post(`${baseUrl}/api/internal/captcha-prompt`, {
+            await internalHttp.post(`${baseUrl}/api/internal/captcha-prompt`, {
                 jobKey,
                 image: screenshotBase64,
                 loading: !contentReady,
                 contentReady,
                 expiresAt: deadline,
-                width: currentClip.width,
-                height: currentClip.height,
+                width: Math.ceil(currentClip.width),
+                height: Math.ceil(currentClip.height),
                 title: targetInfo.title,
                 message: contentReady ? targetInfo.message : '官方题图尚未完整加载，系统正在重试。请稍候，或点击「换一题」。',
                 promptZh: targetInfo.promptZh || '',
@@ -2716,7 +2719,7 @@ async function attemptInteractiveUserCaptcha(page, phase = 'interactive', option
 
         let waitResult = null;
         try {
-            const res = await axios.get(`${baseUrl}/api/internal/captcha-wait-click/${jobKey}?timeout=${waitTimeoutMs}`, {
+            const res = await internalHttp.get(`${baseUrl}/api/internal/captcha-wait-click/${jobKey}?timeout=${waitTimeoutMs}`, {
                 timeout: waitTimeoutMs + 5000
             });
             waitResult = res.data;
@@ -2839,21 +2842,21 @@ async function attemptInteractiveUserCaptcha(page, phase = 'interactive', option
 
             if (await isVerificationCleared(page, verifyOpts)) {
                 captchaLog(phase, `[Interactive] 用户操作后验证已通过！`);
-                await axios.post(`${baseUrl}/api/internal/captcha-status`, { jobKey, cleared: true }, { timeout: 5000 }).catch(() => {});
+                await internalHttp.post(`${baseUrl}/api/internal/captcha-status`, { jobKey, cleared: true }, { timeout: 5000 }).catch(() => {});
                 return true;
             }
         } else {
             // 超时或未点击
             if (await isVerificationCleared(page, verifyOpts)) {
                 captchaLog(phase, '[Interactive] 验证已自行通过');
-                await axios.post(`${baseUrl}/api/internal/captcha-status`, { jobKey, cleared: true }, { timeout: 5000 }).catch(() => {});
+                await internalHttp.post(`${baseUrl}/api/internal/captcha-status`, { jobKey, cleared: true }, { timeout: 5000 }).catch(() => {});
                 return true;
             }
         }
     }
 
     const finalCleared = await isVerificationCleared(page, verifyOpts);
-    await axios.post(`${baseUrl}/api/internal/captcha-status`, {
+    await internalHttp.post(`${baseUrl}/api/internal/captcha-status`, {
         jobKey,
         cleared: finalCleared
     }, { timeout: 5000 }).catch(() => {});

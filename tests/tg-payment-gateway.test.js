@@ -23,7 +23,7 @@ function signed(values = {}) {
     payload.sign = buildZpaySign(payload, KEY);
     return payload;
 }
-function response(body) { return { ok: true, text: async () => JSON.stringify(body) }; }
+function response(body) { return new Response(JSON.stringify(body)); }
 
 test('TG ZPay checkout uses an exact decimal amount and its isolated callback/return URLs', async () => {
     let request;

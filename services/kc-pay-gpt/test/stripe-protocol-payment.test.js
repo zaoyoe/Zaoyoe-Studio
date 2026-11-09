@@ -1,6 +1,9 @@
 'use strict';
 
 import { describe, it, expect, vi } from 'vitest';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import { createRequire } from 'node:module';
 const {
     createStripePaymentMethod,
     syncCheckoutBillingTax,
@@ -142,5 +145,35 @@ describe('Stripe pure protocol payment integration', () => {
         expect(getDefaultPlanDisplayAmount('pro_500', 'USD', true)).toBe(500);
         expect(getDefaultPlanDisplayAmount('team_2', 'USD', true)).toBe(60);
         expect(getDefaultPlanDisplayAmount('team_5', 'USD', true)).toBe(150);
+    });
+});
+
+
+describe('round7 actual protocol entrypoint persistence gate', () => {
+    it.each(['cs_test_offline_hold', 'oaics_offline_hold'])('propagates hold failure with zero network/browser work (%s)', async sessionId => {
+        const network = vi.fn(() => { throw new Error('unexpected offline network request'); });
+        const page = { evaluate: network, goto: network, request: { post: network, get: network } };
+        const runtimeRequire = createRequire(new URL('../stripe-protocol-payment.js', import.meta.url));
+        const module = { exports: {} };
+        vm.runInNewContext(fs.readFileSync(new URL('../stripe-protocol-payment.js', import.meta.url), 'utf8'), {
+            module, exports: module.exports, process: { env: {} }, Buffer, URL, URLSearchParams,
+            console: { log() {}, warn() {}, error() {} },
+            setTimeout: network,
+            require: name => {
+                if (name === 'axios') return { create: network, get: network, post: network, request: network };
+                if (name === './sentinel/sentinel-client') return { mintSentinelToken: network };
+                if (name === './stripe-device-fingerprint') return { registerStripeDeviceFingerprint: network };
+                if (name === './playwright-proxy') return { substituteProxySession: network, resetActiveProxyTunnels: network };
+                return runtimeRequire(name);
+            }
+        });
+        const failure = Object.assign(new Error('offline durable hold persistence failed'), { code: 'CARD_PAYMENT_HOLD_FAILED' });
+        const gate = vi.fn(async () => { throw failure; });
+        await expect(module.exports.executeStripeProtocolPayment({
+            page, card: { number: 'offline-card-fixture', expiry: '01/30', cvc: '000' },
+            sessionId, accessToken: 'offline-fixture', onPaymentAttemptStarted: gate, protocolOnly: false
+        })).rejects.toBe(failure);
+        expect(gate).toHaveBeenCalledOnce();
+        expect(network).not.toHaveBeenCalled();
     });
 });

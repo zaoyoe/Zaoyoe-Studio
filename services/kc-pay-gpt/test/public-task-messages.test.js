@@ -69,7 +69,8 @@ describe('public task error boundary', () => {
 describe('actual server task delivery with a mock store', () => {
     it('filters live WebSocket failures before sending but leaves source diagnostics intact', () => {
         const send = vi.fn();
-        const context = { taskClients: new Map([['offline-job', new Set([{ readyState: 1, send }])]]), WebSocket: { OPEN: 1 }, publicTaskUpdate };
+        const context = { taskClients: new Map([['offline-job', new Set([{ readyState: 1, send, taskAccess: { jobKey: 'offline-job', token: 'offline-token' } }])]]),
+            WebSocket: { OPEN: 1 }, publicTaskUpdate, verifyTaskAccessToken: (job, token) => job === 'offline-job' && token === 'offline-token' };
         vm.runInNewContext(snippet('function broadcastToTask(', '// In-memory state for interactive'), context);
         const source = { type: 'status', status: 'failed', message: '定价弹窗未能成功弹出 private detail', progress: 20 };
         context.broadcastToTask('offline-job', source);
@@ -81,13 +82,14 @@ describe('actual server task delivery with a mock store', () => {
         const task = { status: 'failed', message: '定价弹窗未能成功弹出', payment_state: 'not_started', recovery_required: 0, progress: 20 };
         const context = {
             store: { getTaskStatus: async () => task }, WebSocket: { OPEN: 1 }, publicTaskUpdate,
+            verifyTaskAccessToken: (job, token) => job === 'offline-job' && token === 'offline-token',
             TERMINAL_TASK_STATUSES: new Set(['failed', 'manual']), splitTaskMediaPaths: () => ({ screenshots: [], videos: [] }), extractTaskMediaFromOutput: () => ({ screenshots: [], videos: [] })
         };
         vm.runInNewContext(snippet('async function sendTaskSnapshot(', 'function logTask('), context);
-        await context.sendTaskSnapshot({ readyState: 1, send }, 'offline-job');
+        await context.sendTaskSnapshot({ readyState: 1, send, taskAccess: { jobKey: 'offline-job', token: 'offline-token' } }, 'offline-job');
         expect(JSON.parse(send.mock.calls[0][0]).message).toBe(GENERIC_FAILURE);
         task.status = 'manual'; task.payment_state = 'unknown'; task.recovery_required = 1; task.message = 'token_expired';
-        await context.sendTaskSnapshot({ readyState: 1, send }, 'offline-job');
+        await context.sendTaskSnapshot({ readyState: 1, send, taskAccess: { jobKey: 'offline-job', token: 'offline-token' } }, 'offline-job');
         expect(JSON.parse(send.mock.calls[1][0]).message).toBe(PAYMENT_UNCONFIRMED);
     });
     it('classifies the original 401 as a credentials failure without retrying or deleting cards', () => {

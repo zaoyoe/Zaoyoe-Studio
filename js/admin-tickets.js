@@ -6846,7 +6846,9 @@ const AdminTickets = {
     buildDefaultReplyTemplates: function (ticket = {}, state = {}) {
         const normalizedNextStatus = this.normalizeTicketStatusValue(state?.normalizedNextStatus || state?.nextStatus || '');
         const issueType = this.safeText(ticket?.issue_type).trim().toUpperCase();
-        const hasOrder = Boolean(this.safeText(ticket?.order_id).trim());
+        const resolvedOrderId = this.safeText(ticket?.order_id).trim() || this.extractOrderId(ticket);
+        const hasOrder = Boolean(resolvedOrderId);
+        const isGuest = ticket?.is_guest_order === true || resolvedOrderId.startsWith('GS');
         const canRefund = state?.canRefund === true;
 
         if (normalizedNextStatus === 'REJECTED') {
@@ -6880,13 +6882,25 @@ const AdminTickets = {
         }];
 
         if (issueType === 'REFUND' || canRefund || hasOrder) {
+            const refundBody = isGuest
+                ? '已核实您反馈的问题，工单已处理完成。订单现金退款申请已提交，款项将原路退回至您的支付账户，请留意到账通知。如仍有疑问，请继续回复本工单。'
+                : (canRefund
+                    ? '已核实本次情况，工单已处理完成，相关订单积分会按流程退回，请稍后留意账户变动。如仍未到账，请继续回复本工单。'
+                    : '已核实本次情况，工单已处理完成。如涉及订单退款或补偿结果，请以系统到账记录为准；若仍有异常，请继续回复本工单。');
             templates.unshift({
                 key: 'resolved_refund',
                 title: '退款处理通知',
                 tag: canRefund ? '退款' : '订单',
-                body: canRefund
-                    ? '已核实本次情况，工单已处理完成，相关订单积分会按流程退回，请稍后留意账户变动。如仍未到账，请继续回复本工单。'
-                    : '已核实本次情况，工单已处理完成。如涉及订单退款或补偿结果，请以系统到账记录为准；若仍有异常，请继续回复本工单。'
+                body: refundBody
+            });
+        }
+
+        if (issueType === 'INVALID_KEY' || hasOrder) {
+            templates.unshift({
+                key: 'resolved_reissue_card',
+                title: '补发卡密通知',
+                tag: '补发',
+                body: '您好，我们已为您核查并重新补发了有效卡密，请查收上方卡密详情。如仍有疑问，请直接回复本工单，我们将继续协助您！'
             });
         }
 
@@ -6913,7 +6927,7 @@ const AdminTickets = {
             });
         }
 
-        return templates.slice(0, 3);
+        return templates.slice(0, 4);
     },
 
     buildReplyTemplatePlaceholders: function (ticket = {}, state = {}) {
@@ -7077,6 +7091,24 @@ const AdminTickets = {
             });
         }
 
+        const descText = this.safeText(ticket?.description).trim();
+        if (descText.includes('[用户补充')) {
+            const followups = descText.split(/---\s*\[用户补充\s*([^\]]+)\]\s*---\s*/);
+            for (let i = 1; i < followups.length; i += 2) {
+                const time = followups[i]?.trim();
+                const content = followups[i + 1]?.trim();
+                if (content) {
+                    items.push({
+                        title: '用户补充信息',
+                        time: time || updatedAtLabel,
+                        detail: content,
+                        icon: 'fa-user-pen',
+                        tone: 'warning'
+                    });
+                }
+            }
+        }
+
         if (currentStatus === 'PENDING') {
             items.push({
                 title: ticket?.is_overdue ? '工单已超时待处理' : '工单等待处理中',
@@ -7133,9 +7165,38 @@ const AdminTickets = {
         return mergedItems;
     },
 
+    extractOrderId: function (ticket = {}) {
+        const direct = this.safeText(ticket?.order_id).trim();
+        if (direct) return direct;
+        const text = this.safeText(ticket?.description || ticket?.reason);
+        const bracketMatch = text.match(/\[关联订单[:：]\s*([A-Za-z0-9_-]+)\]/i);
+        if (bracketMatch && bracketMatch[1]) return bracketMatch[1].trim();
+        const prefixMatch = text.match(/(?:关联订单号?|订单号?)[：:\s]+([A-Za-z0-9_-]+)/i);
+        if (prefixMatch && prefixMatch[1]) return prefixMatch[1].trim();
+        const gsMatch = text.match(/\b(GS\d{14,}[A-Za-z0-9]*)\b/i);
+        if (gsMatch && gsMatch[1]) return gsMatch[1].trim();
+        const uuidMatch = text.match(/\b([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\b/i);
+        if (uuidMatch && uuidMatch[1]) return uuidMatch[1].trim();
+        return '';
+    },
+
+    extractEmail: function (ticket = {}) {
+        const direct = this.safeText(ticket?.user_email).trim();
+        if (direct) return direct;
+        const text = this.safeText(ticket?.description || ticket?.reason);
+        const prefixMatch = text.match(/(?:[（(]联系邮箱|联系邮箱|邮箱|email)[：:\s]+([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)[）)]?/i);
+        if (prefixMatch && prefixMatch[1]) return prefixMatch[1].trim();
+        const emailMatch = text.match(/\b([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)\b/i);
+        if (emailMatch && emailMatch[1]) return emailMatch[1].trim();
+        return '';
+    },
+
     buildReplyModalDetailState: function (ticket = {}, newStatus = '') {
         const state = this.buildReplyModalState(ticket, newStatus);
         const sourceMeta = this.getTicketSourceMeta(ticket);
+        const resolvedOrderId = this.extractOrderId(ticket);
+        const resolvedEmail = this.extractEmail(ticket);
+        const isGuest = ticket?.is_guest_order === true || resolvedOrderId.startsWith('GS');
         const issueTypeLabel = this.safeText(ticket?.issue_type_label).trim() || this.getIssueTypeLabel(ticket?.issue_type);
         const statusLabel = this.safeText(ticket?.status_label).trim() || this.getTicketStatusLabel(ticket?.status);
         const createdAtLabel = this.formatDateTime(ticket?.created_at);
@@ -7146,7 +7207,7 @@ const AdminTickets = {
                 : `已处理 · ${statusLabel}`
         );
         const refundSummary = this.safeText(ticket?.refund_summary).trim()
-            || (this.safeText(ticket?.order_id).trim() ? '已关联订单' : '无关联订单');
+            || (resolvedOrderId ? '已关联订单' : '无关联订单');
         const descriptionText = this.safeText(ticket?.reason || ticket?.description, '暂无描述');
         const summaryItems = [
             {
@@ -7175,15 +7236,15 @@ const AdminTickets = {
             },
             {
                 label: '用户 ID',
-                value: this.safeText(ticket?.user_id).trim() || '未关联用户'
+                value: this.safeText(ticket?.user_id).trim() || (isGuest ? '游客买家' : '未关联用户')
             },
             {
                 label: '用户邮箱',
-                value: this.safeText(ticket?.user_email).trim() || '无邮箱'
+                value: resolvedEmail || '无邮箱'
             },
             {
                 label: '订单号',
-                value: this.safeText(ticket?.order_id).trim() || '无关联订单'
+                value: resolvedOrderId || '无关联订单'
             },
             {
                 label: '退款信息',
@@ -7197,10 +7258,17 @@ const AdminTickets = {
             }
         ];
 
-        if (Number(ticket?.order_price_paid) > 0) {
+        if (ticket?.product_name) {
             summaryItems.splice(7, 0, {
+                label: '关联商品',
+                value: this.safeText(ticket.product_name).trim()
+            });
+        }
+
+        if (Number(ticket?.order_price_paid) > 0) {
+            summaryItems.splice(ticket?.product_name ? 8 : 7, 0, {
                 label: '订单实付',
-                value: this.formatPoints(ticket?.order_price_paid)
+                value: isGuest ? `¥${ticket.order_price_paid}` : this.formatPoints(ticket?.order_price_paid)
             });
         }
 
@@ -7434,13 +7502,241 @@ const AdminTickets = {
 
         return items.map((item) => {
             const toneClass = item?.tone ? ` admin-ticket-reply-modal__summary-item--${this.safeText(item.tone).trim().toLowerCase()}` : '';
+            const isCopyable = item?.label === '工单号' || item?.label === '订单号' || item?.label === '用户邮箱';
+            const val = this.safeText(item?.value || '');
+            const copyAttr = isCopyable && val && val !== '无关联订单' && val !== '无邮箱'
+                ? ` data-copy-text="${this.escapeHtml(val)}" title="点击复制 ${this.escapeHtml(item?.label || '')}" style="cursor: pointer;"`
+                : '';
             return `
-                <div class="admin-ticket-reply-modal__summary-item${toneClass}">
+                <div class="admin-ticket-reply-modal__summary-item${toneClass}"${copyAttr}>
                     <span class="admin-ticket-reply-modal__summary-label">${this.escapeHtml(item?.label || '')}</span>
-                    <span class="admin-ticket-reply-modal__summary-value">${this.escapeHtml(item?.value || '')}</span>
+                    <span class="admin-ticket-reply-modal__summary-value">${this.escapeHtml(val)}</span>
                 </div>
             `;
         }).join('');
+    },
+
+    renderReplyModalOrderCard: function (ticket = {}, state = {}) {
+        const orderId = this.safeText(ticket?.order_id).trim() || this.extractOrderId(ticket);
+        if (!orderId) {
+            return '';
+        }
+        const isGuest = ticket?.is_guest_order === true || orderId.startsWith('GS');
+        const productName = this.escapeHtml(this.safeText(ticket?.product_name || '商城商品'));
+        const skuName = this.escapeHtml(this.safeText(ticket?.sku_name || '默认规格'));
+        const quantity = Number(ticket?.quantity || 1) || 1;
+        const pricePaid = ticket?.order_price_paid !== undefined ? ticket.order_price_paid : (ticket?.price_paid || 0);
+        const priceDisplay = isGuest ? `¥${pricePaid}` : `${pricePaid} 积分`;
+        const orderTime = ticket?.order_created_at ? this.formatDateTime(ticket.order_created_at) : '';
+        const paymentStatus = this.safeText(ticket?.order_payment_status || 'paid').toLowerCase();
+        const deliveryStatus = this.safeText(ticket?.order_delivery_status || 'delivered').toLowerCase();
+        const refundStatus = this.safeText(ticket?.order_refund_status || 'none').toLowerCase();
+        const cardContent = this.safeText(ticket?.order_card_content).trim();
+
+        const isDelivered = deliveryStatus === 'delivered' || Boolean(cardContent);
+        const isPaymentConfirmed = ['confirmed', 'paid', 'succeeded'].includes(paymentStatus);
+        const isRefunded = refundStatus === 'refunded' || refundStatus === 'full_refund';
+        const canRefund = (state?.canRefund !== undefined ? state.canRefund : (ticket?.can_refund !== false)) && !isRefunded;
+
+        const paymentBadge = isRefunded
+            ? '<span class="admin-ticket-pill admin-ticket-pill--refund"><i class="fas fa-rotate-left"></i> 已退款</span>'
+            : (isPaymentConfirmed
+                ? '<span class="admin-ticket-pill admin-ticket-pill--success"><i class="fas fa-check-circle"></i> 支付成功</span>'
+                : `<span class="admin-ticket-pill admin-ticket-pill--warning"><i class="fas fa-clock"></i> ${paymentStatus || '待支付'}</span>`);
+
+        const deliveryBadge = isDelivered
+            ? '<span class="admin-ticket-pill admin-ticket-pill--success"><i class="fas fa-truck"></i> 已交付发货</span>'
+            : '<span class="admin-ticket-pill admin-ticket-pill--warning"><i class="fas fa-truck-ramp-box"></i> 待发货 / 异常</span>';
+
+        return `
+            <div class="admin-ticket-order-box">
+                <div class="admin-ticket-order-box__header">
+                    <div class="admin-ticket-order-box__tag-cluster">
+                        <span class="admin-ticket-order-badge admin-ticket-order-badge--${isGuest ? 'guest' : 'member'}">
+                            <i class="fas ${isGuest ? 'fa-user-tag' : 'fa-gem'}"></i>
+                            ${isGuest ? '游客现金订单' : '会员积分订单'}
+                        </span>
+                        <span class="admin-ticket-order-no" title="点击复制订单号" data-copy-text="${this.escapeHtml(orderId)}">
+                            <i class="far fa-copy"></i> ${this.escapeHtml(orderId)}
+                        </span>
+                    </div>
+                    ${orderTime ? `<div class="admin-ticket-order-time">下单时间: ${this.escapeHtml(orderTime)}</div>` : ''}
+                </div>
+
+                <div class="admin-ticket-order-item">
+                    <div class="admin-ticket-order-item__main">
+                        <span class="admin-ticket-order-item__name">${productName}</span>
+                        <span class="admin-ticket-order-item__sku">${skuName} × ${quantity}</span>
+                    </div>
+                    <div class="admin-ticket-order-item__price">${priceDisplay}</div>
+                </div>
+
+                <div class="admin-ticket-order-box__status-row">
+                    ${paymentBadge}
+                    ${deliveryBadge}
+                </div>
+
+                ${cardContent ? `
+                    <div class="admin-ticket-card-content-box">
+                        <div class="admin-ticket-card-content-box__head">
+                            <span><i class="fas fa-key"></i> 已交付卡密内容：</span>
+                            <button type="button" class="admin-ticket-mini-btn" data-copy-text="${this.escapeHtml(cardContent)}">
+                                <i class="far fa-copy"></i> 复制卡密
+                            </button>
+                        </div>
+                        <pre class="admin-ticket-card-content-box__text">${this.escapeHtml(cardContent)}</pre>
+                    </div>
+                ` : `
+                    <div class="admin-ticket-card-content-box admin-ticket-card-content-box--empty">
+                        <i class="fas fa-exclamation-triangle"></i> 该订单尚未成功写入卡密内容或待人工履约补发
+                    </div>
+                `}
+
+                <div class="admin-ticket-order-actions-bar">
+                    <button type="button" class="admin-ticket-order-action-btn admin-ticket-order-action-btn--reissue" id="ticketActionReissueToggleBtn">
+                        <i class="fas fa-paper-plane"></i> 补发卡密
+                    </button>
+                    ${canRefund ? `
+                        <button type="button" class="admin-ticket-order-action-btn admin-ticket-order-action-btn--refund" id="ticketActionQuickRefundBtn">
+                            <i class="fas fa-undo"></i> 发起退款
+                        </button>
+                    ` : ''}
+                    <button type="button" class="admin-ticket-order-action-btn admin-ticket-order-action-btn--goto" id="ticketActionGotoOrderBtn" data-order-id="${this.escapeHtml(orderId)}" data-is-guest="${isGuest ? '1' : '0'}">
+                        <i class="fas fa-arrow-up-right-from-square"></i> 在订单管理中查看
+                    </button>
+                    ${ticket?.user_email ? `
+                        <button type="button" class="admin-ticket-order-action-btn" data-copy-text="${this.escapeHtml(ticket.user_email)}">
+                            <i class="far fa-envelope"></i> 复制邮箱
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    },
+
+    bindReplyModalOrderCardEvents: function (ticket = {}, container) {
+        if (!container) return;
+
+        container.querySelectorAll('[data-copy-text]').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const text = btn.getAttribute('data-copy-text');
+                if (text) {
+                    this.copyText(text);
+                }
+            });
+        });
+
+        const reissueToggleBtn = container.querySelector('#ticketActionReissueToggleBtn');
+        const reissueSection = document.getElementById('ticketReissueSection');
+        const reissueInput = document.getElementById('ticketReissueCardInput');
+        const closeReissueBtn = document.getElementById('ticketCloseReissueSectionBtn');
+        const fillReplyBtn = document.getElementById('ticketFillReissueToReplyBtn');
+        const autoReissueStockBtn = document.getElementById('ticketAutoReissueStockBtn');
+
+        if (reissueToggleBtn && reissueSection) {
+            reissueToggleBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                reissueSection.hidden = !reissueSection.hidden;
+                if (!reissueSection.hidden) {
+                    reissueSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    if (reissueInput) {
+                        reissueInput.focus();
+                    }
+                }
+            });
+        }
+
+        if (closeReissueBtn && reissueSection) {
+            closeReissueBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                reissueSection.hidden = true;
+            });
+        }
+
+        if (fillReplyBtn && reissueInput) {
+            fillReplyBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const card = this.safeText(reissueInput.value).trim();
+                if (!card) {
+                    window.showToast?.('请先输入补发的新卡密内容', 'warning');
+                    reissueInput.focus();
+                    return;
+                }
+                const formatted = `已核实您反馈的问题，现已为您重新补发卡密：\n\n【${card}】\n\n请您查收并按使用说明体验。如仍有疑问，请直接回复本工单，我们将继续协助您！`;
+                this.applyReplyTemplate(formatted);
+                window.showToast?.('已将补发卡密格式化并填入管理员回复', 'success');
+                reissueSection.hidden = true;
+            });
+        }
+
+        if (autoReissueStockBtn) {
+            autoReissueStockBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                if (!confirm('确认自动从同 SKU 库存中调取一张卡密并标记补发吗？')) {
+                    return;
+                }
+                autoReissueStockBtn.disabled = true;
+                try {
+                    const res = await this.postJson('/api/admin?action=tickets/process', {
+                        ticketId: ticket.id,
+                        action: 'reissue_card',
+                        auto_fulfill: true,
+                        adminReply: '已自动从库存完成补发'
+                    });
+                    if (res && res.success) {
+                        window.showToast?.('库存补发成功！工单已标记为已解决', 'success');
+                        this.closeReplyModal();
+                        this.load();
+                    } else {
+                        throw new Error(res?.message || '补发失败');
+                    }
+                } catch (err) {
+                    window.showToast?.(err.message || '库存补发失败，请尝试手动录入卡密', 'error');
+                } finally {
+                    autoReissueStockBtn.disabled = false;
+                }
+            });
+        }
+
+        const quickRefundBtn = container.querySelector('#ticketActionQuickRefundBtn');
+        if (quickRefundBtn) {
+            quickRefundBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const refundCheckbox = document.getElementById('ticketRefundCheckbox');
+                if (refundCheckbox && !refundCheckbox.disabled) {
+                    refundCheckbox.checked = true;
+                }
+                const refundTemplate = ticket.is_guest_order
+                    ? '已核实您反馈的问题，工单已处理完成。订单现金退款申请已提交，款项将原路退回至您的支付账户，请留意到账通知。'
+                    : '已核实您反馈的问题，工单已处理完成。相关订单积分会按原路径退回至您的账户，请稍后留意积分变动。';
+                this.applyReplyTemplate(refundTemplate);
+                window.showToast?.('已自动勾选退款并填入退款通知回复', 'info');
+                const refundField = document.getElementById('ticketRefundField');
+                if (refundField) {
+                    refundField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            });
+        }
+
+        const gotoOrderBtn = container.querySelector('#ticketActionGotoOrderBtn');
+        if (gotoOrderBtn) {
+            gotoOrderBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const orderId = gotoOrderBtn.getAttribute('data-order-id');
+                const isGuest = gotoOrderBtn.getAttribute('data-is-guest') === '1';
+                if (window.adminStudio && typeof window.adminStudio.switchModule === 'function') {
+                    window.adminStudio.switchModule('shop');
+                    setTimeout(() => {
+                        if (isGuest && typeof window.adminStudio.switchTab === 'function') {
+                            window.adminStudio.switchTab('guest-orders');
+                        }
+                    }, 100);
+                } else {
+                    this.openWorkbench(ticket, 'order');
+                }
+            });
+        }
     },
 
     renderReplyModalContextItems: function (items = []) {
@@ -7587,7 +7883,35 @@ const AdminTickets = {
             summaryGrid.innerHTML = this.renderReplyModalSummaryItems(state.summaryItems);
         }
         if (description) {
-            description.textContent = state.descriptionText;
+            const rawDesc = state.descriptionText || '';
+            if (rawDesc.includes('[用户补充')) {
+                const parts = rawDesc.split(/---\s*\[用户补充\s*([^\]]+)\]\s*---\s*/);
+                description.textContent = '';
+                const origBlock = document.createElement('div');
+                origBlock.className = 'admin-ticket-reply-desc-block';
+                origBlock.textContent = parts[0].trim();
+                description.appendChild(origBlock);
+
+                for (let i = 1; i < parts.length; i += 2) {
+                    const time = parts[i]?.trim();
+                    const content = parts[i + 1]?.trim();
+                    if (content) {
+                        const followBlock = document.createElement('div');
+                        followBlock.className = 'admin-ticket-reply-followup-block';
+                        const head = document.createElement('div');
+                        head.className = 'admin-ticket-reply-followup-head';
+                        head.textContent = `用户补充 (${time || '最新'}):`;
+                        const body = document.createElement('div');
+                        body.className = 'admin-ticket-reply-followup-body';
+                        body.textContent = content;
+                        followBlock.appendChild(head);
+                        followBlock.appendChild(body);
+                        description.appendChild(followBlock);
+                    }
+                }
+            } else {
+                description.textContent = rawDesc;
+            }
         }
         if (contextList) {
             contextList.innerHTML = this.renderReplyModalContextItems(state.contextItems);
@@ -7626,13 +7950,38 @@ const AdminTickets = {
             }
         }
 
+        const orderSection = document.getElementById('ticketReplyOrderCardSection');
+        const orderCardContainer = document.getElementById('ticketReplyOrderCard');
+        if (orderCardContainer) {
+            const html = this.renderReplyModalOrderCard(ticket, state);
+            orderCardContainer.innerHTML = html;
+            if (orderSection) {
+                orderSection.hidden = !html;
+            }
+            if (html) {
+                this.bindReplyModalOrderCardEvents(ticket, orderCardContainer);
+            }
+        }
+
+        const refundCheckboxText = document.getElementById('ticketRefundCheckboxText');
+        if (refundCheckboxText) {
+            const resolvedOrderId = this.safeText(ticket?.order_id).trim() || this.extractOrderId(ticket);
+            const isGuest = ticket?.is_guest_order === true || resolvedOrderId.startsWith('GS');
+            refundCheckboxText.textContent = isGuest ? '同时发起现金原路退款' : '同时退还订单积分';
+        }
+
         return state;
     },
 
     buildRefundConfirmationMessage: function (ticket = {}, adminReply = '', internalNote = '') {
         const shortTicketId = this.safeText(ticket?.id).trim().slice(0, 8) || '未知工单';
-        const orderId = this.safeText(ticket?.order_id).trim();
-        const lines = [`确认将工单 ${shortTicketId} 标记为已解决并退还订单积分吗？`];
+        const orderId = this.safeText(ticket?.order_id).trim() || this.extractOrderId(ticket);
+        const isGuest = ticket?.is_guest_order === true || orderId.startsWith('GS');
+        const lines = [
+            isGuest
+                ? `确认将工单 ${shortTicketId} 标记为已解决并提交订单现金原路退款申请吗？`
+                : `确认将工单 ${shortTicketId} 标记为已解决并退还订单积分吗？`
+        ];
 
         if (orderId) {
             lines.push(`关联订单：${orderId}`);
@@ -7644,7 +7993,7 @@ const AdminTickets = {
             lines.push(`内部备注：${internalNote}`);
         }
 
-        lines.push('该操作会尝试触发订单退款流程，并同步通知用户。');
+        lines.push(isGuest ? '该操作会将订单加入原路退款队列，并同步通知用户。' : '该操作会尝试触发订单退款流程，并同步通知用户。');
         return lines.join('\n');
     },
 
@@ -8460,23 +8809,34 @@ const AdminTickets = {
             const orderDiv = document.createElement('div');
             orderDiv.className = 'admin-ticket-copyable admin-ticket-copyable--order';
             orderDiv.title = '点击复制';
-            const orderId = this.safeText(ticket.order_id);
+            const orderId = this.safeText(ticket.order_id) || this.extractOrderId(ticket);
             orderDiv.textContent = orderId ? `${orderId.substring(0, 18)}...` : '-';
             orderDiv.addEventListener('click', () => this.copyText(orderId));
             orderCell.appendChild(orderDiv);
 
+            if (ticket.product_name) {
+                const prodDiv = document.createElement('div');
+                prodDiv.className = 'admin-ticket-meta-date admin-ticket-order-product';
+                prodDiv.textContent = this.truncateText(ticket.product_name, 15);
+                prodDiv.title = ticket.product_name;
+                orderCell.appendChild(prodDiv);
+            }
+
+            const isGuest = ticket?.is_guest_order === true || orderId.startsWith('GS');
             const userCell = document.createElement('td');
             userCell.className = 'admin-ticket-nowrap-cell';
             userCell.dataset.label = '用户 / 邮箱';
             const userDiv = document.createElement('div');
             userDiv.className = 'admin-ticket-copyable admin-ticket-copyable--user';
             userDiv.title = '点击复制';
-            const userId = this.safeText(ticket.user_id);
-            userDiv.textContent = userId ? `${userId.substring(0, 8)}...` : '-';
-            userDiv.addEventListener('click', () => this.copyText(userId));
+            const userId = this.safeText(ticket.user_id) || (isGuest ? '游客买家' : '');
+            userDiv.textContent = userId ? (userId === '游客买家' ? '游客买家' : `${userId.substring(0, 8)}...`) : '-';
+            if (userId && userId !== '游客买家') {
+                userDiv.addEventListener('click', () => this.copyText(userId));
+            }
             userCell.appendChild(userDiv);
 
-            const userEmail = this.safeText(ticket.user_email);
+            const userEmail = this.safeText(ticket.user_email) || this.extractEmail(ticket);
             const emailDiv = document.createElement('div');
             emailDiv.className = 'admin-ticket-meta-date admin-ticket-user-email';
             emailDiv.textContent = userEmail || '无邮箱';
@@ -8749,6 +9109,7 @@ const AdminTickets = {
                 body: JSON.stringify({
                     ticketId,
                     newStatus,
+                    action: 'reply',
                     adminReply,
                     internalNote,
                     doRefund
@@ -8763,7 +9124,9 @@ const AdminTickets = {
             // Close modal
             this.closeReplyModal();
             let successMessage = '已完成工单处理';
-            if (result.refundDuplicate) {
+            if (result.guestRefundQueued) {
+                successMessage = '工单已处理，游客现金退款已排队，到账以支付渠道结果为准';
+            } else if (result.refundDuplicate) {
                 successMessage = '已完成工单处理，关联订单此前已退款，无需重复退回积分';
             } else if (result.refundAmount > 0) {
                 successMessage = `已完成工单处理，并退回 ${Math.max(0, Math.round(Number(result.refundAmount || 0)))} 积分`;

@@ -1,0 +1,80 @@
+{
+  "nodeVersion": "v25.9.0",
+  "environment": {
+    "NODE_OPTIONS": "--require=/tmp/security-test-isolation-20261108/preload.cjs"
+  },
+  "commands": [
+    {
+      "name": "round2-final-verified",
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+      "args": [
+        "--test",
+        "--test-reporter=tap",
+        "tests/security-round2-kc-activation.test.js",
+        "tests/security-round2-kc-credentials.test.js",
+        "tests/security-round2-kc-public-guard.test.js",
+        "tests/security-round2-media-download.test.js",
+        "tests/security-round2-supplier-rich-text.test.js",
+        "tests/shop-product-image-assets.test.js",
+        "tests/shop-product-image-upload.test.js",
+        "tests/shop-supplier-media-r2-and-markup.test.js",
+        "tests/admin-shop-supplier-catalog-handler.test.js",
+        "tests/provider-adapters-zpay-refund.test.js",
+        "tests/payment-zpay-webhook-handler.test.js",
+        "tests/security-round2-zpay-amount.test.js"
+      ],
+      "envOverride": {
+        "NODE_OPTIONS": "--require=/tmp/security-test-isolation-20261108/preload.cjs"
+      },
+      "provenance": "original captured command metadata"
+    },
+    {
+      "name": "payment-tg-guest-verified",
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+      "args": [
+        "--test",
+        "--test-reporter=tap",
+        "tests/payment-public-zpay-webhook-endpoint.test.js",
+        "tests/zpay-provider.test.js",
+        "tests/zpay-checkout-flow.test.js",
+        "tests/guest-shop-payment-adapter.test.js",
+        "tests/guest-shop-webhook.test.js",
+        "tests/guest-shop-security.test.js",
+        "tests/guest-shop-order-access-endpoints.test.js",
+        "tests/tg-payment-gateway.test.js",
+        "tests/tg-zpay-reconciliation-contract.test.js",
+        "tests/tg-authenticated-payment-query-contract.test.js",
+        "tests/tg-purchase-payment-completion-contract.test.js"
+      ],
+      "envOverride": {
+        "NODE_OPTIONS": "--require=/tmp/security-test-isolation-20261108/preload.cjs"
+      },
+      "provenance": "original captured command metadata"
+    },
+    {
+      "name": "kc-affected-final-serial",
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt",
+      "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+      "args": [
+        "./node_modules/vitest/vitest.mjs",
+        "run",
+        "test/recharge-routing.test.js",
+        "test/billing-form.test.js",
+        "test/claude-navigation.test.js",
+        "test/claude-payment-flow.test.js",
+        "test/grok-native-flow.test.js",
+        "--no-file-parallelism",
+        "--maxWorkers=1",
+        "--reporter=json",
+        "--outputFile=/tmp/security-round2-kc-affected-final-results.json"
+      ],
+      "envOverride": {
+        "NODE_OPTIONS": "--require=/tmp/security-test-isolation-20261108/preload.cjs"
+      },
+      "provenance": "execution command preserved in handoff; original result/log archived; separate standalone exit metadata was not captured"
+    }
+  ],
+  "replayNote": "Use the archived raw/preload.cjs through an absolute NODE_OPTIONS --require path. Do not use KC npm test, which supplies --env-file=.env. The guard is test-level Node protection, not OS/container isolation. It blocks repository real .env reads via patched Node fs, external TCP connections and Unix sockets and allows loopback fixtures. It does not demonstrate production isolation."
+}

@@ -227,38 +227,44 @@ function isPrivateOrLoopbackIp(ip) {
     ]);
 }
 
+function validatedIp(value) {
+    if (typeof value !== 'string') return '';
+    const raw = value.trim();
+    // XFF contains IP literals, never RFC Forwarded expressions or quoted lists.
+    if (!isIP(raw) && !/^\[[A-Fa-f0-9:.]+\](?::\d+)?$/.test(raw)
+        && !/^\d{1,3}(?:\.\d{1,3}){3}:\d+$/.test(raw)) return '';
+    const ip = normalizeIp(raw);
+    return isIP(ip) ? ip : '';
+}
+
+function vercelIngressIp(req, env) {
+    // Runtime environment is controlled by the host; request headers are not
+    // proof that a request passed through Vercel.
+    if (env.VERCEL !== '1' || !['production', 'preview'].includes(env.VERCEL_ENV)) return '';
+    return validatedIp(req?.headers?.['x-vercel-forwarded-for']);
+}
+
 function extractForwardedIps(req) {
-    const headers = req?.headers || {};
-    const forwardedChain = [];
+    // Caddy and other ingress proxies append/replace XFF. Alternative IP headers
+    // can survive as attacker-controlled input; never let them outrank that chain.
+    const value = req?.headers?.['x-forwarded-for'];
+    if (typeof value !== 'string') return [];
+    const parts = value.split(',');
+    if (parts.length > 64) return [];
+    const chain = parts.map(entry => validatedIp(entry));
+    // Dropping an invalid hop would change the trust boundary.
+    return chain.every(Boolean) ? chain : [];
+}
 
-    const singleValueHeaders = [
-        headers['cf-connecting-ip'],
-        headers['x-real-ip'],
-        headers['true-client-ip']
-    ];
-
-    singleValueHeaders.forEach((entry) => {
-        const normalized = normalizeIp(entry);
-        if (normalized) {
-            forwardedChain.push(normalized);
-        }
-    });
-
-    const xForwardedFor = String(headers['x-forwarded-for'] || '');
-    xForwardedFor
-        .split(',')
-        .map((entry) => normalizeIp(entry))
-        .filter(Boolean)
-        .forEach((entry) => forwardedChain.push(entry));
-
-    const forwardedHeader = String(headers.forwarded || '');
-    forwardedHeader
-        .split(',')
-        .map((entry) => normalizeIp(entry))
-        .filter(Boolean)
-        .forEach((entry) => forwardedChain.push(entry));
-
-    return [...new Set(forwardedChain)];
+function resolveForwardedChain(socketIp, forwardedIps, trustedProxies, trustAllProxies) {
+    // A missing peer has no authenticated ingress context.
+    if (!socketIp || !forwardedIps.length) return socketIp;
+    let candidate = socketIp;
+    for (let i = forwardedIps.length - 1; i >= 0; i--) {
+        if (!trustAllProxies && !isIpAllowed(candidate, trustedProxies)) break;
+        candidate = forwardedIps[i];
+    }
+    return candidate;
 }
 
 function resolveClientIp(req, options = {}) {
@@ -266,26 +272,14 @@ function resolveClientIp(req, options = {}) {
     const trustedProxies = options.trustedProxies || env.TRUSTED_PROXY_IPS || env.TRUSTED_PROXY_CIDRS || '';
     const trustAllProxies = shouldTrustAllProxies(env, options.trustAllProxies === true);
 
-    const socketIp = normalizeIp(
+    const socketIp = validatedIp(
         req?.socket?.remoteAddress
         || req?.connection?.remoteAddress
         || req?.ip
     );
     const forwardedIps = extractForwardedIps(req);
 
-    if (!forwardedIps.length) {
-        return socketIp;
-    }
-
-    if (!socketIp) {
-        return forwardedIps[0];
-    }
-
-    if (trustAllProxies || isIpAllowed(socketIp, trustedProxies)) {
-        return forwardedIps[0];
-    }
-
-    return socketIp;
+    return vercelIngressIp(req, env) || resolveForwardedChain(socketIp, forwardedIps, trustedProxies, trustAllProxies);
 }
 
 function explainClientIpResolution(req, options = {}) {
@@ -293,7 +287,7 @@ function explainClientIpResolution(req, options = {}) {
     const trustedProxiesRaw = options.trustedProxies || env.TRUSTED_PROXY_IPS || env.TRUSTED_PROXY_CIDRS || '';
     const trustedProxies = splitIpRules(trustedProxiesRaw);
     const trustAllProxies = shouldTrustAllProxies(env, options.trustAllProxies === true);
-    const socketIp = normalizeIp(
+    const socketIp = validatedIp(
         req?.socket?.remoteAddress
         || req?.connection?.remoteAddress
         || req?.ip
@@ -303,10 +297,9 @@ function explainClientIpResolution(req, options = {}) {
         trustAllProxies
         || isIpAllowed(socketIp, trustedProxies)
     );
-    const usedForwardedChain = Boolean(forwardedIps.length && (!socketIp || directPeerTrusted));
-    const resolvedClientIp = usedForwardedChain
-        ? forwardedIps[0]
-        : socketIp;
+    const usedForwardedChain = Boolean(forwardedIps.length && directPeerTrusted);
+    const platformIp = vercelIngressIp(req, env);
+    const resolvedClientIp = platformIp || resolveForwardedChain(socketIp, forwardedIps, trustedProxies, trustAllProxies);
 
     return {
         socketIp,
@@ -315,7 +308,8 @@ function explainClientIpResolution(req, options = {}) {
         trustedProxies,
         trustAllProxies,
         directPeerTrusted,
-        usedForwardedChain,
+        usedForwardedChain: Boolean(platformIp) || usedForwardedChain,
+        platformIngress: platformIp ? 'vercel' : null,
         directPeerTrustReason: !socketIp
             ? 'missing_direct_peer'
             : trustAllProxies
@@ -438,7 +432,7 @@ async function takePersistentRateLimitToken({
     });
 
     if (!normalizedKey || !supabase || typeof supabase.rpc !== 'function' || !shouldUsePersistentRateLimitStore(env)) {
-        if (requirePersistent && (!supabase || typeof supabase.rpc !== 'function' || !shouldUsePersistentRateLimitStore(env))) {
+        if (requirePersistent) {
             return unavailable();
         }
         return fallback();
@@ -459,9 +453,9 @@ async function takePersistentRateLimitToken({
             throw error;
         }
 
-        const payload = Array.isArray(data) ? data[0] : data;
-        if (!payload || typeof payload !== 'object') {
-            throw new Error('Persistent rate limit RPC returned no data');
+        const payload = Array.isArray(data) && data.length === 1 ? data[0] : data;
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload) || typeof payload.allowed !== 'boolean') {
+            throw new Error('Persistent rate limit RPC returned invalid data');
         }
 
         const resetAt = Date.parse(payload.reset_at || payload.resetAt || '');
@@ -526,8 +520,12 @@ async function takeRateLimitTokens({
                 && data.length > 0
                 && data.length < normalizedChecks.length
                 && data[data.length - 1]?.allowed === false;
-            if (!Array.isArray(data) || data.length === 0 || (data.length < normalizedChecks.length && !batchStoppedAtDenial)) {
-                throw new Error('Persistent batch rate limit RPC returned no data');
+            if (!Array.isArray(data)
+                || data.length === 0
+                || data.length > normalizedChecks.length
+                || (data.length < normalizedChecks.length && !batchStoppedAtDenial)
+                || data.some((result) => !result || typeof result.allowed !== 'boolean')) {
+                throw new Error('Persistent batch rate limit RPC returned invalid data');
             }
             return data.map((result = {}, index) => ({
                 scope: String(result.scope || normalizedChecks[index]?.scope || '').trim(),
@@ -596,12 +594,112 @@ function resetSharedRateLimitStore() {
     sharedRateLimitStore.clear();
 }
 
+const DEFAULT_ALLOWED_DOMAINS = Object.freeze([
+    'fatherkey.com',
+    'zaoyoe.com',
+    'zaoyoe.xyz'
+]);
+
+function resolveClientCountry(req) {
+    if (!req) return '';
+    const headers = req.headers || {};
+    const raw = headers['cf-ipcountry']
+        || headers['x-vercel-ip-country']
+        || headers['cloudfront-viewer-country']
+        || headers['x-country-code']
+        || '';
+    const code = String(raw || '').trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(code)) {
+        return code;
+    }
+    return '';
+}
+
+function isAllowedRequestOrigin(req, options = {}) {
+    const env = options.env || process.env;
+    const allowMissing = options.allowMissingOrigin !== undefined
+        ? Boolean(options.allowMissingOrigin)
+        : false;
+
+    let rawOrigin = String(req?.headers?.origin || '').trim();
+    if (!rawOrigin && (req?.headers?.referer || req?.headers?.referrer)) {
+        const rawReferer = String(req?.headers?.referer || req?.headers?.referrer).trim();
+        try {
+            const parsedReferer = new URL(rawReferer);
+            rawOrigin = parsedReferer.origin;
+        } catch (_) {
+            rawOrigin = '';
+        }
+    }
+
+    if (!rawOrigin) {
+        if (allowMissing) {
+            return { allowed: true, origin: '', isMissing: true };
+        }
+        return { allowed: false, reason: 'missing_origin', origin: '' };
+    }
+
+    let parsed;
+    try {
+        parsed = new URL(rawOrigin);
+    } catch (_) {
+        return { allowed: false, reason: 'invalid_origin', origin: rawOrigin };
+    }
+
+    const protocol = parsed.protocol.toLowerCase();
+    if (protocol !== 'http:' && protocol !== 'https:') {
+        return { allowed: false, reason: 'unsupported_protocol', origin: rawOrigin };
+    }
+
+    const hostname = String(parsed.hostname || '').trim().toLowerCase();
+    const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+
+    const allowLocalhost = options.allowLocalhost !== undefined
+        ? Boolean(options.allowLocalhost)
+        : !isProductionLikeRuntime(env);
+
+    if (isLocal) {
+        if (allowLocalhost) {
+            return { allowed: true, origin: rawOrigin, hostname, isLocal: true };
+        }
+        return { allowed: false, reason: 'localhost_forbidden_in_production', origin: rawOrigin, hostname };
+    }
+
+    if (isProductionLikeRuntime(env) && protocol !== 'https:') {
+        return { allowed: false, reason: 'insecure_protocol', origin: rawOrigin, hostname };
+    }
+
+    const allowedOrigins = Array.isArray(options.allowedOrigins)
+        ? options.allowedOrigins.map((o) => String(o || '').trim().toLowerCase()).filter(Boolean)
+        : [];
+    if (allowedOrigins.length > 0 && allowedOrigins.includes(rawOrigin.toLowerCase())) {
+        return { allowed: true, origin: rawOrigin, hostname };
+    }
+
+    const allowedHosts = Array.isArray(options.allowedHosts) && options.allowedHosts.length > 0
+        ? options.allowedHosts.map((h) => String(h || '').trim().toLowerCase()).filter(Boolean)
+        : DEFAULT_ALLOWED_DOMAINS;
+
+    const matchedDomain = allowedHosts.some((domain) => {
+        return hostname === domain || hostname.endsWith(`.${domain}`);
+    });
+
+    if (matchedDomain) {
+        return { allowed: true, origin: rawOrigin, hostname };
+    }
+
+    return { allowed: false, reason: 'unauthorized_origin', origin: rawOrigin, hostname };
+}
+
 module.exports = {
+    DEFAULT_ALLOWED_DOMAINS,
     applyRateLimitHeaders,
     explainClientIpResolution,
     ipMatchesCidr,
+    isAllowedRequestOrigin,
     isIpAllowed,
     normalizeIp,
+    resolveClientCountry,
     resolveClientIp,
     splitIpRules,
     takeRateLimitToken,

@@ -1,0 +1,72 @@
+{
+  "raw": "whitespace-results.json",
+  "interpretation": "git diff --no-index exits 1 because each new file differs from /dev/null; all raw diagnostics were empty. No historical result overwritten. Independent byte check follows.",
+  "files": [
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/README.md",
+      "trailing_whitespace_lines": [],
+      "ends_with_newline": true,
+      "status": "PASS"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/cli.cjs",
+      "trailing_whitespace_lines": [],
+      "ends_with_newline": true,
+      "status": "PASS"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/fixture.sql",
+      "trailing_whitespace_lines": [],
+      "ends_with_newline": true,
+      "status": "PASS"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs",
+      "trailing_whitespace_lines": [],
+      "ends_with_newline": true,
+      "status": "PASS"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/plan.cjs",
+      "trailing_whitespace_lines": [],
+      "ends_with_newline": true,
+      "status": "PASS"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/safety.cjs",
+      "trailing_whitespace_lines": [],
+      "ends_with_newline": true,
+      "status": "PASS"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/store-loader.cjs",
+      "trailing_whitespace_lines": [],
+      "ends_with_newline": true,
+      "status": "PASS"
+    },
+    {
+      "path": "tests/security-round8-kc-mysql-lab.test.js",
+      "trailing_whitespace_lines": [],
+      "ends_with_newline": true,
+      "status": "PASS"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/preload.cjs",
+      "trailing_whitespace_lines": [],
+      "ends_with_newline": true,
+      "status": "PASS"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/run.py",
+      "trailing_whitespace_lines": [],
+      "ends_with_newline": true,
+      "status": "PASS"
+    },
+    {
+      "path": "docs/security-card-store-hardening-round8-2026-11-09.md",
+      "trailing_whitespace_lines": [],
+      "ends_with_newline": true,
+      "status": "PASS"
+    }
+  ]
+}

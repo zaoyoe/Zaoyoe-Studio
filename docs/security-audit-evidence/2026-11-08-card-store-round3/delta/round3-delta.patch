@@ -1,0 +1,960 @@
+--- before/services/kc-pay-gpt/mysql-store.js
++++ after/services/kc-pay-gpt/mysql-store.js
+@@ -2918,7 +2918,7 @@
+     };
+ }
+ 
+-async function createTaskLog({ tokenPreview, sessionPayload, cdkCode, phone, cardLast4, status, progress = 0, paymentState = 'not_started', executionMode = 'legacy_unknown' }) {
++async function createTaskLog({ tokenPreview, sessionPayload, cdkCode, phone, cardLast4, status, progress = 0, paymentState = 'not_started', executionMode = 'legacy_unknown' }, options = {}) {
+     const now = new Date();
+     const displayTime = now.toLocaleString('zh-CN', { hour12: false });
+     const jobKey = crypto.randomBytes(24).toString('base64url');
+@@ -2946,10 +2946,104 @@
+             Number(progress || 0),
+             displayTime,
+             String(paymentState || 'not_started')
+-        ]
++        ],
++        options
+     );
+ 
+     return { jobKey, displayTime };
++}
++
++
++function activationAdmissionError(code, message, statusCode = 403) {
++    return Object.assign(new Error(message), { code, statusCode });
++}
++
++async function getBlockingActivationTask(connection, cdkCode, excludeJobKey = '') {
++    const rows = await runQuery(
++        `SELECT provider_task.* FROM task_logs provider_task
++         WHERE provider_task.cdk_code = ? AND provider_task.job_key <> ?
++           AND (provider_task.status IN ('running', 'manual') OR provider_task.recovery_required = 1
++             OR COALESCE(provider_task.payment_state, 'unknown') NOT IN ('not_started', 'declined', 'succeeded')
++             OR ((provider_task.execution_mode = 'third_party_api' OR provider_task.gpt_api_order_id IS NOT NULL
++                 OR provider_task.gpt_api_task_id IS NOT NULL) AND ${GPT_API_UNSETTLED_TASK_SQL}))
++         ORDER BY provider_task.id DESC LIMIT 1 FOR UPDATE`,
++        [String(cdkCode), String(excludeJobKey)], { connection }
++    );
++    return rows[0] || null;
++}
++
++// CDK consumption and its recoverable task must commit together. An uncertain
++// COMMIT result is deliberately propagated: callers must never compensate by CDK alone.
++async function createActivationTask({ expectedCdk, ...input }) {
++    const bindingFields = ['platform', 'plan_type', 'payment_region'];
++    if (!input.cdkCode || !expectedCdk || bindingFields.some(key => !Object.prototype.hasOwnProperty.call(expectedCdk, key))
++        || !['local_card_pool', 'third_party_api'].includes(input.executionMode)) {
++        throw activationAdmissionError('ACTIVATION_INPUT_INVALID', '充值任务绑定信息不完整', 400);
++    }
++    return withTransaction(async connection => {
++        const cdks = await runQuery(
++            `SELECT *, (cooldown_until > CURRENT_TIMESTAMP) AS activation_cooling_down
++             FROM cdk_codes WHERE cdk_code = ? LIMIT 1 FOR UPDATE`, [String(input.cdkCode)], { connection });
++        const cdk = cdks[0];
++        if (!cdk || Number(cdk.is_active) !== 1 || cdk.type !== '自助') {
++            throw activationAdmissionError('CDK_UNAVAILABLE', 'CDK 无效、已使用或非自助激活码');
++        }
++        const blockingTask = await getBlockingActivationTask(connection, input.cdkCode);
++        if (blockingTask?.status === 'running') {
++            return { created: false, jobKey: blockingTask.job_key };
++        }
++        if (cdk.used_at || blockingTask) {
++            throw activationAdmissionError('CDK_LOCK_UNAVAILABLE', 'CDK 不可用或存在待复核任务');
++        }
++        if (Number(cdk.activation_cooling_down) === 1) {
++            throw activationAdmissionError('CDK_COOLDOWN', 'CDK 仍在安全冷却中，请稍后重试');
++        }
++        if (bindingFields.some(key => String(cdk[key] ?? '') !== String(expectedCdk[key] ?? ''))) {
++            throw activationAdmissionError('CDK_BINDING_CHANGED', 'CDK 套餐配置已变更，请刷新后重试', 409);
++        }
++        const consumed = await runExecute(
++            `UPDATE cdk_codes SET used_at = CURRENT_TIMESTAMP
++             WHERE cdk_code = ? AND is_active = 1 AND used_at IS NULL`, [String(input.cdkCode)], { connection });
++        if (consumed.affectedRows !== 1) {
++            throw activationAdmissionError('CDK_LOCK_UNAVAILABLE', 'CDK 不可用或正在被他人使用');
++        }
++        const task = await createTaskLog({ ...input, status: 'running', paymentState: 'not_started' }, { connection });
++        return { ...task, created: true };
++    });
++}
++
++// Only a current, provably safe task may return its own CDK. Provider evidence,
++// unknown payment outcomes and newer task owners all require a retained lock.
++async function retireSafeActivationTask(jobKey, { message = '任务未能启动，请稍后重试', allowDeclined = false } = {}) {
++    if (!jobKey) return { released: false, reason: 'TASK_MISSING' };
++    return withTransaction(async connection => {
++        // Match the existing provider settlement lock order: task -> CDK -> owner.
++        const tasks = await runQuery('SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE', [String(jobKey)], { connection });
++        const task = tasks[0];
++        const safeState = task?.payment_state === 'not_started'
++            || (allowDeclined && task?.execution_mode === 'local_card_pool' && task?.payment_state === 'declined');
++        if (!task || !task.cdk_code || task.status !== 'running' || Number(task.recovery_required) !== 0 || !safeState
++            || !['local_card_pool', 'third_party_api'].includes(task.execution_mode)
++            || task.gpt_api_order_id != null || task.gpt_api_task_id != null || task.gpt_api_raw != null) {
++            return { released: false, reason: 'TASK_REQUIRES_REVIEW' };
++        }
++        const cdks = await runQuery('SELECT * FROM cdk_codes WHERE cdk_code = ? LIMIT 1 FOR UPDATE', [task.cdk_code], { connection });
++        const owners = await runQuery('SELECT job_key FROM task_logs WHERE cdk_code = ? ORDER BY id DESC LIMIT 1 FOR UPDATE', [task.cdk_code], { connection });
++        if (!cdks[0] || !cdks[0].used_at || Number(cdks[0].is_active) !== 1 || owners[0]?.job_key !== String(jobKey)
++            || await getBlockingActivationTask(connection, task.cdk_code, jobKey)) {
++            return { released: false, reason: 'CDK_OWNER_MISMATCH' };
++        }
++        const retired = await runExecute(
++            `UPDATE task_logs SET status = 'failed', message = ?, progress = 0,
++                finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP), last_heartbeat_at = CURRENT_TIMESTAMP,
++                session_payload = NULL, session_payload_encrypted = NULL
++             WHERE job_key = ? AND status = 'running'`, [redactSensitiveText(message).slice(0, 255), String(jobKey)], { connection });
++        if (retired.affectedRows !== 1) throw activationAdmissionError('ACTIVATION_RETIRE_CONFLICT', '充值任务收尾状态已变更', 409);
++        const released = await runExecute(
++            'UPDATE cdk_codes SET used_at = NULL WHERE cdk_code = ? AND used_at IS NOT NULL', [task.cdk_code], { connection });
++        if (released.affectedRows !== 1) throw activationAdmissionError('ACTIVATION_RELEASE_CONFLICT', '充值卡密归属已变更', 409);
++        return { released: true };
++    });
+ }
+ 
+ async function getTaskStatus(jobKey) {
+@@ -4399,6 +4493,8 @@
+     getMaintenanceModeState,
+     setMaintenanceModeState,
+     createTaskLog,
++    createActivationTask,
++    retireSafeActivationTask,
+     deleteTaskLogByJobKey,
+     deleteTaskMediaFiles,
+     getBillingOverviewStats,
+--- before/services/kc-pay-gpt/server.js
++++ after/services/kc-pay-gpt/server.js
+@@ -4320,7 +4320,6 @@
+     if (!cdk) {
+         return res.status(400).json({ success: false, message: '缺少 CDK' });
+     }
+-    let ownsCdkLock = false;
+     let workerDispatched = false;
+     let capacityReservation = '';
+     let taskSlot = '';
+@@ -4443,24 +4442,23 @@
+             }
+         }
+ 
+-        activationStage = 'cdk_lock';
+-        const lockSuccess = await store.markCdkUsed(cdk);
+-        if (!lockSuccess) {
+-            return rejectActivation(403, 'CDK_LOCK_UNAVAILABLE', 'CDK 不可用或正在被他人使用');
+-        }
+-        ownsCdkLock = true;
+-
+-        activationStage = 'task_create';
+-        const task = await store.createTaskLog({
++        activationStage = 'task_admission';
++        const task = await store.createActivationTask({
++            expectedCdk: { platform: cdkDetails.platform, plan_type: cdkDetails.plan_type, payment_region: cdkDetails.payment_region },
+             tokenPreview,
+             sessionPayload: storedSession,
+             cdkCode: cdk,
+             phone: null,
+             cardLast4: null,
+-            status: 'running',
+             progress: 8,
+             executionMode
+         });
++        if (!task.created) {
++            return res.json({
++                success: true, jobKey: task.jobKey, taskAccessToken: issueTaskAccessToken(task.jobKey),
++                message: '该 CDK 正在开通中，已为您恢复等待进度'
++            });
++        }
+         createdTaskKey = task.jobKey;
+         Object.assign(task, { executionMode, tokenPreview, platform, planType });
+ 
+@@ -4471,14 +4469,17 @@
+         capacityReservation = '';
+ 
+         activationStage = 'worker_dispatch';
++        const providerSession = useGptApi ? JSON.parse(storedSession) : null;
++        // Crossing the dispatch boundary is enough to make the outcome uncertain.
++        // A synchronous throw must not release a CDK a worker may already own.
++        workerDispatched = true;
+         if (useGptApi) {
+-            runGptApiWorker({ task, token, session: JSON.parse(storedSession), cdk, planType }).catch((error) => {
++            runGptApiWorker({ task, token, session: providerSession, cdk, planType }).catch((error) => {
+                 console.error(`[GPT API Worker] ${task.jobKey}:`, error);
+             });
+         } else {
+             spawnActivationWorker({ task, token, sessionRaw: storedSession, cdk, cdkDetails, clientIp, sessionCooldownScopeKey });
+         }
+-        workerDispatched = true;
+ 
+         return res.json({
+             success: true,
+@@ -4487,23 +4488,13 @@
+             message: '任务已启动，正在为您开通中...'
+         });
+     } catch (error) {
+-        if (ownsCdkLock && !workerDispatched) {
+-            // Retire a task that never reached a worker before making its CDK reusable.
+-            // Otherwise a retry recovers the stale running row and can wait forever.
+-            let canReturnCdk = true;
+-            if (createdTaskKey) {
+-                try {
+-                    await store.updateTaskLog(createdTaskKey, {
+-                        status: 'failed', progress: 0, paymentState: 'not_started',
+-                        recoveryRequired: false, message: '任务未能启动，请稍后重试'
+-                    });
+-                } catch (cleanupError) {
+-                    canReturnCdk = false;
+-                    logTask(createdTaskKey, `未启动任务收尾失败，CDK 保留待复核: ${redactSensitiveText(cleanupError.message)}`, 'error');
+-                }
+-            }
+-            if (canReturnCdk) {
+-                try { await store.markCdkUnused(cdk); } catch (_) { }
++        if (createdTaskKey && !workerDispatched) {
++            try {
++                const cleanup = await store.retireSafeActivationTask(createdTaskKey);
++                if (!cleanup.released) logTask(createdTaskKey, '未启动任务未能安全返卡，CDK 保留待复核', 'warn');
++            } catch (cleanupError) {
++                // Includes unknown COMMIT outcomes: never fall back to an unscoped unlock.
++                logTask(createdTaskKey, `未启动任务收尾失败，CDK 保留待复核: ${redactSensitiveText(cleanupError.message)}`, 'error');
+             }
+         }
+         const safeError = redactSensitiveText(error.message);
+@@ -4799,17 +4790,22 @@
+             if (await recoverInterruptedCheckoutDiagnostic(staleTask)) continue;
+             if (staleTask.execution_mode === 'third_party_api' || staleTask.gpt_api_order_id || staleTask.gpt_api_task_id) continue;
+             const decision = classifyInterruptedTask(staleTask);
++            if (!decision.retainCdk && staleTask.cdk_code) {
++                const cleanup = await store.retireSafeActivationTask(staleTask.job_key, {
++                    allowDeclined: true, message: '服务重启导致任务中断，未提交支付，任务已安全结束'
++                });
++                if (cleanup.released) continue;
++                // A newer owner or newer payment evidence invalidates the startup snapshot.
++                // Keep the current row and CDK intact for review instead of overwriting them.
++                logTask(staleTask.job_key, '启动恢复未能确认安全返卡，保留任务及 CDK 待复核', 'warn');
++                continue;
++            }
+             await store.updateTaskLog(staleTask.job_key, {
+                 status: decision.status,
+-                message: decision.retainCdk
+-                    ? '服务重启导致任务中断，支付状态未确认，已保留 CDK 并转人工复核'
+-                    : '服务重启导致任务中断，未提交支付，任务已安全结束',
++                message: '服务重启导致任务中断，支付状态未确认，已保留 CDK 并转人工复核',
+                 paymentState: decision.paymentState,
+-                recoveryRequired: decision.retainCdk
++                recoveryRequired: true
+             });
+-            if (!decision.retainCdk && staleTask.cdk_code) {
+-                await store.markCdkUnused(staleTask.cdk_code);
+-            }
+         }
+         await store.resetAllAssetLocks();
+         console.log(`🔐 [任务恢复] 已处理 ${staleTasks.length} 条遗留任务，并安全清理可回收资产锁`);
+--- before/services/kc-pay-gpt/test/recharge-routing.test.js
++++ after/services/kc-pay-gpt/test/recharge-routing.test.js
+@@ -39,7 +39,9 @@
+             plan_mapping: { plus: 'plus-monthly', go: 'go-monthly', pro_100: 'pro100-monthly',
+                 pro_200: 'pro200-monthly', pro_500: 'pro500-monthly' } })),
+         hasAvailableCard: vi.fn(async () => true), markCdkUsed: vi.fn(async () => true),
+-        markCdkUnused: vi.fn(async () => {}), createTaskLog: vi.fn(async () => ({ jobKey: 'fixture-job' })), ...overrides
++        markCdkUnused: vi.fn(async () => {}), createTaskLog: vi.fn(async () => ({ jobKey: 'fixture-job' })),
++        createActivationTask: vi.fn(async () => ({ created: true, jobKey: 'fixture-job' })),
++        retireSafeActivationTask: vi.fn(async () => ({ released: true })), ...overrides
+     };
+     const spawnActivationWorker = vi.fn(), runGptApiWorker = vi.fn(async () => {});
+     const context = { ...sessions, Buffer, Date, crypto, store, ensureStoreReady: async () => {},
+@@ -64,7 +66,8 @@
+     it.each(fixtures)('$platform uses only its own credential checks and execution mode', async fixture => {
+         const h = handlerHarness(fixture); await h.request();
+         expect(h.response.value).toMatchObject({ success: true, jobKey: 'fixture-job' });
+-        expect(h.store.markCdkUsed).toHaveBeenCalledOnce();
++        expect(h.store.createActivationTask).toHaveBeenCalledOnce();
++        expect(h.store.markCdkUsed).not.toHaveBeenCalled();
+         expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+         expect(h.context.validateAccessToken).toHaveBeenCalledTimes(fixture.platform === 'chatgpt' ? 1 : 0);
+         if (fixture.platform === 'chatgpt') {
+@@ -74,7 +77,7 @@
+             expect(h.spawnActivationWorker.mock.calls[0][0]).toMatchObject({ sessionRaw: fixture.credential,
+                 task: { platform: fixture.platform, executionMode: 'local_card_pool' } });
+         }
+-        expect(h.store.createTaskLog.mock.calls[0][0].tokenPreview).not.toContain('offline-cookie');
++        expect(h.store.createActivationTask.mock.calls[0][0].tokenPreview).not.toContain('offline-cookie');
+     });
+     it('preserves full ChatGPT Session JSON in local mode', async () => {
+         const h = handlerHarness(fixtures[2], { getGptApiConfig: async () => ({ enabled: false }) }); await h.request();
+@@ -91,6 +94,7 @@
+         expect(h.store.hasAvailableCard).not.toHaveBeenCalled();
+         expect(h.store.markCdkUsed).not.toHaveBeenCalled();
+         expect(h.store.createTaskLog).not.toHaveBeenCalled();
++        expect(h.store.createActivationTask).not.toHaveBeenCalled();
+         expect(h.spawnActivationWorker).not.toHaveBeenCalled();
+         expect(h.runGptApiWorker).not.toHaveBeenCalled();
+     });
+@@ -110,6 +114,7 @@
+         expect(h.store.hasAvailableCard).not.toHaveBeenCalled();
+         expect(h.store.markCdkUsed).not.toHaveBeenCalled();
+         expect(h.store.createTaskLog).not.toHaveBeenCalled();
++        expect(h.store.createActivationTask).not.toHaveBeenCalled();
+         expect(h.spawnActivationWorker).not.toHaveBeenCalled();
+         expect(h.runGptApiWorker).not.toHaveBeenCalled();
+     });
+@@ -134,10 +139,16 @@
+         const h = handlerHarness(fixtures[0], { verifyCdkDetails: async () => { throw new Error('lookup failed'); } });
+         await h.request(); expect(h.store.markCdkUnused).not.toHaveBeenCalled(); expect(h.response.statusCode).toBe(500);
+     });
+-    it('releases only the lock acquired by this request when task creation fails', async () => {
+-        const h = handlerHarness(fixtures[0], { createTaskLog: async () => { throw new Error('insert failed'); } });
+-        await h.request(); expect(h.store.markCdkUsed).toHaveBeenCalledOnce(); expect(h.store.markCdkUnused).toHaveBeenCalledOnce();
+-        expect(h.context.logTask).toHaveBeenCalledWith('', expect.stringContaining('stage=task_create'), 'error');
++    it('never unlocks by CDK when atomic admission fails or its commit outcome is unknown', async () => {
++        const h = handlerHarness(fixtures[0], { createActivationTask: vi.fn(async () => { throw new Error('insert or commit failed'); }) });
++        await h.request();
++        expect(h.response.statusCode).toBe(500);
++        expect(h.store.createActivationTask).toHaveBeenCalledOnce();
++        expect(h.store.markCdkUsed).not.toHaveBeenCalled();
++        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
++        expect(h.store.retireSafeActivationTask).not.toHaveBeenCalled();
++        expect(h.spawnActivationWorker).not.toHaveBeenCalled();
++        expect(h.context.logTask).toHaveBeenCalledWith('', expect.stringContaining('stage=task_admission'), 'error');
+     });
+     it.each(fixtures)('records card-pool rejection for $platform without leaking internal instructions or starting a task', async fixture => {
+         const h = handlerHarness(fixture, { getGptApiConfig: async () => ({ enabled: false }), hasAvailableCard: async () => false });
+@@ -147,6 +158,7 @@
+         expect(h.context.logTask).toHaveBeenCalledWith('', expect.stringContaining('stage=card_pool_check code=CARD_POOL_UNAVAILABLE'), 'warn');
+         expect(h.store.markCdkUsed).not.toHaveBeenCalled();
+         expect(h.store.createTaskLog).not.toHaveBeenCalled();
++        expect(h.store.createActivationTask).not.toHaveBeenCalled();
+         expect(h.spawnActivationWorker).not.toHaveBeenCalled();
+         expect(h.runGptApiWorker).not.toHaveBeenCalled();
+     });
+@@ -185,6 +197,7 @@
+         expect(h.store.hasAvailableCard).not.toHaveBeenCalled();
+         expect(h.store.markCdkUsed).not.toHaveBeenCalled();
+         expect(h.store.createTaskLog).not.toHaveBeenCalled();
++        expect(h.store.createActivationTask).not.toHaveBeenCalled();
+         expect(h.spawnActivationWorker).not.toHaveBeenCalled();
+     });
+     it('does not apply the local Session cooldown to third-party ChatGPT checkout', async () => {
+--- before/services/kc-pay-gpt/test/local-preview-recovery.test.js
++++ after/services/kc-pay-gpt/test/local-preview-recovery.test.js
+@@ -42,16 +42,39 @@
+         const localTask = { job_key: 'recent', cdk_code: 'local-cdk', execution_mode: 'local_card_pool', payment_state: paymentState };
+         const store = {
+             listRunningTasksForRecovery: vi.fn(async () => [localTask, { job_key: 'external', execution_mode: 'third_party_api' }]),
+-            updateTaskLog: vi.fn(), markCdkUnused: vi.fn(), resetAllAssetLocks: vi.fn()
++            updateTaskLog: vi.fn(), markCdkUnused: vi.fn(), resetAllAssetLocks: vi.fn(),
++            retireSafeActivationTask: vi.fn(async () => ({ released: true }))
+         };
+         const code = snippet(serverSource, '        const staleTasks = await store.listRunningTasksForRecovery();', '    } catch (error) {\n        console.error(`❌ [任务恢复]');
+         await vm.runInNewContext(`(async () => {${code}})()`, {
+             store, classifyInterruptedTask, recoverInterruptedCheckoutDiagnostic: async () => false, console: { log() {} }
+         });
+         expect(store.listRunningTasksForRecovery).toHaveBeenCalledOnce();
+-        expect(store.updateTaskLog).toHaveBeenCalledExactlyOnceWith('recent', expect.objectContaining({ status, paymentState, recoveryRequired: retainCdk }));
+-        if (retainCdk) expect(store.markCdkUnused).not.toHaveBeenCalled();
+-        else expect(store.markCdkUnused).toHaveBeenCalledExactlyOnceWith('local-cdk');
++        if (retainCdk) {
++            expect(store.updateTaskLog).toHaveBeenCalledExactlyOnceWith('recent', expect.objectContaining({ status, paymentState, recoveryRequired: true }));
++            expect(store.retireSafeActivationTask).not.toHaveBeenCalled();
++        } else {
++            expect(store.retireSafeActivationTask).toHaveBeenCalledExactlyOnceWith('recent', expect.objectContaining({ allowDeclined: true }));
++            expect(store.updateTaskLog).not.toHaveBeenCalled();
++        }
++        expect(store.markCdkUnused).not.toHaveBeenCalled();
++        expect(store.resetAllAssetLocks).toHaveBeenCalledOnce();
++    });
++    it('keeps the current task intact when its startup snapshot no longer permits retirement', async () => {
++        const store = {
++            listRunningTasksForRecovery: vi.fn(async () => [{ job_key: 'stale', cdk_code: 'local-cdk', execution_mode: 'local_card_pool', payment_state: 'not_started' }]),
++            retireSafeActivationTask: vi.fn(async () => ({ released: false, reason: 'TASK_REQUIRES_REVIEW' })),
++            updateTaskLog: vi.fn(), markCdkUnused: vi.fn(), resetAllAssetLocks: vi.fn()
++        };
++        const logTask = vi.fn();
++        const code = snippet(serverSource, '        const staleTasks = await store.listRunningTasksForRecovery();', '    } catch (error) {\n        console.error(`❌ [任务恢复]');
++        await vm.runInNewContext(`(async () => {${code}})()`, {
++            store, classifyInterruptedTask, recoverInterruptedCheckoutDiagnostic: async () => false, logTask, console: { log() {} }
++        });
++        expect(store.retireSafeActivationTask).toHaveBeenCalledOnce();
++        expect(store.updateTaskLog).not.toHaveBeenCalled();
++        expect(store.markCdkUnused).not.toHaveBeenCalled();
++        expect(logTask).toHaveBeenCalledWith('stale', expect.stringContaining('保留任务及 CDK'), 'warn');
+     });
+ });
+ 
+@@ -149,7 +172,9 @@
+     });
+ });
+ 
+-function socketHarness() {
++const syntheticTaskAccessToken = 'offline-synthetic-task-access-token';
++
++function socketHarness(taskAccessToken = syntheticTaskAccessToken) {
+     const connections = [];
+     class FakeWebSocket {
+         static OPEN = 1;
+@@ -168,12 +193,17 @@
+     vm.createContext(context);
+     vm.runInContext(snippet(publicSource, '        let socket = null;', '        function resetRedeemFlow('), context);
+     vm.runInContext(snippet(publicSource, '        function initWebSocket(', "        startBtn.addEventListener('click'"), context);
+-    context.initWebSocket('original-task');
+-    const first = connections[0]; first.readyState = 1; first.onopen();
++    context.initWebSocket('original-task', taskAccessToken);
++    const first = connections[0];
++    if (first) { first.readyState = 1; first.onopen(); }
+     return { context, connections, first };
+ }
+ 
+ describe('recharge task connection recovery', () => {
++    it('does not create a task connection without its access token', () => {
++        const { connections } = socketHarness('');
++        expect(connections).toHaveLength(0);
++    });
+     it('warns about a disconnect and subscribes to the same task after reconnecting', () => {
+         vi.useFakeTimers();
+         const { context, first, connections } = socketHarness();
+@@ -181,7 +211,7 @@
+         expect(context.showStatus).toHaveBeenCalledWith(expect.stringContaining('请勿重复提交'), 'warning');
+         vi.advanceTimersByTime(3000);
+         const second = connections[1]; second.readyState = 1; second.onopen();
+-        expect(JSON.parse(second.send.mock.calls[0][0])).toEqual({ type: 'subscribe', jobKey: 'original-task' });
++        expect(JSON.parse(second.send.mock.calls[0][0])).toEqual({ type: 'subscribe', jobKey: 'original-task', taskAccessToken: syntheticTaskAccessToken });
+         second.onmessage({ data: JSON.stringify({ type: 'snapshot', jobKey: 'original-task', status: 'failed' }) });
+         expect(context.statusMsg.style.display).toBe('none');
+         expect(context.applyTaskState).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
+--- before/tests/security-round2-kc-activation.test.js
++++ after/tests/security-round2-kc-activation.test.js
+@@ -23,19 +23,21 @@
+     const promise = new Promise(done => { resolve = done; });
+     return { promise, resolve };
+ }
+-function fixture({ storeOverrides = {}, spawn } = {}) {
++function fixture({ storeOverrides = {}, spawn, beforeDispatch } = {}) {
+     const activeForegroundJobs = new Set();
+     const dispatched = [];
+     const unlocked = [];
+     const tasks = [];
+     const updates = [];
++    const retired = [];
++    let preparationHookUsed = false;
+     const context = {
+         console: { log() {}, error() {} }, crypto, activeForegroundJobs,
+         getClientIp: () => '', ensureStoreReady: async () => {},
+         getRemainingCooldownMinutes: () => 0,
+         resolveActivationInput: () => ({ platform: 'grok', planType: 'grok-pro', token: 'synthetic-token',
+             storedSession: '{}', tokenPreview: 'synthetic' }),
+-        logTask() {}, issueTaskAccessToken: key => `synthetic-access-${key}`,
++        logTask(key) { if (key && beforeDispatch && !preparationHookUsed) { preparationHookUsed = true; beforeDispatch(key); } }, issueTaskAccessToken: key => `synthetic-access-${key}`,
+         redactSensitiveText: text => String(text || ''),
+         formatTaskErrorMessage: (_status, message) => message,
+         fireTelegramNotification() {}, extractEmailFromSession: () => null,
+@@ -51,11 +53,13 @@
+             hasAvailableCard: async () => true,
+             markCdkUsed: async () => true,
+             markCdkUnused: async cdk => { unlocked.push(cdk); },
+-            createTaskLog: async input => {
++            createTaskLog: async () => { throw new Error('unscoped task creation forbidden'); },
++            createActivationTask: async input => {
+                 const task = { jobKey: `synthetic-job-${tasks.length + 1}` };
+                 tasks.push({ task, input });
+-                return task;
++                return { ...task, created: true };
+             },
++            retireSafeActivationTask: async key => { retired.push(key); return { released: true }; },
+             updateTaskLog: async (key, update) => { updates.push({ key, update }); },
+             ...storeOverrides
+         }
+@@ -67,7 +71,7 @@
+         await context.handle({ path: '/api/run-process', body: { session: 'synthetic-session', cdk, ...body } }, res);
+         return res;
+     }
+-    return { run, context, activeForegroundJobs, dispatched, unlocked, tasks, updates };
++    return { run, context, activeForegroundJobs, dispatched, unlocked, tasks, updates, retired };
+ }
+ 
+ test('KC real activation handler reserves capacity before the first CDK lookup can yield', async () => {
+@@ -96,7 +100,7 @@
+     ['used CDK', { verifyCdkDetails: async () => ({ type: '自助', used_at: 'synthetic-date' }) }, 403],
+     ['non-self-service CDK', { verifyCdkDetails: async () => ({ type: '人工', used_at: null }) }, 403],
+     ['empty card pool', { hasAvailableCard: async () => false }, 503],
+-    ['failed CDK compare-and-set', { markCdkUsed: async () => false }, 403],
++    ['failed CDK compare-and-set', { createActivationTask: async () => { throw Object.assign(new Error('CAS conflict'), { statusCode: 403 }); } }, 403],
+     ['CDK lookup failure', { verifyCdkDetails: async () => { throw new Error('synthetic lookup failure'); } }, 500]
+ ]) {
+     test(`KC real activation handler releases admission after ${name}`, async () => {
+@@ -116,43 +120,54 @@
+     assert.equal(app.activeForegroundJobs.size, 0);
+     assert.equal(app.dispatched.length, 0);
+ });
+-test('KC task creation failure returns the claimed CDK and admission capacity', async () => {
+-    const app = fixture({ storeOverrides: { createTaskLog: async () => { throw new Error('synthetic insert failure'); } } });
++test('KC atomic admission failure returns capacity without unscoped CDK compensation', async () => {
++    const app = fixture({ storeOverrides: { createActivationTask: async () => { throw new Error('synthetic insert or commit failure'); } } });
+     assert.equal((await app.run()).code, 500);
+-    assert.deepEqual(app.unlocked, ['synthetic-code']);
+-    assert.equal(app.activeForegroundJobs.size, 0);
+-    assert.equal(app.dispatched.length, 0);
+-});
+-test('KC synchronous worker dispatch failure returns the CDK and both kinds of capacity', async () => {
+-    const app = fixture({ spawn: () => { throw new Error('synthetic dispatch failure'); } });
++    assert.deepEqual(app.unlocked, []);
++    assert.deepEqual(app.retired, []);
++    assert.equal(app.activeForegroundJobs.size, 0);
++    assert.equal(app.dispatched.length, 0);
++});
++test('KC synchronous dispatch failure retains the CDK and task capacity for recovery', async () => {
++    const app = fixture({ spawn: () => { throw new Error('synthetic uncertain dispatch failure'); } });
+     assert.equal((await app.run()).code, 500);
+-    assert.deepEqual(app.unlocked, ['synthetic-code']);
+-    assert.equal(app.activeForegroundJobs.size, 0);
+-    assert.equal(app.updates.length, 1);
+-    assert.equal(app.updates[0].key, 'synthetic-job-1');
+-    assert.equal(app.updates[0].update.status, 'failed');
+-    assert.equal(app.updates[0].update.paymentState, 'not_started');
+-});
+-test('KC never returns a CDK when an unstarted task cannot be retired', async () => {
+-    const app = fixture({
+-        spawn: () => { throw new Error('synthetic dispatch failure'); },
+-        storeOverrides: { updateTaskLog: async () => { throw new Error('synthetic cleanup failure'); } }
++    assert.deepEqual(app.unlocked, []);
++    assert.deepEqual(app.retired, []);
++    assert.deepEqual([...app.activeForegroundJobs], ['synthetic-job-1']);
++    assert.equal(app.updates.length, 0);
++});
++test('KC failure before dispatch retires only the created task through the atomic primitive', async () => {
++    const app = fixture({ beforeDispatch: () => { throw new Error('synthetic preparation failure'); } });
++    assert.equal((await app.run()).code, 500);
++    assert.deepEqual(app.retired, ['synthetic-job-1']);
++    assert.deepEqual(app.unlocked, []);
++    assert.equal(app.dispatched.length, 0);
++    assert.equal(app.activeForegroundJobs.size, 0);
++});
++for (const outcome of ['refused', 'throws']) {
++    test(`KC never falls back to an unscoped CDK unlock when retirement ${outcome}`, async () => {
++        const app = fixture({
++            beforeDispatch: () => { throw new Error('synthetic preparation failure'); },
++            storeOverrides: { retireSafeActivationTask: async () => {
++                if (outcome === 'throws') throw new Error('synthetic uncertain retirement');
++                return { released: false, reason: 'TASK_REQUIRES_REVIEW' };
++            } }
++        });
++        assert.equal((await app.run()).code, 500);
++        assert.deepEqual(app.unlocked, []);
++        assert.equal(app.updates.length, 0);
++        assert.equal(app.dispatched.length, 0);
++        assert.equal(app.activeForegroundJobs.size, 0);
+     });
+-    assert.equal((await app.run()).code, 500);
+-    assert.deepEqual(app.unlocked, []);
+-    assert.equal(app.activeForegroundJobs.size, 0);
+-});
+-test('KC retires unstarted tasks before returning their CDK', async () => {
+-    const events = [];
+-    const app = fixture({
+-        spawn: () => { throw new Error('synthetic dispatch failure'); },
+-        storeOverrides: {
+-            updateTaskLog: async () => { events.push('retired'); },
+-            markCdkUnused: async () => { events.push('returned'); }
+-        }
+-    });
+-    await app.run();
+-    assert.deepEqual(events, ['retired', 'returned']);
++}
++test('KC admission resumes a task discovered under the transaction lock without redispatch', async () => {
++    const app = fixture({ storeOverrides: { createActivationTask: async () => ({ created: false, jobKey: 'synthetic-concurrent' }) } });
++    const res = await app.run();
++    assert.equal(res.body.jobKey, 'synthetic-concurrent');
++    assert.equal(res.body.taskAccessToken, 'synthetic-access-synthetic-concurrent');
++    assert.equal(app.activeForegroundJobs.size, 0);
++    assert.equal(app.dispatched.length, 0);
++    assert.deepEqual(app.unlocked, []);
+ });
+ test('KC maintenance and missing credentials never claim CDKs or capacity', async () => {
+     const app = fixture({ storeOverrides: { getMaintenanceModeState: async () => ({ enabled: true }) } });
+--- /dev/null
++++ after/tests/security-round3-kc-activation-atomic.test.js
+@@ -0,0 +1,386 @@
++'use strict';
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const vm = require('node:vm');
++const crypto = require('node:crypto');
++const { createRequire } = require('node:module');
++
++const serviceRoot = path.resolve(__dirname, '../services/kc-pay-gpt');
++const runtimePath = path.join(serviceRoot, 'mysql-store.js');
++const runtimeRequire = createRequire(runtimePath);
++const source = fs.readFileSync(process.env.KC_ATOMIC_STORE_SOURCE || runtimePath, 'utf8');
++const clone = value => JSON.parse(JSON.stringify(value));
++const expectedCdk = { platform: 'grok', plan_type: 'grok-pro', payment_region: 'US' };
++const input = () => ({ expectedCdk: { ...expectedCdk }, cdkCode: 'OFFLINE-CDK', tokenPreview: 'offline-preview',
++    sessionPayload: 'offline-synthetic-session', executionMode: 'local_card_pool', progress: 8 });
++const safeTask = (patch = {}) => ({ id: 1, job_key: 'offline-job', cdk_code: 'OFFLINE-CDK', execution_mode: 'local_card_pool',
++    status: 'running', payment_state: 'not_started', recovery_required: 0,
++    gpt_api_order_id: null, gpt_api_task_id: null, gpt_api_raw: null,
++    session_payload: null, session_payload_encrypted: 'synthetic-encrypted-placeholder', ...patch });
++
++// An offline stateful transaction model executes the actual store module. Its
++// mutex serializes whole transactions; it does not model MySQL row/gap locks,
++// isolation levels, connection loss or an actual process being killed.
++function harness({ cdk = {}, tasks = [], fail = '', commit = '', encryptionError = false } = {}) {
++    const state = { cdk: { cdk_code: 'OFFLINE-CDK', type: '自助', is_active: 1, used_at: null,
++        activation_cooling_down: 0, ...expectedCdk, ...cdk }, tasks: clone(tasks) };
++    const events = [];
++    let gate = Promise.resolve();
++    let sequence = 0;
++    let commitFault = commit;
++    function queryRows(sql, params) {
++        if (/FROM cdk_codes WHERE cdk_code/.test(sql)) return state.cdk && state.cdk.cdk_code === params[0] ? [clone(state.cdk)] : [];
++        if (/SELECT provider_task\.\*/.test(sql)) {
++            assert.match(sql, /FOR UPDATE/);
++            assert.match(sql, /recovery_required = 1/);
++            assert.match(sql, /COALESCE\(provider_task.payment_state, 'unknown'\)/);
++            return clone(state.tasks.filter(row => row.cdk_code === params[0] && row.job_key !== params[1] && (
++                ['running', 'manual'].includes(row.status) || row.recovery_required === 1 ||
++                !['not_started', 'declined', 'succeeded'].includes(row.payment_state) ||
++                ((row.execution_mode === 'third_party_api' || row.gpt_api_order_id != null || row.gpt_api_task_id != null) &&
++                    (row.gpt_api_order_id != null || row.gpt_api_task_id != null || /"dispatchStarted":true/.test(row.gpt_api_raw || '')))
++            )).sort((a, b) => b.id - a.id).slice(0, 1));
++        }
++        if (/SELECT \* FROM task_logs WHERE job_key/.test(sql)) return clone(state.tasks.filter(row => row.job_key === params[0]));
++        if (/SELECT job_key, status, message, progress, updated_at/.test(sql)) return clone(state.tasks.filter(row => row.cdk_code === params[0] && row.status === 'running').sort((a, b) => b.id - a.id).slice(0, 1));
++        if (/SELECT job_key FROM task_logs WHERE cdk_code/.test(sql)) return clone(state.tasks.filter(row => row.cdk_code === params[0]).sort((a, b) => b.id - a.id).slice(0, 1).map(row => ({ job_key: row.job_key })));
++        throw new Error(`Unhandled offline SELECT: ${sql}`);
++    }
++    function mutate(sql, params) {
++        if (/UPDATE\s+cdk_codes\s+SET\s+used_at\s*=\s*CURRENT_TIMESTAMP/.test(sql)) {
++            if (fail === 'consume') return { affectedRows: 0 };
++            if (!state.cdk || state.cdk.used_at || state.cdk.is_active !== 1) return { affectedRows: 0 };
++            state.cdk.used_at = 'offline-consumed'; return { affectedRows: 1 };
++        }
++        if (/INSERT INTO task_logs/.test(sql)) {
++            if (fail === 'insert') throw new Error('offline INSERT failure');
++            const id = Math.max(0, ...state.tasks.map(row => row.id)) + 1;
++            state.tasks.push(safeTask({ id, job_key: params[0], token_preview: params[1], session_payload_encrypted: params[2],
++                session_fingerprint: params[3], execution_mode: params[4], cdk_code: params[5], status: params[8], payment_state: params[12] }));
++            return { affectedRows: 1, insertId: id };
++        }
++        if (/UPDATE task_logs SET status = 'failed'/.test(sql)) {
++            if (fail === 'retire') throw new Error('offline retirement failure');
++            if (fail === 'retire_cas') return { affectedRows: 0 };
++            const row = state.tasks.find(row => row.job_key === params[1] && row.status === 'running');
++            if (!row) return { affectedRows: 0 };
++            Object.assign(row, { status: 'failed', message: params[0], progress: 0, session_payload: null, session_payload_encrypted: null });
++            return { affectedRows: 1 };
++        }
++        if (/UPDATE cdk_codes SET used_at = NULL/.test(sql)) {
++            if (fail === 'release') throw new Error('offline CDK return failure');
++            if (fail === 'release_cas') return { affectedRows: 0 };
++            if (!state.cdk || state.cdk.cdk_code !== params[0] || !state.cdk.used_at) return { affectedRows: 0 };
++            state.cdk.used_at = null; return { affectedRows: 1 };
++        }
++        throw new Error(`Unhandled offline mutation: ${sql}`);
++    }
++    const pool = {
++        execute: async (sql, params) => { events.push({ via: 'pool', sql, params }); return [mutate(sql, params)]; },
++        query: async (sql, params) => { events.push({ via: 'pool', sql, params }); return [queryRows(sql, params)]; },
++        getConnection: async () => {
++            const id = ++sequence;
++            let snapshot, committed = false, unlock;
++            return {
++                beginTransaction: async () => {
++                    const previous = gate;
++                    gate = new Promise(resolve => { unlock = resolve; });
++                    await previous;
++                    snapshot = clone(state); events.push({ via: id, operation: 'begin' });
++                    if (fail === 'deadlock') throw new Error('offline ER_LOCK_DEADLOCK');
++                },
++                query: async (sql, params) => { events.push({ via: id, sql, params }); return [queryRows(sql, params)]; },
++                execute: async (sql, params) => { events.push({ via: id, sql, params }); return [mutate(sql, params)]; },
++                commit: async () => {
++                    events.push({ via: id, operation: 'commit' });
++                    const fault = commitFault;
++                    commitFault = '';
++                    if (fault === 'before_apply') throw new Error('offline commit rejected');
++                    committed = true;
++                    if (fault === 'after_apply') throw new Error('offline commit response lost');
++                },
++                rollback: async () => {
++                    events.push({ via: id, operation: 'rollback' });
++                    if (!committed && snapshot) Object.assign(state, clone(snapshot));
++                },
++                release: () => { events.push({ via: id, operation: 'release' }); if (unlock) unlock(); }
++            };
++        }
++    };
++    const module = { exports: {} };
++    const sessions = runtimeRequire('./session-security');
++    const context = { module, exports: module.exports, __dirname: serviceRoot, Buffer, process,
++        console: { log() {}, warn() {}, error() {} }, setTimeout, clearTimeout,
++        require(name) {
++            if (name === 'mysql2/promise') return { createPool: () => pool };
++            if (name === './session-security' && encryptionError) return { ...sessions, encryptSessionPayload() { throw new Error('offline encryption unavailable'); } };
++            return runtimeRequire(name);
++        }
++    };
++    vm.runInNewContext(source, context, { filename: runtimePath });
++    return { state, events, store: module.exports, sessions };
++}
++async function admit(h, data = input()) {
++    if (h.store.createActivationTask) return h.store.createActivationTask(data);
++    // Only used to execute the pre-change backup with the same fault injection.
++    await h.store.markCdkUsed(data.cdkCode);
++    return h.store.createTaskLog({ ...data, status: 'running' });
++}
++function assertConnectionOnly(h) {
++    assert.equal(h.events.filter(event => event.sql && event.via === 'pool').length, 0);
++    assert.equal(new Set(h.events.filter(event => event.sql).map(event => event.via)).size, 1);
++}
++
++test('atomic admission rolls back CDK consumption when task INSERT fails', async () => {
++    const h = harness({ fail: 'insert' });
++    await assert.rejects(admit(h), /INSERT failure/);
++    assert.equal(h.state.cdk.used_at, null, 'CDK must remain usable when no task was committed');
++    assert.equal(h.state.tasks.length, 0);
++    assertConnectionOnly(h);
++});
++test('atomic admission encrypts Session and commits the task on the consuming connection', async () => {
++    const h = harness();
++    const task = await admit(h);
++    assert.equal(task.created, true);
++    assert.equal(h.state.tasks.length, 1);
++    assert.equal(h.state.cdk.used_at, 'offline-consumed');
++    assert.equal(h.state.tasks[0].status, 'running');
++    assert.equal(h.state.tasks[0].payment_state, 'not_started');
++    assert.equal(h.state.tasks[0].session_payload, null);
++    assert.match(h.state.tasks[0].session_payload_encrypted, /^v1:/);
++    assert.equal(h.sessions.decryptSessionPayload(h.state.tasks[0].session_payload_encrypted), input().sessionPayload);
++    assertConnectionOnly(h);
++});
++for (const [label, options] of [['encryption failure', { encryptionError: true }], ['commit rejection', { commit: 'before_apply' }], ['CDK CAS conflict', { fail: 'consume' }], ['deadlock victim', { fail: 'deadlock' }]]) {
++    test(`atomic admission leaves no orphan consumption after ${label}`, async () => {
++        const h = harness(options);
++        await assert.rejects(admit(h));
++        assert.equal(h.state.cdk.used_at, null);
++        assert.equal(h.state.tasks.length, 0);
++        assert.equal(h.events.at(-1).operation, 'release');
++    });
++}
++test('lost COMMIT response keeps both task and CDK, and retry resumes without inserting again', async () => {
++    const h = harness({ commit: 'after_apply' });
++    await assert.rejects(admit(h), /response lost/);
++    assert.equal(h.state.tasks.length, 1);
++    assert.equal(h.state.cdk.used_at, 'offline-consumed');
++    const resumed = await admit(h);
++    assert.equal(resumed.created, false);
++    assert.equal(resumed.jobKey, h.state.tasks[0].job_key);
++    assert.equal(h.state.tasks.length, 1);
++    assert.equal(h.events.filter(event => /INSERT INTO task_logs/.test(event.sql || '')).length, 1);
++});
++test('concurrent admission in the serialized transaction model creates only one task', async () => {
++    const h = harness();
++    const results = await Promise.all(Array.from({ length: 12 }, () => admit(h)));
++    assert.equal(results.filter(result => result.created).length, 1);
++    assert.equal(new Set(results.map(result => result.jobKey)).size, 1);
++    assert.equal(h.state.tasks.length, 1);
++});
++for (const [label, patch] of [['disabled', { is_active: 0 }], ['used', { used_at: 'offline-used' }], ['non-self-service', { type: '人工' }], ['cooling down', { activation_cooling_down: 1 }],
++    ['changed platform', { platform: 'claude' }], ['changed plan', { plan_type: 'another' }], ['changed region', { payment_region: 'PH' }]]) {
++    test(`transaction rechecks ${label} CDKs`, async () => {
++        const h = harness({ cdk: patch });
++        const before = clone(h.state);
++        await assert.rejects(admit(h));
++        assert.deepEqual(h.state, before);
++    });
++}
++test('transaction rejects a deleted CDK', async () => {
++    const h = harness(); h.state.cdk = null;
++    await assert.rejects(admit(h));
++    assert.equal(h.state.tasks.length, 0);
++});
++for (const patch of [{ status: 'manual' }, { status: 'failed', payment_state: 'unknown' }, { status: 'failed', recovery_required: 1 },
++    { status: 'failed', execution_mode: 'third_party_api', gpt_api_order_id: 'offline-order' },
++    { status: 'failed', execution_mode: 'third_party_api', gpt_api_raw: '{"attempt":{"dispatchStarted":true}}' }]) {
++    test(`admission blocks unresolved prior task: ${JSON.stringify(patch)}`, async () => {
++        const h = harness({ tasks: [safeTask(patch)] });
++        await assert.rejects(admit(h));
++        assert.equal(h.state.cdk.used_at, null);
++        assert.equal(h.state.tasks.length, 1);
++    });
++}
++test('admission refuses incomplete binding and unknown execution mode before opening a transaction', async () => {
++    for (const patch of [{ expectedCdk: {} }, { executionMode: 'legacy_unknown' }, { cdkCode: '' }]) {
++        const h = harness();
++        await assert.rejects(admit(h, { ...input(), ...patch }));
++        assert.equal(h.events.length, 0);
++    }
++});
++test('task-owned retirement atomically clears Session, finishes the task and returns its CDK', async () => {
++    const h = harness({ cdk: { used_at: 'offline-used' }, tasks: [safeTask()] });
++    assert.equal((await h.store.retireSafeActivationTask('offline-job')).released, true);
++    assert.equal(h.state.tasks[0].status, 'failed');
++    assert.equal(h.state.tasks[0].session_payload_encrypted, null);
++    assert.equal(h.state.cdk.used_at, null);
++    assertConnectionOnly(h);
++    assert.equal((await h.store.retireSafeActivationTask('offline-job')).released, false);
++});
++for (const failure of ['retire', 'retire_cas', 'release', 'release_cas']) {
++    test(`retirement rolls back both writes after ${failure} failure`, async () => {
++        const h = harness({ fail: failure, cdk: { used_at: 'offline-used' }, tasks: [safeTask()] });
++        const before = clone(h.state);
++        await assert.rejects(h.store.retireSafeActivationTask('offline-job'));
++        assert.deepEqual(h.state, before);
++    });
++}
++for (const commit of ['before_apply', 'after_apply']) {
++    test(`retirement preserves a consistent task and CDK after ${commit} commit failure`, async () => {
++        const h = harness({ commit, cdk: { used_at: 'offline-used' }, tasks: [safeTask()] });
++        const before = clone(h.state);
++        await assert.rejects(h.store.retireSafeActivationTask('offline-job'), /commit/);
++        if (commit === 'before_apply') assert.deepEqual(h.state, before);
++        else {
++            assert.equal(h.state.tasks[0].status, 'failed');
++            assert.equal(h.state.tasks[0].session_payload_encrypted, null);
++            assert.equal(h.state.cdk.used_at, null);
++            assert.equal((await h.store.retireSafeActivationTask('offline-job')).released, false);
++        }
++    });
++}
++for (const payment_state of ['started', 'unknown', 'succeeded', 'declined', null]) {
++    test(`retirement retains a task whose payment state is ${payment_state}`, async () => {
++        const h = harness({ cdk: { used_at: 'offline-used' }, tasks: [safeTask({ payment_state })] });
++        assert.equal((await h.store.retireSafeActivationTask('offline-job')).released, false);
++        assert.equal(h.state.cdk.used_at, 'offline-used');
++        assert.equal(h.state.tasks[0].status, 'running');
++    });
++}
++for (const patch of [{ status: 'manual' }, { recovery_required: 1 }, { execution_mode: 'legacy_unknown' },
++    { gpt_api_order_id: 'offline-order' }, { gpt_api_task_id: 'offline-provider-task' }, { gpt_api_raw: '{}' }]) {
++    test(`retirement refuses risk evidence: ${JSON.stringify(patch)}`, async () => {
++        const h = harness({ cdk: { used_at: 'offline-used' }, tasks: [safeTask(patch)] });
++        assert.equal((await h.store.retireSafeActivationTask('offline-job')).released, false);
++        assert.equal(h.state.cdk.used_at, 'offline-used');
++    });
++}
++test('startup recovery may retire only an explicitly declined local task', async () => {
++    for (const [mode, released] of [['local_card_pool', true], ['third_party_api', false]]) {
++        const h = harness({ cdk: { used_at: 'offline-used' }, tasks: [safeTask({ execution_mode: mode, payment_state: 'declined' })] });
++        assert.equal((await h.store.retireSafeActivationTask('offline-job', { allowDeclined: true })).released, released);
++    }
++});
++test('late old-task retirement never releases the newer owner CDK', async () => {
++    const h = harness({ cdk: { used_at: 'offline-new-owner' }, tasks: [safeTask(), safeTask({ id: 2, job_key: 'new-owner', status: 'failed', payment_state: 'declined' })] });
++    assert.equal((await h.store.retireSafeActivationTask('offline-job')).released, false);
++    assert.equal(h.state.cdk.used_at, 'offline-new-owner');
++    assert.equal(h.state.tasks[0].status, 'running');
++});
++test('another unresolved task blocks retirement even when the retiring task is the latest owner', async () => {
++    const h = harness({ cdk: { used_at: 'offline-used' }, tasks: [safeTask({ id: 1, job_key: 'older', status: 'manual' }), safeTask({ id: 2 })] });
++    assert.equal((await h.store.retireSafeActivationTask('offline-job')).released, false);
++    assert.equal(h.state.cdk.used_at, 'offline-used');
++});
++test('retirement refuses an inactive or already unheld CDK', async () => {
++    for (const patch of [{ is_active: 0, used_at: 'offline-used' }, { used_at: null }]) {
++        const h = harness({ cdk: patch, tasks: [safeTask()] });
++        assert.equal((await h.store.retireSafeActivationTask('offline-job')).released, false);
++        assert.equal(h.state.tasks[0].status, 'running');
++    }
++});
++test('diagnostic createTaskLog remains callable outside an activation transaction', async () => {
++    const h = harness();
++    const task = await h.store.createTaskLog({ ...input(), executionMode: 'checkout_diagnostic', status: 'running' });
++    assert.ok(task.jobKey);
++    assert.equal(h.state.cdk.used_at, null);
++    assert.equal(h.state.tasks[0].execution_mode, 'checkout_diagnostic');
++    assert.equal(h.events[0].via, 'pool');
++});
++
++// Exercise the actual HTTP admission handler with the actual store primitive,
++// replacing only its non-transactional preflight and worker side effects.
++function handler(h, { dispatchError = false } = {}) {
++    const server = fs.readFileSync(path.join(serviceRoot, 'server.js'), 'utf8');
++    const start = server.indexOf('async function handleActivationRequest(req, res) {');
++    const end = server.indexOf("\napp.post('/api/run-process'", start);
++    const slots = ['reserveForegroundSlot', 'releaseForegroundSlot'].map(name => {
++        const begin = server.indexOf(`function ${name}(`);
++        return server.slice(begin, server.indexOf('\n}', begin) + 2);
++    }).join('\n');
++    const dispatched = [], unlocks = [], retirements = [], activeForegroundJobs = new Set();
++    const context = { crypto, activeForegroundJobs, console: { log() {}, error() {} },
++        getClientIp: () => '', ensureStoreReady: async () => {}, getRemainingCooldownMinutes: () => 0,
++        resolveActivationInput: () => ({ platform: 'grok', planType: 'grok-pro', token: 'offline-token',
++            storedSession: input().sessionPayload, tokenPreview: 'offline-preview' }),
++        logTask() {}, issueTaskAccessToken: key => `offline-access-${key}`, redactSensitiveText: String,
++        formatTaskErrorMessage: (_status, message) => message,
++        spawnActivationWorker(data) { dispatched.push(data); if (dispatchError) throw new Error('offline uncertain dispatch'); },
++        store: { ...h.store,
++            getMaintenanceModeState: async () => ({ enabled: false }), getMaxConcurrentActivations: async () => 3,
++            verifyCdkDetails: async () => clone(h.state.cdk),
++            hasAvailableCard: async () => true,
++            markCdkUnused: async cdk => { unlocks.push(cdk); throw new Error('unscoped unlock forbidden'); },
++            retireSafeActivationTask: async key => { retirements.push(key); return h.store.retireSafeActivationTask(key); }
++        }
++    };
++    vm.runInNewContext(`${slots}\n${server.slice(start, end)}\nthis.handle = handleActivationRequest`, context);
++    return { dispatched, unlocks, retirements, activeForegroundJobs, async run() {
++        const res = { code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
++        await context.handle({ path: '/api/run-process', body: { session: 'offline-session', cdk: 'OFFLINE-CDK' } }, res);
++        return res;
++    } };
++}
++test('HTTP handler preserves committed consumption after a lost COMMIT response', async () => {
++    const h = harness({ commit: 'after_apply' }), app = handler(h);
++    assert.equal((await app.run()).code, 500);
++    assert.equal(h.state.tasks.length, 1);
++    assert.equal(h.state.cdk.used_at, 'offline-consumed');
++    assert.equal(app.dispatched.length, 0);
++    assert.equal(app.unlocks.length, 0);
++    assert.equal(app.retirements.length, 0);
++    assert.equal(app.activeForegroundJobs.size, 0);
++});
++test('HTTP retry after a lost COMMIT response resumes its persisted task without dispatching again', async () => {
++    const h = harness({ commit: 'after_apply' }), app = handler(h);
++    assert.equal((await app.run()).code, 500);
++    const resumed = await app.run();
++    assert.equal(resumed.code, 200);
++    assert.equal(resumed.body.success, true);
++    assert.equal(resumed.body.jobKey, h.state.tasks[0].job_key);
++    assert.equal(resumed.body.taskAccessToken, `offline-access-${h.state.tasks[0].job_key}`);
++    assert.equal(h.state.tasks.length, 1);
++    assert.equal(h.state.cdk.used_at, 'offline-consumed');
++    assert.equal(app.dispatched.length, 0);
++    assert.equal(app.unlocks.length, 0);
++    assert.equal(app.retirements.length, 0);
++    assert.equal(app.activeForegroundJobs.size, 0);
++});
++test('HTTP handler retains the committed task after entering an uncertain dispatch', async () => {
++    const h = harness(), app = handler(h, { dispatchError: true });
++    assert.equal((await app.run()).code, 500);
++    assert.equal(h.state.tasks[0].status, 'running');
++    assert.equal(h.state.cdk.used_at, 'offline-consumed');
++    assert.equal(app.dispatched.length, 1);
++    assert.equal(app.unlocks.length, 0);
++    assert.equal(app.retirements.length, 0);
++    assert.equal(app.activeForegroundJobs.size, 1);
++});
++
++test('startup recovery rechecks current payment evidence instead of releasing from a stale snapshot', async () => {
++    const h = harness({ cdk: { used_at: 'offline-used' }, tasks: [safeTask({ payment_state: 'unknown' })] });
++    const before = clone(h.state);
++    const server = fs.readFileSync(path.join(serviceRoot, 'server.js'), 'utf8');
++    const start = server.indexOf('        const staleTasks = await store.listRunningTasksForRecovery();');
++    const end = server.indexOf('    } catch (error) {\n        console.error(`❌ [任务恢复]', start);
++    assert.ok(start >= 0 && end > start);
++    const logs = [], updates = [], unlocks = [];
++    await vm.runInNewContext(`(async () => {${server.slice(start, end)}})()`, {
++        store: { ...h.store,
++            listRunningTasksForRecovery: async () => [safeTask()],
++            updateTaskLog: async (...args) => updates.push(args),
++            markCdkUnused: async (...args) => unlocks.push(args), resetAllAssetLocks: async () => {}
++        },
++        classifyInterruptedTask: runtimeRequire('./task-safety').classifyInterruptedTask,
++        recoverInterruptedCheckoutDiagnostic: async () => false,
++        logTask: (...args) => logs.push(args), console: { log() {} }
++    });
++    assert.deepEqual(h.state, before);
++    assert.equal(updates.length, 0);
++    assert.equal(unlocks.length, 0);
++    assert.equal(logs.length, 1);
++    assert.match(logs[0][1], /保留任务及 CDK/);
++});

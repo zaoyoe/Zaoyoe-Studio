@@ -1,0 +1,50 @@
+
+ RUN  v4.1.9 /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt
+
+ ✓ test/payment-protocol-fallback.test.js (18 tests) 42ms
+ ✓ test/card-freeze.test.js (5 tests) 96ms
+stdout | test/stripe-protocol-payment.test.js > Stripe pure protocol payment integration > syncCheckoutBillingTax coordinates /taxes and /update_tax_id for Oregon tax-free billing
+⚡ [协议支付] 正在向 ChatGPT 同步免税账单地址 (国家=US, 州=Oregon, 币种=PHP)...
+
+stdout | test/stripe-protocol-payment.test.js > Stripe pure protocol payment integration > syncCheckoutBillingTax coordinates /taxes and /update_tax_id for Oregon tax-free billing
+⚡ [协议支付] ✅ 免税地址与税务状态同步成功！总金额: PHP 982.14 (税额: 0)
+
+stderr | test/stripe-protocol-payment.test.js > Stripe pure protocol payment integration > executeWithProxyRetry automatically rotates proxy SID upon transient socket/TLS failure
+🔄 [协议网络] 代理出现瞬态握手故障 (Client network socket disconnected before secure TLS connection was established)，正在就地轮换出口 SID 重试 (尝试 2/3)...
+
+ ❯ test/stripe-protocol-payment.test.js (7 tests | 2 failed) 30ms
+     ✓ rejects unregistered device fingerprints before any PaymentMethod request 3ms
+     ✓ keeps the full attempt correlation without retaining the raw confirmation token 1ms
+     ✓ syncCheckoutBillingTax coordinates /taxes and /update_tax_id for Oregon tax-free billing 3ms
+     ✓ executeWithProxyRetry automatically rotates proxy SID upon transient socket/TLS failure 12ms
+     ✓ calibrates default and fallback amounts accurately across all ChatGPT plan types (Go, Plus, Pro 100/200/500, Team) 1ms
+     × propagates hold failure with zero network/browser work (cs_test_offline_hold) 8ms
+     × propagates hold failure with zero network/browser work (oaics_offline_hold) 1ms
+ ✓ test/mysql-card-cooldown.test.js (28 tests) 149ms
+ ✓ test/gpt-outsourcing-store.test.js (26 tests) 166ms
+ ✓ test/payment-retry-safety.test.js (110 tests) 164ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/stripe-protocol-payment.test.js > round7 actual protocol entrypoint persistence gate > propagates hold failure with zero network/browser work (cs_test_offline_hold)
+ FAIL  test/stripe-protocol-payment.test.js > round7 actual protocol entrypoint persistence gate > propagates hold failure with zero network/browser work (oaics_offline_hold)
+Error: Cannot find module './payment-decline-dictionary'
+Require stack:
+- /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/test/stripe-protocol-payment.test.js
+ ❯ require test/stripe-protocol-payment.test.js:167:24
+    165|                 if (name === './stripe-device-fingerprint') return { r…
+    166|                 if (name === './playwright-proxy') return { substitute…
+    167|                 return runtimeRequire(name);
+       |                        ^
+    168|             }
+    169|         });
+ ❯ evalmachine.<anonymous>:14:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 5 passed (6)
+      Tests  2 failed | 192 passed (194)
+   Start at  23:35:14
+   Duration  522ms (transform 296ms, setup 0ms, import 524ms, tests 646ms, environment 1ms)
+
