@@ -2469,6 +2469,7 @@ function createSupplierCatalogHandler(dependencies = {}) {
                 });
             }
             const safeError = getSafeSupplierError(error);
+            console.error('[SupplierCatalog] Request failed:', safeError.code, error?.message || error);
             return sendJsonImpl(res, safeError.statusCode, {
                 success: false,
                 code: safeError.code,

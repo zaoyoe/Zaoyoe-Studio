@@ -28,7 +28,7 @@ const ENDPOINTS = Object.freeze({ ...READ_ENDPOINTS, ...WRITE_ENDPOINTS });
 // and the trade `amount` matched the quote exactly. The operator also confirmed
 // the supplier quotes in CNY, so the default is stated instead of left unknown.
 const QUOTE_CURRENCY = 'CNY';
-const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const UUID = /^[a-f\d]{8}-[a-f\d]{4}-[1-5][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
 const UPSTREAM_ORDER_NO = /^[\p{L}\p{N}._:-]{6,160}$/u;
 const normalizedItems = new WeakSet();
@@ -272,10 +272,11 @@ function normalizeVariant(item, input = {}) {
     return race ? { race } : {};
 }
 
-function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000, fetchImpl = globalThis.fetch, enableCache = false, cacheTtlMs = 60_000 } = {}) {
+function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000, fetchImpl = globalThis.fetch, enableCache = false, cacheTtlMs = 60_000, maxResponseBytes = MAX_RESPONSE_BYTES } = {}) {
     if (!text(appId) || !appKey) throw new TypeError('Xiareng credentials are required');
     const confirmedCurrency = /^[A-Z]{3}$/.test(String(currency)) ? String(currency) : QUOTE_CURRENCY;
     const deadline = Math.min(30_000, Math.max(500, Number(timeoutMs) || 10_000));
+    const effectiveMaxBytes = Math.max(1024 * 1024, Number(maxResponseBytes) || MAX_RESPONSE_BYTES);
     const detailCache = new Map();
 
     function getCachedGoodsDetail(goodsNo) {
@@ -327,7 +328,7 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: form
             });
             if (!response.ok) throw error(operation, 'supplier_http_error', response.status >= 500 || response.status === 429);
-            if (Number(response.headers?.get?.('content-length')) > MAX_RESPONSE_BYTES) throw error(operation, 'supplier_response_too_large');
+            if (Number(response.headers?.get?.('content-length')) > effectiveMaxBytes) throw error(operation, 'supplier_response_too_large');
             let content;
             if (response.body?.getReader) {
                 const reader = response.body.getReader();
@@ -338,13 +339,13 @@ function createXiarengAdapter({ appId, appKey, currency = '', timeoutMs = 10_000
                         const { done, value } = await reader.read();
                         if (done) break;
                         length += value.byteLength;
-                        if (length > MAX_RESPONSE_BYTES) throw error(operation, 'supplier_response_too_large');
+                        if (length > effectiveMaxBytes) throw error(operation, 'supplier_response_too_large');
                         chunks.push(Buffer.from(value));
                     }
                 } finally { await reader.cancel().catch(() => {}); }
                 content = Buffer.concat(chunks).toString('utf8');
             } else content = await response.text();
-            if (Buffer.byteLength(content) > MAX_RESPONSE_BYTES) throw error(operation, 'supplier_response_too_large');
+            if (Buffer.byteLength(content) > effectiveMaxBytes) throw error(operation, 'supplier_response_too_large');
             let payload;
             try { payload = JSON.parse(content); } catch (_) { throw error(operation, 'supplier_invalid_response'); }
             if (!record(payload)) throw error(operation, 'supplier_invalid_response');

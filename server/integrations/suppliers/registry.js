@@ -30,6 +30,7 @@ function resolveSupplierAccountEnv(account, env = process.env) {
             appKey: secret,
             currency: String(env[`${prefix}_CURRENCY`] || ''),
             timeoutMs: env[`${prefix}_TIMEOUT_MS`],
+            maxResponseBytes: env[`${prefix}_MAX_RESPONSE_BYTES`] ? Number(env[`${prefix}_MAX_RESPONSE_BYTES`]) : undefined,
             enableCache: true,
             cacheTtlMs: 60_000
         };
