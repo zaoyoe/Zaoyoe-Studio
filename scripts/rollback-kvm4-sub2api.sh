@@ -5,12 +5,13 @@ KVM4_HOST="${KVM4_HOST:-76.13.188.218}"
 KVM4_PORT="${KVM4_PORT:-2222}"
 KVM4_USER="${KVM4_USER:-root}"
 KVM4_KEY="${KVM4_KEY:-$HOME/.ssh/hostinger_sub2api}"
-KVM4_SUB2API_ROOT="${KVM4_SUB2API_ROOT:-/opt/sub2api}"
+KVM4_NEWAPI_ROOT="${KVM4_NEWAPI_ROOT:-${KVM4_SUB2API_ROOT:-/opt/sub2api}}"
+KVM4_SUB2API_ROOT="$KVM4_NEWAPI_ROOT"
 TARGET_RELEASE="${1:-}"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/rollback-kvm4-sub2api.sh [newapi-release-id]
+Usage: scripts/rollback-kvm4-newapi.sh [newapi-release-id]
 
 Rollback the KVM4 NewAPI service slot to a previous NewAPI release. Legacy
 Sub2API releases and the private bridge are intentionally not valid rollback

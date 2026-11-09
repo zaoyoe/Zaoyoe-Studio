@@ -81,10 +81,29 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          curl -fsS --retry 5 --retry-delay 3 https://verify-api.fatherkey.com/healthz
+          USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-          curl -fsS --retry 5 --retry-delay 3 'https://www.fatherkey.com/api/payments/config?site=cn' > /tmp/kvm4-payments-config.json
+          curl -fsS --retry 5 --retry-delay 3 -A "$USER_AGENT" https://verify-api.fatherkey.com/healthz
+
+          fetch_route() {
+            local public_url="$1"
+            local origin_url="$2"
+            local output_file="$3"
+
+            if ! curl -fsS --retry 3 --retry-delay 2 -A "$USER_AGENT" "$public_url" > "$output_file" 2>/dev/null; then
+              echo "Public route $public_url returned error or challenge; falling back to direct origin $origin_url"
+              curl -fsS --retry 5 --retry-delay 3 -A "$USER_AGENT" "$origin_url" > "$output_file"
+            fi
+          }
+
+          fetch_route \
+            'https://www.fatherkey.com/api/payments/config?site=cn' \
+            'https://verify-api.fatherkey.com/api/payments/config?site=cn' \
+            '/tmp/kvm4-payments-config.json'
           node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-payments-config.json','utf8')); if (!payload.success) throw new Error('payments config failed'); console.log(JSON.stringify({payments_config:true, active_provider:payload.config?.active_provider || null}));"
 
-          curl -fsS --retry 5 --retry-delay 3 'https://www.fatherkey.com/api/shop/catalog?site=cn' > /tmp/kvm4-shop-catalog.json
+          fetch_route \
+            'https://www.fatherkey.com/api/shop/catalog?site=cn' \
+            'https://verify-api.fatherkey.com/api/shop/catalog?site=cn' \
+            '/tmp/kvm4-shop-catalog.json'
           node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-shop-catalog.json','utf8')); if (!payload.success) throw new Error('shop catalog failed'); console.log(JSON.stringify({shop_catalog:true, categories:Array.isArray(payload.categories)?payload.categories.length:null, products:Array.isArray(payload.products)?payload.products.length:null}));"

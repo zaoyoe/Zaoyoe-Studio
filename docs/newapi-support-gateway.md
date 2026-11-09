@@ -49,8 +49,9 @@ the NewAPI drawer shows an unavailable state and no message is sent.
    read and write the new tables.
 2. Add the HMAC secret to Vercel Production, then add the matching URL and
    secret to KVM4's `/opt/sub2api/.env`.
-3. Merge the code through `main`; Vercel and the KVM4 Sub2API workflow deploy
-   from `main` according to `AGENTS.md`.
+3. Merge the code through `main`; Vercel and the `Deploy KVM4 NewAPI` workflow
+   deploy from `main` according to `AGENTS.md`. The remote `/opt/sub2api` path
+   is a compatibility service-slot name only.
 4. Sign in to NewAPI, send a test message, confirm it appears in Admin Studio
    with the `NewAPI` source label, reply there, and confirm the reply appears
    in the NewAPI drawer and administrator inbox.

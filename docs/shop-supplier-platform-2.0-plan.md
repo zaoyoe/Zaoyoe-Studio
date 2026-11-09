@@ -387,7 +387,7 @@ flowchart TD
 1. 实施使用从最新 main 派生的专用分支，保留恢复备份、完整候选提交、变更清单、迁移状态和测试计数；不在已合并的旧 UI 分支叠加发布。
 2. 数据库先设计兼容增量迁移与 verify SQL，文件交给用户执行；Codex 不执行 SQL。生产应用状态、操作者与验证结果单独记录，未验证不能标已完成。
 3. 外采能力、账号的新采购开关和 SKU 外采资格默认关闭；部署新表、路由或配置凭据不能隐含启用采购，既有 worker 继续服务原订单。发布后先只读核验，再按选定账号/SKU/站点/购买路径逐项启用；生产部署不隐含开游客商品或外采权限。
-4. 按 AGENTS.md 走 PR → 最新 main → Vercel Git integration；验证 Vercel、KVM4 Verify、KVM4 Sub2API 的最新 main SHA。涉及游客购买时，同时记录 guest-shop worker 链与 applicable readiness 证据。
+4. 按 AGENTS.md 走 PR → 最新 main → Vercel Git integration；验证 Vercel、KVM4 Verify、KVM4 NewAPI service-slot 的最新 main SHA。涉及游客购买时，同时记录 guest-shop worker 链与 applicable readiness 证据。
 5. 核对新 Adapter、任务文件、公共/管理路由与静态资源确实进入 Vercel/KVM4 构建包，不能只确认仓库有文件；新 `/api/open/v1` 对外路由要单独纳入网关与打包验收。
 6. 本地预览输出源 SHA 和是否有工作区差异，与候选核对；工作区预览不是生产证据。生产配置重载、worker 根目录与密钥规则沿用部署手册。
 7. 回滚首先停止新销售/新采购，保留已收款订单的核对、交付和售后；必要时回滚应用版本但不回滚资金记录或删除采购证据。已经发往上游的请求必须继续核对。

@@ -71,15 +71,23 @@
 
 ## 1.1 游客购买专用分支（强制，防止发错生产）
 
+### 当前生产状态（2026-11-09）
+
+任务 2.1 的现行记录和用户确认表明，游客现金购买链路已经在生产打通；
+指定的「测试」SKU 保持开启，「测试 2」入口保持关闭。这里的“专用分支”和
+“发布不等于改变状态”是发布边界，不是要求把已经批准的游客商品重新关闭。
+发布只允许携带同一套代码和配置，不能用部署脚本、默认值或历史快照覆盖现有
+商品/SKU 开关。新 SKU 或状态变更仍须按任务 2.1 §61.9 单独审查和批准。
+
 游客现金直付相关改动 **不得** 继续堆在 `bot`、已合并的布局/UI 分支、或其他功能分支上。
 
 - 工作分支：`codex/guest-shop-cash-purchase`，或后续从已声明远端的最新 `main` 派生的专用 `codex/guest-shop-*` 分支
 - 唯一合法发布路径：专用分支 → PR → 最新 `main` → Vercel Git 集成创建 Production
 - **禁止**从 `codex/*`、`bot` 或其他功能分支执行 `npx vercel deploy --prod`
 - **禁止**把 Preview、功能分支部署、或 “Promote Preview to Production” 当成游客购买的生产发布
-- **发布不等于启用游客商品**。部署过程不得打开 `shop_products.allow_guest_purchase` / `shop_product_skus.allow_guest_purchase`，也不得执行 SQL
+- **发布不等于改变游客商品状态**。当前已批准并已开启的 SKU 必须保持原状态；部署不得新增 SKU、擅自关闭现有 SKU、打开 `shop_products.allow_guest_purchase` / `shop_product_skus.allow_guest_purchase`，也不得执行 SQL
 - 生产拓扑：Vercel 只托管前端；`/api/shop/:path*` 反代到 `https://verify-api.fatherkey.com/api/shop/:path*`。游客 API、webhook、worker 跑在 KVM4 Verify Server
-- 游客购买相关发布必须同时验证四条链路：Vercel production、KVM4 Verify Server、KVM4 Sub2API、KVM4 guest-shop worker。worker 只能在 verify 的 `.current-release` 已经等于最新 `main` 之后安装或启动
+- 游客购买相关发布必须同时验证四条链路：Vercel production、KVM4 Verify Server、KVM4 NewAPI service-slot、KVM4 guest-shop worker。worker 只能在 verify 的 `.current-release` 已经等于最新 `main` 之后安装或启动
 - 改 KVM4 `/opt/zaoyoe-verify-server/.env` 的 `GUEST_SHOP_*` 后，必须 `docker compose up -d --no-deps --force-recreate --no-build verify-server` 重载 compose `env_file`。`docker restart` 不会重读 `.env`。禁止打印 secret，禁止复用 `CRON_SECRET`
 - 回滚游客购买：关闭该商品/SKU 的游客开关。不是数据库 rollback，也不是 Vercel-only rollback
 - 规范正文：`AGENTS.md`、`docs/kvm4-verify-server-deploy.md`、`docs/guest-shop-payment-fulfillment-runbook.md`、`docs/guest-purchase-task-2.0.md`（当前任务 2.1 内容版本）
@@ -220,7 +228,7 @@ Production chains: <per-chain PASS / FAIL / PENDING / NOT RUN, SHA and evidence>
 | --- | --- | --- |
 | Vercel production | `npx vercel inspect https://www.fatherkey.com` 显示 Production alias 为 Ready，source 为 main，实际部署 commit 等于目标 SHA | deployment ID / URL、source SHA、Ready 结果 |
 | KVM4 Verify Server | `Deploy KVM4 Verify Server` 对应目标 SHA 的运行成功；SSH 核对 `/opt/zaoyoe-verify-server/.current-release` 等于该 SHA，容器 `/app/server/.release-commit` 一致，公开 `/healthz` 正常 | Actions run ID、两个 release marker、健康检查 |
-| KVM4 Sub2API（NewAPI） | `Deploy KVM4 Sub2API` 对应目标 SHA 的运行成功；SSH 核对 `/opt/sub2api/.current-release` 一致，`https://new.fatherkey.com/health` 正常；NewAPI、PostgreSQL、Redis healthy，`sub2api-legacy` 未运行 | Actions run ID、release marker、health 与容器状态 |
+| KVM4 NewAPI service-slot | `Deploy KVM4 NewAPI` 对应目标 SHA 的运行成功；SSH 核对 `/opt/sub2api/.current-release` 一致，`https://new.fatherkey.com/health` 正常；NewAPI、PostgreSQL、Redis healthy，`sub2api-legacy` 未运行 | Actions run ID、release marker、health 与容器状态 |
 | KVM4 guest-shop worker（游客发布额外项） | verify 已在该 SHA 后，核对宿主 worker 文件与该提交一致；按已批准的运行状态检查 timer/service 及近期 journal，运行适用的 readiness | 文件来源、timer/service 状态、脱敏 journal、readiness 结果 |
 
 Ready 必须是生产 alias 当前指向的 deployment。Actions 成功必须对应目标 SHA；已有旧运行成功
@@ -239,6 +247,8 @@ Ready 必须是生产 alias 当前指向的 deployment。Actions 成功必须对
 - 首页可打开
 - 管理后台可登录
 - 关键 API 没有 404 / 500
+- `docs/admin-cloudflare-access-runbook.md` 中主站、TG、KC 三组外层
+  Cloudflare Access 检查均为 PASS；任一入口直接返回 Vercel HTML 都是发布阻断项
 
 ### C. 支付相关改动额外检查
 

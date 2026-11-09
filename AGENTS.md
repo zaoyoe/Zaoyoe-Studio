@@ -12,17 +12,17 @@ When the user asks Codex to deploy:
 6. Verify the production alias with `npx vercel inspect https://www.fatherkey.com`.
 7. Verify Vercel production is `Ready`.
 8. Verify the GitHub Actions workflow `Deploy KVM4 Verify Server` succeeds.
-9. Verify the GitHub Actions workflow `Deploy KVM4 Sub2API` succeeds.
+9. Verify the GitHub Actions workflow `Deploy KVM4 NewAPI` succeeds.
 10. SSH to KVM4 and confirm both verify and the NewAPI service-slot
     `.current-release` files equal the latest `main` commit, `/health` is
     healthy, and the NewAPI, PostgreSQL, and Redis containers are healthy. The
     removed `sub2api-legacy` bridge container must not be running.
 11. Report the final result in Chinese with three deployment chains: Vercel
-    production, KVM4 Verify Server, and KVM4 Sub2API.
+    production, KVM4 Verify Server, and KVM4 NewAPI.
 
 Canonical full deploy prompt:
 
-> 推送并完整部署。请严格按 AGENTS.md：先核验可恢复备份、干净候选提交和完整发布清单；创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须同时验证 Vercel production Ready、GitHub Actions 的 Deploy KVM4 Verify Server 成功、Deploy KVM4 Sub2API 成功，并 SSH 到 KVM4 确认 verify/sub2api 的 .current-release 都等于 main 最新 commit，/health 正常，docker ps healthy。最后用中文汇报三条链路结果。
+> 推送并完整部署。请严格按 AGENTS.md：先核验可恢复备份、干净候选提交和完整发布清单；创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须同时验证 Vercel production Ready、GitHub Actions 的 Deploy KVM4 Verify Server 成功、Deploy KVM4 NewAPI 成功，并 SSH 到 KVM4 确认 verify/newapi service-slot 的 .current-release 都等于 main 最新 commit，/health 正常，docker ps healthy。最后用中文汇报三条链路结果。
 
 Emergency rollback is allowed with `npx vercel rollback <deployment-url-or-id> --yes`.
 
@@ -44,6 +44,20 @@ To prevent developing or previewing against stale worktree snapshots or split Gi
 5. **Isolated Subsystems (`tg.fatherkey.com` & `/opt/kc-pay-gpt`)**:
    - **Telegram Standalone Store (`tg.fatherkey.com` / `tg.adm.fatherkey.com`)**: Static pages are served by Vercel and `/api/tg/:path*` routes to KVM4 Verify Server (`/opt/zaoyoe-verify-server`). After Verify Server is on the matching `main` commit, install the TG fulfillment worker via `scripts/install-kvm4-tg-worker.sh` (canonical root `/opt/zaoyoe-verify-server`).
    - **KC Auto-Recharge Service (`redeem.fatherkey.com` / `adm.fatherkey.com`)**: Source lives in `services/kc-pay-gpt/` and deploys to KVM4 `/opt/kc-pay-gpt` (`kc-pay-gpt-app` on `127.0.0.1:3100`, `kc-pay-gpt-mysql` on `127.0.0.1:3311`). Never overwrite `/opt/kc-pay-gpt/.env`, host-level `/opt/kc-pay-gpt/docker-compose.yml`, `data/`, `debug_screenshots/`, `product_files/`, or the `mysql_data` volume.
+
+6. **Cloudflare Access for administrator entrypoints**:
+   - The outer login gate is a Cloudflare Access application, not a Vercel
+     route or a repository file. Every production admin hostname must return a
+     redirect to `*.cloudflareaccess.com/cdn-cgi/access/login/...` and the
+     `www-authenticate: Cloudflare-Access` header before its HTML is served.
+   - The protected entrypoints are `www.fatherkey.com/admin-studio.html` and
+     `admin.html`, `adm.fatherkey.com/` and `/admin-login`, and
+     `tg.adm.fatherkey.com/` and `/tg-admin`.
+   - A Vercel deployment cannot create or restore the Cloudflare Access
+     application, policy, or DNS proxy. If the TG host returns Vercel HTML
+     directly, stop the release at the external-configuration gate and restore
+     the Cloudflare application/policy and proxied DNS before treating TG admin
+     login as protected. See `docs/admin-cloudflare-access-runbook.md`.
 
 ## Release Integrity and Recovery Rules
 
@@ -136,14 +150,20 @@ workflow runs `npm run deploy:kvm4:verify` and verifies the public routes. Use
 manual KVM4 deploys only from latest clean `main` for emergency follow-up or
 workflow recovery.
 
-KVM4 Sub2API service-slot deploys are automated from `main` by the GitHub Actions
-workflow `Deploy KVM4 Sub2API`. The workflow and `/opt/sub2api` names are stable
-deployment identifiers; they no longer mean that legacy Sub2API is the public
-application. After a PR merges into `main`, the workflow runs
-`npm run deploy:kvm4:sub2api` and verifies
+KVM4 NewAPI service-slot deploys are automated from `main` by the GitHub Actions
+workflow `Deploy KVM4 NewAPI`. The workflow file and `/opt/sub2api` names are
+stable compatibility identifiers; they no longer mean that legacy Sub2API is
+the public application. After a PR merges into `main`, the workflow runs
+`npm run deploy:kvm4:newapi` and verifies
 `https://new.fatherkey.com/health` as the canonical route. Use manual KVM4
 deploys only from latest clean `main` for emergency follow-up or workflow
 recovery.
+
+The old `Deploy KVM4 Sub2API`, `deploy:kvm4:sub2api`,
+`rollback:kvm4:sub2api`, `KVM4_SUB2API_ROOT`, and `/opt/sub2api` names remain
+supported as compatibility aliases. New release manifests and operator reports
+must call the service NewAPI; do not rename the remote service slot during a
+deploy.
 
 The NewAPI service-slot topology is:
 
@@ -229,7 +249,7 @@ dependencies. The sidebar brand/logo and public home logo must still link to
 
 ## Guest Shop Deployment Rules
 
-游客现金直付购买的代码发布仍必须走最新 `main`，但 **发布不等于启用游客商品**。
+游客现金直付购买的代码发布仍必须走最新 `main`，但 **发布不等于改变游客商品状态**；当前已批准并已开启的 SKU 必须保留。
 游客购买 API、webhook 和 worker 跑在 KVM4 Verify Server；Vercel 生产只托管前端，
 并把 `/api/shop/:path*` 反代到 `https://verify-api.fatherkey.com/api/shop/:path*`。
 
@@ -246,7 +266,7 @@ When the user asks Codex to deploy guest-shop related changes:
 5. Verify the three existing production chains:
    - Vercel production alias `https://www.fatherkey.com` is `Ready`
    - GitHub Actions `Deploy KVM4 Verify Server` succeeds
-   - GitHub Actions `Deploy KVM4 Sub2API` succeeds
+   - GitHub Actions `Deploy KVM4 NewAPI` succeeds
 6. SSH to KVM4 and confirm verify and NewAPI `.current-release` equal the
    latest `main` commit, `/health` is healthy, and required containers are
    healthy.
@@ -268,12 +288,13 @@ When the user asks Codex to deploy guest-shop related changes:
      `journalctl` evidence when the launch checklist actually requires the
      worker to run
 8. Report in Chinese with four chains when guest-shop code is in the release:
-   Vercel production, KVM4 Verify Server, KVM4 Sub2API, KVM4 guest-shop worker.
+   Vercel production, KVM4 Verify Server, KVM4 NewAPI service-slot, KVM4 guest-shop worker.
 
 Hard prohibitions:
 
-- Do not enable guest products, guest SKUs, or the guest purchase switch as
-  part of a deploy.
+- Do not enable new guest products, new guest SKUs, or change the guest purchase
+  switch as part of a deploy. Existing approved and enabled SKUs must retain
+  their current state.
 - Do not execute SQL during deploy. Outside a deployment, Codex may execute SQL
   through the authorized Supabase browser, CLI, API, or local database after the
   user has explicitly authorized execution in the current conversation. Prefer
@@ -309,20 +330,21 @@ Hard prohibitions:
 
 Canonical guest-shop deploy prompt:
 
-> 推送并完整部署游客购买相关改动。请严格按 AGENTS.md：先核验可恢复备份、干净候选提交和完整发布清单；从专用游客购买分支创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须验证 Vercel production Ready、Deploy KVM4 Verify Server、Deploy KVM4 Sub2API，并 SSH 确认 verify/sub2api 的 .current-release 等于 main 最新 commit。verify 发布成功后才能安装或启动 KVM4 guest-shop worker。部署过程不得执行 SQL，也不得打开游客商品。最后用中文汇报四条链路结果。
+> 推送并完整部署游客购买相关改动。请严格按 AGENTS.md：先核验可恢复备份、干净候选提交和完整发布清单；从专用游客购买分支创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须验证 Vercel production Ready、Deploy KVM4 Verify Server、Deploy KVM4 NewAPI，并 SSH 确认 verify/newapi service-slot 的 .current-release 等于 main 最新 commit。verify 发布成功后才能安装或启动 KVM4 guest-shop worker。部署过程不得执行 SQL，不得新增或擅自关闭已批准的游客商品/SKU。最后用中文汇报四条链路结果。
 
 Canonical guest-shop enablement is a separate later step in
 `docs/guest-purchase-task-2.0.md` (the file currently carries the Task 2.1
-content version for compatibility). The old Task 2.0 percentage and A-J matrix
-are frozen historical evidence: they do not block a default-off Task 2.1
-deploy. Enabling a selected SKU requires the direct, feature-scoped safety gate
-in Task 2.1 §61.9, an operator review of that exact product/SKU, a successful
-production deploy, and the user's explicit approval. Unrelated historical
-payment cases and disabled future features are not implicit prerequisites.
-Deployment success alone still never enables a guest product.
+content version for compatibility). Its old Task 2.0 percentage, A-J matrix,
+and default-off statements are frozen historical evidence; they do not describe
+the current approved production SKU state. The current record says the `测试`
+SKU is enabled and `测试 2` remains closed. A deploy preserves those states.
+Enabling a new SKU or changing an existing SKU still requires the direct,
+feature-scoped safety gate in Task 2.1 §61.9, an operator review of that exact
+product/SKU, a successful production deploy, and the user's explicit approval.
+Deployment success alone never changes a guest product switch.
 
 See also:
 
 - `docs/vercel-release-checklist.md` §1.1：游客购买必须走专用分支；禁止功能分支 prod deploy
 - `docs/kvm4-verify-server-deploy.md` Guest Shop Worker：worker 只能在 verify 发布对应 commit 后安装；改 `.env` 后必须 `--force-recreate` 重建容器以重载 `env_file`；禁止自定义 root；部署不执行 SQL
-- `docs/guest-shop-payment-fulfillment-runbook.md`：发布不等于启用，密钥重建步骤，以及后台退款/补发/解锁操作
+- `docs/guest-shop-payment-fulfillment-runbook.md`：发布不等于改变状态，密钥重建步骤，以及后台退款/补发/解锁操作

@@ -6,7 +6,10 @@ KVM4_HOST="${KVM4_HOST:-76.13.188.218}"
 KVM4_PORT="${KVM4_PORT:-2222}"
 KVM4_USER="${KVM4_USER:-root}"
 KVM4_KEY="${KVM4_KEY:-$HOME/.ssh/hostinger_sub2api}"
-KVM4_SUB2API_ROOT="${KVM4_SUB2API_ROOT:-/opt/sub2api}"
+KVM4_NEWAPI_ROOT="${KVM4_NEWAPI_ROOT:-${KVM4_SUB2API_ROOT:-/opt/sub2api}}"
+# Keep the historical variable populated because the remote service slot and
+# downstream recovery scripts still use /opt/sub2api as their stable name.
+KVM4_SUB2API_ROOT="$KVM4_NEWAPI_ROOT"
 KEEP_RELEASES="${KEEP_RELEASES:-5}"
 KVM4_SSH_ATTEMPTS="${KVM4_SSH_ATTEMPTS:-4}"
 KVM4_SSH_RETRY_DELAY="${KVM4_SSH_RETRY_DELAY:-15}"
@@ -14,7 +17,7 @@ DRY_RUN=0
 
 usage() {
   cat <<'EOF'
-Usage: scripts/deploy-kvm4-sub2api.sh [options]
+Usage: scripts/deploy-kvm4-newapi.sh [options]
 
 Deploy NewAPI into the Hostinger KVM4 service slot from the latest clean main.
 The /opt/sub2api root and container name remain stable deployment identifiers;
@@ -26,7 +29,8 @@ Options:
   --port PORT     SSH port. Default: KVM4_PORT or 2222
   --user USER     SSH user. Default: KVM4_USER or root
   --key PATH      SSH private key. Default: KVM4_KEY or ~/.ssh/hostinger_sub2api
-  --root PATH     Remote app root. Default: KVM4_SUB2API_ROOT or /opt/sub2api
+  --root PATH     Remote app root. Default: KVM4_NEWAPI_ROOT, then
+                  KVM4_SUB2API_ROOT, then /opt/sub2api
 EOF
 }
 
@@ -76,7 +80,8 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --root)
-      KVM4_SUB2API_ROOT="${2:-}"
+      KVM4_NEWAPI_ROOT="${2:-}"
+      KVM4_SUB2API_ROOT="$KVM4_NEWAPI_ROOT"
       shift 2
       ;;
     -h|--help)
@@ -965,7 +970,7 @@ for smoke_candidate in "${smoke_candidate_rows[@]}"; do
     echo "Provider chat smoke candidate $candidate_channel_id failed with a connection error; trying the next candidate" >&2
     continue
   fi
-  if [[ "$smoke_chat_status" =~ ^(429|500|502|503|504)$ ]] || [[ "$smoke_chat_status" =~ ^(400|401|402|403)$ ]]; then
+  if [[ "$smoke_chat_status" =~ ^(429|500|502|503|504)$ ]] || [[ "$smoke_chat_status" =~ ^(400|401|402|403|404)$ ]]; then
     smoke_last_error="channel $candidate_channel_id returned HTTP $smoke_chat_status"
     echo "Provider chat smoke candidate $candidate_channel_id returned HTTP $smoke_chat_status; trying the next candidate" >&2
     continue
@@ -1102,7 +1107,7 @@ REMOTE
 
 retry_command scp "${scp_opts[@]}" "$remote_script_path" "$remote:$remote_tmp/activate.sh"
 
-echo "Activating NewAPI in the KVM4 Sub2API service slot"
+echo "Activating NewAPI in the KVM4 NewAPI service-slot (legacy path /opt/sub2api)"
 retry_command ssh "${ssh_opts[@]}" "$remote" \
   "KVM4_SUB2API_ROOT='$KVM4_SUB2API_ROOT' RELEASE_ID='$release_id' RELEASE_COMMIT='$head_sha' KEEP_RELEASES='$KEEP_RELEASES' REMOTE_TMP='$remote_tmp' bash '$remote_tmp/activate.sh'"
 

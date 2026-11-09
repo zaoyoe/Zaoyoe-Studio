@@ -2,7 +2,7 @@
 
 本手册用于值班、对账和故障处理。游客订单与登录用户积分订单完全分离；任何人工操作都必须保留订单号、原因、操作者和审计记录。
 
-## 发布不等于启用
+## 发布不等于改变游客商品状态
 
 游客购买代码发布必须按 `AGENTS.md`：从专用分支 PR 合入最新 `main`，禁止从 `codex/*` 功能分支执行 `npx vercel deploy --prod`。
 
@@ -11,13 +11,15 @@
 - Vercel 生产托管 `shop.html` / `js/guest-shop-client.js` / `css/shop-page.css` 等前端；
 - `/api/shop/:path*` 由 Vercel 反代到 `https://verify-api.fatherkey.com/api/shop/:path*`；
 - 游客 API、webhook、worker 实际运行在 KVM4 Verify Server；
-- KVM4 Sub2API / NewAPI 仍是完整部署的第三条链路，但不承载游客下单。
+- KVM4 NewAPI service-slot（远端兼容路径仍为 `/opt/sub2api`）是完整部署的第三条链路，但不承载游客下单。
 
-因此游客购买相关发布必须同时验证四条链路：Vercel production、KVM4 Verify Server、KVM4 Sub2API、KVM4 guest-shop worker。其中 worker 只能在 verify 的 `.current-release` 已经等于最新 `main` 之后安装或启动。
+因此游客购买相关发布必须同时验证四条链路：Vercel production、KVM4 Verify Server、KVM4 NewAPI service-slot、KVM4 guest-shop worker。其中 worker 只能在 verify 的 `.current-release` 已经等于最新 `main` 之后安装或启动。
+
+当前状态：任务 2.1 的生产记录显示「测试」SKU 已开启游客购买，「测试 2」游客入口保持关闭。下面的发布流程保留这两个状态；它只阻止部署期间新增、擅自关闭或擅自扩大游客商品范围。新增 SKU 或改变现有 SKU 仍要走任务 2.1 §61.9 和独立批准。
 
 硬禁止：
 
-- 部署过程不得打开游客商品或游客 SKU；
+- 部署过程不得新增游客商品或游客 SKU，也不得擅自关闭已批准的游客商品/SKU；
 - 部署过程不得执行 SQL，也不得回滚已有游客购买迁移；
 - 不得把自动化全绿、readiness 默认退出码 0、或三条链路 Ready 当成可以启用游客购买；
 - 关闭游客开关是业务回滚；数据库回滚和 Vercel-only rollback 都不是游客购买的标准回滚。
@@ -37,7 +39,7 @@
 > - `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_guest_shop_promo_l1l2.sql`
 > - `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_verify_guest_shop_promo_l1l2.sql`（**只读**，**23 行**检查，可重复执行；第 1–22 行必须 PASS，第 23 行 `operator_state_review` 为 PASS 或 REVIEW）
 >
-> **发布不等于启用**：本批所有开关默认关闭，代码上线后游客结账的线上行为与之前**逐字一致**。
+> **历史发布说明**：本批促销/多件扩展开关默认关闭，代码上线后游客结账的线上行为与之前**逐字一致**。这段只约束扩展能力，不覆盖当前已批准基础 SKU 的游客购买状态。
 
 ### 应付金额口径（本批之后）
 

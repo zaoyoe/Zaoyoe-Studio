@@ -39,6 +39,8 @@ test('legacy Sub2API source and local entrypoints are removed', () => {
 
 test('NewAPI deployment checks the canonical public route', () => {
     const workflow = readRepoFile('.github/workflows/deploy-kvm4-sub2api.yml');
+    assert.match(workflow, /^name:\s*Deploy KVM4 NewAPI/m);
+    assert.match(workflow, /npm run deploy:kvm4:newapi/);
     assert.match(workflow, /https:\/\/new\.fatherkey\.com\/health/);
     assert.doesNotMatch(workflow, /https:\/\/sub2api\.fatherkey\.com\/health/);
 
@@ -46,4 +48,20 @@ test('NewAPI deployment checks the canonical public route', () => {
     assert.match(deploy, /new\.fatherkey\.com/);
     assert.match(deploy, /canonical_site_count/);
     assert.doesNotMatch(deploy, /compatibility_site_count/);
+});
+
+test('NewAPI has canonical commands while preserving the historical service-slot aliases', () => {
+    const packageJson = JSON.parse(readRepoFile('package.json'));
+    assert.equal(packageJson.scripts['deploy:kvm4:newapi'], 'bash scripts/deploy-kvm4-newapi.sh');
+    assert.equal(packageJson.scripts['rollback:kvm4:newapi'], 'bash scripts/rollback-kvm4-newapi.sh');
+    assert.equal(packageJson.scripts['deploy:kvm4:sub2api'], 'npm run deploy:kvm4:newapi');
+    assert.equal(packageJson.scripts['rollback:kvm4:sub2api'], 'npm run rollback:kvm4:newapi');
+
+    for (const relativePath of [
+        'scripts/deploy-kvm4-newapi.sh',
+        'scripts/rollback-kvm4-newapi.sh'
+    ]) {
+        const source = readRepoFile(relativePath);
+        assert.match(source, /deploy-kvm4-sub2api\.sh|rollback-kvm4-sub2api\.sh/);
+    }
 });
