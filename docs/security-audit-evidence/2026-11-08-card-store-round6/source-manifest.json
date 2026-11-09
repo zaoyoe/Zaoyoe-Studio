@@ -1,0 +1,137 @@
+{
+  "scope": "Hash of dirty local source at archive time, including final-test inputs. Not a clean candidate commit, an attestation of test-time immutability, or a complete release manifest.",
+  "files": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "bytes": 198133,
+      "sha256": "0ed041dc69dd7195ec210ab527abb83ca50231c8f4bf31d87974f67914f713b1",
+      "round6_delta": true
+    },
+    {
+      "path": "services/kc-pay-gpt/payment-retry.js",
+      "bytes": 50322,
+      "sha256": "0b51dfb27a46985ac4d479d403122ffd2287e7aebbf14d6ad0a2755198ce5166",
+      "round6_delta": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "bytes": 5381,
+      "sha256": "52fc653bce8bdf60ae5b6ab3ce12ad754a964f9f82be49f30aa0ab78b5002942",
+      "round6_delta": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "bytes": 39256,
+      "sha256": "c93789e2fa98ef0750c5bbd6c21710b654de0cf0ff0b3463a00bbdf2ae6dcb7c",
+      "round6_delta": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "bytes": 15319,
+      "sha256": "f03b9dd4e9a3167ac2b1c635e0f435856eea0749bf10c234b85c993c3e18f520",
+      "round6_delta": true
+    },
+    {
+      "path": "services/kc-pay-gpt/index.js",
+      "bytes": 65041,
+      "sha256": "21ed32ea710e25d655079cf66434f24f1bdc86a71f2948edcb25e12a4c7a3458",
+      "round6_delta": true
+    },
+    {
+      "path": "services/kc-pay-gpt/chatgpt.js",
+      "bytes": 31154,
+      "sha256": "c50720bf0f6eecc4223e4e429f4ec9ecffa488ae15d3de946596fe7dcb7e8871",
+      "round6_delta": true
+    },
+    {
+      "path": "tests/security-round6-kc-card-ownership.test.js",
+      "bytes": 14224,
+      "sha256": "c43d1786e4cecbb445470eb24369fa32d9702ac4e48cb2f4e85ebf20d50229f2",
+      "round6_delta": true
+    },
+    {
+      "path": "tests/security-round6-kc-payment-callers.test.js",
+      "bytes": 3708,
+      "sha256": "e2505a01acb904ec6cda98aabcec042ad645954c97e33bc98b20c542c11f535a",
+      "round6_delta": true
+    },
+    {
+      "path": "tests/security-round2-kc-activation.test.js",
+      "bytes": 13782,
+      "sha256": "0fc07c07133f3420bfa95a4e928e34c790b85ee6df233a549b721bd06ee916c6",
+      "round6_delta": false
+    },
+    {
+      "path": "tests/security-round3-kc-activation-atomic.test.js",
+      "bytes": 23717,
+      "sha256": "6919ebdc2b15868ed9543c479d54a06ce6888a27b2cbf86252e31f6e0bf4189b",
+      "round6_delta": false
+    },
+    {
+      "path": "tests/security-round4-kc-local-settlement.test.js",
+      "bytes": 16026,
+      "sha256": "4fc4446cca9aab38d8230633b01c18ed9cb20de5a64c4609855d84e50d670e06",
+      "round6_delta": false
+    },
+    {
+      "path": "tests/security-round5-kc-owner-locks.test.js",
+      "bytes": 14827,
+      "sha256": "39190f24f952590ca39ca3b8ca05a2e33db312ded95c37d26acbdc9820436e04",
+      "round6_delta": false
+    },
+    {
+      "path": "services/kc-pay-gpt/test/openai-payment-method.test.js",
+      "bytes": 22906,
+      "sha256": "287e135c4f5c371b5267b3b2efd890ecaab095c71bd458b460a67b4e54440d3d",
+      "round6_delta": false
+    },
+    {
+      "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+      "bytes": 49419,
+      "sha256": "3f846e4ee51ecc0e18113892d1a1d3b582fc1b2ddfe39ac44ce2a264e86cadf5",
+      "round6_delta": false
+    },
+    {
+      "path": "services/kc-pay-gpt/test/card-freeze.test.js",
+      "bytes": 3130,
+      "sha256": "f755e50cd3f977fae49b73665d74706404571919bac00a439759ad6e8298c29f",
+      "round6_delta": false
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-api-client.test.js",
+      "bytes": 13628,
+      "sha256": "b73470a7a8440a79898183fcbd8f942d50ed77addbbe93ba2727bdc5517e6950",
+      "round6_delta": false
+    },
+    {
+      "path": "services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+      "bytes": 6304,
+      "sha256": "73fd595fafd7b39433d4bf34da10a91f84395400fb06311eb1cddd0c0b93ba19",
+      "round6_delta": false
+    },
+    {
+      "path": "services/kc-pay-gpt/test/task-safety.test.js",
+      "bytes": 11061,
+      "sha256": "b9fac87e62510596231a34b94faccf0b772fbf5d10e8af1592bf2100761454a1",
+      "round6_delta": false
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-decline-dictionary.test.js",
+      "bytes": 5410,
+      "sha256": "ba4d6f3cfcc7c58fe096a2fcaa2172cfe51065c546e0486d1d582e6f08a0c2ed",
+      "round6_delta": false
+    },
+    {
+      "path": "services/kc-pay-gpt/test/chatgpt-billing.test.js",
+      "bytes": 3922,
+      "sha256": "8f68e09626c446f3a11eb97fe77ae518c2ff5a85085967e7318d34ef6f32e5a1",
+      "round6_delta": false
+    },
+    {
+      "path": "services/kc-pay-gpt/test/chatgpt-checkout-team-promo.test.js",
+      "bytes": 11869,
+      "sha256": "6ecb85e5f0d6b6aeec2b00cf5528fe4fc62020bb0dc59f3f00f1910e255e18a9",
+      "round6_delta": false
+    }
+  ]
+}

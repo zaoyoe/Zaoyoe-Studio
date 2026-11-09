@@ -1,0 +1,2879 @@
+TAP version 13
+# Subtest: release: an old task cannot change a card owned by "payment_next-job"
+not ok 1 - release: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 95.25
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:95:44)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3)
+  ...
+# Subtest: release: an old task cannot change a card owned by "payment_job-1"
+not ok 2 - release: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 1.045458
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:95:44)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: an old task cannot change a card owned by "payment_Job-1-extra"
+not ok 3 - release: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 0.869958
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:95:44)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: an old task cannot change a card owned by "payment_Job-1 "
+not ok 4 - release: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.741083
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:95:44)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: an old task cannot change a card owned by null
+not ok 5 - release: an old task cannot change a card owned by null
+  ---
+  duration_ms: 0.961125
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:95:44)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"in_use":0}
+not ok 6 - release: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 0.97175
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:104:44)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"is_active":0}
+not ok 7 - release: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 0.851791
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:104:44)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"status":"待人工复核"}
+not ok 8 - release: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.987708
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:104:44)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"status":"已冻结"}
+not ok 9 - release: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 0.893375
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:104:44)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: ordinary task cannot mutate protected state {"status":"已报废"}
+not ok 10 - release: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.827583
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:104:44)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid/missing owner fails before persistence ("")
+not ok 11 - release: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.788709
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid/missing owner fails before persistence (null)
+not ok 12 - release: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 1.45075
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid/missing owner fails before persistence (true)
+not ok 13 - release: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.68225
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid/missing owner fails before persistence ("payment_bad key")
+not ok 14 - release: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 0.60425
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+not ok 15 - release: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.586541
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid/missing owner fails before persistence ({})
+not ok 16 - release: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.564458
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid/missing owner fails before persistence (["payment_Job-1"])
+not ok 17 - release: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.818375
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid asset ID fails before persistence (true)
+not ok 18 - release: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.632416
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid asset ID fails before persistence (-1)
+not ok 19 - release: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 1.343375
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid asset ID fails before persistence (1.5)
+not ok 20 - release: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 1.29425
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid asset ID fails before persistence ("55 OR 1=1")
+not ok 21 - release: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 0.925958
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid asset ID fails before persistence ([])
+not ok 22 - release: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 2.341708
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: release: invalid asset ID fails before persistence (9007199254740992)
+not ok 23 - release: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 0.729375
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by "payment_next-job"
+not ok 24 - cooldown: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 0.802125
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by "payment_job-1"
+not ok 25 - cooldown: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 0.747292
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by "payment_Job-1-extra"
+not ok 26 - cooldown: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 0.784667
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by "payment_Job-1 "
+not ok 27 - cooldown: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.990834
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: an old task cannot change a card owned by null
+not ok 28 - cooldown: an old task cannot change a card owned by null
+  ---
+  duration_ms: 0.536583
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"in_use":0}
+not ok 29 - cooldown: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 0.537542
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"is_active":0}
+not ok 30 - cooldown: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 0.50725
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"status":"待人工复核"}
+not ok 31 - cooldown: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.498625
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"status":"已冻结"}
+not ok 32 - cooldown: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 0.49525
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: ordinary task cannot mutate protected state {"status":"已报废"}
+not ok 33 - cooldown: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.527291
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence ("")
+not ok 34 - cooldown: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.599
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence (null)
+not ok 35 - cooldown: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 0.852625
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence (true)
+not ok 36 - cooldown: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.541333
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence ("payment_bad key")
+not ok 37 - cooldown: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 1.109417
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+not ok 38 - cooldown: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.566041
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence ({})
+not ok 39 - cooldown: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.493208
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid/missing owner fails before persistence (["payment_Job-1"])
+not ok 40 - cooldown: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.525584
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence (true)
+not ok 41 - cooldown: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.517708
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence (-1)
+not ok 42 - cooldown: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 0.84175
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence (1.5)
+not ok 43 - cooldown: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 0.508125
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence ("55 OR 1=1")
+not ok 44 - cooldown: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 0.647917
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence ([])
+not ok 45 - cooldown: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 0.689666
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: cooldown: invalid asset ID fails before persistence (9007199254740992)
+not ok 46 - cooldown: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 1.019084
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by "payment_next-job"
+not ok 47 - quarantine: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 0.921375
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by "payment_job-1"
+not ok 48 - quarantine: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 1.115042
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by "payment_Job-1-extra"
+not ok 49 - quarantine: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 0.84775
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by "payment_Job-1 "
+not ok 50 - quarantine: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.720292
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: an old task cannot change a card owned by null
+not ok 51 - quarantine: an old task cannot change a card owned by null
+  ---
+  duration_ms: 0.727375
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"in_use":0}
+not ok 52 - quarantine: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 0.551334
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"is_active":0}
+not ok 53 - quarantine: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 0.519625
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"status":"待人工复核"}
+not ok 54 - quarantine: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.605542
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"status":"已冻结"}
+not ok 55 - quarantine: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 0.718083
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: ordinary task cannot mutate protected state {"status":"已报废"}
+not ok 56 - quarantine: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.983458
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence ("")
+not ok 57 - quarantine: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.807084
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence (null)
+not ok 58 - quarantine: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 0.683
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence (true)
+not ok 59 - quarantine: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.609125
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence ("payment_bad key")
+not ok 60 - quarantine: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 0.795792
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+not ok 61 - quarantine: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.912209
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence ({})
+not ok 62 - quarantine: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.782041
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid/missing owner fails before persistence (["payment_Job-1"])
+not ok 63 - quarantine: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.772125
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence (true)
+not ok 64 - quarantine: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.566458
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence (-1)
+not ok 65 - quarantine: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 0.709333
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence (1.5)
+not ok 66 - quarantine: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 0.618125
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence ("55 OR 1=1")
+not ok 67 - quarantine: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 0.575542
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence ([])
+not ok 68 - quarantine: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 1.885083
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: quarantine: invalid asset ID fails before persistence (9007199254740992)
+not ok 69 - quarantine: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 0.650125
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by "payment_next-job"
+not ok 70 - exhaust: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 0.748417
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by "payment_job-1"
+not ok 71 - exhaust: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 0.572834
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by "payment_Job-1-extra"
+not ok 72 - exhaust: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 0.821834
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by "payment_Job-1 "
+not ok 73 - exhaust: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.54925
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: an old task cannot change a card owned by null
+not ok 74 - exhaust: an old task cannot change a card owned by null
+  ---
+  duration_ms: 0.570084
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"in_use":0}
+not ok 75 - exhaust: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 0.538958
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"is_active":0}
+not ok 76 - exhaust: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 0.54025
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"status":"待人工复核"}
+not ok 77 - exhaust: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.543166
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"status":"已冻结"}
+not ok 78 - exhaust: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 0.571375
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: ordinary task cannot mutate protected state {"status":"已报废"}
+not ok 79 - exhaust: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.546167
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence ("")
+not ok 80 - exhaust: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.563959
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence (null)
+not ok 81 - exhaust: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 0.493625
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence (true)
+not ok 82 - exhaust: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 1.073583
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence ("payment_bad key")
+not ok 83 - exhaust: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 0.544167
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+not ok 84 - exhaust: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 1.556875
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence ({})
+not ok 85 - exhaust: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 2.341625
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid/missing owner fails before persistence (["payment_Job-1"])
+not ok 86 - exhaust: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.891125
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence (true)
+not ok 87 - exhaust: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.916791
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence (-1)
+not ok 88 - exhaust: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 1.139625
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence (1.5)
+not ok 89 - exhaust: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 0.607208
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence ("55 OR 1=1")
+not ok 90 - exhaust: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 1.553917
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence ([])
+not ok 91 - exhaust: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 2.093625
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: exhaust: invalid asset ID fails before persistence (9007199254740992)
+not ok 92 - exhaust: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 0.700542
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: an old task cannot change a card owned by "payment_next-job"
+not ok 93 - usage: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 5.483416
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: an old task cannot change a card owned by "payment_job-1"
+not ok 94 - usage: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 1.85875
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: an old task cannot change a card owned by "payment_Job-1-extra"
+not ok 95 - usage: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 0.82425
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: an old task cannot change a card owned by "payment_Job-1 "
+not ok 96 - usage: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.84275
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: an old task cannot change a card owned by null
+not ok 97 - usage: an old task cannot change a card owned by null
+  ---
+  duration_ms: 0.84175
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"in_use":0}
+not ok 98 - usage: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 0.640917
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"is_active":0}
+not ok 99 - usage: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 0.587083
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"status":"待人工复核"}
+not ok 100 - usage: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.661292
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"status":"已冻结"}
+not ok 101 - usage: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 0.585917
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: ordinary task cannot mutate protected state {"status":"已报废"}
+not ok 102 - usage: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.594083
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence ("")
+not ok 103 - usage: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.673375
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence (null)
+not ok 104 - usage: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 1.69225
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence (true)
+not ok 105 - usage: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.883916
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence ("payment_bad key")
+not ok 106 - usage: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 0.641917
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+not ok 107 - usage: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.622875
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence ({})
+not ok 108 - usage: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.64275
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid/missing owner fails before persistence (["payment_Job-1"])
+not ok 109 - usage: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.686
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid asset ID fails before persistence (true)
+not ok 110 - usage: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.559125
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid asset ID fails before persistence (-1)
+not ok 111 - usage: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 0.533334
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid asset ID fails before persistence (1.5)
+not ok 112 - usage: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 1.199708
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid asset ID fails before persistence ("55 OR 1=1")
+not ok 113 - usage: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 0.907416
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid asset ID fails before persistence ([])
+not ok 114 - usage: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 1.163042
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage: invalid asset ID fails before persistence (9007199254740992)
+not ok 115 - usage: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 1.380166
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: an old task cannot change a card owned by "payment_next-job"
+not ok 116 - profile: an old task cannot change a card owned by "payment_next-job"
+  ---
+  duration_ms: 2.649709
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: an old task cannot change a card owned by "payment_job-1"
+not ok 117 - profile: an old task cannot change a card owned by "payment_job-1"
+  ---
+  duration_ms: 0.647041
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: an old task cannot change a card owned by "payment_Job-1-extra"
+not ok 118 - profile: an old task cannot change a card owned by "payment_Job-1-extra"
+  ---
+  duration_ms: 1.123458
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: an old task cannot change a card owned by "payment_Job-1 "
+not ok 119 - profile: an old task cannot change a card owned by "payment_Job-1 "
+  ---
+  duration_ms: 0.769083
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: an old task cannot change a card owned by null
+not ok 120 - profile: an old task cannot change a card owned by null
+  ---
+  duration_ms: 0.564333
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:92:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:96:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"in_use":0}
+not ok 121 - profile: ordinary task cannot mutate protected state {"in_use":0}
+  ---
+  duration_ms: 0.984834
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"is_active":0}
+not ok 122 - profile: ordinary task cannot mutate protected state {"is_active":0}
+  ---
+  duration_ms: 1.482542
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"status":"待人工复核"}
+not ok 123 - profile: ordinary task cannot mutate protected state {"status":"待人工复核"}
+  ---
+  duration_ms: 0.663667
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"status":"已冻结"}
+not ok 124 - profile: ordinary task cannot mutate protected state {"status":"已冻结"}
+  ---
+  duration_ms: 0.755375
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: ordinary task cannot mutate protected state {"status":"已报废"}
+not ok 125 - profile: ordinary task cannot mutate protected state {"status":"已报废"}
+  ---
+  duration_ms: 0.985
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:101:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'CARD_LOCK_OWNERSHIP_LOST'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence ("")
+not ok 126 - profile: invalid/missing owner fails before persistence ("")
+  ---
+  duration_ms: 0.679417
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence (null)
+not ok 127 - profile: invalid/missing owner fails before persistence (null)
+  ---
+  duration_ms: 0.783833
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence (true)
+not ok 128 - profile: invalid/missing owner fails before persistence (true)
+  ---
+  duration_ms: 0.605167
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence ("payment_bad key")
+not ok 129 - profile: invalid/missing owner fails before persistence ("payment_bad key")
+  ---
+  duration_ms: 0.602708
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+not ok 130 - profile: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.616625
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence ({})
+not ok 131 - profile: invalid/missing owner fails before persistence ({})
+  ---
+  duration_ms: 0.549875
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid/missing owner fails before persistence (["payment_Job-1"])
+not ok 132 - profile: invalid/missing owner fails before persistence (["payment_Job-1"])
+  ---
+  duration_ms: 0.51625
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:110:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:112:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid asset ID fails before persistence (true)
+not ok 133 - profile: invalid asset ID fails before persistence (true)
+  ---
+  duration_ms: 0.817292
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid asset ID fails before persistence (-1)
+not ok 134 - profile: invalid asset ID fails before persistence (-1)
+  ---
+  duration_ms: 0.677792
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid asset ID fails before persistence (1.5)
+not ok 135 - profile: invalid asset ID fails before persistence (1.5)
+  ---
+  duration_ms: 0.589709
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid asset ID fails before persistence ("55 OR 1=1")
+not ok 136 - profile: invalid asset ID fails before persistence ("55 OR 1=1")
+  ---
+  duration_ms: 0.863667
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid asset ID fails before persistence ([])
+not ok 137 - profile: invalid asset ID fails before persistence ([])
+  ---
+  duration_ms: 0.913042
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: profile: invalid asset ID fails before persistence (9007199254740992)
+not ok 138 - profile: invalid asset ID fails before persistence (9007199254740992)
+  ---
+  duration_ms: 0.758
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:117:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_ID_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:119:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: owned release is idempotent and cannot release a subsequent owner
+not ok 139 - owned release is idempotent and cannot release a subsequent owner
+  ---
+  duration_ms: 0.910917
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:125:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:127:12)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: an ownership transfer just before release is checked by the UPDATE itself
+not ok 140 - an ownership transfer just before release is checked by the UPDATE itself
+  ---
+  duration_ms: 0.74375
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:134:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:136:12)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: matching owner can cool down, exhaust and quarantine, preserving the respective states
+not ok 141 - matching owner can cool down, exhaust and quarantine, preserving the respective states
+  ---
+  duration_ms: 1.049
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:140:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:147:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: usage and payment profile require ownership and retain the lock for final release
+not ok 142 - usage and payment profile require ownership and retain the lock for final release
+  ---
+  duration_ms: 0.78575
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:153:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:163:12)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: daily usage cooldown and write rollback retain their existing safety behavior
+ok 143 - daily usage cooldown and write rollback retain their existing safety behavior
+  ---
+  duration_ms: 2.965417
+  type: 'test'
+  ...
+# Subtest: runtime release checks phone and card ownership separately
+not ok 144 - runtime release checks phone and card ownership separately
+  ---
+  duration_ms: 0.894708
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:176:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:178:12)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: runtime release with no owner cannot clear either asset
+not ok 145 - runtime release with no owner cannot clear either asset
+  ---
+  duration_ms: 0.81175
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:184:1'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:186:5)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserveCard: return the exact owner as a reservation receipt
+not ok 146 - reserveCard: return the exact owner as a reservation receipt
+  ---
+  duration_ms: 0.984042
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:191:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - 'payment_Job-1'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'payment_Job-1'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:194:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations (undefined)
+not ok 147 - reserveCard: never truncate or accept unowned reservations (undefined)
+  ---
+  duration_ms: 0.737333
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:199:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:201:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations ("")
+not ok 148 - reserveCard: never truncate or accept unowned reservations ("")
+  ---
+  duration_ms: 0.674916
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:199:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:201:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations (true)
+not ok 149 - reserveCard: never truncate or accept unowned reservations (true)
+  ---
+  duration_ms: 0.687875
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:199:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:201:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+not ok 150 - reserveCard: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.646625
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:199:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:201:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserveCard: never truncate or accept unowned reservations ("bad owner")
+not ok 151 - reserveCard: never truncate or accept unowned reservations ("bad owner")
+  ---
+  duration_ms: 0.570666
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:199:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:201:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserveRuntimeAssets: return the exact owner as a reservation receipt
+not ok 152 - reserveRuntimeAssets: return the exact owner as a reservation receipt
+  ---
+  duration_ms: 1.1165
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:191:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - 'payment_Job-1'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'payment_Job-1'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:194:16)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations (undefined)
+not ok 153 - reserveRuntimeAssets: never truncate or accept unowned reservations (undefined)
+  ---
+  duration_ms: 0.854583
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:199:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:201:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations ("")
+not ok 154 - reserveRuntimeAssets: never truncate or accept unowned reservations ("")
+  ---
+  duration_ms: 0.773292
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:199:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:201:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations (true)
+not ok 155 - reserveRuntimeAssets: never truncate or accept unowned reservations (true)
+  ---
+  duration_ms: 0.720042
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:199:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:201:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+not ok 156 - reserveRuntimeAssets: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+  ---
+  duration_ms: 0.768792
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:199:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:201:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: reserveRuntimeAssets: never truncate or accept unowned reservations ("bad owner")
+not ok 157 - reserveRuntimeAssets: never truncate or accept unowned reservations ("bad owner")
+  ---
+  duration_ms: 0.737166
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:199:9'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    code: 'ASSET_LOCK_OWNER_INVALID'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:201:13)
+    async Test.run (node:internal/test_runner/test:1208:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+1..157
+# tests 157
+# suites 0
+# pass 1
+# fail 156
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 417.318208

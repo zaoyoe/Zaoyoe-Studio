@@ -1,0 +1,35 @@
+{
+  "status": "PASS",
+  "readOnly": true,
+  "rows": [
+    [
+      {
+        "server_uuid": "8a30916c-dbe1-11f1-90b5-2ea4ac7236b8",
+        "datadir": "/private/tmp/kc-hold-7d64646488d639c6/data/",
+        "db": "kc_fault_lab_7d64646488d639c6"
+      }
+    ],
+    [
+      {
+        "total": 1,
+        "held": "1",
+        "reusable": "0"
+      }
+    ],
+    [
+      {
+        "count": 0
+      }
+    ],
+    [
+      {
+        "count": 0
+      }
+    ],
+    [
+      {
+        "count": 0
+      }
+    ]
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "metadata_provenance": "Final command lists and completed exit codes carried in session continuation context; original logs copied byte-for-byte. No new execution sidecar or candidate-commit binding is claimed retrospectively.",
+  "final_focused_suites": [
+    {
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "launcher": "/tmp/security-test-isolation-20261108/run.py",
+      "command": [
+        "node",
+        "--test",
+        "tests/security-round4-kc-local-settlement.test.js",
+        "tests/security-round3-kc-activation-atomic.test.js",
+        "tests/security-round2-kc-activation.test.js"
+      ],
+      "exit_code_observed": 0,
+      "pass": 107,
+      "fail": 0,
+      "skip": 0,
+      "log": "raw/local-settlement-native-final.log"
+    },
+    {
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt",
+      "launcher": "/tmp/security-test-isolation-20261108/run.py",
+      "command": [
+        "node",
+        "./node_modules/vitest/vitest.mjs",
+        "run",
+        "test/gpt-outsourcing-store.test.js",
+        "test/recharge-routing.test.js",
+        "test/gpt-outsourcing-recovery.test.js",
+        "test/task-safety.test.js",
+        "test/local-preview-recovery.test.js",
+        "test/task-diagnostics.test.js",
+        "--no-file-parallelism",
+        "--maxWorkers=1"
+      ],
+      "exit_code_observed": 0,
+      "files_pass": 6,
+      "pass": 185,
+      "fail": 0,
+      "log": "raw/local-settlement-kc-final-v2.log"
+    }
+  ],
+  "total_focused_pass": 292,
+  "total_focused_fail": 0,
+  "syntax": {
+    "pass": 4,
+    "fail": 0,
+    "command_records": "raw/local-settlement-syntax-results.json"
+  },
+  "whitespace": {
+    "status": "PASS_INCREMENTAL_ONLY",
+    "interpretation": "whitespace-interpretation.json"
+  },
+  "preserved_failures": [
+    {
+      "log": "raw/local-settlement-baseline.log",
+      "pass": 0,
+      "fail": 1,
+      "meaning": "Before helper: task result committed separately from failing CDK return"
+    },
+    {
+      "log": "raw/local-settlement-legacy-unknown-red.log",
+      "pass": 63,
+      "fail": 1,
+      "meaning": "Legacy Chinese unknown-payment output did not reliably retain assets"
+    },
+    {
+      "log": "raw/local-settlement-renewal-red.log",
+      "pass": 65,
+      "fail": 2,
+      "meaning": "Premature success persisted before auto-renew verification"
+    },
+    {
+      "log": "raw/local-settlement-exception-message-red.log",
+      "pass": 70,
+      "fail": 1,
+      "meaning": "Raw worker exception leaked into public task message"
+    }
+  ],
+  "historical_not_current": {
+    "round3_focused_pass": 232,
+    "round2_kc_full_suite": {
+      "files": 71,
+      "tests": 1693,
+      "pass": 1620,
+      "fail": 72,
+      "skip": 1,
+      "exit_code": 1,
+      "rerun_this_round": false,
+      "source_report": "docs/security-card-store-hardening-round2-2026-11-08.md"
+    }
+  },
+  "not_run": [
+    "KC full suite in round4",
+    "real MySQL concurrent row/gap locks and deadlocks",
+    "real disconnect/process crash recovery",
+    "production KC artifact and host compose",
+    "main-site/TG runtime acceptance",
+    "WAF and production permission acceptance",
+    "guest promo archive contracts",
+    "A5-G3 manual acceptance",
+    "Docker build",
+    "SQL/migrations",
+    "deployment"
+  ],
+  "test_limit": "Stateful mysql2 offline model serializes full transactions; actual source worker runs with mocked store in VM. Passing tests cannot establish real InnoDB lock, isolation or crash semantics."
+}

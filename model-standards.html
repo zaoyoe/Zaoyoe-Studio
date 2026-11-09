@@ -1,0 +1,1751 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-visual">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="color-scheme" content="light dark">
+    <script src="./js/section-visibility-preload.js?v=75e23ac2a6e7"></script>
+    <script src="/api/runtime/section-visibility-preload" async></script>
+    <script src="./js/theme-preload.js?v=75e23ac2a6e7"></script>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="description" content="Zaoyoe Studio AI 工作台全模型输入规范与文件支持标准，详细提供图像、对话多模态、视频与语音全系模型的文件格式、大小上限与参数协议。" data-legal-description="全模型输入规范与支持标准，适用于 AI 工作台图像、对话、视频与语音创作。">
+    <title>全模型输入规范与支持标准 - Zaoyoe Studio</title>
+    <link rel="canonical" href="https://www.fatherkey.com/model-standards.html">
+    <link rel="icon" type="image/png" href="assets/favicon.png">
+    <link rel="stylesheet" href="./css/auth-popup-handoff.css?v=75e23ac2a6e7">
+    <script src="./js/auth-popup-handoff.js?v=75e23ac2a6e7"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://verify-api.fatherkey.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="vendor/fontawesome/6.4.0/css/all.min.css?v=75e23ac2a6e7">
+
+    <link rel="stylesheet" href="css/auth-sheet.css?v=75e23ac2a6e7">
+    <link rel="stylesheet" href="css/profile-modal.css?v=75e23ac2a6e7">
+    <link rel="stylesheet" href="avatar-fix.css?v=75e23ac2a6e7">
+    <link rel="stylesheet" href="css/framer_home.css?v=75e23ac2a6e7">
+    <link rel="stylesheet" href="css/prompt-shell-page.css?v=75e23ac2a6e7">
+    <link rel="stylesheet" href="css/privacy-page.css?v=75e23ac2a6e7">
+    <link rel="stylesheet" href="./css/desktop-nav-glass.css?v=20261108_14">
+    <script type="module" src="./js/desktop-nav-glass.mjs?v=20261109_NAV_MOTION_1"></script>
+</head>
+
+<body class="privacy-page prompt-shell-page">
+    <canvas id="ambientCanvas"></canvas>
+    <canvas id="starryCanvas"></canvas>
+
+    <div class="dropdown-overlay" id="dropdownOverlay"></div>
+
+    <nav class="framer-nav">
+        <div class="nav-container">
+            <a href="/index.html" class="nav-logo" aria-label="返回首页">
+                <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M30 20 H80 L70 35 H20 Z" fill="white" />
+                    <path d="M40 40 H90 L80 55 H30 Z" fill="#ccc" />
+                    <path d="M20 60 H70 L60 75 H10 Z" fill="white" />
+                    <path d="M80 20 L90 15 L80 30" fill="#333" />
+                    <path d="M90 40 L100 35 L90 50" fill="#333" />
+                    <path d="M70 60 L80 55 L70 70" fill="#333" />
+                </svg>
+            </a>
+
+            <div class="nav-menu">
+                <a href="/prompts.html" class="nav-trigger" data-dropdown="prompts" data-i18n="nav.prompts">提示词</a>
+                <a href="/workbench.html" data-i18n="nav.workbench">AI 工作台</a>
+                <a href="/verify.html" data-i18n="nav.verify">Gemini Pro</a>
+                <a href="https://new.fatherkey.com" data-i18n="nav.gongyi">核心秘钥</a>
+                <a href="/shop.html" class="nav-trigger" data-dropdown="shop" data-i18n="nav.shop">商城</a>
+                <a href="/guestbook.html" data-i18n="nav.guestbook">留言板</a>
+            </div>
+
+            <div class="nav-actions">
+                <div id="auth-container"></div>
+                <button class="nav-hamburger" aria-label="展开导航菜单">
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main id="main-content">
+        <div class="privacy-container has-sidebar">
+            <a href="/index.html" class="legal-brand" aria-label="返回首页">
+                <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M30 20 H80 L70 35 H20 Z" fill="white" />
+                    <path d="M40 40 H90 L80 55 H30 Z" fill="#ccc" />
+                    <path d="M20 60 H70 L60 75 H10 Z" fill="white" />
+                    <path d="M80 20 L90 15 L80 30" fill="#333" />
+                    <path d="M90 40 L100 35 L90 50" fill="#333" />
+                    <path d="M70 60 L80 55 L70 70" fill="#333" />
+                </svg>
+                <span><span data-legal-brand-name>Zaoyoe Studio</span><small>早鸟工作室</small></span>
+            </a>
+            <p class="privacy-eyebrow" data-legal-brand-name>Zaoyoe Studio · AI 工作台标准规范</p>
+            <h1>全模型输入规范与支持标准</h1>
+            <div class="legal-meta">
+                <span><strong>核验基准</strong>：2026-11-08 整理；各通道能力与实际开放状态分别标注</span>
+                <span><strong>适用范围</strong>：AI 工作台（图片创作、文本对话、视频生成、语音交互）</span>
+                <span><strong>收录模型</strong>：通用模型参考、跨上游 Image 2.6 GIF 与 BBLABU 通道目录；收录不等于已开放</span>
+            </div>
+            <nav class="legal-policy-nav" aria-label="平台政策与规范">
+                <a href="/model-standards.html" aria-current="page">模型规范</a>
+                <a href="/terms.html">服务条款</a>
+                <a href="/privacy.html">隐私政策</a>
+                <a href="/refund-policy.html">退款政策</a>
+            </nav>
+
+            <!-- Multi-Model Layout: Left Sticky Sidebar + Right Cards -->
+            <div class="standards-page-layout">
+                <!-- Left Sticky Directory -->
+                <aside class="standards-sidebar" id="standardsSidebar" aria-label="模型与文件规范导航目录">
+                    <div class="standards-sidebar-header">
+                        <span class="standards-sidebar-title"><i class="fas fa-list-check"></i> 模型与协议目录</span>
+                        <span class="standards-sidebar-count" id="sidebarModelCount">42 款模型</span>
+                    </div>
+
+                    <div class="standards-search-box">
+                        <i class="fas fa-search" aria-hidden="true"></i>
+                        <input type="search" id="modelFilterInput" placeholder="搜索模型 (如 Banana, GPT-4o, Kling...)" aria-label="快速检索模型">
+                    </div>
+
+                    <div class="standards-sidebar-meta">
+                        <span class="standards-meta-chip"><i class="fas fa-image"></i> 图像 12</span>
+                        <span class="standards-meta-chip"><i class="fas fa-comments"></i> 对话 18</span>
+                        <span class="standards-meta-chip"><i class="fas fa-video"></i> 视频 5</span>
+                        <span class="standards-meta-chip"><i class="fas fa-microphone"></i> 语音 3</span>
+                    </div>
+
+                    <nav class="standards-nav-tree" id="standardsNavTree">
+                        <div class="standards-nav-group" data-nav-group="bblabu">
+                            <div class="standards-nav-group-title"><i class="fas fa-film"></i> 动图与视频接入</div>
+                            <ul class="standards-nav-list">
+                                <li><a href="#model-bblabu-contract" class="standards-nav-item"><span class="nav-model-name">GIF 与视频接入规范</span></a></li>
+                                <li><a href="#model-bblabu-catalog" class="standards-nav-item"><span class="nav-model-name">型号能力与适配状态</span></a></li>
+                            </ul>
+                        </div>
+                        <!-- Group 1: 图像生成与编辑 -->
+                        <div class="standards-nav-group" data-nav-group="image">
+                            <div class="standards-nav-group-title">
+                                <i class="fas fa-palette"></i> 图像生成与编辑模型
+                            </div>
+                            <ul class="standards-nav-list">
+                                <li><a href="#model-banana-2-1" class="standards-nav-item active"><span class="nav-model-name">Banana 2.1 (Nano)</span><span class="nav-badge-tag tag-hot">热门图生图</span></a></li>
+                                <li><a href="#model-banana-2" class="standards-nav-item"><span class="nav-model-name">Banana 2</span><span class="nav-badge-tag tag-edit">支持垫图</span></a></li>
+                                <li><a href="#model-banana-pro" class="standards-nav-item"><span class="nav-model-name">Banana Pro (Preview)</span><span class="nav-badge-tag tag-pro">专业渲染</span></a></li>
+                                <li><a href="#model-gpt-image-2" class="standards-nav-item"><span class="nav-model-name">GPT-Image 2 / All</span><span class="nav-badge-tag tag-hot">双向编辑</span></a></li>
+                                <li><a href="#model-gpt-image-2-5" class="standards-nav-item"><span class="nav-model-name">GPT-Image 2.5</span><span class="nav-badge-tag tag-edit">图生图</span></a></li>
+                                <li><a href="#model-dall-e-3" class="standards-nav-item"><span class="nav-model-name">DALL-E 3 (OpenAI)</span><span class="nav-badge-tag">纯文生图</span></a></li>
+                                <li><a href="#model-gemini-3-flash-image" class="standards-nav-item"><span class="nav-model-name">Gemini 3.1 Flash Image</span></a></li>
+                                <li><a href="#model-imagen-4" class="standards-nav-item"><span class="nav-model-name">Google Imagen 4.0</span><span class="nav-badge-tag tag-pro">超清画质</span></a></li>
+                                <li><a href="#model-flux-pro" class="standards-nav-item"><span class="nav-model-name">FLUX.1 Pro / Schnell</span><span class="nav-badge-tag">开源霸主</span></a></li>
+                                <li><a href="#model-qwen-image" class="standards-nav-item"><span class="nav-model-name">通义千问 Qwen Image</span><span class="nav-badge-tag tag-edit">中文图像编辑</span></a></li>
+                                <li><a href="#model-jimeng" class="standards-nav-item"><span class="nav-model-name">字节即梦 Jimeng v2.1</span><span class="nav-badge-tag">东方审美</span></a></li>
+                                <li><a href="#model-grok-imagine" class="standards-nav-item"><span class="nav-model-name">xAI Grok Imagine</span></a></li>
+                            </ul>
+                        </div>
+
+                        <!-- Group 2: 文本对话与多模态解析 -->
+                        <div class="standards-nav-group" data-nav-group="chat">
+                            <div class="standards-nav-group-title">
+                                <i class="fas fa-comments"></i> 文本对话与多模态
+                            </div>
+                            <ul class="standards-nav-list">
+                                <li><a href="#model-gpt-4o" class="standards-nav-item"><span class="nav-model-name">GPT-4o / GPT-4o mini</span><span class="nav-badge-tag tag-hot">全模态</span></a></li>
+                                <li><a href="#model-gpt-4-1" class="standards-nav-item"><span class="nav-model-name">GPT-4.1 / mini / nano</span></a></li>
+                                <li><a href="#model-gpt-5" class="standards-nav-item"><span class="nav-model-name">GPT-5 / 5 mini / 5 Pro</span><span class="nav-badge-tag tag-pro">旗舰基模</span></a></li>
+                                <li><a href="#model-openai-o-series" class="standards-nav-item"><span class="nav-model-name">OpenAI o1 / o3 / o4-mini</span><span class="nav-badge-tag tag-pro">深度思考</span></a></li>
+                                <li><a href="#model-claude-3-7-sonnet" class="standards-nav-item"><span class="nav-model-name">Claude 3.7 Sonnet</span><span class="nav-badge-tag tag-hot">混合思考</span></a></li>
+                                <li><a href="#model-claude-3-5" class="standards-nav-item"><span class="nav-model-name">Claude 3.5 Sonnet / Haiku</span><span class="nav-badge-tag">代码高分</span></a></li>
+                                <li><a href="#model-claude-opus-4" class="standards-nav-item"><span class="nav-model-name">Claude Opus 4 / Sonnet 4</span><span class="nav-badge-tag tag-pro">顶配推理</span></a></li>
+                                <li><a href="#model-gemini-2-5" class="standards-nav-item"><span class="nav-model-name">Gemini 2.5 Flash / Pro</span><span class="nav-badge-tag tag-hot">2M长窗口</span></a></li>
+                                <li><a href="#model-gemini-3" class="standards-nav-item"><span class="nav-model-name">Gemini 3.0 / 3.1 Pro Preview</span></a></li>
+                                <li><a href="#model-deepseek-v3-r1" class="standards-nav-item"><span class="nav-model-name">DeepSeek V3 / R1 (满血)</span><span class="nav-badge-tag tag-hot">国货之光</span></a></li>
+                                <li><a href="#model-deepseek-v4" class="standards-nav-item"><span class="nav-model-name">DeepSeek V4 Flash / Pro</span></a></li>
+                                <li><a href="#model-qwen-2-5-vl" class="standards-nav-item"><span class="nav-model-name">通义千问 Qwen 2.5 / 2.5 VL</span><span class="nav-badge-tag">视觉高精</span></a></li>
+                                <li><a href="#model-qwen-3-6" class="standards-nav-item"><span class="nav-model-name">通义千问 Qwen 3.6 Plus</span></a></li>
+                                <li><a href="#model-glm-4v" class="standards-nav-item"><span class="nav-model-name">智谱 GLM-4V / GLM-5</span></a></li>
+                                <li><a href="#model-kimi" class="standards-nav-item"><span class="nav-model-name">月之暗面 Kimi K2 / Moonshot</span></a></li>
+                                <li><a href="#model-grok-vision" class="standards-nav-item"><span class="nav-model-name">xAI Grok 2 / 3 Vision</span></a></li>
+                                <li><a href="#model-doubao" class="standards-nav-item"><span class="nav-model-name">字节豆包 Doubao Vision / Seed</span></a></li>
+                                <li><a href="#model-minimax" class="standards-nav-item"><span class="nav-model-name">MiniMax M2.7 / M3</span></a></li>
+                            </ul>
+                        </div>
+
+                        <!-- Group 3: 视频生成模型 -->
+                        <div class="standards-nav-group" data-nav-group="video">
+                            <div class="standards-nav-group-title">
+                                <i class="fas fa-video"></i> AI 视频生成模型
+                            </div>
+                            <ul class="standards-nav-list">
+                                <li><a href="#model-kling" class="standards-nav-item"><span class="nav-model-name">快手可灵 Kling 1.5 / 2.0</span><span class="nav-badge-tag tag-hot">首尾帧</span></a></li>
+                                <li><a href="#model-sora-2" class="standards-nav-item"><span class="nav-model-name">OpenAI Sora 2 / Sora 2 Pro</span><span class="nav-badge-tag tag-pro">物理世界</span></a></li>
+                                <li><a href="#model-veo" class="standards-nav-item"><span class="nav-model-name">Google Veo 2.0 / 3.0 / 3.1</span></a></li>
+                                <li><a href="#model-jimeng-video" class="standards-nav-item"><span class="nav-model-name">字节即梦视频 Jimeng Video</span></a></li>
+                                <li><a href="#model-hailuo-video" class="standards-nav-item"><span class="nav-model-name">MiniMax 海螺视频 (Hailuo)</span></a></li>
+                            </ul>
+                        </div>
+
+                        <!-- Group 4: 语音与实时模型 -->
+                        <div class="standards-nav-group" data-nav-group="audio">
+                            <div class="standards-nav-group-title">
+                                <i class="fas fa-microphone"></i> 语音与实时音频
+                            </div>
+                            <ul class="standards-nav-list">
+                                <li><a href="#model-gpt-audio-realtime" class="standards-nav-item"><span class="nav-model-name">GPT-4o Audio / Realtime</span></a></li>
+                                <li><a href="#model-whisper-tts" class="standards-nav-item"><span class="nav-model-name">Whisper-1 &amp; TTS-1 HD</span></a></li>
+                                <li><a href="#model-gemini-audio" class="standards-nav-item"><span class="nav-model-name">Gemini 2.5 Native Audio</span></a></li>
+                            </ul>
+                        </div>
+
+                        <!-- Group 5: 核心基础协议 -->
+                        <div class="standards-nav-group" data-nav-group="protocol">
+                            <div class="standards-nav-group-title">
+                                <i class="fas fa-shield-halved"></i> 基础协议与解析安全
+                            </div>
+                            <ul class="standards-nav-list">
+                                <li><a href="#spec-file-formats" class="standards-nav-item"><span class="nav-model-name">通用文件格式与体积速查表</span></a></li>
+                                <li><a href="#spec-document-parsing" class="standards-nav-item"><span class="nav-model-name">本地文档与 PDF 提取标准</span></a></li>
+                                <li><a href="#spec-security-privacy" class="standards-nav-item"><span class="nav-model-name">文件隐私安全与合规协议</span></a></li>
+                            </ul>
+                        </div>
+                    </nav>
+                </aside>
+
+                <!-- Right Main Content -->
+                <div class="standards-content-wrapper">
+                    <div class="standards-section-banner" id="section-bblabu">
+                        <div class="standards-section-icon"><i class="fas fa-film"></i></div>
+                        <div class="standards-section-title-wrap">
+                            <h2>动图与视频接入规范</h2>
+                            <p>GPT Image 2.6 的 GIF 设置适用于工作台各上游；BBLABU 视频型号按下方通道规范使用。</p>
+                        </div>
+                    </div>
+                    <div class="model-card-stream">
+                        <article class="model-card" id="model-bblabu-contract">
+                            <div class="model-card-header"><div class="model-card-title-group"><h3 class="model-card-title">动图输出与视频任务</h3><span class="model-provider-badge">图片跨上游 · 视频 BBLABU</span></div></div>
+                            <div class="model-card-details">
+                                <ul>
+                                    <li><strong>GIF 输出</strong>：各上游精确匹配 <code>gpt-image-2.6</code> 时，API 计费与积分计费均可选择 PNG、JPEG、WebP、GIF；一次 1–10 张，最多 9 张参考图。GIF 可设 2–64 帧（默认 9），每帧 20–2000 毫秒（默认 200）。静态格式不发送帧参数。</li>
+                                    <li><strong>图像编辑</strong>：无参考图走 <code>/v1/images/generations</code>，有参考图走 <code>/v1/images/edits</code>。此型号省略 quality，不开放蒙版。GIF 输入、透明背景尚未核验。</li>
+                                    <li><strong>动图保存</strong>：按实际媒体类型识别并保存原始字节，保留动画帧；下载原文件。仅当原图存储已配置时受理此型号图片任务。</li>
+                                    <li><strong>BBLABU 视频输入</strong>：各型号分别约束比例、分辨率、时长、参考图/视频/音频及首尾帧。素材须使用可被上游直接下载的公网 HTTPS 原始文件地址，每次生成一条视频。</li>
+                                    <li><strong>BBLABU 视频恢复</strong>：创建后保存上游任务 ID，每轮查询间隔约 8 秒，最长 2 小时；有任务 ID 后只查询原任务。刷新页面或暂时查询失败均沿用同一 ID；地址、模型或凭据改变后不能用新配置恢复旧任务。</li>
+                                    <li><strong>接入状态</strong>：“已接入”表示工作台具备参数和协议适配，不代表已完成收费实测或生产启用。“待适配”型号保持禁止提交，价格以当前后台配置及上游实际账单为准。</li>
+                                </ul>
+                            </div>
+                        </article>
+                        <article class="model-card" id="model-bblabu-catalog">
+                            <div class="model-card-header"><div class="model-card-title-group"><h3 class="model-card-title">BBLABU 型号能力目录</h3><span class="model-provider-badge" id="bblabuCapabilityVersion"></span></div></div>
+                            <div class="model-card-details">
+                                <p id="bblabuCapabilitySummary">正在读取通道能力目录。</p>
+                                <div class="media-capability-table-wrap"><table class="media-capability-table"><thead><tr><th scope="col">型号 / 状态</th><th scope="col">输出与输入限制</th></tr></thead><tbody id="bblabuCapabilityRows"></tbody></table></div>
+                                <p>资料来源：<a href="https://api.bblabu.cn/docs" target="_blank" rel="noopener noreferrer">BBLABU 接入文档</a>及配套视频文档。型号必须精确匹配。Image 2.6 的 GIF 参数适配跨上游共用；其他目录能力仅用于 BBLABU，各供应商的真实接口兼容性仍须分别核验。</p>
+                            </div>
+                        </article>
+                    </div>
+                    <!-- Section 1: 图像生成与编辑模型 -->
+                    <div class="standards-section-banner" id="section-image">
+                        <div class="standards-section-icon"><i class="fas fa-palette"></i></div>
+                        <div class="standards-section-title-wrap">
+                            <h2>1. 图像生成与编辑模型规范 (Image Mode)</h2>
+                            <p>在图片创作模式中，模型支持文本提示词生图、单图或多图参考垫图、局部重绘以及历史任务续作。</p>
+                        </div>
+                    </div>
+
+                    <div class="model-card-stream">
+                        <!-- Banana 2.1 -->
+                        <div class="model-card" id="model-banana-2-1">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Banana 2.1 (Nano Banana)</h3>
+                                    <span class="model-provider-badge"><i class="fab fa-google"></i> Google / Gemini 生态</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 原生支持图生图与编辑</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识 (Canonical Model ID):</span>
+                                <code>nano-banana-2.1</code>
+                                <code>gemini-nano-banana</code>
+                                <code>banana-2.1</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持文件格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图上限</span>
+                                    <span class="model-spec-val">最多 4 张（单张 &le; 10 MB）</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">上游协议机制</span>
+                                    <span class="model-spec-val">NewAPI <code>/images/edits</code> (image / image[])</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">0.1 积分/张 · 支持 API 额度</span>
+                                </div>
+                            </div>
+                            <div class="model-card-details">
+                                <ul>
+                                    <li><strong>图像理解能力</strong>：上游集群原生解析图片内容，在提示词驱动下能精确继承底图的人物外貌特征、主体轮廓、服装纹理及整体光影布局。</li>
+                                    <li><strong>多图融合重绘</strong>：支持同时上传多张参考图，模型将自动融合两张及以上图片的关键要素进行统一生图。</li>
+                                    <li><strong>画幅与分辨率</strong>：原生支持 1:1、16:9、9:16、3:4、4:3 画幅，最高支持 2K/4K 渲染放大。</li>
+                                    <li><strong>输入限制</strong>：仅接收静态图片，不支持视频、动图或文本/PDF 文件附件。</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Banana 2 -->
+                        <div class="model-card" id="model-banana-2">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Banana 2 (Nano Banana 2)</h3>
+                                    <span class="model-provider-badge"><i class="fab fa-google"></i> Google / Gemini 生态</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 支持图生图</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>nano-banana-2</code>
+                                <code>banana-2</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持文件格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图上限</span>
+                                    <span class="model-spec-val">最多 4 张（单张 &le; 10 MB）</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">上游协议机制</span>
+                                    <span class="model-spec-val">NewAPI <code>/images/edits</code></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">0.1 积分/张</span>
+                                </div>
+                            </div>
+                            <div class="model-card-details">
+                                <p>经典 Banana 系列图像底座，生成速度极快，适合轻量级概念发散与参考图垫图实验。</p>
+                            </div>
+                        </div>
+
+                        <!-- Banana Pro -->
+                        <div class="model-card" id="model-banana-pro">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Banana Pro (Nano Banana Pro)</h3>
+                                    <span class="model-provider-badge"><i class="fab fa-google"></i> Google / Gemini 生态</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 旗舰级图生图</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>nano-banana-pro</code>
+                                <code>nano-banana-pro-preview</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持文件格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图上限</span>
+                                    <span class="model-spec-val">最多 4 张（单张 &le; 12 MB）</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">上游协议机制</span>
+                                    <span class="model-spec-val">OpenAI / Gemini Relay 兼容协议</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">0.15~0.2 积分/张</span>
+                                </div>
+                            </div>
+                            <div class="model-card-details">
+                                <p>高精度渲染版本，强化了复杂提示词遵循度、多主体构图一致性与手部及面部细节刻画。</p>
+                            </div>
+                        </div>
+
+                        <!-- GPT-Image 2 / All -->
+                        <div class="model-card" id="model-gpt-image-2">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">GPT-Image 2 / GPT-Image 2 All</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-brain"></i> OpenAI 生态通道</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 支持图生图与图像续作</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>gpt-image-2</code>
+                                <code>gpt-image-2-all</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持文件格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">PNG</span><span class="format-pill">JPG</span><span class="format-pill">WebP</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图上限</span>
+                                    <span class="model-spec-val">最多 4 张（单张 &le; 10 MB）</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">上游协议机制</span>
+                                    <span class="model-spec-val"><code>/v1/images/edits</code> (multipart form)</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">按实际用量扣费或积分折算</span>
+                                </div>
+                            </div>
+                            <div class="model-card-details">
+                                <p>深度整合 GPT 智能重构与图像编辑管线，支持依据参考图增减画面元素、替换主体背景或进行艺术风格重绘。</p>
+                            </div>
+                        </div>
+
+                        <!-- GPT-Image 2.5 -->
+                        <div class="model-card" id="model-gpt-image-2-5">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">GPT-Image 2.5</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-brain"></i> OpenAI 通道</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 支持图生图</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>gpt-image-2.5</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">PNG</span><span class="format-pill">JPG</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图上限</span>
+                                    <span class="model-spec-val">最多 4 张</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">分辨率规格</span>
+                                    <span class="model-spec-val">1024x1024 / 1792x1024 / 1024x1792</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">标准扣费</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- DALL-E 3 -->
+                        <div class="model-card" id="model-dall-e-3">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">DALL-E 3 (OpenAI)</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-brain"></i> OpenAI</span>
+                                </div>
+                                <span class="status-badge status-badge--pending"><i class="fas fa-info-circle"></i> 仅文生图 (无图生图接口)</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>dall-e-3</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持文件格式</span>
+                                    <span class="model-spec-val">纯文本 Prompt 驱动</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图支持</span>
+                                    <span class="model-spec-val">官方接口不接收图片输入</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">协议规格</span>
+                                    <span class="model-spec-val"><code>/v1/images/generations</code></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">生图尺寸</span>
+                                    <span class="model-spec-val">1024x1024, 1024x1792, 1792x1024</span>
+                                </div>
+                            </div>
+                            <div class="model-card-details">
+                                <p><strong>特别提醒</strong>：OpenAI 官方 DALL-E 3 接口仅开放文本生成图像功能。如您在工作台选择 DALL-E 3 并上传了图片，系统将给出“模型仅支持文生图”指引，参考图不会被传递给 DALL-E 3。</p>
+                            </div>
+                        </div>
+
+                        <!-- Gemini 3.1 Flash Image -->
+                        <div class="model-card" id="model-gemini-3-flash-image">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Gemini 3.1 Flash Image / 3 Pro Image</h3>
+                                    <span class="model-provider-badge"><i class="fab fa-google"></i> Google</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 多模态文本生成图像</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>gemini-3.1-flash-image</code>
+                                <code>gemini-3-pro-image</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">画幅比例</span>
+                                    <span class="model-spec-val">1:1, 3:4, 4:3, 9:16, 16:9 等 14 种画幅</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">生成极速</span>
+                                    <span class="model-spec-val">平均 2.5 秒极速出图</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">0.08~0.1 积分/张</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Imagen 4.0 -->
+                        <div class="model-card" id="model-imagen-4">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Google Imagen 4.0 (Ultra / Fast)</h3>
+                                    <span class="model-provider-badge"><i class="fab fa-google"></i> Google DeepMind</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 旗舰级文生图</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>imagen-4.0-generate-001</code>
+                                <code>imagen-4.0-ultra-generate-001</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">输出质感</span>
+                                    <span class="model-spec-val">超清摄影级真实材质</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">文本遵循度</span>
+                                    <span class="model-spec-val">卓越支持复杂自然语言排版</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图机制</span>
+                                    <span class="model-spec-val">文生图优先</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">0.2 积分/张</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- FLUX.1 Pro -->
+                        <div class="model-card" id="model-flux-pro">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">FLUX.1 Pro / FLUX Schnell</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-bolt"></i> Black Forest Labs</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 支持图生图 / 风格重绘</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>flux-pro</code>
+                                <code>flux-pro-api</code>
+                                <code>flux-schnell</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持文件格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图上限</span>
+                                    <span class="model-spec-val">1~2 张（单张 &le; 10 MB）</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">文字渲染</span>
+                                    <span class="model-spec-val">原生排版英文字符准确率高</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">0.12~0.25 积分/张</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 通义千问 Qwen Image -->
+                        <div class="model-card" id="model-qwen-image">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">通义千问 Qwen Image &amp; Edit</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-cloud"></i> 阿里百炼 / 通义</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 原生支持中文图像编辑与修图</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>qwen-image</code>
+                                <code>qwen-image-plus</code>
+                                <code>qwen-image-edit</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持文件格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图上限</span>
+                                    <span class="model-spec-val">最多 3 张底图</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">中文语义理解</span>
+                                    <span class="model-spec-val">完美理解中文成语、国风及电商构图</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">0.08~0.15 积分/张</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 即梦 Jimeng -->
+                        <div class="model-card" id="model-jimeng">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">即梦 Jimeng General v2.1</h3>
+                                    <span class="model-provider-badge"><i class="fab fa-tiktok"></i> 字节跳动 (ByteDance)</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 支持生图与东方审美优化</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>jimeng_high_aes_general_v21_L</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">特色优势</span>
+                                    <span class="model-spec-val">亚洲人像、国风意境及美学评分强化</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">推荐画幅</span>
+                                    <span class="model-spec-val">1:1, 16:9, 9:16, 3:4</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">生成耗时</span>
+                                    <span class="model-spec-val">约 4~8 秒</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">0.1 积分/张</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Grok Imagine -->
+                        <div class="model-card" id="model-grok-imagine">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Grok Imagine</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-xmark"></i> xAI</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 高创意天马行空文生图</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>grok-imagine</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">创意风格</span>
+                                    <span class="model-spec-val">超现实、赛博朋克与科幻感极佳</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图支持</span>
+                                    <span class="model-spec-val">接收单张参考图风格迁移</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">0.15 积分/张</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 2: 文本对话与多模态解析模型 -->
+                    <div class="standards-section-banner" id="section-chat">
+                        <div class="standards-section-icon"><i class="fas fa-comments"></i></div>
+                        <div class="standards-section-title-wrap">
+                            <h2>2. 文本对话与多模态模型规范 (Chat &amp; Vision Mode)</h2>
+                            <p>在智能对话模式下，工作台支持将文本、图片和文档/PDF整合传给大模型。支持图生文解析、文档知识检索与深度思考链 (Reasoning)。</p>
+                        </div>
+                    </div>
+
+                    <div class="model-card-stream">
+                        <!-- GPT-4o / mini -->
+                        <div class="model-card" id="model-gpt-4o">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">GPT-4o &amp; GPT-4o mini</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-brain"></i> OpenAI</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 原生视觉多模态全支持</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>gpt-4o</code>
+                                <code>gpt-4o-mini</code>
+                                <code>chatgpt-4o-latest</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持文件格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span><span class="format-pill">PDF</span><span class="format-pill">TXT</span><span class="format-pill">MD</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">图片上传上限</span>
+                                    <span class="model-spec-val">最多 16 张（单张 &le; 12 MB）</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">文档解析上限</span>
+                                    <span class="model-spec-val">单文件 &le; 8 MB，合计 &le; 12 万字</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">上下文窗口</span>
+                                    <span class="model-spec-val">128K Token 窗口</span>
+                                </div>
+                            </div>
+                            <div class="model-card-details">
+                                <p>支持图文混排提问、长文档摘要与代码编写。图片输入将自动根据分辨率拆分 High/Low Detail Tiles 进行计费与识别。</p>
+                            </div>
+                        </div>
+
+                        <!-- GPT-4.1 -->
+                        <div class="model-card" id="model-gpt-4-1">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">GPT-4.1 / mini / nano</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-brain"></i> OpenAI</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 原生视觉与超快响应</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>gpt-4.1</code>
+                                <code>gpt-4.1-mini</code>
+                                <code>gpt-4.1-nano</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">PDF</span><span class="format-pill">TXT</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">图片上限</span>
+                                    <span class="model-spec-val">最多 16 张</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">优势</span>
+                                    <span class="model-spec-val">极速首 Token 交付，代码调试精准</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">API Token 或微积分计费</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- GPT-5 系列 -->
+                        <div class="model-card" id="model-gpt-5">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">GPT-5 / 5 mini / 5 Pro</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-brain"></i> OpenAI 次世代</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 全自适应推理与全模态</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>gpt-5</code>
+                                <code>gpt-5-mini</code>
+                                <code>gpt-5-pro</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span><span class="format-pill">PDF</span><span class="format-pill">多文档</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">推理控制</span>
+                                    <span class="model-spec-val">支持 <code>reasoning_effort</code> (minimal/low/medium/high/xhigh)</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">上下文窗口</span>
+                                    <span class="model-spec-val">256K 超大上下文</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">工具调用</span>
+                                    <span class="model-spec-val">支持高级函数回调与结构化输出</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- OpenAI o 系列 (o1 / o3 / o4-mini) -->
+                        <div class="model-card" id="model-openai-o-series">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">OpenAI o1 / o3 / o4-mini</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-brain"></i> OpenAI 强化学习</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 深度思维链推理 (Reasoning)</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>o1</code>
+                                <code>o1-pro</code>
+                                <code>o3</code>
+                                <code>o3-mini</code>
+                                <code>o4-mini</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">视觉输入</span>
+                                    <span class="model-spec-val">o1/o3 原生支持高精图表与白板数学识图</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">思考过程</span>
+                                    <span class="model-spec-val">工作台完整回显思维链折叠面板</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">强度调节</span>
+                                    <span class="model-spec-val">低/中/高推理档位无缝自选</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">适用场景</span>
+                                    <span class="model-spec-val">复杂数学证明、算法奥赛、长链路排障</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Claude 3.7 Sonnet -->
+                        <div class="model-card" id="model-claude-3-7-sonnet">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Claude 3.7 Sonnet (Hybrid Thinking)</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-sparkles"></i> Anthropic</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 原生视觉 + 动态自适应思考</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>claude-3-7-sonnet-20250219</code>
+                                <code>claude-3-7-sonnet-20250219-thinking</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持文件格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">GIF</span><span class="format-pill">WebP</span><span class="format-pill">PDF</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">图片上限</span>
+                                    <span class="model-spec-val">最多 20 张（单张 &le; 5 MB）</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">思考预算</span>
+                                    <span class="model-spec-val">支持配置 1,024 ~ 64,000 Thinking Tokens</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">上下文窗口</span>
+                                    <span class="model-spec-val">200K Tokens</span>
+                                </div>
+                            </div>
+                            <div class="model-card-details">
+                                <p>业界公认前端交互开发、代码架构与多模态文档提取综合评测第一名。工作台原生提供思考预算控制开关。</p>
+                            </div>
+                        </div>
+
+                        <!-- Claude 3.5 Sonnet / Haiku -->
+                        <div class="model-card" id="model-claude-3-5">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Claude 3.5 Sonnet &amp; 3.5 Haiku</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-sparkles"></i> Anthropic</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 高精视觉多模态</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>claude-3-5-sonnet-20241022</code>
+                                <code>claude-3-5-haiku-20241022</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">PDF</span><span class="format-pill">TXT</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">图片上限</span>
+                                    <span class="model-spec-val">最多 20 张</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">文字提取能力</span>
+                                    <span class="model-spec-val">对模糊印章、复杂表格、手写体识别极佳</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">上下文</span>
+                                    <span class="model-spec-val">200K 窗口</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Claude Opus 4 -->
+                        <div class="model-card" id="model-claude-opus-4">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Claude Opus 4 / Sonnet 4 系列</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-sparkles"></i> Anthropic</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 顶级学术与科研</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>claude-opus-4</code>
+                                <code>claude-sonnet-4</code>
+                                <code>claude-opus-4-6</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">复杂推演</span>
+                                    <span class="model-spec-val">极高逻辑连贯性与文书拟真度</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">多模态支持</span>
+                                    <span class="model-spec-val">高精图文图表输入</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">高级按量计费</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">上下文</span>
+                                    <span class="model-spec-val">200K+ 宽幅窗口</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Google Gemini 2.5 Flash / Pro -->
+                        <div class="model-card" id="model-gemini-2-5">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Gemini 2.5 Flash &amp; 2.5 Pro</h3>
+                                    <span class="model-provider-badge"><i class="fab fa-google"></i> Google</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 百万级超长多模态窗口</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>gemini-2.5-flash</code>
+                                <code>gemini-2.5-pro</code>
+                                <code>gemini-2.0-flash</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持文件格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span><span class="format-pill">PDF</span><span class="format-pill">TXT</span><span class="format-pill">音频</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">上下文窗口</span>
+                                    <span class="model-spec-val">1,000,000 ~ 2,000,000 Tokens</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">思考模式</span>
+                                    <span class="model-spec-val">支持 <code>geminiThinking</code> 动态思维链</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">性价比</span>
+                                    <span class="model-spec-val">Flash 版本极度高性价比</span>
+                                </div>
+                            </div>
+                            <div class="model-card-details">
+                                <p>适合将长达数百页的技术手册、整部小说或长篇财报导入工作台进行秒级全文检索与交叉对比问答。</p>
+                            </div>
+                        </div>
+
+                        <!-- Gemini 3.0 / 3.1 Pro -->
+                        <div class="model-card" id="model-gemini-3">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Gemini 3.0 / 3.1 Pro Preview</h3>
+                                    <span class="model-provider-badge"><i class="fab fa-google"></i> Google</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 次世代多模态</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>gemini-3-pro-preview</code>
+                                <code>gemini-3.1-pro-preview</code>
+                                <code>gemini-3-flash-preview</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">PDF</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">推理等级</span>
+                                    <span class="model-spec-val">支持 <code>thinking_level</code> 细粒度控制</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">超长记忆</span>
+                                    <span class="model-spec-val">2M Token 原生窗口</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">标准 Token 扣费</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- DeepSeek V3 & R1 -->
+                        <div class="model-card" id="model-deepseek-v3-r1">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">DeepSeek V3 &amp; DeepSeek R1 (满血版)</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-cube"></i> DeepSeek 深度求索</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 开源最强推理思维链</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>deepseek-chat</code>
+                                <code>deepseek-reasoner</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持文件格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">TXT</span><span class="format-pill">MD</span><span class="format-pill">PDF</span><span class="format-pill">CSV</span><span class="format-pill">代码</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">思考过程</span>
+                                    <span class="model-spec-val">原生展示 <code>&lt;think&gt;</code> 思维链折叠卡片</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">代码与数学</span>
+                                    <span class="model-spec-val">对齐 OpenAI o1 顶级水平</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">极优积分价格 · 支持私钥</span>
+                                </div>
+                            </div>
+                            <div class="model-card-details">
+                                <p><strong>说明</strong>：DeepSeek R1 为纯文本逻辑推理模型。对于附带的文档与代码，工作台将在浏览器本地完成精准文字提取后交由 R1 进行推导。</p>
+                            </div>
+                        </div>
+
+                        <!-- DeepSeek V4 -->
+                        <div class="model-card" id="model-deepseek-v4">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">DeepSeek V4 Flash &amp; Pro</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-cube"></i> DeepSeek</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 次世代自适应推理</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>deepseek-v4-flash</code>
+                                <code>deepseek-v4-pro</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">推理挡位</span>
+                                    <span class="model-spec-val">none / max 自如切换</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">吞吐性能</span>
+                                    <span class="model-spec-val">首字毫秒级到达</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">长文处理</span>
+                                    <span class="model-spec-val">128K 完整无损记忆</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">低廉 Token 费率</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 通义千问 Qwen 2.5 / 2.5 VL -->
+                        <div class="model-card" id="model-qwen-2-5-vl">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">通义千问 Qwen 2.5 &amp; Qwen 2.5 VL (视觉多模态)</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-cloud"></i> 阿里通义</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 高清视觉与视频解析</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>qwen2.5-72b-instruct</code>
+                                <code>qwen2.5-vl-72b-instruct</code>
+                                <code>qwen-plus</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span><span class="format-pill">PDF</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">图片上限</span>
+                                    <span class="model-spec-val">最多 12 张图片解析</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">空间感知</span>
+                                    <span class="model-spec-val">支持像素坐标检测与图表分析</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">中文场景</span>
+                                    <span class="model-spec-val">中文各专业领域极强表现</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 通义千问 Qwen 3.6 Plus -->
+                        <div class="model-card" id="model-qwen-3-6">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">通义千问 Qwen 3.6 Plus</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-cloud"></i> 阿里百炼</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 超快对话与思考开关</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>qwen3.6-plus</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">思考控制</span>
+                                    <span class="model-spec-val">支持 <code>enable_thinking</code> 思维链开启</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">记忆容量</span>
+                                    <span class="model-spec-val">支持速度优先/最近16条/长记忆三种配置</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">扣费模式</span>
+                                    <span class="model-spec-val">按实际用量扣费</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">响应时延</span>
+                                    <span class="model-spec-val">&lt; 1 秒首字流式吐出</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 智谱 GLM-4V / GLM-5 -->
+                        <div class="model-card" id="model-glm-4v">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">智谱清言 GLM-4V &amp; GLM-5 系列</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-network-wired"></i> 智谱 AI</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 视觉多模态与长文</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>glm-4v</code>
+                                <code>glm-5</code>
+                                <code>glm-5.2</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">PDF</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">多模态能力</span>
+                                    <span class="model-spec-val">直接提取图片数据报表并转换为 Markdown</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">思考控制</span>
+                                    <span class="model-spec-val">支持 GLM-5.2 推理强度控制 (high/max)</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">Token 扣费</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 月之暗面 Kimi -->
+                        <div class="model-card" id="model-kimi">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">月之暗面 Kimi K2 &amp; Moonshot v1</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-moon"></i> Moonshot AI</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 极长上下文文档总结专家</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>moonshot-v1-8k</code>
+                                <code>moonshot-v1-32k</code>
+                                <code>moonshot-v1-128k</code>
+                                <code>kimi-k2</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">PDF</span><span class="format-pill">DOC</span><span class="format-pill">TXT</span><span class="format-pill">MD</span><span class="format-pill">CSV</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">文档上限</span>
+                                    <span class="model-spec-val">最多 5 个文档附件</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">思考机制</span>
+                                    <span class="model-spec-val">K2 支持 <code>thinking_object</code> 推理</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">长篇阅读</span>
+                                    <span class="model-spec-val">无损捕捉复杂法律合同细节</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- xAI Grok Vision -->
+                        <div class="model-card" id="model-grok-vision">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">xAI Grok 2 Vision &amp; Grok 3</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-xmark"></i> xAI</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 视觉多模态与快节奏思维</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>grok-2-vision-1212</code>
+                                <code>grok-3-vision</code>
+                                <code>grok-3</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">真实世界识图</span>
+                                    <span class="model-spec-val">准确解析生活照片、街景路牌与社交媒体截图</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">幽默风格</span>
+                                    <span class="model-spec-val">支持自由表达与个性化对话</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">Token 扣费</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 字节豆包 Doubao -->
+                        <div class="model-card" id="model-doubao">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">字节豆包 Doubao Vision &amp; Seed 2.1</h3>
+                                    <span class="model-provider-badge"><i class="fab fa-tiktok"></i> 字节跳动火山引擎</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 视觉多模态与高性价比</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>doubao-vision-pro</code>
+                                <code>doubao-seed-2-1-turbo</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">PDF</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">思考控制</span>
+                                    <span class="model-spec-val">Seed 2.1 支持深度思考对象</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">中文语感</span>
+                                    <span class="model-spec-val">极佳贴近当下网络流行表达</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">超低单价 Token</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- MiniMax -->
+                        <div class="model-card" id="model-minimax">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">MiniMax M2.7 &amp; M3 系列</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-comment-dots"></i> MiniMax 名之梦</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 自适应思考与长记忆</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>minimax-m2.7</code>
+                                <code>minimax-m3</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">TXT</span><span class="format-pill">PDF</span><span class="format-pill">MD</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">思考机制</span>
+                                    <span class="model-spec-val"><code>thinking_object_adaptive</code> 自适应思考</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">角色扮演</span>
+                                    <span class="model-spec-val">出色的人设沉浸度与长对话记忆</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">按量扣费</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 3: AI 视频生成模型 -->
+                    <div class="standards-section-banner" id="section-video">
+                        <div class="standards-section-icon"><i class="fas fa-video"></i></div>
+                        <div class="standards-section-title-wrap">
+                            <h2>3. AI 视频生成模型规范 (Video Mode)</h2>
+                            <p>在视频生成模式下，用户可通过文本 Prompt 或上传首尾关键帧生成流畅动态影像。系统支持智能轮询与异步后台完成通知。</p>
+                        </div>
+                    </div>
+
+                    <div class="model-card-stream">
+                        <!-- 快手可灵 Kling -->
+                        <div class="model-card" id="model-kling">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">快手可灵 Kling 1.5 / Kling 2.0</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-play"></i> 快手 (Kuaishou)</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 原生支持首尾帧图生视频</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>kling-v1</code>
+                                <code>kling-v1-5</code>
+                                <code>kling-v2</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图类型</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图上限</span>
+                                    <span class="model-spec-val">最多 4 张（支持起始帧与结束帧）</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">生成时长与分辨率</span>
+                                    <span class="model-spec-val">5s / 10s · 720p / 1080p / 4K</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">视频积分 (基础约 60 积分/次)</span>
+                                </div>
+                            </div>
+                            <div class="model-card-details">
+                                <p><strong>首尾帧使用建议</strong>：建议第一张图作为动作起始状态，第二张图作为动作目标终点。两者画幅比例与主体位置越接近，物理运动过渡越平滑。</p>
+                            </div>
+                        </div>
+
+                        <!-- OpenAI Sora 2 -->
+                        <div class="model-card" id="model-sora-2">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">OpenAI Sora 2 &amp; Sora 2 Pro</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-brain"></i> OpenAI</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 真实世界物理引擎级视频模拟</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>sora-2</code>
+                                <code>sora-2-pro</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持输入</span>
+                                    <span class="model-spec-val">Prompt 指令 + 首帧图片参考</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">输出规格</span>
+                                    <span class="model-spec-val">1080p / 60fps 电影画质</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">镜头运镜</span>
+                                    <span class="model-spec-val">支持航拍、变焦、特写与穿越运镜</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">按生成时长消耗专属视频额度</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Google Veo -->
+                        <div class="model-card" id="model-veo">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Google Veo 2.0 / Veo 3.0 / Veo 3.1</h3>
+                                    <span class="model-provider-badge"><i class="fab fa-google"></i> Google DeepMind</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 极高清光影与物理一致性</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>veo-2.0-generate-001</code>
+                                <code>veo-3.0-generate-001</code>
+                                <code>veo-3.1-generate-preview</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">图生视频</span>
+                                    <span class="model-spec-val">支持 1~2 张高精底图输入</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">画幅适配</span>
+                                    <span class="model-spec-val">16:9 横屏 / 9:16 竖屏全覆盖</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">光影质感</span>
+                                    <span class="model-spec-val">光线折射、水流扰动与烟雾粒子拟真度极高</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">按次积分折算</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 即梦视频 Jimeng Video -->
+                        <div class="model-card" id="model-jimeng-video">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">字节即梦视频 Jimeng Video</h3>
+                                    <span class="model-provider-badge"><i class="fab fa-tiktok"></i> 字节跳动</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 短视频运镜节奏大师</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>jimeng-video</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">JPG</span><span class="format-pill">PNG</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">适用场景</span>
+                                    <span class="model-spec-val">短剧分镜、抖音快手爆款带货视频素材</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">生成速度</span>
+                                    <span class="model-spec-val">平均 45~90 秒快速交付</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">基础视频扣费</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- MiniMax 海螺视频 -->
+                        <div class="model-card" id="model-hailuo-video">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">MiniMax 海螺视频 (Hailuo Video)</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-film"></i> MiniMax</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 人物动作与微表情高度逼真</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>hailuo-video</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">动态幅度</span>
+                                    <span class="model-spec-val">大幅度武打动作与奔跑姿态不崩解</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">参考图数量</span>
+                                    <span class="model-spec-val">支持单张或双张底图</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">输出帧率</span>
+                                    <span class="model-spec-val">流畅 25~30 fps</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">视频积分扣除</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 4: 语音与实时音频模型 -->
+                    <div class="standards-section-banner" id="section-audio">
+                        <div class="standards-section-icon"><i class="fas fa-microphone"></i></div>
+                        <div class="standards-section-title-wrap">
+                            <h2>4. 语音与实时音频模型规范 (Audio &amp; Speech Mode)</h2>
+                            <p>涵盖文本转语音 (TTS)、高精语音听写识别 (Whisper) 与双向全双工实时低延迟通话通道。</p>
+                        </div>
+                    </div>
+
+                    <div class="model-card-stream">
+                        <!-- GPT-4o Audio / Realtime -->
+                        <div class="model-card" id="model-gpt-audio-realtime">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">GPT-4o Audio &amp; Realtime</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-brain"></i> OpenAI</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 原生双向音频流式对话</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>gpt-4o-audio-preview</code>
+                                <code>gpt-4o-realtime-preview</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">输入格式</span>
+                                    <span class="model-spec-val">WAV (16kHz / 24kHz), PCM 16-bit</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">时延表现</span>
+                                    <span class="model-spec-val">300ms 极速响应，支持被打断 (Barge-in)</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">语气与情感</span>
+                                    <span class="model-spec-val">拟真人类呼吸、笑声、耳语与抑扬顿挫</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">通道模式</span>
+                                    <span class="model-spec-val">WebSocket 或 REST Audio Output</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Whisper & TTS -->
+                        <div class="model-card" id="model-whisper-tts">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Whisper-1 听写 &amp; TTS-1 HD 语音合成</h3>
+                                    <span class="model-provider-badge"><i class="fas fa-brain"></i> OpenAI 语音基石</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 工业级音质标准</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>whisper-1</code>
+                                <code>tts-1</code>
+                                <code>tts-1-hd</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">支持音频格式</span>
+                                    <span class="model-spec-val"><span class="format-pill">MP3</span><span class="format-pill">WAV</span><span class="format-pill">M4A</span><span class="format-pill">AAC</span><span class="format-pill">OGG</span><span class="format-pill">FLAC</span></span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">单文件上限</span>
+                                    <span class="model-spec-val">&le; 25 MB</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">合成音色</span>
+                                    <span class="model-spec-val">Alloy, Echo, Fable, Onyx, Nova, Shimmer 等 6 款</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">多语言识别</span>
+                                    <span class="model-spec-val">99+ 语言自动侦测并支持跨语言翻译</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Gemini Native Audio -->
+                        <div class="model-card" id="model-gemini-audio">
+                            <div class="model-card-header">
+                                <div class="model-card-title-group">
+                                    <h3 class="model-card-title">Gemini 2.5 Native Audio</h3>
+                                    <span class="model-provider-badge"><i class="fab fa-google"></i> Google</span>
+                                </div>
+                                <span class="status-badge status-badge--supported"><i class="fas fa-check-circle"></i> 原生端到端语音大模型</span>
+                            </div>
+                            <div class="model-id-bar">
+                                <span class="label">底层标识:</span>
+                                <code>gemini-2.5-flash-native-audio-latest</code>
+                            </div>
+                            <div class="model-spec-grid">
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">音频直通</span>
+                                    <span class="model-spec-val">无需 ASR 转换，直接从声学信号理解说话人情绪</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">输入格式</span>
+                                    <span class="model-spec-val">PCM / AAC / MP3</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">语言广度</span>
+                                    <span class="model-spec-val">支持多语种无缝混合交替交流</span>
+                                </div>
+                                <div class="model-spec-block">
+                                    <span class="model-spec-label">计费模式</span>
+                                    <span class="model-spec-val">音频 Token 折算</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 5: 全局基础规范与解析安全 -->
+                    <div class="standards-section-banner" id="spec-file-formats">
+                        <div class="standards-section-icon"><i class="fas fa-table-list"></i></div>
+                        <div class="standards-section-title-wrap">
+                            <h2>5. 全局文件支持与格式限制速查表</h2>
+                            <p>为避免上传失败，请参照以下全局受支持格式、单次上限及推荐参数：</p>
+                        </div>
+                    </div>
+
+                    <div class="model-spec-table-wrapper">
+                        <table class="model-spec-table">
+                            <thead>
+                                <tr>
+                                    <th>素材类型</th>
+                                    <th>受支持文件扩展名</th>
+                                    <th>单文件上限</th>
+                                    <th>单次任务数量</th>
+                                    <th>推荐参数 / 规格建议</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>图片素材 (Image)</strong></td>
+                                    <td><span class="format-pill">JPG</span><span class="format-pill">PNG</span><span class="format-pill">WebP</span><span class="format-pill">GIF</span></td>
+                                    <td>&le; 10 MB / 张</td>
+                                    <td>最多 4 张（生图）<br>最多 20 张（对话）</td>
+                                    <td>色彩空间建议 sRGB；长边建议 1024~4096px，避免超过 4K 分辨率造成上游自动压缩。</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>文档与代码 (Document)</strong></td>
+                                    <td><span class="format-pill">PDF</span><span class="format-pill">TXT</span><span class="format-pill">MD</span><span class="format-pill">CSV</span><span class="format-pill">JSON</span><span class="format-pill">HTML</span><span class="format-pill">LOG</span></td>
+                                    <td>&le; 8 MB / 份</td>
+                                    <td>最多 5 个附件</td>
+                                    <td>纯文本自动截取关键段落；PDF 建议页数在 150 页内，带有标准文字编码（非纯扫描位图）。</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>视频素材 (Video)</strong></td>
+                                    <td><span class="format-pill">MP4</span><span class="format-pill">MOV</span><span class="format-pill">WebM</span></td>
+                                    <td>&le; 50 MB</td>
+                                    <td>最多 1~2 个参考</td>
+                                    <td>建议编码为 H.264/AAC，帧率 30fps，建议时长在 3~10 秒以便于模型抽取时序关键点。</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>音频素材 (Audio)</strong></td>
+                                    <td><span class="format-pill">MP3</span><span class="format-pill">WAV</span><span class="format-pill">M4A</span><span class="format-pill">AAC</span><span class="format-pill">OGG</span></td>
+                                    <td>&le; 25 MB</td>
+                                    <td>最多 1 个附件</td>
+                                    <td>采样率建议 16,000Hz 或 44,100Hz，保持单声道或双声道清晰无强烈爆音。</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Document Parsing Section -->
+                    <div class="standards-section-banner" id="spec-document-parsing">
+                        <div class="standards-section-icon"><i class="fas fa-file-shield"></i></div>
+                        <div class="standards-section-title-wrap">
+                            <h2>6. 本地文档与 PDF 提取标准说明</h2>
+                            <p>工作台重视用户数据私密性，文档解析机制设计遵循本地化、最小化原则：</p>
+                        </div>
+                    </div>
+
+                    <div class="model-card">
+                        <div class="model-card-details">
+                            <ul>
+                                <li><strong>浏览器端沙箱提取</strong>：当您在对话模式选择上传 PDF 或文本类文件时，系统优先借助浏览器内置 JavaScript 模块完成文字流清洗与断句，仅向后端模型发送提取出的纯文本 Token，杜绝原始文件外泄。</li>
+                                <li><strong>文字上限与智能截断</strong>：单文件提取上限约为 50,000 汉字/字符，多文件单次会话合计建议不超过 120,000 汉字。超过上限的部分，系统会自动提取头尾关键摘要与章节大纲，避免触发上游上下文溢出报错。</li>
+                                <li><strong>扫描件与图片型 PDF 建议</strong>：对于无可选文字的扫描版 PDF，建议直接截图成 JPG/PNG 格式，并选用具备原生视觉能力的多模态模型（如 Claude 3.7、Gemini 2.5 或 GPT-4o）进行 OCR 识别，以获得最佳精准度。</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Security & Privacy Section -->
+                    <div class="standards-section-banner" id="spec-security-privacy">
+                        <div class="standards-section-icon"><i class="fas fa-lock"></i></div>
+                        <div class="standards-section-title-wrap">
+                            <h2>7. 数据安全、文件留存与销毁合规</h2>
+                            <p>平台严格遵守国际与本地网络安全标准，为您的每次创作保驾护航：</p>
+                        </div>
+                    </div>
+
+                    <div class="model-card">
+                        <div class="model-card-details">
+                            <ul>
+                                <li><strong>临时素材自动过期</strong>：为执行图片生图和垫图任务而上传的临时图片对象，在生成任务完成后将进入生命周期倒计时，由云端 CDN 在 24~48 小时后自动释放销毁，不作长期存档。</li>
+                                <li><strong>绝不用于二次训练</strong>：您提交的提示词指令、上传素材以及最终生成内容，仅用于完成本次实时推理，严禁被用于任何公共基础模型的二次再训练。</li>
+                                <li><strong>内容合规与免责约定</strong>：上传的素材需严格遵守相关法律法规，严禁上传包含侵犯第三方版权、隐私、暴力或有害内容的素材。更多完整法律声明与权利归属，请查阅我们的<a href="/terms.html">《服务条款》</a>与<a href="/privacy.html">《隐私政策》</a>。</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="legal-footer">
+        <span>© 2026 <span data-legal-brand-name>Zaoyoe Studio</span>（早鸟工作室）</span>
+        <nav aria-label="法律文件与规范">
+            <a href="/model-standards.html" aria-current="page">模型规范</a>
+            <a href="/terms.html">服务条款</a>
+            <a href="/privacy.html">隐私政策</a>
+            <a href="/refund-policy.html">退款政策</a>
+        </nav>
+    </footer>
+
+    <script src="js/theme-toggle.js?v=75e23ac2a6e7"></script>
+    <script src="js/framer_home.js?v=75e23ac2a6e7&navModalResume=20261107_1"></script>
+
+    <script src="js/ai-media-model-capabilities.js?v=20261108_IMAGE26_ALL_PROVIDERS_2"></script>
+    <script src="js/model-standards-media.js?v=75e23ac2a6e7"></script>
+    <!-- Interactive Search & ScrollSpy for Model Standards -->
+    <script src="inline-model-standards-10.js?v=20261109_INLINE_1"></script>
+</body>
+
+</html>

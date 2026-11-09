@@ -1,0 +1,69 @@
+{
+  "copies": [
+    {
+      "source": "/tmp/kc-round5-owner-locks-before.tap",
+      "destination": "raw/owner-locks-initial-interrupted.tap",
+      "source_sha256": "0dbf390a0e8cccddc638fba7a10a5ff3fc602d7332d6bccd9022725201eca10c",
+      "archived_sha256": "0dbf390a0e8cccddc638fba7a10a5ff3fc602d7332d6bccd9022725201eca10c",
+      "byte_for_byte": true
+    },
+    {
+      "source": "/tmp/kc-round5-owner-locks-before-complete.tap",
+      "destination": "raw/owner-locks-before-37.tap",
+      "source_sha256": "be3080cde0420580edc92b1be1d598ebb961319ee39dc74c5a6bc9bb7f2c617f",
+      "archived_sha256": "be3080cde0420580edc92b1be1d598ebb961319ee39dc74c5a6bc9bb7f2c617f",
+      "byte_for_byte": true
+    },
+    {
+      "source": "/tmp/kc-round5-owner-locks-after.tap",
+      "destination": "raw/owner-locks-after-37.tap",
+      "source_sha256": "c127aa1ef4fa142ddb2a5f0137c5fc603469f2bc18b9d3a0b4f79ad6249d1de1",
+      "archived_sha256": "c127aa1ef4fa142ddb2a5f0137c5fc603469f2bc18b9d3a0b4f79ad6249d1de1",
+      "byte_for_byte": true
+    },
+    {
+      "source": "/tmp/kc-round5-native-regression.tap",
+      "destination": "raw/native-regression-144.tap",
+      "source_sha256": "5fce54b7302084a0a145cacf066171d7c577208bfc991d968495f55b272ac390",
+      "archived_sha256": "5fce54b7302084a0a145cacf066171d7c577208bfc991d968495f55b272ac390",
+      "byte_for_byte": true
+    },
+    {
+      "source": "/tmp/kc-round5-baseline-final.tap",
+      "destination": "raw/baseline-final-44.tap",
+      "source_sha256": "8eead3fa17ff63b9a2014f58525fe2aa9762b64e3b3a6325761cf8ef7f286bac",
+      "archived_sha256": "8eead3fa17ff63b9a2014f58525fe2aa9762b64e3b3a6325761cf8ef7f286bac",
+      "byte_for_byte": true
+    },
+    {
+      "source": "/tmp/kc-round5-native-final.tap",
+      "destination": "raw/native-final-151.tap",
+      "source_sha256": "2f3dc8d7cd9a3d2f6f79142f05a0c736ed2dd223e3d4fbdd42f3e794407e1bdd",
+      "archived_sha256": "2f3dc8d7cd9a3d2f6f79142f05a0c736ed2dd223e3d4fbdd42f3e794407e1bdd",
+      "byte_for_byte": true
+    },
+    {
+      "source": "/tmp/kc-round5-kc-regression.log",
+      "destination": "raw/kc-regression-306.log",
+      "source_sha256": "09ea427df955dd2d8b4fee2f805826d9c0ee5a036a3a2e2d7fc83d4db0965514",
+      "archived_sha256": "09ea427df955dd2d8b4fee2f805826d9c0ee5a036a3a2e2d7fc83d4db0965514",
+      "byte_for_byte": true
+    },
+    {
+      "source": "/tmp/kc-round5-full.log",
+      "destination": "raw/kc-full.log",
+      "source_sha256": "adf17fbca59c5174280b636c4cb3ba60f67215d633fb10b6f2ec869bf20bb18e",
+      "archived_sha256": "adf17fbca59c5174280b636c4cb3ba60f67215d633fb10b6f2ec869bf20bb18e",
+      "byte_for_byte": true
+    },
+    {
+      "source": "/tmp/kc-round5-ui-new-failures-rerun.log",
+      "destination": "raw/ui-new-failures-rerun.log",
+      "source_sha256": "4df29d3aca604a0e684e172c0c811b00237d2b8a687cd9acce746d04286e4bc0",
+      "archived_sha256": "4df29d3aca604a0e684e172c0c811b00237d2b8a687cd9acce746d04286e4bc0",
+      "byte_for_byte": true
+    }
+  ],
+  "recorded_at_archive_time": "2026-11-08T13:48:27.775338+00:00",
+  "scope": "Archive timestamp is not a test execution timestamp. Initial interrupted and failing outputs retained. Historical round-2/round-4 files not edited."
+}

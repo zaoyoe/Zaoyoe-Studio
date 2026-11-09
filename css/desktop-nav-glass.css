@@ -1,0 +1,519 @@
+@layer glass-foreground;
+@import url("./modal-glass.css?v=75e23ac2a6e7") layer(glass-foreground.modal-rim);
+
+/* Foreground contrast is independent of both glass material layers. This first
+   layer owns only opted-in monochrome controls, never the lens or surface. */
+@layer glass-foreground {
+  /* Typography is ready for the first paint, independent of contrast sampling.
+     Use the final body font stack here: the deferred main stylesheet replaces
+     --font-body after the critical stylesheet has already painted the navbar. */
+  .framer-nav .nav-menu > a,
+  :is(.nav-dropdown-portal,.nav-dropdown,.nav-support-dropdown) a,
+  .avatar-dropdown .dropdown-action,
+  .mobile-menu :is(.mobile-menu-link,.mobile-menu-trigger,.mobile-submenu-link,.mobile-submenu a) {
+    font-family: "Helvetica Neue", Helvetica, Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif !important;
+    font-weight: 400 !important;
+  }
+  .framer-nav .nav-menu > a {
+    letter-spacing: .015em !important;
+  }
+  @media not (forced-colors: active) {
+    [data-glass-ink] {
+      color: var(--glass-control-ink) !important;
+      text-shadow: none !important;
+      -webkit-text-stroke: 0 !important;
+    }
+    /* Commit solid ink in one paint. Keep hover/layout motion without
+       interpolating colors, filters or glyph shadows across a background edge. */
+    [data-glass-ink], [data-glass-ink] * {
+      text-shadow: none !important;
+      filter: none !important;
+      transition-property: width, max-width, min-width, opacity, transform, margin, padding, background-color, border-color !important;
+    }
+    [data-glass-ink] :is(.default-auth-icon, .dropdown-action-icon, .dropdown-svg-icon, .gdock-icon, svg),
+    .dropdown-action[data-glass-ink] > span,
+    .nav-hamburger[data-glass-ink] > span {
+      transition-property: transform, opacity, stroke-width !important;
+    }
+    [data-glass-ink] :is(.dropdown-action-icon, .dropdown-svg-icon, .default-auth-icon, .gdock-icon),
+    .dropdown-action[data-glass-ink] > span,
+    .dropdown-action[data-glass-ink] svg {
+      color: var(--glass-control-ink) !important;
+    }
+    /* Shared search and notification content participates without a Dock CSS
+       dependency. Colored actions and rich-content links retain their semantics. */
+    .prompt-spotlight-input-wrap[data-glass-ink] .prompt-spotlight-input {
+      color: var(--glass-control-ink) !important;
+    }
+    .prompt-spotlight-input-wrap[data-glass-ink] .prompt-spotlight-input::placeholder {
+      color: var(--glass-control-ink) !important;
+      opacity: .65;
+      text-shadow: none !important;
+    }
+    .prompt-spotlight-input-wrap[data-glass-ink] .prompt-spotlight-caret {
+      background: var(--glass-control-ink) !important;
+      box-shadow: none !important;
+      transition-property: opacity, transform !important;
+    }
+    .nav-hamburger[data-glass-ink] > span {
+      background-color: var(--glass-control-ink) !important;
+      box-shadow: none !important;
+      transition-property: transform, opacity !important;
+    }
+  }
+}
+
+/* Standalone Glasswork material, shared by desktop glass surfaces.
+   The layer owns the entire surface, so legacy !important rules cannot mix in.
+   Matches glasswork-preview: auto / blur 7 / tint .94 / edge 1.3 / dispersion .32.
+   See vendor/glasswork/glass.css for the original material equations. */
+@layer desktop-nav-glass {
+  /* Exact complement of the mobile glass renderer's media query. */
+  @media not (pointer: coarse), (hover: hover) and (width > 768px) {
+    :is(.framer-nav, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .gdock, .chat-widget-fab .message-preview, .engagement-surface, .glass-ring, [data-desktop-glass-surface]) {
+      --dng-k: .94;
+      --dng-tint: #ffffff;
+      --dng-thin: .06;
+      --dng-dense: .22;
+      --dng-sat: 1.55;
+      --dng-bri: 1.05;
+      --dng-ink: rgba(0, 0, 0, .86);
+      --dng-density: .35;
+      --dng-keep: 1;
+      --dng-floor: 0;
+      --dng-veil: min(1, var(--dng-k));
+      --dng-alpha: min(.95, max(var(--dng-floor), calc((var(--dng-thin) + (var(--dng-dense) - var(--dng-thin)) * var(--dng-density)) * var(--dng-k))));
+      --dng-filter: blur(7px) saturate(var(--dng-sat)) contrast(calc(1 + .04 * var(--dng-veil))) brightness(calc(1 + (var(--dng-bri) - 1) * var(--dng-veil))) saturate(var(--dng-keep));
+      --dng-shadow:
+        inset 1.5px 1.5px 1px -1px rgb(255 255 255 / 1),
+        inset -1.5px -1.5px 1px -1px rgb(255 255 255 / .6),
+        inset 0 0 0 .5px rgb(255 255 255 / .3),
+        0 0 0 .5px rgb(0 0 0 / .12),
+        0 4px 16px rgb(0 0 0 / .1),
+        inset 0 6px 8px -6px rgb(255 255 255 / calc(.5 * var(--dng-veil))),
+        inset 4px 0 8px -6px rgb(255 255 255 / calc(.22 * var(--dng-veil))),
+        inset -4px 0 8px -6px rgb(255 255 255 / calc(.12 * var(--dng-veil))),
+        inset 0 -6px 8px -6px rgb(0 0 0 / calc(.06 * var(--dng-veil)));
+      background: color-mix(in srgb, var(--dng-tint) calc(var(--dng-alpha) * 100%), transparent) !important;
+      background-image: none !important;
+      border: 0 !important;
+      box-shadow: var(--dng-shadow) !important;
+      -webkit-backdrop-filter: var(--dng-filter) !important;
+      backdrop-filter: var(--dng-filter) var(--desktop-glass-lens,) !important;
+      color: var(--dng-ink) !important;
+      isolation: isolate;
+      /* Preserve each component's dimensions/radius; use the preview corner shape. */
+      corner-shape: superellipse(1.2);
+    }
+
+    :is(.framer-nav, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .gdock, .chat-widget-fab .message-preview, .engagement-surface:not(.engagement-surface--modal), .glass-ring, [data-desktop-glass-surface])[data-desktop-glass-kind="dark"],
+    body.home-page .framer-nav:not(.scrolled):not([data-desktop-glass-kind]),
+    html:not([data-theme="light"]) :is(.framer-nav, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .gdock, .chat-widget-fab .message-preview, .engagement-surface:not(.engagement-surface--modal), .glass-ring, [data-desktop-glass-surface]):not([data-desktop-glass-kind]) {
+      --dng-tint: #1e1e22;
+      --dng-thin: .16;
+      --dng-dense: .38;
+      --dng-sat: 1.45;
+      --dng-bri: .78;
+      --dng-ink: rgba(255, 255, 255, .94);
+      --dng-shadow:
+        inset 1px 1px .5px -.5px rgb(255 255 255 / .46),
+        inset -1px -1px .5px -.5px rgb(255 255 255 / .18),
+        inset 0 0 0 .5px rgb(255 255 255 / .06),
+        0 0 0 .5px rgb(0 0 0 / .28),
+        0 4px 14px rgb(0 0 0 / .22),
+        inset 0 6px 8px -6px rgb(255 255 255 / calc(.18 * var(--dng-veil))),
+        inset 4px 0 8px -6px rgb(255 255 255 / calc(.07 * var(--dng-veil))),
+        inset -4px 0 8px -6px rgb(255 255 255 / calc(.04 * var(--dng-veil))),
+        inset 0 -6px 8px -6px rgb(0 0 0 / calc(.08 * var(--dng-veil)));
+    }
+
+    /* The homepage hero is black in both themes. Start with the same dark,
+       untextured material that sampling will select, before the module loads.
+       Runtime values take over normally on scroll and when overlays appear. */
+    body.home-page .framer-nav:not(.scrolled):not([data-desktop-glass-kind]) {
+      --dng-density: 0;
+      --dng-keep: 1;
+    }
+
+    /* A full-width dark header uses a bottom separator; floating surfaces
+       retain the glass material's perimeter highlights. */
+    .framer-nav:not(.scrolled)[data-desktop-glass-kind="dark"],
+    body.home-page .framer-nav:not(.scrolled):not([data-desktop-glass-kind]),
+    html:not([data-theme="light"]) .framer-nav:not(.scrolled):not([data-desktop-glass-kind]) {
+      --dng-shadow:
+        inset 0 -1px 0 rgb(255 255 255 / .08),
+        0 4px 14px rgb(0 0 0 / .18);
+    }
+
+    /* Full-width light headers need only a soft bottom edge; keep the deeper
+       floating shadow for the scrolled capsule and other glass surfaces. */
+    .framer-nav:not(.scrolled)[data-desktop-glass-kind="light"],
+    html[data-theme="light"] body:not(.home-page) .framer-nav:not(.scrolled):not([data-desktop-glass-kind]) {
+      --dng-shadow:
+        inset 0 -1px 0 rgb(0 0 0 / .04),
+        0 1px 4px -1px rgb(0 0 0 / .04);
+    }
+
+    /* The material chooses its ink as a unit. Page-theme action colors must
+       not leave black text on the dark hero's clear glass (or vice versa). */
+    :is(.framer-nav, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .gdock, .chat-widget-fab .message-preview, .engagement-surface:not(.engagement-surface--modal), [data-desktop-glass-surface])
+      :is(.nav-menu > a, .nav-logo, .login-trigger-btn, .user-avatar-btn,
+          .dropdown-action, .dropdown-action > span:not(.dropdown-action-icon),
+          .dropdown-action-icon, .dropdown-action svg, .identity-name, .dropdown-header),
+    :is(.nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown) a {
+      color: var(--dng-ink) !important;
+    }
+
+    .avatar-dropdown .dropdown-action:is(:hover, :focus, :focus-visible)
+      :is(i, .dropdown-action-icon, .dropdown-svg-icon, svg) {
+      color: var(--chat-primary, #6b9ece) !important;
+    }
+
+    .framer-nav.scrolled { corner-shape: round; }
+    :is(.avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown) { overflow: hidden; }
+    /* The Dock host is the sole desktop surface, including Spotlight. The
+       retained empty child belongs exclusively to the mobile renderer. */
+    .gdock { --ink: var(--dng-ink) !important; }
+    .gdock > .gdock-glass { display: none !important; }
+    .gdock :is(.gdock-label, .gdock-icon, .prompt-spotlight-input,
+      .prompt-spotlight-search-icon, .prompt-spotlight-esc),
+    .chat-widget-fab .message-preview :is(.preview-sender, .preview-text),
+    .engagement-surface:not(.engagement-surface--modal) :is(.engagement-surface__title, .engagement-surface__body, .engagement-surface__body strong, .engagement-surface__body p) {
+      color: var(--dng-ink) !important;
+      text-shadow: none !important;
+    }
+    .prompt-spotlight-input::placeholder { color: var(--dng-ink) !important; opacity: .5; }
+
+    /* Remove the replaced material layers; preserve semantic pseudo-elements
+       such as stock-state dots on additional, discovered glass components. */
+    :is(.framer-nav, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown,
+      .nav-support-dropdown, .gdock, .chat-widget-fab .message-preview, .glass-ring)::before,
+    :is(.framer-nav, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown,
+      .nav-support-dropdown, .gdock, .chat-widget-fab .message-preview, .glass-ring)::after,
+    [data-desktop-glass-clear-before]::before,
+    [data-desktop-glass-clear-after]::after {
+      content: none !important;
+      display: none !important;
+    }
+    /* A modal notification's ::before is its page scrim, not a rim layer. */
+    .engagement-surface--modal::before { backdrop-filter: none !important; }
+    :is(
+      .wallet-overlay.wallet-modal-force-hidden,
+      .zaoyoe-announcement-overlay.announcement-modal-force-hidden,
+      #loginModal.auth-sheet-force-hidden,
+      #profileModal.profile-modal-force-hidden,
+      #shopPurchaseModal.shop-purchase-force-hidden,
+      #shopCartCheckoutModal.shop-modal-force-hidden,
+      #shopSuccessModal.shop-modal-force-hidden,
+      #guestbookModal.guestbook-modal-force-hidden,
+      #commentModal.comment-modal-force-hidden,
+      #promptModal.prompt-modal-force-hidden,
+      .ai-image-overlay.ai-image-force-hidden,
+      [hidden]
+    ) .glass-ring,
+    dialog.glass-ring:not([open]),
+    dialog:not([open]) .glass-ring {
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+    }
+
+    [data-desktop-glass-surface][data-desktop-glass-nested][data-desktop-glass-nested] {
+      background: transparent !important;
+      background-image: none !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+    }
+    /* Keep the complete material attached while the app hides a menu. A newly
+       mounted surface is revealed only after its decoded lens is committed. */
+    [data-desktop-glass-surface][data-desktop-glass-pending] {
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+
+    @media (prefers-reduced-transparency: reduce) {
+      :is(.framer-nav, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .gdock, .chat-widget-fab .message-preview, .engagement-surface:not(.engagement-surface--modal), .glass-ring, [data-desktop-glass-surface]) {
+        background: color-mix(in srgb, var(--dng-tint) 96%, transparent) !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+      }
+    }
+    @media (forced-colors: active) {
+      :is(.framer-nav, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .gdock, .chat-widget-fab .message-preview, .engagement-surface:not(.engagement-surface--modal), .glass-ring, [data-desktop-glass-surface]) {
+        border: 1px solid CanvasText !important;
+        background: Canvas !important;
+        color: CanvasText;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+        box-shadow: none !important;
+      }
+    }
+  }
+
+  /* The expanded narrow-screen menu is a solid sheet. Keep this exception in
+     the material layer: layered !important glass otherwise beats the legacy
+     unlayered open-state rules. Closing the menu restores the existing lens. */
+  :is(html.mobile-menu-open .framer-nav, body.mobile-menu-open .framer-nav,
+    .framer-nav:has(.nav-hamburger.active)) {
+    --dng-ink: #f8fafc;
+    /* The menu starts at --nav-height, which includes the removed border.
+       Fill that reserved pixel so page content cannot show between the sheets. */
+    min-height: var(--nav-height) !important;
+    background: #000000 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    filter: none !important;
+  }
+  :is(html[data-theme="light"].mobile-menu-open .framer-nav,
+    html[data-theme="light"] body.mobile-menu-open .framer-nav,
+    html[data-theme="light"] .framer-nav:has(.nav-hamburger.active)) {
+    --dng-ink: #17212b;
+    background: #ffffff !important;
+  }
+  /* A solid sheet follows theme ink immediately, even while the background
+     sampler still has the previous glass frame. Floating popovers stay adaptive. */
+  :is(html.mobile-menu-open .framer-nav, body.mobile-menu-open .framer-nav,
+    .framer-nav:has(.nav-hamburger.active))
+    :is(.nav-menu > a, .nav-hamburger, .login-trigger-btn, .user-avatar-btn) {
+    --glass-control-ink: var(--dng-ink) !important;
+    color: var(--dng-ink) !important;
+  }
+  @media (forced-colors: active) {
+    :is(html.mobile-menu-open .framer-nav, body.mobile-menu-open .framer-nav,
+      .framer-nav:has(.nav-hamburger.active)) {
+      --dng-ink: CanvasText;
+      background: Canvas !important;
+    }
+  }
+}
+
+@layer mobile-glass {
+  /* Zero-specificity mobile Dock glass fallback for pages without magnifying-dock.css. */
+  @media (hover: none) and (pointer: coarse), (max-width: 768px) and (pointer: coarse) {
+    :where(.glass-ring) {
+      --mg-blur: 6px;
+      --mg-strength: 0.78;
+      --mg-refraction: 1.1;
+      --mg-dispersion: 0.40;
+      --mg-tint: 24, 27, 32;
+      --mg-alpha: 0.64;
+      --mg-brightness: 0.8284;
+      --mg-surface-shadow:
+        inset 0 0.5px 0.5px rgb(255 255 255 / 0.62),
+        inset 0.5px 0 1px rgb(255 255 255 / 0.26),
+        inset -1px -2px 3px rgb(0 0 0 / 0.16),
+        inset 0 0 calc(8px * var(--mg-refraction)) rgb(255 255 255 / 0.16),
+        0 6px 24px rgb(0 0 0 / 0.10);
+      corner-shape: round;
+      box-shadow: var(--mg-surface-shadow);
+    }
+
+    :where(html:not([data-theme="dark"]) .glass-ring) {
+      --mg-tint: 255, 255, 255;
+      --mg-alpha: 0.56;
+      --mg-brightness: 1.039;
+    }
+
+    @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+      :where(.glass-ring) {
+        background: rgba(var(--mg-tint), var(--mg-alpha));
+        -webkit-backdrop-filter: blur(var(--mg-blur)) saturate(1.35) brightness(var(--mg-brightness));
+        backdrop-filter: blur(var(--mg-blur)) saturate(1.35) brightness(var(--mg-brightness));
+      }
+    }
+
+    :where(.glass-ring)::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: block;
+      padding: calc(0.75px * var(--mg-refraction));
+      border: 0;
+      border-radius: inherit;
+      background: linear-gradient(
+        138deg,
+        rgb(255 255 255 / 0.54),
+        rgb(136 230 255 / calc(var(--mg-dispersion) * 0.38)) 22%,
+        transparent 42%,
+        rgb(0 0 0 / 0.13) 60%,
+        rgb(255 170 214 / calc(var(--mg-dispersion) * 0.30)) 79%,
+        rgb(255 255 255 / 0.38)
+      );
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+  }
+}
+
+/* Shared Dock liquid-glass modal outer ring (.glass-ring + .glass-ring__surface).
+   Outer 6–8px perimeter exposes Dock liquid-glass refraction; inner surface stays 100% opaque. */
+.glass-ring,
+.glass-ring * {
+  box-sizing: border-box;
+}
+
+:where(.glass-ring) {
+  width: min(100%, 36rem);
+}
+
+.glass-ring {
+  --glass-ring-width: 8px;
+  --glass-radius: 28px;
+  --glass-panel: #fffefd;
+  --glass-surface-ink: #1f2937;
+  --glass-surface-border: rgba(255, 255, 255, 0.72);
+  --glass-surface-shadow:
+    0 0 0 0.5px rgba(15, 23, 42, 0.08),
+    0 2px 10px rgba(15, 23, 42, 0.06);
+  --glass-ring-fallback-bg: rgba(238, 235, 228, 0.94);
+
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  padding: var(--glass-ring-width);
+  border: 0;
+  border-radius: var(--glass-radius);
+  corner-shape: superellipse(1.2);
+  background: var(--glass-ring-fallback-bg);
+}
+
+.glass-ring--shell {
+  display: flex;
+  flex-direction: column;
+  width: auto;
+  max-width: 100%;
+  min-height: 0;
+}
+
+:where(.glass-ring__surface) {
+  padding: clamp(20px, 4vw, 32px);
+  border: 1px solid var(--glass-surface-border);
+  background: var(--glass-panel);
+  color: var(--glass-surface-ink);
+  box-shadow: var(--glass-surface-shadow);
+}
+
+.glass-ring__surface {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  border-radius: max(0px, calc(var(--glass-radius) - var(--glass-ring-width))) !important;
+  corner-shape: inherit;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+#loginModal .auth-sheet-ring.glass-ring {
+  width: 100%;
+  max-width: 480px;
+}
+
+#loginModal .auth-sheet.glass-ring__surface {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--auth-sheet-panel-strong) !important;
+  border-radius: max(0px, calc(var(--glass-radius, 28px) - var(--glass-ring-width, 8px))) !important;
+}
+
+@media (max-width: 520px) {
+  .glass-ring {
+    --glass-ring-width: 7px;
+  }
+}
+
+[data-theme="dark"] .glass-ring {
+  --glass-panel: #11151d;
+  --glass-surface-ink: #f2f5f8;
+  --glass-surface-border: rgba(255, 255, 255, 0.10);
+  --glass-surface-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.36),
+    0 2px 10px rgba(0, 0, 0, 0.28);
+  --glass-ring-fallback-bg: rgba(34, 37, 44, 0.94);
+}
+
+#profileModal .modal-content.profile-modal,
+.modal-content.profile-modal {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Site layout support detail dialog glass ring fallback */
+.site-layout-support-detail-dialog__ring {
+  --glass-ring-width: 8px;
+  --glass-radius: 26px;
+  --glass-blur: 12px;
+  --glass-saturation: 145%;
+  --glass-panel: #0f172a;
+  --glass-outline: rgba(255, 255, 255, 0.30);
+  --glass-highlight: rgba(255, 255, 255, 0.36);
+  position: relative;
+  width: min(440px, calc(100vw - 32px));
+  box-sizing: border-box !important;
+  padding: var(--glass-ring-width, 8px) !important;
+  border-radius: var(--glass-radius, 26px) !important;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.10) 54%,
+      rgba(255, 255, 255, 0.18)
+    ) !important;
+  border: 1px solid var(--glass-outline) !important;
+  backdrop-filter: var(--dng-filter, blur(var(--glass-blur, 12px)) saturate(var(--glass-saturation, 145%))) !important;
+  -webkit-backdrop-filter: var(--dng-webkit-filter, blur(var(--glass-blur, 12px)) saturate(var(--glass-saturation, 145%))) !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36) !important;
+  display: flex;
+}
+
+@media (max-width: 520px) {
+  .site-layout-support-detail-dialog__ring {
+    --glass-ring-width: 7px;
+    --glass-blur: 10px;
+    width: 100%;
+  }
+}
+
+html[data-theme="light"] .site-layout-support-detail-dialog__ring {
+  --glass-panel: #fffefd;
+  --glass-outline: rgba(255, 255, 255, 0.56);
+  --glass-highlight: rgba(255, 255, 255, 0.68);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.34),
+      rgba(255, 255, 255, 0.18) 54%,
+      rgba(255, 255, 255, 0.26)
+    ) !important;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18) !important;
+}
+
+.site-layout-support-detail-dialog__ring > .site-layout-support-detail-dialog__panel.glass-ring__surface {
+  position: relative;
+  width: 100% !important;
+  max-height: min(720px, calc(100vh - 40px));
+  overflow: auto;
+  border-radius: max(0px, calc(var(--glass-radius, 26px) - var(--glass-ring-width, 8px))) !important;
+  background: #0f172a !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18) !important;
+  padding: 22px;
+  outline: none;
+  transform: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="light"] .site-layout-support-detail-dialog__ring > .site-layout-support-detail-dialog__panel.glass-ring__surface {
+  background: #fffefd !important;
+  border: 1px solid rgba(255, 255, 255, 0.84) !important;
+  box-shadow: 0 2px 8px rgba(48, 42, 31, 0.045) !important;
+}
+

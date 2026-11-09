@@ -1,0 +1,10 @@
+{
+  "status": "STOPPED_DATA_PRESERVED",
+  "pid": 90884,
+  "datadir": "/private/tmp/kc-hold-88db804f71ff9b98/data",
+  "case": "exact_owner_and_single_hold",
+  "result": "FAIL / harness expected wrong error code",
+  "no_post_failure_dml": true,
+  "no_cleanup_or_reinitialization": true,
+  "retry": "fresh datadir and runId, same approved isolation scope"
+}

@@ -476,7 +476,7 @@ test('grid mode reuses the list sidebar and puts order query above categories', 
     );
     assert.match(
         finalGridCss,
-        /\.shop-main\.shop-layout--grid \.list-aside__indicator \{[\s\S]*border-top: 1px solid #d9d9e0 !important;[\s\S]*transition: transform 0\.34s cubic-bezier\(0\.22, 1, 0\.36, 1\), height 0\.34s cubic-bezier\(0\.22, 1, 0\.36, 1\);/,
+        /\.shop-main\.shop-layout--grid \.list-aside__indicator \{[\s\S]*border-top: 1px solid #d9d9e0 !important;[\s\S]*transition: transform 0\.34s ease-out, width 0\.34s ease-out, height 0\.34s ease-out;/,
         'grid selected category indicator must retain its top border and list-mode sliding transition'
     );
     assert.match(
@@ -581,5 +581,92 @@ test('grid mode reuses the list sidebar and puts order query above categories', 
         orderDetailHover,
         /background|border|box-shadow|transform|filter/,
         'order detail hover must change text color only'
+    );
+});
+
+test('shop category hierarchical accordion, in-place patching, folder icons and capsule shortening contracts', () => {
+    const layoutSource = fs.readFileSync(path.join(workspaceRoot, 'js/shop-list-layout.js'), 'utf8');
+    const layoutStyles = fs.readFileSync(path.join(workspaceRoot, 'css/shop-list-layout.css'), 'utf8');
+
+    // 1. Folder icon & fallback alignment
+    assert.match(
+        layoutSource,
+        /function createCategoryIconHtml\(entry\) \{[\s\S]*<i class="fas fa-folder category-folder-icon" style="color: \$\{escapeAttribute\(folderColor\)\}">/,
+        'storefront category icons must provide a colored folder fallback matching Admin Studio'
+    );
+    assert.match(
+        layoutStyles,
+        /\.category-folder-icon\s*\{[\s\S]*font-size:\s*14px;/,
+        'category folder icon style must be defined in shop list layout css'
+    );
+
+    // 2. In-place patching for hierarchical categories (zero DOM destruction on click)
+    assert.match(
+        layoutSource,
+        /const canPatchInPlace = expectedTabs\.length > 0[\s\S]*existingTabs\.length === expectedTabs\.length[\s\S]*indicatorMatches;/,
+        'hierarchical category rendering must verify canPatchInPlace before rebuilding innerHTML'
+    );
+    assert.match(
+        layoutSource,
+        /if \(canPatchInPlace\) \{[\s\S]*tab\.classList\.toggle\('active', isActive\)[\s\S]*chevron\.classList\.toggle\('expanded', isExpanded\)[\s\S]*wrapper\.classList\.toggle\('is-expanded', isExpanded\)[\s\S]*return;[\s\S]*\}/,
+        'canPatchInPlace must update active classes, counts, chevron rotation and accordion wrapper in place without touching innerHTML'
+    );
+
+    // 3. Reliable click handling in capture phase (zero lost clicks)
+    assert.match(
+        layoutSource,
+        /document\.addEventListener\('click', \(event\) => \{[\s\S]*data-shop-toggle-subtabs[\s\S]*toggleCategorySubtabs\(pid\)[\s\S]*#shopCategoryFilters \.filter-tab\[data-shop-category\][\s\S]*#listCategoryFilters \.filter-tab\[data-shop-category\][\s\S]*selectCategory[\s\S]*\}, true\);/,
+        'category tabs and chevron toggles must be captured in capture phase with stopPropagation so clicks are never dropped'
+    );
+
+    // 4. Safe element selection without fragile CSS escaping
+    assert.match(
+        layoutSource,
+        /const wrappers = Array\.from\(document\.querySelectorAll\('\.category-sub-tabs-wrapper'\)\)\s*\.filter\(\(w\) => w\.dataset\.parentPid === String\(pid\)\);/,
+        'toggleCategorySubtabs must safely find wrappers by dataset instead of unescaped CSS attribute selectors'
+    );
+    assert.match(
+        layoutSource,
+        /const chevrons = Array\.from\(document\.querySelectorAll\('\[data-shop-toggle-subtabs\]'\)\)\s*\.filter\(\(ch\) => ch\.getAttribute\('data-shop-toggle-subtabs'\) === String\(pid\)\);/,
+        'toggleCategorySubtabs must safely find chevrons by getAttribute instead of unescaped CSS attribute selectors'
+    );
+
+    // 5. Sliding indicator capsule shortening and smooth transitions
+    assert.match(
+        layoutStyles,
+        /\.list-aside__indicator\s*\{[\s\S]*transition:[\s\S]*transform[\s\S]*width[\s\S]*height/,
+        'indicator must declare smooth transitions for both transform and width'
+    );
+    assert.match(
+        layoutStyles,
+        /\.list-aside \.category-sub-tabs-wrapper\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-rows:\s*0fr;[\s\S]*transition:\s*grid-template-rows/,
+        'accordion wrapper must use CSS Grid template rows for smooth 0fr to 1fr accordion animation'
+    );
+    assert.match(
+        layoutStyles,
+        /\.category-tree-chevron\.expanded\s*\{[\s\S]*transform:\s*rotate\(90deg\);/,
+        'expanded chevron must rotate 90 degrees'
+    );
+    assert.match(
+        layoutStyles,
+        /\.list-aside \.category-sub-tabs\s*\{[\s\S]*margin-left:\s*14px;[\s\S]*padding-left:\s*8px;[\s\S]*border-left:\s*1px dashed/,
+        'child tabs container must have indentation and tree dashed border line'
+    );
+
+    // 6. Sidebar adaptive height containment, in-card internal scrolling and wheel isolation
+    assert.match(
+        layoutStyles,
+        /html body\.shop-page \.list-aside-stack \{[\s\S]*height: auto;[\s\S]*max-height: calc\(100vh - var\(--nav-height, 61px\) - 78px\);/,
+        'desktop sidebar must adapt its height to category content and lock to viewport max-height'
+    );
+    assert.match(
+        layoutStyles,
+        /html body\.shop-page \.list-aside__tabs \{[\s\S]*overflow-y: auto !important;[\s\S]*overscroll-behavior: contain !important;[\s\S]*width: calc\(100% \+ 17px\) !important;[\s\S]*margin-right: -17px !important;[\s\S]*padding-right: 15px;[\s\S]*scrollbar-gutter: stable;/,
+        'category tabs container must scroll internally, position scrollbar at outer card edge without squeezing category content, and stabilize gutter'
+    );
+    assert.match(
+        layoutSource,
+        /document\.addEventListener\('wheel', \(event\) => \{[\s\S]*\.list-aside-stack, \.list-aside, \.list-aside__panel[\s\S]*tabs\.scrollTop \+= event\.deltaY;[\s\S]*event\.preventDefault\(\);[\s\S]*\}, \{ passive: false \}\);/,
+        'wheel events on sidebar must scroll category tabs without scrolling the webpage'
     );
 });

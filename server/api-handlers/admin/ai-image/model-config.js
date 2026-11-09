@@ -17,6 +17,8 @@ const {
     redactSensitiveValue
 } = require('../_ai-shared');
 
+const mediaCapabilities = require('../../../../js/ai-media-model-capabilities');
+
 const DEFAULT_MODEL_TEST_TIMEOUT_MS = 90000;
 const MODEL_PROBE_RESOLUTIONS = Object.freeze(['1k', '2k', '4k']);
 const MODEL_PROBE_REMOTE_IMAGE_URL = 'https://www.fatherkey.com/assets/prompts-home/____1_1.webp';
@@ -353,6 +355,10 @@ function serializeProvider(provider = {}) {
         updatedAt: provider.updatedAt || provider.updated_at || null,
         decryptErrorMessage: provider.decryptErrorMessage || ''
     };
+    serialized.mediaCapabilities = Object.fromEntries([...new Set([
+        ...scopedModels.imageModels, ...scopedModels.videoModels,
+        ...serialized.detectedImageModels, ...serialized.detectedVideoModels, ...serialized.detectedUnknownModels
+    ])].map(model => [model, mediaCapabilities.resolve({ model, baseUrl: serialized.baseUrl })]).filter(([, profile]) => profile));
     if (asyncResult) {
         serialized.asyncResult = asyncResult;
         serialized.async_result = asyncResult;
@@ -592,13 +598,15 @@ function inferDiscoveredModelGroup(model = {}) {
     return 'unknown';
 }
 
-function summarizeDiscoveredModels(models = []) {
+function summarizeDiscoveredModels(models = [], baseUrl = '') {
+    const capabilityFor = model => mediaCapabilities.resolve({ model: model.id, baseUrl });
+    const groupFor = model => capabilityFor(model)?.kind || inferDiscoveredModelGroup(model);
     const imageModels = [];
     const chatModels = [];
     const videoModels = [];
     const unknownModels = [];
     for (const model of models) {
-        const group = inferDiscoveredModelGroup(model);
+        const group = groupFor(model);
         if (group === 'image') {
             imageModels.push(model.id);
         } else if (group === 'chat') {
@@ -612,7 +620,8 @@ function summarizeDiscoveredModels(models = []) {
     return {
         models: models.map((model) => ({
             ...model,
-            groupHint: inferDiscoveredModelGroup(model)
+            groupHint: groupFor(model),
+            mediaCapability: capabilityFor(model)
         })),
         imageModels: imageModels.slice(0, 80),
         chatModels: chatModels.slice(0, 120),
@@ -772,7 +781,7 @@ async function discoverOpenAiCompatibleModels({
             };
         }
 
-        const summary = summarizeDiscoveredModels(extractDiscoveredModelEntries(payload));
+        const summary = summarizeDiscoveredModels(extractDiscoveredModelEntries(payload), baseUrl);
         return {
             ok: true,
             endpoint: 'models',

@@ -1,0 +1,24 @@
+{
+  "status": "ACCEPTED_OUT_OF_SCOPE_REMOVAL",
+  "scope": "User-confirmed removal only; no runtime/code/SQL change",
+  "tests": "NOT RERUN; documentation-only update. Prior 327 PASS/0 FAIL unchanged.",
+  "staged_empty": true,
+  "files": [
+    {
+      "path": "docs/security-card-store-hardening-round10-2026-11-09.md",
+      "sha256": "99dd7f0a02102f4960fbdb80b6903597dc63013d4a1a138282e0b8ec6e6c6d39",
+      "bytes": 10863
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/scope-resolution-frontend-removal.json",
+      "sha256": "6e980703de600bbfd7e7cb4b95e879deb9bbaef78196446aec15c36e01477ffb",
+      "bytes": 1762
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/round10-report-before-user-scope-resolution.md",
+      "sha256": "c3f52986a1aed5e5ac1b75529c41895386d2515d38eddd7fe495a85c69744425",
+      "bytes": 10055
+    }
+  ],
+  "historical_verification_unchanged": true
+}

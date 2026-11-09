@@ -1,0 +1,14 @@
+[
+  {
+    "path": "services/kc-pay-gpt/lib/payment-attempt-ledger.js",
+    "backup": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/before-deadlines-payment-attempt-ledger.js",
+    "sha256": "3ed4b53154ea1b7972d094a38ce1a414ecaf169ced471d97d42bcbddecb995de",
+    "readback_verified": true
+  },
+  {
+    "path": "tests/security-round10-kc-payment-attempt-ledger.test.js",
+    "backup": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/before-deadlines-security-round10-kc-payment-attempt-ledger.test.js",
+    "sha256": "03fb4a6926d5ab94b1e06392c45931a51cd1c330ff4c8835c67c11c3751d5268",
+    "readback_verified": true
+  }
+]

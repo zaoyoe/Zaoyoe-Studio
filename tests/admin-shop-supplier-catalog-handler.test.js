@@ -76,6 +76,7 @@ function createSupabase(state) {
                 select(columns) { this.columns = columns; return this; },
                 eq(column, value) { this.filters.push([column, value]); return this; },
                 insert(payload) { this.mode = 'insert'; this.payload = payload; state.writes.push({ table, mode: 'insert', payload }); return this; },
+                update(payload) { this.mode = 'update'; this.payload = payload; state.writes.push({ table, mode: 'update', payload }); return this; },
                 delete() { this.mode = 'delete'; state.writes.push({ table, mode: 'delete' }); return this; },
                 maybeSingle() { return this.finish(); },
                 single() { return this.finish(); },
@@ -195,7 +196,7 @@ test('single and bulk supplier imports create only inactive local drafts and dis
     assert.deepEqual(state.writes[0].payload, {
         name: '测试上游商品',
         description: null,
-        category: 'resource',
+        category: 'other',
         tags: [],
         price_points: 0,
         stock_count: 0,
@@ -910,4 +911,607 @@ test('upstream order reconciliation fails closed on lookup errors and malformed 
         assert.deepEqual(h.state.rpcCalls, []);
         assert.deepEqual(h.calls.audits, []);
     }
+});
+
+test('update-mapping-ceiling validates input and updates mapping cost ceiling via RPC', async () => {
+    const h = makeHandler({
+        state: {
+            writes: [],
+            rpcCalls: [],
+            results: [{
+                data: {
+                    success: true,
+                    mapping_id: 'bea8e791-54b4-41dc-99b6-a0787c4499d7',
+                    cost_ceiling_cny: '8.50',
+                    policy_ceiling_cny: '8.50'
+                },
+                error: null
+            }]
+        }
+    });
+    const res = createResponse();
+    await h.handler({
+        method: 'POST',
+        headers: {},
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'update-mapping-ceiling',
+            mappingId: 'bea8e791-54b4-41dc-99b6-a0787c4499d7',
+            costCeilingCny: '8.50'
+        }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json(), {
+        success: true,
+        mappingId: 'bea8e791-54b4-41dc-99b6-a0787c4499d7',
+        costCeilingCny: '8.50',
+        result: {
+            success: true,
+            mapping_id: 'bea8e791-54b4-41dc-99b6-a0787c4499d7',
+            cost_ceiling_cny: '8.50',
+            policy_ceiling_cny: '8.50'
+        }
+    });
+    assert.equal(h.state.rpcCalls.length, 1);
+    assert.equal(h.state.rpcCalls[0].name, 'fn_set_shop_supplier_mapping_cost_ceiling_v2');
+    assert.equal(h.state.rpcCalls[0].input.p_mapping_id, 'bea8e791-54b4-41dc-99b6-a0787c4499d7');
+    assert.equal(h.state.rpcCalls[0].input.p_cost_ceiling_cny, 8.5);
+});
+
+test('Xiareng catalog list returns categoryTree and filters items by groupKey', async () => {
+    const { handler } = makeXiarengCatalog({
+        categories: [
+            { categoryKey: 'cat-1', name: '飞机API 1', upstreamIdCandidate: '6' },
+            { categoryKey: 'cat-2', name: '谷歌邮箱自营', upstreamIdCandidate: '87' }
+        ],
+        items: [
+            { goods_no: 'XR-TG-1', goods_name: 'TG商品', catalogCategoryKeys: ['cat-1'] },
+            { goods_no: 'XR-GM-1', goods_name: 'GMail商品', catalogCategoryKeys: ['cat-2'] }
+        ]
+    });
+
+    const initialRes = createResponse();
+    await handler({ method: 'GET', url: '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list' }, initialRes);
+    assert.equal(initialRes.statusCode, 200);
+    const initialPayload = initialRes.json();
+    assert.equal(initialPayload.success, true);
+    assert.ok(Array.isArray(initialPayload.categoryTree));
+    assert.equal(initialPayload.categoryTree.length, 2);
+    const snapshotId = initialPayload.snapshotId;
+
+    // Filter by groupKey 'xr-3' (Telegram)
+    const tgRes = createResponse();
+    await handler({ method: 'GET', url: `/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&snapshotId=${snapshotId}&groupKey=xr-3` }, tgRes);
+    assert.equal(tgRes.statusCode, 200);
+    const tgPayload = tgRes.json();
+    assert.equal(tgPayload.items.length, 1);
+    assert.equal(tgPayload.items[0].providerGoodsId, 'XR-TG-1');
+
+    // Filter by groupKey 'xr-2' (Gmail)
+    const gmRes = createResponse();
+    await handler({ method: 'GET', url: `/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&snapshotId=${snapshotId}&groupKey=xr-2` }, gmRes);
+    assert.equal(gmRes.statusCode, 200);
+    const gmPayload = gmRes.json();
+    assert.equal(gmPayload.items.length, 1);
+    assert.equal(gmPayload.items[0].providerGoodsId, 'XR-GM-1');
+
+    // Query with defaultFirstCategory=1
+    const defRes = createResponse();
+    await handler({ method: 'GET', url: `/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list&snapshotId=${snapshotId}&defaultFirstCategory=1` }, defRes);
+    assert.equal(defRes.statusCode, 200);
+    const defPayload = defRes.json();
+    assert.equal(defPayload.selectedCategoryKey, 'cat-1');
+    assert.equal(defPayload.items.length, 1);
+    assert.equal(defPayload.items[0].providerGoodsId, 'XR-TG-1');
+});
+
+test('Xiareng multi-variant import calls import_shop_supplier_multi_draft_v3 with multiple variants', async () => {
+    const { handler, state } = makeXiareng({
+        config: { category: { '半年号': '6.44', '一年号': '12.00' } }
+    });
+    const res = createResponse();
+    await handler({
+        method: 'POST',
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'import',
+            providerId: 'xiareng',
+            accountKey: 'second',
+            site: 'cn',
+            goodsNos: ['XR-1'],
+            multiVariants: {
+                'XR-1': [
+                    { race: '半年号', costCeilingCny: '7.00' },
+                    { race: '一年号', costCeilingCny: '13.00' }
+                ]
+            }
+        }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().success, true);
+    assert.equal(state.rpcCalls.length, 1);
+    assert.equal(state.rpcCalls[0].name, 'import_shop_supplier_multi_draft_v3');
+    const input = state.rpcCalls[0].input;
+    assert.equal(input.p_account_id, 'xr-account');
+    assert.equal(input.p_admin_id, 'admin-1');
+    assert.equal(input.p_goods_no, 'XR-1');
+    assert.deepEqual(input.p_variants, [
+        { race: '半年号', costCeilingCny: '7.00' },
+        { race: '一年号', costCeilingCny: '13.00' }
+    ]);
+});
+
+test('Xiareng draft import preserves cover imageUrl in snapshot and updates product icon', async () => {
+    const { handler, state } = makeXiareng({
+        cover: 'https://cdn.example.com/tg-icon.png',
+        config: { category: { '半年号': '6.44' } }
+    });
+    const res = createResponse();
+    await handler({
+        method: 'POST',
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'import',
+            providerId: 'xiareng',
+            accountKey: 'second',
+            site: 'cn',
+            goodsNos: ['XR-1'],
+            multiVariants: {
+                'XR-1': [{ race: '半年号', costCeilingCny: '7.00' }]
+            }
+        }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().success, true);
+    assert.equal(state.rpcCalls.length, 1);
+    const input = state.rpcCalls[0].input;
+    assert.equal(input.p_snapshot.imageUrl, 'https://cdn.example.com/tg-icon.png');
+    // Verify shop_products update
+    const productUpdate = state.writes.find((w) => w.table === 'shop_products' && (w.mode === 'update' || w.op === 'update'));
+    assert.ok(productUpdate, 'expected shop_products update for icon');
+    assert.equal(productUpdate.payload.icon_url, 'https://cdn.example.com/tg-icon.png');
+    assert.deepEqual(productUpdate.payload.image_assets, { original: 'https://cdn.example.com/tg-icon.png' });
+});
+
+test('Xiareng autoAllVariants automatically discovers races and imports multi-variant draft', async () => {
+    const { handler, state } = makeXiareng({
+        config: { category: { '半年号': '6.00', '一年号': '12.00' } }
+    });
+    const res = createResponse();
+    await handler({
+        method: 'POST',
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'import',
+            providerId: 'xiareng',
+            accountKey: 'second',
+            site: 'cn',
+            goodsNos: ['XR-1'],
+            autoAllVariants: true,
+            markupMultiplier: 1.2,
+            costCeilingMultiplier: 1.0,
+            productCategory: 'telegram'
+        }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().success, true);
+    assert.equal(state.rpcCalls.length, 1);
+    assert.equal(state.rpcCalls[0].name, 'import_shop_supplier_multi_draft_v3');
+    const input = state.rpcCalls[0].input;
+    assert.equal(input.p_goods_no, 'XR-1');
+    // Check that races were automatically extracted with cost ceiling calculated as 1.0x cost
+    assert.equal(input.p_variants.length, 2);
+    assert.equal(input.p_variants[0].race, '半年号');
+    assert.equal(input.p_variants[0].costCeilingCny, 6.00);
+    assert.equal(input.p_variants[1].race, '一年号');
+    assert.equal(input.p_variants[1].costCeilingCny, 12.00);
+});
+
+test('Xiareng batch import respects category payment channels and initialStatus published', async () => {
+    const { handler, state } = makeXiareng({
+        config: { category: { '半年号': '10.00' } }
+    });
+    const res = createResponse();
+    await handler({
+        method: 'POST',
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'import',
+            providerId: 'xiareng',
+            accountKey: 'second',
+            site: 'cn',
+            goodsNos: ['XR-1'],
+            autoAllVariants: true,
+            markupMultiplier: 1.2,
+            categoryPaymentChannels: {
+                'XR-1': ['zpay', 'nowpayments']
+            },
+            markupMultipliers: {
+                'XR-1': 1.5
+            },
+            initialStatus: 'published'
+        }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().success, true);
+
+    // Verify product patch contains payment channels and is_active: true
+    const productUpdate = state.writes.find((w) => w.table === 'shop_products' && (w.mode === 'update' || w.op === 'update'));
+    assert.ok(productUpdate, 'expected shop_products update');
+    assert.equal(productUpdate.payload.is_active, true);
+    assert.deepEqual(productUpdate.payload.guest_payment_channels, ['zpay', 'nowpayments']);
+    assert.equal(productUpdate.payload.allow_guest_purchase, true);
+
+    // Verify supplier mapping was activated
+    const mappingUpdate = state.writes.find((w) => w.table === 'shop_supplier_product_mappings' && (w.mode === 'update' || w.op === 'update'));
+    assert.ok(mappingUpdate, 'expected shop_supplier_product_mappings update');
+    assert.equal(mappingUpdate.payload.is_enabled, true);
+});
+
+test('Xiareng category-goods endpoint returns goods grouped by categoryKeys from snapshot', async () => {
+    const { handler } = makeXiarengCatalog({ items: [
+        { goods_no: 'XR-1', goods_name: '商品A', catalogCategoryKeys: ['cat-1'] },
+        { goods_no: 'XR-2', goods_name: '商品B', catalogCategoryKeys: ['cat-1', 'cat-2'] },
+        { goods_no: 'XR-3', goods_name: '商品C', catalogCategoryKeys: ['cat-2'] }
+    ] });
+
+    // Step 1: list to generate snapshot
+    const listRes = createResponse();
+    await handler({ method: 'GET', url: '/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=list' }, listRes);
+    assert.equal(listRes.statusCode, 200);
+    const snapshotId = listRes.json().snapshotId;
+    assert.ok(snapshotId);
+
+    // Step 2: call category-goods
+    const catRes = createResponse();
+    await handler({
+        method: 'GET',
+        url: `/api/admin/shop/supplier-catalog?providerId=xiareng&accountKey=second&action=category-goods&snapshotId=${snapshotId}&categoryKeys=cat-1,cat-2`
+    }, catRes);
+
+    assert.equal(catRes.statusCode, 200);
+    const catPayload = catRes.json();
+    assert.equal(catPayload.success, true);
+    assert.ok(catPayload.categories['cat-1']);
+    assert.equal(catPayload.categories['cat-1'].items.length, 2);
+    assert.equal(catPayload.categories['cat-2'].items.length, 2);
+    assert.equal(catPayload.categories['cat-1'].categoryName, '分类甲');
+});
+
+test('Xiareng multi-variant import in fallback mode creates active product with channels when initialStatus is published', async () => {
+    const { handler, state } = makeXiareng({
+        config: { category: { '半年号': '6.00' } }
+    }, {
+        results: [
+            { data: xrAccount, error: null }, // account lookup
+            { data: null, error: { message: 'function import_shop_supplier_multi_draft_v3 does not exist', code: '42883' } }, // RPC fails -> enters fallback
+            { data: [], error: null }, // existing mappings lookup
+            { data: { id: 'prod-fallback-1', name: '只读商品' }, error: null }, // product insert
+            { data: { id: 'sku-fallback-1' }, error: null } // default SKU lookup
+        ]
+    });
+    const res = createResponse();
+    await handler({
+        method: 'POST',
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'import',
+            providerId: 'xiareng',
+            accountKey: 'second',
+            site: 'cn',
+            goodsNos: ['XR-1'],
+            autoAllVariants: true,
+            markupMultiplier: 1.5,
+            productCategory: 'linkedin',
+            categoryPaymentChannels: {
+                'XR-1': ['zpay']
+            },
+            initialStatus: 'published'
+        }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().success, true);
+
+    // Verify product insert had is_active: true and guest_payment_channels: ['zpay']
+    const prodInsert = state.writes.find((w) => w.table === 'shop_products' && (w.mode === 'insert' || w.op === 'insert'));
+    assert.ok(prodInsert, 'expected shop_products insert');
+    assert.equal(prodInsert.payload.is_active, true);
+    assert.equal(prodInsert.payload.allow_guest_purchase, true);
+    assert.deepEqual(prodInsert.payload.guest_payment_channels, ['zpay']);
+    assert.equal(prodInsert.payload.category, 'linkedin');
+
+    // Verify mapping insert had is_enabled: true
+    const mappingInsert = state.writes.find((w) => w.table === 'shop_supplier_product_mappings' && (w.mode === 'insert' || w.op === 'insert'));
+    assert.ok(mappingInsert, 'expected mapping insert');
+    assert.equal(mappingInsert.payload.is_enabled, true);
+});
+
+test('Xiareng multi-variant import in fallback mode skips already imported goods when duplicatePolicy is skip', async () => {
+    const { handler, state } = makeXiareng({
+        config: { category: { '半年号': '6.00' } }
+    }, {
+        results: [
+            { data: xrAccount, error: null }, // account lookup
+            { data: null, error: { message: 'function import_shop_supplier_multi_draft_v3 does not exist', code: '42883' } }, // RPC fails -> enters fallback
+            { data: [{ id: 'map-existing-1', product_id: 'prod-existing-1' }], error: null } // existing mappings lookup
+        ]
+    });
+    const res = createResponse();
+    await handler({
+        method: 'POST',
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'import',
+            providerId: 'xiareng',
+            accountKey: 'second',
+            site: 'cn',
+            goodsNos: ['XR-1'],
+            autoAllVariants: true,
+            duplicatePolicy: 'skip'
+        }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().success, true);
+    assert.equal(res.json().results[0].status, 'skipped');
+    assert.equal(res.json().results[0].productId, 'prod-existing-1');
+
+    // Ensure no new product insert was triggered
+    const prodInsert = state.writes.find((w) => w.table === 'shop_products' && (w.mode === 'insert' || w.op === 'insert'));
+    assert.equal(prodInsert, undefined);
+});
+
+test('Xiareng autoAllVariants falls back to single-variant import for goods without races', async () => {
+    const { handler, state } = makeXiareng({
+        config: {} // No category or races -> single product
+    }, {
+        results: [
+            { data: xrAccount, error: null }, // account lookup
+            { data: { status: 'imported_as_draft', productId: 'prod-single-1', mappingId: 'map-1' }, error: null } // single draft RPC
+        ]
+    });
+    const res = createResponse();
+    await handler({
+        method: 'POST',
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'import',
+            providerId: 'xiareng',
+            accountKey: 'second',
+            site: 'cn',
+            goodsNos: ['XR-1'],
+            autoAllVariants: true
+        }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().success, true);
+    assert.equal(state.rpcCalls.length, 1);
+    assert.equal(state.rpcCalls[0].name, 'import_shop_supplier_draft_v2');
+});
+
+test('Xiareng multi-variant import in fallback mode synchronizes stock_count from upstream availableQuantity', async () => {
+    const { handler, state } = makeXiareng({
+        stock: 98,
+        config: { category: { '半年号': '6.00' } }
+    }, {
+        results: [
+            { data: xrAccount, error: null }, // account lookup
+            { data: null, error: { message: 'function import_shop_supplier_multi_draft_v3 does not exist', code: '42883' } }, // RPC fails
+            { data: [], error: null }, // no existing mappings
+            { data: { id: 'prod-fallback-stock', name: '只读商品' }, error: null }, // product insert
+            { data: { id: 'sku-fallback-stock' }, error: null } // default SKU lookup
+        ]
+    });
+    const res = createResponse();
+    await handler({
+        method: 'POST',
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'import',
+            providerId: 'xiareng',
+            accountKey: 'second',
+            site: 'cn',
+            goodsNos: ['XR-1'],
+            autoAllVariants: true
+        }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().success, true);
+
+    const prodInsert = state.writes.find((w) => w.table === 'shop_products' && (w.mode === 'insert' || w.op === 'insert'));
+    assert.ok(prodInsert, 'expected shop_products insert');
+    assert.equal(prodInsert.payload.stock_count, 98);
+
+    const skuUpdate = state.writes.find((w) => w.table === 'shop_product_skus' && (w.mode === 'update' || w.op === 'update'));
+    assert.ok(skuUpdate, 'expected shop_product_skus update');
+    assert.equal(skuUpdate.payload.stock_count, 98);
+});
+
+test('Xiareng supplier import automatically detects manual delivery goods and sets manual_delivery: true', async () => {
+    const { handler, state } = makeXiareng({
+        delivery_way: 1,
+        name: '韩国Kakao/成品/接码',
+        description: '下单后联系客服上号，提供设备协助完成登录',
+        config: { category: { '首发成品': '35.00' } }
+    }, {
+        results: [
+            { data: xrAccount, error: null }, // account lookup
+            { data: null, error: { message: 'function import_shop_supplier_multi_draft_v3 does not exist', code: '42883' } }, // RPC fallback
+            { data: [], error: null }, // no existing mappings
+            { data: { id: 'prod-kakao', name: '韩国Kakao/成品/接码' }, error: null }, // product insert
+            { data: { id: 'sku-kakao' }, error: null } // default SKU lookup
+        ]
+    });
+    const res = createResponse();
+    await handler({
+        method: 'POST',
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'import',
+            providerId: 'xiareng',
+            accountKey: 'second',
+            site: 'cn',
+            goodsNos: ['XR-1'],
+            autoAllVariants: true
+        }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().success, true);
+
+    const prodInsert = state.writes.find((w) => w.table === 'shop_products' && (w.mode === 'insert' || w.op === 'insert'));
+    assert.ok(prodInsert, 'expected shop_products insert');
+    assert.equal(prodInsert.payload.manual_delivery, true);
+    assert.equal(prodInsert.payload.show_usage_instructions, true);
+
+    const skuUpdate = state.writes.find((w) => w.table === 'shop_product_skus' && (w.mode === 'update' || w.op === 'update'));
+    assert.ok(skuUpdate, 'expected shop_product_skus update');
+    assert.equal(skuUpdate.payload.manual_delivery, true);
+});
+
+test('Xiareng supplier import extracts purchase notes to 注意事项 and sets show_purchase_notes: true', async () => {
+    const { handler, state } = makeXiareng({
+        code: 'XR-1',
+        name: '海外领英LinkedIn-英国IP注册2个月',
+        description: '<p>账号格式：登录邮箱----登录密码</p><p>注意事项：登录2小时内不要改任何信息！</p>',
+        user_price: '18.20',
+        config: { category: { '英国IP': '18.20' } }
+    }, {
+        results: [
+            { data: xrAccount, error: null },
+            { data: null, error: { message: 'function import_shop_supplier_multi_draft_v3 does not exist', code: '42883' } },
+            { data: [], error: null },
+            { data: { id: 'prod-linkedin', name: '海外领英LinkedIn-英国IP注册2个月' }, error: null },
+            { data: { id: 'sku-linkedin' }, error: null }
+        ]
+    });
+    const res = createResponse();
+    await handler({
+        method: 'POST',
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'import',
+            providerId: 'xiareng',
+            accountKey: 'second',
+            site: 'cn',
+            goodsNos: ['XR-1'],
+            autoAllVariants: true
+        }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().success, true);
+
+    const prodInsert = state.writes.find((w) => w.table === 'shop_products' && (w.mode === 'insert' || w.op === 'insert'));
+    assert.ok(prodInsert, 'expected shop_products insert');
+    assert.equal(prodInsert.payload.show_purchase_notes, true);
+    assert.match(prodInsert.payload.purchase_notes, /【特别注意事项】/);
+    assert.match(prodInsert.payload.purchase_notes, /登录2小时内不要改任何信息/);
+    assert.match(prodInsert.payload.purchase_notes, /【购买须知】/);
+    assert.match(prodInsert.payload.purchase_notes, /购买前请确认商品规格、数量和完整说明，价格及库存以本页实时显示为准。/);
+    assert.match(prodInsert.payload.purchase_notes, /付款后，可在订单查询或会员购买记录中查看交付内容。/);
+    assert.match(prodInsert.payload.purchase_notes, /售后时长和适用条件以商品详情中的说明为准。/);
+    assert.match(prodInsert.payload.purchase_notes, /需要售后时，请通过对应订单提交工单，以便核对购买信息。/);
+    assert.equal(prodInsert.payload.purchase_notes_zh, prodInsert.payload.purchase_notes);
+});
+
+test('Xiareng supplier import without specific notes still includes exact upstream 购买须知', async () => {
+    const { handler, state } = makeXiareng({
+        code: 'XR-1',
+        name: '海外领英LinkedIn-英国IP注册3个月',
+        description: '<p>账号格式：登录邮箱----登录密码</p>',
+        user_price: '23.40',
+        config: { category: { '英国IP注册3个月': '23.40' } }
+    }, {
+        results: [
+            { data: xrAccount, error: null },
+            { data: null, error: { message: 'function import_shop_supplier_multi_draft_v3 does not exist', code: '42883' } },
+            { data: [], error: null },
+            { data: { id: 'prod-linkedin-3m', name: '海外领英LinkedIn-英国IP注册3个月' }, error: null },
+            { data: { id: 'sku-linkedin-3m' }, error: null }
+        ]
+    });
+    const res = createResponse();
+    await handler({
+        method: 'POST',
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'import',
+            providerId: 'xiareng',
+            accountKey: 'second',
+            site: 'cn',
+            goodsNos: ['XR-1'],
+            autoAllVariants: true
+        }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().success, true);
+
+    const prodInsert = state.writes.find((w) => w.table === 'shop_products' && (w.mode === 'insert' || w.op === 'insert'));
+    assert.ok(prodInsert, 'expected shop_products insert');
+    assert.equal(prodInsert.payload.show_purchase_notes, true);
+    assert.doesNotMatch(prodInsert.payload.purchase_notes, /【特别注意事项】/);
+    assert.match(prodInsert.payload.purchase_notes, /【购买须知】/);
+    assert.match(prodInsert.payload.purchase_notes, /购买前请确认商品规格、数量和完整说明，价格及库存以本页实时显示为准。/);
+    assert.match(prodInsert.payload.purchase_notes, /付款后，可在订单查询或会员购买记录中查看交付内容。/);
+    assert.match(prodInsert.payload.purchase_notes, /售后时长和适用条件以商品详情中的说明为准。/);
+    assert.match(prodInsert.payload.purchase_notes, /需要售后时，请通过对应订单提交工单，以便核对购买信息。/);
+});
+
+test('Xiareng supplier import gracefully falls back when min_purchase_quantity column is missing in database', async () => {
+    const { handler, state } = makeXiareng({
+        code: 'XR-MIN-QTY',
+        name: '全新长效Hotmail邮箱',
+        user_price: '0.13',
+        stock: 200,
+        minimum: 5,
+        img: 'https://cdn.fatherkey.com/cover.webp',
+        content: '<p>使用说明</p>'
+    }, {
+        results: [
+            { data: xrAccount, error: null },
+            {
+                data: {
+                    status: 'imported_as_draft',
+                    productId: 'prod-fallback-min-qty',
+                    skuId: 'sku-fallback-min-qty',
+                    mappingId: 'map-fallback-min-qty'
+                },
+                error: null
+            },
+            // First shop_products.update fails because min_purchase_quantity column does not exist
+            {
+                data: null,
+                error: { code: 'PGRST204', message: "Could not find the 'min_purchase_quantity' column of 'shop_products' in the schema cache" }
+            },
+            // Second shop_products.update succeeds
+            { data: { id: 'prod-fallback-min-qty' }, error: null },
+            // Sku update
+            { data: { id: 'sku-fallback-min-qty' }, error: null },
+            // Mapping update
+            { data: { id: 'map-fallback-min-qty' }, error: null }
+        ]
+    });
+
+    const res = createResponse();
+    await handler({
+        method: 'POST',
+        url: '/api/admin/shop/supplier-catalog',
+        body: {
+            action: 'import',
+            providerId: 'xiareng',
+            accountKey: 'second',
+            site: 'cn',
+            goodsNos: ['XR-MIN-QTY'],
+            productCategories: { 'XR-MIN-QTY': '微软邮箱' },
+            initialStatus: 'published'
+        }
+    }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().success, true);
+
+    const prodUpdates = state.writes.filter((w) => w.table === 'shop_products' && (w.mode === 'update' || w.op === 'update'));
+    assert.equal(prodUpdates.length, 2, 'should have attempted update twice (initial with minQty, then fallback)');
+    assert.equal(prodUpdates[0].payload.min_purchase_quantity, 5);
+    assert.equal('min_purchase_quantity' in prodUpdates[1].payload, false, 'fallback payload should not have min_purchase_quantity');
+    assert.equal(prodUpdates[1].payload.category, '微软邮箱');
+    assert.equal(prodUpdates[1].payload.is_active, true);
 });

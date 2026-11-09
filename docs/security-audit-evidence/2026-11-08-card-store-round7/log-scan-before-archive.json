@@ -1,0 +1,122 @@
+{
+  "finite_patterns": {
+    "pan_13_19": "(?<!\\d)(?:\\d[ -]?){12,18}\\d(?!\\d)",
+    "jwt": "\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}",
+    "secret_key": "\\b(?:sk_(?:live|test)_[A-Za-z0-9]+|gh[pousr]_[A-Za-z0-9]+|sb_secret_[A-Za-z0-9_-]+|AKIA[A-Z0-9]{16})",
+    "long_opaque": "[A-Za-z0-9_~+/=-]{100,}",
+    "card_security_field": "(?i)[\"\\']?(?:cvc|cvv|card_number|password|access_token|authorization)[\"\\']?\\s*[:=]\\s*[\"\\']?[^\\s,\\'\"}]{3,}"
+  },
+  "results": [
+    {
+      "path": "/tmp/kc-round7-chatgpt-regression.log",
+      "bytes": 10267,
+      "match_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 4,
+        "card_security_field": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round7-fault-vitest-first.log",
+      "bytes": 3290,
+      "match_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round7-fault-vitest-path-fix.log",
+      "bytes": 1509,
+      "match_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round7-initial-vitest.log",
+      "bytes": 37282,
+      "match_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 1
+      }
+    },
+    {
+      "path": "/tmp/kc-round7-kc-regression.log",
+      "bytes": 58773,
+      "match_counts": {
+        "pan_13_19": 7,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 7,
+        "card_security_field": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round7-model-first.log",
+      "bytes": 14182,
+      "match_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round7-native-regression-fixture-fixed.log",
+      "bytes": 41337,
+      "match_counts": {
+        "pan_13_19": 6,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round7-native-regression.log",
+      "bytes": 51613,
+      "match_counts": {
+        "pan_13_19": 6,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round7-vitest-adapted.log",
+      "bytes": 14026,
+      "match_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round7-vitest-helper-fix.log",
+      "bytes": 1508,
+      "match_counts": {
+        "pan_13_19": 0,
+        "jwt": 0,
+        "secret_key": 0,
+        "long_opaque": 0,
+        "card_security_field": 0
+      }
+    }
+  ],
+  "boundary": "Heuristic metadata scan only; no matched values printed."
+}

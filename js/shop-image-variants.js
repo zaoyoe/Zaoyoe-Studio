@@ -3,16 +3,65 @@
     'use strict';
 
     window.__SHOP_IMAGE_VARIANTS__ = Object.freeze({
-    "version": "20260430_RESPONSIVE_IMAGE_VARIANTS_1",
+    "version": "20261107_PRODUCT_IMAGE_VARIANTS_3",
     "basePaths": {
-        "card": "/assets/products-card"
+        "card": "/assets/products-card",
+        "thumb": "/assets/products-thumb"
     },
     "variants": {
         "card": {
             "https://cdn.fatherkey.com/products/46839a81-52b6-4c1d-9f7d-41a9fcfc136c.jpg": "/assets/products-card/46839a81-52b6-4c1d-9f7d-41a9fcfc136c.webp",
             "https://cdn.fatherkey.com/products/50c27963-82cc-4ced-90a8-39abfce7f155.jpg": "/assets/products-card/50c27963-82cc-4ced-90a8-39abfce7f155.webp",
             "https://cdn.fatherkey.com/products/product_1775982177111.jpg": "/assets/products-card/875cdf10-cb5b-4f7f-baae-b747e318a8c3.webp",
-            "https://cdn.fatherkey.com/products/product_1775986763396.jpg": "/assets/products-card/faf47fcd-0ae6-46cb-817a-0971ca9678f8.webp"
+            "https://cdn.fatherkey.com/products/product_1775986763396.jpg": "/assets/products-card/faf47fcd-0ae6-46cb-817a-0971ca9678f8.webp",
+            "https://cdn.fatherkey.com/shop/products/cover/2026/11/2553ff19c5ce9c6500a5.png": "/assets/products-card/f5ae1e086805dbeff67c.webp",
+            "https://cdn.fatherkey.com/shop/products/cover/2026/11/36ea1d05753cf60f98fa.png": "/assets/products-card/9b22f5163825c2cb1671.webp",
+            "https://cdn.fatherkey.com/shop/products/cover/2026/11/5bc135966ce671b68e34.webp": "/assets/products-card/f757f0858de59d8479bb.webp",
+            "https://cdn.fatherkey.com/shop/products/cover/2026/11/67db6d2ea17c2ac1b4f6.png": "/assets/products-card/c0795c4af8819c494f0b.webp",
+            "https://cdn.fatherkey.com/shop/products/cover/2026/11/7edcf2441059890fc496.gif": "/assets/products-card/fc963a711a743d9938d0.webp",
+            "https://cdn.fatherkey.com/shop/products/cover/2026/11/9fabb812811561deedf1.webp": "/assets/products-card/802f6fff1e01d262a452.webp",
+            "https://cdn.zaoyoe.com/products/0e150d10-d38a-4253-9620-f12c1e0d0879.webp": "/assets/products-card/efa5409859ec193439ce.webp",
+            "https://cdn.zaoyoe.com/products/3ccb86f1-ca3a-440f-90d6-5943b0ad17f8.webp": "/assets/products-card/8de0bbbd8328b630b67c.webp",
+            "https://cdn.zaoyoe.com/products/6c0e9169-12b2-4ba7-aa3a-a3e906fc3d5f.webp": "/assets/products-card/4cfdeef0396b015a6b59.webp",
+            "https://cdn.zaoyoe.com/products/89f5b725-90e1-46b6-b0af-02c109ca4d5b.webp": "/assets/products-card/5e171d67258a364e41e6.webp",
+            "https://cdn.zaoyoe.com/products/c2950cdb-a8f0-41f2-b8b8-c6f3702f1d93.webp": "/assets/products-card/58b6792214eed3ca6461.webp",
+            "https://cdn.zaoyoe.com/products/c84931dc-cb18-4b91-89f8-e0c5b45d027d.webp": "/assets/products-card/f74754392025b7c3ece1.webp",
+            "https://cdn.zaoyoe.com/products/d16773a9-538c-44f0-b106-9581034896b8.webp": "/assets/products-card/edbcc7db15b3c76b98f7.webp",
+            "https://cdn.zaoyoe.com/products/f8577051-4865-4f23-b1d5-62f62e341793.webp": "/assets/products-card/0f83137ab096dbc4f653.webp",
+            "https://cdn.zaoyoe.com/products/product_1780214441719.webp": "/assets/products-card/2cd4b46dad8726040bf7.webp",
+            "https://cdn.zaoyoe.com/products/product_1780215032762.webp": "/assets/products-card/f925f1bbdc15b0103683.webp",
+            "https://cdn.zaoyoe.com/products/product_1780215411547.webp": "/assets/products-card/d82ffff5962a53ba8352.webp",
+            "https://cdn.zaoyoe.com/products/product_1780216707921.webp": "/assets/products-card/7aed65d2587df8910d6e.webp",
+            "https://cdn.zaoyoe.com/products/product_1780652677421.webp": "/assets/products-card/98c09405b793a973d7ff.webp",
+            "https://cdn.zaoyoe.com/products/product_1780821544141.webp": "/assets/products-card/84a487ee8f2ab12c926e.webp",
+            "https://cdn.zaoyoe.com/products/product_1781142108015.webp": "/assets/products-card/f407c28008cd530c7c5b.webp",
+            "https://cdn.zaoyoe.com/products/product_1781340896326.webp": "/assets/products-card/0cd096f9a1129548b3c0.webp",
+            "https://cdn.zaoyoe.com/products/product_1781406400192.webp": "/assets/products-card/799be6fed56041df903c.webp"
+        },
+        "thumb": {
+            "https://cdn.fatherkey.com/shop/products/cover/2026/11/2553ff19c5ce9c6500a5.png": "/assets/products-thumb/501d6a6556f2ede2153d.webp",
+            "https://cdn.fatherkey.com/shop/products/cover/2026/11/36ea1d05753cf60f98fa.png": "/assets/products-thumb/fb307b27c7259313b4fb.webp",
+            "https://cdn.fatherkey.com/shop/products/cover/2026/11/5bc135966ce671b68e34.webp": "/assets/products-thumb/272410b83decb0f93f9a.webp",
+            "https://cdn.fatherkey.com/shop/products/cover/2026/11/67db6d2ea17c2ac1b4f6.png": "/assets/products-thumb/0d6ffe330a3ead39dc5a.webp",
+            "https://cdn.fatherkey.com/shop/products/cover/2026/11/7edcf2441059890fc496.gif": "/assets/products-thumb/6a3a0aa34a333419092f.webp",
+            "https://cdn.fatherkey.com/shop/products/cover/2026/11/9fabb812811561deedf1.webp": "/assets/products-thumb/3ca54d0a71542ffb5109.webp",
+            "https://cdn.zaoyoe.com/products/0e150d10-d38a-4253-9620-f12c1e0d0879.webp": "/assets/products-thumb/e438edda0f49fd70b240.webp",
+            "https://cdn.zaoyoe.com/products/3ccb86f1-ca3a-440f-90d6-5943b0ad17f8.webp": "/assets/products-thumb/2f371b833f90ff7c786e.webp",
+            "https://cdn.zaoyoe.com/products/6c0e9169-12b2-4ba7-aa3a-a3e906fc3d5f.webp": "/assets/products-thumb/713390378e1e86cb3b28.webp",
+            "https://cdn.zaoyoe.com/products/89f5b725-90e1-46b6-b0af-02c109ca4d5b.webp": "/assets/products-thumb/c5d044aad85140a575d2.webp",
+            "https://cdn.zaoyoe.com/products/c2950cdb-a8f0-41f2-b8b8-c6f3702f1d93.webp": "/assets/products-thumb/4a7d7c607bbc0c130fd1.webp",
+            "https://cdn.zaoyoe.com/products/c84931dc-cb18-4b91-89f8-e0c5b45d027d.webp": "/assets/products-thumb/3246b7b9bc21f8e295e0.webp",
+            "https://cdn.zaoyoe.com/products/d16773a9-538c-44f0-b106-9581034896b8.webp": "/assets/products-thumb/4284063fc2551f4d0a78.webp",
+            "https://cdn.zaoyoe.com/products/f8577051-4865-4f23-b1d5-62f62e341793.webp": "/assets/products-thumb/50b07cce7fcb7ed61986.webp",
+            "https://cdn.zaoyoe.com/products/product_1780214441719.webp": "/assets/products-thumb/190d7923816f7074b03b.webp",
+            "https://cdn.zaoyoe.com/products/product_1780215032762.webp": "/assets/products-thumb/43b9ffd3d2b8e5250078.webp",
+            "https://cdn.zaoyoe.com/products/product_1780215411547.webp": "/assets/products-thumb/adf5a6085b6195edb6a4.webp",
+            "https://cdn.zaoyoe.com/products/product_1780216707921.webp": "/assets/products-thumb/79aaa5d6eaf0bbfb8f5f.webp",
+            "https://cdn.zaoyoe.com/products/product_1780652677421.webp": "/assets/products-thumb/6960ca1417fb7124c04e.webp",
+            "https://cdn.zaoyoe.com/products/product_1780821544141.webp": "/assets/products-thumb/6d1ce720a821a8500929.webp",
+            "https://cdn.zaoyoe.com/products/product_1781142108015.webp": "/assets/products-thumb/34c2a74f4e769ed17160.webp",
+            "https://cdn.zaoyoe.com/products/product_1781340896326.webp": "/assets/products-thumb/9e9387696c410c7ca209.webp",
+            "https://cdn.zaoyoe.com/products/product_1781406400192.webp": "/assets/products-thumb/d52a9a76bc6cbc240ea3.webp"
         }
     }
 });

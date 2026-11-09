@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "own_pid": 92069,
+  "graceful_sigterm": true,
+  "no_listener_on_23316": true,
+  "datadir_retained": "/private/tmp/kc-hold-7d64646488d639c6/data",
+  "failed_datadir_retained": "/private/tmp/kc-hold-88db804f71ff9b98/data",
+  "no_sql_cleanup_or_drop": true,
+  "data_directory_mode": "0o700"
+}

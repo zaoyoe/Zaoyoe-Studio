@@ -1,0 +1,1146 @@
+--- a/services/kc-pay-gpt/mysql-store.js
++++ b/services/kc-pay-gpt/mysql-store.js
+@@ -14,6 +14,7 @@
+ const { encryptSessionPayload, decryptSessionPayload, fingerprintSessionPayload, redactSensitiveText } = require('./session-security');
+ 
+ const { sealCredential, openCredential } = require('./credential-security');
++const { normalizePaymentState, mergePaymentState, shouldRetainCdk } = require('./task-safety');
+ 
+ const DB_HOST = process.env.DB_HOST || '127.0.0.1';
+ const DB_PORT = Number(process.env.DB_PORT || 3306);
+@@ -122,7 +123,9 @@
+         await connection.commit();
+         return result;
+     } catch (error) {
+-        await connection.rollback();
++        // A disconnect can also make ROLLBACK fail. Preserve the original
++        // write/COMMIT error; neither outcome authorizes a separate unlock.
++        try { await connection.rollback(); } catch (_) { /* original error wins */ }
+         throw error;
+     } finally {
+         connection.release();
+@@ -3108,12 +3111,12 @@
+     gptApiOrderId, gptApiTaskId, gptApiRaw, gptApiTopupCode, autoRenewStatus,
+     executionMode,
+     autoRenewMessage, paymentState, recoveryRequired
+-}) {
++}, options = {}) {
+     const screenshotsJson = Array.isArray(failureScreenshots)
+         ? JSON.stringify(failureScreenshots)
+         : null;
+-    const terminal = ['success', 'failed', 'manual', 'maintenance', 'cancelled'].includes(String(status));
+-    await runExecute(
++    const terminal = options.terminal ?? ['success', 'failed', 'manual', 'maintenance', 'cancelled'].includes(String(status));
++    return runExecute(
+         `UPDATE task_logs
+          SET status = ?,
+              message = COALESCE(?, message),
+@@ -3155,8 +3158,69 @@
+             recoveryRequired == null ? null : (recoveryRequired ? 1 : 0),
+             terminal ? 1 : 0,
+             String(jobKey)
+-        ]
+-    );
++        ],
++        options
++    );
++}
++
++// Ordinary worker updates are bound to the current local task owner. Keep the
++// result, Session deletion and any safe CDK return on one connection/COMMIT.
++// An uncertain COMMIT must propagate; callers may not compensate by CDK alone.
++async function updateLocalActivationTask(jobKey, input = {}, { finalize = false, annotate = false } = {}) {
++    const key = String(jobKey || '');
++    const cdkCode = String(input.cdkCode || '');
++    if (!key || !cdkCode || (finalize && annotate)) return { applied: false, released: false, reason: 'INVALID_INPUT' };
++    return withTransaction(async connection => {
++        // Match admission: CDK -> task -> latest owner -> other blockers.
++        const cdks = await runQuery('SELECT * FROM cdk_codes WHERE cdk_code = ? LIMIT 1 FOR UPDATE', [cdkCode], { connection });
++        const tasks = await runQuery('SELECT * FROM task_logs WHERE job_key = ? LIMIT 1 FOR UPDATE', [key], { connection });
++        const row = tasks[0];
++        if (!row || row.cdk_code !== cdkCode || row.execution_mode !== 'local_card_pool'
++            || row.gpt_api_order_id != null || row.gpt_api_task_id != null || row.gpt_api_raw != null
++            || !cdks[0]?.used_at || Number(cdks[0].is_active) !== 1) {
++            return { applied: false, released: false, reason: 'LOCAL_TASK_REQUIRES_REVIEW' };
++        }
++        const owners = await runQuery('SELECT job_key FROM task_logs WHERE cdk_code = ? ORDER BY id DESC LIMIT 1 FOR UPDATE', [cdkCode], { connection });
++        if (owners[0]?.job_key !== key) return { applied: false, released: false, reason: 'CDK_OWNER_MISMATCH' };
++        if (annotate) {
++            // Only the successful task may record its post-payment auto-renew
++            // result. This path never returns a CDK or reopens a finished task.
++            if (!row.finished_at || !['success', 'manual'].includes(row.status) || row.payment_state !== 'succeeded'
++                || !['success', 'manual'].includes(input.status) || input.paymentState !== 'succeeded') {
++                return { applied: false, released: false, reason: 'ANNOTATION_REFUSED' };
++            }
++        } else if (row.finished_at || !['running', 'manual'].includes(row.status)
++            || !(finalize ? ['success', 'failed', 'manual'] : ['running', 'manual']).includes(input.status)) {
++            return { applied: false, released: false, reason: 'TASK_ALREADY_SETTLED_OR_INVALID' };
++        }
++        const paymentState = mergePaymentState(row.payment_state,
++            Object.prototype.hasOwnProperty.call(input, 'paymentState') ? normalizePaymentState(input.paymentState) : row.payment_state);
++        const confirmedSuccess = (finalize || annotate) && input.status === 'success' && paymentState === 'succeeded';
++        const retain = shouldRetainCdk({ paymentState }) || Boolean(row.recovery_required) || Boolean(input.recoveryRequired);
++        const recoveryRequired = confirmedSuccess ? false : retain || input.status === 'success';
++        const status = annotate ? input.status : (recoveryRequired ? 'manual' : input.status);
++        const released = finalize && status === 'failed' && !recoveryRequired;
++        if (released && await getBlockingActivationTask(connection, cdkCode, key)) {
++            return { applied: false, released: false, reason: 'OTHER_TASK_REQUIRES_REVIEW' };
++        }
++        const message = status === 'manual' && input.status !== 'manual'
++            ? '支付结果或任务状态需人工复核，已保留 CDK 与银行卡' : input.message;
++        const updated = await updateTaskLog(key, {
++            status, message, cdkCode, paymentState, recoveryRequired,
++            rawOutput: input.rawOutput, progress: input.progress, phone: input.phone, cardLast4: input.cardLast4,
++            failureScreenshots: input.failureScreenshots, autoRenewStatus: input.autoRenewStatus, autoRenewMessage: input.autoRenewMessage
++        }, { connection, terminal: finalize || annotate });
++        if (updated.affectedRows !== 1) throw activationAdmissionError('LOCAL_SETTLEMENT_CONFLICT', '充值任务状态已变更', 409);
++        if (finalize) {
++            const cleared = await runExecute('UPDATE task_logs SET session_payload = NULL, session_payload_encrypted = NULL WHERE job_key = ?', [key], { connection });
++            if (cleared.affectedRows !== 1) throw activationAdmissionError('LOCAL_SESSION_CONFLICT', '充值任务凭证清理未确认', 409);
++        }
++        if (released) {
++            const returned = await runExecute('UPDATE cdk_codes SET used_at = NULL WHERE cdk_code = ? AND used_at IS NOT NULL AND is_active = 1', [cdkCode], { connection });
++            if (returned.affectedRows !== 1) throw activationAdmissionError('LOCAL_RELEASE_CONFLICT', '充值卡密归属已变更', 409);
++        }
++        return { applied: true, released, status, paymentState, recoveryRequired, message };
++    });
+ }
+ 
+ async function listStaleRunningTasks(maxAgeMs = 15 * 60 * 1000) {
+@@ -4501,6 +4565,7 @@
+     getTaskStatus,
+     getRunningTaskByCdk,
+     updateTaskLog,
++    updateLocalActivationTask,
+     listRecentGptApiOrders,
+     listProducts,
+     addProduct,
+--- a/services/kc-pay-gpt/server.js
++++ b/services/kc-pay-gpt/server.js
+@@ -3917,12 +3917,55 @@
+         const checkoutScript = path.join(__dirname, 'index.js');
+         let finalRun = null;
+         const allOutputs = [];
+-        let shouldRollbackCdk = true;
++        let settlementClosed = false;
++        let persistenceUncertain = false;
++        let pendingUpdates = Promise.resolve();
+         let observedPaymentState = 'not_started';
+         let lastProgress = 0;
+         const accountEmail = extractEmailFromSession(sessionRaw) || '';
+         const platform = getPlatformForPlan(cdkDetails.plan_type);
+         let lastUsedProxy = '';
++
++        const outputPaymentEvidence = output => {
++            const text = String(output || '');
++            return (text.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g) || [])
++                .reduce((previous, marker) => mergePaymentState(previous, marker.split(':')[1]),
++                    text.includes('支付结果未知') ? 'unknown' : 'not_started');
++        };
++        // stdout callbacks are asynchronous. Serialize their writes and queue
++        // final settlement behind them so a slow callback cannot overwrite it.
++        const persistLocal = (input, options = {}) => {
++            if (Object.prototype.hasOwnProperty.call(input, 'paymentState')) {
++                observedPaymentState = mergePaymentState(observedPaymentState, input.paymentState);
++            }
++            const operation = pendingUpdates.then(async () => {
++                if (settlementClosed && !options.annotate) {
++                    throw new Error('本地充值任务已结算或归属已变更，停止旧 worker 更新');
++                }
++                let result;
++                try {
++                    const uncertain = persistenceUncertain && !options.annotate;
++                    result = await store.updateLocalActivationTask(task.jobKey, {
++                        ...input, cdkCode: cdk,
++                        paymentState: uncertain ? mergePaymentState(observedPaymentState, 'unknown') : observedPaymentState,
++                        ...(uncertain ? { status: 'manual', recoveryRequired: true,
++                            message: '任务状态持久化未确认，已保留资产，需人工复核' } : {})
++                    }, options);
++                } catch (error) {
++                    persistenceUncertain = true;
++                    throw error;
++                }
++                if (!result.applied) {
++                    settlementClosed = true;
++                    throw new Error(`本地充值任务更新被拒绝: ${result.reason || 'TASK_CHANGED'}`);
++                }
++                observedPaymentState = mergePaymentState(observedPaymentState, result.paymentState);
++                if (options.finalize) settlementClosed = true;
++                return result;
++            });
++            pendingUpdates = operation.catch(() => {});
++            return operation;
++        };
+ 
+         try {
+             for (let attempt = 1; attempt <= MAX_PROCESS_ATTEMPTS; attempt += 1) {
+@@ -3991,21 +4034,21 @@
+                                     updatePayload.failureScreenshots = combined;
+                                 }
+                             }
+-                            await store.updateTaskLog(task.jobKey, updatePayload);
++                            const savedProgress = await persistLocal(updatePayload);
+                             broadcastToTask(task.jobKey, {
+                                 type: 'progress',
+                                 jobKey: task.jobKey,
+                                 progress: runningProgress,
+-                                status: 'running',
+-                                message: '正在开通中',
++                                status: savedProgress.status,
++                                message: savedProgress.message || '正在开通中',
+                                 cdkCode: cdk,
+                                 screenshots: liveOutput ? extractTaskMediaFromOutput(liveOutput).screenshots : undefined,
+                                 videos: liveOutput ? extractTaskMediaFromOutput(liveOutput).videos : undefined
+                             });
+                         }
+                     }, async (state, message) => {
+-                        observedPaymentState = normalizePaymentState(state);
+-                        await store.updateTaskLog(task.jobKey, {
++                        observedPaymentState = mergePaymentState(observedPaymentState, state);
++                        await persistLocal({
+                             status: state === 'unknown' ? 'manual' : 'running',
+                             message: message || (state === 'started' ? '正在提交银行卡支付' : '支付状态已更新'),
+                             cdkCode: cdk,
+@@ -4019,11 +4062,9 @@
+                 allOutputs.push(`===== ATTEMPT ${attempt}${cardLast4 ? ` | CARD ${cardLast4}` : ''} =====\n${run.output}`);
+                 finalRun = { ...run, output: allOutputs.join('\n\n') };
+                 const attemptPaymentState = normalizePaymentState(
+-                    run.analysis.paymentState
+-                    || (run.output.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g)?.slice(-1)[0]?.split(':')[1])
+-                    || (run.output.includes('支付结果未知') ? 'unknown' : 'not_started')
++                    mergePaymentState(run.analysis.paymentState || 'not_started', outputPaymentEvidence(run.output))
+                 );
+-                observedPaymentState = attemptPaymentState;
++                observedPaymentState = mergePaymentState(observedPaymentState, attemptPaymentState);
+                 if (task.executionMode === 'local_card_pool'
+                     && platform === 'chatgpt'
+                     && sessionCooldownScopeKey
+@@ -4037,8 +4078,8 @@
+                     }
+                 }
+                 if (attemptPaymentState) {
+-                    await store.updateTaskLog(task.jobKey, {
+-                        status: run.analysis.status === 'success' ? 'success' : 'running',
++                    await persistLocal({
++                        status: 'running',
+                         paymentState: attemptPaymentState,
+                         recoveryRequired: ['started', 'unknown'].includes(normalizePaymentState(attemptPaymentState)),
+                         cdkCode: cdk,
+@@ -4049,16 +4090,16 @@
+                     logTask(task.jobKey, '支付结果未知，停止后续自动重试并转人工复核', 'warn');
+                 }
+ 
+-                const currentStatus = run.analysis.status === 'success' ? 'success' : 'running';
++                const currentStatus = 'running';
+                 const currentProgress = normalizeTaskProgress(
+                     getCheckoutProgress(run.output, currentStatus),
+                     currentStatus,
+                     lastProgress
+                 );
+                 lastProgress = currentProgress;
+-                await store.updateTaskLog(task.jobKey, {
++                const savedAttempt = await persistLocal({
+                     status: currentStatus,
+-                    message: currentStatus === 'success' ? '激活成功' : (attemptPaymentState === 'unknown' ? '支付结果未确认，转人工复核' : '正在开通中'),
++                    message: attemptPaymentState === 'unknown' ? '支付结果未确认，转人工复核' : '正在开通中',
+                     rawOutput: finalRun.output,
+                     progress: currentProgress,
+                     cdkCode: cdk,
+@@ -4071,13 +4112,13 @@
+                     type: 'progress',
+                     jobKey: task.jobKey,
+                     progress: currentProgress,
+-                    status: currentStatus,
+-                    message: currentStatus === 'success' ? '激活成功' : '正在开通中',
++                    status: savedAttempt.status,
++                    message: savedAttempt.message || '正在开通中',
+                     cdkCode: cdk,
+                     cardLast4
+                 });
+ 
+-                if (shouldRetainCdk({ paymentState: attemptPaymentState }) || !run.analysis.shouldRetry || attempt >= MAX_PROCESS_ATTEMPTS) {
++                if (persistenceUncertain || shouldRetainCdk({ paymentState: observedPaymentState }) || !run.analysis.shouldRetry || attempt >= MAX_PROCESS_ATTEMPTS) {
+                     logTask(task.jobKey, `尝试 ${attempt} 结束，status=${run.analysis.status} shouldRetry=${run.analysis.shouldRetry}`);
+                     break;
+                 }
+@@ -4087,152 +4128,17 @@
+ 
+             const rawOutput = finalRun?.output || '';
+             const normalizedAnalysis = finalizeRetryAnalysis(finalRun?.analysis);
+-            const outputPaymentState = rawOutput.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g)?.slice(-1)[0]?.split(':')[1]
+-                || (rawOutput.includes('支付结果未知') ? 'unknown' : 'not_started');
+-            const finalPaymentState = mergePaymentState(
+-                outputPaymentState,
+-                normalizedAnalysis?.paymentState || 'not_started'
+-            );
+-            const finalStatus = ['started', 'unknown'].includes(finalPaymentState)
+-                ? 'manual'
+-                : (normalizedAnalysis?.status || 'failed');
+-            observedPaymentState = finalPaymentState;
+-            if (shouldRetainCdk({ paymentState: finalPaymentState })) {
+-                shouldRollbackCdk = false;
+-            }
++            const outputPaymentState = outputPaymentEvidence(rawOutput);
++            let finalPaymentState = mergePaymentState(observedPaymentState, mergePaymentState(
++                outputPaymentState, normalizedAnalysis?.paymentState || 'not_started'));
++            let finalStatus = ['started', 'unknown'].includes(finalPaymentState)
++                ? 'manual' : (normalizedAnalysis?.status || 'failed');
++            let finalMessage = normalizedAnalysis?.message || null;
++            observedPaymentState = mergePaymentState(observedPaymentState, finalPaymentState);
+ 
+             const finalProgress = normalizeTaskProgress(finalStatus === 'success' ? 100 : lastProgress, finalStatus, lastProgress);
+             const taskMedia = extractTaskMediaFromOutput(rawOutput);
+             const failureScreenshots = [...taskMedia.screenshots, ...taskMedia.videos];
+-            await store.updateTaskLog(task.jobKey, {
+-                status: finalStatus,
+-                message: normalizedAnalysis?.message || null,
+-                rawOutput,
+-                cdkCode: cdk,
+-                progress: finalProgress,
+-                failureScreenshots,
+-                paymentState: finalPaymentState || 'not_started',
+-                recoveryRequired: ['started', 'unknown'].includes(normalizePaymentState(finalPaymentState))
+-            });
+-
+-            broadcastToTask(task.jobKey, {
+-                type: 'status',
+-                jobKey: task.jobKey,
+-                status: finalStatus,
+-                message: normalizedAnalysis?.message,
+-                paymentState: finalPaymentState,
+-                recoveryRequired: ['started', 'unknown'].includes(finalPaymentState),
+-                cdkCode: cdk,
+-                progress: finalProgress,
+-                screenshots: taskMedia.screenshots,
+-                videos: taskMedia.videos
+-            });
+-
+-            logTask(
+-                task.jobKey,
+-                `任务结束 status=${finalStatus} progress=${finalProgress} message=${normalizedAnalysis?.message || ''}`
+-            );
+-
+-            if (finalStatus === 'success') {
+-                shouldRollbackCdk = false;
+-                let needsManualReview = false;
+-                if (task.executionMode === 'local_card_pool' || !task.executionMode) {
+-                    let autoRenewResult;
+-                    try {
+-                        const workerAutoRenew = extractAutoRenewResultFromOutput(rawOutput);
+-                        if (workerAutoRenew) {
+-                            autoRenewResult = workerAutoRenew;
+-                        } else if (platform === 'chatgpt') {
+-                            autoRenewResult = await cancelAutoRenew(token, {
+-                                email: accountEmail,
+-                                timezoneOffsetMin: -new Date().getTimezoneOffset(),
+-                                proxy: lastUsedProxy
+-                            });
+-                        } else {
+-                            autoRenewResult = {
+-                                ok: false,
+-                                data: { verificationUnknown: true },
+-                                error: `${platform} 充值已完成，自动续费状态需人工核实`
+-                            };
+-                        }
+-                    } catch (error) {
+-                        autoRenewResult = {
+-                            ok: false,
+-                            error: `取消自动续费请求异常：${redactSensitiveText(error.message)}`,
+-                            data: { verificationUnknown: true }
+-                        };
+-                    }
+-                    const autoRenewData = autoRenewResult.data || {};
+-                    const autoRenewClass = classifyAutoRenewCancellation(autoRenewResult);
+-                    const autoRenewStatus = autoRenewClass === 'already_disabled' ? 'disabled'
+-                        : (autoRenewClass === 'verification_unknown' ? 'verification_unknown' : 'failed');
+-                    const autoRenewConfirmed = autoRenewStatus === 'disabled';
+-                    const autoRenewMessage = autoRenewConfirmed
+-                        ? '充值完成，自动续费已确认关闭'
+-                        : (autoRenewData.message || autoRenewResult.error || '充值成功，但自动续费关闭状态未确认，请人工复核');
+-                    needsManualReview = !autoRenewConfirmed;
+-                    await store.updateTaskLog(task.jobKey, {
+-                        status: needsManualReview ? 'manual' : 'success',
+-                        message: needsManualReview ? '充值已完成，但自动续费关闭状态未确认，请联系客服人工复核' : '激活成功',
+-                        autoRenewStatus,
+-                        autoRenewMessage,
+-                        paymentState: 'succeeded',
+-                        recoveryRequired: needsManualReview
+-                    });
+-                    logTask(task.jobKey, `自动续费处理结果=${autoRenewStatus}`, autoRenewConfirmed ? 'info' : 'warn');
+-                    if (needsManualReview) {
+-                        notifyTaskOutcome({
+-                            event: 'failure',
+-                            email: accountEmail,
+-                            cdk,
+-                            jobKey: task.jobKey,
+-                            message: '充值已完成，但自动续费关闭状态未确认，请联系客服人工复核'
+-                        });
+-                    }
+-                }
+-                if (!needsManualReview) {
+-                    await store.resetCdkFailure(cdk);
+-                }
+-                if (clientIp && !needsManualReview) {
+-                    await store.resetActivationAttemptFailure('ip', clientIp);
+-                }
+-                if (!needsManualReview) {
+-                    notifyTaskOutcome({
+-                        event: 'success',
+-                        email: accountEmail,
+-                        cdk,
+-                        jobKey: task.jobKey,
+-                        message: normalizedAnalysis?.message || '激活成功'
+-                    });
+-                }
+-            } else if (isCardPoolExhaustedIssue(rawOutput, normalizedAnalysis)) {
+-                notifyTaskOutcome({
+-                    event: 'card_pool_empty',
+-                    email: accountEmail,
+-                    cdk,
+-                    jobKey: task.jobKey,
+-                    message: normalizedAnalysis?.message || '卡池资产枯竭'
+-                });
+-            } else if (finalStatus === 'failed' || finalStatus === 'manual') {
+-                notifyTaskOutcome({
+-                    event: 'failure',
+-                    email: accountEmail,
+-                    cdk,
+-                    jobKey: task.jobKey,
+-                    message: normalizedAnalysis?.message || '激活失败'
+-                });
+-            }
+-
+-            if (finalStatus === 'success') {
+-                logTask(task.jobKey, `CDK [REDACTED] 已成功核销`);
+-            } else if (shouldRollbackCdk && finalPaymentState !== 'unknown') {
+-                await store.markCdkUnused(cdk);
+-                logTask(task.jobKey, `CDK [REDACTED] 已回滚为未使用`);
+-                await store.releaseCardsByOwner(task.jobKey).catch(() => {});
+-            } else if (shouldRetainCdk({ paymentState: finalPaymentState })) {
+-                logTask(task.jobKey, `CDK [REDACTED] 保留，等待人工核对支付结果`, 'warn');
+-            }
+-
+             if (isNoActivationEligibilityMessage(normalizedAnalysis?.message)) {
+                 const cdkCooledDown = await store.recordCdkFailure(cdk);
+                 const ipCooledDown = clientIp
+@@ -4250,48 +4156,169 @@
+                         logTask(task.jobKey, `IP ${clientIp} 因连续无资格提交进入 10 分钟冷却`, 'warn');
+                     }
+                     const cooldownMessage = `${normalizedAnalysis?.message || '该账号无激活权限,请更换账号重试'}（${cooldownParts.join('，')}）`;
+-                    await store.updateTaskLog(task.jobKey, {
+-                        status: finalStatus,
+-                        message: cooldownMessage,
+-                        rawOutput,
+-                        cdkCode: cdk,
+-                        progress: finalProgress
+-                    });
+-                    broadcastToTask(task.jobKey, {
+-                        type: 'status',
+-                        jobKey: task.jobKey,
+-                        status: finalStatus,
+-                        message: cooldownMessage,
+-                        cdkCode: cdk,
+-                        progress: finalProgress
+-                    });
++                    finalMessage = cooldownMessage;
+                 }
+             }
++            // Payment completion and auto-renew confirmation are separate
++            // decisions. Persist a recoverable pending result before making
++            // the external cancellation request; a crash or failed annotation
++            // must not leave an unverified task advertised as successful.
++            const autoRenewPending = finalStatus === 'success' && finalPaymentState === 'succeeded'
++                && task.executionMode === 'local_card_pool' && !persistenceUncertain;
++            if (autoRenewPending) {
++                finalStatus = 'manual';
++                finalMessage = '充值已完成，正在核实自动续费状态，请勿重复充值';
++            } else if (['started', 'unknown'].includes(finalPaymentState)) {
++                finalMessage = '支付结果未确认，已保留 CDK 与银行卡，需人工复核，请勿重复充值';
++            }
++            const settlement = await persistLocal({
++                status: finalStatus,
++                message: finalMessage,
++                rawOutput,
++                cdkCode: cdk,
++                progress: finalProgress,
++                failureScreenshots,
++                paymentState: finalPaymentState || 'not_started',
++                recoveryRequired: autoRenewPending || ['started', 'unknown'].includes(normalizePaymentState(finalPaymentState)),
++                ...(autoRenewPending ? { autoRenewStatus: 'pending', autoRenewMessage: finalMessage } : {})
++            }, { finalize: true });
++            finalStatus = settlement.status;
++            finalPaymentState = settlement.paymentState;
++            finalMessage = settlement.message || finalMessage;
++
++            broadcastToTask(task.jobKey, {
++                type: 'status',
++                jobKey: task.jobKey,
++                status: finalStatus,
++                message: finalMessage,
++                paymentState: finalPaymentState,
++                recoveryRequired: settlement.recoveryRequired,
++                cdkCode: cdk,
++                progress: finalProgress,
++                screenshots: taskMedia.screenshots,
++                videos: taskMedia.videos
++            });
++
++            logTask(
++                task.jobKey,
++                `任务结算 status=${finalStatus} progress=${finalProgress} message=${finalMessage || ''}`
++            );
++
++            if (autoRenewPending && !persistenceUncertain && finalPaymentState === 'succeeded') {
++                let autoRenewResult;
++                try {
++                    const workerAutoRenew = extractAutoRenewResultFromOutput(rawOutput);
++                    if (workerAutoRenew) {
++                        autoRenewResult = workerAutoRenew;
++                    } else if (platform === 'chatgpt') {
++                        autoRenewResult = await cancelAutoRenew(token, {
++                            email: accountEmail,
++                            timezoneOffsetMin: -new Date().getTimezoneOffset(),
++                            proxy: lastUsedProxy
++                        });
++                    } else {
++                        autoRenewResult = {
++                            ok: false,
++                            data: { verificationUnknown: true },
++                            error: `${platform} 充值已完成，自动续费状态需人工核实`
++                        };
++                    }
++                } catch (error) {
++                    autoRenewResult = {
++                        ok: false,
++                        error: `取消自动续费请求异常：${redactSensitiveText(error.message)}`,
++                        data: { verificationUnknown: true }
++                    };
++                }
++                const autoRenewData = autoRenewResult.data || {};
++                const autoRenewClass = classifyAutoRenewCancellation(autoRenewResult);
++                const autoRenewStatus = autoRenewClass === 'already_disabled' ? 'disabled'
++                    : (autoRenewClass === 'verification_unknown' ? 'verification_unknown' : 'failed');
++                const autoRenewConfirmed = autoRenewStatus === 'disabled';
++                const autoRenewMessage = autoRenewConfirmed
++                    ? '充值完成，自动续费已确认关闭'
++                    : (autoRenewData.message || autoRenewResult.error || '充值成功，但自动续费关闭状态未确认，请人工复核');
++                const renewal = await persistLocal({
++                    status: autoRenewConfirmed ? 'success' : 'manual',
++                    message: autoRenewConfirmed ? '激活成功' : '充值已完成，但自动续费关闭状态未确认，请联系客服人工复核',
++                    autoRenewStatus,
++                    autoRenewMessage,
++                    paymentState: 'succeeded',
++                    recoveryRequired: !autoRenewConfirmed
++                }, { annotate: true });
++                finalStatus = renewal.status;
++                finalPaymentState = renewal.paymentState;
++                finalMessage = renewal.message;
++                broadcastToTask(task.jobKey, { type: 'status', jobKey: task.jobKey, cdkCode: cdk,
++                    status: finalStatus, message: finalMessage, paymentState: finalPaymentState,
++                    recoveryRequired: renewal.recoveryRequired, progress: finalProgress });
++                logTask(task.jobKey, `自动续费处理结果=${autoRenewStatus}`, autoRenewConfirmed ? 'info' : 'warn');
++            }
++            if (finalStatus === 'success') {
++                await store.resetCdkFailure(cdk);
++                if (clientIp) {
++                    await store.resetActivationAttemptFailure('ip', clientIp);
++                }
++                notifyTaskOutcome({
++                    event: 'success',
++                    email: accountEmail,
++                    cdk,
++                    jobKey: task.jobKey,
++                    message: finalMessage || '激活成功'
++                });
++            } else if (finalStatus === 'failed' && isCardPoolExhaustedIssue(rawOutput, normalizedAnalysis)) {
++                notifyTaskOutcome({
++                    event: 'card_pool_empty',
++                    email: accountEmail,
++                    cdk,
++                    jobKey: task.jobKey,
++                    message: finalMessage || '卡池资产枯竭'
++                });
++            } else if (finalStatus === 'failed' || finalStatus === 'manual') {
++                notifyTaskOutcome({
++                    event: 'failure',
++                    email: accountEmail,
++                    cdk,
++                    jobKey: task.jobKey,
++                    message: finalMessage || (finalStatus === 'manual' ? '需人工复核，请勿重复充值' : '激活失败')
++                });
++            }
++
++            if (finalStatus === 'success') {
++                logTask(task.jobKey, `CDK [REDACTED] 已成功核销`);
++            } else if (settlement.released) {
++                logTask(task.jobKey, `CDK [REDACTED] 已回滚为未使用`);
++                await store.releaseCardsByOwner(task.jobKey).catch(() => {});
++            } else if (shouldRetainCdk({ paymentState: finalPaymentState })) {
++                logTask(task.jobKey, `CDK [REDACTED] 保留，等待人工核对支付结果`, 'warn');
++            }
++
+         } catch (bgError) {
+             logTask(task.jobKey, `后台任务异常: ${redactSensitiveText(bgError.message)}`, 'error');
+-            let retainCdk = !shouldRollbackCdk || shouldRetainCdk({ paymentState: observedPaymentState });
+-            try {
+-                const latestTask = await store.getTaskStatus(task.jobKey);
+-                retainCdk = retainCdk || (latestTask && shouldRetainCdk({ paymentState: latestTask.payment_state }))
+-                    || Boolean(latestTask?.recovery_required);
+-            } catch (_) { retainCdk = true; }
++            // A refused/finished task belongs to another decision already. An
++            // uncertain write can only be retried through the same guarded
++            // transaction, with assets retained and no speculative notification.
++            if (settlementClosed) return;
++            const retainCdk = persistenceUncertain || shouldRetainCdk({ paymentState: observedPaymentState });
+             const status = retainCdk ? 'manual' : 'failed';
+-            const paymentState = retainCdk && observedPaymentState === 'not_started' ? 'unknown' : observedPaymentState;
+-            const message = retainCdk ? '支付结果未确认，已保留 CDK 与银行卡，需人工复核' : bgError.message;
++            const paymentState = persistenceUncertain ? mergePaymentState(observedPaymentState, 'unknown') : observedPaymentState;
++            const message = retainCdk ? '支付结果未确认，已保留 CDK 与银行卡，需人工复核' : '任务执行异常，请稍后重试或联系客服';
+             const update = { status, message, rawOutput: redactSensitiveText(bgError.message), cdkCode: cdk,
+                 paymentState, recoveryRequired: retainCdk, progress: normalizeTaskProgress(lastProgress, status, lastProgress) };
++            let settlement;
+             await reportTaskFailure({
+-                persist: () => store.updateTaskLog(task.jobKey, update),
++                persist: async () => { settlement = await persistLocal(update, { finalize: true }); },
+                 report: () => {
+-                    broadcastToTask(task.jobKey, { ...update, type: 'status', jobKey: task.jobKey });
+-                    notifyTaskOutcome({ event: 'failure', email: accountEmail, cdk, jobKey: task.jobKey, message });
++                    if (!settlement?.applied) return;
++                    const saved = { ...update, status: settlement.status, message: settlement.message || message,
++                        paymentState: settlement.paymentState, recoveryRequired: settlement.recoveryRequired };
++                    broadcastToTask(task.jobKey, { ...saved, type: 'status', jobKey: task.jobKey });
++                    notifyTaskOutcome({ event: 'failure', email: accountEmail, cdk, jobKey: task.jobKey, message: saved.message });
+                 },
+                 cleanup: async () => {
+-                    if (!retainCdk) {
+-                        await store.markCdkUnused(cdk);
+-                        logTask(task.jobKey, `CDK [REDACTED] 已回滚为未使用`);
+-                    } else {
+-                        logTask(task.jobKey, `CDK [REDACTED] 保留，等待人工复核`, 'warn');
++                    if (settlement?.released) {
++                        logTask(task.jobKey, 'CDK [REDACTED] 已在任务结算事务中归还');
++                        await store.releaseCardsByOwner(task.jobKey);
+                     }
+                 },
+                 onSecondaryError: (stage, error) => logTask(task.jobKey,
+--- a/services/kc-pay-gpt/test/recharge-routing.test.js
++++ b/services/kc-pay-gpt/test/recharge-routing.test.js
+@@ -342,30 +342,76 @@
+     });
+ });
+ 
+-function spawnHarness({ state = 'not_started', failPersist = false, latestState = null,
+-    platform = 'grok', executionMode = 'local_card_pool', runOutput = null, sessionCooldownScopeKey = 'fixture-session-fingerprint' } = {}) {
++function spawnHarness({ state = 'not_started', failPersist = false, failAt = 0, refuseAt = 0,
++    refuseFinal = false, failFinal = false, loseFinalResponse = false, failAnnotation = false,
++    refuseAnnotation = false, loseAnnotationResponse = false, autoRenewError = false, cardPoolEmpty = false,
++    workerError = 'fixture worker interruption',
++    latestState = null, paymentSequence = null, unawaitedPayments = false,
++    platform = 'grok', executionMode = 'local_card_pool', runOutput = null, runStatus = 'failed',
++    autoRenewConfirmed = false, sessionCooldownScopeKey = 'fixture-session-fingerprint' } = {}) {
+     let done; const finished = new Promise(resolve => { done = resolve; });
++    let savedState = latestState || 'not_started', settled = false, writes = 0, paymentCallback, finalFailed = false;
++    const events = [];
+     const store = {
+         getPaymentRegion: async () => 'US', getActiveProxy: async () => '', getHcaptchaConfig: async () => ({}),
+-        updateTaskLog: vi.fn(async () => { if (failPersist) throw new Error('fixture persistence failure'); }),
+-        getTaskStatus: async () => ({ payment_state: latestState || state }), markCdkUnused: vi.fn(async () => {}),
++        updateTaskLog: vi.fn(), markCdkUnused: vi.fn(), getTaskStatus: vi.fn(),
++        updateLocalActivationTask: vi.fn(async (_key, input, options = {}) => {
++            events.push({ type: 'write', input, options });
++            writes += 1;
++            if (failPersist || writes === failAt || (failAnnotation && options.annotate)) throw new Error('fixture persistence failure');
++            if (failFinal && options.finalize && !finalFailed) {
++                finalFailed = true;
++                throw new Error('fixture final write failed before commit');
++            }
++            if (writes === refuseAt || (options.finalize && refuseFinal) || (options.annotate && refuseAnnotation) || (settled && !options.annotate)) {
++                return { applied: false, released: false, reason: 'OFFLINE_OWNER_CHANGED' };
++            }
++            // The store itself is exercised separately through its real SQL.
++            // Here return the effective persisted evidence for the worker flow.
++            await Promise.resolve();
++            savedState = safety.mergePaymentState(savedState, input.paymentState);
++            const confirmed = (options.finalize || options.annotate) && input.status === 'success' && savedState === 'succeeded';
++            const recoveryRequired = !confirmed && (safety.shouldRetainCdk({ paymentState: savedState }) || !!input.recoveryRequired);
++            const status = options.annotate ? input.status : recoveryRequired ? 'manual' : input.status;
++            if (options.finalize) settled = true;
++            const result = { applied: true, status, paymentState: savedState, recoveryRequired,
++                released: !!options.finalize && status === 'failed' && !recoveryRequired,
++                message: status === 'manual' && input.status !== 'manual'
++                    ? '支付结果或任务状态需人工复核，已保留 CDK 与银行卡' : input.message };
++            events.push({ type: 'saved', result, options });
++            if ((loseFinalResponse && options.finalize) || (loseAnnotationResponse && options.annotate)) throw new Error('fixture commit response lost');
++            return result;
++        }),
++        releaseCardsByOwner: vi.fn(async () => { events.push({ type: 'releaseCards' }); }),
++        resetCdkFailure: vi.fn(async () => {}), resetActivationAttemptFailure: vi.fn(async () => {}),
+         getMaintenanceModeState: async () => ({ enabled: false }),
+         setActivationAttemptCooldown: vi.fn(async () => {})
+     };
+     let runtimeEnv;
+     const sandbox = { ...safety, ...sessions, path, __dirname: root, process: { env: { CHATGPT_TOKEN: 'unrelated-token' } },
+         store, buildActivationCredentialEnv, getPlatformForPlan, reportTaskFailure, redactSensitiveText: s => s,
+-        MAX_PROCESS_ATTEMPTS: 2, normalizeTaskProgress: p => p, logTask() {}, broadcastToTask: vi.fn(),
+-        notifyTaskOutcome: vi.fn(),
++        MAX_PROCESS_ATTEMPTS: 2, normalizeTaskProgress: p => p, logTask() {},
++        broadcastToTask: vi.fn((_key, value) => { events.push({ type: 'broadcast', value }); }),
++        notifyTaskOutcome: vi.fn(value => { events.push({ type: 'notify', value }); }),
++        finalizeRetryAnalysis: analysis => analysis, isNoActivationEligibilityMessage: () => false,
++        isCardPoolExhaustedIssue: () => cardPoolEmpty, extractAutoRenewResultFromOutput: () => null,
++        cancelAutoRenew: vi.fn(async () => {
++            events.push({ type: 'autoRenewCheck' });
++            if (autoRenewError) throw new Error('offline cancellation error');
++            return { ok: true, data: autoRenewConfirmed ? { alreadyCancelled: true } : { verificationUnknown: true } };
++        }),
+         buildHcaptchaEnvFromConfig: () => ({ env: {} }), extractCardLast4FromOutput: () => null,
+         extractTaskMediaFromOutput: () => ({ screenshots: [], videos: [] }), getCheckoutProgress: () => 10,
+         getTotalActiveJobs: () => 1, releaseForegroundSlot: () => done(),
+         runCheckoutScript: async (_key, _script, env, _attempt, _progress, payment) => {
+-            runtimeEnv = env;
++            runtimeEnv = env; paymentCallback = payment;
++            const pending = (paymentSequence || (runOutput === null ? [state] : [])).map(value => payment(value));
++            if (!unawaitedPayments) await Promise.all(pending);
++            else pending.forEach(operation => operation.catch(() => {}));
+             if (runOutput !== null) {
+-                return { output: runOutput, analysis: { status: 'failed', message: 'offline fixture', paymentState: state, shouldRetry: false } };
++                return { output: runOutput, analysis: { status: runStatus, message: 'offline fixture', paymentState: state, shouldRetry: false } };
+             }
+-            await payment(state); throw new Error('fixture worker interruption');
++            throw new Error(workerError);
+         },
+         spawnWorkerWithBrowser: ({ runtimeEnv, runScript }) => runScript(runtimeEnv), console: { error() {} }
+     };
+@@ -375,19 +421,27 @@
+     const token = platform === 'chatgpt' ? jwt : 'offline-token';
+     sandbox.spawnActivationWorker({ task: { jobKey: 'fixture-job', executionMode }, token,
+         sessionRaw: fixture?.credential || '', cdk: 'OFFLINE-CDK', cdkDetails: { platform, plan_type: planType }, clientIp: '', sessionCooldownScopeKey });
+-    return finished.then(() => ({ store, runtimeEnv, sandbox }));
++    return finished.then(() => ({ store, runtimeEnv, sandbox, events, paymentCallback }));
+ }
+ 
+ describe('server dispatch and interruption preserve payment resources', () => {
+     it('dispatches Grok raw cookies and clears inherited GPT credentials', async () => {
+         const h = await spawnHarness();
+         expect(h.runtimeEnv).toMatchObject({ PLATFORM: 'grok', GROK_TOKEN: fixtures[0].credential, CHATGPT_TOKEN: '', CHATGPT_SESSION_JSON: '', CLAUDE_SESSION_KEY: '' });
+-        expect(h.store.markCdkUnused).toHaveBeenCalledOnce();
++        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
++        expect(h.store.releaseCardsByOwner).toHaveBeenCalledOnce();
++        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
++            expect.objectContaining({ status: 'failed', paymentState: 'not_started' }), { finalize: true });
++        const saved = h.events.findIndex(event => event.type === 'saved' && event.options.finalize);
++        expect(h.events.findIndex(event => event.type === 'notify')).toBeGreaterThan(saved);
++        expect(h.events.findIndex(event => event.type === 'releaseCards')).toBeGreaterThan(saved);
+     });
+     it.each(['started', 'unknown', 'succeeded'])('retains %s even when saving the state fails', async state => {
+         const h = await spawnHarness({ state, failPersist: true, latestState: 'not_started' });
+         expect(h.store.markCdkUnused).not.toHaveBeenCalled();
+-        expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'manual', recoveryRequired: true }));
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++        expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
++        expect(h.sandbox.broadcastToTask.mock.calls.some(([, event]) => event.type === 'status')).toBe(false);
+     });
+     it('cools a ChatGPT Session after unusual activity only before payment starts', async () => {
+         const h = await spawnHarness({ platform: 'chatgpt', runOutput: '[CHECKOUT_UNUSUAL_ACTIVITY]', sessionCooldownScopeKey: 'a'.repeat(64) });
+@@ -403,6 +457,163 @@
+         const h = await spawnHarness({ runOutput: '[CHECKOUT_UNUSUAL_ACTIVITY]', ...options });
+         expect(h.store.setActivationAttemptCooldown).not.toHaveBeenCalled();
+     });
++    it('keeps worker exception details out of the saved and reported public message', async () => {
++        const h = await spawnHarness({ workerError: 'offline internal diagnostic: synthetic-secret-fixture' });
++        const finalWrite = h.events.find(event => event.type === 'write' && event.options.finalize);
++        expect(finalWrite.input.message).toBe('任务执行异常，请稍后重试或联系客服');
++        const status = h.events.filter(event => event.type === 'broadcast' && event.value.type === 'status').at(-1).value;
++        expect(status.message).toBe(finalWrite.input.message);
++        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ message: status.message }));
++        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
++    });
++    it('retains assets after a transient persistence failure and only reports the saved manual result', async () => {
++        const h = await spawnHarness({ failAt: 1 });
++        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
++            expect.objectContaining({ status: 'manual', paymentState: 'unknown', recoveryRequired: true }), { finalize: true });
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
++        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledOnce();
++        expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ type: 'status', status: 'manual' }));
++    });
++    it.each([{ refuseAt: 1 }, { refuseFinal: true }])('stops refused settlement without a fallback unlock or completion notice: %j', async options => {
++        const h = await spawnHarness(options);
++        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
++        expect(h.store.updateTaskLog).not.toHaveBeenCalled();
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++        expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
++    });
++    it('retains assets after a rejected final write and only reports a confirmed manual settlement', async () => {
++        const h = await spawnHarness({ state: 'not_started', runOutput: 'offline output', failFinal: true });
++        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
++            expect.objectContaining({ status: 'manual', paymentState: 'unknown', recoveryRequired: true }), { finalize: true });
++        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledOnce();
++        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'failure' }));
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
++    });
++    it('does not compensate or report completion when the final commit response is lost', async () => {
++        const h = await spawnHarness({ state: 'not_started', runOutput: 'offline output', loseFinalResponse: true });
++        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++        expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
++        expect(h.sandbox.broadcastToTask).not.toHaveBeenCalledWith('fixture-job', expect.objectContaining({ type: 'status' }));
++    });
++    it('uses persisted stronger evidence when the worker fails before payment', async () => {
++        const h = await spawnHarness({ latestState: 'succeeded' });
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++        expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({
++            type: 'status', status: 'manual', paymentState: 'succeeded', recoveryRequired: true }));
++        const status = h.events.filter(event => event.type === 'broadcast' && event.value.type === 'status').at(-1).value;
++        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'failure', message: status.message }));
++        expect(status.message).toContain('人工复核');
++    });
++    it('uses the persisted review message for normal completion and does not report card-pool exhaustion', async () => {
++        const h = await spawnHarness({ latestState: 'succeeded', runOutput: 'offline failed result', cardPoolEmpty: true });
++        const status = h.events.filter(event => event.type === 'broadcast' && event.value.type === 'status').at(-1).value;
++        expect(status).toMatchObject({ status: 'manual', paymentState: 'succeeded', recoveryRequired: true });
++        expect(status.message).toContain('人工复核');
++        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ event: 'failure', message: status.message }));
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++    });
++    it('serializes unawaited stdout callbacks before finalization and does not downgrade payment evidence', async () => {
++        const h = await spawnHarness({ state: 'not_started', paymentSequence: ['started', 'not_started'],
++            unawaitedPayments: true, runOutput: 'offline output' });
++        const finalWrite = h.events.find(event => event.type === 'write' && event.options.finalize);
++        expect(finalWrite.input.paymentState).toBe('started');
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++        expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ type: 'status', status: 'manual' }));
++    });
++    it('preserves a started marker even when a single output chunk ends with declined', async () => {
++        const h = await spawnHarness({ state: 'declined', runOutput: 'PAYMENT_STATE:started\nPAYMENT_STATE:declined' });
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
++            expect.objectContaining({ paymentState: 'started' }), { finalize: true });
++    });
++    it('retains assets when legacy output reports an unknown payment without a state marker', async () => {
++        const h = await spawnHarness({ state: 'not_started', runOutput: '支付结果未知，请人工复核' });
++        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
++            expect.objectContaining({ status: 'manual', paymentState: 'unknown', recoveryRequired: true }), { finalize: true });
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
++    });
++    it('accepts affirmative success after an earlier legacy unknown-payment message', async () => {
++        const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
++            runOutput: '支付结果未知\nPAYMENT_STATE:succeeded', autoRenewConfirmed: true });
++        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'success' }));
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++    });
++    it('reports affirmative success only after settlement and safely annotates auto-renew confirmation', async () => {
++        const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
++            runOutput: 'PAYMENT_STATE:succeeded', autoRenewConfirmed: true });
++        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
++            expect.objectContaining({ status: 'success', paymentState: 'succeeded', autoRenewStatus: 'disabled' }), { annotate: true });
++        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'success' }));
++        const saved = h.events.findIndex(event => event.type === 'saved' && event.options.finalize);
++        const renewalSaved = h.events.findIndex(event => event.type === 'saved' && event.options.annotate);
++        const renewalCheck = h.events.findIndex(event => event.type === 'autoRenewCheck');
++        expect(renewalCheck).toBeGreaterThan(saved);
++        expect(renewalSaved).toBeGreaterThan(renewalCheck);
++        expect(h.events.findIndex(event => event.type === 'broadcast' && event.value.status === 'success')).toBeGreaterThan(renewalSaved);
++        expect(h.events[saved].result).toMatchObject({ status: 'manual', recoveryRequired: true });
++        expect(h.events[renewalSaved].result).toMatchObject({ status: 'success', recoveryRequired: false });
++        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++        const writes = h.store.updateLocalActivationTask.mock.calls.length;
++        await expect(h.paymentCallback('started')).rejects.toThrow('已结算');
++        expect(h.store.updateLocalActivationTask).toHaveBeenCalledTimes(writes);
++    });
++    it('does not unlock or send a success notice when saving the auto-renew result fails', async () => {
++        const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
++            runOutput: 'PAYMENT_STATE:succeeded', autoRenewConfirmed: true, failAnnotation: true });
++        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
++            expect.objectContaining({ status: 'success', paymentState: 'succeeded' }), { annotate: true });
++        expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
++        expect(h.sandbox.broadcastToTask).not.toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success' }));
++        const lastSaved = h.events.filter(event => event.type === 'saved').at(-1);
++        expect(lastSaved.result).toMatchObject({ status: 'manual', paymentState: 'succeeded', recoveryRequired: true });
++        const finalWrite = h.events.find(event => event.type === 'write' && event.options.finalize);
++        expect(finalWrite.input).toMatchObject({ status: 'manual', autoRenewStatus: 'pending', recoveryRequired: true });
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
++    });
++    it('does not advertise success after an annotation is refused or its commit response is lost', async () => {
++        for (const options of [{ refuseAnnotation: true }, { loseAnnotationResponse: true }]) {
++            const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
++                runOutput: 'PAYMENT_STATE:succeeded', autoRenewConfirmed: true, ...options });
++            expect(h.sandbox.broadcastToTask).not.toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success' }));
++            expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
++            expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++            expect(h.store.markCdkUnused).not.toHaveBeenCalled();
++            expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
++                expect.objectContaining({ status: 'success', paymentState: 'succeeded' }), { annotate: true });
++            const finalized = h.events.find(event => event.type === 'saved' && event.options.finalize);
++            expect(finalized.result).toMatchObject({ status: 'manual', recoveryRequired: true });
++            // A lost COMMIT response can mean success is already durable. The
++            // worker must not announce it without acknowledgement or undo it.
++            if (options.loseAnnotationResponse) {
++                expect(h.events.filter(event => event.type === 'saved').at(-1).result.status).toBe('success');
++            }
++        }
++    });
++    it('persists cancellation exceptions as a review result before reporting them', async () => {
++        const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
++            runOutput: 'PAYMENT_STATE:succeeded', autoRenewError: true });
++        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job', expect.objectContaining({
++            status: 'manual', paymentState: 'succeeded', autoRenewStatus: 'verification_unknown', recoveryRequired: true
++        }), { annotate: true });
++        const status = h.events.filter(event => event.type === 'broadcast' && event.value.type === 'status').at(-1).value;
++        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ event: 'failure', message: status.message }));
++        expect(h.sandbox.broadcastToTask).not.toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success' }));
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++    });
++    it('keeps payment completed when auto-renew needs review', async () => {
++        const h = await spawnHarness({ state: 'succeeded', runStatus: 'success', runOutput: 'PAYMENT_STATE:succeeded' });
++        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
++            expect.objectContaining({ status: 'manual', paymentState: 'succeeded', recoveryRequired: true }), { annotate: true });
++        expect(h.sandbox.broadcastToTask).toHaveBeenLastCalledWith('fixture-job', expect.objectContaining({ status: 'manual', paymentState: 'succeeded' }));
++        expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'success' }));
++        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
++    });
+     it('closes the context with recording disabled and continues cleanup after close failure', async () => {
+         const h = await workerHarness(fixtures[0], { contextCloseError: new Error('fixture context close failure') });
+         expect(h.process.exitCode).toBe(1);
+--- /dev/null
++++ b/tests/security-round4-kc-local-settlement.test.js
+@@ -0,0 +1,234 @@
++'use strict';
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const vm = require('node:vm');
++const { createRequire } = require('node:module');
++const root = path.resolve(__dirname, '../services/kc-pay-gpt');
++const runtime = path.join(root, 'mysql-store.js');
++const runtimeRequire = createRequire(runtime);
++const source = fs.readFileSync(process.env.KC_LOCAL_STORE_SOURCE || runtime, 'utf8');
++const clone = value => JSON.parse(JSON.stringify(value));
++const task = patch => ({ id: 1, job_key: 'offline-job', cdk_code: 'OFFLINE-CDK', execution_mode: 'local_card_pool',
++    status: 'running', payment_state: 'not_started', recovery_required: 0, finished_at: null,
++    gpt_api_order_id: null, gpt_api_task_id: null, gpt_api_raw: null,
++    session_payload: null, session_payload_encrypted: 'offline-encrypted-placeholder', ...patch });
++const failed = patch => ({ cdkCode: 'OFFLINE-CDK', status: 'failed', paymentState: 'not_started',
++    recoveryRequired: false, message: 'offline failed', progress: 25, ...patch });
++
++// Offline model only. Serializing whole transactions cannot establish real
++// MySQL row/gap lock behavior, isolation, disconnect or crash recovery.
++function harness({ tasks = [task()], cdk = {}, fault = '', commit = '', rollbackError = false } = {}) {
++    const state = { cdk: { cdk_code: 'OFFLINE-CDK', used_at: 'offline-held', is_active: 1, ...cdk }, tasks: clone(tasks) };
++    const events = [];
++    let gate = Promise.resolve(), serial = 0, commitFault = commit;
++    function query(sql, params) {
++        if (/FROM cdk_codes WHERE cdk_code/.test(sql)) return state.cdk && params[0] === state.cdk.cdk_code ? [clone(state.cdk)] : [];
++        if (/SELECT \* FROM task_logs WHERE job_key/.test(sql)) return clone(state.tasks.filter(row => row.job_key === params[0]));
++        if (/SELECT job_key FROM task_logs WHERE cdk_code/.test(sql)) return clone(state.tasks.filter(row => row.cdk_code === params[0]).sort((a, b) => b.id - a.id).slice(0, 1));
++        if (/SELECT provider_task\.\*/.test(sql)) return clone(state.tasks.filter(row => row.cdk_code === params[0] && row.job_key !== params[1] && (
++            ['running', 'manual'].includes(row.status) || row.recovery_required === 1 ||
++            !['not_started', 'declined', 'succeeded'].includes(row.payment_state) || row.gpt_api_order_id || row.gpt_api_task_id
++        )).slice(0, 1));
++        throw new Error(`Unhandled offline query: ${sql}`);
++    }
++    function execute(sql, params) {
++        if (/UPDATE\s+task_logs\s+SET status = \?/.test(sql)) {
++            if (fault === 'task_write') throw new Error('offline task write failure');
++            if (fault === 'task_cas') return { affectedRows: 0 };
++            const row = state.tasks.find(row => row.job_key === params.at(-1));
++            if (!row) return { affectedRows: 0 };
++            // Execute the column assignments of the actual updateTaskLog SQL.
++            const columns = ['status', 'message', 'raw_output', 'progress', 'cdk_code', 'phone', 'card_last4',
++                'failure_screenshots', 'gpt_api_order_id', 'gpt_api_task_id', 'gpt_api_raw', 'gpt_api_topup_code',
++                'execution_mode', 'auto_renew_status', 'auto_renew_message', 'payment_state', 'recovery_required'];
++            columns.forEach((name, i) => { if (params[i] != null) row[name] = name === 'progress' ? Math.max(row.progress || 0, params[i]) : params[i]; });
++            if (params[17]) row.finished_at ||= 'offline-finished';
++            return { affectedRows: 1 };
++        }
++        if (/UPDATE task_logs SET session_payload = NULL/.test(sql)) {
++            if (fault === 'session_clear') throw new Error('offline Session clearing failure');
++            if (fault === 'session_cas') return { affectedRows: 0 };
++            const row = state.tasks.find(row => row.job_key === params[0]);
++            if (!row) return { affectedRows: 0 };
++            row.session_payload = null; row.session_payload_encrypted = null;
++            return { affectedRows: 1 };
++        }
++        if (/UPDATE\s+cdk_codes\s+SET\s+used_at = NULL/.test(sql)) {
++            if (fault === 'release') throw new Error('offline CDK release failure');
++            if (fault === 'release_cas') return { affectedRows: 0 };
++            if (!state.cdk || params[0] !== state.cdk.cdk_code || !state.cdk.used_at) return { affectedRows: 0 };
++            state.cdk.used_at = null; return { affectedRows: 1 };
++        }
++        throw new Error(`Unhandled offline mutation: ${sql}`);
++    }
++    const pool = {
++        query: async (sql, params) => { events.push({ via: 'pool', sql }); return [query(sql, params)]; },
++        execute: async (sql, params) => { events.push({ via: 'pool', sql }); return [execute(sql, params)]; },
++        getConnection: async () => {
++            const id = ++serial; let snapshot, committed = false, unlock;
++            return {
++                beginTransaction: async () => {
++                    const previous = gate; gate = new Promise(resolve => { unlock = resolve; }); await previous;
++                    snapshot = clone(state); events.push({ via: id, operation: 'begin' });
++                },
++                query: async (sql, params) => { events.push({ via: id, sql }); return [query(sql, params)]; },
++                execute: async (sql, params) => { events.push({ via: id, sql }); return [execute(sql, params)]; },
++                commit: async () => {
++                    events.push({ via: id, operation: 'commit' }); const fail = commitFault; commitFault = '';
++                    if (fail === 'before_apply') throw new Error('offline commit rejected');
++                    committed = true; if (fail === 'after_apply') throw new Error('offline commit response lost');
++                },
++                rollback: async () => {
++                    events.push({ via: id, operation: 'rollback' });
++                    if (!committed && snapshot) Object.assign(state, clone(snapshot));
++                    if (rollbackError) throw new Error('offline rollback failure');
++                },
++                release: () => { events.push({ via: id, operation: 'release' }); unlock?.(); }
++            };
++        }
++    };
++    const module = { exports: {} };
++    vm.runInNewContext(source, { module, exports: module.exports, __dirname: root, Buffer, process, setTimeout, clearTimeout,
++        console: { log() {}, warn() {}, error() {} },
++        require: name => name === 'mysql2/promise' ? { createPool: () => pool } : runtimeRequire(name)
++    }, { filename: runtime });
++    const update = (patch = {}, options = {}) => module.exports.updateLocalActivationTask('offline-job', failed(patch), options);
++    return { store: module.exports, state, events, update };
++}
++
++test('local settlement rolls back task result when CDK return fails', async () => {
++    const h = harness({ fault: 'release' });
++    const settle = h.store.updateLocalActivationTask ? () => h.update({}, { finalize: true }) : async () => {
++        await h.store.updateTaskLog('offline-job', failed());
++        await h.store.markCdkUnused('OFFLINE-CDK');
++    };
++    await assert.rejects(settle(), /CDK release failure/);
++    assert.equal(h.state.tasks[0].status, 'running', 'failed result must not commit separately from CDK return');
++    assert.equal(h.state.cdk.used_at, 'offline-held');
++});
++
++test('safe failure returns only its CDK and clears Session in the same transaction', async () => {
++    const h = harness(); const result = await h.update({}, { finalize: true });
++    assert.equal(result.applied, true); assert.equal(result.released, true);
++    assert.equal(h.state.tasks[0].status, 'failed'); assert.equal(h.state.cdk.used_at, null);
++    assert.equal(h.state.tasks[0].session_payload_encrypted, null);
++    assert.equal(h.events.some(e => e.via === 'pool'), false);
++    assert.equal(new Set(h.events.filter(e => e.sql).map(e => e.via)).size, 1);
++    const locks = h.events.filter(e => e.sql?.includes('FOR UPDATE'));
++    assert.match(locks[0].sql, /FROM cdk_codes/); assert.match(locks[1].sql, /FROM task_logs WHERE job_key/);
++});
++for (const fault of ['task_write', 'task_cas', 'session_clear', 'session_cas', 'release_cas']) {
++    test(`local settlement rollback preserves both rows on ${fault}`, async () => {
++        const h = harness({ fault }); const before = clone(h.state);
++        await assert.rejects(h.update({}, { finalize: true })); assert.deepEqual(h.state, before);
++    });
++}
++for (const paymentState of ['started', 'unknown', 'succeeded', null, 'unrecognized']) {
++    test(`persisted ${paymentState} cannot be downgraded by a safe failure`, async () => {
++        const h = harness({ tasks: [task({ payment_state: paymentState })] });
++        const result = await h.update({}, { finalize: true });
++        assert.equal(result.released, false); assert.equal(result.status, 'manual');
++        assert.equal(result.recoveryRequired, true); assert.equal(h.state.cdk.used_at, 'offline-held');
++        assert.notEqual(h.state.tasks[0].payment_state, 'not_started');
++    });
++}
++for (const patch of [
++    { execution_mode: 'third_party_api' }, { execution_mode: 'legacy_unknown' },
++    { gpt_api_order_id: 'offline-provider-order' }, { gpt_api_task_id: 'offline-provider-task' },
++    { gpt_api_raw: '{}' }, { cdk_code: 'OTHER-CDK' }, { status: 'failed', finished_at: 'offline-finished' },
++    { status: 'success', payment_state: 'succeeded', finished_at: 'offline-finished' },
++    { status: 'cancelled' }, { status: 'maintenance' }
++]) {
++    test(`refuses incompatible, completed or foreign task ${JSON.stringify(patch)}`, async () => {
++        const h = harness({ tasks: [task(patch)] }); const before = clone(h.state);
++        const result = await h.update({}, { finalize: true }); assert.equal(result.applied, false); assert.deepEqual(h.state, before);
++    });
++}
++for (const cdk of [{ used_at: null }, { is_active: 0 }]) {
++    test(`unavailable CDK does not become reusable ${JSON.stringify(cdk)}`, async () => {
++        const h = harness({ cdk }); const result = await h.update({}, { finalize: true });
++        assert.equal(result.released, false); assert.equal(h.state.cdk.used_at, cdk.used_at === null ? null : 'offline-held');
++    });
++}
++test('late old task cannot return or modify a newer owner CDK', async () => {
++    const h = harness({ tasks: [task(), task({ id: 2, job_key: 'newer-offline-job' })] });
++    const before = clone(h.state); const result = await h.update({}, { finalize: true });
++    assert.equal(result.applied, false); assert.deepEqual(h.state, before);
++});
++test('another unresolved task blocks safe release even if current task is newest', async () => {
++    const h = harness({ tasks: [task({ id: 2 }), task({ id: 1, job_key: 'older-offline-job', payment_state: 'unknown' })] });
++    const before = clone(h.state); assert.equal((await h.update({}, { finalize: true })).applied, false); assert.deepEqual(h.state, before);
++});
++test('duplicate completion is idempotent and a late payment callback cannot resurrect it', async () => {
++    const h = harness(); await h.update({}, { finalize: true }); const before = clone(h.state);
++    assert.equal((await h.update({}, { finalize: true })).applied, false);
++    assert.equal((await h.update({ status: 'running', paymentState: 'started' })).applied, false);
++    assert.deepEqual(h.state, before);
++});
++test('concurrent finalizations return the CDK once in the offline serial model', async () => {
++    const h = harness(); const results = await Promise.all(Array.from({ length: 12 }, () => h.update({}, { finalize: true })));
++    assert.equal(results.filter(r => r.released).length, 1); assert.equal(results.filter(r => r.applied).length, 1);
++});
++test('intermediate unknown state stays recoverable until an affirmative success', async () => {
++    const h = harness(); await h.update({ status: 'manual', paymentState: 'unknown', recoveryRequired: true });
++    assert.equal(h.state.tasks[0].finished_at, null); assert.equal(h.state.cdk.used_at, 'offline-held');
++    const result = await h.update({ status: 'success', paymentState: 'succeeded' }, { finalize: true });
++    assert.equal(result.status, 'success'); assert.equal(result.released, false);
++    assert.equal(h.state.tasks[0].session_payload_encrypted, null);
++});
++test('post-success auto-renew annotation can require review without returning CDK', async () => {
++    const h = harness(); await h.update({ status: 'success', paymentState: 'succeeded' }, { finalize: true });
++    const result = await h.update({ status: 'manual', paymentState: 'succeeded', recoveryRequired: true,
++        autoRenewStatus: 'verification_unknown' }, { annotate: true });
++    assert.equal(result.applied, true); assert.equal(result.released, false); assert.equal(result.status, 'manual');
++    assert.equal(h.state.cdk.used_at, 'offline-held');
++    assert.equal((await h.update({}, { finalize: true })).applied, false);
++});
++test('pending auto-renew completion can become success without returning CDK or restoring Session', async () => {
++    const h = harness();
++    const pending = await h.update({ status: 'manual', paymentState: 'succeeded', recoveryRequired: true,
++        autoRenewStatus: 'pending' }, { finalize: true });
++    assert.equal(pending.status, 'manual'); assert.equal(pending.recoveryRequired, true);
++    assert.equal(h.state.tasks[0].auto_renew_status, 'pending');
++    assert.equal(h.state.tasks[0].session_payload_encrypted, null);
++    const result = await h.update({ status: 'success', paymentState: 'succeeded', autoRenewStatus: 'disabled',
++        recoveryRequired: false }, { annotate: true });
++    assert.equal(result.status, 'success'); assert.equal(result.recoveryRequired, false);
++    assert.equal(result.released, false); assert.equal(h.state.cdk.used_at, 'offline-held');
++    assert.equal(h.state.tasks[0].auto_renew_status, 'disabled');
++    assert.equal(h.state.tasks[0].session_payload_encrypted, null);
++});
++test('failed auto-renew annotation preserves the committed pending result', async () => {
++    const h = harness({ fault: 'task_write', tasks: [task({ status: 'manual', payment_state: 'succeeded',
++        recovery_required: 1, finished_at: 'offline-finished', auto_renew_status: 'pending',
++        session_payload_encrypted: null })] });
++    const before = clone(h.state);
++    await assert.rejects(h.update({ status: 'success', paymentState: 'succeeded', autoRenewStatus: 'disabled',
++        recoveryRequired: false }, { annotate: true }), /task write failure/);
++    assert.deepEqual(h.state, before);
++});
++test('late auto-renew annotation cannot change a task after the CDK gains another owner', async () => {
++    const h = harness({ tasks: [task({ status: 'manual', payment_state: 'succeeded', recovery_required: 1,
++        finished_at: 'offline-finished', auto_renew_status: 'pending' }),
++        task({ id: 2, job_key: 'newer-offline-job' })] });
++    const before = clone(h.state);
++    const result = await h.update({ status: 'success', paymentState: 'succeeded', autoRenewStatus: 'disabled' }, { annotate: true });
++    assert.equal(result.applied, false); assert.equal(result.reason, 'CDK_OWNER_MISMATCH');
++    assert.deepEqual(h.state, before);
++});
++for (const commit of ['before_apply', 'after_apply']) {
++    test(`commit uncertainty ${commit} never triggers a separate CDK unlock`, async () => {
++        const h = harness({ commit }); await assert.rejects(h.update({}, { finalize: true }), /commit/);
++        assert.equal(h.events.some(e => e.via === 'pool'), false);
++        assert.equal(h.state.cdk.used_at, commit === 'before_apply' ? 'offline-held' : null);
++        const retry = await h.update({}, { finalize: true });
++        assert.equal(retry.applied, commit === 'before_apply');
++    });
++}
++test('rollback failure does not replace the original transaction failure', async () => {
++    const h = harness({ fault: 'release', rollbackError: true });
++    await assert.rejects(h.update({}, { finalize: true }), /CDK release failure/);
++    assert.equal(h.events.at(-1).operation, 'release');
++});

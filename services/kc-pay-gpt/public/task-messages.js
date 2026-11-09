@@ -27,7 +27,13 @@
     function publicTaskUpdate(data) {
         if (!data || !['status', 'progress', 'snapshot'].includes(data.type)) return data;
         return {
-            ...data,
+            type: data.type,
+            jobKey: data.jobKey,
+            status: data.status,
+            progress: data.progress,
+            completed: data.completed,
+            paymentState: data.paymentState,
+            recoveryRequired: data.recoveryRequired,
             message: ['failed', 'manual', 'maintenance'].includes(data.status)
                 ? formatTaskErrorMessage(data.status, data.message, data)
                 : (data.status === 'success' ? '充值成功' : '正在为您办理充值，请稍候')

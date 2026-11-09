@@ -1,0 +1,88 @@
+selected_database
+plus_papay
+TABLE_NAME	ENGINE	TABLE_COLLATION	TABLE_ROWS
+billing_records	InnoDB	utf8mb4_unicode_ci	72
+card_assets	InnoDB	utf8mb4_unicode_ci	3
+cdk_codes	InnoDB	utf8mb4_unicode_ci	21
+task_logs	InnoDB	utf8mb4_unicode_ci	58
+TABLE_NAME	COLUMN_NAME	COLUMN_TYPE	IS_NULLABLE	COLUMN_DEFAULT	EXTRA
+billing_records	id	bigint unsigned	NO	NULL	auto_increment
+billing_records	card_last4	varchar(4)	NO	NULL	
+billing_records	amount	decimal(10,2)	NO	0.00	
+billing_records	currency	varchar(8)	NO	USD	
+billing_records	plan_type	varchar(64)	NO	plus	
+billing_records	status	varchar(16)	NO	success	
+billing_records	platform	varchar(32)	NO	chatgpt	
+card_assets	id	bigint unsigned	NO	NULL	auto_increment
+card_assets	is_active	tinyint(1)	NO	1	
+card_assets	status	varchar(32)	NO	æ­£å¸¸	
+card_assets	in_use	tinyint(1)	NO	0	
+card_assets	locked_by	varchar(64)	YES	NULL	
+cdk_codes	id	bigint unsigned	NO	NULL	auto_increment
+cdk_codes	cdk_code	varchar(32)	NO	NULL	
+cdk_codes	is_active	tinyint(1)	NO	1	
+cdk_codes	shipped_at	timestamp	YES	NULL	
+cdk_codes	used_at	timestamp	YES	NULL	
+cdk_codes	created_at	timestamp	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED
+cdk_codes	updated_at	timestamp	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+cdk_codes	type	varchar(16)	NO	è‡ªåŠ©	
+cdk_codes	plan_type	varchar(64)	NO	plus	
+cdk_codes	fail_count	int	YES	0	
+cdk_codes	cooldown_until	timestamp	YES	NULL	
+cdk_codes	platform	varchar(32)	NO	chatgpt	
+cdk_codes	payment_region	varchar(16)	YES	NULL	
+task_logs	id	bigint unsigned	NO	NULL	auto_increment
+task_logs	job_key	varchar(64)	NO	NULL	
+task_logs	token_preview	varchar(64)	NO	NULL	
+task_logs	session_payload	mediumtext	YES	NULL	
+task_logs	cdk_code	varchar(32)	YES	NULL	
+task_logs	phone	varchar(32)	YES	NULL	
+task_logs	card_last4	varchar(4)	YES	NULL	
+task_logs	status	varchar(32)	NO	NULL	
+task_logs	message	varchar(255)	YES	NULL	
+task_logs	progress	int	NO	0	
+task_logs	display_time	varchar(64)	NO	NULL	
+task_logs	raw_output	mediumtext	YES	NULL	
+task_logs	created_at	timestamp	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED
+task_logs	updated_at	timestamp	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+task_logs	failure_screenshots	text	YES	NULL	
+task_logs	gpt_api_topup_code	varchar(255)	YES	NULL	
+task_logs	gpt_api_order_id	varchar(128)	YES	NULL	
+task_logs	gpt_api_task_id	varchar(128)	YES	NULL	
+task_logs	gpt_api_raw	mediumtext	YES	NULL	
+task_logs	session_payload_encrypted	mediumtext	YES	NULL	
+task_logs	session_fingerprint	char(64)	YES	NULL	
+task_logs	execution_mode	varchar(32)	NO	legacy_unknown	
+task_logs	auto_renew_status	varchar(32)	NO	not_applicable	
+task_logs	auto_renew_message	varchar(255)	YES	NULL	
+task_logs	payment_state	varchar(32)	NO	not_started	
+task_logs	recovery_required	tinyint(1)	NO	0	
+task_logs	started_at	timestamp	YES	NULL	
+task_logs	finished_at	timestamp	YES	NULL	
+task_logs	last_heartbeat_at	timestamp	YES	NULL	
+task_logs	platform	varchar(32)	NO	chatgpt	
+task_logs	plan_type	varchar(64)	NO	plus	
+card_total	card_in_use	card_payment_pending	card_idle_normal
+3	0	0	2
+billing_total	billing_success	billing_failed	billing_currency_count
+72	8	61	2
+task_total	task_open	task_payment_uncertain
+100	63	3
+cdk_total	cdk_used
+21	9
+status	row_count	in_use_count	owner_count
+已冻结	1	0	0
+正常	2	0	0
+status	currency	row_count
+failed	PHP	60
+failed	USD	1
+pending	PHP	3
+success	PHP	8
+execution_mode	status	payment_state	recovery_required	row_count
+local_card_pool	failed	declined	0	5
+local_card_pool	failed	not_started	0	29
+local_card_pool	manual	declined	0	51
+local_card_pool	manual	not_started	0	4
+local_card_pool	manual	succeeded	1	5
+local_card_pool	manual	unknown	1	3
+local_card_pool	success	succeeded	0	3

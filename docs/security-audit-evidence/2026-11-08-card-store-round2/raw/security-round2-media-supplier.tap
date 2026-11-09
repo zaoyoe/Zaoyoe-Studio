@@ -1,0 +1,312 @@
+✔ supplier catalog list requires admin and returns only normalized upstream fields (5.287709ms)
+✔ single and bulk supplier imports create only inactive local drafts and disabled mappings (1.05975ms)
+✔ disabled supplier accounts fail closed before any upstream request (0.206083ms)
+✔ supplier catalog import fails closed with a clear migration-not-ready response (0.128208ms)
+✔ re-importing an existing source listing returns its mapping without overwriting local product data (0.185417ms)
+✔ failed mapping creation compensates by removing the newly created inactive draft (0.254292ms)
+✔ supplier catalog route rejects unsupported methods and invalid bulk size (0.189834ms)
+✔ supplier catalog API handler is registered on the admin gateway (0.511625ms)
+✔ Xiareng catalog snapshots merge duplicate goods across categories and reuse one snapshot for filters and pages (8.960959ms)
+✔ Xiareng catalog snapshots survive admin handler recreation between category and page requests (3.312375ms)
+✔ refreshing a Xiareng snapshot in another tab does not invalidate an unexpired snapshot (7.826792ms)
+✔ Xiareng catalog snapshots expire after the cache TTL and cannot cross site scope (3.982917ms)
+✔ Xiareng catalog rejects malformed or unscoped snapshot filters before reading upstream (0.207333ms)
+✔ account discovery returns safe configuration metadata without adapter construction or upstream calls (0.298458ms)
+✔ catalog requests resolve exactly the selected provider/account and carry it to the isolated registry (0.1055ms)
+✔ paused nondefault account and unsupported actions never construct an adapter or call upstream (0.149083ms)
+✔ Xiareng draft import uses one transactional RPC with a sanitized snapshot and server-validated race (23.201917ms)
+✔ unsupported SKU, unspecified race and unsupported site do not create even an inactive product (1.064417ms)
+✔ a missing v2 database function fails explicitly without falling back to nontransactional product writes (0.351292ms)
+✔ read-only preview requires stock/quote capabilities and never writes local products or mappings (0.17275ms)
+✔ preview returns a specific conflict when a supplier refuses draft-card inventory reads (0.249084ms)
+✔ draft-card GET is admin-only, strictly paged, normalized and never writes local data (0.265584ms)
+✔ draft-card request validation fails before account lookup or supplier calls (0.072416ms)
+✔ Xiareng preselected-card goods are rejected before any import RPC or write (0.337833ms)
+✔ product source summary excludes credentials and stays readable on the pre-v2 schema (0.25475ms)
+✔ source summary allowlists stored fields and rejects malformed product IDs before reading the database (0.190458ms)
+✔ procurement history needs shop.manage but no configured adapter, credential, or enabled account (0.188917ms)
+✔ procurement history rejects unauthorized and invalid filters before accessing private data (0.345375ms)
+✔ procurement database failures return a safe retryable response without revealing internals (0.401792ms)
+✔ known upstream order reconciliation is read-only and returns only safe status evidence (0.539375ms)
+✔ upstream order reconciliation rejects malformed input before any database or supplier access (0.728583ms)
+✔ upstream order reconciliation fails closed on lookup errors and malformed status evidence (0.500042ms)
+✔ update-mapping-ceiling validates input and updates mapping cost ceiling via RPC (0.116834ms)
+✔ Xiareng catalog list returns categoryTree and filters items by groupKey (2.54ms)
+✔ Xiareng multi-variant import calls import_shop_supplier_multi_draft_v3 with multiple variants (2.033375ms)
+✔ Xiareng draft import preserves cover imageUrl in snapshot and updates product icon (19.06525ms)
+✔ Xiareng autoAllVariants automatically discovers races and imports multi-variant draft (0.916958ms)
+✔ Xiareng batch import respects category payment channels and initialStatus published (0.5175ms)
+✔ Xiareng category-goods endpoint returns goods grouped by categoryKeys from snapshot (0.920791ms)
+✔ Xiareng multi-variant import in fallback mode creates active product with channels when initialStatus is published (0.605333ms)
+✔ Xiareng multi-variant import in fallback mode skips already imported goods when duplicatePolicy is skip (0.274042ms)
+✔ Xiareng autoAllVariants falls back to single-variant import for goods without races (0.2855ms)
+✔ Xiareng multi-variant import in fallback mode synchronizes stock_count from upstream availableQuantity (0.236875ms)
+✔ Xiareng supplier import automatically detects manual delivery goods and sets manual_delivery: true (1.279833ms)
+✔ Xiareng supplier import extracts purchase notes to 注意事项 and sets show_purchase_notes: true (0.355917ms)
+✔ Xiareng supplier import without specific notes still includes exact upstream 购买须知 (0.350583ms)
+✔ Xiareng supplier import gracefully falls back when min_purchase_quantity column is missing in database (0.331042ms)
+✔ media rejects nonpublic address 127.0.0.1 (1.513625ms)
+✔ media rejects nonpublic address 10.1.2.3 (0.263291ms)
+✔ media rejects nonpublic address 172.16.1.1 (0.054625ms)
+✔ media rejects nonpublic address 192.168.1.1 (0.047375ms)
+✔ media rejects nonpublic address 169.254.169.254 (0.611958ms)
+✔ media rejects nonpublic address 100.64.1.1 (0.523ms)
+✔ media rejects nonpublic address 0.0.0.0 (0.260125ms)
+✔ media rejects nonpublic address 192.88.99.1 (0.159291ms)
+✔ media rejects nonpublic address 198.18.0.1 (0.149375ms)
+✔ media rejects nonpublic address 224.0.0.1 (0.232167ms)
+✔ media rejects nonpublic address ::1 (3.536ms)
+✔ media rejects nonpublic address fc00::1 (3.24925ms)
+✔ media rejects nonpublic address fe80::1 (0.050583ms)
+✔ media rejects nonpublic address ::ffff:8.8.8.8 (0.028208ms)
+✔ media rejects nonpublic address 2002:0808:0808::1 (0.034292ms)
+✔ media rejects unsafe URL http://2130706433/image (0.557833ms)
+✔ media rejects unsafe URL http://0x7f000001/ (0.134916ms)
+✔ media rejects unsafe URL http://127.1/ (0.045875ms)
+✔ media rejects unsafe URL http://[::1]/ (0.039083ms)
+✔ media rejects unsafe URL https://user:pass@example.com/x (0.039166ms)
+✔ media rejects unsafe URL http://example.com:8080/x (0.034833ms)
+✔ media rejects unsafe URL file:///etc/passwd (0.077625ms)
+✔ media rejects unsafe URL http://metadata.internal/x (0.033875ms)
+✔ media rejects unsafe URL http://localhost/x (0.03825ms)
+✔ media rejects unsafe URL https://example.com./x (0.045708ms)
+✔ media pins the validated address and preserves HTTPS hostname (5.502833ms)
+✔ media refuses mixed public/private DNS answers before connecting (0.263708ms)
+✔ media revalidates every redirect DNS answer (0.13725ms)
+✔ media refuses literal private redirect and HTTPS downgrade (0.205292ms)
+✔ media caps redirect chains even with an excessive caller limit (0.290125ms)
+✔ media checks declared and streamed sizes including chunked responses (2.1775ms)
+✔ media refuses compressed responses, active content, and fake MIME (2.573333ms)
+✔ media supports ordinary JPEG and MP4 assets (1.101417ms)
+✔ media honors abort before and after DNS resolution (1.805917ms)
+✔ HTML media sync removes rejected attributes without replacing visible text (0.870417ms)
+✔ HTML sync bounds media batch count and escapes attribute quotes (0.692125ms)
+✔ cover importer rejects private URLs even without storage and never invokes the downloader (0.185625ms)
+✔ cover importer uses DNS and redirect protections without restoring failed source URLs (1.121791ms)
+✔ cover deadline bounds stalled DNS and uploads, aborts and clears failed cache (420.521625ms)
+✔ safe remote cover still uploads all three WebP variants with cancellation signal (3.61975ms)
+✖ backend: link content cannot bypass escaping or retain script/event handlers (3.644666ms)
+✖ backend: CSS is allowlisted while legacy formatting and media survive (0.92225ms)
+✖ backend: entity quotes remain attribute text and synthetic placeholders cannot be injected (0.654709ms)
+✖ backend: unsupported media protocols cannot become active attributes (0.733333ms)
+✖ admin-preview: link content cannot bypass escaping or retain script/event handlers (1.458125ms)
+✖ admin-preview: CSS is allowlisted while legacy formatting and media survive (0.941125ms)
+✖ admin-preview: entity quotes remain attribute text and synthetic placeholders cannot be injected (0.446459ms)
+✖ admin-preview: unsupported media protocols cannot become active attributes (0.433708ms)
+✖ supplier import never restores rejected covers or cleared HTML and propagates unexpected sync errors (0.870542ms)
+✖ sanitized signed-query URLs round-trip once and encoded loopback URLs are removed (0.592791ms)
+✔ static image renditions are bounded WebP with deterministic bytes (94.399792ms)
+✔ animated GIF and WebP renditions retain distinct frames, per-frame timing, loops and transparency (23.567875ms)
+✔ animated supplier imports upload three real WebP renditions with matching content types (11.075166ms)
+✔ animation decode budgets preserve the source instead of flattening or allocating unbounded frames (2.403875ms)
+✔ supplier imports coalesce concurrent requests and address identical bytes by content (78.551875ms)
+✔ failed imports reject unsafe fallback and allow a subsequent retry (34.197792ms)
+✔ oversized streamed sources fail closed before processing or upload (0.25275ms)
+✔ stock timestamps do not split shared image URLs on shop, homepage or admin (9.969792ms)
+✔ list thumbnail errors fall back through card to original and then stop (3.872ms)
+✔ missing thumbnails select the card even when original uses a CDN alias (3.60925ms)
+✔ catalog CDN aliases resolve to the same bundled thumbnail (4.052041ms)
+✔ bundled variants exist, have correct dimensions and share a URL across repeated products (27.041584ms)
+(node:99186) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ manual product uploads reuse immutable rendition URLs across different products (78.350625ms)
+✔ invalid or oversized thumbnails fall back without losing a valid original and card (8.298333ms)
+✔ product image authentication, permissions and rate limit still reject before any upload (4.618667ms)
+✔ resolveFullMediaUrl resolves relative paths and preserves absolute URLs (1.541625ms)
+✔ getMediaFileExtension detects mime types and url paths with safe fallback (0.280458ms)
+✔ syncHtmlMediaToR2 resolves relative images and video sources gracefully without R2 credentials (11.714416ms)
+✔ syncSupplierProductStock automatically recalculates price with markupMultiplier and updates database (6.762291ms)
+✔ admin-config.js AdminRichTextEditor preserves img, video, source safely and does not drop images (11.587875ms)
+✔ shop-client.js rich text sanitization preserves IMG, VIDEO, SOURCE elements (7.218083ms)
+✔ admin shop mutate handler supports up to 32,000 characters for rich text usage instructions (1.452792ms)
+✔ supplier catalog description sanitization converts legacy font tags to styled spans and eliminates raw code (5.942917ms)
+ℹ tests 120
+ℹ suites 0
+ℹ pass 110
+ℹ fail 10
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 841.161208
+
+✖ failing tests:
+
+test at tests/security-round2-supplier-rich-text.test.js:28:5
+✖ backend: link content cannot bypass escaping or retain script/event handlers (3.644666ms)
+  evalmachine.<anonymous>:105
+          imageAssets = await uploadProductImageAssets(r2ImageUrl, { env });
+                        ^^^^^
+  
+  SyntaxError: await is only valid in async functions and the top level bodies of modules
+      at new Script (node:vm:117:7)
+      at createScript (node:vm:269:10)
+      at Object.runInContext (node:vm:300:10)
+      at runtime (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:17:8)
+      at sanitize (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:25:19)
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:35:28)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.start (node:internal/test_runner/test:1096:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:385:17)
+
+test at tests/security-round2-supplier-rich-text.test.js:42:5
+✖ backend: CSS is allowlisted while legacy formatting and media survive (0.92225ms)
+  evalmachine.<anonymous>:105
+          imageAssets = await uploadProductImageAssets(r2ImageUrl, { env });
+                        ^^^^^
+  
+  SyntaxError: await is only valid in async functions and the top level bodies of modules
+      at new Script (node:vm:117:7)
+      at createScript (node:vm:269:10)
+      at Object.runInContext (node:vm:300:10)
+      at runtime (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:17:8)
+      at sanitize (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:25:19)
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:43:24)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+
+test at tests/security-round2-supplier-rich-text.test.js:49:5
+✖ backend: entity quotes remain attribute text and synthetic placeholders cannot be injected (0.654709ms)
+  evalmachine.<anonymous>:105
+          imageAssets = await uploadProductImageAssets(r2ImageUrl, { env });
+                        ^^^^^
+  
+  SyntaxError: await is only valid in async functions and the top level bodies of modules
+      at new Script (node:vm:117:7)
+      at createScript (node:vm:269:10)
+      at Object.runInContext (node:vm:300:10)
+      at runtime (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:17:8)
+      at sanitize (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:25:19)
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:50:24)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+
+test at tests/security-round2-supplier-rich-text.test.js:56:5
+✖ backend: unsupported media protocols cannot become active attributes (0.733333ms)
+  evalmachine.<anonymous>:105
+          imageAssets = await uploadProductImageAssets(r2ImageUrl, { env });
+                        ^^^^^
+  
+  SyntaxError: await is only valid in async functions and the top level bodies of modules
+      at new Script (node:vm:117:7)
+      at createScript (node:vm:269:10)
+      at Object.runInContext (node:vm:300:10)
+      at runtime (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:17:8)
+      at sanitize (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:25:19)
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:58:33)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+
+test at tests/security-round2-supplier-rich-text.test.js:28:5
+✖ admin-preview: link content cannot bypass escaping or retain script/event handlers (1.458125ms)
+  evalmachine.<anonymous>:105
+          imageAssets = await uploadProductImageAssets(r2ImageUrl, { env });
+                        ^^^^^
+  
+  SyntaxError: await is only valid in async functions and the top level bodies of modules
+      at new Script (node:vm:117:7)
+      at createScript (node:vm:269:10)
+      at Object.runInContext (node:vm:300:10)
+      at runtime (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:17:8)
+      at sanitize (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:25:19)
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:35:28)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+
+test at tests/security-round2-supplier-rich-text.test.js:42:5
+✖ admin-preview: CSS is allowlisted while legacy formatting and media survive (0.941125ms)
+  evalmachine.<anonymous>:105
+          imageAssets = await uploadProductImageAssets(r2ImageUrl, { env });
+                        ^^^^^
+  
+  SyntaxError: await is only valid in async functions and the top level bodies of modules
+      at new Script (node:vm:117:7)
+      at createScript (node:vm:269:10)
+      at Object.runInContext (node:vm:300:10)
+      at runtime (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:17:8)
+      at sanitize (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:25:19)
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:43:24)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+
+test at tests/security-round2-supplier-rich-text.test.js:49:5
+✖ admin-preview: entity quotes remain attribute text and synthetic placeholders cannot be injected (0.446459ms)
+  evalmachine.<anonymous>:105
+          imageAssets = await uploadProductImageAssets(r2ImageUrl, { env });
+                        ^^^^^
+  
+  SyntaxError: await is only valid in async functions and the top level bodies of modules
+      at new Script (node:vm:117:7)
+      at createScript (node:vm:269:10)
+      at Object.runInContext (node:vm:300:10)
+      at runtime (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:17:8)
+      at sanitize (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:25:19)
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:50:24)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+
+test at tests/security-round2-supplier-rich-text.test.js:56:5
+✖ admin-preview: unsupported media protocols cannot become active attributes (0.433708ms)
+  evalmachine.<anonymous>:105
+          imageAssets = await uploadProductImageAssets(r2ImageUrl, { env });
+                        ^^^^^
+  
+  SyntaxError: await is only valid in async functions and the top level bodies of modules
+      at new Script (node:vm:117:7)
+      at createScript (node:vm:269:10)
+      at Object.runInContext (node:vm:300:10)
+      at runtime (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:17:8)
+      at sanitize (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:25:19)
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:58:33)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+
+test at tests/security-round2-supplier-rich-text.test.js:63:1
+✖ supplier import never restores rejected covers or cleared HTML and propagates unexpected sync errors (0.870542ms)
+  evalmachine.<anonymous>:105
+          imageAssets = await uploadProductImageAssets(r2ImageUrl, { env });
+                        ^^^^^
+  
+  SyntaxError: await is only valid in async functions and the top level bodies of modules
+      at new Script (node:vm:117:7)
+      at createScript (node:vm:269:10)
+      at Object.runInContext (node:vm:300:10)
+      at runtime (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:17:8)
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:65:15)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+
+test at tests/security-round2-supplier-rich-text.test.js:72:1
+✖ sanitized signed-query URLs round-trip once and encoded loopback URLs are removed (0.592791ms)
+  evalmachine.<anonymous>:105
+          imageAssets = await uploadProductImageAssets(r2ImageUrl, { env });
+                        ^^^^^
+  
+  SyntaxError: await is only valid in async functions and the top level bodies of modules
+      at new Script (node:vm:117:7)
+      at createScript (node:vm:269:10)
+      at Object.runInContext (node:vm:300:10)
+      at runtime (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:17:8)
+      at TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-supplier-rich-text.test.js:73:15)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)

@@ -136,6 +136,36 @@
         }
     }
 
+    function initScrollDecorationPause() {
+        const root = document.documentElement;
+        // Include the shared navigation's 450ms capsule transition in the idle window.
+        const idleDelay = 500;
+        let idleTimer = null;
+        let active = false;
+
+        function resumeDecorations() {
+            if (idleTimer !== null) {
+                window.clearTimeout(idleTimer);
+                idleTimer = null;
+            }
+            if (active) {
+                root.removeAttribute('data-verify-scroll-active');
+                active = false;
+            }
+        }
+
+        window.addEventListener('scroll', () => {
+            if (!active) {
+                root.setAttribute('data-verify-scroll-active', '');
+                active = true;
+            }
+            if (idleTimer !== null) window.clearTimeout(idleTimer);
+            idleTimer = window.setTimeout(resumeDecorations, idleDelay);
+        }, { passive: true });
+        window.addEventListener('pagehide', resumeDecorations);
+    }
+
+    initScrollDecorationPause();
     applyLoggedInPrerenderState();
 
     document.addEventListener('DOMContentLoaded', () => {

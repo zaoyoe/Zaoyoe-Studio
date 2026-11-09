@@ -1,0 +1,6 @@
+{
+  "exit": 0,
+  "log": "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/execute-03.log",
+  "reason": "Fresh isolated instance after preserving original failure datadir; corrected harness only",
+  "statement_file": "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/executed-statements-01.sql"
+}

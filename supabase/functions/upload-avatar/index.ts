@@ -14,6 +14,7 @@ interface UploadRequest {
     imageData?: string     // Base64 data (manual upload)
     returnDataUrl?: boolean // Return a canvas-safe data URL for small avatar/poster clients
     cardImageData?: string // Product card WebP variant data
+    thumbImageData?: string // Small list thumbnail WebP variant data
     productId?: string     // Product ID for naming (optional)
     posterId?: string      // Poster template ID for naming (optional)
     sessionId?: string     // Chat/session context for scoped filenames
@@ -31,7 +32,7 @@ const ALLOWED_IMAGE_CONTENT_TYPES = new Set([
     'image/webp',
     'image/gif'
 ])
-const UPLOAD_SIZE_LIMITS: Record<UploadType | 'card', number> = {
+const UPLOAD_SIZE_LIMITS: Record<UploadType | 'card' | 'thumb', number> = {
     avatar: 2 * 1024 * 1024,
     product: 5 * 1024 * 1024,
     poster: 5 * 1024 * 1024,
@@ -39,7 +40,8 @@ const UPLOAD_SIZE_LIMITS: Record<UploadType | 'card', number> = {
     guestbook: 3 * 1024 * 1024,
     chat: 3 * 1024 * 1024,
     homepage: 5 * 1024 * 1024,
-    card: 1024 * 1024
+    card: 1024 * 1024,
+    thumb: 256 * 1024
 }
 const UPLOAD_RATE_LIMITS: Record<UploadType, { limit: number; windowMs: number }> = {
     avatar: { limit: 12, windowMs: 60 * 60 * 1000 },
@@ -70,6 +72,12 @@ const REMOTE_IMAGE_FETCH_TIMEOUT_MS = Math.max(
     1000,
     Number(Deno.env.get('UPLOAD_REMOTE_IMAGE_TIMEOUT_MS') || 5000) || 5000
 )
+
+// Each rendition has an immutable content key, shared across products with identical bytes.
+async function productImageDigest(bytes: Uint8Array): Promise<string> {
+    const digest = await crypto.subtle.digest('SHA-256', bytes)
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('').slice(0, 20)
+}
 
 function normalizeUploadType(value: unknown): UploadType {
     const normalized = String(value || 'avatar').trim().toLowerCase() as UploadType
@@ -273,7 +281,7 @@ function getR2PublicUrlBase(): string {
     }
 }
 
-function assertImageSize(imageBuffer: Uint8Array | null, type: UploadType | 'card', label = 'Image') {
+function assertImageSize(imageBuffer: Uint8Array | null, type: UploadType | 'card' | 'thumb', label = 'Image') {
     const limit = UPLOAD_SIZE_LIMITS[type] || UPLOAD_SIZE_LIMITS.avatar
     if (!imageBuffer || imageBuffer.length > limit) {
         throw new Error(`${label} size exceeds ${Math.round(limit / 1024 / 1024)}MB limit`)
@@ -499,7 +507,7 @@ serve(async (req) => {
 
         // Parse request
         const payload: UploadRequest = await req.json()
-        const { userId, imageUrl, imageData, returnDataUrl, cardImageData, productId, posterId, sessionId, homepageSection, site } = payload
+        const { userId, imageUrl, imageData, returnDataUrl, cardImageData, thumbImageData, productId, posterId, sessionId, homepageSection, site } = payload
         const type = normalizeUploadType(payload.type)
 
         if (!userId) {
@@ -569,7 +577,6 @@ serve(async (req) => {
             },
         })
 
-        const productKeyBase = sanitizeR2KeySegment(productId || Date.now())
         const productExtension = getImageExtension(imageContentType)
         const safeUserId = sanitizeR2KeySegment(userId)
         const safeSessionId = sanitizeR2KeySegment(sessionId || userId)
@@ -581,7 +588,7 @@ serve(async (req) => {
         // Generate filename based on type
         let filename: string
         if (type === 'product') {
-            filename = `products/${productKeyBase}.${productExtension}`
+            filename = `products/original/${await productImageDigest(imageBuffer!)}.${productExtension}`
         } else if (type === 'poster') {
             filename = `affiliate-posters/${sanitizeR2KeySegment(posterId || userId)}_${uploadedAt}.jpg`
         } else if (type === 'comment') {
@@ -625,7 +632,7 @@ serve(async (req) => {
                 assertImageMagicBytes(cardImageBuffer, 'image/webp', 'Product card image')
                 assertImageSize(cardImageBuffer, 'card', 'Product card image')
 
-                const cardFilename = `products/card/${productKeyBase}.webp`
+                const cardFilename = `products/card/${await productImageDigest(cardImageBuffer!)}.webp`
                 console.log(`⬆️ Uploading product card variant to R2: ${bucketName}/${cardFilename}`)
 
                 await r2.send(
@@ -645,6 +652,29 @@ serve(async (req) => {
             }
         }
 
+        let productThumbImageUrl = ''
+        if (type === 'product' && thumbImageData) {
+            try {
+                if (getImageDataContentType(thumbImageData) !== 'image/webp') {
+                    throw new Error('Product thumbnail must be WebP')
+                }
+                const thumbImageBuffer = decodeImageData(thumbImageData)
+                assertImageMagicBytes(thumbImageBuffer, 'image/webp', 'Product thumbnail')
+                assertImageSize(thumbImageBuffer, 'thumb', 'Product thumbnail')
+                const thumbFilename = `products/thumb/${await productImageDigest(thumbImageBuffer!)}.webp`
+                await r2.send(new PutObjectCommand({
+                    Bucket: bucketName,
+                    Key: thumbFilename,
+                    Body: thumbImageBuffer,
+                    ContentType: 'image/webp',
+                    CacheControl: 'public, max-age=31536000, immutable',
+                }))
+                productThumbImageUrl = `${publicUrl}/${thumbFilename}`
+            } catch (thumbUploadError) {
+                console.warn('⚠️ Product thumbnail upload failed:', thumbUploadError)
+            }
+        }
+
         // Generate public URL
         const uploadedImageUrl = `${publicUrl}/${filename}`
         const includeDataUrl = returnDataUrl === true && !!imageBuffer && imageBuffer.length <= UPLOAD_SIZE_LIMITS.avatar
@@ -655,6 +685,7 @@ serve(async (req) => {
             ? {
                 original: uploadedImageUrl,
                 ...(productCardImageUrl ? { card: productCardImageUrl } : {}),
+                ...(productThumbImageUrl ? { thumb: productThumbImageUrl } : {}),
             }
             : null
 

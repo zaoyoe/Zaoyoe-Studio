@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Zaoyoe CDK crypto-shredder daily at 03:30
+ConditionPathExists=/opt/zaoyoe-verify-server/.env
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+AccuracySec=1m
+RandomizedDelaySec=5m
+Persistent=true
+Unit=zaoyoe-cdk-shredder.service
+
+[Install]
+WantedBy=timers.target

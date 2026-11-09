@@ -25,9 +25,7 @@ function setCssVariables(target, variables) {
 function setElementHidden(target, hidden, visibleDisplay = '') {
     if (!target) return;
     target.hidden = !!hidden;
-    if (visibleDisplay || hidden) {
-        setInlineStyles(target, { display: hidden ? 'none' : visibleDisplay });
-    }
+    setInlineStyles(target, { display: hidden ? 'none' : visibleDisplay });
 }
 
 function normalizeGuestbookDisplayImageUrl(url) {
@@ -447,6 +445,54 @@ function initGuestbookPage() {
     let isLoading = false;
     let infiniteScrollObserver = null;
     let realtimeSetupTimer = null;
+    let pendingBatchTimer = null;
+    let renderedOrder = [];
+    const cardSignatures = new WeakMap();
+    const { appendMasonryBatch, messageSignature } = window.GuestbookRendering;
+
+    function cancelPendingBatch() {
+        if (pendingBatchTimer !== null) clearTimeout(pendingBatchTimer);
+        pendingBatchTimer = null;
+        isLoading = false;
+    }
+
+    function rememberCard(element, message) {
+        cardSignatures.set(element, messageSignature(message, document.documentElement.lang));
+        return element;
+    }
+
+    function preserveCardPresentation(currentWrapper, replacement, message) {
+        const currentCard = currentWrapper.querySelector('.message-item');
+        const nextCard = replacement.querySelector('.message-item');
+        if (currentCard.id) nextCard.id = currentCard.id;
+        for (const name of ['fetched-history', 'expanded']) {
+            if (currentCard.classList.contains(name)) nextCard.classList.add(name);
+        }
+        if (currentWrapper.classList.contains('visible')) replacement.classList.add('visible');
+        const oldList = currentCard.querySelector('.comment-list');
+        const nextList = nextCard.querySelector('.comment-list');
+        const toggle = nextCard.querySelector('.comment-toggle-btn');
+        if (oldList && nextList && toggle && !message.forceExpanded) {
+            const collapsed = oldList.classList.contains('collapsed');
+            nextList.classList.toggle('collapsed', collapsed);
+            if (!collapsed) {
+                setInlineStyles(nextList, { maxHeight: 'none', overflow: 'visible' });
+                nextCard.classList.add('expanded');
+                const label = toggle.querySelector('span');
+                label.textContent = window.i18n?.t('guestbook.collapse', '收起') || '收起';
+                label.setAttribute('data-i18n', 'guestbook.collapse');
+                toggle.querySelector('i').className = 'fas fa-chevron-up';
+            }
+        }
+    }
+
+    function animateMessage(element, index, step = 0.1) {
+        const delay = Math.min(index * step, 1.0);
+        setCssVariables(element, { '--guestbook-stagger-delay': `${delay}s` });
+        setTimeout(() => {
+            if (element.isConnected) element.classList.add('visible');
+        }, delay * 1000);
+    }
 
     function scheduleRealtimeSetup(delay = 2500) {
         if (realtimeSetupTimer || window.__guestbookRealtimeEnabled) return;
@@ -465,7 +511,9 @@ function initGuestbookPage() {
     // 🚨 状态重置函数（供loadGuestbookMessages调用）
     window.resetGuestbookState = function () {
         console.log('🔄 重置留言板状态');
+        cancelPendingBatch();
         renderedCount = 0;
+        renderedOrder = [];
         isLoading = false;
         allMessages = [];
         // 如果有infiniteScrollObserver，先销毁
@@ -506,8 +554,11 @@ function initGuestbookPage() {
 
         console.log('📊 [Masonry] Final column count:', newCols, 'Previous:', currentColumnCount);
 
-        // Only re-initialize if column count changes
-        if (newCols !== currentColumnCount) {
+        // Recover if another display path cleared the container as well as on breakpoints.
+        const columnsConnected = masonryColumns.length === newCols && masonryColumns.every(column =>
+            isMobile ? column === messageContainer : column.parentElement === messageContainer
+        );
+        if (newCols !== currentColumnCount || !columnsConnected) {
             currentColumnCount = newCols;
             messageContainer.innerHTML = '';
             masonryColumns = [];
@@ -569,108 +620,100 @@ function initGuestbookPage() {
         return shortest;
     }
 
-    // Make renderMessages global
+    // Reconcile loaded cards by ID and rendered data. An unchanged refresh keeps their DOM intact.
     window.renderMessages = function (messages) {
         if (!messageContainer) return;
-
+        cancelPendingBatch();
+        if (infiniteScrollObserver) {
+            infiniteScrollObserver.disconnect();
+            infiniteScrollObserver = null;
+        }
+        const focused = document.activeElement;
+        const restoreFocus = messageContainer.contains(focused);
+        const previousCount = Math.max(renderedCount, renderedOrder.length);
+        const currentCards = new Map();
+        messageContainer.querySelectorAll('.message-item[data-message-id]').forEach(card => {
+            currentCards.set(card.dataset.messageId, card.closest('.message-anim-wrapper'));
+        });
         allMessages = messages;
-        renderedCount = 0;
 
-        console.log('🔍 [Guestbook Debug] Total messages:', allMessages.length);
-
-        // Hide skeleton loading
         const skeletonContainer = document.getElementById('skeletonContainer');
-        if (skeletonContainer) {
+        if (skeletonContainer && !skeletonContainer.classList.contains('hidden')) {
             skeletonContainer.classList.add('hidden');
         }
+        if (!messageContainer.classList.contains('guestbook-message-container-ready')) {
+            messageContainer.classList.add('guestbook-message-container-ready');
+        }
+        setElementHidden(emptyState, messages.length !== 0, messages.length ? '' : 'flex');
 
-        // Fade in container
-        messageContainer.classList.add('guestbook-message-container-ready');
-
-        if (messages.length === 0) {
-            setElementHidden(emptyState, false, 'flex');
-            messageContainer.innerHTML = ''; // Clear any columns
+        if (!messages.length) {
+            messageContainer.replaceChildren();
+            masonryColumns = [];
+            currentColumnCount = 0;
+            renderedOrder = [];
+            renderedCount = 0;
+            updateLoadingIndicator();
             return;
         }
 
-        setElementHidden(emptyState, true);
+        const layoutChanged = initMasonry();
+        const endIndex = Math.min(Math.max(previousCount, getInitialLoadSize()), messages.length);
+        const nextOrder = messages.slice(0, endIndex).map(message => String(getMessageIdentity(message)));
+        const sameOrder = !layoutChanged && renderedOrder.length === nextOrder.length
+            && renderedOrder.every((id, index) => id === nextOrder[index] && currentCards.has(id));
+        const newElements = [];
+        const changedElements = [];
+        const elements = messages.slice(0, endIndex).map((message, index) => {
+            const current = currentCards.get(nextOrder[index]);
+            const signature = messageSignature(message, document.documentElement.lang);
+            if (current && cardSignatures.get(current) === signature) return current;
+            const element = rememberCard(htmlToElement(createMessageCard(message, index)), message);
+            if (current) preserveCardPresentation(current, element, message);
+            if (!current || !current.classList.contains('visible')) newElements.push(element);
+            if (sameOrder && current) current.replaceWith(element);
+            changedElements.push(element);
+            return element;
+        });
 
-        // Force init masonry
-        currentColumnCount = 0; // Reset to force init
-        initMasonry();
-
-        // Initial render
-        const initialCount = getInitialLoadSize();
-        console.log(`🚀 Initial render count: ${initialCount} (Mobile: ${window.innerWidth <= 768})`);
-        renderBatch(initialCount);
-
-        // Set up infinite scroll
-        if (renderedCount < allMessages.length) {
-            setupInfiniteScroll();
-        } else {
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            setElementHidden(loadingIndicator, true);
+        if (!sameOrder) {
+            masonryColumns.forEach(column => column.replaceChildren());
+            appendMasonryBatch(messageContainer, masonryColumns, elements);
+            if (restoreFocus && focused.isConnected) focused.focus({ preventScroll: true });
         }
+        changedElements.forEach(element => stabilizeGuestbookMessageImages(element));
+        newElements.forEach((element, index) => animateMessage(element, index));
+        renderedCount = endIndex;
+        renderedOrder = nextOrder;
+        attachCommentHandlers();
+        updateLoadingIndicator();
+        if (renderedCount < allMessages.length) setupInfiniteScroll();
+        observeNewItems();
     };
 
     function renderBatch(count) {
         const startIndex = renderedCount;
         const endIndex = Math.min(renderedCount + count, allMessages.length);
-        const batch = allMessages.slice(startIndex, endIndex);
-
-        console.log(`🔍 [Guestbook Debug] Rendering batch: ${batch.length} items`);
-
-        // Render batch
-        batch.forEach((msg, index) => {
+        const elements = [];
+        allMessages.slice(startIndex, endIndex).forEach((message, index) => {
             try {
-                const html = createMessageCard(msg, startIndex + index);
-                if (!html) {
-                    console.error('❌ createMessageCard returned null for msg:', msg.id);
-                    return;
-                }
-                const element = htmlToElement(html);
-                if (!element) {
-                    console.error('❌ htmlToElement failed for msg:', msg.id);
-                    return;
-                }
-
-                // Apply the stagger delay before the element is inserted so the first paint matches the animation timing.
-                const delay = Math.min(index * 0.1, 1.0); // 100ms stagger, capped at 1s
-                setCssVariables(element, { '--guestbook-stagger-delay': `${delay}s` });
-
-                // Find shortest column and append
-                const targetCol = getShortestColumn();
-                targetCol.appendChild(element);
-                stabilizeGuestbookMessageImages(element);
-
-                // Trigger animation with delay
-                // ⚡ CRITICAL FIX: Always use staggered animation for "cascading" effect
-                // This restores the "obvious" animation user requested
-
-                setTimeout(() => {
-                    element.classList.add('visible');
-                }, delay * 1000);
-            } catch (err) {
-                console.error('❌ Error rendering message:', msg.id, err);
+                const element = rememberCard(htmlToElement(createMessageCard(message, startIndex + index)), message);
+                setCssVariables(element, { '--guestbook-stagger-delay': `${Math.min(index * 0.1, 1.0)}s` });
+                elements.push(element);
+            } catch (error) {
+                console.error('❌ Error rendering message:', message.id, error);
             }
         });
-
+        appendMasonryBatch(messageContainer, masonryColumns, elements);
+        elements.forEach((element, index) => {
+            stabilizeGuestbookMessageImages(element);
+            animateMessage(element, index);
+        });
         renderedCount = endIndex;
-
-        // Attach handlers
+        renderedOrder = allMessages.slice(0, endIndex).map(message => String(getMessageIdentity(message)));
         attachCommentHandlers();
-
-        // Add loading indicator
         updateLoadingIndicator();
-
-        // Re-setup infinite scroll
-        if (renderedCount < allMessages.length) {
-            setupInfiniteScroll();
-        }
-
-        // Trigger scroll highlight (Mobile)
+        if (renderedCount < allMessages.length) setupInfiniteScroll();
         observeNewItems();
-
     }
 
     // Handle Resize
@@ -678,40 +721,20 @@ function initGuestbookPage() {
     window.addEventListener('resize', () => {
         clearTimeout(resizeTimeout);
         resizeTimeout = setTimeout(() => {
+            // Preserve expanded comments and decoded images when redistributing at a breakpoint.
+            const elements = renderedOrder.map(id =>
+                messageContainer.querySelector(`.message-item[data-message-id="${id}"]`)?.closest('.message-anim-wrapper')
+            ).filter(Boolean);
+            const focused = document.activeElement;
+            const restoreFocus = messageContainer.contains(focused);
             if (initMasonry()) {
-                // If layout changed, re-render everything
-                // We need to reset renderedCount and re-render all currently loaded messages
-                // But to keep it simple and consistent, let's just re-render the currently visible amount
-                // Or just re-distribute? Re-distributing is hard because we need to detach and re-attach.
-                // Easiest is to re-render from scratch up to current renderedCount.
-
-                const currentCount = renderedCount;
-                renderedCount = 0;
-                currentColumnCount = 0; // Force init
-                initMasonry();
-
-                // Re-render all previously rendered messages
-                // We render them in one go, but we might want to batch them if too many?
-                // For now, just render them all.
-                const messagesToRender = allMessages.slice(0, currentCount);
-
-                messagesToRender.forEach((msg, index) => {
-                    const html = createMessageCard(msg, index);
-                    const element = htmlToElement(html);
-                    const targetCol = getShortestColumn();
-                    targetCol.appendChild(element);
-                    stabilizeGuestbookMessageImages(element);
-
-                    // ⚡ VISUALS FIRST: Enable staggered animation on resize
-                    // Using slightly faster stagger (50ms) for resize to feel responsive but fluid
-                const delay = Math.min(index * 0.05, 1.0);
-                setCssVariables(element, { '--guestbook-stagger-delay': `${delay}s` });
-                setTimeout(() => {
-                    element.classList.add('visible');
-                }, delay * 1000);
+                elements.forEach((element, index) => {
+                    element.classList.remove('visible');
+                    setCssVariables(element, { '--guestbook-stagger-delay': `${Math.min(index * 0.05, 1.0)}s` });
                 });
-
-                renderedCount = currentCount;
+                appendMasonryBatch(messageContainer, masonryColumns, elements);
+                if (restoreFocus && focused.isConnected) focused.focus({ preventScroll: true });
+                elements.forEach((element, index) => animateMessage(element, index, 0.05));
                 attachCommentHandlers();
                 syncMobileHighlightMode();
             }
@@ -739,6 +762,8 @@ function initGuestbookPage() {
             messageContainer.parentElement.insertBefore(loadingIndicator, sentinel);
         }
 
+        setElementHidden(sentinel, false);
+
         // If observer already exists, do nothing
         if (infiniteScrollObserver) return;
 
@@ -757,7 +782,8 @@ function initGuestbookPage() {
                     }
 
                     // Simulate delay
-                    setTimeout(() => {
+                    pendingBatchTimer = setTimeout(() => {
+                        pendingBatchTimer = null;
                         // Load more
                         const batchSize = getBatchSize();
                         console.log(`📜 Loading more: ${batchSize} items`);
@@ -779,15 +805,15 @@ function initGuestbookPage() {
         const loadingIndicator = document.getElementById('loadingIndicator');
         const sentinel = document.getElementById('scrollSentinel');
 
-        if (loadingIndicator) {
-            if (renderedCount < allMessages.length) {
-                loadingIndicator.classList.remove('is-visible');
-                setElementHidden(loadingIndicator, false);
-            } else {
-                // All loaded
-                setElementHidden(loadingIndicator, true);
-                setElementHidden(sentinel, true); // Disable sentinel
-                if (infiniteScrollObserver) infiniteScrollObserver.disconnect();
+        if (renderedCount < allMessages.length) {
+            loadingIndicator?.classList.remove('is-visible');
+            setElementHidden(loadingIndicator, false);
+        } else {
+            setElementHidden(loadingIndicator, true);
+            setElementHidden(sentinel, true);
+            if (infiniteScrollObserver) {
+                infiniteScrollObserver.disconnect();
+                infiniteScrollObserver = null;
             }
         }
     }
@@ -981,6 +1007,7 @@ function initGuestbookPage() {
         const html = createMessageCard(msg, 0);
         const element = htmlToElement(html);
         if (!element) return null;
+        rememberCard(element, msg);
 
         const card = element.querySelector('.message-item');
         const messageId = msg.id || msg.objectId || '';
@@ -1017,6 +1044,8 @@ function initGuestbookPage() {
                 allMessages.push(msg);
             }
             renderedCount += 1;
+            if (position === 'prepend') renderedOrder.unshift(String(messageId));
+            else renderedOrder.push(String(messageId));
         }
 
         attachCommentHandlers();
@@ -1142,7 +1171,10 @@ function initGuestbookPage() {
             replacementElement.classList.add('visible');
         }
 
+        preserveCardPresentation(currentWrapper, replacementElement, messageState);
+        rememberCard(replacementElement, messageState);
         currentWrapper.replaceWith(replacementElement);
+        if (!replacementElement.classList.contains('visible')) animateMessage(replacementElement, 0);
         stabilizeGuestbookMessageImages(replacementElement);
         attachCommentHandlers();
 
@@ -1174,6 +1206,8 @@ function initGuestbookPage() {
         const currentCard = document.querySelector(`.message-item[data-message-id="${normalizedMessageId}"]`);
         if (currentCard) {
             allMessages.unshift(nextMessage);
+            renderedCount += 1;
+            renderedOrder.unshift(String(normalizedMessageId));
             const currentWrapper = currentCard.closest('.message-anim-wrapper') || currentCard;
             const replacementElement = htmlToElement(createMessageCard(nextMessage, 0));
             const replacementCard = replacementElement?.querySelector?.('.message-item') || null;
@@ -1186,7 +1220,10 @@ function initGuestbookPage() {
             if (currentWrapper.classList.contains('visible')) {
                 replacementElement.classList.add('visible');
             }
+            preserveCardPresentation(currentWrapper, replacementElement, nextMessage);
+            rememberCard(replacementElement, nextMessage);
             currentWrapper.replaceWith(replacementElement);
+            if (!replacementElement.classList.contains('visible')) animateMessage(replacementElement, 0);
             stabilizeGuestbookMessageImages(replacementElement);
             attachCommentHandlers();
             return replacementCard;
@@ -1457,14 +1494,23 @@ function initGuestbookPage() {
             commentInput.focus();
         }
     });
-    commentCancelBtn?.addEventListener('click', () => {
-        window.closeCommentModal();
-    });
     commentModal?.addEventListener('click', (event) => {
         if (event.target === commentModal) {
             window.closeCommentModal(event);
         }
     });
+
+    if (!window.__guestbookCommentEscapeBound) {
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                const modal = document.getElementById('commentModal');
+                if (modal && modal.classList.contains('active')) {
+                    window.closeCommentModal();
+                }
+            }
+        });
+        window.__guestbookCommentEscapeBound = true;
+    }
     syncCommentComposerEmptyState();
     syncCommentModalHitTargets(false);
 

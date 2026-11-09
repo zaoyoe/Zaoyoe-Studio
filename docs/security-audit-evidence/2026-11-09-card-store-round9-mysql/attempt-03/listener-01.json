@@ -1,0 +1,12 @@
+{
+  "pid": 92069,
+  "listeners": [
+    "127.0.0.1:23316"
+  ],
+  "port_was_unoccupied": true,
+  "no_existing_data": true,
+  "socket_only_bootstrap": true,
+  "no_mysqlx": true,
+  "no_option_files": true,
+  "isolated_datadir": "/private/tmp/kc-hold-7d64646488d639c6/data"
+}

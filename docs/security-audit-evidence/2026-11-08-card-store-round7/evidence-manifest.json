@@ -1,0 +1,222 @@
+{
+  "generated_at": "2026-11-09T00:12:29.878473+08:00",
+  "status": "HASHED",
+  "root": "/Volumes/chao/AI/xianyu_profit_calculator",
+  "file_count": 42,
+  "excluded": [
+    "docs/security-audit-evidence/2026-11-08-card-store-round7/evidence-manifest.json"
+  ],
+  "scope": "Round7 report plus archive files excluding this manifest itself. Not a commit, signature, full workspace or production evidence.",
+  "files": [
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/.gitignore",
+      "bytes": 104,
+      "sha256": "e225b14afe6f21eb3d425af095238d6c60c776492948bf0ca05202823a8e89ea"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/README.md",
+      "bytes": 1591,
+      "sha256": "c236e64c41613475c84e97662bbbb9fd7e0e57345cc564d3abc42e835bbe947c"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/archive-events.json",
+      "bytes": 742,
+      "sha256": "7e290d6cd398d7a827ae5c9088df78005026659ffa1f54cab12a276a6c30ddac"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/archive-procedure-first.py",
+      "bytes": 17404,
+      "sha256": "7bf48f53701bcb989a692db2686b12401a5a1970d6cd77f083f2bdb863af948a"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/archive-procedure.py",
+      "bytes": 17233,
+      "sha256": "2e9450db89637089cb8d6c5d199e769f320c7b2179fd56e8ac6719a295b239f7"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/backup-manifests/initial.json",
+      "bytes": 9508,
+      "sha256": "63325ac80dbbc8583a20e4f5c5cc85077325e693c4cb9fe8b3e0a6afb5b7b429"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/backup-manifests/resume.json",
+      "bytes": 251,
+      "sha256": "688d2ff541a93b6dcaae06ba0b9585046c9135fb290b98bc2050330a922c4aab"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/backup-manifests/round6-fixture-before.json",
+      "bytes": 346,
+      "sha256": "65d0b0351aae1556ca157fc8c8f44f8ad5da3f06db7a48138a85598ad9fed1f5"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/backup-verification.json",
+      "bytes": 4248,
+      "sha256": "00339d7c0ab2a3c6b66efc7dad4067eaaa42a3fe8e482743a54aa2daa0edbd3a"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/baseline-and-boundaries.json",
+      "bytes": 1157,
+      "sha256": "30f55a8529eaa3869d7af822daf2dfab6fc4dd4b182248a91dcf1034f8b26c2a"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/baseline-status-expanded.txt",
+      "bytes": 34754,
+      "sha256": "69d10c6592d98d91c272e1d6821cd54ec7a733ac50d29b54506fcf7872046753"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/delta/round7-working-tree-delta.patch",
+      "bytes": 65607,
+      "sha256": "47e6db015f11aaf798493beef289a1602b96f6c3a1b5ba2cacea9c80d913b077"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/delta-recovery-verification.json",
+      "bytes": 8682,
+      "sha256": "14bfcd864a1d2cb77c8723b340cd3376ee6573ef188569f1405d56454d96411b"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/final-integrity.json",
+      "bytes": 35241,
+      "sha256": "9b059873acc773cf0f094b2cdd551235feaaa8dfb29fb6fffc0d332d142749c9"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/finalization-backup-verification.json",
+      "bytes": 956,
+      "sha256": "1634f09c6cdf17685195f6bc9c4668d6b495566c0326f8f4675e9614d663bd97"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/finalization-procedure.py",
+      "bytes": 13577,
+      "sha256": "4f2f682dd9802acd9de54f4d3c4e2ce827c37e995362e5b4390c3f580ea89c79"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/historical-round6-integrity.json",
+      "bytes": 14251,
+      "sha256": "393dd23bd5bd6b468ec661ae9417e858e3754d1346bfb7342655f5bdc47f498b"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/isolation/preload.cjs",
+      "bytes": 1438,
+      "sha256": "d87e682b933d9a57ab604efce87a4b57f9b5df497b48e30d4f36cea4bf71a625"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/isolation/run.py",
+      "bytes": 1099,
+      "sha256": "3fbef5365d0b6779881f5ea667379c6b9f9804d1e6c84b47a8a59a02738cfe6c"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/log-provenance.json",
+      "bytes": 10174,
+      "sha256": "e969d396290427cc99bfb344d1364207ccf429068f2f13034f41145d649dd894"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/log-scan-before-archive.json",
+      "bytes": 3049,
+      "sha256": "2f9312201d6a89e9819d040a1d076f9c6e48679a8b861adcc0a5273817109ed4"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-chatgpt-regression.log",
+      "bytes": 7811,
+      "sha256": "5bb74c7a5522461207205c375dc588e66e17d7d1d33ebb9041cf70ad5c035ca9"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-fault-vitest-first.log",
+      "bytes": 3290,
+      "sha256": "9367b55f910ff4a51405f0b5e046dd7d088bcf00aad14fb19b4a12ceea23ed5e"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-fault-vitest-path-fix.log",
+      "bytes": 1509,
+      "sha256": "f097aaecf1ecf8e07cf4c2701c34b859612f6aaa762115bbc1dae091c3df04a3"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-initial-vitest.log",
+      "bytes": 37276,
+      "sha256": "184ad9dd65e77d8ac04c337440dac363d44a4b8534cc63cb4f09476605858b88"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-kc-regression.log",
+      "bytes": 58245,
+      "sha256": "145b6ec9bb2f8e88f98a0607eabb625c5393937a497255dbce36c12cc83474a7"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-model-first.log",
+      "bytes": 14182,
+      "sha256": "d3a75806704036f03526a3afbc48f896237fe8b0eb1e25426a02ee9e74ccf69a"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-native-regression-fixture-fixed.log",
+      "bytes": 41361,
+      "sha256": "d67224fb475d8ca203729f60ad117c235b7178fe9a81498fe6b445187cb25ecd"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-native-regression.log",
+      "bytes": 51637,
+      "sha256": "00f75d78e0c4c549d717a8b2b8df26d8f50f9f95deaeb7e5bc250d1b2f9f9145"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-vitest-adapted.log",
+      "bytes": 14026,
+      "sha256": "9f8d5b5da348f13f11dfb65642db335e7530e9af1d3e4ed72f5aa2e364b1877b"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-vitest-helper-fix.log",
+      "bytes": 1508,
+      "sha256": "0cde9d584708e10320d6907ffd30c8fb18a77c8dc93555f8e090938797d805b4"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/packaging-boundary.json",
+      "bytes": 1017,
+      "sha256": "d1324a6fe38528ad820194f97aee40c18919437e1eb088b82d930addd4f97aa7"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-extra-regression-plan.json",
+      "bytes": 1081,
+      "sha256": "8b77deb5555ef6c06abce50ae2625b7f1883e60e2697d3f9fd6ab6f9c7b88bc0"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-extra-regression-results.json",
+      "bytes": 1468,
+      "sha256": "ce6a6cd769caae8878e94b1b753674185ec7d29785c2dc0fec268fb0d5de7806"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-regression-plan.json",
+      "bytes": 1636,
+      "sha256": "cc2cfa5763ebdc2de0e392a464602c3be7bc4cea633798b2b009a6e1ae18e7c7"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-regression-results.json",
+      "bytes": 2032,
+      "sha256": "01f1317a394f1e610a0c5b33ee7db22058b235af1d8340d6d75ad19e2e23d500"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-syntax-results.json",
+      "bytes": 2003,
+      "sha256": "0365d64021ca836e2aa958537c1df067730c08208eab6b77d6dea4e9205f6c80"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/source-manifest.json",
+      "bytes": 9828,
+      "sha256": "214d36cd60f1136f0cee222c91c8259dd69f78797f5e50171d3b6097b68aeaa0"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/status-before-archive-expanded.txt",
+      "bytes": 34961,
+      "sha256": "345d36fb2c577e3db98b9ee3f3992e6844518140771a70f64e1eaccc42424eb3"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/verification-results.json",
+      "bytes": 5261,
+      "sha256": "229e0fb25fbd64c9c01ac252ae81649617e704d92ddf16315714c21e34ad6d2d"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/whitespace-results.json",
+      "bytes": 1043,
+      "sha256": "faf5e4325d1d65a0d6a28f57232da8159bd23096e0fd4aae3c538e21e5803210"
+    },
+    {
+      "path": "docs/security-card-store-hardening-round7-2026-11-08.md",
+      "bytes": 12571,
+      "sha256": "e91062e62774f258fc7835874ec9d0ead106a54fa0d995693be3458d5b50480f"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "exit": 1,
+  "stage": "write target.json after successful native initialization, socket-only identity verification, fixture application, root hardening and loopback start",
+  "error": "Python Path.open does not accept opener; no database scenario was run",
+  "backup": "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/prepare-lab-before-target-fix.py",
+  "sha256": "5a6b97cba89c7d5f2ff927845e50a91eef14417d667c5841c6cde53798fd2193",
+  "recovery": "Do not rerun initialization or fixture. Verify owned live process and finish only the target file write."
+}

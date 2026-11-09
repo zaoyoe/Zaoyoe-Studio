@@ -1,0 +1,1 @@
+{"initialInvocationExit":1,"initialFailure":"CommonJS test runner used top-level await; test processes were not started","correction":"wrapped Promise.allSettled in an async function; no application source or assertions changed"}

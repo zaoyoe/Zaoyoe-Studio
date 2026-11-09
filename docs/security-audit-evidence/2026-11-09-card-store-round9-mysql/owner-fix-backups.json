@@ -1,0 +1,14 @@
+[
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs",
+    "backup": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/before-owner-contract-fix-lab.cjs",
+    "sha256": "c48e2b9edf6ca903b44f9ef9de812ce8613eb685a74ddf93f93bcf53363a0190",
+    "readback_verified": true
+  },
+  {
+    "path": "tests/security-round8-kc-mysql-lab.test.js",
+    "backup": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/before-owner-contract-fix-security-round8-kc-mysql-lab.test.js",
+    "sha256": "b6ed3608ac2378fccee86acb99820097d143fe2d53747518fc0294cf2d730582",
+    "readback_verified": true
+  }
+]

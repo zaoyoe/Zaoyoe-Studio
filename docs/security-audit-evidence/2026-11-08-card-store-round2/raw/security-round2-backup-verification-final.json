@@ -1,0 +1,326 @@
+{
+  "verifiedAt": "2026-11-08T10:27:54.239Z",
+  "kind": "local-file-backups-not-git-commits",
+  "manifests": [
+    {
+      "manifest": "/tmp/security-hardening-20261108-round2-before/manifest.json",
+      "manifestSha256": "c6c983d824acc768f1494f4adb5dc99d125f49b8585259ffa2db765e28b98f72",
+      "entries": [
+        {
+          "path": "api/_lib/payments/zpay-webhook.js",
+          "sha256": "e1c18ec631d1df284167d9f195281bf438f3ecf9b752da50bcf9999b68a4dd0a",
+          "backup": "/tmp/security-hardening-20261108-round2-before/api/_lib/payments/zpay-webhook.js",
+          "actualSha256": "e1c18ec631d1df284167d9f195281bf438f3ecf9b752da50bcf9999b68a4dd0a",
+          "status": "PASS",
+          "bytes": 29549
+        },
+        {
+          "path": "api/_lib/payments/provider-adapters.js",
+          "sha256": "120b16d0e6ed595da5705f7e76af24c8c9bd8b4e2a159aa2a5fe13c605be0f1e",
+          "backup": "/tmp/security-hardening-20261108-round2-before/api/_lib/payments/provider-adapters.js",
+          "actualSha256": "120b16d0e6ed595da5705f7e76af24c8c9bd8b4e2a159aa2a5fe13c605be0f1e",
+          "status": "PASS",
+          "bytes": 68632
+        },
+        {
+          "path": "server/api-handlers/admin/shop/_r2-media.js",
+          "sha256": "2b16518f6803497deb8062775b04becdbf00f01f5d2ad66c119fd13994e19c13",
+          "backup": "/tmp/security-hardening-20261108-round2-before/server/api-handlers/admin/shop/_r2-media.js",
+          "actualSha256": "2b16518f6803497deb8062775b04becdbf00f01f5d2ad66c119fd13994e19c13",
+          "status": "PASS",
+          "bytes": 5647
+        },
+        {
+          "path": "services/kc-pay-gpt/server.js",
+          "sha256": "8c51f0f8ed4563ca1eedb3f7bae13e36f73a3a7c8eabbe827b257d39bf339b92",
+          "backup": "/tmp/security-hardening-20261108-round2-before/services/kc-pay-gpt/server.js",
+          "actualSha256": "8c51f0f8ed4563ca1eedb3f7bae13e36f73a3a7c8eabbe827b257d39bf339b92",
+          "status": "PASS",
+          "bytes": 218523
+        },
+        {
+          "path": "services/kc-pay-gpt/mysql-store.js",
+          "sha256": "d4c79cd64039fecbff382143aa9ca87c8f5b6e0abe401d99d830e86cc9d7912a",
+          "backup": "/tmp/security-hardening-20261108-round2-before/services/kc-pay-gpt/mysql-store.js",
+          "actualSha256": "d4c79cd64039fecbff382143aa9ca87c8f5b6e0abe401d99d830e86cc9d7912a",
+          "status": "PASS",
+          "bytes": 182602
+        },
+        {
+          "path": "services/kc-pay-gpt/public/index.html",
+          "sha256": "08f50669aeb24801fd27a1e63f8bed550ff58e1af049f40914c7ca7c17877a49",
+          "backup": "/tmp/security-hardening-20261108-round2-before/services/kc-pay-gpt/public/index.html",
+          "actualSha256": "08f50669aeb24801fd27a1e63f8bed550ff58e1af049f40914c7ca7c17877a49",
+          "status": "PASS",
+          "bytes": 178040
+        },
+        {
+          "path": "services/kc-pay-gpt/.env.example",
+          "sha256": "dca9d5ba299ceb97b7ec44eb330f1f6397c8aec19549b1c63f8a5677d7046d7e",
+          "backup": "/tmp/security-hardening-20261108-round2-before/services/kc-pay-gpt/.env.example",
+          "actualSha256": "dca9d5ba299ceb97b7ec44eb330f1f6397c8aec19549b1c63f8a5677d7046d7e",
+          "status": "PASS",
+          "bytes": 3459
+        },
+        {
+          "path": "server/api-handlers/admin/shop/mutate.js",
+          "sha256": "6602a520fa076d7cd8b161ebc08ad01aabb2f92fb9c217eafdbab2dab6c2ad1e",
+          "backup": "/tmp/security-hardening-20261108-round2-before/server/api-handlers/admin/shop/mutate.js",
+          "actualSha256": "6602a520fa076d7cd8b161ebc08ad01aabb2f92fb9c217eafdbab2dab6c2ad1e",
+          "status": "PASS",
+          "bytes": 188419
+        },
+        {
+          "path": "server/api-handlers/public/shop.js",
+          "sha256": "d4092aa8aca25b76feef3b051bcd16eb9db8b7e1ab4884209ad30ce90b9baf27",
+          "backup": "/tmp/security-hardening-20261108-round2-before/server/api-handlers/public/shop.js",
+          "actualSha256": "d4092aa8aca25b76feef3b051bcd16eb9db8b7e1ab4884209ad30ce90b9baf27",
+          "status": "PASS",
+          "bytes": 241652
+        },
+        {
+          "path": "api/_lib/shop-cdk-secrets.js",
+          "sha256": "8215625a4a44ea8189548972e73aa2f194f114d503a35e0167e88f07aa0c76a6",
+          "backup": "/tmp/security-hardening-20261108-round2-before/api/_lib/shop-cdk-secrets.js",
+          "actualSha256": "8215625a4a44ea8189548972e73aa2f194f114d503a35e0167e88f07aa0c76a6",
+          "status": "PASS",
+          "bytes": 4494
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "manifest": "/tmp/security-hardening-20261108-round2-continuation/manifest.json",
+      "manifestSha256": "3f67e2c7d429a667c46f0a50423b4fd76ecdb5f2e82500a4bd350628d2254e14",
+      "entries": [
+        {
+          "path": "tests/payment-zpay-webhook-handler.test.js",
+          "sha256": "3b25531862c873ffe1bcc78271e0aa522dd27bdd5e7a4dd8fa8ca173fea26f4d",
+          "backup": "/tmp/security-hardening-20261108-round2-continuation/tests/payment-zpay-webhook-handler.test.js",
+          "actualSha256": "3b25531862c873ffe1bcc78271e0aa522dd27bdd5e7a4dd8fa8ca173fea26f4d",
+          "status": "PASS",
+          "bytes": 32373
+        },
+        {
+          "path": "tests/security-round2-media-download.test.js",
+          "sha256": "e1411d8831b6b0058cd919e7355562a1a24c643bec86fbbeae26fbc8d9e357f8",
+          "backup": "/tmp/security-hardening-20261108-round2-continuation/tests/security-round2-media-download.test.js",
+          "actualSha256": "e1411d8831b6b0058cd919e7355562a1a24c643bec86fbbeae26fbc8d9e357f8",
+          "status": "PASS",
+          "bytes": 7691
+        },
+        {
+          "path": "services/kc-pay-gpt/mysql-store.js",
+          "sha256": "d4c79cd64039fecbff382143aa9ca87c8f5b6e0abe401d99d830e86cc9d7912a",
+          "backup": "/tmp/security-hardening-20261108-round2-continuation/services/kc-pay-gpt/mysql-store.js",
+          "actualSha256": "d4c79cd64039fecbff382143aa9ca87c8f5b6e0abe401d99d830e86cc9d7912a",
+          "status": "PASS",
+          "bytes": 182602
+        },
+        {
+          "path": "services/kc-pay-gpt/.env.example",
+          "sha256": "dca9d5ba299ceb97b7ec44eb330f1f6397c8aec19549b1c63f8a5677d7046d7e",
+          "backup": "/tmp/security-hardening-20261108-round2-continuation/services/kc-pay-gpt/.env.example",
+          "actualSha256": "dca9d5ba299ceb97b7ec44eb330f1f6397c8aec19549b1c63f8a5677d7046d7e",
+          "status": "PASS",
+          "bytes": 3459
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "manifest": "/tmp/security-hardening-20261108-round2-finalization-before/manifest.json",
+      "manifestSha256": "07b81d5447730d45fe0da99a06fb544d830c2c1240709f9737eada9e1e19e9b5",
+      "entries": [
+        {
+          "path": "tests/security-round2-kc-credentials.test.js",
+          "sha256": "13d4904b36948d71abfd0292fa25c8cbb73f6ce98a66a570600b3ee372b58165",
+          "backup": "/tmp/security-hardening-20261108-round2-finalization-before/tests/security-round2-kc-credentials.test.js",
+          "actualSha256": "13d4904b36948d71abfd0292fa25c8cbb73f6ce98a66a570600b3ee372b58165",
+          "status": "PASS",
+          "bytes": 10978
+        },
+        {
+          "path": "api/_lib/payments/provider-adapters.js",
+          "sha256": "3a33c840e78834b499148c687cf2281ba124de1e3b4bb2236608436090aeb4fa",
+          "backup": "/tmp/security-hardening-20261108-round2-finalization-before/api/_lib/payments/provider-adapters.js",
+          "actualSha256": "3a33c840e78834b499148c687cf2281ba124de1e3b4bb2236608436090aeb4fa",
+          "status": "PASS",
+          "bytes": 68585
+        },
+        {
+          "path": "tests/provider-adapters-zpay-refund.test.js",
+          "sha256": "b68800046f7298aaf4cb33d75a5d2ceb36a786ee2f8c04da0944cbd028569b7a",
+          "backup": "/tmp/security-hardening-20261108-round2-finalization-before/tests/provider-adapters-zpay-refund.test.js",
+          "actualSha256": "b68800046f7298aaf4cb33d75a5d2ceb36a786ee2f8c04da0944cbd028569b7a",
+          "status": "PASS",
+          "bytes": 7952
+        },
+        {
+          "path": "tests/payment-zpay-webhook-handler.test.js",
+          "sha256": "3b25531862c873ffe1bcc78271e0aa522dd27bdd5e7a4dd8fa8ca173fea26f4d",
+          "backup": "/tmp/security-hardening-20261108-round2-finalization-before/tests/payment-zpay-webhook-handler.test.js",
+          "actualSha256": "3b25531862c873ffe1bcc78271e0aa522dd27bdd5e7a4dd8fa8ca173fea26f4d",
+          "status": "PASS",
+          "bytes": 32373
+        },
+        {
+          "path": "services/kc-pay-gpt/server.js",
+          "sha256": "49c0668646a99fc288ba2a5dd9785df8f1c8f5719072742a014146f7a2f416f0",
+          "backup": "/tmp/security-hardening-20261108-round2-finalization-before/services/kc-pay-gpt/server.js",
+          "actualSha256": "49c0668646a99fc288ba2a5dd9785df8f1c8f5719072742a014146f7a2f416f0",
+          "status": "PASS",
+          "bytes": 219167
+        },
+        {
+          "path": "services/kc-pay-gpt/public/index.html",
+          "sha256": "f5cd17fc547f43665e596f49cbcff9b2786664b537415b90650d0a13b72233df",
+          "backup": "/tmp/security-hardening-20261108-round2-finalization-before/services/kc-pay-gpt/public/index.html",
+          "actualSha256": "f5cd17fc547f43665e596f49cbcff9b2786664b537415b90650d0a13b72233df",
+          "status": "PASS",
+          "bytes": 178473
+        },
+        {
+          "path": "server/api-handlers/admin/shop/supplier-catalog.js",
+          "sha256": "aeb29952c9ed013c50e0408b3553e8469d120b707e241842c3b5951a6a8eb480",
+          "backup": "/tmp/security-hardening-20261108-round2-finalization-before/server/api-handlers/admin/shop/supplier-catalog.js",
+          "actualSha256": "aeb29952c9ed013c50e0408b3553e8469d120b707e241842c3b5951a6a8eb480",
+          "status": "PASS",
+          "bytes": 126160
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "manifest": "/tmp/security-hardening-20261108-round2-media-before/manifest.json",
+      "manifestSha256": "d6166f6ce6a0af8d4d59f762766e0986b5ffc4665a204bc7f06c9cf3d19b7c6a",
+      "entries": [
+        {
+          "path": "server/api-handlers/admin/shop/_product-image-assets.js",
+          "sha256": "579ac8fb6aad66adc1b0ba13608039a4a5fc8cd17203a16cd7b9858ffdd26c01",
+          "bytes": 6700,
+          "backup": "/tmp/security-hardening-20261108-round2-media-before/server/api-handlers/admin/shop/_product-image-assets.js",
+          "actualSha256": "579ac8fb6aad66adc1b0ba13608039a4a5fc8cd17203a16cd7b9858ffdd26c01",
+          "status": "PASS"
+        },
+        {
+          "path": "server/api-handlers/admin/shop/supplier-catalog.js",
+          "sha256": "aeb29952c9ed013c50e0408b3553e8469d120b707e241842c3b5951a6a8eb480",
+          "bytes": 126160,
+          "backup": "/tmp/security-hardening-20261108-round2-media-before/server/api-handlers/admin/shop/supplier-catalog.js",
+          "actualSha256": "aeb29952c9ed013c50e0408b3553e8469d120b707e241842c3b5951a6a8eb480",
+          "status": "PASS"
+        },
+        {
+          "path": "tests/shop-product-image-assets.test.js",
+          "sha256": "e9d49c4def007a5014ee8ca526b72c6cc4e71b86e5557e66708c9a38f33e69fb",
+          "bytes": 15679,
+          "backup": "/tmp/security-hardening-20261108-round2-media-before/tests/shop-product-image-assets.test.js",
+          "actualSha256": "e9d49c4def007a5014ee8ca526b72c6cc4e71b86e5557e66708c9a38f33e69fb",
+          "status": "PASS"
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "manifest": "/tmp/security-hardening-20261108-round2-sanitizer-before/manifest.json",
+      "manifestSha256": "923711adc248bc4cc17f7aa9d9cbd3def8716207104b5c7961d73153896b34b3",
+      "entries": [
+        {
+          "path": "js/admin-shop.js",
+          "sha256": "c60cf3ccf1e988154e2d023b6d1b659730dc66d0feb10d46042815877158e214",
+          "backup": "/tmp/security-hardening-20261108-round2-sanitizer-before/js/admin-shop.js",
+          "actualSha256": "c60cf3ccf1e988154e2d023b6d1b659730dc66d0feb10d46042815877158e214",
+          "status": "PASS",
+          "bytes": 1445208
+        },
+        {
+          "path": "server/api-handlers/admin/shop/supplier-catalog.js",
+          "sha256": "8943086239fbb9e3c7a2141d2eba6ee28995cc83461212b2ecccabcb54fae8e6",
+          "backup": "/tmp/security-hardening-20261108-round2-sanitizer-before/server/api-handlers/admin/shop/supplier-catalog.js",
+          "actualSha256": "8943086239fbb9e3c7a2141d2eba6ee28995cc83461212b2ecccabcb54fae8e6",
+          "status": "PASS",
+          "bytes": 126001
+        },
+        {
+          "path": "server/api-handlers/admin/shop/_r2-media.js",
+          "sha256": "85d36f944f68da64e3474e2f88058453bb61209b697fc2b965e61a6a5a2ead8b",
+          "backup": "/tmp/security-hardening-20261108-round2-sanitizer-before/server/api-handlers/admin/shop/_r2-media.js",
+          "actualSha256": "85d36f944f68da64e3474e2f88058453bb61209b697fc2b965e61a6a5a2ead8b",
+          "status": "PASS",
+          "bytes": 6164
+        },
+        {
+          "path": "tests/shop-product-image-assets.test.js",
+          "sha256": "e75811be886f7afd3c9fe0a6e0d998744dc1f052fdd4b97a443d904b3b2fdaf2",
+          "backup": "/tmp/security-hardening-20261108-round2-sanitizer-before/tests/shop-product-image-assets.test.js",
+          "actualSha256": "e75811be886f7afd3c9fe0a6e0d998744dc1f052fdd4b97a443d904b3b2fdaf2",
+          "status": "PASS",
+          "bytes": 15763
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "manifest": "/tmp/security-hardening-20261108-round2-dispatch-before/manifest.json",
+      "manifestSha256": "bd8f560c3832a65c5b0984717b1646e4ad14e7157875c38ffaf3f8d508d84775",
+      "entries": [
+        {
+          "path": "services/kc-pay-gpt/server.js",
+          "sha256": "49c0668646a99fc288ba2a5dd9785df8f1c8f5719072742a014146f7a2f416f0",
+          "backup": "/tmp/security-hardening-20261108-round2-dispatch-before/services/kc-pay-gpt/server.js",
+          "actualSha256": "49c0668646a99fc288ba2a5dd9785df8f1c8f5719072742a014146f7a2f416f0",
+          "status": "PASS",
+          "bytes": 219167
+        },
+        {
+          "path": "tests/security-round2-kc-activation.test.js",
+          "sha256": "4f3accc0709931e949794eace09fb2956829fe9b9a5a3664adb045cdf7994d84",
+          "backup": "/tmp/security-hardening-20261108-round2-dispatch-before/tests/security-round2-kc-activation.test.js",
+          "actualSha256": "4f3accc0709931e949794eace09fb2956829fe9b9a5a3664adb045cdf7994d84",
+          "status": "PASS",
+          "bytes": 11340
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "manifest": "/tmp/security-hardening-20261108-round2-routing-fixture-before/manifest.json",
+      "manifestSha256": "4166f6202548ace4b17e895a525c00d4bb3fe3c3c185fbabe9db17ca90563d70",
+      "entries": [
+        {
+          "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+          "sha256": "99bf8e87ed95cfa43c4d4102fa1561c8c9c90b6407ad664dd7c3e3ff210cf3c7",
+          "backup": "/tmp/security-hardening-20261108-round2-routing-fixture-before/services/kc-pay-gpt/test/recharge-routing.test.js",
+          "actualSha256": "99bf8e87ed95cfa43c4d4102fa1561c8c9c90b6407ad664dd7c3e3ff210cf3c7",
+          "status": "PASS",
+          "bytes": 30693
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "manifest": "/tmp/security-hardening-20261108-round2-amount-final-before/manifest.json",
+      "manifestSha256": "3abd595b09c4ff60849c7c527cfbf9589a1b7c58de3d28a5378bd11255f61071",
+      "entries": [
+        {
+          "path": "api/_lib/payments/zpay-amount.js",
+          "sha256": "a6bdd6297ed02c1bf60a0f13565867aca7bad761a0ddf8e9d4157c94732187dc",
+          "backup": "/tmp/security-hardening-20261108-round2-amount-final-before/api/_lib/payments/zpay-amount.js",
+          "actualSha256": "a6bdd6297ed02c1bf60a0f13565867aca7bad761a0ddf8e9d4157c94732187dc",
+          "status": "PASS",
+          "bytes": 776
+        },
+        {
+          "path": "tests/provider-adapters-zpay-refund.test.js",
+          "sha256": "1e4447fc53225e8bbc11da1b55d76e0ce0913fb2ea3e5db08baab7bafceed4d3",
+          "backup": "/tmp/security-hardening-20261108-round2-amount-final-before/tests/provider-adapters-zpay-refund.test.js",
+          "actualSha256": "1e4447fc53225e8bbc11da1b55d76e0ce0913fb2ea3e5db08baab7bafceed4d3",
+          "status": "PASS",
+          "bytes": 10041
+        }
+      ],
+      "status": "PASS"
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "recorded_at": "2026-11-08T19:52:32.441363+08:00",
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "meaning": "Current dirty source snapshot; whole-file Git diff includes earlier work. Final tests were run in the preceding phase; this continuation did not edit these files.",
+  "files": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "role": "changed_this_round",
+      "sha256": "504c70d060fc97539a536baec3f1c5a4194a1027bb8e75e773e44a67d885b759",
+      "bytes": 189267,
+      "git_status": "M services/kc-pay-gpt/mysql-store.js"
+    },
+    {
+      "path": "services/kc-pay-gpt/server.js",
+      "role": "changed_this_round",
+      "sha256": "737c0494dadf39056091b4597356170bf16a12bd2bd1423831a737587e6432b0",
+      "bytes": 220421,
+      "git_status": "M services/kc-pay-gpt/server.js"
+    },
+    {
+      "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+      "role": "changed_this_round",
+      "sha256": "c3eff1747400638ad5193bcb3e439fd4af3fdd6666bcd26c243b31dec3729960",
+      "bytes": 31775,
+      "git_status": "M services/kc-pay-gpt/test/recharge-routing.test.js"
+    },
+    {
+      "path": "services/kc-pay-gpt/test/local-preview-recovery.test.js",
+      "role": "changed_this_round",
+      "sha256": "1c0e6fce296d13e4bc03038003f059e34fbb1adf0752ba5f48ac2cd2491673f3",
+      "bytes": 14199,
+      "git_status": "M services/kc-pay-gpt/test/local-preview-recovery.test.js"
+    },
+    {
+      "path": "tests/security-round2-kc-activation.test.js",
+      "role": "changed_this_round",
+      "sha256": "0fc07c07133f3420bfa95a4e928e34c790b85ee6df233a549b721bd06ee916c6",
+      "bytes": 13782,
+      "git_status": "?? tests/security-round2-kc-activation.test.js"
+    },
+    {
+      "path": "tests/security-round3-kc-activation-atomic.test.js",
+      "role": "changed_this_round",
+      "sha256": "6919ebdc2b15868ed9543c479d54a06ce6888a27b2cbf86252e31f6e0bf4189b",
+      "bytes": 23717,
+      "git_status": "?? tests/security-round3-kc-activation-atomic.test.js"
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+      "role": "regression_only",
+      "sha256": "1a8b2908ffad6ef42e288b4c0475c28a503073408853eb42e713a8fe41e174b9",
+      "bytes": 19582,
+      "git_status": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing-recovery.test.js",
+      "role": "regression_only",
+      "sha256": "340d1d017616094a37687e3871f7f9abe2412f8ca1d87f4536f7a7c42a23b669",
+      "bytes": 5335,
+      "git_status": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/test/task-safety.test.js",
+      "role": "regression_only",
+      "sha256": "b9fac87e62510596231a34b94faccf0b772fbf5d10e8af1592bf2100761454a1",
+      "bytes": 11061,
+      "git_status": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/Dockerfile",
+      "role": "packaging_review_only",
+      "sha256": "023ebb80f6d25aa857053f4dc8026f55674af45ea34529a7311559af53e5fa4e",
+      "bytes": 2016,
+      "git_status": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/.dockerignore",
+      "role": "packaging_review_only",
+      "sha256": "5a5023d9e6dbae10022ba839347d5dab25b09016dbfaf629017cc54818890b80",
+      "bytes": 127,
+      "git_status": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/docker-compose.yml",
+      "role": "packaging_review_only",
+      "sha256": "e03d588b3bed6e7c5ac0bf488e24c9977cc49154c9628ca09029069262334181",
+      "bytes": 4166,
+      "git_status": ""
+    },
+    {
+      "path": "deploy/kvm4/verify-server.Dockerfile",
+      "role": "packaging_review_only",
+      "sha256": "084a689549a6b107d956b6bf472657bcb154b39b3971a1e8d7d0c9e2e9424caa",
+      "bytes": 350,
+      "git_status": ""
+    }
+  ]
+}

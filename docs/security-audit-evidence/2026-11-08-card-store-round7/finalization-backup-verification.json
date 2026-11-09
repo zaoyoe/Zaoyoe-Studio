@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-09T00:09:32.886652+08:00",
+  "path": "docs/security-audit-evidence/2026-11-08-card-store-round7/.gitignore",
+  "backup_absolute_path": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-round7-finalization-backup-z1f7bm6w/round7.gitignore.before",
+  "before_sha256": "ab1cddafcb19b7ecc9cd4c79d336bb85c19d7d681b209441a9d68247e8f94372",
+  "backup_sha256": "ab1cddafcb19b7ecc9cd4c79d336bb85c19d7d681b209441a9d68247e8f94372",
+  "backup_readback_matches": true,
+  "after_sha256": "e225b14afe6f21eb3d425af095238d6c60c776492948bf0ca05202823a8e89ea",
+  "reason": "Root logs rule excluded the parent directory; the earlier !logs/*.log exception alone was insufficient. Added !logs/ in this round-only .gitignore.",
+  "archived_log_files_visible_after": 10,
+  "boundary": "No root ignore rules, runtime code, old evidence or Git index modified. This is a finalization correction; the original archive procedure remains preserved as executed."
+}

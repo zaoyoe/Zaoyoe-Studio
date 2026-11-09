@@ -1,10 +1,54 @@
 (function () {
     'use strict';
 
+    function buildProfileLbiField({
+        id,
+        type = 'text',
+        labelText = '',
+        labelI18n = '',
+        autocomplete = 'off',
+        inputClass = '',
+        inputAttributes = '',
+        corner = 20
+    }) {
+        const isPassword = type === 'password';
+        const initialText = (window.i18n && typeof window.i18n.t === 'function' ? window.i18n.t(labelI18n) : null) || labelText;
+        const labelSpans = [...initialText].map((char, index) => `<span style="--i: ${index};">${char}</span>`).join('');
+        const i18nAttr = labelI18n ? ` data-i18n="${labelI18n}"` : '';
+        const attrStr = inputAttributes ? ` ${inputAttributes.trim()}` : '';
+        return `
+            <div class="lbi" data-field="${initialText}" data-corner="${corner}">
+                <div class="lbi-box">
+                    <svg class="lbi-ring" viewBox="0 0 380 48" aria-hidden="true">
+                        <path class="lbi-left" d=""></path>
+                        <path class="lbi-right" d=""></path>
+                        <path class="lbi-gap lbi-gap-left" pathLength="1" d=""></path>
+                        <path class="lbi-gap lbi-gap-right" pathLength="1" d=""></path>
+                    </svg>
+                    <label class="lbi-label" for="${id}"${i18nAttr} data-lbi-prepared="${initialText}">${labelSpans}</label>
+                    <input type="${type}" id="${id}" class="security-input lbi-field${inputClass ? ` ${inputClass}` : ''}" autocomplete="${autocomplete}"${attrStr}>
+                    ${isPassword ? `
+                    <button class="lbi-eye" type="button" aria-label="显示密码" data-show="false" tabindex="-1">
+                        <svg class="lbi-eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+                            <circle cx="12" cy="12" r="3" />
+                        </svg>
+                        <svg class="lbi-eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M4 10.5c2.4 3.8 5.6 5.5 8 5.5s5.6-1.7 8-5.5" />
+                            <path d="M6.5 13.5l-2 2.5" />
+                            <path d="M12 16v3" />
+                            <path d="M17.5 13.5l2 2.5" />
+                        </svg>
+                    </button>` : ''}
+                </div>
+            </div>`;
+    }
+
     function buildProfileModalHTML() {
         return `
     <div class="modal-overlay" id="profileModal" data-modal-dismiss-managed="1">
-        <div class="modal-content profile-modal">
+        <div class="glass-ring glass-ring--shell profile-modal-ring">
+        <div class="modal-content profile-modal glass-ring__surface">
             <div class="profile-mobile-topbar">
                 <div class="profile-mobile-topbar-shell">
                     <div class="profile-mobile-tabs">
@@ -148,16 +192,22 @@
                                         <h3 class="profile-security-desktop-title"
                                             data-i18n="security.changePassword">修改密码</h3>
                                         <div class="input-group">
-                                            <input type="password" id="desktop_oldPassword"
-                                                class="security-input glass-input" placeholder="当前密码"
-                                                autocomplete="new-password"
-                                                data-i18n-placeholder="security.currentPassword">
+                                            ${buildProfileLbiField({
+                                                id: 'desktop_oldPassword',
+                                                type: 'password',
+                                                labelText: '当前密码',
+                                                labelI18n: 'security.currentPassword',
+                                                autocomplete: 'new-password'
+                                            })}
                                         </div>
                                         <div class="input-group">
-                                            <input type="password" id="desktop_newPassword"
-                                                class="security-input glass-input" placeholder="新密码 (至少6位)"
-                                                autocomplete="new-password"
-                                                data-i18n-placeholder="security.newPassword">
+                                            ${buildProfileLbiField({
+                                                id: 'desktop_newPassword',
+                                                type: 'password',
+                                                labelText: '新密码 (至少6位)',
+                                                labelI18n: 'security.newPassword',
+                                                autocomplete: 'new-password'
+                                            })}
                                         </div>
                                         <button type="button" class="profile-security-desktop-primary-btn" data-profile-action="change-password"
                                             data-i18n="security.updatePassword">更新密码</button>
@@ -169,14 +219,23 @@
                                         <p class="profile-security-desktop-desc" data-i18n="security.bindPhoneDesc">
                                             绑定手机号可以增强账户安全性</p>
                                         <div class="input-group">
-                                            <input type="text" id="desktop_phoneNumberInput"
-                                                class="security-input glass-input" placeholder="输入手机号" maxlength="11"
-                                                data-i18n-placeholder="security.enterPhone">
+                                            ${buildProfileLbiField({
+                                                id: 'desktop_phoneNumberInput',
+                                                type: 'text',
+                                                labelText: '输入手机号',
+                                                labelI18n: 'security.enterPhone',
+                                                autocomplete: 'tel',
+                                                inputAttributes: 'maxlength="11"'
+                                            })}
                                         </div>
                                         <div class="input-group profile-security-desktop-code-row">
-                                            <input type="text" id="desktop_phoneCodeInput"
-                                                class="security-input glass-input" placeholder="输入6位验证码"
-                                                data-i18n-placeholder="security.enterVerifyCode">
+                                            ${buildProfileLbiField({
+                                                id: 'desktop_phoneCodeInput',
+                                                type: 'text',
+                                                labelText: '输入6位验证码',
+                                                labelI18n: 'security.enterVerifyCode',
+                                                autocomplete: 'one-time-code'
+                                            })}
                                             <button class="profile-security-desktop-code-btn"
                                                 id="desktop_sendPhoneCodeBtn" type="button" data-profile-action="send-phone-code"
                                                 data-i18n="security.getVerifyCode">获取验证码</button>
@@ -203,14 +262,22 @@
                                 <div class="mobile-security-section">
                                     <h3 class="mobile-section-title" data-i18n="security.changePassword">修改密码</h3>
                                     <div class="input-group">
-                                        <input type="password" id="mobile_oldPassword" class="security-input glass-input"
-                                            placeholder="当前密码" autocomplete="new-password"
-                                            data-i18n-placeholder="security.currentPassword">
+                                        ${buildProfileLbiField({
+                                            id: 'mobile_oldPassword',
+                                            type: 'password',
+                                            labelText: '当前密码',
+                                            labelI18n: 'security.currentPassword',
+                                            autocomplete: 'new-password'
+                                        })}
                                     </div>
                                     <div class="input-group">
-                                        <input type="password" id="mobile_newPassword" class="security-input glass-input"
-                                            placeholder="新密码 (至少6位)" autocomplete="new-password"
-                                            data-i18n-placeholder="security.newPassword">
+                                        ${buildProfileLbiField({
+                                            id: 'mobile_newPassword',
+                                            type: 'password',
+                                            labelText: '新密码 (至少6位)',
+                                            labelI18n: 'security.newPassword',
+                                            autocomplete: 'new-password'
+                                        })}
                                     </div>
                                     <button type="button" class="security-mobile-primary-btn" data-profile-action="change-password"
                                         data-i18n="security.updatePassword">更新密码</button>
@@ -220,14 +287,24 @@
                                     <h3 class="mobile-section-title" data-i18n="security.bindPhone">绑定手机号</h3>
                                     <p class="mobile-section-desc" data-i18n="security.bindPhoneDesc">绑定手机号可以增强账户安全性</p>
                                     <div class="input-group">
-                                        <input type="text" id="mobile_phoneNumberInput" class="security-input glass-input"
-                                            placeholder="输入手机号" maxlength="11"
-                                            data-i18n-placeholder="security.enterPhone">
+                                        ${buildProfileLbiField({
+                                            id: 'mobile_phoneNumberInput',
+                                            type: 'text',
+                                            labelText: '输入手机号',
+                                            labelI18n: 'security.enterPhone',
+                                            autocomplete: 'tel',
+                                            inputAttributes: 'maxlength="11"'
+                                        })}
                                     </div>
                                     <div class="input-group profile-mobile-code-row">
-                                        <input type="text" id="mobile_phoneCodeInput" class="security-input glass-input profile-mobile-code-input"
-                                            placeholder="输入6位验证码"
-                                            data-i18n-placeholder="security.enterVerifyCode">
+                                        ${buildProfileLbiField({
+                                            id: 'mobile_phoneCodeInput',
+                                            type: 'text',
+                                            labelText: '输入6位验证码',
+                                            labelI18n: 'security.enterVerifyCode',
+                                            autocomplete: 'one-time-code',
+                                            inputClass: 'profile-mobile-code-input'
+                                        })}
                                         <button class="security-mobile-code-btn" id="mobile_sendPhoneCodeBtn"
                                             type="button" data-profile-action="send-phone-code"
                                             data-i18n="security.getVerifyCode">获取验证码</button>
@@ -252,6 +329,7 @@
                 </div>
             </div>
         </div>
+        </div>
     </div>`;
     }
 
@@ -259,6 +337,12 @@
         if (document.getElementById('profileModal')) return;
         document.body.insertAdjacentHTML('beforeend', buildProfileModalHTML());
         window.i18n?.applyTranslations?.();
+        try {
+            window.LabelInput?.scan?.();
+            document.querySelectorAll('#profileModal .lbi').forEach((root) => {
+                window.LabelInput?.update?.(root);
+            });
+        } catch (_) {}
     }
 
     if (document.readyState === 'loading') {

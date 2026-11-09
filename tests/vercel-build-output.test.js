@@ -54,6 +54,38 @@ test('vercel static output keeps public assets while excluding function sources'
     assert.equal(files.has('debug-realtime.html'), false);
 });
 
+
+test('vercel static output excludes dotted test and spec fixtures without removing public modules', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vercel-static-fixtures-'));
+    const privateMarker = 'FIXTURE_ONLY_NOT_FOR_PUBLIC_STATIC_OUTPUT';
+    const privateFiles = [
+        'js/admin-access.test.js',
+        'js/admin-access.spec.js',
+        'js/session.test.mjs',
+        'js/session.spec.cjs',
+        'js/test.mjs',
+        'js/SPEC.cjs',
+        'css/admin.test.css',
+        'admin.spec.html'
+    ];
+    const publicFiles = ['js/admin-access.js', 'js/glass-mutations.mjs', 'js/contest.js', 'js/inspect.cjs'];
+
+    try {
+        for (const file of privateFiles) writeTempFile(tempRoot, file, privateMarker);
+        for (const file of publicFiles) writeTempFile(tempRoot, file, '/* public module */');
+
+        const result = buildStaticOutput({ rootDir: tempRoot });
+        const files = new Set(result.files);
+        for (const file of privateFiles) assert.equal(files.has(file), false, file);
+        for (const file of publicFiles) assert.equal(files.has(file), true, file);
+        for (const file of result.files) {
+            assert.equal(fs.readFileSync(path.join(result.outputRoot, file), 'utf8').includes(privateMarker), false, file);
+        }
+    } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+});
+
 test('vercel static asset filter does not treat real image assets as preview harnesses', () => {
     assert.equal(shouldCopyStaticAsset('assets/verify-preview.png'), true);
     assert.equal(shouldCopyStaticAsset('preview-hero-effects.html'), false);

@@ -435,7 +435,7 @@
                 const response = await fetch('/api/admin/login/send-tg-code', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ challengeToken: state.challengeToken })
+                    body: JSON.stringify({ challengeToken: state.challengeToken, fingerprint: getBrowserFingerprint() })
                 });
                 const data = await response.json();
                 setMessage(data.message || (data.success ? '验证码已发送' : '发送失败'), data.success);

@@ -1,0 +1,169 @@
+{
+  "scope": "Eleven round-only file deltas. Reverse and forward patch in temporary byte copies only; workspace and Git index untouched.",
+  "temporary_copy": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-round7-delta-recovery-bbkhojde",
+  "reverse_command": {
+    "command": [
+      "patch",
+      "-p1",
+      "-R",
+      "--batch",
+      "--fuzz=0",
+      "-i",
+      "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-08-card-store-round7/delta/round7-working-tree-delta.patch"
+    ],
+    "cwd": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-round7-delta-recovery-bbkhojde",
+    "exit": 0,
+    "stdout": "patching file 'services/kc-pay-gpt/mysql-store.js'\npatching file 'services/kc-pay-gpt/payment-retry.js'\npatching file 'services/kc-pay-gpt/stripe-protocol-payment.js'\npatching file 'services/kc-pay-gpt/test/payment-retry-safety.test.js'\npatching file 'services/kc-pay-gpt/test/payment-protocol-fallback.test.js'\npatching file 'services/kc-pay-gpt/test/mysql-card-cooldown.test.js'\npatching file 'services/kc-pay-gpt/test/card-freeze.test.js'\npatching file 'services/kc-pay-gpt/test/stripe-protocol-payment.test.js'\npatching file 'tests/security-round5-kc-owner-locks.test.js'\npatching file 'tests/security-round6-kc-card-ownership.test.js'\npatching file 'tests/security-round7-kc-payment-hold.test.js'\n",
+    "stderr": ""
+  },
+  "restored_snapshots": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "expected_sha256": "0ed041dc69dd7195ec210ab527abb83ca50231c8f4bf31d87974f67914f713b1",
+      "actual_sha256": "0ed041dc69dd7195ec210ab527abb83ca50231c8f4bf31d87974f67914f713b1",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/payment-retry.js",
+      "expected_sha256": "0b51dfb27a46985ac4d479d403122ffd2287e7aebbf14d6ad0a2755198ce5166",
+      "actual_sha256": "0b51dfb27a46985ac4d479d403122ffd2287e7aebbf14d6ad0a2755198ce5166",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/stripe-protocol-payment.js",
+      "expected_sha256": "93f1ec27ce315d8a03d8b94f1212c0f4345fc6fe6c4e3858245839dea4f68d47",
+      "actual_sha256": "93f1ec27ce315d8a03d8b94f1212c0f4345fc6fe6c4e3858245839dea4f68d47",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "expected_sha256": "c93789e2fa98ef0750c5bbd6c21710b654de0cf0ff0b3463a00bbdf2ae6dcb7c",
+      "actual_sha256": "c93789e2fa98ef0750c5bbd6c21710b654de0cf0ff0b3463a00bbdf2ae6dcb7c",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "expected_sha256": "f03b9dd4e9a3167ac2b1c635e0f435856eea0749bf10c234b85c993c3e18f520",
+      "actual_sha256": "f03b9dd4e9a3167ac2b1c635e0f435856eea0749bf10c234b85c993c3e18f520",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "expected_sha256": "52fc653bce8bdf60ae5b6ab3ce12ad754a964f9f82be49f30aa0ab78b5002942",
+      "actual_sha256": "52fc653bce8bdf60ae5b6ab3ce12ad754a964f9f82be49f30aa0ab78b5002942",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/card-freeze.test.js",
+      "expected_sha256": "f755e50cd3f977fae49b73665d74706404571919bac00a439759ad6e8298c29f",
+      "actual_sha256": "f755e50cd3f977fae49b73665d74706404571919bac00a439759ad6e8298c29f",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+      "expected_sha256": "73fd595fafd7b39433d4bf34da10a91f84395400fb06311eb1cddd0c0b93ba19",
+      "actual_sha256": "73fd595fafd7b39433d4bf34da10a91f84395400fb06311eb1cddd0c0b93ba19",
+      "matches": true
+    },
+    {
+      "path": "tests/security-round5-kc-owner-locks.test.js",
+      "expected_sha256": "39190f24f952590ca39ca3b8ca05a2e33db312ded95c37d26acbdc9820436e04",
+      "actual_sha256": "39190f24f952590ca39ca3b8ca05a2e33db312ded95c37d26acbdc9820436e04",
+      "matches": true
+    },
+    {
+      "path": "tests/security-round6-kc-card-ownership.test.js",
+      "expected_sha256": "c43d1786e4cecbb445470eb24369fa32d9702ac4e48cb2f4e85ebf20d50229f2",
+      "actual_sha256": "c43d1786e4cecbb445470eb24369fa32d9702ac4e48cb2f4e85ebf20d50229f2",
+      "matches": true
+    }
+  ],
+  "new_files_removed": [
+    {
+      "path": "tests/security-round7-kc-payment-hold.test.js",
+      "absent_after_reverse": true
+    }
+  ],
+  "forward_command": {
+    "command": [
+      "patch",
+      "-p1",
+      "--batch",
+      "--fuzz=0",
+      "-i",
+      "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-08-card-store-round7/delta/round7-working-tree-delta.patch"
+    ],
+    "cwd": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-round7-delta-recovery-bbkhojde",
+    "exit": 0,
+    "stdout": "patching file 'services/kc-pay-gpt/mysql-store.js'\npatching file 'services/kc-pay-gpt/payment-retry.js'\npatching file 'services/kc-pay-gpt/stripe-protocol-payment.js'\npatching file 'services/kc-pay-gpt/test/payment-retry-safety.test.js'\npatching file 'services/kc-pay-gpt/test/payment-protocol-fallback.test.js'\npatching file 'services/kc-pay-gpt/test/mysql-card-cooldown.test.js'\npatching file 'services/kc-pay-gpt/test/card-freeze.test.js'\npatching file 'services/kc-pay-gpt/test/stripe-protocol-payment.test.js'\npatching file 'tests/security-round5-kc-owner-locks.test.js'\npatching file 'tests/security-round6-kc-card-ownership.test.js'\npatching file 'tests/security-round7-kc-payment-hold.test.js'\n",
+    "stderr": ""
+  },
+  "replayed_files": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "expected_sha256": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+      "actual_sha256": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/payment-retry.js",
+      "expected_sha256": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22",
+      "actual_sha256": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/stripe-protocol-payment.js",
+      "expected_sha256": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d",
+      "actual_sha256": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "expected_sha256": "d7675bf3fd08afcf7a8bc4a1db2e06e6eb8a5585b3b05e4c7a9e6c38f2eb6dc1",
+      "actual_sha256": "d7675bf3fd08afcf7a8bc4a1db2e06e6eb8a5585b3b05e4c7a9e6c38f2eb6dc1",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "expected_sha256": "8dd381041bfd0cc910c35ec3cd1e67720ca886d95907d36b4cbae31d37adee94",
+      "actual_sha256": "8dd381041bfd0cc910c35ec3cd1e67720ca886d95907d36b4cbae31d37adee94",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "expected_sha256": "ba5523d9ade2832c42e46fa01c7d2eb094a84a5d14ae3755ec9f2d65be831b5f",
+      "actual_sha256": "ba5523d9ade2832c42e46fa01c7d2eb094a84a5d14ae3755ec9f2d65be831b5f",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/card-freeze.test.js",
+      "expected_sha256": "ebbb32bc5a773fd89f19f392a79440fb5ddfccb5fb7f352c6821fedb5227a312",
+      "actual_sha256": "ebbb32bc5a773fd89f19f392a79440fb5ddfccb5fb7f352c6821fedb5227a312",
+      "matches": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+      "expected_sha256": "75a46fdd8c6234038f67f29f94a0bd65526ad264d8830ec45b8cedd2e5d87b42",
+      "actual_sha256": "75a46fdd8c6234038f67f29f94a0bd65526ad264d8830ec45b8cedd2e5d87b42",
+      "matches": true
+    },
+    {
+      "path": "tests/security-round5-kc-owner-locks.test.js",
+      "expected_sha256": "e6e5f5d7eb17c3161735e6cc1576ea8744134916d5493f25bab82658cbc93079",
+      "actual_sha256": "e6e5f5d7eb17c3161735e6cc1576ea8744134916d5493f25bab82658cbc93079",
+      "matches": true
+    },
+    {
+      "path": "tests/security-round6-kc-card-ownership.test.js",
+      "expected_sha256": "824122a09c7bffaf7274773da7e8452f41c6e19a9fff92bb7d5ed62d86f25859",
+      "actual_sha256": "824122a09c7bffaf7274773da7e8452f41c6e19a9fff92bb7d5ed62d86f25859",
+      "matches": true
+    },
+    {
+      "path": "tests/security-round7-kc-payment-hold.test.js",
+      "expected_sha256": "fe1620710ec237f7e2e4d618ed5165d08b580a544869f3ecd90f3927920eb9c1",
+      "actual_sha256": "fe1620710ec237f7e2e4d618ed5165d08b580a544869f3ecd90f3927920eb9c1",
+      "matches": true
+    }
+  ]
+}

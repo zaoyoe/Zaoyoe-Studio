@@ -27,7 +27,7 @@ function frontendHarness() {
         window: {}, Date, Math, Number, String, Boolean,
         setInterval, clearInterval, setTimeout, clearTimeout,
         requestAnimationFrame: fn => fn(),
-        taskProgressValue: 50, activeJobKey: 'test-job',
+        taskProgressValue: 50, activeJobKey: 'test-job', activeTaskAccessToken: 'offline-capability',
         WebSocket: { OPEN: 1 },
         socket: { readyState: 1, send: data => sent.push(JSON.parse(data)) },
         showCapsule: (...args) => capsules.push(args),
@@ -66,7 +66,7 @@ async function dragSwitchSession({ prompts, reloadSucceeds = true, maxWaitMs = 9
         },
     };
     const context = vm.createContext({
-        page, Buffer, process: { env: {} }, Date: { now: () => now },
+        page, Buffer, process: { env: { KC_INTERNAL_CAPTCHA_TOKEN: 'offline-internal-key-at-least-32-bytes' } }, Date: { now: () => now },
         Number, Math, Array, captchaLog() {},
         isVerificationCleared: async () => cleared,
         findVisibleCaptchaClip: async () => ({ ...target }),
@@ -83,7 +83,11 @@ async function dragSwitchSession({ prompts, reloadSucceeds = true, maxWaitMs = 9
             return reloadSucceeds;
         },
         axios: {
-            post: async (url, data) => { pushes.push({ url, data }); },
+            create(options) {
+                expect(options).toEqual({ headers: { 'x-kc-internal-token': 'offline-internal-key-at-least-32-bytes' }, proxy: false, maxRedirects: 0 });
+                return this;
+            },
+            post: async (url, data) => { expect(url.startsWith('http://127.0.0.1:3100/')).toBe(true); pushes.push({ url, data }); },
             get: async () => { cleared = true; return { data: { clicked: false } }; },
         },
     });
@@ -220,7 +224,7 @@ describe('interactive CAPTCHA recovery', () => {
             waitForTimeout: async () => { now += 1; },
         };
         const context = vm.createContext({
-            page, Buffer, process: { env: {} },
+            page, Buffer, process: { env: { KC_INTERNAL_CAPTCHA_TOKEN: 'offline-internal-key-at-least-32-bytes' } },
             Date: { now: () => now },
             Number, Math, Array,
             captchaLog() {},
@@ -236,7 +240,11 @@ describe('interactive CAPTCHA recovery', () => {
             formatCaptchaGuideMessage: () => '请按题目要求操作',
             reloadHcaptchaChallenge: async () => { refreshes += 1; },
             axios: {
-                post: async (url, data) => { pushes.push({ url, data }); },
+            create(options) {
+                expect(options).toEqual({ headers: { 'x-kc-internal-token': 'offline-internal-key-at-least-32-bytes' }, proxy: false, maxRedirects: 0 });
+                return this;
+            },
+                post: async (url, data) => { expect(url.startsWith('http://127.0.0.1:3100/')).toBe(true); pushes.push({ url, data }); },
                 get: async url => {
                     waitTimeouts.push(Number(new URL(url).searchParams.get('timeout')));
                     now += 1300;

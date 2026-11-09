@@ -1,0 +1,26 @@
+{
+  "status": "STATIC REVIEW ONLY",
+  "runtime_changed": false,
+  "vercel_excluded_directories": [
+    "/services/",
+    "/tests/",
+    "/docs/"
+  ],
+  "kc_docker": "COPY . . currently includes acceptance/; not an HTTP route or boot entrypoint; review separate test-tool exclusion before a future release",
+  "image_build": "NOT RUN",
+  "production_artifact": "NOT RUN",
+  "files": [
+    {
+      "path": ".vercelignore",
+      "sha256": "439d5e7999c2fd6f9e32d0bb0cd32129e72a7175f61618822ed1009fd0c8c3a5"
+    },
+    {
+      "path": "services/kc-pay-gpt/.dockerignore",
+      "sha256": "5a5023d9e6dbae10022ba839347d5dab25b09016dbfaf629017cc54818890b80"
+    },
+    {
+      "path": "services/kc-pay-gpt/Dockerfile",
+      "sha256": "023ebb80f6d25aa857053f4dc8026f55674af45ea34529a7311559af53e5fa4e"
+    }
+  ]
+}

@@ -1,0 +1,2052 @@
+/* Reserve foreground priority when the Dock loads before shared glass CSS. */
+@layer glass-foreground;
+@import url("./modal-glass.css?v=75e23ac2a6e7") layer(glass-foreground.modal-rim);
+
+
+/* Glasswork Liquid Glass Custom Properties (from https://github.com/kubai087/glasswork/blob/main/glass.css) */
+@property --m-tint { syntax: '<color>'; inherits: true; initial-value: #ffffff; }
+@property --m-k { syntax: '<number>'; inherits: true; initial-value: 1; }
+@property --m-thin { syntax: '<number>'; inherits: true; initial-value: 0.06; }
+@property --m-dense { syntax: '<number>'; inherits: true; initial-value: 0.22; }
+@property --m-blur { syntax: '<number>'; inherits: true; initial-value: 2; }
+@property --m-sat { syntax: '<number>'; inherits: true; initial-value: 1.8; }
+@property --m-bri { syntax: '<number>'; inherits: true; initial-value: 1.06; }
+@property --m-con { syntax: '<number>'; inherits: true; initial-value: 1; }
+@property --m-catch { syntax: '<number>'; inherits: true; initial-value: 1; }
+@property --m-bevel { syntax: '<number>'; inherits: true; initial-value: 1; }
+@property --m-shadow { syntax: '<number>'; inherits: true; initial-value: 1; }
+@property --density { syntax: '<number>'; inherits: true; initial-value: 0.35; }
+@property --keep { syntax: '<number>'; inherits: true; initial-value: 1; }
+@property --floor { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --ink { syntax: '<color>'; inherits: true; initial-value: rgba(0, 0, 0, 0.86); }
+@property --ink-2 { syntax: '<color>'; inherits: true; initial-value: rgba(60, 60, 67, 0.7); }
+@property --ink-solid { syntax: '<color>'; inherits: true; initial-value: #000000; }
+@property --ink-a { syntax: '<number>'; inherits: true; initial-value: 0.86; }
+@property --well { syntax: '<color>'; inherits: true; initial-value: rgba(0, 0, 0, 0.15); }
+@property --row-hover { syntax: '<color>'; inherits: true; initial-value: rgba(0, 0, 0, 0.045); }
+@property --row-active { syntax: '<color>'; inherits: true; initial-value: rgba(0, 0, 0, 0.09); }
+
+/* Magnifying Dock & Navbar Popups · Site-Wide Liquid Glass System */
+.dock-cluster {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  right: 0;
+  bottom: calc(55px + env(safe-area-inset-bottom, 0px));
+  width: max-content;
+  margin-left: auto;
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  isolation: isolate;
+  will-change: transform;
+  contain: layout style;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translate3d(0, 104px, 0);
+  touch-action: pan-y;
+  pointer-events: none;
+  opacity: 0;
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1), opacity 60ms linear, width 300ms cubic-bezier(0.16, 1, 0.3, 1), max-width 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dock-cluster.is-ready {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+  pointer-events: auto;
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1), opacity 60ms linear, width 300ms cubic-bezier(0.16, 1, 0.3, 1), max-width 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Smoothly hide Dock downward with elegant physics curve when any modal/sheet/dialog/overlay is active */
+body.has-active-modal .dock-cluster,
+html.has-active-modal .dock-cluster,
+body.modal-open .dock-cluster,
+body.auth-sheet-open .dock-cluster,
+html.auth-sheet-open .dock-cluster,
+body.guestbook-composer-open .dock-cluster,
+body.wallet-modal-lock .dock-cluster,
+body.guest-shop-modal-open .dock-cluster,
+body.shop-cart-open .dock-cluster,
+body.ai-image-workbench-open .dock-cluster,
+html.ai-image-workbench-open .dock-cluster,
+body.prompt-spotlight-active .dock-cluster,
+body.ticket-detail-modal-open .dock-cluster,
+body.ticket-modal-open .dock-cluster,
+body[data-shop-cart-open="true"] .dock-cluster,
+body[data-shop-purchase-modal-open="true"] .dock-cluster,
+body.shop-list-drawer-open .dock-cluster,
+html.shop-list-drawer-open .dock-cluster,
+body:has(.shop-main.is-list-drawer-open) .dock-cluster,
+body:has(#shop-view-products.is-list-drawer-open) .dock-cluster,
+body:has(#myTicketDetailModal.active) .dock-cluster,
+body:has(#guestOrdersTicketModal.active) .dock-cluster,
+body:has(.guest-orders-modal-overlay.active) .dock-cluster,
+body:has(#myTicketDetailModal:not([hidden])) .dock-cluster,
+body:has(#guestOrdersTicketModal:not([hidden])) .dock-cluster,
+body:has(#shopPurchaseModal.active) .dock-cluster,
+body:has(#shopCartDrawer.active) .dock-cluster,
+body:has(#shopCartCheckoutModal.active) .dock-cluster,
+body:has(#shopSuccessModal.active) .dock-cluster,
+body:has(#guestCashPurchaseModal.active) .dock-cluster,
+body:has(.guest-shop-modal.active) .dock-cluster,
+body:has(#profileModal.active) .dock-cluster,
+body:has(#guestbookModal.active) .dock-cluster,
+body:has(#commentModal.active) .dock-cluster,
+body:has(#loginModal.active) .dock-cluster,
+body:has(#authModal.active) .dock-cluster,
+body:has(#adminLoginModal.active) .dock-cluster,
+body:has(.auth-sheet-overlay.active) .dock-cluster,
+body:has(#walletModal.active) .dock-cluster,
+body:has(#wallet-modal-overlay.active) .dock-cluster,
+body:has(.wallet-order-modal-overlay.active) .dock-cluster,
+body:has(#promptModal.active) .dock-cluster,
+body:has(.poetry-modal.active) .dock-cluster,
+body:has(#promptSpotlightOverlay.is-open) .dock-cluster,
+body:has(.prompt-spotlight-overlay.is-open) .dock-cluster,
+body:has(.modal-overlay.active) .dock-cluster,
+body:has(.modal.active) .dock-cluster,
+body:has(.modal.open) .dock-cluster,
+body:has(.modal-layer.open) .dock-cluster,
+body:has(.codes-modal-overlay.is-visible) .dock-cluster,
+body:has(dialog[open]) .dock-cluster {
+  pointer-events: none !important;
+  transform: translate3d(0, 140px, 0) !important;
+  opacity: 0 !important;
+  transition: transform 440ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms ease !important;
+}
+
+/* Smoothly hide Capsule Navbar upward when any modal/sheet/dialog/overlay is active */
+body.has-active-modal .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+html.has-active-modal .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.modal-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.auth-sheet-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+html.auth-sheet-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.guestbook-composer-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.wallet-modal-lock .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.guest-shop-modal-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.shop-cart-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.ai-image-workbench-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+html.ai-image-workbench-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.prompt-spotlight-active .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.ticket-detail-modal-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.ticket-modal-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body[data-shop-cart-open="true"] .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body[data-shop-purchase-modal-open="true"] .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#myTicketDetailModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#guestOrdersTicketModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.guest-orders-modal-overlay.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#myTicketDetailModal:not([hidden])) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#guestOrdersTicketModal:not([hidden])) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#shopPurchaseModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#shopCartDrawer.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#shopCartCheckoutModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#shopSuccessModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#guestCashPurchaseModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.guest-shop-modal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#profileModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#guestbookModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#commentModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#loginModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#authModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#adminLoginModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.auth-sheet-overlay.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#walletModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#wallet-modal-overlay.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.wallet-order-modal-overlay.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#promptModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.poetry-modal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#promptSpotlightOverlay.is-open) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.prompt-spotlight-overlay.is-open) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.modal-overlay.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.modal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.modal.open) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.modal-layer.open) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.codes-modal-overlay.is-visible) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(dialog[open]) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)) {
+  transform: translateY(calc(-100% - 40px)) !important;
+  opacity: 0 !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
+  transition: transform 0.44s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.32s ease, box-shadow 0.3s ease !important;
+}
+
+/* Full-screen scrims own the entire viewport, including the navigation area.
+   Hiding the glass also prevents tint bleed and interaction with background menus.
+   The cart-only state keeps its separate top/capsule behavior above. */
+body[data-nav-modal-open="true"] .framer-nav {
+  transform: translateY(calc(-100% - 40px)) !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
+}
+
+body[data-nav-modal-open="true"] :is(.nav-dropdown-portal, .avatar-dropdown, .dropdown-overlay) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Hide standalone AI workbench floating orb on prompts page (fused into Dock center) */
+body.prompts-page .ai-image-dock,
+.ai-image-workbench-root .ai-image-dock,
+[data-aiw-dock] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Remove standalone compose floating button on guestbook page (merged into Dock) */
+#guestbookComposerLauncherWrap,
+.guestbook-launcher {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+}
+
+.gdock {
+  --fill-on: #f7faf8;
+  --fill-slab: #242a28;
+  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ink: #f7faf8;
+  --ink-rgb: 247, 250, 248;
+  --on-ink: #222827;
+  --dock-gap: 12px;
+
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: var(--dock-gap, 12px);
+  padding: 12px 16px;
+  border-radius: 999px;
+  color: var(--ink);
+  isolation: isolate;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.gdock-glass {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  isolation: isolate;
+  pointer-events: none;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.gdock[data-fill="light"] {
+  --fill-on: #222827;
+  --fill-slab: #ffffff;
+  --ink: #29332e;
+  --ink-rgb: 41, 51, 46;
+  --on-ink: #ffffff;
+}
+
+/* Shared menu geometry; desktop and mobile have separate material owners. */
+.avatar-dropdown { border-radius: 18px !important; }
+.nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown {
+  border-radius: 16px !important;
+  padding: 6px !important;
+}
+/* Desktop navigation material is owned by desktop-nav-glass.css. */
+@media (hover: none) and (pointer: coarse), (max-width: 768px) and (pointer: coarse) {
+/* Harmonized Dropdown Menu Glass Surface */
+.avatar-dropdown,
+.nav-dropdown-portal,
+.nav-dropdown,
+.nav-support-dropdown {
+  --glass-x: 50%;
+  --glass-y: 0%;
+  --nav-pop-blur: 11px;
+  --nav-pop-sat: 172%;
+  --nav-pop-bright: 105%;
+
+  overflow: hidden;
+  isolation: isolate;
+  background: linear-gradient(
+    165deg,
+    rgba(20, 26, 36, 0.42) 0%,
+    rgba(11, 15, 22, 0.34) 58%,
+    rgba(10, 18, 26, 0.38) 100%
+  ) !important;
+  border: 0 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(14, 42, 54, 0.26),
+    0 16px 36px -6px rgba(4, 10, 26, 0.46),
+    0 4px 12px rgba(0, 0, 0, 0.22) !important;
+  -webkit-backdrop-filter: blur(var(--nav-pop-blur)) saturate(var(--nav-pop-sat)) brightness(var(--nav-pop-bright)) !important;
+  backdrop-filter: var(
+    --nav-backdrop-filter,
+    blur(var(--nav-pop-blur)) saturate(var(--nav-pop-sat)) brightness(var(--nav-pop-bright))
+  ) !important;
+}
+
+.avatar-dropdown {
+  border-radius: 18px !important;
+}
+
+.nav-dropdown-portal,
+.nav-dropdown,
+.nav-support-dropdown {
+  border-radius: 16px !important;
+  padding: 6px !important;
+}
+
+.avatar-dropdown::before,
+.nav-dropdown-portal::before,
+.nav-dropdown::before,
+.nav-support-dropdown::before {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  background: linear-gradient(
+    138deg,
+    rgba(255, 255, 255, 0.42) 0%,
+    rgba(255, 255, 255, 0.14) 26%,
+    rgba(255, 255, 255, 0.04) 54%,
+    rgba(16, 62, 76, 0.18) 76%,
+    rgba(255, 255, 255, 0.24) 100%
+  ) border-box;
+  -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  content: "";
+}
+
+.avatar-dropdown::after,
+.nav-dropdown-portal::after,
+.nav-dropdown::after,
+.nav-support-dropdown::after {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      145px 34px at var(--glass-x, 50%) var(--glass-y, 0%),
+      rgba(255, 255, 255, 0.065),
+      rgba(255, 255, 255, 0.01) 44%,
+      transparent 74%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.05) 0px,
+      transparent 6px,
+      transparent calc(100% - 16px),
+      rgba(11, 45, 58, 0.09) 100%
+    );
+  mix-blend-mode: screen;
+  opacity: 0.48;
+  pointer-events: none;
+  transition: opacity 180ms ease, background 140ms ease-out;
+  content: "";
+}
+
+.avatar-dropdown[data-interacting="true"]::after,
+.nav-dropdown-portal[data-interacting="true"]::after,
+.nav-dropdown[data-interacting="true"]::after,
+.nav-support-dropdown[data-interacting="true"]::after {
+  opacity: 0.6;
+}
+
+.avatar-dropdown > *,
+.nav-dropdown-portal > *,
+.nav-dropdown > *,
+.nav-support-dropdown > * {
+  position: relative;
+  z-index: 2;
+}
+
+html[data-theme="light"] .avatar-dropdown,
+html[data-theme="light"] .nav-dropdown-portal,
+html[data-theme="light"] .nav-dropdown,
+html[data-theme="light"] .nav-support-dropdown {
+  --nav-pop-blur: 13px;
+  --nav-pop-sat: 184%;
+  --nav-pop-bright: 102%;
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.66) 0%,
+    rgba(245, 249, 255, 0.56) 58%,
+    rgba(240, 246, 252, 0.6) 100%
+  ) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.06),
+    0 16px 36px -6px rgba(15, 23, 42, 0.12),
+    0 4px 10px rgba(15, 23, 42, 0.05) !important;
+}
+
+html[data-theme="light"] .avatar-dropdown::before,
+html[data-theme="light"] .nav-dropdown-portal::before,
+html[data-theme="light"] .nav-dropdown::before,
+html[data-theme="light"] .nav-support-dropdown::before {
+  background: linear-gradient(
+    138deg,
+    rgba(255, 255, 255, 0.94) 0%,
+    rgba(255, 255, 255, 0.54) 30%,
+    rgba(15, 23, 42, 0.09) 68%,
+    rgba(255, 255, 255, 0.78) 100%
+  ) border-box;
+}
+
+} /* Keep the existing mobile menu material isolated. */
+
+.avatar-dropdown .dropdown-notif-btn,
+.avatar-dropdown .dropdown-lang-btn,
+.avatar-dropdown .theme-toggle-btn {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 4px 10px rgba(0, 0, 0, 0.2) !important;
+}
+
+.avatar-dropdown .dropdown-notif-btn:hover,
+.avatar-dropdown .dropdown-lang-btn:hover,
+.avatar-dropdown .theme-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.13) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+html[data-theme="light"] .avatar-dropdown .dropdown-notif-btn,
+html[data-theme="light"] .avatar-dropdown .dropdown-lang-btn,
+html[data-theme="light"] .avatar-dropdown .theme-toggle-btn {
+  background: rgba(255, 255, 255, 0.62) !important;
+  border: 1px solid rgba(15, 23, 42, 0.09) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 2px 6px rgba(15, 23, 42, 0.06) !important;
+}
+
+html[data-theme="light"] .avatar-dropdown .dropdown-notif-btn:hover,
+html[data-theme="light"] .avatar-dropdown .dropdown-lang-btn:hover,
+html[data-theme="light"] .avatar-dropdown .theme-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgba(15, 23, 42, 0.16) !important;
+}
+
+.avatar-dropdown .dropdown-lang-btn .lang-icon,
+.avatar-dropdown .theme-toggle-btn .theme-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: inherit;
+}
+
+.avatar-dropdown .dropdown-svg-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 2;
+  color: #ffffff;
+  filter: none;
+  transition: transform 0.24s cubic-bezier(0.24, 1.34, 0.38, 1), color 0.18s ease, opacity 0.18s ease;
+}
+
+.avatar-dropdown .dropdown-notif-btn .dropdown-svg-icon,
+.avatar-dropdown .dropdown-lang-btn .dropdown-svg-icon,
+.avatar-dropdown .theme-toggle-btn .dropdown-svg-icon {
+  width: 17px;
+  height: 17px;
+  color: inherit;
+}
+
+.avatar-dropdown .dropdown-action-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+
+.avatar-dropdown .dropdown-action:hover .dropdown-svg-icon,
+.avatar-dropdown .dropdown-action:focus-visible .dropdown-svg-icon,
+.avatar-dropdown .dropdown-action:hover .dropdown-action-icon,
+.avatar-dropdown .dropdown-action:focus-visible .dropdown-action-icon {
+  transform: scale(1.04);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+html[data-theme="light"] .avatar-dropdown .dropdown-svg-icon,
+html[data-theme="light"] .avatar-dropdown .dropdown-action-icon {
+  color: #0f172a;
+  filter: none;
+}
+
+html[data-theme="light"] .avatar-dropdown .dropdown-notif-btn .dropdown-svg-icon,
+html[data-theme="light"] .avatar-dropdown .dropdown-lang-btn .dropdown-svg-icon,
+html[data-theme="light"] .avatar-dropdown .theme-toggle-btn .dropdown-svg-icon {
+  color: #0f172a;
+  filter: none;
+}
+
+html[data-theme="light"] .avatar-dropdown .dropdown-action:hover .dropdown-svg-icon,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:focus-visible .dropdown-svg-icon,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:hover .dropdown-action-icon,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:focus-visible .dropdown-action-icon {
+  transform: scale(1.04);
+  color: rgba(15, 23, 42, 0.48) !important;
+}
+
+html[data-theme="light"] .avatar-dropdown .dropdown-notif-btn:hover .dropdown-svg-icon,
+html[data-theme="light"] .avatar-dropdown .dropdown-lang-btn:hover .dropdown-svg-icon,
+html[data-theme="light"] .avatar-dropdown .theme-toggle-btn:hover .dropdown-svg-icon {
+  color: rgba(15, 23, 42, 0.48) !important;
+}
+
+.avatar-dropdown .dropdown-action,
+.avatar-dropdown .dropdown-action > span:not(.dropdown-action-icon),
+.nav-dropdown-portal a,
+.nav-dropdown-portal a.site-layout-support-link,
+.nav-dropdown a,
+.nav-support-dropdown a {
+  font-family: var(--font-body) !important;
+  font-size: 15px !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.015em !important;
+  line-height: 1.5 !important;
+  color: #ffffff !important;
+}
+
+.avatar-dropdown .dropdown-action,
+.nav-dropdown-portal a,
+.nav-dropdown-portal a.site-layout-support-link,
+.nav-dropdown a,
+.nav-support-dropdown a {
+  border-radius: 10px !important;
+  text-shadow: none !important;
+  transition: background-color 0.18s ease, transform 0.18s ease !important;
+}
+
+/* Ensure inner text span and action icon never inherit or render a nested inner capsule */
+.avatar-dropdown .dropdown-action span,
+.avatar-dropdown .dropdown-action:hover span,
+.avatar-dropdown .dropdown-action:focus-visible span,
+html[data-theme="light"] .avatar-dropdown .dropdown-action span,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:hover span,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:focus-visible span {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+html[data-theme="light"] .avatar-dropdown .dropdown-action,
+html[data-theme="light"] .avatar-dropdown .dropdown-action > span:not(.dropdown-action-icon),
+html[data-theme="light"] .nav-dropdown-portal a,
+html[data-theme="light"] .nav-dropdown-portal a.site-layout-support-link,
+html[data-theme="light"] .nav-dropdown a,
+html[data-theme="light"] .nav-support-dropdown a {
+  color: #0f172a !important;
+  text-shadow: none !important;
+}
+
+.nav-dropdown-portal a,
+.nav-dropdown a,
+.nav-support-dropdown a {
+  margin: 1px 0 !important;
+  padding: 9px 14px !important;
+}
+
+.avatar-dropdown .dropdown-action:hover,
+.avatar-dropdown .dropdown-action:focus-visible,
+.nav-dropdown-portal a:hover,
+.nav-dropdown-portal a:focus-visible,
+.nav-dropdown-portal a.site-layout-support-link:hover,
+.nav-dropdown-portal a.site-layout-support-link:focus-visible,
+.nav-dropdown a:hover,
+.nav-dropdown a:focus-visible,
+.nav-support-dropdown a:hover,
+.nav-support-dropdown a:focus-visible {
+  color: rgba(255, 255, 255, 0.55) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+  transform: none !important;
+}
+
+html[data-theme="light"] .avatar-dropdown .dropdown-action:hover,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:focus-visible,
+html[data-theme="light"] .nav-dropdown-portal a:hover,
+html[data-theme="light"] .nav-dropdown-portal a:focus-visible,
+html[data-theme="light"] .nav-dropdown-portal a.site-layout-support-link:hover,
+html[data-theme="light"] .nav-dropdown-portal a.site-layout-support-link:focus-visible,
+html[data-theme="light"] .nav-dropdown a:hover,
+html[data-theme="light"] .nav-dropdown a:focus-visible,
+html[data-theme="light"] .nav-support-dropdown a:hover,
+html[data-theme="light"] .nav-support-dropdown a:focus-visible {
+  color: rgba(15, 23, 42, 0.48) !important;
+  background: rgba(15, 23, 42, 0.05) !important;
+  background-color: rgba(15, 23, 42, 0.05) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+  transform: none !important;
+}
+
+@media not (pointer: coarse), (hover: hover) and (width > 768px) {
+  /* Light Theme Navigation Bar Links: Dim brightness on hover */
+  html[data-theme="light"] body:not(.home-page) .framer-nav .nav-menu a,
+  html[data-theme="light"] .framer-nav.scrolled .nav-menu a {
+    color: #0f172a !important;
+    font-family: var(--font-body) !important;
+    font-size: 15px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0.015em !important;
+    transition: color 0.2s ease !important;
+  }
+
+  html[data-theme="light"] body:not(.home-page) .framer-nav .nav-menu a:hover,
+  html[data-theme="light"] .framer-nav.scrolled .nav-menu a:hover {
+    color: rgba(15, 23, 42, 0.48) !important;
+  }
+
+  html[data-theme="light"] body:not(.home-page) .framer-nav .nav-menu a.active,
+  html[data-theme="light"] body:not(.home-page) .framer-nav a.nav-trigger.active,
+  html[data-theme="light"] .framer-nav.scrolled .nav-menu a.active,
+  html[data-theme="light"] .framer-nav.scrolled a.nav-trigger.active {
+    color: #0f172a !important;
+  }
+
+  html[data-theme="light"] body:not(.home-page) .framer-nav .nav-menu a.active:hover,
+  html[data-theme="light"] body:not(.home-page) .framer-nav a.nav-trigger.active:hover,
+  html[data-theme="light"] .framer-nav.scrolled .nav-menu a.active:hover,
+  html[data-theme="light"] .framer-nav.scrolled a.nav-trigger.active:hover {
+    color: rgba(15, 23, 42, 0.48) !important;
+  }
+
+  html[data-theme="light"] body.home-page .framer-nav:not(.scrolled) .nav-menu a {
+    color: rgba(255, 255, 255, 0.88) !important;
+    font-family: var(--font-body) !important;
+    font-size: 15px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0.015em !important;
+    transition: color 0.2s ease !important;
+  }
+
+  html[data-theme="light"] body.home-page .framer-nav:not(.scrolled) .nav-menu a:hover {
+    color: rgba(255, 255, 255, 0.52) !important;
+  }
+}
+
+/* ==========================================================================
+   Dock Items & Tooltip
+   ========================================================================== */
+.gdock-item {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink);
+  opacity: 0.9;
+  cursor: pointer;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transition: width 300ms cubic-bezier(0.16, 1, 0.3, 1),
+              max-width 300ms cubic-bezier(0.16, 1, 0.3, 1),
+              min-width 300ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 240ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
+              margin 300ms cubic-bezier(0.16, 1, 0.3, 1),
+              padding 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gdock-item[data-collapsed="true"] {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  margin-inline: 0 !important;
+  margin-left: calc(-1 * var(--dock-gap, 12px)) !important;
+  padding-inline: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: scale(0.4) translateY(4px) !important;
+  visibility: hidden !important;
+  overflow: hidden !important;
+}
+
+.gdock-item[data-collapsed="true"]:first-child {
+  margin-left: 0 !important;
+  margin-right: calc(-1 * var(--dock-gap, 12px)) !important;
+}
+
+.gdock {
+  transition: width 300ms cubic-bezier(0.16, 1, 0.3, 1),
+              max-width 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dock-cluster {
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 60ms linear,
+              width 300ms cubic-bezier(0.16, 1, 0.3, 1),
+              max-width 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gdock-item[data-near="1"] { opacity: 0.96; }
+.gdock-item[data-near="0"], .gdock-item[data-active="true"] { opacity: 1; }
+.gdock-item:focus-visible { outline: 1.5px solid var(--ink); outline-offset: 3px; }
+
+.gdock-glyph {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: auto;
+  transform-origin: center bottom;
+  transition: transform 420ms cubic-bezier(0.24, 1.34, 0.38, 1);
+}
+
+.gdock-glyph svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.25;
+  filter: none;
+  transform-origin: center center;
+  backface-visibility: hidden;
+  pointer-events: none;
+  transition: stroke-width 240ms ease;
+}
+
+.gdock-item[data-active="true"] .gdock-glyph svg {
+  stroke-width: 2.4;
+  filter: none;
+}
+
+/* True Cross-Dissolve (平滑叠化) - Zero Flicker, Continuous Visual Presence */
+.gdock-glyph > svg.gdock-svg--exit {
+  pointer-events: none;
+}
+
+.gdock-glyph > svg.gdock-svg--enter {
+  pointer-events: none;
+}
+
+@keyframes gdock-svg-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.gdock-glyph.is-spinning svg {
+  animation: gdock-svg-spin 480ms cubic-bezier(0.25, 0.1, 0.25, 1) !important;
+  transform-origin: center center;
+}
+
+/* Subtle haptic micro-press feedback without interrupting magnification wave */
+.gdock-item:active:not(.gdock-item--ai-orb) .gdock-glyph:not(.is-spinning) > svg:not(.gdock-svg--exit):not(.gdock-svg--enter) {
+  transform: scale(0.92);
+  transition: transform 90ms ease-out;
+}
+
+/* Gentle tranquil breathing on active indicator dot */
+@keyframes gdock-dot-pulse {
+  0%, 100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+/* Shrunk AI Workbench Orb Embedded in Center of Dock */
+.gdock-item--ai-orb {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  opacity: 1;
+}
+
+.gdock-item--ai-orb .gdock-glyph {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  overflow: visible;
+  transform-origin: center center;
+}
+
+.gdock-ai-orb.ai-image-fab.is-idle {
+  position: relative;
+  display: grid;
+  place-items: center;
+  grid-template-columns: 46px !important;
+  width: 46px !important;
+  height: 46px !important;
+  min-height: 46px !important;
+  max-width: 46px !important;
+  max-height: 46px !important;
+  flex: 0 0 46px !important;
+  padding: 0 !important;
+  margin: 0 auto !important;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: scale(0.76);
+  transform-origin: center center;
+  pointer-events: none;
+}
+
+.gdock-ai-orb .ai-image-fab-core {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46px !important;
+  height: 46px !important;
+  margin: 0 auto !important;
+  left: auto !important;
+  right: auto !important;
+  transform: none;
+  transform-origin: center center;
+}
+
+.gdock-ai-orb .ai-image-fab-core-inner,
+.gdock-ai-orb .ai-image-fab-mark {
+  display: grid;
+  place-items: center;
+  margin: 0 auto;
+}
+
+.gdock-ai-orb,
+.gdock-ai-orb *,
+.gdock-ai-orb *::before,
+.gdock-ai-orb *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.gdock-dot {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+  border-radius: 50%;
+  background: var(--ink);
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 220ms ease, transform 420ms cubic-bezier(0.24, 1.34, 0.38, 1);
+}
+
+.gdock-dot[data-on="true"] {
+  opacity: 0.75;
+  transform: scale(1);
+  animation: gdock-dot-pulse 2.6s ease-in-out infinite;
+}
+
+/* Post-search state: Reset Search indicator - keep icon natural color, only dot in blue */
+.gdock-item[data-search-filtered="true"] .gdock-dot[data-on="true"] {
+  background: #38bdf8 !important;
+  box-shadow: 0 0 6px #38bdf8;
+  opacity: 0.95 !important;
+}
+
+.gdock-tip {
+  position: absolute;
+  z-index: 4;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--fill-on);
+  color: var(--fill-slab);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 32px;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), width 160ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.gdock-tip:not([data-ready]) { transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1); }
+.gdock-tip[data-on="true"] { opacity: 1; }
+.gdock-tip > span { flex: none; }
+
+html[data-theme="light"] .gdock-tip,
+html:not([data-theme="dark"]) .gdock-tip {
+  background: #1d1d1f;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+html[data-theme="dark"] .gdock-tip {
+  background: #f7faf8;
+  color: #1d1d1f;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+@media (max-width: 440px) and (pointer: coarse) {
+  .gdock {
+    --dock-gap: 8px;
+    gap: var(--dock-gap);
+    padding: 10px 14px;
+    justify-content: center;
+  }
+  .gdock-item {
+    width: 42px;
+    height: 44px;
+    flex: 0 0 42px;
+  }
+  .gdock-item--ai-orb {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    margin: 0 auto;
+  }
+  .gdock-item--ai-orb .gdock-glyph {
+    width: 44px;
+    height: 44px;
+  }
+  .gdock-ai-orb.ai-image-fab.is-idle {
+    transform: scale(0.76);
+    margin: 0 auto !important;
+  }
+}
+
+@media (max-width: 360px) and (pointer: coarse) {
+  .gdock {
+    --dock-gap: 5px;
+    gap: var(--dock-gap);
+    padding-inline: 10px;
+    justify-content: center;
+  }
+  .gdock-item {
+    width: 38px;
+    height: 42px;
+    flex: 0 0 38px;
+  }
+  .gdock-item--ai-orb {
+    width: 40px;
+    height: 42px;
+    flex: 0 0 40px;
+    margin: 0 auto;
+  }
+  .gdock-item--ai-orb .gdock-glyph {
+    width: 40px;
+    height: 42px;
+  }
+  .gdock-ai-orb.ai-image-fab.is-idle {
+    transform: scale(0.70);
+    margin: 0 auto !important;
+  }
+}
+
+/* Mobile geometry only; material overrides live in the mobile-glass layer below. */
+@media (hover: none) and (pointer: coarse), (max-width: 768px) and (pointer: coarse) {
+  .dock-cluster {
+    bottom: calc(34px + env(safe-area-inset-bottom, 0px));
+    max-width: calc(100vw - 20px);
+  }
+  .dock-cluster .gdock,
+  .prompt-spotlight-capsule.gdock { --u: 1.6px; }
+  .gdock-tip { display: none !important; }
+}
+
+/* ==========================================================================
+   Prompt Spotlight Search (Authentic Dock-Style Pure Liquid Glass Capsule)
+   Exact identical crystal transparency, optical refraction, and rim specular as .gdock
+   Zero page background blur, completely clean ambient backdrop
+   Identical entrance motion to Dock: 520ms cubic-bezier(0.22, 1, 0.36, 1) from translateY(104px)
+   Smooth upward dismissal when the first search result image finishes rendering
+   ========================================================================== */
+
+/* Active state: Smoothly hide framer-nav upward when spotlight is active */
+body.prompt-spotlight-active .framer-nav,
+.framer-nav.spotlight-nav-hidden {
+  transform: translateY(calc(-100% - 40px)) !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
+  transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease !important;
+}
+
+/* Active state: Smoothly hide on-page duplicate search bar to avoid overlapping */
+body.prompt-spotlight-active .nav-search-wrapper,
+body.prompt-spotlight-active .list-search-combo {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translateY(-8px) scale(0.98);
+  transition: opacity 0.22s ease, transform 0.22s ease !important;
+}
+
+/* Spotlight Overlay Container - Completely unmount from render/composite tree when closed */
+.prompt-spotlight-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: none;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 18vh;
+  padding-inline: 16px;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.prompt-spotlight-overlay.is-open,
+.prompt-spotlight-overlay.is-dismissing-up {
+  display: flex;
+  visibility: visible;
+}
+
+.prompt-spotlight-overlay.is-open {
+  pointer-events: auto;
+}
+
+/* Shut down expensive backdrop-filter when spotlight is completely inactive */
+.prompt-spotlight-overlay:not(.is-open):not(.is-dismissing-up) .prompt-spotlight-capsule .gdock-glass {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Clean backdrop without blur: page background remains completely crisp and visible */
+.prompt-spotlight-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: transparent !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  cursor: default;
+}
+
+/* Authentic Dock Capsule Search System - Identical Motion to .dock-cluster */
+.prompt-spotlight-capsule.gdock {
+  position: relative;
+  z-index: 2;
+  width: min(560px, calc(100vw - 32px));
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
+  padding: 0 12px 0 18px;
+  border-radius: 999px !important;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  /* Identical entrance motion to Dock: 520ms cubic-bezier(0.22, 1, 0.36, 1) from 104px down */
+  transform: translate3d(0, 104px, 0);
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: auto;
+}
+
+.prompt-spotlight-overlay.is-open .prompt-spotlight-capsule.gdock {
+  transform: translate3d(0, 0, 0);
+}
+
+/* Upward dismissal motion when search completes and first card image is rendered */
+.prompt-spotlight-capsule.gdock.is-dismissing-up,
+.prompt-spotlight-overlay.is-dismissing-up .prompt-spotlight-capsule.gdock {
+  transform: translate3d(0, -112px, 0) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: transform 460ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms ease !important;
+}
+
+/* Inner Layout */
+.prompt-spotlight-inner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  gap: 12px;
+}
+
+/* Search Icon with Subtle Crisp Shadow for Crystal Transparency */
+.prompt-spotlight-search-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: #38bdf8;
+  opacity: 0.95;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+  flex-shrink: 0;
+  transition: color 180ms ease, opacity 180ms ease, transform 180ms ease;
+}
+
+.prompt-spotlight-capsule.gdock:focus-within .prompt-spotlight-search-icon {
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+.prompt-spotlight-search-icon svg {
+  width: 21px;
+  height: 21px;
+  display: block;
+}
+
+/* Loading Spinner on Search Submission */
+.prompt-spotlight-spinner {
+  display: none;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: prompt-spotlight-spin 0.68s linear infinite;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+  flex-shrink: 0;
+}
+
+@keyframes prompt-spotlight-spin {
+  to { transform: rotate(360deg); }
+}
+
+.prompt-spotlight-capsule.is-searching .prompt-spotlight-search-icon svg {
+  display: none;
+}
+
+.prompt-spotlight-capsule.is-searching .prompt-spotlight-spinner {
+  display: block;
+}
+
+/* Input Wrapper with High-Visibility Custom Caret */
+.prompt-spotlight-input-wrap {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* Bold, High-Contrast Blinking Caret (Pill Bar) */
+.prompt-spotlight-caret {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  width: 2.5px;
+  height: 22px;
+  background: linear-gradient(180deg, #38bdf8 0%, #0284c7 100%);
+  border-radius: 1.5px;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.75), 0 1px 3px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 3;
+  transform: translate3d(0, -50%, 0);
+  transition: opacity 100ms ease;
+  will-change: transform, opacity;
+}
+
+.prompt-spotlight-caret.is-active {
+  opacity: 1;
+}
+
+.prompt-spotlight-caret.is-blinking {
+  animation: prompt-spotlight-caret-pulse 1.05s ease-in-out infinite;
+}
+
+@keyframes prompt-spotlight-caret-pulse {
+  0%, 45% { opacity: 1; }
+  50%, 95% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.prompt-spotlight-measurer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: pre;
+  font-family: var(--font-ui);
+  font-size: 1.15rem;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+}
+
+.prompt-spotlight-input-wrap.has-custom-caret .prompt-spotlight-input,
+.prompt-spotlight-input-wrap.has-custom-caret #promptSpotlightInput {
+  caret-color: transparent !important;
+}
+
+/* Input Typography: Crystal clear readability with fine text-shadow (Zero focus ring/glow) */
+.prompt-spotlight-input,
+.prompt-spotlight-input:focus,
+.prompt-spotlight-input:focus-visible,
+.prompt-spotlight-input:active,
+input[type="text"].prompt-spotlight-input,
+input[type="text"].prompt-spotlight-input:focus,
+input[type="text"].prompt-spotlight-input:focus-visible,
+input[type="text"].prompt-spotlight-input:active,
+#promptSpotlightInput,
+#promptSpotlightInput:focus,
+#promptSpotlightInput:focus-visible,
+#promptSpotlightInput:active {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  border: none !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  outline: none !important;
+  outline-color: transparent !important;
+  outline-style: none !important;
+  outline-width: 0 !important;
+  box-shadow: none !important;
+  padding: 0 4px !important;
+  margin: 0 !important;
+  font-family: var(--font-ui);
+  font-size: 1.15rem;
+  font-weight: 550;
+  line-height: 56px;
+  letter-spacing: -0.01em;
+  color: #ffffff !important;
+  caret-color: #0284c7;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 1px rgba(0, 0, 0, 0.95);
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
+
+.prompt-spotlight-input::placeholder {
+  color: rgba(255, 255, 255, 0.82) !important;
+  font-weight: 500;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 1px rgba(0, 0, 0, 0.95);
+}
+
+/* Loading label in place of input on enter */
+.prompt-spotlight-loading-badge {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.22);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  color: #38bdf8;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  animation: prompt-spotlight-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes prompt-spotlight-pulse {
+  0%, 100% { opacity: 0.95; }
+  50% { opacity: 0.6; }
+}
+
+.prompt-spotlight-capsule.is-searching .prompt-spotlight-loading-badge {
+  display: inline-flex;
+}
+
+.prompt-spotlight-capsule.is-searching .prompt-spotlight-action-btn,
+.prompt-spotlight-capsule.is-searching .prompt-spotlight-clear,
+.prompt-spotlight-capsule.is-searching .prompt-spotlight-esc {
+  display: none !important;
+}
+
+/* High-Contrast Action / Search Button (Deep Crystal Obsidian Glass Badge) */
+.prompt-spotlight-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.24) !important;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.72) !important;
+  color: #ffffff !important;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  transition: background 180ms ease, border-color 180ms ease, transform 160ms ease, box-shadow 180ms ease, opacity 180ms ease;
+  opacity: 0.85;
+}
+
+.prompt-spotlight-action-btn.has-query {
+  opacity: 1;
+  background: rgba(2, 132, 199, 0.82) !important;
+  border-color: rgba(56, 189, 248, 0.7) !important;
+  box-shadow: 0 2px 10px rgba(2, 132, 199, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.prompt-spotlight-action-btn:hover {
+  background: rgba(30, 41, 59, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
+  transform: scale(1.08);
+}
+
+.prompt-spotlight-action-btn.has-query:hover {
+  background: rgba(3, 105, 161, 0.95) !important;
+  border-color: rgba(125, 211, 252, 0.85) !important;
+  box-shadow: 0 2px 14px rgba(2, 132, 199, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.prompt-spotlight-action-btn:active {
+  transform: scale(0.94);
+}
+
+.prompt-spotlight-action-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: #ffffff;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+
+/* High-Contrast Clear Button (Compatibility Alias) */
+.prompt-spotlight-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.24) !important;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.72) !important;
+  color: #ffffff !important;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  transition: background 180ms ease, border-color 180ms ease, transform 160ms ease;
+}
+
+.prompt-spotlight-clear:hover {
+  background: rgba(30, 41, 59, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
+  transform: scale(1.08);
+}
+
+.prompt-spotlight-clear svg {
+  width: 14px;
+  height: 14px;
+  stroke: #ffffff;
+  stroke-width: 2.6;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+
+/* High-Contrast ESC Capsule Button (Deep Crystal Obsidian Glass Badge) */
+.prompt-spotlight-esc {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72) !important;
+  border: 1px solid rgba(255, 255, 255, 0.24) !important;
+  color: #ffffff !important;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 26px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  flex-shrink: 0;
+  user-select: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 160ms ease;
+}
+
+.prompt-spotlight-esc:hover {
+  background: rgba(30, 41, 59, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
+  color: #ffffff !important;
+  transform: scale(1.04);
+}
+
+@media (max-width: 640px) {
+  .prompt-spotlight-overlay {
+    padding-top: 14vh;
+    padding-inline: 12px;
+  }
+  .prompt-spotlight-capsule.gdock {
+    height: 52px;
+    min-height: 52px;
+    max-height: 52px;
+    padding: 0 10px 0 14px;
+  }
+  .prompt-spotlight-input {
+    font-size: 1.02rem;
+    line-height: 52px;
+  }
+}
+
+/* ==========================================================================
+   Chat Robot Notification & Engagement Cards · Harmonized Liquid Glass System
+   Replicates the exact optical crystal glass aesthetic of the Dock bar:
+   - Desktop material is owned by desktop-nav-glass.css; mobile by mobile-glass.
+   - Delicate dual-layer inner illumination and deep floating shadow
+   - High-contrast typography & tactile glass-capsule buttons
+   ========================================================================== */
+
+.chat-widget-fab .message-preview {
+  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  position: absolute;
+  bottom: 64px;
+  right: 16px;
+  min-width: 220px;
+  max-width: min(440px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 16px 18px 15px;
+  border-radius: 20px !important;
+  overflow: hidden;
+  isolation: isolate;
+  cursor: default;
+  white-space: normal;
+  word-wrap: break-word;
+  z-index: 1000;
+}
+
+/* 确保文字与交互控件置于反光层上方 */
+html body .chat-widget-fab .message-preview > *,
+html body .chat-widget-fab .message-preview.engagement-preview > * {
+  position: relative !important;
+  z-index: 4 !important;
+}
+
+/* 标题样式：统一暗色主题字体样式（柔和浅天蓝 + 黑色深沉微投影），全环境高对比度 */
+html body .chat-widget-fab .message-preview .preview-sender,
+html body.shop-page .chat-widget-fab .message-preview .preview-sender,
+html body.prompts-page .chat-widget-fab .message-preview .preview-sender,
+html body.verify-page .chat-widget-fab .message-preview .preview-sender,
+html body.guestbook-page .chat-widget-fab .message-preview .preview-sender,
+html body.privacy-page .chat-widget-fab .message-preview .preview-sender,
+html[data-theme="light"] body .chat-widget-fab .message-preview .preview-sender,
+html[data-theme="dark"] body .chat-widget-fab .message-preview .preview-sender,
+html[data-theme="light"] .chat-widget-fab .message-preview .preview-sender,
+html[data-theme="dark"] .chat-widget-fab .message-preview .preview-sender,
+.chat-widget-fab .message-preview .preview-sender {
+  font-family: var(--font-ui) !important;
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+  line-height: 1.35 !important;
+  letter-spacing: -0.01em !important;
+  margin-bottom: 2px !important;
+  color: var(--engagement-title-color-dark, #bfdbfe) !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 1px rgba(0, 0, 0, 0.95) !important;
+}
+
+/* 正文样式：统一暗色主题字体样式（清爽柔和浅白 + 双层黑曜石极细微投影），全环境极致清晰 */
+html body .chat-widget-fab .message-preview .preview-text,
+html body.shop-page .chat-widget-fab .message-preview .preview-text,
+html body.prompts-page .chat-widget-fab .message-preview .preview-text,
+html body.verify-page .chat-widget-fab .message-preview .preview-text,
+html body.guestbook-page .chat-widget-fab .message-preview .preview-text,
+html body.privacy-page .chat-widget-fab .message-preview .preview-text,
+html[data-theme="light"] body .chat-widget-fab .message-preview .preview-text,
+html[data-theme="dark"] body .chat-widget-fab .message-preview .preview-text,
+html[data-theme="light"] .chat-widget-fab .message-preview .preview-text,
+html[data-theme="dark"] .chat-widget-fab .message-preview .preview-text,
+.chat-widget-fab .message-preview .preview-text {
+  margin-top: 6px !important;
+  font-family: var(--font-ui) !important;
+  font-size: 12.5px !important;
+  font-weight: 550 !important;
+  line-height: 1.55 !important;
+  letter-spacing: -0.01em !important;
+  color: var(--engagement-text-color-dark, #e2e8f0) !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 1px rgba(0, 0, 0, 0.95) !important;
+  word-break: break-word !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  display: block !important;
+  -webkit-line-clamp: initial !important;
+  line-clamp: initial !important;
+}
+
+/* 链接样式：统一暗色主题亮色 */
+html body .chat-widget-fab .message-preview .engagement-preview__path-link,
+html body .chat-widget-fab .message-preview a,
+.chat-widget-fab .message-preview .engagement-preview__path-link {
+  color: var(--engagement-accent-color-dark, #93c5fd) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85) !important;
+}
+
+/* 按钮组 */
+.chat-widget-fab .message-preview .engagement-preview__actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  margin-top: 14px !important;
+}
+
+/* 主操作胶囊按钮 */
+.chat-widget-fab .message-preview .engagement-preview__action {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 0 14px !important;
+  border-radius: 999px !important;
+  border: 0 !important;
+  font-family: var(--font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  color: #ffffff !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease !important;
+}
+
+.chat-widget-fab .message-preview .engagement-preview__action:hover {
+  transform: translateY(-1px) !important;
+  filter: brightness(1.08) !important;
+  box-shadow: 0 3px 12px rgba(16, 185, 129, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45) !important;
+}
+
+.chat-widget-fab .message-preview .engagement-preview__action:active {
+  transform: translateY(0) !important;
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.2), 0 2px 6px rgba(16, 185, 129, 0.3) !important;
+}
+
+/* Success tone（如签到奖励等） */
+.chat-widget-fab .message-preview.engagement-preview--success .engagement-preview__action {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+}
+
+.chat-widget-fab .message-preview.engagement-preview--success .engagement-preview__action:hover {
+  box-shadow: 0 3px 12px rgba(16, 185, 129, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45) !important;
+}
+
+/* Warning tone */
+.chat-widget-fab .message-preview.engagement-preview--warning .engagement-preview__action {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+}
+
+/* Alert / Error tone */
+.chat-widget-fab .message-preview.engagement-preview--alert .engagement-preview__action,
+.chat-widget-fab .message-preview.engagement-preview--error .engagement-preview__action {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+}
+
+/* 关闭胶囊按钮：复用聚焦搜索 ESC 按钮的高质感黑曜石晶体微胶囊 (Spotlight ESC Obsidian Badge Parity) */
+html body .chat-widget-fab .message-preview .engagement-preview__close,
+html body.shop-page .chat-widget-fab .message-preview .engagement-preview__close,
+html body.prompts-page .chat-widget-fab .message-preview .engagement-preview__close,
+html body.verify-page .chat-widget-fab .message-preview .engagement-preview__close,
+html body.guestbook-page .chat-widget-fab .message-preview .engagement-preview__close,
+html body.privacy-page .chat-widget-fab .message-preview .engagement-preview__close,
+html[data-theme="light"] body .chat-widget-fab .message-preview .engagement-preview__close,
+html[data-theme="dark"] body .chat-widget-fab .message-preview .engagement-preview__close,
+html[data-theme="light"] .chat-widget-fab .message-preview .engagement-preview__close,
+html[data-theme="dark"] .chat-widget-fab .message-preview .engagement-preview__close,
+.chat-widget-fab .message-preview .engagement-preview__close {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  margin-left: auto !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 0 14px !important;
+  border-radius: 999px !important;
+  font-family: var(--font-ui) !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  line-height: 26px !important;
+  letter-spacing: 0.04em !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+  user-select: none !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+  border: 1px solid rgba(255, 255, 255, 0.24) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85) !important;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 160ms ease, box-shadow 180ms ease !important;
+}
+
+html body .chat-widget-fab .message-preview .engagement-preview__close:hover,
+html[data-theme="light"] body .chat-widget-fab .message-preview .engagement-preview__close:hover,
+html[data-theme="dark"] body .chat-widget-fab .message-preview .engagement-preview__close:hover,
+html[data-theme="light"] .chat-widget-fab .message-preview .engagement-preview__close:hover,
+html[data-theme="dark"] .chat-widget-fab .message-preview .engagement-preview__close:hover,
+.chat-widget-fab .message-preview .engagement-preview__close:hover {
+  background: rgba(30, 41, 59, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
+  color: #ffffff !important;
+  transform: scale(1.04) !important;
+}
+
+html body .chat-widget-fab .message-preview .engagement-preview__close:active,
+html[data-theme="light"] body .chat-widget-fab .message-preview .engagement-preview__close:active,
+html[data-theme="dark"] body .chat-widget-fab .message-preview .engagement-preview__close:active,
+html[data-theme="light"] .chat-widget-fab .message-preview .engagement-preview__close:active,
+html[data-theme="dark"] .chat-widget-fab .message-preview .engagement-preview__close:active,
+.chat-widget-fab .message-preview .engagement-preview__close:active {
+  background: rgba(15, 23, 42, 0.85) !important;
+  transform: scale(0.98) !important;
+}
+
+/* 移动端与窄屏幕安全适配：确保通知卡片在窄屏下左右边距适中，全宽磨砂与折射覆盖 */
+@media (max-width: 820px) {
+  .chat-widget-fab .message-preview {
+    max-width: calc(100vw - 32px) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .chat-widget-fab .message-preview {
+    right: 0 !important;
+    bottom: 60px !important;
+    max-width: calc(100vw - 28px) !important;
+    border-radius: 18px !important;
+    padding: 14px 16px 13px 16px !important;
+  }
+}
+
+/* ==========================================================================
+   Avatar Dropdown Menu Items - Robot Blue Icon Accent on Hover / Focus
+   ========================================================================== */
+.avatar-dropdown .dropdown-action i,
+.avatar-dropdown .dropdown-action .dropdown-action-icon,
+.avatar-dropdown .dropdown-action .dropdown-svg-icon,
+.avatar-dropdown .dropdown-action svg {
+  transition: color 0.2s ease, stroke 0.2s ease;
+}
+
+.avatar-dropdown .dropdown-action:hover i,
+.avatar-dropdown .dropdown-action:hover .dropdown-action-icon,
+.avatar-dropdown .dropdown-action:hover .dropdown-svg-icon,
+.avatar-dropdown .dropdown-action:hover svg,
+.avatar-dropdown .dropdown-action:focus i,
+.avatar-dropdown .dropdown-action:focus .dropdown-action-icon,
+.avatar-dropdown .dropdown-action:focus .dropdown-svg-icon,
+.avatar-dropdown .dropdown-action:focus svg,
+.avatar-dropdown .dropdown-action:focus-visible i,
+.avatar-dropdown .dropdown-action:focus-visible .dropdown-action-icon,
+.avatar-dropdown .dropdown-action:focus-visible .dropdown-svg-icon,
+.avatar-dropdown .dropdown-action:focus-visible svg {
+  color: var(--chat-primary, #6b9ece) !important;
+}
+
+html[data-theme="light"] .avatar-dropdown .dropdown-action:hover i,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:hover .dropdown-action-icon,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:hover .dropdown-svg-icon,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:hover svg,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:focus i,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:focus .dropdown-action-icon,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:focus .dropdown-svg-icon,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:focus svg,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:focus-visible i,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:focus-visible .dropdown-action-icon,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:focus-visible .dropdown-svg-icon,
+html[data-theme="light"] .avatar-dropdown .dropdown-action:focus-visible svg {
+  color: var(--chat-primary, #6b9ece) !important;
+}
+
+/* ==========================================================================
+   Shop Dock Customizations: Narrow Viewport & Cart Badge
+   ========================================================================== */
+@media (max-width: 820px) {
+  .gdock-item[data-key="view"] {
+    display: none !important;
+  }
+}
+
+.gdock-item[data-key="cart"] {
+  position: relative;
+}
+
+.gdock-item[data-key="cart"]::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(239, 68, 68, 0.45) 0%, rgba(244, 63, 94, 0.16) 45%, transparent 72%);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.gdock-item[data-key="cart"].is-cart-bumped::before {
+  animation: dock-cart-halo 650ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes dock-cart-halo {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.gdock-item[data-key="cart"].is-cart-bumped .gdock-glyph {
+  animation: dock-cart-bounce 600ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes dock-cart-bounce {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  22% {
+    transform: translateY(-9px) scale(1.18, 0.86);
+  }
+  42% {
+    transform: translateY(3px) scale(0.92, 1.12);
+  }
+  62% {
+    transform: translateY(-4px) scale(1.06, 0.96);
+  }
+  82% {
+    transform: translateY(1px) scale(0.98, 1.02);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.gdock-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.45);
+  transform: scale(1);
+  transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 4;
+}
+
+.gdock-item[data-key="cart"] .gdock-badge.is-popping {
+  animation: dock-badge-pop 550ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes dock-badge-pop {
+  0% {
+    transform: scale(0.45);
+    box-shadow: 0 0 0 rgba(239, 68, 68, 0.95);
+  }
+  38% {
+    transform: scale(1.46);
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.9);
+  }
+  64% {
+    transform: scale(0.88);
+  }
+  84% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 2px 6px rgba(239, 68, 68, 0.45);
+  }
+}
+
+.gdock-item[data-key="cart"]:active .gdock-badge {
+  transform: scale(0.9);
+}
+
+/* Support Robot Button Notification Animation & Badge */
+.gdock-item[data-key="support"] {
+  position: relative;
+}
+
+.gdock-item[data-key="support"]::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.45) 0%, rgba(99, 102, 241, 0.18) 45%, transparent 72%);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.gdock-item[data-key="support"].is-support-bumped::before {
+  animation: dock-support-halo 650ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes dock-support-halo {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.gdock-item[data-key="support"].is-support-bumped .gdock-glyph {
+  animation: dock-support-bounce 600ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes dock-support-bounce {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  22% {
+    transform: translateY(-9px) scale(1.18, 0.86);
+  }
+  42% {
+    transform: translateY(3px) scale(0.92, 1.12);
+  }
+  62% {
+    transform: translateY(-4px) scale(1.06, 0.96);
+  }
+  82% {
+    transform: translateY(1px) scale(0.98, 1.02);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.gdock-item[data-key="support"] .gdock-badge.is-popping {
+  animation: dock-badge-pop 550ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.gdock-item[data-key="support"]:active .gdock-badge {
+  transform: scale(0.9);
+}
+
+
+
+
+
+
+
+/* Mobile preset: theme-locked material · 6 CSS px · tint .78 · rim 1.1 · dispersion .40.
+   A single native backdrop samples page content. Curved rim optics add depth;
+   readable canvas backdrops can additionally use the mobile refraction renderer.
+   Important layer declarations override legacy important material rules only
+   while the coarse-pointer media query matches. Desktop rules stay unmodified. */
+/* Reuse production navbar material and layout. An inset shadow keeps the rim
+   at half a CSS pixel even on browsers that round fractional border widths. */
+@media (hover: none) and (pointer: coarse), (max-width: 768px) and (pointer: coarse) {
+  .framer-nav.scrolled {
+    --mobile-nav-rim-color: rgba(255, 255, 255, 0.22);
+    border-color: transparent;
+  }
+  html[data-theme="light"] .framer-nav.scrolled {
+    --mobile-nav-rim-color: rgba(15, 23, 42, 0.12);
+    border-color: transparent;
+  }
+  .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active))::before {
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 0.5px var(--mobile-nav-rim-color);
+    pointer-events: none;
+    content: "";
+  }
+}
+
+@layer mobile-glass {
+  @media (hover: none) and (pointer: coarse), (max-width: 768px) and (pointer: coarse) {
+    :is(.dock-cluster .gdock, .prompt-spotlight-capsule.gdock, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .mobile-menu, .chat-widget-fab .message-preview, .glass-ring) {
+      --mg-blur: 6px;
+      --mg-strength: 0.78;
+      --mg-refraction: 1.1;
+      --mg-dispersion: 0.40;
+      --mg-tint: 24, 27, 32;
+      --mg-ink: #f5f5f7;
+      --mg-secondary: #e2e8f0;
+      --mg-accent: #bfdbfe;
+      --mg-alpha: 0.64;
+      --mg-fallback-alpha: 0.64;
+      --mg-brightness: 0.8284;
+      --mg-hover: rgb(255 255 255 / 0.10);
+      --mg-border: rgb(255 255 255 / 0.22);
+      color: var(--mg-ink) !important;
+    }
+    :where(html:not([data-theme="dark"])) :is(.dock-cluster .gdock, .prompt-spotlight-capsule.gdock, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .mobile-menu, .chat-widget-fab .message-preview, .glass-ring) {
+      --mg-tint: 255, 255, 255;
+      --mg-ink: #1d1d1f;
+      --mg-secondary: #334155;
+      --mg-accent: #1d4e89;
+      --mg-alpha: 0.56;
+      --mg-fallback-alpha: 0.56;
+      --mg-brightness: 1.039;
+      --mg-hover: rgb(15 23 42 / 0.07);
+      --mg-border: rgb(255 255 255 / 0.65);
+    }
+    :is(.dock-cluster .gdock-glass, .prompt-spotlight-capsule .gdock-glass, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .mobile-menu, .chat-widget-fab .message-preview, .glass-ring) {
+      background: rgba(var(--mg-tint), var(--mg-alpha, var(--mg-fallback-alpha))) !important;
+      -webkit-backdrop-filter: blur(var(--mg-blur)) saturate(var(--mg-saturation, 1.35)) brightness(var(--mg-brightness)) !important;
+      backdrop-filter: blur(var(--mg-blur)) saturate(var(--mg-saturation, 1.35)) brightness(var(--mg-brightness)) !important;
+      border-color: var(--mg-border) !important;
+      --mg-surface-shadow: inset 0 0.5px 0.5px rgb(255 255 255 / 0.62),
+        inset 0.5px 0 1px rgb(255 255 255 / 0.26),
+        inset -1px -2px 3px rgb(0 0 0 / 0.16),
+        inset 0 0 calc(8px * var(--mg-refraction)) rgb(255 255 255 / 0.16),
+        0 6px 24px rgb(0 0 0 / 0.10);
+      box-shadow: var(--mg-surface-shadow) !important;
+      filter: none !important;
+      corner-shape: round !important;
+      mix-blend-mode: normal !important;
+      transition-property: transform, opacity, visibility !important;
+    }
+    /* Preserve the robot card's border space; draw its 1px outline at half width. */
+    .chat-widget-fab .message-preview {
+      border-color: transparent !important;
+      box-shadow: inset 0 0 0 0.5px var(--mg-border), var(--mg-surface-shadow) !important;
+    }
+    /* Only the glass pane blurs; the content and its enclosing dock do not. */
+    :is(.dock-cluster .gdock, .prompt-spotlight-capsule.gdock) {
+      background: transparent !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+      box-shadow: none !important;
+    }
+    :is(.dock-cluster, .prompt-spotlight-capsule) .gdock-refract-canvas {
+      display: none !important;
+      opacity: 0 !important;
+    }
+    :is(.dock-cluster .gdock-glass, .prompt-spotlight-capsule .gdock-glass, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .mobile-menu, .chat-widget-fab .message-preview, .glass-ring)::before {
+      content: "" !important;
+      position: absolute !important;
+      inset: 0 !important;
+      z-index: 1 !important;
+      display: block !important;
+      padding: calc(0.75px * var(--mg-refraction)) !important;
+      border: 0 !important;
+      border-radius: inherit !important;
+      background: linear-gradient(138deg, rgb(255 255 255 / 0.54),
+        rgb(136 230 255 / calc(var(--mg-dispersion) * 0.38)) 22%, transparent 42%,
+        rgb(0 0 0 / 0.13) 60%, rgb(255 170 214 / calc(var(--mg-dispersion) * 0.30)) 79%,
+        rgb(255 255 255 / 0.38)) !important;
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0) !important;
+      -webkit-mask-composite: xor !important;
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0) !important;
+      mask-composite: exclude !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+      box-shadow: none !important;
+      filter: none !important;
+      transform: none !important;
+      mix-blend-mode: normal !important;
+      opacity: 1 !important;
+      pointer-events: none !important;
+    }
+    :is(.dock-cluster .gdock-glass, .prompt-spotlight-capsule .gdock-glass, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .mobile-menu, .chat-widget-fab .message-preview, .glass-ring)::after { content: none !important; display: none !important; }
+    /* Enhanced panes use one preblurred source, so CSS must not blur it again. */
+    :is(.dock-cluster .gdock-glass, .prompt-spotlight-capsule .gdock-glass, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .mobile-menu, .chat-widget-fab .message-preview, .glass-ring)[data-mobile-glass-optics="canvas"] {
+      isolation: isolate;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+    }
+    .wallet-overlay.wallet-modal-force-hidden .glass-ring {
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+    }
+    .mobile-glass-optics {
+      position: absolute !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      border-radius: inherit !important;
+      z-index: -1 !important;
+      pointer-events: none !important;
+    }
+    /* Nested menu groups must not blur an already blurred parent. */
+    :is(.mobile-menu, .nav-dropdown-portal, .avatar-dropdown) :is(.mobile-submenu, .nav-dropdown, .nav-support-dropdown, .dropdown-header, .dropdown-actions) {
+      background: transparent !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+      box-shadow: none !important;
+    }
+    :is(.mobile-menu, .nav-dropdown-portal, .avatar-dropdown) :is(.nav-dropdown, .nav-support-dropdown)::before,
+    :is(.mobile-menu, .nav-dropdown-portal, .avatar-dropdown) :is(.nav-dropdown, .nav-support-dropdown)::after { content: none !important; }
+    :is(.dock-cluster .gdock-item, .prompt-spotlight-inner, .prompt-spotlight-input) {
+      color: var(--mg-ink) !important;
+      mix-blend-mode: normal !important;
+      text-shadow: none !important;
+    }
+    .dock-cluster .gdock-glyph svg { filter: none !important; }
+    :is(.avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .mobile-menu) :is(a, button, .dropdown-action, .nav-dropdown-item, .mobile-menu-link, .mobile-menu-trigger, .mobile-submenu-link):not([data-auth-action="logout"]):not(.logout) {
+      color: var(--mg-ink) !important;
+      text-shadow: none !important;
+    }
+    :is(.avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .mobile-menu) :is(a, button):hover { background-color: var(--mg-hover) !important; }
+    .chat-widget-fab .message-preview :is(.preview-sender, .preview-text) {
+      color: var(--mg-ink) !important;
+      text-shadow: none !important;
+    }
+    .chat-widget-fab .message-preview :is(a, .engagement-preview__path-link) {
+      color: var(--mg-accent) !important;
+      text-shadow: none !important;
+    }
+    /* Same fallback for every surface, including late-created robot cards. */
+    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+      :is(.dock-cluster .gdock-glass, .prompt-spotlight-capsule .gdock-glass, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .mobile-menu, .chat-widget-fab .message-preview, .glass-ring) { background: rgb(var(--mg-tint)) !important; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .mobile-glass-optics { display: none !important; }
+      :is(.dock-cluster .gdock-glass, .prompt-spotlight-capsule .gdock-glass, .avatar-dropdown, .nav-dropdown-portal, .nav-dropdown, .nav-support-dropdown, .mobile-menu, .chat-widget-fab .message-preview, .glass-ring) {
+        background: rgb(var(--mg-tint)) !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+      }
+    }
+  }
+}

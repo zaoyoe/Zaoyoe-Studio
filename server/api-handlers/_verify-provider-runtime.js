@@ -10,11 +10,14 @@ const {
 const ACTIVE_VERIFY_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending', 'assigned', 'billing_pending']);
 const VERIFY_PROVIDER_AIDONE = 'aidone';
 const VERIFY_PROVIDER_CATCARD = 'catcard';
+const VERIFY_PROVIDER_86AI = '86ai';
+const VERIFY_ADAPTER_86AI_API = '86ai_api';
 const VERIFY_ADAPTER_AIDONE_OPENAPI = 'aidone_openapi';
 const VERIFY_ADAPTER_PIXEL_BRIDGE_REST = 'pixel_bridge_rest';
 const VERIFY_PROVIDER_LABELS = Object.freeze({
     [VERIFY_PROVIDER_AIDONE]: '通道 1 · aidone',
-    [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free'
+    [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free',
+    [VERIFY_PROVIDER_86AI]: '通道 3 · 86AI Pro 开通'
 });
 
 function normalizeText(value) {
@@ -27,17 +30,20 @@ function isPlainVerifyRuntimeConfig(value) {
 
 function normalizeVerifyProvider(value, fallback = VERIFY_PROVIDER_AIDONE) {
     const normalized = normalizeText(value).toLowerCase();
+    if (['86ai', '86ai_api'].includes(normalized)) return VERIFY_PROVIDER_86AI;
     if (['catcard', '1free', 'pixel', 'pixel_bridge', 'pixel_bridge_rest', 'qzz'].includes(normalized)) {
         return VERIFY_PROVIDER_CATCARD;
     }
     if (['aidone', 'primary', 'legacy', 'openapi', 'aidone_openapi'].includes(normalized)) {
         return VERIFY_PROVIDER_AIDONE;
     }
-    return fallback === VERIFY_PROVIDER_CATCARD ? VERIFY_PROVIDER_CATCARD : VERIFY_PROVIDER_AIDONE;
+    return [VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD, VERIFY_PROVIDER_86AI].includes(fallback) ? fallback : VERIFY_PROVIDER_AIDONE;
 }
 
 function normalizeVerifyAdapter(value, provider = VERIFY_PROVIDER_AIDONE) {
+    if (normalizeVerifyProvider(provider) === VERIFY_PROVIDER_86AI) return VERIFY_ADAPTER_86AI_API;
     const normalized = normalizeText(value).toLowerCase();
+    if (['86ai', '86ai_api'].includes(normalized)) return VERIFY_ADAPTER_86AI_API;
     if (['pixel_bridge_rest', 'pixel-bridge-rest', 'catcard', '1free', 'pixel'].includes(normalized)) {
         return VERIFY_ADAPTER_PIXEL_BRIDGE_REST;
     }
@@ -53,6 +59,10 @@ function isPixelBridgeAdapter(adapter) {
     return normalizeVerifyAdapter(adapter, VERIFY_PROVIDER_AIDONE) === VERIFY_ADAPTER_PIXEL_BRIDGE_REST;
 }
 
+function isAidoneAdapter(adapter) {
+    return normalizeVerifyAdapter(adapter, VERIFY_PROVIDER_AIDONE) === VERIFY_ADAPTER_AIDONE_OPENAPI;
+}
+
 function getVerifyProviderLabel(provider, adapter = '') {
     const normalizedProvider = normalizeVerifyProvider(provider);
     if (adapter && isPixelBridgeAdapter(adapter)) {
@@ -62,6 +72,10 @@ function getVerifyProviderLabel(provider, adapter = '') {
 }
 
 function getVerifyProviderCapabilities(provider, adapter = '') {
+    if (normalizeVerifyProvider(provider) === VERIFY_PROVIDER_86AI) {
+        return { proActivation: true, extract: false, full: false, keyBalance: false, keyTypes: false,
+            serviceStatus: false, batchSubmit: false, remarks: false, cancelTask: false, failedLinkPurchase: false };
+    }
     const normalizedAdapter = normalizeVerifyAdapter(adapter, provider);
     if (normalizedAdapter === VERIFY_ADAPTER_PIXEL_BRIDGE_REST) {
         return {
@@ -87,6 +101,7 @@ function getVerifyProviderCapabilities(provider, adapter = '') {
 }
 
 function getVerifyProviderUnitCosts(provider, adapter = '') {
+    if (normalizeVerifyProvider(provider) === VERIFY_PROVIDER_86AI) return { pro_activation: 1 };
     const normalizedAdapter = normalizeVerifyAdapter(adapter, provider);
     if (normalizedAdapter === VERIFY_ADAPTER_PIXEL_BRIDGE_REST) {
         return {
@@ -112,10 +127,21 @@ function getVerifyPriceMap(config = {}) {
         1,
         Number(config.pricePerVerifyFull || config.price_per_verify_full || fullFallback) || fullFallback
     );
+    const customSub6 = Number(config.pricePerVerifySub6 ?? config.price_per_verify_sub6);
+    const sub6Price = Number.isFinite(customSub6) && customSub6 > 0 ? customSub6 : fullPrice;
+
+    const customSub12 = Number(config.pricePerVerifySub12 ?? config.price_per_verify_sub12);
+    const sub12Price = Number.isFinite(customSub12) && customSub12 > 0 ? customSub12 : Math.round(fullPrice * 1.5);
+
+    const customSub24 = Number(config.pricePerVerifySub24 ?? config.price_per_verify_sub24);
+    const sub24Price = Number.isFinite(customSub24) && customSub24 > 0 ? customSub24 : Math.round(fullPrice * 2);
 
     return {
         extract: extractPrice,
-        full: fullPrice
+        full: fullPrice,
+        sub6: sub6Price,
+        sub12: sub12Price,
+        sub24: sub24Price
     };
 }
 
@@ -126,7 +152,7 @@ function normalizeVerifyModeVisibility(value) {
 
 function normalizeVerifyProviderVisibility(value) {
     const normalized = normalizeText(value).toLowerCase();
-    if (normalized === VERIFY_PROVIDER_AIDONE || normalized === VERIFY_PROVIDER_CATCARD) {
+    if ([VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD, VERIFY_PROVIDER_86AI, 'all'].includes(normalized)) {
         return normalized;
     }
     return 'both';
@@ -266,6 +292,7 @@ function getProviderConfigSource(config = {}, provider = VERIFY_PROVIDER_AIDONE)
         ? config.providers
         : {};
     const normalizedProvider = normalizeVerifyProvider(provider);
+    if (normalizedProvider === VERIFY_PROVIDER_86AI) return providers['86ai'] || {};
     if (normalizedProvider === VERIFY_PROVIDER_CATCARD) {
         return providers.catcard || providers['1free'] || providers.pixel || providers.pixel_bridge || {};
     }
@@ -293,6 +320,21 @@ function buildRuntimeProviderConfig({
 } = {}) {
     const normalizedProvider = normalizeVerifyProvider(provider);
     const providerSource = getProviderConfigSource(config, normalizedProvider);
+    // This adapter has no balance API and no legacy-key fallback. Keep it opt-in.
+    if (normalizedProvider === VERIFY_PROVIDER_86AI) {
+        const apiKeys = normalizeVerifyCredentialList(providerSource.card_codes || providerSource.apiKeys || providerSource.cdkeys);
+        const rawPrice = Number(providerSource.pricePerProActivation ?? providerSource.price_per_pro_activation);
+        const price = Number.isFinite(rawPrice) && rawPrice > 0 && rawPrice <= 1000000 ? Math.round(rawPrice * 1e6) / 1e6 : 0;
+        return {
+            site, provider: normalizedProvider, enabled: providerSource.enabled === true,
+            providerLabel: VERIFY_PROVIDER_LABELS[normalizedProvider], provider_label: VERIFY_PROVIDER_LABELS[normalizedProvider],
+            adapter: VERIFY_ADAPTER_86AI_API, provider_adapter: VERIFY_ADAPTER_86AI_API,
+            apiBaseUrl: 'https://86ai.one', apiKey: apiKeys[0] || '', apiKeys, keyCount: apiKeys.length,
+            pricePerProActivation: price, modeVisibility: 'pro_activation_only', mode_visibility: 'pro_activation_only',
+            unitCosts: { pro_activation: 1 }, keyTypeHints: {},
+            capabilities: getVerifyProviderCapabilities(normalizedProvider)
+        };
+    }
     const adapter = normalizeVerifyAdapter(
         providerSource.adapter
         || providerSource.provider_adapter
@@ -373,6 +415,12 @@ function buildRuntimeProviderConfig({
         pricePerVerify: prices.extract,
         pricePerVerifyExtract: prices.extract,
         pricePerVerifyFull: prices.full,
+        pricePerVerifySub6: prices.sub6 || prices.full,
+        pricePerVerifySub12: prices.sub12 || Math.round(prices.full * 1.5),
+        pricePerVerifySub24: prices.sub24 || Math.round(prices.full * 2),
+        price_per_verify_sub6: prices.sub6 || prices.full,
+        price_per_verify_sub12: prices.sub12 || Math.round(prices.full * 1.5),
+        price_per_verify_sub24: prices.sub24 || Math.round(prices.full * 2),
         modeVisibility,
         mode_visibility: modeVisibility,
         keyTypeHints,
@@ -393,16 +441,23 @@ function activateVerifyProviderConfig(runtimeConfig = {}, provider = '') {
     return {
         ...runtimeConfig,
         ...providerConfig,
+        enabled: runtimeConfig.enabled !== false && providerConfig.enabled !== false,
         providers: runtimeConfig.providers,
         activeProvider: normalizedProvider,
         active_provider: normalizedProvider,
         providerVisibility: runtimeConfig.providerVisibility,
         provider_visibility: runtimeConfig.provider_visibility,
-        modeVisibility: runtimeConfig.modeVisibility,
-        mode_visibility: runtimeConfig.mode_visibility,
+        modeVisibility: normalizedProvider === VERIFY_PROVIDER_86AI ? 'pro_activation_only' : runtimeConfig.modeVisibility,
+        mode_visibility: normalizedProvider === VERIFY_PROVIDER_86AI ? 'pro_activation_only' : runtimeConfig.mode_visibility,
         pricePerVerify: runtimeConfig.pricePerVerify,
         pricePerVerifyExtract: runtimeConfig.pricePerVerifyExtract,
-        pricePerVerifyFull: runtimeConfig.pricePerVerifyFull
+        pricePerVerifyFull: runtimeConfig.pricePerVerifyFull,
+        pricePerVerifySub6: runtimeConfig.pricePerVerifySub6 ?? providerConfig.pricePerVerifySub6 ?? runtimeConfig.pricePerVerifyFull,
+        pricePerVerifySub12: runtimeConfig.pricePerVerifySub12 ?? providerConfig.pricePerVerifySub12 ?? Math.round(runtimeConfig.pricePerVerifyFull * 1.5),
+        pricePerVerifySub24: runtimeConfig.pricePerVerifySub24 ?? providerConfig.pricePerVerifySub24 ?? Math.round(runtimeConfig.pricePerVerifyFull * 2),
+        price_per_verify_sub6: runtimeConfig.price_per_verify_sub6 ?? providerConfig.price_per_verify_sub6 ?? runtimeConfig.price_per_verify_full,
+        price_per_verify_sub12: runtimeConfig.price_per_verify_sub12 ?? providerConfig.price_per_verify_sub12 ?? Math.round(runtimeConfig.price_per_verify_full * 1.5),
+        price_per_verify_sub24: runtimeConfig.price_per_verify_sub24 ?? providerConfig.price_per_verify_sub24 ?? Math.round(runtimeConfig.price_per_verify_full * 2)
     };
 }
 
@@ -439,7 +494,9 @@ async function loadVerifyRuntimeConfig(supabase, env = process.env, options = {}
             activeProvider: VERIFY_PROVIDER_AIDONE,
             active_provider: VERIFY_PROVIDER_AIDONE,
             providers: {
-                [VERIFY_PROVIDER_AIDONE]: providerConfig
+                [VERIFY_PROVIDER_AIDONE]: providerConfig,
+                [VERIFY_PROVIDER_CATCARD]: buildRuntimeProviderConfig({ provider: VERIFY_PROVIDER_CATCARD, fallbackConfig, prices, site, env }),
+                [VERIFY_PROVIDER_86AI]: buildRuntimeProviderConfig({ provider: VERIFY_PROVIDER_86AI, site, env })
             }
         };
     }
@@ -513,6 +570,7 @@ async function loadVerifyRuntimeConfig(supabase, env = process.env, options = {}
             env
         })
     };
+    providers[VERIFY_PROVIDER_86AI] = buildRuntimeProviderConfig({ config: mergedForDefaults, provider: VERIFY_PROVIDER_86AI, site, env });
     const activeConfig = providers[activeProvider] || providers[VERIFY_PROVIDER_AIDONE];
 
     return {
@@ -525,6 +583,12 @@ async function loadVerifyRuntimeConfig(supabase, env = process.env, options = {}
         pricePerVerify: prices.extract,
         pricePerVerifyExtract: prices.extract,
         pricePerVerifyFull: prices.full,
+        pricePerVerifySub6: prices.sub6 || prices.full,
+        pricePerVerifySub12: prices.sub12 || Math.round(prices.full * 1.5),
+        pricePerVerifySub24: prices.sub24 || Math.round(prices.full * 2),
+        price_per_verify_sub6: prices.sub6 || prices.full,
+        price_per_verify_sub12: prices.sub12 || Math.round(prices.full * 1.5),
+        price_per_verify_sub24: prices.sub24 || Math.round(prices.full * 2),
         modeVisibility,
         mode_visibility: modeVisibility,
         providerVisibility,
@@ -625,6 +689,7 @@ async function fetchPixelBridgeKeySnapshot(config = {}, apiKey = '', options = {
 }
 
 async function fetchVerifyProviderQuotaSnapshot(config = {}, apiKey = '', options = {}) {
+    if (config.provider === VERIFY_PROVIDER_86AI) throw new Error('86AI does not support balance queries');
     const adapter = normalizeVerifyAdapter(config.adapter || config.provider_adapter, config.provider);
     if (adapter === VERIFY_ADAPTER_PIXEL_BRIDGE_REST) {
         return fetchPixelBridgeKeySnapshot(config, apiKey, options);
@@ -648,6 +713,7 @@ async function fetchVerifyProviderQuotaSnapshot(config = {}, apiKey = '', option
 }
 
 async function fetchVerifyQuotaStates(config = {}, options = {}) {
+    if (config.provider === VERIFY_PROVIDER_86AI) return [];
     const apiKeys = normalizeVerifyCredentialList(config.apiKeys || config.apiKey);
 
     const snapshots = await Promise.all(apiKeys.map(async (apiKey) => {
@@ -686,12 +752,13 @@ function snapshotSupportsTaskType(snapshot = {}, taskType = '') {
 
     const keyType = normalizeText(snapshot.key_type || snapshot.keyType).toLowerCase();
     if (!keyType) return true;
-    if (keyType === 'subscribe' || keyType === 'full') return normalizedTaskType === 'full';
+    if (keyType === 'subscribe' || keyType === 'full') return ['full', 'sub6', 'sub12', 'sub24'].includes(normalizedTaskType);
     if (keyType === 'extract_link' || keyType === 'extract') return normalizedTaskType === 'extract';
     return true;
 }
 
 async function selectVerifyCredentialForTask(config = {}, requiredUses = 0, options = {}) {
+    if (config.provider === VERIFY_PROVIDER_86AI) throw new Error('86AI requires the Pro activation runtime');
     const snapshots = await fetchVerifyQuotaStates(config, options);
     const healthySnapshots = snapshots
         .filter((snapshot) => snapshot?.ok)
@@ -719,6 +786,41 @@ async function fetchDirectVerifyQuotaState(supabase, options = {}) {
         : await loadVerifyRuntimeConfig(supabase, options.env || process.env, {
             site: options.site
         });
+    const requestedProvider = normalizeVerifyProvider(options.provider || config.provider);
+    if (requestedProvider === VERIFY_PROVIDER_86AI) {
+        const providerConfig = getProviderConfigSource(config, VERIFY_PROVIDER_86AI);
+        let queueStatus = null;
+        try {
+            queueStatus = await fetch86aiServiceStatus(providerConfig, options);
+        } catch (_) {
+            queueStatus = null;
+        }
+        const cards = normalizeVerifyCredentialList([
+            providerConfig.apiKeys,
+            providerConfig.card_codes,
+            config.verify_86ai_card_codes
+        ]);
+        const keyCount = cards.length || (Array.isArray(config.apiKeys) ? config.apiKeys.length : (config.apiKey ? 1 : 0));
+        return {
+            success: true,
+            status: 200,
+            provider: '86ai',
+            provider_label: '通道 3 · 86AI Pro 开通',
+            supported: false,
+            balance: null,
+            queue_size: Number.isFinite(Number(queueStatus?.queue_size)) ? Number(queueStatus.queue_size) : null,
+            service_status: queueStatus?.service_status || 'running',
+            key_count: keyCount,
+            key_states: (cards.length ? cards : (config.apiKeys || [])).map((key, index) => ({
+                api_key: key,
+                key_name: `86AI 卡密 #${index + 1}`,
+                balance: null,
+                status: 'configured',
+                supported: false
+            })),
+            message: '86AI 按卡密核销，上游不提供余额接口；请在 86AI 后台核对额度。'
+        };
+    }
     let providerStatus = null;
     if (isPixelBridgeAdapter(config.adapter || config.provider_adapter)) {
         try {
@@ -727,6 +829,16 @@ async function fetchDirectVerifyQuotaState(supabase, options = {}) {
             providerStatus = {
                 ok: false,
                 service_status: 'unavailable',
+                message: normalizeVerifySnapshotError(error)
+            };
+        }
+    } else if (config.provider === VERIFY_PROVIDER_AIDONE || isAidoneAdapter(config.adapter || config.provider_adapter)) {
+        try {
+            providerStatus = await fetchAidoneServiceStatus(config, options);
+        } catch (error) {
+            providerStatus = {
+                ok: false,
+                service_status: '',
                 message: normalizeVerifySnapshotError(error)
             };
         }
@@ -795,7 +907,12 @@ async function fetchDirectVerifyQuotaState(supabase, options = {}) {
         key_count: Number(config.keyCount || healthySnapshots.length || 0),
         healthy_key_count: healthySnapshots.length,
         key_states: snapshots.map((snapshot) => buildVerifyQuotaKeyState(snapshot)),
-        queue_size: Number(providerStatus?.queue_size || 0) || 0,
+        queue_size: Number.isFinite(Number(providerStatus?.queue_size)) && Number(providerStatus.queue_size) > 0
+            ? Number(providerStatus.queue_size)
+            : healthySnapshots.reduce((sum, snapshot) => {
+                const counts = snapshot?.raw?.status_counts;
+                return sum + Math.max(0, Number(counts?.pending || 0));
+            }, 0),
         running_jobs: Number(providerStatus?.running_jobs || 0) || 0,
         worker_count: Number(providerStatus?.worker_count || 0) || 0,
         online_servers: Number(providerStatus?.online_servers || 0) || 0,
@@ -833,6 +950,101 @@ async function fetchPixelBridgeServiceStatus(config = {}, options = {}) {
         checked_at: new Date(options.now || Date.now()).toISOString(),
         message: normalizeText(payload.msg || payload.message || '')
     };
+}
+
+async function fetchAidoneServiceStatus(config = {}, options = {}) {
+    const rawUrl = config.apiBaseUrl || config.api_base_url || 'https://geminipro.my';
+    const rootUrl = normalizeText(rawUrl).replace(/\/+$/, '').replace(/\/openapi$/i, '');
+    const endpoint = `${rootUrl}/api/get_queue`;
+    try {
+        const result = await fetchJson(endpoint, {
+            method: 'GET',
+            fetchImpl: options.fetchImpl,
+            timeoutMs: options.timeoutMs || 4000
+        });
+        const payload = result.payload || {};
+        const queueData = payload.queue && typeof payload.queue === 'object' ? payload.queue : {};
+        const count = Number(queueData.source_count ?? payload.source_count ?? payload.queue_size ?? payload.count);
+        const ok = result.ok && payload.success !== false && Number.isFinite(count);
+        return {
+            ok,
+            status: result.status,
+            provider: VERIFY_PROVIDER_AIDONE,
+            adapter: VERIFY_ADAPTER_AIDONE_OPENAPI,
+            api_base_url: rootUrl,
+            upstream_endpoint: endpoint,
+            queue_size: ok ? Math.max(0, Math.round(count)) : 0,
+            running_jobs: null,
+            worker_count: null,
+            online_servers: null,
+            service_status: ok ? 'running' : '',
+            checked_at: new Date(options.now || Date.now()).toISOString(),
+            message: normalizeText(payload.message || payload.msg || '')
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            status: 502,
+            provider: VERIFY_PROVIDER_AIDONE,
+            adapter: VERIFY_ADAPTER_AIDONE_OPENAPI,
+            api_base_url: rootUrl,
+            upstream_endpoint: endpoint,
+            queue_size: 0,
+            running_jobs: null,
+            worker_count: null,
+            online_servers: null,
+            service_status: '',
+            checked_at: new Date(options.now || Date.now()).toISOString(),
+            message: normalizeVerifySnapshotError(error)
+        };
+    }
+}
+
+async function fetch86aiServiceStatus(config = {}, options = {}) {
+    const rawUrl = config.apiBaseUrl || config.api_base_url || 'https://86ai.one';
+    const rootUrl = normalizeText(rawUrl).replace(/\/+$/, '');
+    const endpoint = `${rootUrl}/tasks/get_queue_up`;
+    try {
+        const result = await fetchJson(endpoint, {
+            method: 'GET',
+            fetchImpl: options.fetchImpl,
+            timeoutMs: options.timeoutMs || 4000
+        });
+        const payload = result.payload || {};
+        const count = Number(payload?.data?.total ?? payload?.total);
+        const ok = result.ok && payload.success !== false && Number.isFinite(count);
+        return {
+            ok,
+            status: result.status,
+            provider: VERIFY_PROVIDER_86AI,
+            adapter: VERIFY_ADAPTER_86AI_API,
+            api_base_url: rootUrl,
+            upstream_endpoint: endpoint,
+            queue_size: ok ? Math.max(0, Math.round(count)) : null,
+            running_jobs: null,
+            worker_count: null,
+            online_servers: null,
+            service_status: ok ? 'running' : '',
+            checked_at: new Date(options.now || Date.now()).toISOString(),
+            message: normalizeText(payload.message || payload.msg || '')
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            status: 502,
+            provider: VERIFY_PROVIDER_86AI,
+            adapter: VERIFY_ADAPTER_86AI_API,
+            api_base_url: rootUrl,
+            upstream_endpoint: endpoint,
+            queue_size: null,
+            running_jobs: null,
+            worker_count: null,
+            online_servers: null,
+            service_status: '',
+            checked_at: new Date(options.now || Date.now()).toISOString(),
+            message: normalizeVerifySnapshotError(error)
+        };
+    }
 }
 
 async function buildLocalVerifyQueueSnapshot(supabase, options = {}) {
@@ -874,6 +1086,15 @@ async function buildLocalVerifyQueueSnapshot(supabase, options = {}) {
                 message: normalizeVerifySnapshotError(error)
             };
         }
+    } else if (config.provider === VERIFY_PROVIDER_AIDONE || isAidoneAdapter(config.adapter)) {
+        try {
+            providerStatus = await fetchAidoneServiceStatus(config, options);
+        } catch (error) {
+            providerStatus = {
+                ok: false,
+                message: normalizeVerifySnapshotError(error)
+            };
+        }
     }
 
     return {
@@ -883,7 +1104,9 @@ async function buildLocalVerifyQueueSnapshot(supabase, options = {}) {
         provider: config.provider,
         provider_label: config.provider_label,
         adapter: config.adapter,
-        queue_size: Number.isFinite(Number(providerStatus?.queue_size)) ? Number(providerStatus.queue_size) : localQueueSize,
+        queue_size: Number.isFinite(Number(providerStatus?.queue_size)) && Number(providerStatus.queue_size) > 0
+            ? Number(providerStatus.queue_size)
+            : localQueueSize,
         running_jobs: Number.isFinite(Number(providerStatus?.running_jobs)) ? Number(providerStatus.running_jobs) : localRunningJobs,
         local_queue_size: localQueueSize,
         local_running_jobs: localRunningJobs,
@@ -900,17 +1123,23 @@ async function buildLocalVerifyQueueSnapshot(supabase, options = {}) {
 }
 
 module.exports = {
+    VERIFY_PROVIDER_86AI,
+    VERIFY_ADAPTER_86AI_API,
+    normalizeVerifyProviderVisibility,
     ACTIVE_VERIFY_STATUSES,
     VERIFY_ADAPTER_AIDONE_OPENAPI,
     VERIFY_ADAPTER_PIXEL_BRIDGE_REST,
     VERIFY_PROVIDER_AIDONE,
     VERIFY_PROVIDER_CATCARD,
     activateVerifyProviderConfig,
+    buildRuntimeProviderConfig,
     buildLocalVerifyQueueSnapshot,
     buildVerifyTypedUsageSummary,
     buildVerifyUsageSummary,
     buildVerifyQuotaKeyState,
     fetchDirectVerifyQuotaState,
+    fetch86aiServiceStatus,
+    fetchAidoneServiceStatus,
     fetchPixelBridgeServiceStatus,
     fetchVerifyQuotaStates,
     getVerifyPriceMap,

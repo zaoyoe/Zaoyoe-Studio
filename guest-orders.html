@@ -3,11 +3,14 @@
 
 <head>
     <meta charset="UTF-8">
+    <script src="./js/i18n-preload.js?v=20261107_FIRST_PAINT_1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-visual">
     <meta name="theme-color" content="#f5f7fb">
     <meta name="color-scheme" content="light dark">
     <script src="./js/theme-preload.js?v=20260503_MODAL_CHROME_CLOSE_1"></script>
+    <script src="./js/auth-popup-handoff.js?v=20260501_IOS_GOOGLE_REDIRECT_1"></script>
     <script src="./js/nav-auth-fast-paint.js?v=20260528_AVATAR_CANONICAL_CDN_1" defer></script>
+    <script src="inline-guest-orders-5.js?v=20261109_INLINE_1"></script>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -26,7 +29,12 @@
     <link rel="stylesheet" href="css/framer_home.css?v=20260617_AVATAR_MENU_ICON_HOVER_BLUE_1&themeChrome=20260428_IOS_SAFARI_SYNTH_MENU_TAP_6&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1">
     <link rel="stylesheet" href="css/auth-popup-handoff.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&authStagger=20260619_AUTH_SHEET_TOP_DOWN_STAGGER_1" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="public-auth-sheet">
-    <link rel="stylesheet" href="css/guest-orders.css?v=20261001_GUEST_ORDERS_ACCENT_FOOTER_1">
+    <link rel="stylesheet" href="css/guest-orders.css?v=20261001_GUEST_ORDERS_ACCENT_FOOTER_1&glassRing=20261108_1&modalSpacing=20261108_1">
+    <link rel="stylesheet" href="./css/label-input.css">
+    <link rel="stylesheet" href="./css/magnifying-dock.css?v=20261108_RIM_3&overlayNav=20261108_1">
+    <link rel="stylesheet" href="./css/desktop-nav-glass.css?v=20261108_14">
+    <script type="module" src="./js/desktop-nav-glass.mjs?v=20261109_NAV_MOTION_1"></script>
+    <link rel="stylesheet" href="css/guest-orders-inline.css?v=20261109_INLINE_1">
 </head>
 
 <body class="guest-orders-page guestbook-page">
@@ -73,13 +81,15 @@
             <div class="guest-orders-heading">
                 <i class="fas fa-clipboard-list guest-orders-heading-icon" aria-hidden="true"></i>
                 <div>
-                    <h1>游客订单查询</h1>
-                    <p>用下单时填写的邮箱和查询密码查看订单与卡密</p>
+                    <h1 id="guestOrdersHeadingTitle">游客订单查询</h1>
+                    <p id="guestOrdersHeadingSubtitle">用下单时填写的邮箱和查询密码查看订单与卡密</p>
                 </div>
             </div>
-            <a class="guest-orders-link-btn guest-orders-back-shop-btn" href="/shop.html">
-                <i class="fas fa-arrow-left" aria-hidden="true"></i> 返回商城
-            </a>
+            <div class="guest-orders-header-actions">
+                <a class="guest-orders-link-btn guest-orders-back-shop-btn" href="/shop.html">
+                    <i class="fas fa-arrow-left" aria-hidden="true"></i> 返回商城
+                </a>
+            </div>
         </header>
 
         <section id="guestOrdersFeatureGate" class="guest-orders-gate" role="status" aria-live="polite" hidden>
@@ -88,9 +98,153 @@
             <button id="guestOrdersFeatureRetryBtn" type="button" class="guest-orders-secondary-btn">重试</button>
         </section>
 
+        <!-- Initial Loading Skeleton (按实际卡片位置设计) -->
+        <div id="guestOrdersInitialSkeleton" class="guest-orders-skeleton-host" aria-hidden="true">
+            <!-- 游客模式卡片骨架：按实际查询订单卡片位置布局 -->
+            <div class="guest-orders-skel-view guest-orders-skel-view--guest">
+                <section class="guest-orders-card guest-orders-skel-card guest-orders-skel-query-card">
+                    <div class="guest-orders-skel-bar guest-orders-skel-bar--title"></div>
+                    <div class="guest-orders-skel-form">
+                        <div class="guest-orders-skel-field">
+                            <div class="guest-orders-skel-bar guest-orders-skel-bar--label-sm"></div>
+                            <div class="guest-orders-skel-input"></div>
+                        </div>
+                        <div class="guest-orders-skel-field">
+                            <div class="guest-orders-skel-bar guest-orders-skel-bar--label-md"></div>
+                            <div class="guest-orders-skel-input"></div>
+                        </div>
+                        <div class="guest-orders-skel-field">
+                            <div class="guest-orders-skel-bar guest-orders-skel-bar--label-lg"></div>
+                            <div class="guest-orders-skel-input"></div>
+                        </div>
+                        <div class="guest-orders-skel-field guest-orders-skel-field--action">
+                            <div class="guest-orders-skel-button"></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- 会员模式卡片骨架：按实际Tab栏、筛选卡片、订单列表卡片位置布局 -->
+            <div class="guest-orders-skel-view guest-orders-skel-view--member">
+                <!-- 1. 视图切换 Tab 骨架 -->
+                <div class="guest-orders-skel-tabs-wrap">
+                    <div class="guest-orders-skel-tabs">
+                        <div class="guest-orders-skel-tab-item"></div>
+                        <div class="guest-orders-skel-tab-item"></div>
+                    </div>
+                </div>
+
+                <!-- 2. 订单筛选卡片骨架 -->
+                <section class="guest-orders-card guest-orders-skel-card guest-orders-skel-filter-card">
+                    <div class="orders-filter-header">
+                        <div class="guest-orders-skel-bar guest-orders-skel-bar--filter-title"></div>
+                        <div class="guest-orders-skel-badge guest-orders-skel-badge--count"></div>
+                    </div>
+                    <div class="orders-filter-search-row">
+                        <div class="guest-orders-skel-input guest-orders-skel-input--search"></div>
+                    </div>
+                    <div class="orders-filter-controls-row">
+                        <div class="guest-orders-skel-dropdown"></div>
+                        <div class="guest-orders-skel-dropdown"></div>
+                        <div class="guest-orders-skel-dropdown"></div>
+                        <div class="guest-orders-skel-dropdown"></div>
+                    </div>
+                </section>
+
+                <!-- 3. 订单列表卡片骨架 -->
+                <section class="guest-orders-card guest-orders-skel-card guest-orders-skel-result-card">
+                    <div class="guest-orders-result-head">
+                        <div class="guest-orders-skel-bar guest-orders-skel-bar--result-title"></div>
+                    </div>
+                    <div class="guest-orders-list guest-orders-skel-list">
+                        <article class="guest-orders-item is-skeleton">
+                            <div class="guest-orders-item-top">
+                                <div class="guest-orders-item-left">
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--order-no"></div>
+                                </div>
+                                <div class="guest-orders-item-badges">
+                                    <div class="guest-orders-skel-badge"></div>
+                                    <div class="guest-orders-skel-badge"></div>
+                                </div>
+                            </div>
+                            <div class="guest-orders-item-body">
+                                <div class="guest-orders-skel-thumb"></div>
+                                <div class="guest-orders-item-content">
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-title"></div>
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-meta"></div>
+                                </div>
+                                <div class="guest-orders-item-amount">
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-price"></div>
+                                </div>
+                            </div>
+                        </article>
+                        <article class="guest-orders-item is-skeleton">
+                            <div class="guest-orders-item-top">
+                                <div class="guest-orders-item-left">
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--order-no inline-style-guest-orders-1"></div>
+                                </div>
+                                <div class="guest-orders-item-badges">
+                                    <div class="guest-orders-skel-badge"></div>
+                                    <div class="guest-orders-skel-badge"></div>
+                                </div>
+                            </div>
+                            <div class="guest-orders-item-body">
+                                <div class="guest-orders-skel-thumb"></div>
+                                <div class="guest-orders-item-content">
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-title inline-style-guest-orders-2"></div>
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-meta inline-style-guest-orders-3"></div>
+                                </div>
+                                <div class="guest-orders-item-amount">
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-price inline-style-guest-orders-4"></div>
+                                </div>
+                            </div>
+                        </article>
+                        <article class="guest-orders-item is-skeleton">
+                            <div class="guest-orders-item-top">
+                                <div class="guest-orders-item-left">
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--order-no inline-style-guest-orders-5"></div>
+                                </div>
+                                <div class="guest-orders-item-badges">
+                                    <div class="guest-orders-skel-badge"></div>
+                                    <div class="guest-orders-skel-badge"></div>
+                                </div>
+                            </div>
+                            <div class="guest-orders-item-body">
+                                <div class="guest-orders-skel-thumb"></div>
+                                <div class="guest-orders-item-content">
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-title inline-style-guest-orders-6"></div>
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-meta inline-style-guest-orders-7"></div>
+                                </div>
+                                <div class="guest-orders-item-amount">
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-price inline-style-guest-orders-8"></div>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+            </div>
+        </div>
+
         <div id="guestOrdersProtectedContent" hidden aria-hidden="true">
 
-        <section id="guestOrdersQueryCard" class="guest-orders-card" aria-labelledby="guestOrdersQueryTitle">
+            <!-- View Tabs Component: Hidden by default, shown after password inquiry or member login -->
+            <div class="guest-orders-tabs-wrapper" id="guestOrdersTabsWrapper" hidden>
+                <div class="guest-orders-view-tabs" id="guestOrdersViewTabs" role="tablist" aria-label="视图切换">
+                    <div class="guest-orders-tab-slider" id="guestOrdersTabSlider" aria-hidden="true"></div>
+                    <button type="button" class="guest-orders-view-tab active" data-view="orders" id="tabBtnOrders" role="tab" aria-selected="true">
+                        <i class="fas fa-box-archive" aria-hidden="true"></i>
+                        <span>订单查询</span>
+                    </button>
+                    <button type="button" class="guest-orders-view-tab" data-view="tickets" id="tabBtnTickets" role="tab" aria-selected="false">
+                        <i class="fas fa-headset" aria-hidden="true"></i>
+                        <span>我的工单</span>
+                        <span id="myTicketsBadgeCount" class="my-tickets-tab-badge" hidden>0</span>
+                    </button>
+                </div>
+            </div>
+
+            <div id="guestOrdersOrdersView" class="guest-orders-view-pane">
+            <section id="guestOrdersQueryCard" class="guest-orders-card" aria-labelledby="guestOrdersQueryTitle">
             <h2 id="guestOrdersQueryTitle" class="guest-orders-card-title">查询订单</h2>
             <form id="guestOrdersQueryForm" class="guest-orders-form guest-orders-query-form" autocomplete="off" novalidate>
                 <label class="guest-orders-field guest-orders-credential-field" for="guestOrdersEmail">
@@ -193,6 +347,158 @@
             <p class="guest-orders-tip">链接使用后立即失效。设置成功的同时，该邮箱在其他设备上已登录的查询会话会被一并退出。</p>
         </section>
 
+        <!-- Order Filters Module (§11.3) -->
+        <section id="guestOrdersFilterCard" class="guest-orders-card guest-orders-filter-card" aria-label="订单筛选与搜索" hidden>
+            <div class="orders-filter-header">
+                <div class="orders-filter-title">
+                    <i class="fas fa-filter" aria-hidden="true"></i>
+                    <span>订单筛选</span>
+                </div>
+                <div class="orders-filter-header-actions">
+                    <span id="ordersFilterCountBadge" class="orders-filter-count-badge">共 0 笔订单</span>
+                    <button id="ordersFilterResetBtn" type="button" class="orders-filter-reset-btn" hidden>
+                        <i class="fas fa-rotate-left" aria-hidden="true"></i>
+                        <span>重置筛选</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Search Input Row -->
+            <div class="orders-filter-search-row">
+                <div class="custom-filter-search">
+                    <i class="fas fa-magnifying-glass custom-filter-search-icon" aria-hidden="true"></i>
+                    <input id="ordersFilterSearchInput" class="custom-filter-input" type="text"
+                        placeholder="搜索订单号、商品名称、卡密内容..."
+                        autocomplete="off" spellcheck="false" data-lpignore="true">
+                    <button id="ordersFilterSearchClearBtn" type="button" class="custom-filter-clear-btn" aria-label="清空搜索" hidden>
+                        <i class="fas fa-times-circle" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Custom Dropdowns Row -->
+            <div class="orders-filter-controls-row">
+                <!-- Status Dropdown -->
+                <div class="custom-dropdown" id="ordersStatusDropdown" data-dropdown-key="status">
+                    <button type="button" class="custom-dropdown-trigger" id="ordersStatusTrigger" aria-haspopup="listbox" aria-expanded="false">
+                        <i class="fas fa-tags custom-dropdown-icon" aria-hidden="true"></i>
+                        <span class="custom-dropdown-label" id="ordersStatusLabel">全部状态</span>
+                        <i class="fas fa-chevron-down custom-dropdown-chevron" aria-hidden="true"></i>
+                    </button>
+                    <div class="custom-dropdown-menu" role="listbox" id="ordersStatusMenu" hidden>
+                        <div class="custom-dropdown-item is-active" role="option" data-value="all" aria-selected="true">
+                            <span class="dropdown-item-left"><i class="fas fa-layer-group" aria-hidden="true"></i> 全部状态</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="completed" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-circle-check inline-style-guest-orders-9" aria-hidden="true"></i> 已完成 / 已发货</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="fulfilling" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-spinner fa-spin inline-style-guest-orders-10" aria-hidden="true"></i> 发货中 / 待发货</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="pending" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-clock inline-style-guest-orders-11" aria-hidden="true"></i> 待支付</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="refunded" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-rotate-left inline-style-guest-orders-12" aria-hidden="true"></i> 已退款</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fulfillment Type Dropdown -->
+                <div class="custom-dropdown" id="ordersDeliveryDropdown" data-dropdown-key="deliveryType">
+                    <button type="button" class="custom-dropdown-trigger" id="ordersDeliveryTrigger" aria-haspopup="listbox" aria-expanded="false">
+                        <i class="fas fa-truck-fast custom-dropdown-icon" aria-hidden="true"></i>
+                        <span class="custom-dropdown-label" id="ordersDeliveryLabel">全部履约类型</span>
+                        <i class="fas fa-chevron-down custom-dropdown-chevron" aria-hidden="true"></i>
+                    </button>
+                    <div class="custom-dropdown-menu" role="listbox" id="ordersDeliveryMenu" hidden>
+                        <div class="custom-dropdown-item is-active" role="option" data-value="all" aria-selected="true">
+                            <span class="dropdown-item-left"><i class="fas fa-boxes-stacked" aria-hidden="true"></i> 全部履约类型</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="auto" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-bolt inline-style-guest-orders-13" aria-hidden="true"></i> 自动交付 (卡密)</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="manual" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-headset inline-style-guest-orders-14" aria-hidden="true"></i> 人工交付 (联系客服)</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Date Range Dropdown -->
+                <div class="custom-dropdown" id="ordersDateDropdown" data-dropdown-key="dateRange">
+                    <button type="button" class="custom-dropdown-trigger" id="ordersDateTrigger" aria-haspopup="listbox" aria-expanded="false">
+                        <i class="fas fa-calendar-day custom-dropdown-icon" aria-hidden="true"></i>
+                        <span class="custom-dropdown-label" id="ordersDateLabel">全部时间</span>
+                        <i class="fas fa-chevron-down custom-dropdown-chevron" aria-hidden="true"></i>
+                    </button>
+                    <div class="custom-dropdown-menu" role="listbox" id="ordersDateMenu" hidden>
+                        <div class="custom-dropdown-item is-active" role="option" data-value="all" aria-selected="true">
+                            <span class="dropdown-item-left"><i class="fas fa-clock-rotate-left" aria-hidden="true"></i> 全部时间</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="today" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-sun inline-style-guest-orders-11" aria-hidden="true"></i> 今天</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="7days" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-calendar-week inline-style-guest-orders-13" aria-hidden="true"></i> 近 7 天</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="30days" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-calendar inline-style-guest-orders-15" aria-hidden="true"></i> 近 30 天</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="90days" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-calendar-days inline-style-guest-orders-16" aria-hidden="true"></i> 近 3 个月</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="year" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-calendar-check inline-style-guest-orders-17" aria-hidden="true"></i> 今年内</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sort Dropdown -->
+                <div class="custom-dropdown" id="ordersSortDropdown" data-dropdown-key="sortBy">
+                    <button type="button" class="custom-dropdown-trigger" id="ordersSortTrigger" aria-haspopup="listbox" aria-expanded="false">
+                        <i class="fas fa-arrow-down-short-wide custom-dropdown-icon" aria-hidden="true"></i>
+                        <span class="custom-dropdown-label" id="ordersSortLabel">下单时间：最新在前</span>
+                        <i class="fas fa-chevron-down custom-dropdown-chevron" aria-hidden="true"></i>
+                    </button>
+                    <div class="custom-dropdown-menu" role="listbox" id="ordersSortMenu" hidden>
+                        <div class="custom-dropdown-item is-active" role="option" data-value="time_desc" aria-selected="true">
+                            <span class="dropdown-item-left"><i class="fas fa-calendar-days" aria-hidden="true"></i> 下单时间：最新在前</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="time_asc" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-calendar" aria-hidden="true"></i> 下单时间：最早在前</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="amount_desc" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-arrow-down-9-1" aria-hidden="true"></i> 实付金额：从高到低</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                        <div class="custom-dropdown-item" role="option" data-value="amount_asc" aria-selected="false">
+                            <span class="dropdown-item-left"><i class="fas fa-arrow-up-1-9" aria-hidden="true"></i> 实付金额：从低到高</span>
+                            <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Filter Tags Row -->
+            <div id="ordersFilterTagsRow" class="orders-filter-tags-row" hidden></div>
+        </section>
+
         <section id="guestOrdersResultCard" class="guest-orders-card" aria-labelledby="guestOrdersResultTitle" hidden>
             <div class="guest-orders-result-head">
                 <h2 id="guestOrdersResultTitle" class="guest-orders-card-title">订单列表</h2>
@@ -218,19 +524,462 @@
             <!-- Detail state (?order_no=). Same card, so no extra route. -->
             <div id="guestOrdersDetail" class="guest-orders-detail" hidden>
                 <dl id="guestOrdersDetailRows" class="guest-orders-detail-rows"></dl>
+
+                <!-- Unfulfilled / Pending Delivery Notice -->
+                <div id="guestOrdersDeliveryPendingBox" class="guest-orders-delivery-pending-box" hidden>
+                    <div class="pending-box-icon"><i class="fas fa-boxes-packing" aria-hidden="true"></i></div>
+                    <div class="pending-box-content">
+                        <strong>订单待发货</strong>
+                        <p>你的订单已支付完成，系统正在排队出库处理中。发货完成后卡密内容将自动更新在此处；如长时间未出库或有人工交付需求，可点击“提交售后工单”与我们联系。</p>
+                        <button type="button" id="guestOrdersPendingTicketBtn" class="guest-orders-ticket-btn guest-orders-ticket-btn--pending">
+                            <i class="fas fa-headset" aria-hidden="true"></i>
+                            <span>提交售后工单</span>
+                        </button>
+                    </div>
+                </div>
+
                 <div id="guestOrdersDeliveryPanel" class="guest-orders-delivery" hidden>
                     <div class="guest-orders-delivery-header-bar">
                         <div class="guest-orders-delivery-title">
                             <i class="fas fa-gift" aria-hidden="true"></i> 发货内容
                         </div>
-                        <div id="guestOrdersDeliveryActionsBar" class="guest-orders-delivery-actions-bar"></div>
+                        <div id="guestOrdersDetailActions" class="guest-orders-detail-actions">
+                            <div id="guestOrdersDeliveryActionsBar" class="guest-orders-delivery-actions-bar">
+                                <button id="guestOrdersOpenTicketBtn" type="button" class="guest-orders-ticket-btn">
+                                    <i class="fas fa-headset" aria-hidden="true"></i>
+                                    <span>提交售后工单</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                     <div id="guestOrdersDeliveryList" class="guest-orders-delivery-list guest-orders-delivery-scroll"></div>
                 </div>
                 <p id="guestOrdersDeliveryHint" class="guest-orders-tip" hidden></p>
+
+                <!-- Existing Ticket Status Card (shows if ticket exists) -->
+                <div id="guestOrdersTicketStatusCard" class="guest-orders-ticket-status-card" hidden>
+                    <div class="ticket-status-header">
+                        <div class="ticket-status-title">
+                            <i class="fas fa-headset" aria-hidden="true"></i>
+                            <span id="ticketStatusTitle">售后工单记录</span>
+                        </div>
+                        <div class="ticket-status-header-actions">
+                            <span id="ticketStatusBadge" class="guest-orders-badge">待处理</span>
+                            <button type="button" id="ticketStatusViewMoreBtn" class="ticket-status-view-more-btn">
+                                <span>在“我的工单”中查看</span>
+                                <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="ticketStatusBody" class="ticket-status-body">
+                        <div class="ticket-status-row">
+                            <span class="ticket-status-label">问题描述：</span>
+                            <span id="ticketStatusDesc" class="ticket-status-desc"></span>
+                        </div>
+                        <div id="ticketStatusReplyRow" class="ticket-status-reply-row" hidden>
+                            <span class="ticket-status-label">客服回复：</span>
+                            <span id="ticketStatusReply" class="ticket-status-reply"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        </div><!-- /#guestOrdersOrdersView -->
+
+        <!-- My Tickets Section (Service Support / 我的工单) -->
+        <section id="myTicketsSection" class="my-tickets-section" hidden>
+            <!-- My Tickets Header -->
+            <div class="my-tickets-header">
+                <div class="my-tickets-heading">
+                    <span class="my-tickets-service-tag">服务支持</span>
+                    <h2 class="my-tickets-title">我的工单</h2>
+                    <p class="my-tickets-subtitle">从购买前咨询到售后处理，每一次沟通都会清晰留存。</p>
+                </div>
+                <button type="button" id="myTicketsCreateBtn" class="my-tickets-create-btn">
+                    <i class="fas fa-plus" aria-hidden="true"></i>
+                    <span>创建工单</span>
+                </button>
+            </div>
+
+            <!-- 5 Stat Cards Row -->
+            <div class="my-tickets-stat-grid" id="myTicketsStatGrid">
+                <div class="my-tickets-stat-card is-active" data-stat-filter="all" id="statCardAll">
+                    <div class="stat-card-icon stat-card-icon--terminal">
+                        <i class="fas fa-desktop" aria-hidden="true"></i>
+                    </div>
+                    <div class="stat-card-info">
+                        <span class="stat-card-label">全部工单</span>
+                        <strong class="stat-card-value" id="statCountAll">0</strong>
+                    </div>
+                </div>
+                <div class="my-tickets-stat-card" data-stat-filter="pending" id="statCardPending">
+                    <div class="stat-card-icon stat-card-icon--headset">
+                        <i class="fas fa-headset" aria-hidden="true"></i>
+                    </div>
+                    <div class="stat-card-info">
+                        <span class="stat-card-label">待客服回复</span>
+                        <strong class="stat-card-value" id="statCountPending">0</strong>
+                    </div>
+                </div>
+                <div class="my-tickets-stat-card" data-stat-filter="replied" id="statCardReplied">
+                    <div class="stat-card-icon stat-card-icon--chat">
+                        <i class="fas fa-comment-dots" aria-hidden="true"></i>
+                    </div>
+                    <div class="stat-card-info">
+                        <span class="stat-card-label">待我回复</span>
+                        <strong class="stat-card-value" id="statCountReplied">0</strong>
+                    </div>
+                </div>
+                <div class="my-tickets-stat-card" data-stat-filter="resolved" id="statCardResolved">
+                    <div class="stat-card-icon stat-card-icon--success">
+                        <i class="fas fa-check-circle" aria-hidden="true"></i>
+                    </div>
+                    <div class="stat-card-info">
+                        <span class="stat-card-label">已经解决</span>
+                        <strong class="stat-card-value" id="statCountResolved">0</strong>
+                    </div>
+                </div>
+                <div class="my-tickets-stat-card" data-stat-filter="closed" id="statCardClosed">
+                    <div class="stat-card-icon stat-card-icon--closed">
+                        <i class="fas fa-lock" aria-hidden="true"></i>
+                    </div>
+                    <div class="stat-card-info">
+                        <span class="stat-card-label">已经关闭</span>
+                        <strong class="stat-card-value" id="statCountClosed">0</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Record Card -->
+            <div class="my-tickets-record-card">
+                <div class="my-tickets-record-header">
+                    <div class="my-tickets-record-title-group">
+                        <div class="record-title-icon">
+                            <i class="fas fa-message" aria-hidden="true"></i>
+                        </div>
+                        <div>
+                            <h3 class="record-title-text">工单记录</h3>
+                            <p class="record-subtitle-text">选择任意工单，查看完整沟通记录</p>
+                        </div>
+                    </div>
+                    <div class="my-tickets-filter-bar">
+                        <div class="custom-filter-search my-tickets-search-wrap">
+                            <i class="fas fa-magnifying-glass custom-filter-search-icon" aria-hidden="true"></i>
+                            <input type="text" id="myTicketsSearchInput" class="custom-filter-input my-tickets-search-input" placeholder="搜索工单号或描述内容...">
+                            <button type="button" id="myTicketsClearSearchBtn" class="custom-filter-clear-btn my-tickets-clear-btn" hidden aria-label="清空搜索">
+                                <i class="fas fa-circle-xmark" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                        <div class="custom-dropdown my-tickets-type-dropdown" id="myTicketsTypeDropdown" data-dropdown-key="ticketFilterType">
+                            <button type="button" class="custom-dropdown-trigger" id="myTicketsTypeTrigger" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="dropdown-trigger-prefix">类型</span>
+                                <span class="custom-dropdown-label" id="myTicketsTypeLabel">全部类型</span>
+                                <i class="fas fa-chevron-down custom-dropdown-chevron" aria-hidden="true"></i>
+                            </button>
+                            <div class="custom-dropdown-menu" role="listbox" id="myTicketsTypeMenu" hidden>
+                                <div class="custom-dropdown-item is-active" role="option" data-value="all" aria-selected="true">
+                                    <span class="dropdown-item-left">全部类型</span>
+                                    <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                                </div>
+                                <div class="custom-dropdown-item" role="option" data-value="INVALID_KEY" aria-selected="false">
+                                    <span class="dropdown-item-left">卡密无效</span>
+                                    <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                                </div>
+                                <div class="custom-dropdown-item" role="option" data-value="NOT_DELIVERED" aria-selected="false">
+                                    <span class="dropdown-item-left">发货异常</span>
+                                    <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                                </div>
+                                <div class="custom-dropdown-item" role="option" data-value="ACCOUNT_ISSUE" aria-selected="false">
+                                    <span class="dropdown-item-left">账号异常</span>
+                                    <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                                </div>
+                                <div class="custom-dropdown-item" role="option" data-value="REFUND" aria-selected="false">
+                                    <span class="dropdown-item-left">申请退款</span>
+                                    <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                                </div>
+                                <div class="custom-dropdown-item" role="option" data-value="OTHER" aria-selected="false">
+                                    <span class="dropdown-item-left">其他问题</span>
+                                    <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="my-tickets-record-body">
+                    <!-- Empty State -->
+                    <div id="myTicketsEmptyState" class="my-tickets-empty-state">
+                        <div class="empty-state-icon">
+                            <i class="far fa-comment-dots" aria-hidden="true"></i>
+                        </div>
+                        <h4 class="empty-state-title">这里还没有工单</h4>
+                        <p class="empty-state-subtitle">遇到疑问时，不必反复寻找客服入口，创建一张工单就能持续跟进。</p>
+                        <button type="button" id="myTicketsCreateEmptyBtn" class="my-tickets-action-btn">
+                            <i class="fas fa-plus" aria-hidden="true"></i>
+                            <span>创建第一张工单</span>
+                        </button>
+                    </div>
+
+                    <!-- Ticket List Container -->
+                    <div id="myTicketsListContainer" class="my-tickets-list-container" hidden></div>
+                </div>
             </div>
         </section>
         </div>
+
+        <!-- Ticket Submission Modal -->
+        <div id="guestOrdersTicketModal" class="guest-orders-modal-overlay" hidden aria-hidden="true">
+            <div class="glass-ring glass-ring--shell guest-orders-modal-ring">
+            <div class="guest-orders-modal-dialog glass-ring__surface" role="dialog" aria-modal="true" aria-labelledby="guestOrdersTicketModalTitle">
+                <div class="guest-orders-modal-header">
+                    <div id="guestOrdersTicketModalTitle" class="guest-orders-modal-title">
+                        <i class="fas fa-headset" aria-hidden="true"></i>
+                        <span>提交售后工单</span>
+                    </div>
+                    <button id="guestOrdersCloseTicketBtn" type="button" class="guest-orders-modal-close" aria-label="关闭">
+                        <i class="fas fa-times" aria-hidden="true"></i>
+                    </button>
+                </div>
+
+                <form id="guestOrdersTicketForm" class="guest-orders-ticket-form" novalidate autocomplete="off">
+                    <div class="guest-orders-ticket-order-info">
+                        <div class="ticket-info-item">
+                            <span class="ticket-info-label">关联订单</span>
+                            <span id="ticketModalOrderNo" class="ticket-info-value mono">-</span>
+                        </div>
+                        <div class="ticket-info-item">
+                            <span class="ticket-info-label">商品名称</span>
+                            <span id="ticketModalProductName" class="ticket-info-value">-</span>
+                        </div>
+                    </div>
+
+                    <div class="guest-orders-ticket-field">
+                        <label>问题分类</label>
+                        <div class="custom-dropdown" id="ticketIssueDropdown" data-dropdown-key="issueType">
+                            <button type="button" class="custom-dropdown-trigger" id="ticketIssueTrigger" aria-haspopup="listbox" aria-expanded="false">
+                                <i class="fas fa-circle-question custom-dropdown-icon" aria-hidden="true"></i>
+                                <span class="custom-dropdown-label" id="ticketIssueLabel">卡密无效 / 无法使用</span>
+                                <i class="fas fa-chevron-down custom-dropdown-chevron" aria-hidden="true"></i>
+                            </button>
+                            <div class="custom-dropdown-menu" role="listbox" id="ticketIssueMenu" hidden>
+                                <div class="custom-dropdown-item is-active" role="option" data-value="INVALID_KEY" aria-selected="true">
+                                    <span class="dropdown-item-left"><i class="fas fa-key inline-style-guest-orders-10" aria-hidden="true"></i> 卡密无效 / 无法使用</span>
+                                    <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                                </div>
+                                <div class="custom-dropdown-item" role="option" data-value="NOT_DELIVERED" aria-selected="false">
+                                    <span class="dropdown-item-left"><i class="fas fa-truck-ramp-box inline-style-guest-orders-13" aria-hidden="true"></i> 未收到卡密 / 发货异常</span>
+                                    <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                                </div>
+                                <div class="custom-dropdown-item" role="option" data-value="ACCOUNT_ISSUE" aria-selected="false">
+                                    <span class="dropdown-item-left"><i class="fas fa-user-xmark inline-style-guest-orders-19" aria-hidden="true"></i> 账号异常 / 无法登录</span>
+                                    <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                                </div>
+                                <div class="custom-dropdown-item" role="option" data-value="REFUND" aria-selected="false">
+                                    <span class="dropdown-item-left"><i class="fas fa-rotate-left inline-style-guest-orders-14" aria-hidden="true"></i> 申请退款 / 协商处理</span>
+                                    <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                                </div>
+                                <div class="custom-dropdown-item" role="option" data-value="OTHER" aria-selected="false">
+                                    <span class="dropdown-item-left"><i class="fas fa-comment-dots inline-style-guest-orders-12" aria-hidden="true"></i> 其他问题 / 咨询客服</span>
+                                    <i class="fas fa-check check-icon" aria-hidden="true"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="guest-orders-ticket-field">
+                        <label for="ticketModalEmail">联系邮箱</label>
+                        <div class="ticket-input-wrapper">
+                            <i class="far fa-envelope ticket-input-icon" aria-hidden="true"></i>
+                            <input id="ticketModalEmail" type="email" class="custom-filter-input"
+                                placeholder="用于接收工单处理进度与回复" required autocomplete="email">
+                        </div>
+                    </div>
+
+                    <div class="guest-orders-ticket-field">
+                        <div class="ticket-field-header">
+                            <label for="ticketModalDescription">问题描述</label>
+                            <span id="ticketModalCharCount" class="ticket-char-count">0 / 1000</span>
+                        </div>
+                        <textarea id="ticketModalDescription" class="guest-orders-ticket-textarea"
+                            rows="4" maxlength="1000"
+                            placeholder="请详细描述你遇到的问题（如报错信息、异常现象等），以便我们为你快速排查与处理..." required></textarea>
+                    </div>
+
+                    <div id="ticketModalError" class="shop-alert shop-alert--error" hidden></div>
+
+                    <div class="guest-orders-modal-actions">
+                        <button id="ticketModalCancelBtn" type="button" class="guest-orders-secondary-btn">取消</button>
+                        <button id="ticketModalSubmitBtn" type="submit" class="guest-orders-primary-btn">
+                            <i class="fas fa-paper-plane" aria-hidden="true"></i>
+                            <span class="submit-text">提交工单</span>
+                            <span class="guest-orders-submit-dots" aria-hidden="true" hidden>
+                                <span></span><span></span><span></span>
+                            </span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+            </div>
+        </div>
+
+        <!-- Ticket Detail Modal (工单处理情况详情卡片) -->
+        <div id="myTicketDetailModal" class="guest-orders-modal-overlay" hidden aria-hidden="true">
+            <div class="glass-ring glass-ring--shell guest-orders-modal-ring guest-orders-modal-ring--detail">
+            <div class="guest-orders-modal-dialog my-ticket-detail-dialog glass-ring__surface" role="dialog" aria-modal="true" aria-labelledby="myTicketDetailModalTitle">
+                <div class="guest-orders-modal-header">
+                    <div id="myTicketDetailModalTitle" class="guest-orders-modal-title">
+                        <i class="fas fa-file-lines" aria-hidden="true"></i>
+                        <span>工单处理详情</span>
+                    </div>
+                    <button id="myTicketDetailCloseBtn" type="button" class="guest-orders-modal-close" aria-label="关闭">
+                        <i class="fas fa-times" aria-hidden="true"></i>
+                    </button>
+                </div>
+
+                <div class="my-ticket-detail-body">
+                    <!-- Top Status Strip -->
+                    <div class="my-ticket-detail-strip">
+                        <div class="my-ticket-detail-id-wrap">
+                            <span class="my-ticket-detail-label">工单编号</span>
+                            <span id="ticketDetailNo" class="my-ticket-detail-id mono">-</span>
+                            <button type="button" id="ticketDetailCopyIdBtn" class="my-ticket-copy-btn" title="复制工单号">
+                                <i class="far fa-copy" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                        <div id="ticketDetailStatusBadge" class="my-ticket-badge">-</div>
+                    </div>
+
+                    <!-- Timeline Steps -->
+                    <div class="my-ticket-timeline">
+                        <div class="my-ticket-timeline-step is-complete" id="timelineStepSubmit">
+                            <div class="step-dot"><i class="fas fa-check" aria-hidden="true"></i></div>
+                            <div class="step-content">
+                                <span class="step-title">工单已提交</span>
+                                <span id="ticketDetailSubmitTime" class="step-time">-</span>
+                            </div>
+                        </div>
+                        <div class="my-ticket-timeline-line" id="timelineLine1"></div>
+                        <div class="my-ticket-timeline-step" id="timelineStepProcessing">
+                            <div class="step-dot" id="timelineStepProcessingDot"><i class="fas fa-clock" aria-hidden="true"></i></div>
+                            <div class="step-content">
+                                <span class="step-title" id="timelineStepProcessingTitle">客服受理中</span>
+                                <span id="ticketDetailProcessTime" class="step-time">-</span>
+                            </div>
+                        </div>
+                        <div class="my-ticket-timeline-line" id="timelineLine2"></div>
+                        <div class="my-ticket-timeline-step" id="timelineStepDone">
+                            <div class="step-dot" id="timelineStepDoneDot"><i class="fas fa-circle-check" aria-hidden="true"></i></div>
+                            <div class="step-content">
+                                <span class="step-title" id="timelineStepDoneTitle">处理完成</span>
+                                <span id="ticketDetailDoneTime" class="step-time">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Meta Grid -->
+                    <div class="my-ticket-detail-meta-grid">
+                        <div class="my-ticket-detail-meta-item">
+                            <span class="meta-label">问题分类</span>
+                            <span id="ticketDetailType" class="meta-value">-</span>
+                        </div>
+                        <div class="my-ticket-detail-meta-item">
+                            <span class="meta-label">联系邮箱</span>
+                            <span id="ticketDetailEmail" class="meta-value mono">-</span>
+                        </div>
+                        <div class="my-ticket-detail-meta-item meta-item--full" id="ticketDetailOrderRow" hidden>
+                            <span class="meta-label">关联订单</span>
+                            <div class="meta-order-value-wrap">
+                                <span id="ticketDetailOrderNo" class="meta-value mono">-</span>
+                                <button type="button" id="ticketDetailCopyOrderBtn" class="my-ticket-copy-btn" title="复制订单号">
+                                    <i class="far fa-copy" aria-hidden="true"></i>
+                                </button>
+                                <button type="button" id="ticketDetailJumpOrderBtn" class="my-ticket-jump-btn">
+                                    <i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                                    <span>查看订单</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Description Section -->
+                    <div class="my-ticket-detail-section">
+                        <div class="detail-section-title">
+                            <i class="fas fa-user" aria-hidden="true"></i>
+                            <span>用户问题描述</span>
+                        </div>
+                        <div id="ticketDetailDesc" class="detail-section-content">-</div>
+                    </div>
+
+                    <!-- Reply & Result Section -->
+                    <div class="my-ticket-detail-section">
+                        <div class="detail-section-title">
+                            <i class="fas fa-headset" aria-hidden="true"></i>
+                            <span>客服处理情况与回复</span>
+                        </div>
+                        <div id="ticketDetailReplyBox" class="detail-section-content detail-reply-content">
+                            <p id="ticketDetailReplyText" class="detail-reply-text"></p>
+                            <!-- Reissued card keys block if present -->
+                            <div id="ticketDetailReissuedCard" class="ticket-reissue-box" hidden>
+                                <div class="ticket-reissue-head">
+                                    <span class="ticket-reissue-title"><i class="fas fa-key" aria-hidden="true"></i> 补发卡密</span>
+                                    <button type="button" id="ticketDetailCopyCardBtn" class="ticket-reissue-copy-btn">
+                                        <i class="far fa-copy" aria-hidden="true"></i>
+                                        <span>复制卡密</span>
+                                    </button>
+                                </div>
+                                <pre id="ticketDetailCardContent" class="ticket-reissue-content mono"></pre>
+                            </div>
+                        </div>
+                        <div id="ticketDetailPendingNotice" class="detail-pending-notice" hidden>
+                            <i class="fas fa-hourglass-half" aria-hidden="true"></i>
+                            <span>客服正在加急排查处理中，回复后会在此处展示，请稍候查看。</span>
+                        </div>
+                    </div>
+
+                    <!-- Conversation History Stream (if multiple exchanges exist) -->
+                    <div id="ticketDetailConversationSection" class="my-ticket-detail-section" hidden>
+                        <div class="detail-section-title">
+                            <i class="fas fa-comments" aria-hidden="true"></i>
+                            <span>沟通跟进记录</span>
+                        </div>
+                        <div id="ticketDetailConversationStream" class="my-ticket-conversation-stream"></div>
+                    </div>
+
+                    <!-- User Reply Composer Section -->
+                    <div id="ticketDetailUserReplySection" class="my-ticket-detail-section my-ticket-reply-compose-section">
+                        <div class="detail-section-title">
+                            <i class="fas fa-reply" aria-hidden="true"></i>
+                            <span>回复工单 / 补充信息</span>
+                        </div>
+                        <div class="my-ticket-reply-composer">
+                            <textarea id="ticketDetailReplyInput" class="guest-orders-ticket-textarea my-ticket-reply-textarea"
+                                rows="3" maxlength="1000" placeholder="补充你的问题情况，客服将继续协助处理..."></textarea>
+                            <div class="my-ticket-reply-bar">
+                                <span id="ticketDetailReplyCharCount" class="ticket-char-count">0 / 1000</span>
+                                <button type="button" id="ticketDetailReplySubmitBtn" class="guest-orders-primary-btn my-ticket-reply-send-btn">
+                                    <i class="fas fa-paper-plane" aria-hidden="true"></i>
+                                    <span class="submit-text">发送回复</span>
+                                    <span class="guest-orders-submit-dots" aria-hidden="true" hidden>
+                                        <span></span><span></span><span></span>
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="ticketDetailReplyError" class="shop-alert shop-alert--error" hidden></div>
+                    </div>
+                </div>
+
+                <div class="guest-orders-modal-actions my-ticket-detail-actions">
+                    <button id="myTicketDetailCloseFooterBtn" type="button" class="guest-orders-secondary-btn">关闭</button>
+                    <button id="myTicketDetailJumpFooterBtn" type="button" class="guest-orders-primary-btn" hidden>
+                        <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                        <span>查看关联订单</span>
+                    </button>
+                </div>
+            </div>
+            </div>
+        </div>
+
         <footer class="guest-orders-footer">
             <p>查询凭证只保存在本机浏览器，本站不保存明文查询密码。清除浏览器数据或重新加载页面后需要重新输入。</p>
         </footer>
@@ -239,12 +988,16 @@
 
     <script src="./js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1" defer></script>
     <script src="./js/site-layout-runtime.js?v=20260609_SUPPORT_COPY_REAL_CLIPBOARD_1" defer></script>
-    <script src="./js/i18n.js?v=20260613_SHOP_SOLD_OUT_DISCOUNT_COPY_1" defer></script>
+    <script src="./js/i18n.js?v=20260613_SHOP_SOLD_OUT_DISCOUNT_COPY_1&firstPaint=20261107_1" defer></script>
     <script src="./js/profile-modal-loader.js?v=20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1" defer></script>
     <script src="./inject-auth.js?v=20260620_THEME_STARRY_EVENT_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1" defer></script>
-    <script src="./js/framer-nav-runtime.js?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1" defer></script>
+    <script src="./js/ios-scroll-lock.js?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6" defer></script>
+    <script src="./js/framer-nav-runtime.js?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1&navModalResume=20261107_1&scrollPerf=20261108_1" defer></script>
     <script src="./js/guest-query-password.js?v=20260921_GUEST_ORDER_ACCESS_A2_1" defer></script>
     <script src="./js/guest-orders-client.js?v=20260924_GUEST_ORDERS_CREDENTIAL_ONLY_1" defer></script>
+    <script src="./js/member-orders-bridge.js?v=20261106_1" defer></script>
+    <script src="./js/magnifying-dock.js?v=20261108_RIM_3&scrollPerf=20261108_1&overlayNav=20261108_1" defer></script>
+    <script src="./js/label-input.js" defer></script>
 </body>
 
 </html>

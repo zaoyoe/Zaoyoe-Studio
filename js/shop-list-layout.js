@@ -13,7 +13,8 @@
         layoutMode: 'desktop',
         pendingAnimate: false,
         hooked: false,
-        ready: false
+        ready: false,
+        syncing: false
     };
 
     let syncTimer = 0;
@@ -21,6 +22,8 @@
     let listEnterToken = 0;
     let listEnterTimer = 0;
     let indicatorObserver = null;
+    const shopCategoryExpandedState = new Set();
+    const shopCategoryUserToggledState = new Set();
 
     function $(sel, root) {
         return (root || document).querySelector(sel);
@@ -78,6 +81,7 @@
             calculating: en ? 'Calculating...' : '计算中...',
             auto: en ? 'Instant delivery' : '自动交付',
             online: en ? 'Online delivery' : '在线交付',
+            guestPurchase: en ? 'Guest purchase' : '游客可购',
             low: en ? 'Low stock' : '即将售罄',
             ok: en ? 'In stock' : '充足',
             plenty: en ? 'Plenty' : '非常多',
@@ -90,7 +94,7 @@
 
     function syncStaticCopy() {
         const labels = copy();
-        const asideKicker = $('.list-aside .list-panel-kicker');
+        const asideKicker = $('.list-aside .list-panel-kicker, [data-list-aside-catalog-kicker]');
         const asideTitle = $('.list-aside__title');
         const catalogKickers = $all('.list-catalog .list-panel-kicker, [data-list-mobile-catalog-kicker]');
         const filterTrigger = $('.list-mobile-filter__trigger');
@@ -108,11 +112,11 @@
         const viewToggle = $('.view-toggle');
         const viewButtons = $all('[data-view-target]');
 
-        if (asideKicker) asideKicker.textContent = labels.categories;
-        if (asideTitle) asideTitle.textContent = labels.categories;
+        if (asideKicker) asideKicker.textContent = labels.catalog;
         catalogKickers.forEach((el) => {
             el.textContent = labels.catalog;
         });
+        updateCategoryTitles();
         if (filterLabel) filterLabel.textContent = labels.filter;
         if (filterTrigger) filterTrigger.setAttribute('aria-label', labels.filter);
         if (closeButton) closeButton.setAttribute('aria-label', labels.closeCategories);
@@ -197,6 +201,26 @@
         return name || '';
     }
 
+    function getCategoryIcon(name) {
+        const shop = shopClient();
+        const match = getCategoryEntries().find((entry) => entry.name === name);
+        let iconUrl = match?.iconUrl;
+        const lower = String(name || '').toLowerCase();
+        if (iconUrl && (
+            iconUrl.includes('202608282029589417833') ||
+            iconUrl.includes('202606030325329662693') ||
+            iconUrl.includes('gpt.png') ||
+            iconUrl.includes('openai')
+        ) && (lower.includes('gemini') || lower.includes('claude'))) {
+            iconUrl = '';
+        }
+        if (iconUrl) return iconUrl;
+        if (shop && typeof shop.getCategoryPredefinedIcon === 'function') {
+            return shop.getCategoryPredefinedIcon(name) || '';
+        }
+        return '';
+    }
+
     function countProductsInCategory(name) {
         const shop = shopClient();
         if (!shop) return 0;
@@ -266,7 +290,22 @@
             const cached = shop.getCachedProductsForCategory(category);
             if (Array.isArray(cached)) return cached;
         }
-        return getAllProducts().filter((product) => String(product?.category || '') === category);
+        const all = getAllProducts();
+        if (!category || category === 'all') return all;
+
+        // Support hierarchical category: if category is a parent, include products of its children
+        const matchingCategories = new Set([category]);
+        if (Array.isArray(shop.availableCategories)) {
+            const catEntry = shop.availableCategories.find((c) => c.name === category);
+            const pid = catEntry ? String(catEntry.id || catEntry.name) : category;
+            shop.availableCategories.forEach((c) => {
+                const pKey = c.parent_id || c.parent_name;
+                if (pKey && (String(pKey) === pid || pKey === category)) {
+                    matchingCategories.add(c.name);
+                }
+            });
+        }
+        return all.filter((product) => matchingCategories.has(String(product?.category || '')));
     }
 
     function isCatalogLoading() {
@@ -316,9 +355,8 @@
         if (fulfillment.soldOut || stock <= 0) {
             return { label: labels.soldOut, kind: 'sold-out', chip: 'sold' };
         }
-        if (stock < 3) return { label: labels.low, kind: 'in-stock', chip: 'low' };
-        if (stock <= 10) return { label: labels.ok, kind: 'in-stock', chip: 'ok' };
-        return { label: labels.plenty, kind: 'in-stock', chip: 'plenty' };
+        const chip = stock < 3 ? 'low' : (stock <= 10 ? 'ok' : 'plenty');
+        return { label: String(stock), kind: 'in-stock', chip };
     }
 
     function hasTieredPricing(product, pricingState) {
@@ -353,8 +391,20 @@
         if (hasFlash && Number.isFinite(flashEndMs) && Date.now() < flashEndMs) {
             chips.push(`<span class="list-chip list-chip--flash"><i class="fas fa-bolt-lightning list-chip--flash__icon" aria-hidden="true"></i><span class="flash-sale-badge__label">${escapeHtml(labels.flashSale)}</span></span>`);
         }
+        const isGuestPurchasable = shop && typeof shop.isShopProductGuestPurchasable === 'function'
+            ? shop.isShopProductGuestPurchasable(product)
+            : Boolean(product?.allow_guest_purchase);
+        if (isGuestPurchasable) {
+            chips.push(`<span class="list-chip list-chip--guest-purchase">${escapeHtml(labels.guestPurchase || (copy().isEn ? 'Guest purchase' : '游客可购'))}</span>`);
+        }
         if (hasTieredPricing(product, pricingState)) {
             chips.push(`<span class="list-chip list-chip--wholesale">${escapeHtml(labels.wholesale)}</span>`);
+        }
+        const minQuantity = (typeof shop?.getProductMinPurchaseQuantity === 'function')
+            ? shop.getProductMinPurchaseQuantity(product)
+            : Math.max(1, Number(product?.min_purchase_quantity || 1) || 1);
+        if (minQuantity > 1) {
+            chips.push(`<span class="list-chip list-chip--min-quantity">${minQuantity}件起售</span>`);
         }
         if (!fulfillment.manualDelivery) {
             chips.push(`<span class="list-chip list-chip--stock list-chip--stock-${stock.chip}">${escapeHtml(labels.stock)} ${escapeHtml(stock.label)}</span>`);
@@ -383,7 +433,7 @@
             ? shop.isShopImageSource(originalUrl)
             : /^https?:\/\//i.test(originalUrl);
         if (hasCoverImage) {
-            return `<img class="list-thumb__image" alt="${escapeAttribute(displayName)}" width="64" height="64" draggable="false">`;
+            return `<img class="list-thumb__image" alt="${escapeAttribute(displayName)}" width="64" height="64" loading="lazy" decoding="async" draggable="false">`;
         }
         if (String(product?.icon_url || '').startsWith('fa')) {
             return `<i class="${escapeAttribute(product.icon_url)}" aria-hidden="true"></i>`;
@@ -407,7 +457,8 @@
             const version = typeof window.buildShopProductImageCacheVersion === 'function'
                 ? window.buildShopProductImageCacheVersion(product)
                 : '';
-            shop.setShopCardImageSource(img, imageAsset, { version });
+            img.onerror = () => shop.handleShopCardImageError(img, imageAsset);
+            shop.setShopCardImageSource(img, imageAsset, { version, variant: 'thumb' });
         });
     }
 
@@ -430,6 +481,11 @@
                     <div class="list-product__copy">
                         <strong class="list-skel"></strong>
                         <p class="list-skel"></p>
+                        <div class="list-chips">
+                            <span class="list-price list-price--inline list-chip list-skel"></span>
+                            <span class="list-chip list-skel"></span>
+                            <span class="list-chip list-skel"></span>
+                        </div>
                     </div>
                 </div>
                 <div class="list-metrics">
@@ -576,8 +632,97 @@
             : getCategoryLabel(shop?.currentCategory || '');
         const mobileTitle = $('#listMobileCategoryTitle');
         const desktopTitle = $('#listDesktopCategoryTitle');
+        const asideTitle = $('.list-aside__title');
         if (mobileTitle) mobileTitle.textContent = title || labels.catalog;
         if (desktopTitle) desktopTitle.textContent = title || labels.catalog;
+        if (asideTitle) asideTitle.textContent = title || labels.catalog;
+    }
+
+    let indicatorTrackingFrame = 0;
+    function animateIndicatorTracking(duration = 340) {
+        if (typeof cancelAnimationFrame === 'function' && indicatorTrackingFrame) {
+            cancelAnimationFrame(indicatorTrackingFrame);
+        }
+        const start = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        function frame(now) {
+            syncListIndicator({ animate: false });
+            syncGridIndicator({ animate: false });
+            if (now - start < duration) {
+                indicatorTrackingFrame = requestAnimationFrame(frame);
+            } else {
+                syncListIndicator({ animate: true });
+                syncGridIndicator({ animate: true });
+            }
+        }
+        indicatorTrackingFrame = requestAnimationFrame(frame);
+    }
+
+    function toggleCategorySubtabs(pid, forceState) {
+        if (!pid) return;
+        shopCategoryUserToggledState.add(pid);
+        const currentExpanded = shopCategoryExpandedState.has(pid);
+        const nextExpanded = typeof forceState === 'boolean' ? forceState : !currentExpanded;
+        if (nextExpanded) {
+            shopCategoryExpandedState.add(pid);
+        } else {
+            shopCategoryExpandedState.delete(pid);
+        }
+
+        // Toggle accordion wrapper class
+        const wrappers = Array.from(document.querySelectorAll('.category-sub-tabs-wrapper'))
+            .filter((w) => w.dataset.parentPid === String(pid));
+        wrappers.forEach((w) => {
+            w.classList.toggle('is-expanded', nextExpanded);
+        });
+
+        // Toggle chevron rotation & aria-expanded
+        const chevrons = Array.from(document.querySelectorAll('[data-shop-toggle-subtabs]'))
+            .filter((ch) => ch.getAttribute('data-shop-toggle-subtabs') === String(pid));
+        chevrons.forEach((ch) => {
+            ch.classList.toggle('expanded', nextExpanded);
+            ch.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+        });
+
+        // Update count on parent category tab
+        const entries = getCategoryEntries();
+        const entryMap = new Map();
+        entries.forEach(e => {
+            if (e.id) entryMap.set(String(e.id), e);
+            if (e.name) entryMap.set(String(e.name).toLowerCase(), e);
+        });
+        const parentEntry = entries.find((e) => String(e.id || e.name) === String(pid) || e.name === pid);
+        if (parentEntry) {
+            if (!wrappers.length) {
+                Array.from(document.querySelectorAll('.category-item-group'))
+                    .filter((g) => g.dataset.parentCategory === parentEntry.name)
+                    .forEach((g) => {
+                        const w = g.querySelector('.category-sub-tabs-wrapper');
+                        if (w) w.classList.toggle('is-expanded', nextExpanded);
+                        const ch = g.querySelector('[data-shop-toggle-subtabs]');
+                        if (ch) {
+                            ch.classList.toggle('expanded', nextExpanded);
+                            ch.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+                        }
+                    });
+            }
+            const children = entries.filter((e) => {
+                const pKey = e.parentId || e.parentName;
+                const parent = pKey ? (entryMap.get(String(pKey)) || entryMap.get(String(pKey).toLowerCase())) : null;
+                return parent && String(parent.id || parent.name) === String(pid);
+            });
+            const directCount = countProductsInCategory(parentEntry.name);
+            const totalCount = directCount + children.reduce((sum, c) => sum + countProductsInCategory(c.name), 0);
+            const countText = String(nextExpanded ? directCount : totalCount);
+
+            Array.from(document.querySelectorAll('.category-item-group'))
+                .filter((g) => g.dataset.parentCategory === parentEntry.name)
+                .forEach((g) => {
+                    const countEl = g.querySelector('.category-item-row .filter-tab [data-list-category-count]');
+                    if (countEl) countEl.textContent = countText;
+                });
+        }
+
+        animateIndicatorTracking(340);
     }
 
     function syncCategoryIndicator(container, { animate = false } = {}) {
@@ -585,13 +730,41 @@
         const indicator = container.querySelector('.list-aside__indicator');
         const active = container.querySelector('.filter-tab.active');
         if (!indicator || !active) return;
-        const top = active.offsetTop;
-        const height = active.offsetHeight;
-        if (!height) return;
-        const skipMotion = !animate || prefersReducedMotion() || indicator.dataset.placed !== '1';
+        let top = 0;
+        let left = 0;
+        let width = 0;
+        let height = 0;
+        if (typeof active.getBoundingClientRect === 'function' && typeof container.getBoundingClientRect === 'function') {
+            const activeRect = active.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            top = Math.round(activeRect.top - containerRect.top + container.scrollTop);
+            left = Math.round(activeRect.left - containerRect.left);
+            width = Math.round(activeRect.width || active.offsetWidth);
+            height = Math.round(active.offsetHeight || activeRect.height);
+        } else {
+            top = active.offsetTop;
+            left = active.offsetLeft;
+            width = active.offsetWidth;
+            height = active.offsetHeight;
+        }
+        if (!height || !width) return;
+        const currentLeft = indicator.dataset.left ? Number(indicator.dataset.left) : null;
+        const currentTop = indicator.dataset.top ? Number(indicator.dataset.top) : null;
+        const currentWidth = indicator.dataset.width ? Number(indicator.dataset.width) : null;
+        const currentHeight = indicator.dataset.height ? Number(indicator.dataset.height) : null;
+        const isPlaced = indicator.dataset.placed === '1';
+        if (isPlaced && currentLeft === left && currentTop === top && currentWidth === width && currentHeight === height) {
+            return;
+        }
+        indicator.dataset.left = String(left);
+        indicator.dataset.top = String(top);
+        indicator.dataset.width = String(width);
+        indicator.dataset.height = String(height);
+        const skipMotion = !animate || prefersReducedMotion() || !isPlaced;
         indicator.style.transition = skipMotion ? 'none' : '';
+        indicator.style.width = `${width}px`;
         indicator.style.height = `${height}px`;
-        indicator.style.transform = `translate3d(0, ${top}px, 0)`;
+        indicator.style.transform = `translate3d(${left}px, ${top}px, 0)`;
         if (skipMotion) {
             void indicator.offsetHeight;
             indicator.style.transition = '';
@@ -612,6 +785,18 @@
         const gridFilters = $('#shopCategoryFilters');
         if (listFilters) listFilters.dataset.observed = '1';
         if (gridFilters) gridFilters.dataset.indicatorObserved = '1';
+        if (listFilters && !listFilters.dataset.scrollBound) {
+            listFilters.dataset.scrollBound = '1';
+            listFilters.addEventListener('scroll', () => {
+                syncListIndicator({ animate: false });
+            }, { passive: true });
+        }
+        if (gridFilters && !gridFilters.dataset.scrollBound) {
+            gridFilters.dataset.scrollBound = '1';
+            gridFilters.addEventListener('scroll', () => {
+                syncGridIndicator({ animate: false });
+            }, { passive: true });
+        }
         if (typeof ResizeObserver !== 'function' || indicatorObserver) return;
         indicatorObserver = new ResizeObserver(() => {
             syncListIndicator({ animate: false });
@@ -619,6 +804,15 @@
         });
         if (listFilters) indicatorObserver.observe(listFilters);
         if (gridFilters) indicatorObserver.observe(gridFilters);
+    }
+
+    function createCategoryIconHtml(entry) {
+        const iconUrl = getCategoryIcon(entry.name) || entry.iconUrl;
+        if (iconUrl) {
+            return `<img class="category-icon" src="${escapeAttribute(iconUrl)}" alt="" decoding="async" loading="lazy" data-hide-on-error="1">`;
+        }
+        const folderColor = entry.color || '#6b9ece';
+        return `<i class="fas fa-folder category-folder-icon" style="color: ${escapeAttribute(folderColor)}"></i>`;
     }
 
     function syncCategoryTab(tab, entry, current) {
@@ -629,15 +823,65 @@
         tab.dataset.shopCategory = entry.name;
         tab.setAttribute('aria-pressed', isActive ? 'true' : 'false');
 
+        let main = tab.querySelector('.category-tab-main');
         let label = tab.querySelector('[data-list-category-label]');
         let count = tab.querySelector('[data-list-category-count]');
-        if (!label || !count || tab.children.length !== 2) {
+        let icon = tab.querySelector('.category-icon');
+        let folderIcon = tab.querySelector('.category-folder-icon');
+        const iconUrl = getCategoryIcon(entry.name) || entry.iconUrl;
+        const folderColor = entry.color || '#6b9ece';
+
+        if (!main || !label || !count) {
+            main = document.createElement('span');
+            main.className = 'category-tab-main';
+            if (iconUrl) {
+                icon = document.createElement('img');
+                icon.className = 'category-icon';
+                icon.src = iconUrl;
+                icon.alt = '';
+                icon.loading = 'lazy';
+                icon.onerror = () => { icon.style.display = 'none'; };
+                main.appendChild(icon);
+            } else {
+                folderIcon = document.createElement('i');
+                folderIcon.className = 'fas fa-folder category-folder-icon';
+                folderIcon.style.color = folderColor;
+                main.appendChild(folderIcon);
+            }
             label = document.createElement('span');
+            label.className = 'category-name';
             label.dataset.listCategoryLabel = '';
+            main.appendChild(label);
+
             count = document.createElement('span');
             count.className = 'count';
             count.dataset.listCategoryCount = '';
-            tab.replaceChildren(label, count);
+
+            tab.replaceChildren(main, count);
+        } else {
+            if (iconUrl) {
+                if (folderIcon) folderIcon.remove();
+                if (!icon) {
+                    icon = document.createElement('img');
+                    icon.className = 'category-icon';
+                    icon.alt = '';
+                    icon.loading = 'lazy';
+                    icon.onerror = () => { icon.style.display = 'none'; };
+                    main.insertBefore(icon, label);
+                }
+                if (icon.getAttribute('src') !== iconUrl) {
+                    icon.src = iconUrl;
+                    icon.style.display = '';
+                }
+            } else {
+                if (icon) icon.remove();
+                if (!folderIcon) {
+                    folderIcon = document.createElement('i');
+                    folderIcon.className = 'fas fa-folder category-folder-icon';
+                    main.insertBefore(folderIcon, label);
+                }
+                folderIcon.style.color = folderColor;
+            }
         }
         label.textContent = entry.label;
         count.textContent = String(countProductsInCategory(entry.name));
@@ -646,24 +890,173 @@
     function renderCategoryContainer(container, entries, current, { withIndicator = false } = {}) {
         if (!container) return;
         container.setAttribute('aria-busy', 'false');
+
+        const entryMap = new Map();
+        entries.forEach(e => {
+            if (e.id) entryMap.set(String(e.id), e);
+            if (e.name) entryMap.set(String(e.name).toLowerCase(), e);
+        });
+
+        const topLevel = [];
+        const childrenMap = new Map();
+
+        entries.forEach(e => {
+            const pKey = e.parentId || e.parentName;
+            const parent = pKey ? (entryMap.get(String(pKey)) || entryMap.get(String(pKey).toLowerCase())) : null;
+            if (parent && parent !== e) {
+                const pid = String(parent.id || parent.name);
+                if (!childrenMap.has(pid)) childrenMap.set(pid, []);
+                childrenMap.get(pid).push(e);
+            } else {
+                topLevel.push(e);
+            }
+        });
+
+        const expectedTabs = [];
+        topLevel.forEach(p => {
+            expectedTabs.push(p);
+            const pid = String(p.id || p.name);
+            const children = childrenMap.get(pid) || [];
+            children.forEach(c => expectedTabs.push(c));
+        });
+
         const existingTabs = $all('.filter-tab[data-shop-category]', container);
-        const canPatchInPlace = entries.length > 0
-            && existingTabs.length === entries.length
-            && existingTabs.every((tab, index) => tab.dataset.shopCategory === entries[index].name)
-            && (withIndicator ? Boolean(container.querySelector('.list-aside__indicator')) : !container.querySelector('.list-aside__indicator'));
+        const hasIndicator = Boolean(container.querySelector('.list-aside__indicator'));
+        const indicatorMatches = withIndicator ? hasIndicator : !hasIndicator;
+
+        const canPatchInPlace = expectedTabs.length > 0
+            && existingTabs.length === expectedTabs.length
+            && existingTabs.every((tab, index) => tab.dataset.shopCategory === expectedTabs[index].name)
+            && indicatorMatches;
 
         if (canPatchInPlace) {
-            existingTabs.forEach((tab, index) => syncCategoryTab(tab, entries[index], current));
+            existingTabs.forEach(tab => {
+                const catName = tab.dataset.shopCategory;
+                const isActive = catName === current;
+                tab.classList.toggle('active', isActive);
+                tab.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+            });
+
+            topLevel.forEach(parentEntry => {
+                const pid = String(parentEntry.id || parentEntry.name);
+                const children = childrenMap.get(pid) || [];
+                if (!children.length) {
+                    const tab = existingTabs.find(t => t.dataset.shopCategory === parentEntry.name);
+                    const countEl = tab?.querySelector('[data-list-category-count]');
+                    if (countEl) countEl.textContent = String(countProductsInCategory(parentEntry.name));
+                    return;
+                }
+
+                if (children.some(c => c.name === current) || (parentEntry.name === current && !shopCategoryUserToggledState.has(pid))) {
+                    shopCategoryExpandedState.add(pid);
+                }
+
+                const isExpanded = shopCategoryExpandedState.has(pid);
+                const directCount = countProductsInCategory(parentEntry.name);
+                const totalCount = directCount + children.reduce((sum, c) => sum + countProductsInCategory(c.name), 0);
+                const displayCount = isExpanded ? directCount : totalCount;
+
+                const group = Array.from(container.querySelectorAll('.category-item-group'))
+                    .find(g => g.dataset.parentCategory === parentEntry.name);
+                if (group) {
+                    const parentCountEl = group.querySelector('.category-item-row .filter-tab [data-list-category-count]');
+                    if (parentCountEl) parentCountEl.textContent = String(displayCount);
+
+                    const chevron = group.querySelector('[data-shop-toggle-subtabs]');
+                    if (chevron) {
+                        chevron.classList.toggle('expanded', isExpanded);
+                        chevron.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+                    }
+
+                    const wrapper = group.querySelector('.category-sub-tabs-wrapper');
+                    if (wrapper) {
+                        wrapper.classList.toggle('is-expanded', isExpanded);
+                    }
+
+                    children.forEach(child => {
+                        const childTab = Array.from(group.querySelectorAll('.filter-tab--child'))
+                            .find(t => t.dataset.shopCategory === child.name);
+                        const childCountEl = childTab?.querySelector('[data-list-category-count]');
+                        if (childCountEl) childCountEl.textContent = String(countProductsInCategory(child.name));
+                    });
+                }
+            });
             return;
         }
 
-        container.innerHTML = (withIndicator ? '<span class="list-aside__indicator" aria-hidden="true"></span>' : '') + entries.map((entry) => {
-            const isActive = entry.name === current;
-            return `<button class="filter-tab${isActive ? ' active' : ''}" type="button" data-shop-category="${escapeAttribute(entry.name)}" aria-pressed="${isActive ? 'true' : 'false'}">
-                <span data-list-category-label>${escapeHtml(entry.label)}</span>
-                <span class="count" data-list-category-count>${countProductsInCategory(entry.name)}</span>
-            </button>`;
-        }).join('');
+        const html = [withIndicator ? '<span class="list-aside__indicator" aria-hidden="true"></span>' : ''];
+
+        topLevel.forEach(parentEntry => {
+            const pid = String(parentEntry.id || parentEntry.name);
+            const children = childrenMap.get(pid) || [];
+            const hasChildren = children.length > 0;
+            const isChildActive = children.some(c => c.name === current);
+            const isParentActive = parentEntry.name === current;
+
+            const directCount = countProductsInCategory(parentEntry.name);
+            const totalCount = directCount + children.reduce((sum, c) => sum + countProductsInCategory(c.name), 0);
+
+            if (isChildActive || (isParentActive && !shopCategoryUserToggledState.has(pid))) {
+                shopCategoryExpandedState.add(pid);
+            }
+
+            const isExpanded = shopCategoryExpandedState.has(pid);
+            const displayCount = isExpanded ? directCount : totalCount;
+
+            if (!hasChildren) {
+                html.push(`
+                    <button class="filter-tab${isParentActive ? ' active' : ''}" type="button" data-shop-category="${escapeAttribute(parentEntry.name)}" aria-pressed="${isParentActive ? 'true' : 'false'}">
+                        <span class="category-tab-main">
+                            ${createCategoryIconHtml(parentEntry)}
+                            <span data-list-category-label class="category-name">${escapeHtml(parentEntry.label)}</span>
+                        </span>
+                        <span class="count" data-list-category-count>${directCount}</span>
+                    </button>
+                `);
+            } else {
+                html.push(`
+                    <div class="category-item-group" data-parent-category="${escapeAttribute(parentEntry.name)}">
+                        <div class="category-item-row">
+                            <button class="filter-tab${isParentActive ? ' active' : ''}" type="button" data-shop-category="${escapeAttribute(parentEntry.name)}" aria-pressed="${isParentActive ? 'true' : 'false'}">
+                                <span class="category-tab-main">
+                                    <span class="category-tree-chevron${isExpanded ? ' expanded' : ''}" data-shop-toggle-subtabs="${escapeAttribute(pid)}" role="button" aria-label="展开或折叠子分类" aria-expanded="${isExpanded ? 'true' : 'false'}"><i class="fas fa-chevron-right"></i></span>
+                                    ${createCategoryIconHtml(parentEntry)}
+                                    <span data-list-category-label class="category-name">${escapeHtml(parentEntry.label)}</span>
+                                </span>
+                                <span class="count" data-list-category-count>${displayCount}</span>
+                            </button>
+                        </div>
+                        <div class="category-sub-tabs-wrapper${isExpanded ? ' is-expanded' : ''}" data-parent-pid="${escapeAttribute(pid)}">
+                            <div class="category-sub-tabs" data-parent-pid="${escapeAttribute(pid)}">
+                                ${children.map(child => {
+                                    const isCActive = child.name === current;
+                                    return `
+                                        <button class="filter-tab filter-tab--child${isCActive ? ' active' : ''}" type="button" data-shop-category="${escapeAttribute(child.name)}" aria-pressed="${isCActive ? 'true' : 'false'}">
+                                            <span class="category-tab-main">
+                                                ${createCategoryIconHtml(child)}
+                                                <span data-list-category-label class="category-name">${escapeHtml(child.label)}</span>
+                                            </span>
+                                            <span class="count" data-list-category-count>${countProductsInCategory(child.name)}</span>
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `);
+            }
+        });
+
+        container.innerHTML = html.join('');
+
+        container.querySelectorAll('[data-shop-toggle-subtabs]').forEach(ch => {
+            ch.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const pid = ch.getAttribute('data-shop-toggle-subtabs');
+                toggleCategorySubtabs(pid);
+            });
+        });
     }
 
     function renderFilters({ animateListIndicator = false } = {}) {
@@ -691,6 +1084,14 @@
         renderCategoryContainer(listFilters, entries, current, { withIndicator: true });
         renderCategoryContainer(gridFilters, entries, current, { withIndicator: true });
         ensureListIndicatorObserver();
+        // Position new indicators in this render, before the browser paints.
+        // Keep the next-frame sync for expanded groups and layout changes.
+        [listFilters, gridFilters].forEach((container) => {
+            const indicator = container?.querySelector('.list-aside__indicator');
+            if (indicator && indicator.dataset.placed !== '1') {
+                syncCategoryIndicator(container);
+            }
+        });
         requestAnimationFrame(() => {
             syncListIndicator({ animate: animateListIndicator });
             syncGridIndicator({ animate: animateListIndicator });
@@ -706,7 +1107,28 @@
             updateCategoryTitles();
             return;
         }
-        rows.innerHTML = listRowsMarkup();
+        const nextMarkup = listRowsMarkup();
+        const hasExistingRows = !!rows.querySelector('.list-row[data-product-id]');
+        if (hasExistingRows && rows.dataset.renderedSignature === nextMarkup) {
+            $all('.list-row[data-product-id]', rows).forEach((row) => {
+                const shop = shopClient();
+                const product = shop && typeof shop.getCachedProductById === 'function'
+                    ? shop.getCachedProductById(row.dataset.productId)
+                    : getAllProducts().find((item) => String(item?.id || '') === String(row.dataset.productId || ''));
+                if (!product) return;
+                const pricingState = shop.buildProductCardPricingState(product, shop.agentPricesCache || {});
+                applyPurchaseDataset(row, product, pricingState);
+                const cartButton = row.querySelector('[data-shop-action="add-product-to-cart"]');
+                const buyButton = row.querySelector('.list-buy[data-shop-action]');
+                applyPurchaseDataset(cartButton, product, pricingState);
+                applyPurchaseDataset(buyButton, product, pricingState);
+            });
+            updateCategoryTitles();
+            shopClient()?.startFlashSaleTimer?.();
+            return;
+        }
+        rows.dataset.renderedSignature = nextMarkup;
+        rows.innerHTML = nextMarkup;
         $all('.list-row[data-product-id]', rows).forEach((row) => {
             const shop = shopClient();
             const product = shop && typeof shop.getCachedProductById === 'function'
@@ -766,7 +1188,7 @@
     function setListDrawer(open) {
         const shopMain = $('.shop-main');
         const trigger = $('[data-list-drawer-open]');
-        const shouldOpen = Boolean(open) && isMobileLayout() && effectiveView() === 'list';
+        const shouldOpen = Boolean(open);
         shopMain?.classList.toggle('is-list-drawer-open', shouldOpen);
         document.body.classList.toggle('shop-list-drawer-open', shouldOpen);
         if (trigger) trigger.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
@@ -824,12 +1246,17 @@
 
     function syncFromShop({ animate = false } = {}) {
         if (!state.ready) return;
-        applyLayoutClasses();
-        renderFilters({ animateListIndicator: animate });
-        if (effectiveView() === 'list') {
-            renderList({
-                animate: animate && !state.query.trim()
-            });
+        state.syncing = true;
+        try {
+            applyLayoutClasses();
+            renderFilters({ animateListIndicator: animate });
+            if (effectiveView() === 'list') {
+                renderList({
+                    animate: animate && !state.query.trim()
+                });
+            }
+        } finally {
+            state.syncing = false;
         }
     }
 
@@ -879,12 +1306,75 @@
     function selectCategory(name) {
         const shop = shopClient();
         if (!shop || !name) return;
-        const changed = name !== String(shop.currentCategory || '');
+
+        const entries = typeof getCategoryEntries === 'function' ? getCategoryEntries() : [];
+        const entryMap = new Map();
+        entries.forEach(e => {
+            if (e.id) entryMap.set(String(e.id), e);
+            if (e.name) entryMap.set(String(e.name).toLowerCase(), e);
+        });
+
+        const matched = entries.find((e) => e.name === name);
+        const pid = matched ? String(matched.id || matched.name) : '';
+        const children = pid ? entries.filter((e) => {
+            const pKey = e.parentId || e.parentName;
+            const parent = pKey ? (entryMap.get(String(pKey)) || entryMap.get(String(pKey).toLowerCase())) : null;
+            return parent && String(parent.id || parent.name) === pid;
+        }) : [];
+        const isParentWithChildren = children.length > 0;
+
+        const currentName = String(shop.currentCategory || '');
+        const changed = name !== currentName;
+
+        // If category is a parent with children, toggle its expand/collapse state when clicking active parent
+        if (!changed && isParentWithChildren) {
+            if (shopCategoryExpandedState.has(pid)) {
+                shopCategoryExpandedState.delete(pid);
+            } else {
+                shopCategoryExpandedState.add(pid);
+            }
+            toggleCategorySubtabs(pid, shopCategoryExpandedState.has(pid));
+            return;
+        }
+
+        // If switching to a parent category that is collapsed, automatically expand it smoothly
+        if (changed && isParentWithChildren && !shopCategoryExpandedState.has(pid)) {
+            shopCategoryExpandedState.add(pid);
+            toggleCategorySubtabs(pid, true);
+        }
+
+        // If switching to a child category, ensure its parent is expanded
+        if (matched && (matched.parentId || matched.parentName)) {
+            const pKey = matched.parentId || matched.parentName;
+            const parent = pKey ? (entryMap.get(String(pKey)) || entryMap.get(String(pKey).toLowerCase())) : null;
+            if (parent) {
+                const parentPid = String(parent.id || parent.name);
+                if (!shopCategoryExpandedState.has(parentPid)) {
+                    shopCategoryExpandedState.add(parentPid);
+                    toggleCategorySubtabs(parentPid, true);
+                }
+            }
+        }
+
+        // Optimistically update active tab UI for instant 0ms feedback
+        if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+            document.querySelectorAll('#listCategoryFilters .filter-tab, #shopCategoryFilters .filter-tab').forEach((tab) => {
+                const isTabActive = tab.dataset.shopCategory === name;
+                tab.classList.toggle('active', isTabActive);
+                tab.setAttribute('aria-pressed', isTabActive ? 'true' : 'false');
+            });
+        }
+        if (typeof syncListIndicator === 'function') syncListIndicator({ animate: true });
+        if (typeof syncGridIndicator === 'function') syncGridIndicator({ animate: true });
+
         state.query = '';
         const input = $('#listSearchInput');
         if (input) input.value = '';
-        setListDrawer(false);
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('shop-search-change', { detail: { active: false, query: '' } }));
+        }
         if (!changed) {
+            if (typeof renderFilters === 'function') renderFilters({ animateListIndicator: true });
             renderList({ animate: effectiveView() === 'list' });
             updateCategoryTitles();
             refreshGridSearch();
@@ -903,6 +1393,27 @@
         const gridBtn = $all('#shopCategoryFilters .filter-tab[data-shop-category]')
             .find((button) => button.dataset.shopCategory === name);
         shop.filterCategory(name, gridBtn || undefined);
+        updateCategoryTitles();
+        if (effectiveView() === 'list') {
+            renderList({ animate: true });
+        }
+        if (typeof renderFilters === 'function') {
+            renderFilters({ animateListIndicator: true });
+        }
+        if (typeof document !== 'undefined') {
+            const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+                ? CSS.escape(name)
+                : String(name).replace(/["\\]/g, '\\$&');
+            const activeTab = $(`#listCategoryFilters .filter-tab[data-shop-category="${escaped}"]`);
+            const tabsContainer = $('#listCategoryFilters');
+            if (activeTab && tabsContainer && tabsContainer.scrollHeight > tabsContainer.clientHeight) {
+                const aRect = activeTab.getBoundingClientRect();
+                const cRect = tabsContainer.getBoundingClientRect();
+                if (aRect.top < cRect.top || aRect.bottom > cRect.bottom) {
+                    activeTab.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }
+            }
+        }
     }
 
     function refreshGridSearch() {
@@ -921,6 +1432,23 @@
         updateCategoryTitles();
         if (effectiveView() === 'grid') refreshGridSearch();
         else ensureAllProductsForSearch();
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('shop-search-change', {
+                detail: { active: Boolean(state.query.trim()), query: state.query.trim() }
+            }));
+        }
+    }
+
+    function setSearchQuery(newQuery) {
+        const input = $('#listSearchInput');
+        if (input) input.value = String(newQuery || '');
+        applyListSearch();
+    }
+
+    function resetSearch(options = {}) {
+        const input = $('#listSearchInput');
+        if (input) input.value = '';
+        applyListSearch();
     }
 
     function hookShopClient() {
@@ -991,22 +1519,69 @@
         const grid = document.getElementById('userShopGrid');
         const filters = document.getElementById('shopCategoryFilters');
         if (typeof MutationObserver !== 'function') return;
-        const observer = new MutationObserver(() => {
-            if (effectiveView() === 'list') scheduleSyncFromShop({ animate: false });
+        const observer = new MutationObserver((mutations) => {
+            if (effectiveView() !== 'list' || state.syncing) return;
+            const hasMeaningfulMutation = (mutations || []).some((m) => {
+                const removedNodes = Array.from(m.removedNodes || []);
+                const addedNodes = Array.from(m.addedNodes || []);
+                const removedOnlyTransitionLayer = removedNodes.length > 0 && removedNodes.every(
+                    (node) => node.classList?.contains('shop-grid-transition-layer')
+                );
+                if (addedNodes.length === 0 && removedOnlyTransitionLayer) return false;
+                const touchedOurControls = addedNodes.concat(removedNodes).some(
+                    (node) => node.classList?.contains('list-aside__indicator') || node.classList?.contains('category-item-group')
+                );
+                if (touchedOurControls) return false;
+                return true;
+            });
+            if (hasMeaningfulMutation) {
+                scheduleSyncFromShop({ animate: false });
+            }
         });
         if (grid) observer.observe(grid, { childList: true, subtree: false });
         if (filters) observer.observe(filters, { childList: true, subtree: false });
     }
 
     function bind() {
+        // Intercept wheel on the category sidebar so hovering over the sidebar
+        // scrolls only the category tabs inside the card, never scrolling the webpage.
+        document.addEventListener('wheel', (event) => {
+            const aside = event.target.closest?.('.list-aside-stack, .list-aside, .list-aside__panel');
+            if (!aside) return;
+            const tabs = aside.querySelector?.('.list-aside__tabs') || $('#listCategoryFilters');
+            if (tabs) {
+                tabs.scrollTop += event.deltaY;
+                event.preventDefault();
+            }
+        }, { passive: false });
+
         // Capture grid category clicks before ShopClient's legacy container
         // listener so both views enter the same selectCategory path.
         document.addEventListener('click', (event) => {
+            const toggleChevron = event.target.closest?.('[data-shop-toggle-subtabs]');
+            if (toggleChevron) {
+                event.preventDefault();
+                event.stopPropagation();
+                const pid = toggleChevron.getAttribute('data-shop-toggle-subtabs');
+                toggleCategorySubtabs(pid);
+                return;
+            }
+
             const gridCategoryBtn = event.target.closest?.('#shopCategoryFilters .filter-tab[data-shop-category]');
-            if (!gridCategoryBtn) return;
-            event.preventDefault();
-            event.stopPropagation();
-            selectCategory(gridCategoryBtn.dataset.shopCategory || '');
+            if (gridCategoryBtn) {
+                event.preventDefault();
+                event.stopPropagation();
+                selectCategory(gridCategoryBtn.dataset.shopCategory || '');
+                return;
+            }
+
+            const listCategoryBtn = event.target.closest?.('#listCategoryFilters .filter-tab[data-shop-category]');
+            if (listCategoryBtn) {
+                event.preventDefault();
+                event.stopPropagation();
+                selectCategory(listCategoryBtn.dataset.shopCategory || '');
+                return;
+            }
         }, true);
 
         document.addEventListener('click', (event) => {
@@ -1020,7 +1595,8 @@
             const openDrawer = event.target.closest?.('[data-list-drawer-open]');
             if (openDrawer) {
                 event.preventDefault();
-                setListDrawer(true);
+                const isOpen = document.body.classList.contains('shop-list-drawer-open') || $('.shop-main')?.classList.contains('is-list-drawer-open');
+                setListDrawer(!isOpen);
                 return;
             }
 
@@ -1035,6 +1611,15 @@
             if (orderQuery) {
                 event.preventDefault();
                 openOrderRecords();
+                return;
+            }
+
+            const toggleChevron = event.target.closest?.('[data-shop-toggle-subtabs]');
+            if (toggleChevron) {
+                event.preventDefault();
+                event.stopPropagation();
+                const pid = toggleChevron.getAttribute('data-shop-toggle-subtabs');
+                toggleCategorySubtabs(pid);
                 return;
             }
 
@@ -1101,6 +1686,13 @@
     function init() {
         const shopMain = $('.shop-main');
         if (!shopMain || state.ready) return;
+        if (!window.__shopCategoryMediaErrorHandlerBound) {
+            document.addEventListener('error', (event) => {
+                const image = event.target instanceof HTMLImageElement ? event.target : null;
+                if (image?.dataset.hideOnError === '1') image.hidden = true;
+            }, true);
+            window.__shopCategoryMediaErrorHandlerBound = true;
+        }
         state.view = readStoredView();
         syncStaticCopy();
         hookShopClient();
@@ -1116,11 +1708,18 @@
         window.ShopListLayout = Object.assign(window.ShopListLayout || {}, {
             setView,
             syncFromShop,
+            setListDrawer,
+            isListDrawerOpen: () => Boolean(document.body.classList.contains('shop-list-drawer-open') || $('.shop-main')?.classList.contains('is-list-drawer-open')),
             getView: () => effectiveView(),
             getSearchQuery: () => state.query.trim(),
+            setSearchQuery,
+            resetSearch,
             filterSearchProducts,
             listChipsMarkup
         });
+        if (typeof window !== 'undefined') {
+            window.isShopSearchActive = () => Boolean(state.query.trim() || document.getElementById('listSearchInput')?.value?.trim());
+        }
     }
 
     if (document.readyState === 'loading') {

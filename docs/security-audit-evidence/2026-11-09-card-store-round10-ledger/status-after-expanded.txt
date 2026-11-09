@@ -1,0 +1,856 @@
+ M .env.local.example
+ M admin-config.js
+ M admin-sidebar.css
+ M admin-studio.css
+ M admin-studio.html
+ M admin-studio.js
+ M announcement-loader.js
+ M api/_lib/admin-studio-access.mjs
+ M api/_lib/admin.js
+ M api/_lib/guest-shop/promo.js
+ M api/_lib/payments/guest-shop-adapter.js
+ M api/_lib/payments/nowpayments-webhook.js
+ M api/_lib/payments/provider-adapters.js
+ M api/_lib/payments/zpay-webhook.js
+ M api/_lib/public-runtime-config.js
+ M api/_lib/request-security.js
+ M api/_lib/shop-cdk-secrets.js
+ M api/_lib/vercel-build.js
+ M api/admin.js
+ M api/public.js
+ M api/shop/purchase.js
+ M api/support.js
+ M avatar-fix.css
+ M css/admin-studio-page.css
+ M css/ai-image-workbench.css
+ M css/auth-sheet.css
+ M css/chat-widget.css
+ M css/framer_home.css
+ M css/framer_home_critical.css
+ M css/guest-orders.css
+ M css/homepage-overlays.css
+ M css/index-page.css
+ M css/privacy-page.css
+ M css/profile-modal.css
+ M css/shop-list-layout.css
+ M css/shop-page.css
+ M css/verify-page.css
+ M css/wallet.css
+ M guest-orders.html
+ M guestbook.html
+ M guestbook.js
+ M index.html
+ M index_old.html
+ M inject-auth.js
+ M js/admin-access.js
+ M js/admin-scrollbar-auto-hide-helper.js
+ M js/admin-shop.js
+ M js/admin-tickets.js
+ M js/ai-image-workbench.js
+ M js/chat-widget-loader.js
+ M js/components/ChatWidget.js
+ M js/components/WalletModal.js
+ M js/engagement-runtime-loader.js
+ M js/framer-nav-runtime.js
+ M js/framer_home.js
+ M js/guest-orders-client.js
+ M js/guest-shop-client.js
+ M js/home-hero-liquid-bootstrap.js
+ M js/i18n.js
+ M js/ios-scroll-lock.js
+ M js/profile-modal-loader.js
+ M js/profile-modal-template.js
+ M js/public-scrollbar-auto-hide.js
+ M js/shop-client.js
+ M js/shop-image-variants.js
+ M js/shop-list-layout.js
+ M js/site-layout-runtime.js
+ M js/verify-page.js
+ M js/wallet-modal-loader.js
+ M lang/en.json
+ M lang/zh.json
+ M privacy.html
+ M prompts-poetry.css
+ M prompts-poetry.js
+ M prompts.html
+ M refund-policy.html
+ M reset-password.html
+ M script.js
+ M scripts/generate-responsive-image-variants.js
+ M scripts/local-preview-server.js
+ M security-cards.js
+ M server/api-handlers/_ai-image-models.js
+ M server/api-handlers/_ai-image-runtime.js
+ M server/api-handlers/_verify-job-runtime.js
+ M server/api-handlers/_verify-provider-runtime.js
+ M server/api-handlers/admin/access/session.js
+ M server/api-handlers/admin/ai-image/config.js
+ M server/api-handlers/admin/ai-image/model-config.js
+ M server/api-handlers/admin/settings/verify-monitor-quota.js
+ M server/api-handlers/admin/shop/categories.js
+ M server/api-handlers/admin/shop/mutate.js
+ M server/api-handlers/admin/shop/products.js
+ M server/api-handlers/admin/shop/supplier-catalog.js
+ M server/api-handlers/admin/shop/supplier-manual-purchase.js
+ M server/api-handlers/admin/tickets/list.js
+ M server/api-handlers/admin/tickets/process.js
+ M server/api-handlers/public/ai-image.js
+ M server/api-handlers/public/config.js
+ M server/api-handlers/public/guest-shop.js
+ M server/api-handlers/public/shop.js
+ M server/api-handlers/public/tg-purchase.js
+ M server/api-handlers/public/verify.js
+ M server/index.js
+ M server/integrations/suppliers/registry.js
+ M server/integrations/suppliers/xiareng/client.js
+ M server/tg/gramix-client.js
+ M server/tg/nowpayments-gateway.js
+ M server/tg/payment-gateway.js
+ M services/kc-pay-gpt/.env.example
+ M services/kc-pay-gpt/admin-auth.js
+ M services/kc-pay-gpt/chatgpt.js
+ M services/kc-pay-gpt/human-verification.js
+ M services/kc-pay-gpt/index.js
+ M services/kc-pay-gpt/mysql-store.js
+ M services/kc-pay-gpt/payment-retry.js
+ M services/kc-pay-gpt/public/admin-login.html
+ M services/kc-pay-gpt/public/admin.html
+ M services/kc-pay-gpt/public/index.html
+ M services/kc-pay-gpt/public/task-messages.js
+ M services/kc-pay-gpt/server.js
+ M services/kc-pay-gpt/session-security.js
+ M services/kc-pay-gpt/stripe-protocol-payment.js
+ M services/kc-pay-gpt/test/captcha-content.test.js
+ M services/kc-pay-gpt/test/captcha-interaction.test.js
+ M services/kc-pay-gpt/test/card-freeze.test.js
+ M services/kc-pay-gpt/test/gpt-outsourcing-store.test.js
+ M services/kc-pay-gpt/test/local-preview-recovery.test.js
+ M services/kc-pay-gpt/test/mysql-card-cooldown.test.js
+ M services/kc-pay-gpt/test/payment-protocol-fallback.test.js
+ M services/kc-pay-gpt/test/payment-retry-safety.test.js
+ M services/kc-pay-gpt/test/public-task-messages.test.js
+ M services/kc-pay-gpt/test/recharge-captcha-bridge.test.js
+ M services/kc-pay-gpt/test/recharge-routing.test.js
+ M services/kc-pay-gpt/test/stripe-protocol-payment.test.js
+ M shop.html
+ M style.css
+ M supabase-auth-functions.js
+ M supabase-guestbook-functions.js
+ M supabase/functions/upload-avatar/index.ts
+ M terms.html
+ M tests/admin-access-session.test.js
+ M tests/admin-ai-image-config-handler.test.js
+ M tests/admin-ai-image-model-config-handler.test.js
+ M tests/admin-ai-image-settings-ui-contract.test.js
+ M tests/admin-entry-navigation.test.js
+ M tests/admin-runtime-auth.test.js
+ M tests/admin-shop-categories-handler.test.js
+ M tests/admin-shop-products-handler.test.js
+ M tests/admin-shop-supplier-catalog-handler.test.js
+ M tests/admin-shop-supplier-catalog-ui.test.js
+ M tests/admin-shop-supplier-workspace.test.js
+ M tests/admin-studio-access.test.js
+ M tests/admin-tickets-process.test.js
+ M tests/ai-image-runtime.test.js
+ M tests/ai-image-workbench-api-contract.test.js
+ M tests/ai-image-workbench-standalone-window.test.js
+ M tests/engagement-robot-contract.test.js
+ M tests/frontend-supabase-runtime-config.test.js
+ M tests/gramix-client.test.js
+ M tests/guest-orders-detail-breakdown.test.js
+ M tests/guest-shop-checkout-batch-status.test.js
+ M tests/guest-shop-payment-adapter.test.js
+ M tests/guest-shop-webhook.test.js
+ M tests/homepage-first-paint-performance.test.js
+ M tests/image-delivery-audit-contract.test.js
+ M tests/nowpayments-webhook-handler.test.js
+ M tests/payment-zpay-webhook-handler.test.js
+ M tests/profile-modal-shop-light-theme.test.js
+ M tests/provider-adapters-zpay-refund.test.js
+ M tests/public-ai-image-handler.test.js
+ M tests/public-page-first-paint-defer-contract.test.js
+ M tests/request-security.test.js
+ M tests/shop-image-optimization-contract.test.js
+ M tests/shop-list-layout-contract.test.js
+ M tests/shop-purchase-endpoint.test.js
+ M tests/shop-purchase-guidance-regression.test.js
+ M tests/shop-purchase-modal-keyboard-scroll.test.js
+ M tests/shop-security-hardening.test.js
+ M tests/shop-storefront-mobile-polish-regression.test.js
+ M tests/shop-supplier-xiareng-client.test.js
+ M tests/support-endpoint.test.js
+ M tests/tg-payment-callback-preview.test.js
+ M tests/tg-payment-gateway.test.js
+ M tests/tg-purchase.test.js
+ M tests/tg-usdt-payment.test.js
+ M tests/vercel-build-output.test.js
+ M vercel.json
+ M verify-widget.css
+ M verify-widget.js
+ M verify.html
+ M workbench.html
+?? api/_lib/admin-session-store.js
+?? api/_lib/glass-image-sample.js
+?? api/_lib/input-sanitizer.js
+?? api/_lib/payments/zpay-amount.js
+?? api/_lib/purchase-step-up.js
+?? api/_lib/session-security.js
+?? api/_lib/support-ticket-access.js
+?? api/_lib/turnstile.js
+?? assets/guide/2fa/step-1.png
+?? assets/guide/2fa/step-10.png
+?? assets/guide/2fa/step-2.png
+?? assets/guide/2fa/step-3.png
+?? assets/guide/2fa/step-4.png
+?? assets/guide/2fa/step-5.png
+?? assets/guide/2fa/step-6.png
+?? assets/guide/2fa/step-7.png
+?? assets/guide/2fa/step-8.png
+?? assets/guide/2fa/step-9.png
+?? assets/products-card/0cd096f9a1129548b3c0.webp
+?? assets/products-card/0f83137ab096dbc4f653.webp
+?? assets/products-card/2cd4b46dad8726040bf7.webp
+?? assets/products-card/4cfdeef0396b015a6b59.webp
+?? assets/products-card/58b6792214eed3ca6461.webp
+?? assets/products-card/5e171d67258a364e41e6.webp
+?? assets/products-card/799be6fed56041df903c.webp
+?? assets/products-card/7aed65d2587df8910d6e.webp
+?? assets/products-card/802f6fff1e01d262a452.webp
+?? assets/products-card/84a487ee8f2ab12c926e.webp
+?? assets/products-card/8de0bbbd8328b630b67c.webp
+?? assets/products-card/98c09405b793a973d7ff.webp
+?? assets/products-card/9b22f5163825c2cb1671.webp
+?? assets/products-card/c0795c4af8819c494f0b.webp
+?? assets/products-card/d82ffff5962a53ba8352.webp
+?? assets/products-card/edbcc7db15b3c76b98f7.webp
+?? assets/products-card/efa5409859ec193439ce.webp
+?? assets/products-card/f407c28008cd530c7c5b.webp
+?? assets/products-card/f5ae1e086805dbeff67c.webp
+?? assets/products-card/f74754392025b7c3ece1.webp
+?? assets/products-card/f757f0858de59d8479bb.webp
+?? assets/products-card/f925f1bbdc15b0103683.webp
+?? assets/products-card/fc963a711a743d9938d0.webp
+?? assets/products-thumb/0d6ffe330a3ead39dc5a.webp
+?? assets/products-thumb/190d7923816f7074b03b.webp
+?? assets/products-thumb/272410b83decb0f93f9a.webp
+?? assets/products-thumb/2f371b833f90ff7c786e.webp
+?? assets/products-thumb/3246b7b9bc21f8e295e0.webp
+?? assets/products-thumb/34c2a74f4e769ed17160.webp
+?? assets/products-thumb/3ca54d0a71542ffb5109.webp
+?? assets/products-thumb/4284063fc2551f4d0a78.webp
+?? assets/products-thumb/43b9ffd3d2b8e5250078.webp
+?? assets/products-thumb/4a7d7c607bbc0c130fd1.webp
+?? assets/products-thumb/501d6a6556f2ede2153d.webp
+?? assets/products-thumb/50b07cce7fcb7ed61986.webp
+?? assets/products-thumb/6960ca1417fb7124c04e.webp
+?? assets/products-thumb/6a3a0aa34a333419092f.webp
+?? assets/products-thumb/6d1ce720a821a8500929.webp
+?? assets/products-thumb/713390378e1e86cb3b28.webp
+?? assets/products-thumb/79aaa5d6eaf0bbfb8f5f.webp
+?? assets/products-thumb/9e9387696c410c7ca209.webp
+?? assets/products-thumb/adf5a6085b6195edb6a4.webp
+?? assets/products-thumb/c5d044aad85140a575d2.webp
+?? assets/products-thumb/d52a9a76bc6cbc240ea3.webp
+?? assets/products-thumb/e438edda0f49fd70b240.webp
+?? assets/products-thumb/fb307b27c7259313b4fb.webp
+?? css/desktop-nav-glass.css
+?? css/home-hero-text-nojs.css
+?? css/label-input.css
+?? css/magnifying-dock.css
+?? css/modal-glass.css
+?? css/tutorial-page.css
+?? deploy/kvm4/security-maintenance/zaoyoe-cdk-shredder
+?? deploy/kvm4/security-maintenance/zaoyoe-cdk-shredder.service
+?? deploy/kvm4/security-maintenance/zaoyoe-cdk-shredder.timer
+?? deploy/kvm4/security-maintenance/zaoyoe-db-security-audit
+?? deploy/kvm4/security-maintenance/zaoyoe-db-security-audit.service
+?? deploy/kvm4/security-maintenance/zaoyoe-db-security-audit.timer
+?? docs/bblabu-media-adaptation-2026-11-08.md
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/README.md
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/archive-integrity.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-amount-final-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-continuation.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-dispatch-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-finalization-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-media-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-routing-fixture-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/backup-manifests/security-hardening-20261108-round2-sanitizer-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/baseline-and-boundaries.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/evidence-copy-index.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/final-commands.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/packaging-static-review.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/blocked-reads.jsonl
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/preload.cjs
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-payment-tg-guest-verified.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-amount-after.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-amount-before.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-backup-verification-final.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-final-verification-commands.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-final-verification-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-final-verification-runner-correction.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-final-verification.cjs
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-final-verified.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-activation-final.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-affected-final-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-full-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-prechange-command.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-prechange-exit.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-prechange-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-media-supplier-rerun.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-media-supplier.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-regression-commands.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-regression-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-static-checks-final.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-static-checks.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/source-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round2/test-results-summary.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/README.md
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/backup-manifests/additional-backup-local-preview-recovery.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/backup-manifests/manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/backup-verification.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/baseline-and-boundaries.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/delta/round3-delta.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/evidence-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/packaging-boundary.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/raw-provenance.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/raw/blocked-reads.jsonl
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/raw/preload.cjs
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/raw/round3-syntax.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/raw/round3-whitespace.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/raw/run.py
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/source-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round3/verification-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/.gitignore
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/README.md
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/archive-procedure.py
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/backup-manifests/baseline.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/backup-manifests/initial.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/backup-manifests/pending-renewal.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/backup-manifests/worker-error.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/backup-verification.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/baseline-and-boundaries.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/baseline-status-expanded.txt
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/delta/round4-mysql-store.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/delta/round4-recharge-routing.test.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/delta/round4-security-round4-kc-local-settlement.test.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/delta/round4-server.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/delta/round4-working-tree-delta.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/evidence-manifest.initial.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/evidence-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/git-visibility.md
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/packaging-boundary.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw-provenance.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-baseline.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-exception-message-red.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-kc-final-v2.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-kc-final.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-legacy-unknown-red.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-native-final.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-native-initial.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-renewal-fixed.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-renewal-red.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-routing-initial.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-routing-refined.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-store.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-syntax-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-syntax-routing-test.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-syntax-settlement-test.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-syntax-store.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-syntax-worker.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-whitespace-probes.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/local-settlement-whitespace-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/preload.cjs
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/raw/run.py
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/source-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/status-before-archive-expanded.txt
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/verification-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round4/whitespace-interpretation.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/.gitignore
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/README.md
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/archive-procedure.py
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/backup-manifests/baseline.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/backup-manifests/initial.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/backup-manifests/review-tests.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/backup-verification.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/baseline-and-boundaries.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/baseline-status-expanded.txt
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/delta-recovery-verification.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/delta/round5-gpt-outsourcing-store.test.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/delta/round5-mysql-store.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/delta/round5-security-round5-kc-owner-locks.test.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/delta/round5-working-tree-delta.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/evidence-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/final-integrity.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/full-regression-comparison.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/log-pattern-scan.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/packaging-boundary.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw-provenance.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/baseline-final-44.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/kc-full-command.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/kc-full.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/kc-regression-306.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/native-final-151.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/native-regression-144.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/owner-locks-after-37.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/owner-locks-before-37.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/owner-locks-initial-interrupted.tap
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/preload.cjs
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/run.py
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/syntax-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/ui-new-failures-command.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/raw/ui-new-failures-rerun.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/source-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/status-before-archive-expanded.txt
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/verification-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round5/whitespace-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/.gitignore
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/README.md
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/archive-inclusion-verification.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/archive-procedure.py
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/backup-manifests/baseline.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/backup-manifests/manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/backup-verification.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/baseline-and-boundaries.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/baseline-status-expanded.txt
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/delta-recovery-verification.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/delta/round6-working-tree-delta.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__chatgpt.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__index.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__mysql-store.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__payment-retry.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__test__mysql-card-cooldown.test.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__test__payment-protocol-fallback.test.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/delta/services__kc-pay-gpt__test__payment-retry-safety.test.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/delta/tests__security-round6-kc-card-ownership.test.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/delta/tests__security-round6-kc-payment-callers.test.js.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/evidence-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/final-integrity.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/log-pattern-scan.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/packaging-boundary.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw-provenance.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-baseline-native.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-caller-compatibility-final.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-chatgpt-regression-final.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-native-after.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-native-final.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-native-first.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-retry-before-callback-fix.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-vitest-adapted.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-vitest-after-callback-fix.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-vitest-final.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/preload.cjs
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/run.py
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/raw/syntax-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/source-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/status-before-archive-expanded.txt
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/verification-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round6/whitespace-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/.gitignore
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/README.md
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/archive-events.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/archive-procedure-first.py
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/archive-procedure.py
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/backup-manifests/initial.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/backup-manifests/resume.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/backup-manifests/round6-fixture-before.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/backup-verification.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/baseline-and-boundaries.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/baseline-status-expanded.txt
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/delta-recovery-verification.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/delta/round7-working-tree-delta.patch
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/evidence-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/final-integrity.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/finalization-backup-verification.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/finalization-procedure.py
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/historical-round6-integrity.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/isolation/preload.cjs
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/isolation/run.py
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/log-provenance.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/log-scan-before-archive.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-chatgpt-regression.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-fault-vitest-first.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-fault-vitest-path-fix.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-initial-vitest.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-kc-regression.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-model-first.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-native-regression-fixture-fixed.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-native-regression.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-vitest-adapted.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/logs/kc-round7-vitest-helper-fix.log
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/packaging-boundary.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-extra-regression-plan.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-extra-regression-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-regression-plan.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-regression-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/runs/kc-round7-syntax-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/source-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/status-before-archive-expanded.txt
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/verification-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store-round7/whitespace-results.json
+?? docs/security-audit-evidence/2026-11-08-card-store/evidence-manifest.json
+?? docs/security-audit-evidence/2026-11-08-card-store/guest-media-focused-tests-result.json
+?? docs/security-audit-evidence/2026-11-08-card-store/guest-media-focused-tests.tap
+?? docs/security-audit-evidence/2026-11-08-card-store/isolated-probes-result.json
+?? docs/security-audit-evidence/2026-11-08-card-store/media-import-isolated-probe-result.json
+?? docs/security-audit-evidence/2026-11-08-card-store/public-page-headers.json
+?? docs/security-audit-evidence/2026-11-08-card-store/source-manifest.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/.gitignore
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/baseline.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/coverage-backup-failure.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/deadline-backups.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/logs/ledger-tests-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/logs/ledger-tests-02.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/logs/offline-final-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/logs/offline-final-02.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/logs/syntax-ledger.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/logs/syntax-test.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/packaging-boundary.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/paid-reference-backups.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/before-deadlines-payment-attempt-ledger.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/before-deadlines-security-round10-kc-payment-attempt-ledger.test.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/before-paid-reference-20261109-ledger-DRAFT.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/before-paid-reference-security-round10-kc-payment-attempt-ledger.test.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/chatgpt.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/index.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/mysql-schema.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/mysql-store.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/payment-retry.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/stripe-protocol-payment.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/source-manifest.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/sql-scope.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/status-before-expanded.txt
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/test-results.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/whitespace-review.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/.gitignore
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/before-driver-error-guard/manifest.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/before-driver-error-guard/services__kc-pay-gpt__acceptance__mysql-payment-hold__lab.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/before-driver-error-guard/tests__security-round8-kc-mysql-lab.test.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/cli.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/fixture.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/lab.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/manifest.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/plan.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/safety.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/store-loader.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/cli.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/fixture.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/lab.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/manifest.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/plan.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/safety.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/store-loader.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/services__kc-pay-gpt__mysql-schema.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/services__kc-pay-gpt__mysql-store.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/services__kc-pay-gpt__payment-retry.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/backups/services__kc-pay-gpt__stripe-protocol-payment.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/baseline-status.txt
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/baseline.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/preload.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/run.py
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/log-manifest.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/offline-tests-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/offline-tests-02.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/payment-hold-regression-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/plan-only-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-cli.cjs.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-lab.cjs.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-plan.cjs.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-preload.cjs.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-safety.cjs.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-security-round8-kc-mysql-lab.test.js.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-store-loader.cjs.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-cli.cjs.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-lab.cjs.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-plan.cjs.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-preload.cjs.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-safety.cjs.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-security-round8-kc-mysql-lab.test.js.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-store-loader.cjs.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/packaging-boundary.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/source-manifest.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/status-after-expanded.txt
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/syntax-results-01.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/syntax-results-02.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/test-results.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/verification-results.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/whitespace-results.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round8/whitespace-review.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/.gitignore
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/alias-fix-backups.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/.gitignore
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/audited-run.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/context.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/execute-attempt-03.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/listener-01.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/execute-03.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/fixture-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/identity-before-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/initialize-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/mysqld-final.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/mysqld-initialize.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/mysqld-launch-loopback.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/mysqld-launch-socket.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/plan-03.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/post-check.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/logs/root-hardening-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/post-check.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/post-check.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/prepare-lab.py
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/process-loopback.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/process-socket.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/retry-scope.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/shutdown.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql-events-01.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/executed-statements-01.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/fixture.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/identity-before.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/post-check.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/root-hardening.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/target.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/audited-run-02.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/audited-run.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/baseline.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/context.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/diagnose-aliases-01.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/diagnose-aliases.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/evidence-manifest.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/execute-attempt-01.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/execute-attempt-02.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/failed-instance-preserved.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/listener-01.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/diagnose-aliases-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/execute-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/execute-02.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/fixture-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/identity-before-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/initialize-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/mysqld-failed-instance.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/mysqld-initialize.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/mysqld-launch-loopback.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/mysqld-launch-socket.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/offline-after-alias-fix-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/offline-after-owner-fix-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/offline-final-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/plan-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/root-hardening-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-01.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-02.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-03.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-04.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-05.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-06.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-07.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-08.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-09.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-10.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-11.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-12.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-13.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-14.log
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/owner-fix-backups.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/prepare-lab.py
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/process-loopback.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/process-socket.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/readme-backup.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/scope-diff.patch
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/setup-attempt-01.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/setup-recovery-01.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/README-before-followup.md
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/before-alias-fix-lab.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/before-alias-fix-security-round8-kc-mysql-lab.test.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/before-owner-contract-fix-lab.cjs
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/before-owner-contract-fix-security-round8-kc-mysql-lab.test.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/mysql-schema.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/mysql-store.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/payment-retry.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/prepare-lab-before-target-fix.py
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/stripe-protocol-payment.js
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/source-manifest.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql-events-01.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql-events-02.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/diagnose-aliases-01.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/executed-statements-01.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/executed-statements-02.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/fixture.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/identity-before.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/root-hardening.sql
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/scope-review.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/status-after-expanded.txt
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/status-before-expanded.txt
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/syntax-results.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/syntax-scope.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/target.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/test-results.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/verification-results.json
+?? docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/whitespace-review.json
+?? docs/security-card-store-attack-audit-2026-11-08.md
+?? docs/security-card-store-hardening-round10-2026-11-09.md
+?? docs/security-card-store-hardening-round2-2026-11-08.md
+?? docs/security-card-store-hardening-round3-2026-11-08.md
+?? docs/security-card-store-hardening-round4-2026-11-08.md
+?? docs/security-card-store-hardening-round5-2026-11-08.md
+?? docs/security-card-store-hardening-round6-2026-11-08.md
+?? docs/security-card-store-hardening-round7-2026-11-08.md
+?? docs/security-card-store-hardening-round8-2026-11-09.md
+?? docs/security-card-store-hardening-round9-2026-11-09.md
+?? docs/security-hardening-2026-11-07-kc-tg-local-review.md
+?? docs/security-hardening-2026-11-07-local-review.md
+?? docs/security-hardening-2026-11-08-admin-session-step-up-local-review.md
+?? docs/security-hardening-2026-11-08-local-acceptance-supplement.md
+?? docs/security-hardening-2026-11-08-local-review.md
+?? google-2fa-tutorial.html
+?? js/ai-media-model-capabilities.js
+?? js/desktop-nav-glass.mjs
+?? js/glass-foreground.mjs
+?? js/glass-mutations.mjs
+?? js/guestbook-rendering.js
+?? js/home-hero-text-preload.js
+?? js/i18n-preload.js
+?? js/label-input.js
+?? js/lens.js
+?? js/magnifying-dock.js
+?? js/member-orders-bridge.js
+?? js/mobile-glass-lens.mjs
+?? js/mobile-glass-refraction.mjs
+?? js/mobile-glass-scene.mjs
+?? js/mobile-glass.mjs
+?? js/model-standards-media.js
+?? js/nav-glass-motion.mjs
+?? js/prompt-spotlight.js
+?? js/turnstile-client.js
+?? label-input-preview.html
+?? magnifying-dock-preview.html
+?? model-standards.html
+?? rolling-counter-preview.html
+?? scripts/audit-db-security.js
+?? scripts/install-kvm4-security-maintenance.sh
+?? scripts/shred-expired-cdks.js
+?? scripts/sync-i18n-preload.js
+?? scripts/verify-security-local-browser.mjs
+?? server/api-handlers/_bblabu-media.js
+?? server/api-handlers/_google-one-activation-runtime.js
+?? server/api-handlers/admin/settings/verify-activation-jobs.js
+?? server/api-handlers/admin/shop/_product-image-assets.js
+?? server/api-handlers/admin/shop/_r2-media.js
+?? server/api-handlers/admin/shop/_remote-media-security.js
+?? server/integrations/suppliers/auto-dispatch.js
+?? server/integrations/suppliers/stock-sync.js
+?? server/integrations/suppliers/xiareng/category-groups.js
+?? server/tg/bounded-response.js
+?? services/kc-pay-gpt/acceptance/mysql-payment-hold/README.md
+?? services/kc-pay-gpt/acceptance/mysql-payment-hold/cli.cjs
+?? services/kc-pay-gpt/acceptance/mysql-payment-hold/fixture.sql
+?? services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs
+?? services/kc-pay-gpt/acceptance/mysql-payment-hold/plan.cjs
+?? services/kc-pay-gpt/acceptance/mysql-payment-hold/safety.cjs
+?? services/kc-pay-gpt/acceptance/mysql-payment-hold/store-loader.cjs
+?? services/kc-pay-gpt/acceptance/payment-attempt-ledger/20261109-ledger-DRAFT.sql
+?? services/kc-pay-gpt/admin-security.js
+?? services/kc-pay-gpt/credential-security.js
+?? services/kc-pay-gpt/internal-captcha-security.js
+?? services/kc-pay-gpt/lib/payment-attempt-ledger.js
+?? services/kc-pay-gpt/lib/qrcode-generator.LICENSE
+?? services/kc-pay-gpt/lib/qrcode-generator.PROVENANCE.json
+?? services/kc-pay-gpt/lib/qrcode-generator.js
+?? services/kc-pay-gpt/public-request-security.js
+?? services/kc-pay-gpt/public/admin-security.js
+?? services/kc-pay-gpt/public/vendor/lucide/LICENSE
+?? services/kc-pay-gpt/public/vendor/lucide/PROVENANCE.json
+?? services/kc-pay-gpt/public/vendor/lucide/lucide-0.468.0.min.js
+?? services/kc-pay-gpt/task-access.js
+?? services/kc-pay-gpt/test/admin-auth-security.test.js
+?? services/kc-pay-gpt/test/admin-sensitive-ui-security.test.js
+?? services/kc-pay-gpt/test/admin-step-up-security.test.js
+?? services/kc-pay-gpt/test/internal-captcha-security.test.js
+?? services/kc-pay-gpt/test/task-access-security.test.js
+?? supabase/acceptance/20261108_admin_studio_sessions_README.md
+?? supabase/acceptance/20261108_admin_studio_sessions_readonly.sql
+?? supabase/migrations/20261102165955_google_one_86ai_activation.sql
+?? supabase/migrations/20261103_shop_supplier_custom_cost_ceiling.sql
+?? supabase/migrations/20261103_shop_supplier_multi_variant_draft_v3.sql
+?? supabase/migrations/20261105_add_shop_category_icon_url.sql
+?? supabase/migrations/20261106_shop_product_min_purchase_quantity.sql
+?? supabase/migrations/20261107114915_purchase_security_boundary.sql
+?? supabase/migrations/20261107_core_security_hardening.sql
+?? supabase/migrations/20261107_security_rls_audit_and_hardening.sql
+?? supabase/migrations/20261108013826_tg_authenticated_payment_query.sql
+?? supabase/migrations/20261108041927_admin_studio_revocable_sessions.sql
+?? supabase/migrations/20261108_ai_media_bblabu_constraints.sql
+?? supabase/migrations/20261108_shop_product_sales_config.sql
+?? tests/admin-shop-category-batch-actions.test.js
+?? tests/admin-sidebar-scrollbar-auto-hide.test.js
+?? tests/admin-studio-session-migration-contract.test.js
+?? tests/admin-tickets-guest-order-workflow.test.js
+?? tests/bblabu-media.test.js
+?? tests/core-security-hardening.test.js
+?? tests/desktop-nav-glass-readiness.test.js
+?? tests/dock-and-capsule-nav-modal-hide.test.js
+?? tests/dock-guest-orders-buttons.test.js
+?? tests/dock-touch-interaction.test.js
+?? tests/first-paint-runtime.test.js
+?? tests/glass-foreground.test.js
+?? tests/glass-image-sample.test.js
+?? tests/glass-lens-alpha.test.js
+?? tests/glass-lens-tiles.test.js
+?? tests/glass-scroll-mutations.test.js
+?? tests/glass-sitewide-entry-contract.test.js
+?? tests/google-one-86ai-channel3.test.js
+?? tests/guest-orders-skeleton.test.js
+?? tests/guestbook-glass-theme.test.js
+?? tests/guestbook-rendering.test.js
+?? tests/home-hero-desktop-cleanup.test.js
+?? tests/homepage-hero-text-first-paint.test.js
+?? tests/label-input-sitewide-parity.test.js
+?? tests/mobile-glass.test.js
+?? tests/nav-glass-motion.test.js
+?? tests/nav-modal-scroll-stability.test.js
+?? tests/nav-modal-visibility.test.js
+?? tests/orders-filter-and-member-query.test.js
+?? tests/profile-modal-lbi-input-contract.test.js
+?? tests/profile-modal-loader-lbi-shared.test.js
+?? tests/prompt-copy-security-and-watermark.test.js
+?? tests/prompts-spotlight-dock-search.test.js
+?? tests/security-boundary-regressions.test.js
+?? tests/security-maintenance-installer.test.js
+?? tests/security-round10-kc-payment-attempt-ledger.test.js
+?? tests/security-round2-kc-activation.test.js
+?? tests/security-round2-kc-credentials.test.js
+?? tests/security-round2-kc-public-guard.test.js
+?? tests/security-round2-media-download.test.js
+?? tests/security-round2-supplier-rich-text.test.js
+?? tests/security-round2-zpay-amount.test.js
+?? tests/security-round3-kc-activation-atomic.test.js
+?? tests/security-round4-kc-local-settlement.test.js
+?? tests/security-round5-kc-owner-locks.test.js
+?? tests/security-round6-kc-card-ownership.test.js
+?? tests/security-round6-kc-payment-callers.test.js
+?? tests/security-round7-kc-payment-hold.test.js
+?? tests/security-round8-kc-mysql-lab.test.js
+?? tests/session-security-boundaries.test.js
+?? tests/shop-accurate-stock-and-supplier-sync.test.js
+?? tests/shop-min-purchase-quantity.test.js
+?? tests/shop-product-image-assets.test.js
+?? tests/shop-product-image-upload.test.js
+?? tests/shop-purchase-guidance-fullscreen.test.js
+?? tests/shop-sales-config-modes.test.js
+?? tests/shop-step-up-client.test.js
+?? tests/shop-success-modal-opaque-contract.test.js
+?? tests/shop-supplier-dispatch-config.test.js
+?? tests/shop-supplier-media-r2-and-markup.test.js
+?? tests/shop-title-and-spec-clamp.test.js
+?? tests/support-ticket-access.test.js
+?? tests/tg-authenticated-payment-query-contract.test.js
+?? tests/tg-upstream-response-security.test.js
+?? tests/turnstile-and-honeypot-security.test.js
+?? tests/verify-page-scroll-motion.test.js
+?? tests/wallet-modal-glass-ring-contract.test.js
+?? vendor/glasswork/LICENSE
+?? vendor/glasswork/NOTICE.md
+?? vendor/glasswork/adapt.js
+?? vendor/glasswork/glass.css
+?? vendor/glasswork/lens-map.mjs
+?? vendor/glasswork/lens-tiles.mjs
+?? vendor/glasswork/lens-worker.mjs
+?? vendor/glasswork/lens.js
+?? vendor/glasswork/refract.js

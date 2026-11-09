@@ -889,3 +889,90 @@ html:not([data-theme="dark"]) #guestbookModal {
     overscroll-behavior: contain !important;
     overscroll-behavior-y: contain !important;
 }
+
+/* 20261108_HOMEPAGE_GUESTBOOK_MODAL_LIQUID_GLASS_RING_1 */
+#guestbookModal .guestbook-composer-sheet.glass-ring,
+#guestbookModal.active .guestbook-composer-sheet.glass-ring,
+#guestbookModal.active:focus-within .guestbook-composer-sheet.glass-ring,
+#guestbookModal.ios-focus-lock .guestbook-composer-sheet.glass-ring {
+    --glass-ring-width: 8px;
+    --glass-radius: 32px;
+    --glass-blur: 12px;
+    --glass-saturation: 145%;
+    --glass-panel: #0b0e14;
+    --glass-outline: rgba(255, 255, 255, 0.30);
+    --glass-highlight: rgba(255, 255, 255, 0.36);
+    padding: var(--glass-ring-width, 8px) !important;
+    border-radius: var(--glass-radius, 32px) !important;
+    background:
+        linear-gradient(
+            145deg,
+            rgba(255, 255, 255, 0.24),
+            rgba(255, 255, 255, 0.10) 54%,
+            rgba(255, 255, 255, 0.18)
+        ) !important;
+    border: 1px solid var(--glass-outline) !important;
+    backdrop-filter: var(--dng-filter, blur(var(--glass-blur, 12px)) saturate(var(--glass-saturation, 145%))) !important;
+    -webkit-backdrop-filter: var(--dng-webkit-filter, blur(var(--glass-blur, 12px)) saturate(var(--glass-saturation, 145%))) !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-sheet.glass-ring,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-sheet.glass-ring {
+    --glass-panel: #fcfdff;
+    --glass-outline: rgba(255, 255, 255, 0.56);
+    --glass-highlight: rgba(255, 255, 255, 0.68);
+    background:
+        linear-gradient(
+            145deg,
+            rgba(255, 255, 255, 0.34),
+            rgba(255, 255, 255, 0.18) 54%,
+            rgba(255, 255, 255, 0.26)
+        ) !important;
+    border: 1px solid var(--glass-outline) !important;
+}
+
+#guestbookModal.guestbook-modal-force-hidden .guestbook-composer-sheet.glass-ring {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+@media (max-width: 520px) {
+    #guestbookModal .guestbook-composer-sheet.glass-ring {
+        --glass-ring-width: 7px;
+        --glass-blur: 10px;
+    }
+}
+
+#guestbookModal .guestbook-composer-sheet.glass-ring > .guestbook-composer-surface.glass-ring__surface {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    padding: 14px 18px calc(18px + env(safe-area-inset-bottom)) !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    border-radius: max(0px, calc(var(--glass-radius, 32px) - var(--glass-ring-width, 8px))) !important;
+    background: #0b0e14 !important;
+    border: 1px solid rgba(255, 255, 255, 0.10) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-sheet.glass-ring > .guestbook-composer-surface.glass-ring__surface,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-sheet.glass-ring > .guestbook-composer-surface.glass-ring__surface {
+    background: #fcfdff !important;
+    border: 1px solid rgba(255, 255, 255, 0.84) !important;
+    box-shadow: 0 2px 8px rgba(48, 42, 31, 0.045) !important;
+}
+
+#guestbookModal .guestbook-composer-surface > * {
+    flex-shrink: 0;
+}
+
+#guestbookModal .guestbook-composer-surface > .guestbook-composer-form {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+}

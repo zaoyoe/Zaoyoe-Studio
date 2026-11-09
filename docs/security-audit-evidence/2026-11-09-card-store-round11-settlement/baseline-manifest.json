@@ -1,0 +1,48 @@
+{
+  "base_sha": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "purpose": "byte snapshots before round11 edits; not a release candidate or full checkout backup",
+  "files": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "bytes": 199885,
+      "sha256": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+      "snapshot": "docs/security-audit-evidence/2026-11-09-card-store-round11-settlement/baseline/services/kc-pay-gpt/mysql-store.js",
+      "readback_verified": true
+    },
+    {
+      "path": "services/kc-pay-gpt/server.js",
+      "bytes": 222714,
+      "sha256": "e0b922950a566c1f1fa5512e794cc80f2837e752e1f6e4006c9bf86fad96c582",
+      "snapshot": "docs/security-audit-evidence/2026-11-09-card-store-round11-settlement/baseline/services/kc-pay-gpt/server.js",
+      "readback_verified": true
+    },
+    {
+      "path": "services/kc-pay-gpt/lib/payment-attempt-ledger.js",
+      "bytes": 15093,
+      "sha256": "08d72b32277656f44bb6424d199d9959dc9292f69d38b72a888054e798c15f0c",
+      "snapshot": "docs/security-audit-evidence/2026-11-09-card-store-round11-settlement/baseline/services/kc-pay-gpt/lib/payment-attempt-ledger.js",
+      "readback_verified": true
+    },
+    {
+      "path": "services/kc-pay-gpt/mysql-schema.sql",
+      "bytes": 11462,
+      "sha256": "5762c14dac28291cf566ced78a71af2fb26d466b915c69968cf28027b3bfc055",
+      "snapshot": "docs/security-audit-evidence/2026-11-09-card-store-round11-settlement/baseline/services/kc-pay-gpt/mysql-schema.sql",
+      "readback_verified": true
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/payment-attempt-ledger/20261109-ledger-DRAFT.sql",
+      "bytes": 3781,
+      "sha256": "feaaad96e48bc507ba0679c06684baf589f324be003d5a4fa90c2c61442fe86d",
+      "snapshot": "docs/security-audit-evidence/2026-11-09-card-store-round11-settlement/baseline/services/kc-pay-gpt/acceptance/payment-attempt-ledger/20261109-ledger-DRAFT.sql",
+      "readback_verified": true
+    },
+    {
+      "path": "tests/security-round10-kc-payment-attempt-ledger.test.js",
+      "bytes": 27177,
+      "sha256": "4201cbc0e6b5669866d66edc648a64fb5c3d18cdb74e01e5e0ebce7d3dba87d4",
+      "snapshot": "docs/security-audit-evidence/2026-11-09-card-store-round11-settlement/baseline/tests/security-round10-kc-payment-attempt-ledger.test.js",
+      "readback_verified": true
+    }
+  ]
+}

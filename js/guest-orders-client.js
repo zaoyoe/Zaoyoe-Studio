@@ -59,6 +59,23 @@
     const state = {
         auth: null,
         orders: [],
+        filter: {
+            keyword: '',
+            status: 'all',
+            deliveryType: 'all',
+            dateRange: 'all',
+            sortBy: 'time_desc'
+        },
+        isMember: false,
+        currentView: 'orders',
+        myTickets: [],
+        myTicketsFilter: {
+            stat: 'all',
+            keyword: '',
+            type: 'all'
+        },
+        myTicketsLoading: false,
+        myTicketsControlsBound: false,
         pagination: null,
         page: 1,
         orderNoFilter: '',
@@ -112,6 +129,14 @@
         if (node) node.textContent = normalizeText(value, 2000);
     }
 
+    function nextFrame(fn) {
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(fn);
+        } else {
+            setTimeout(fn, 16);
+        }
+    }
+
     function togglePasswordVisibility(button, inputId = 'guestOrdersPassword', label = '查询密码') {
         const target = element(inputId);
         if (!target || !button) return;
@@ -135,8 +160,64 @@
         node.hidden = !message;
     }
 
+    function hideInitialSkeleton() {
+        setHidden('guestOrdersInitialSkeleton', true);
+    }
+
+    function renderOrdersSkeleton(container, count = 3) {
+        if (!container) return;
+        container.textContent = '';
+        const fragment = document.createDocumentFragment();
+        const widths = [
+            { no: '160px', title: '65%', meta: '42%', price: '64px' },
+            { no: '140px', title: '52%', meta: '35%', price: '52px' },
+            { no: '175px', title: '70%', meta: '48%', price: '72px' }
+        ];
+        for (let i = 0; i < count; i++) {
+            const w = widths[i % widths.length];
+            const item = createNode('article', 'guest-orders-item is-skeleton');
+            item.setAttribute('aria-hidden', 'true');
+
+            const top = createNode('div', 'guest-orders-item-top');
+            const left = createNode('div', 'guest-orders-item-left');
+            const noBar = createNode('div', 'guest-orders-skel-bar guest-orders-skel-bar--order-no');
+            noBar.style.width = w.no;
+            left.appendChild(noBar);
+            top.appendChild(left);
+
+            const badges = createNode('div', 'guest-orders-item-badges');
+            badges.appendChild(createNode('div', 'guest-orders-skel-badge'));
+            badges.appendChild(createNode('div', 'guest-orders-skel-badge'));
+            top.appendChild(badges);
+            item.appendChild(top);
+
+            const body = createNode('div', 'guest-orders-item-body');
+            body.appendChild(createNode('div', 'guest-orders-skel-thumb'));
+
+            const content = createNode('div', 'guest-orders-item-content');
+            const titleBar = createNode('div', 'guest-orders-skel-bar guest-orders-skel-bar--item-title');
+            titleBar.style.width = w.title;
+            const metaBar = createNode('div', 'guest-orders-skel-bar guest-orders-skel-bar--item-meta');
+            metaBar.style.width = w.meta;
+            content.appendChild(titleBar);
+            content.appendChild(metaBar);
+            body.appendChild(content);
+
+            const amount = createNode('div', 'guest-orders-item-amount');
+            const priceBar = createNode('div', 'guest-orders-skel-bar guest-orders-skel-bar--item-price');
+            priceBar.style.width = w.price;
+            amount.appendChild(priceBar);
+            body.appendChild(amount);
+
+            item.appendChild(body);
+            fragment.appendChild(item);
+        }
+        container.appendChild(fragment);
+    }
+
     function setOrderAccessPageAvailable(available, message = '') {
         state.pageAvailable = available === true;
+        hideInitialSkeleton();
         setHidden('guestOrdersProtectedContent', !state.pageAvailable);
         setHidden('guestOrdersFeatureGate', state.pageAvailable);
         setHidden('guestOrdersFeatureRetryBtn', state.pageAvailable);
@@ -374,8 +455,44 @@
         return map[key] || { text: key || '-', tone: '' };
     }
 
+    function resolveOrderStatus(order) {
+        const paymentKey = normalizeText(order?.payment_status, 40).toLowerCase();
+        const fulfillmentKey = normalizeText(order?.fulfillment_status, 40).toLowerCase();
+
+        if (paymentKey === 'confirmed') {
+            if (fulfillmentKey === 'delivered') {
+                return { text: '已完成', tone: 'ok' };
+            }
+            if (fulfillmentKey === 'fulfilling') {
+                return { text: '已付款·发货中', tone: 'warn' };
+            }
+            if (fulfillmentKey === 'failed') {
+                return { text: '已付款·发货失败', tone: 'danger' };
+            }
+            if (fulfillmentKey === 'dead_letter') {
+                return { text: '需人工处理', tone: 'danger' };
+            }
+            if (fulfillmentKey === 'paid_unfulfillable') {
+                return { text: '库存不足', tone: 'danger' };
+            }
+            if (fulfillmentKey === 'refunded') {
+                return { text: '已退款', tone: '' };
+            }
+            return { text: '已付款·待发货', tone: 'warn' };
+        }
+
+        return statusLabel(PAYMENT_LABELS, paymentKey);
+    }
+
     function createBadge(map, value) {
         const label = statusLabel(map, value);
+        const badge = createNode('span', 'guest-orders-badge', label.text);
+        if (label.tone) badge.dataset.tone = label.tone;
+        return badge;
+    }
+
+    function createOrderStatusBadge(order) {
+        const label = resolveOrderStatus(order);
         const badge = createNode('span', 'guest-orders-badge', label.text);
         if (label.tone) badge.dataset.tone = label.tone;
         return badge;
@@ -467,6 +584,20 @@
     }
 
     function resolvePaymentMethod(order, detail) {
+        if (order?.payment?.label) {
+            return {
+                label: order.payment.label,
+                icon: order.payment.icon || 'fa-solid fa-coins',
+                key: order.payment.key || order.payment.method || 'points'
+            };
+        }
+        if (detail?.payment?.label) {
+            return {
+                label: detail.payment.label,
+                icon: detail.payment.icon || 'fa-solid fa-coins',
+                key: detail.payment.key || detail.payment.method || 'points'
+            };
+        }
         const channel = normalizeText(
             order?.channel || detail?.channel || detail?.payment_channel || order?.payment_channel
         ).toLowerCase();
@@ -720,19 +851,1219 @@
         return badge;
     }
 
+    function matchOrderStatus(order, statusFilter) {
+        if (!statusFilter || statusFilter === 'all') return true;
+        const resolved = resolveOrderStatus(order);
+        const resolvedText = String(resolved?.text || '');
+        const paymentKey = normalizeText(order?.payment_status, 40).toLowerCase();
+        const fulfillmentKey = normalizeText(order?.fulfillment_status, 40).toLowerCase();
+
+        switch (statusFilter) {
+            case 'completed':
+                return resolvedText === '已完成' || fulfillmentKey === 'delivered';
+            case 'fulfilling':
+                return resolvedText.includes('发货中') || resolvedText.includes('待发货')
+                    || fulfillmentKey === 'fulfilling' || (paymentKey === 'confirmed' && fulfillmentKey !== 'delivered');
+            case 'pending':
+                return resolvedText === '待支付' || paymentKey === 'pending' || paymentKey === 'created';
+            case 'refunded':
+                return resolvedText === '已退款' || paymentKey === 'refunded' || fulfillmentKey === 'refunded';
+            default:
+                return true;
+        }
+    }
+
+    function matchOrderDeliveryType(order, typeFilter) {
+        if (!typeFilter || typeFilter === 'all') return true;
+        const fulfillmentSource = normalizeText(order?.fulfillment_source || order?.delivery_type, 40).toLowerCase();
+        const isManual = fulfillmentSource === 'manual' || order?.is_manual === true;
+        if (typeFilter === 'manual') return isManual;
+        if (typeFilter === 'auto') return !isManual;
+        return true;
+    }
+
+    function matchOrderDate(order, dateFilter) {
+        if (!dateFilter || dateFilter === 'all') return true;
+        const orderDate = new Date(order.created_at || 0);
+        if (isNaN(orderDate.getTime())) return true;
+
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        switch (dateFilter) {
+            case 'today':
+                return orderDate >= startOfToday;
+            case '7days': {
+                const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                return orderDate >= sevenDaysAgo;
+            }
+            case '30days': {
+                const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                return orderDate >= thirtyDaysAgo;
+            }
+            case '90days': {
+                const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                return orderDate >= ninetyDaysAgo;
+            }
+            case 'year': {
+                const startOfYear = new Date(now.getFullYear(), 0, 1);
+                return orderDate >= startOfYear;
+            }
+            default:
+                return true;
+        }
+    }
+
+    function matchOrderKeyword(order, query) {
+        const q = String(query || '').trim().toLowerCase();
+        if (!q) return true;
+
+        const orderNo = String(order?.order_no || order?.id || '').toLowerCase();
+        if (orderNo.includes(q)) return true;
+
+        const productName = String(order?.snapshot_product_name || order?.product_name || order?.name || '').toLowerCase();
+        if (productName.includes(q)) return true;
+
+        const title = String(order?.product_info?.title || '').toLowerCase();
+        if (title.includes(q)) return true;
+
+        if (Array.isArray(order?.items)) {
+            for (const item of order.items) {
+                const itemName = String(item?.snapshot_product_name || item?.name || item?.product_name || '').toLowerCase();
+                if (itemName.includes(q)) return true;
+                const content = String(item?.content || '').toLowerCase();
+                if (content.includes(q)) return true;
+            }
+        }
+
+        if (Array.isArray(order?.shop_order_items)) {
+            for (const item of order.shop_order_items) {
+                const itemName = String(item?.snapshot_product_name || item?.name || '').toLowerCase();
+                if (itemName.includes(q)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    function sortOrders(orders, sortBy) {
+        const sorted = [...orders];
+        switch (sortBy) {
+            case 'time_asc':
+                sorted.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+                break;
+            case 'amount_desc':
+                sorted.sort((a, b) => (Number(b.amount ?? b.price_paid ?? 0) || 0) - (Number(a.amount ?? a.price_paid ?? 0) || 0));
+                break;
+            case 'amount_asc':
+                sorted.sort((a, b) => (Number(a.amount ?? a.price_paid ?? 0) || 0) - (Number(b.amount ?? b.price_paid ?? 0) || 0));
+                break;
+            case 'time_desc':
+            default:
+                sorted.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+                break;
+        }
+        return sorted;
+    }
+
+    function hasActiveFilter() {
+        const f = state.filter || {};
+        return Boolean(
+            (f.status && f.status !== 'all') ||
+            (f.deliveryType && f.deliveryType !== 'all') ||
+            (f.dateRange && f.dateRange !== 'all') ||
+            (f.keyword && f.keyword.trim().length > 0)
+        );
+    }
+
+    function getFilteredOrders() {
+        const all = Array.isArray(state.orders) ? state.orders : [];
+        const currentFilter = state.filter || {};
+        const filtered = all.filter((order) => {
+            return matchOrderStatus(order, currentFilter.status)
+                && matchOrderDeliveryType(order, currentFilter.deliveryType)
+                && matchOrderDate(order, currentFilter.dateRange)
+                && matchOrderKeyword(order, currentFilter.keyword);
+        });
+        return sortOrders(filtered, currentFilter.sortBy || 'time_desc');
+    }
+
+    function updateFilterUi(displayedCount, totalCount) {
+        const countBadge = element('ordersFilterCountBadge');
+        if (countBadge) {
+            countBadge.textContent = displayedCount === totalCount
+                ? `共 ${totalCount} 笔订单`
+                : `筛选出 ${displayedCount} / 共 ${totalCount} 笔订单`;
+        }
+
+        const currentFilter = state.filter || {};
+        const isFiltered = Boolean(
+            currentFilter.keyword
+            || (currentFilter.status && currentFilter.status !== 'all')
+            || (currentFilter.deliveryType && currentFilter.deliveryType !== 'all')
+            || (currentFilter.dateRange && currentFilter.dateRange !== 'all')
+            || (currentFilter.sortBy && currentFilter.sortBy !== 'time_desc')
+        );
+
+        const resetBtn = element('ordersFilterResetBtn');
+        if (resetBtn) {
+            resetBtn.hidden = !isFiltered;
+        }
+
+        renderFilterTags(isFiltered);
+    }
+
+    function renderFilterTags(isFiltered) {
+        const tagsRow = element('ordersFilterTagsRow');
+        if (!tagsRow) return;
+        tagsRow.textContent = '';
+        if (!isFiltered) {
+            tagsRow.hidden = true;
+            return;
+        }
+
+        tagsRow.hidden = false;
+        const currentFilter = state.filter || {};
+
+        if (currentFilter.keyword) {
+            const tag = createFilterTag('关键词', `"${currentFilter.keyword}"`, () => {
+                currentFilter.keyword = '';
+                const searchInput = element('ordersFilterSearchInput');
+                if (searchInput) searchInput.value = '';
+                const clearBtn = element('ordersFilterSearchClearBtn');
+                if (clearBtn) clearBtn.hidden = true;
+                state.page = 1;
+                renderOrders();
+            });
+            tagsRow.appendChild(tag);
+        }
+
+        if (currentFilter.status && currentFilter.status !== 'all') {
+            const statusLabels = {
+                completed: '已完成 / 已发货',
+                fulfilling: '发货中 / 待发货',
+                pending: '待支付',
+                refunded: '已退款'
+            };
+            const tag = createFilterTag('状态', statusLabels[currentFilter.status] || currentFilter.status, () => {
+                setDropdownValue('status', 'all', '全部状态');
+            });
+            tagsRow.appendChild(tag);
+        }
+
+        if (currentFilter.deliveryType && currentFilter.deliveryType !== 'all') {
+            const deliveryLabels = {
+                auto: '自动交付 (卡密)',
+                manual: '人工交付 (联系客服)'
+            };
+            const tag = createFilterTag('履约', deliveryLabels[currentFilter.deliveryType] || currentFilter.deliveryType, () => {
+                setDropdownValue('deliveryType', 'all', '全部履约类型');
+            });
+            tagsRow.appendChild(tag);
+        }
+
+        if (currentFilter.dateRange && currentFilter.dateRange !== 'all') {
+            const dateLabels = {
+                today: '今天',
+                '7days': '近 7 天',
+                '30days': '近 30 天',
+                '90days': '近 3 个月',
+                year: '今年内'
+            };
+            const tag = createFilterTag('时间', dateLabels[currentFilter.dateRange] || currentFilter.dateRange, () => {
+                setDropdownValue('dateRange', 'all', '全部时间');
+            });
+            tagsRow.appendChild(tag);
+        }
+
+        if (currentFilter.sortBy && currentFilter.sortBy !== 'time_desc') {
+            const sortLabels = {
+                time_asc: '下单时间：最早在前',
+                amount_desc: '实付金额：从高到低',
+                amount_asc: '实付金额：从低到高'
+            };
+            const tag = createFilterTag('排序', sortLabels[currentFilter.sortBy] || currentFilter.sortBy, () => {
+                setDropdownValue('sortBy', 'time_desc', '下单时间：最新在前');
+            });
+            tagsRow.appendChild(tag);
+        }
+    }
+
+    function createFilterTag(label, val, onRemove) {
+        const tag = createNode('span', 'orders-filter-tag');
+        tag.appendChild(createNode('span', 'orders-filter-tag-label', `${label}:`));
+        tag.appendChild(createNode('span', 'orders-filter-tag-val', val));
+        const removeBtn = createNode('button', 'orders-filter-tag-remove');
+        removeBtn.type = 'button';
+        removeBtn.setAttribute('aria-label', `清除${label}筛选`);
+        const closeIcon = document.createElement('i');
+        closeIcon.className = 'fas fa-xmark';
+        closeIcon.setAttribute('aria-hidden', 'true');
+        removeBtn.appendChild(closeIcon);
+        removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            onRemove();
+        });
+        tag.appendChild(removeBtn);
+        return tag;
+    }
+
+    function setDropdownValue(key, value, labelText) {
+        if (!state.filter) state.filter = {};
+        state.filter[key] = value;
+        const dropdownMap = {
+            status: { trigger: 'ordersStatusTrigger', label: 'ordersStatusLabel', menu: 'ordersStatusMenu' },
+            deliveryType: { trigger: 'ordersDeliveryTrigger', label: 'ordersDeliveryLabel', menu: 'ordersDeliveryMenu' },
+            dateRange: { trigger: 'ordersDateTrigger', label: 'ordersDateLabel', menu: 'ordersDateMenu' },
+            sortBy: { trigger: 'ordersSortTrigger', label: 'ordersSortLabel', menu: 'ordersSortMenu' }
+        };
+        const config = dropdownMap[key];
+        if (config) {
+            const labelEl = element(config.label);
+            if (labelEl) labelEl.textContent = labelText;
+            const menuEl = element(config.menu);
+            if (menuEl) {
+                const items = menuEl.querySelectorAll('.custom-dropdown-item');
+                items.forEach((item) => {
+                    const match = item.dataset.value === value;
+                    item.classList.toggle('is-active', match);
+                    item.setAttribute('aria-selected', match ? 'true' : 'false');
+                });
+            }
+        }
+        state.page = 1;
+        renderOrders();
+    }
+
+    function resetFilters() {
+        if (!state.filter) state.filter = {};
+        state.filter.keyword = '';
+        state.filter.status = 'all';
+        state.filter.deliveryType = 'all';
+        state.filter.dateRange = 'all';
+        state.filter.sortBy = 'time_desc';
+        state.page = 1;
+
+        const searchInput = element('ordersFilterSearchInput');
+        if (searchInput) searchInput.value = '';
+        const clearBtn = element('ordersFilterSearchClearBtn');
+        if (clearBtn) clearBtn.hidden = true;
+
+        setDropdownValue('status', 'all', '全部状态');
+        setDropdownValue('deliveryType', 'all', '全部履约类型');
+        setDropdownValue('dateRange', 'all', '全部时间');
+        setDropdownValue('sortBy', 'time_desc', '下单时间：最新在前');
+    }
+
+    function closeAllDropdowns() {
+        document.querySelectorAll('.custom-dropdown').forEach((dropdown) => {
+            dropdown.dataset.open = 'false';
+            const trigger = dropdown.querySelector('.custom-dropdown-trigger');
+            if (trigger) trigger.setAttribute('aria-expanded', 'false');
+            const menu = dropdown.querySelector('.custom-dropdown-menu');
+            if (menu) menu.hidden = true;
+        });
+    }
+
+    function bindFilterControls() {
+        const searchInput = element('ordersFilterSearchInput');
+        const searchClearBtn = element('ordersFilterSearchClearBtn');
+        let searchTimer = null;
+
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                const val = e.target.value || '';
+                if (searchClearBtn) searchClearBtn.hidden = !val.trim();
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(() => {
+                    if (!state.filter) state.filter = {};
+                    state.filter.keyword = val.trim();
+                    state.page = 1;
+                    renderOrders();
+                }, 160);
+            });
+        }
+
+        if (searchClearBtn) {
+            searchClearBtn.addEventListener('click', () => {
+                if (searchInput) searchInput.value = '';
+                searchClearBtn.hidden = true;
+                if (!state.filter) state.filter = {};
+                state.filter.keyword = '';
+                state.page = 1;
+                renderOrders();
+                if (searchInput) searchInput.focus();
+            });
+        }
+
+        const resetBtn = element('ordersFilterResetBtn');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                resetFilters();
+            });
+        }
+
+        const dropdownConfigs = [
+            { id: 'ordersStatusDropdown', key: 'status', labelId: 'ordersStatusLabel' },
+            { id: 'ordersDeliveryDropdown', key: 'deliveryType', labelId: 'ordersDeliveryLabel' },
+            { id: 'ordersDateDropdown', key: 'dateRange', labelId: 'ordersDateLabel' },
+            { id: 'ordersSortDropdown', key: 'sortBy', labelId: 'ordersSortLabel' }
+        ];
+
+        dropdownConfigs.forEach(({ id, key, labelId }) => {
+            const dropdown = element(id);
+            if (!dropdown) return;
+            const trigger = dropdown.querySelector('.custom-dropdown-trigger');
+            const menu = dropdown.querySelector('.custom-dropdown-menu');
+            const labelEl = element(labelId);
+            if (!trigger || !menu) return;
+
+            trigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = dropdown.dataset.open === 'true';
+                closeAllDropdowns();
+                if (!isOpen) {
+                    dropdown.dataset.open = 'true';
+                    trigger.setAttribute('aria-expanded', 'true');
+                    menu.hidden = false;
+                }
+            });
+
+            menu.querySelectorAll('.custom-dropdown-item').forEach((item) => {
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const value = item.dataset.value || 'all';
+                    const leftSpan = item.querySelector('.dropdown-item-left');
+                    const text = leftSpan ? leftSpan.textContent.trim() : item.textContent.trim();
+                    if (labelEl && text) labelEl.textContent = text;
+                    menu.querySelectorAll('.custom-dropdown-item').forEach((it) => {
+                        it.classList.remove('is-active');
+                        it.setAttribute('aria-selected', 'false');
+                    });
+                    item.classList.add('is-active');
+                    item.setAttribute('aria-selected', 'true');
+                    closeAllDropdowns();
+                    if (!state.filter) state.filter = {};
+                    state.filter[key] = value;
+                    state.page = 1;
+                    renderOrders();
+                });
+            });
+        });
+
+        document.addEventListener('click', () => {
+            closeAllDropdowns();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeAllDropdowns();
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // Ticket / Customer Support Safe Controls
+    // ------------------------------------------------------------------
+    let currentTicketIssue = 'INVALID_KEY';
+
+    function showTicketStatus(ticket) {
+        const card = element('guestOrdersTicketStatusCard');
+        if (!card) return;
+        if (!ticket) {
+            card.hidden = true;
+            return;
+        }
+        card.hidden = false;
+        const titleEl = element('ticketStatusTitle');
+        if (titleEl) {
+            titleEl.textContent = ticket.ticket_no ? `售后工单 #${ticket.ticket_no}` : '售后工单记录';
+        }
+        const badgeEl = element('ticketStatusBadge');
+        if (badgeEl) {
+            const statusMap = {
+                open: { text: '待处理', tone: 'warn' },
+                pending: { text: '处理中', tone: 'warn' },
+                resolved: { text: '已解决', tone: 'ok' },
+                closed: { text: '已完结', tone: '' }
+            };
+            const s = statusMap[ticket.status] || { text: ticket.status || '待处理', tone: 'warn' };
+            badgeEl.textContent = s.text;
+            if (s.tone) badgeEl.dataset.tone = s.tone;
+            else delete badgeEl.dataset.tone;
+        }
+        const descEl = element('ticketStatusDesc');
+        if (descEl) {
+            descEl.textContent = ticket.description || ticket.title || '-';
+        }
+        const replyRow = element('ticketStatusReplyRow');
+        const replyEl = element('ticketStatusReply');
+        const replyText = ticket.reply || ticket.resolution_note || ticket.admin_notes || '';
+        if (replyRow && replyEl) {
+            if (replyText) {
+                replyRow.hidden = false;
+                replyEl.textContent = replyText;
+            } else {
+                replyRow.hidden = true;
+                replyEl.textContent = '';
+            }
+        }
+    }
+
+    function openTicketModal() {
+        const modal = element('guestOrdersTicketModal');
+        if (!modal) return;
+
+        const detail = state.detail;
+        const orderNo = detail?.order_no || '';
+        const prodName = detail?.snapshot_product_name || detail?.product_name || '商城商品';
+
+        setText('ticketModalOrderNo', orderNo || '-');
+        setText('ticketModalProductName', prodName);
+
+        const emailInput = element('ticketModalEmail');
+        if (emailInput && !emailInput.value) {
+            if (state.auth?.email) {
+                emailInput.value = state.auth.email;
+            } else if (window.ZaoyoeAccountOrdersBridge?.isLoggedIn && window.ZaoyoeAccountOrdersBridge.isLoggedIn()) {
+                try {
+                    const session = window.ZaoyoeAccountOrdersBridge.getStoredSession ? window.ZaoyoeAccountOrdersBridge.getStoredSession() : null;
+                    if (session?.email) emailInput.value = session.email;
+                } catch (_) {}
+            }
+        }
+
+        currentTicketIssue = 'INVALID_KEY';
+        const triggerLabel = element('ticketIssueLabel');
+        if (triggerLabel) triggerLabel.textContent = '卡密无效 / 无法使用';
+        const triggerIcon = element('ticketIssueTrigger')?.querySelector('.custom-dropdown-icon');
+        if (triggerIcon) {
+            triggerIcon.className = 'fas fa-key custom-dropdown-icon';
+            triggerIcon.style.color = '#f59e0b';
+        }
+        const menu = element('ticketIssueMenu');
+        if (menu) {
+            menu.querySelectorAll('.custom-dropdown-item').forEach((item) => {
+                const isMatch = item.dataset.value === 'INVALID_KEY';
+                item.classList.toggle('is-active', isMatch);
+                item.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+            });
+        }
+
+        const descTextarea = element('ticketModalDescription');
+        if (descTextarea) descTextarea.value = '';
+        setText('ticketModalCharCount', '0 / 1000');
+        const errEl = element('ticketModalError');
+        if (errEl) {
+            errEl.textContent = '';
+            errEl.hidden = true;
+        }
+
+        modal.classList.add('active');
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('ticket-modal-open');
+        if (window.iOSScrollLock) {
+            window.iOSScrollLock.lockLight(modal);
+        }
+        if (descTextarea) {
+            setTimeout(() => descTextarea.focus(), 100);
+        }
+    }
+
+    function closeTicketModal() {
+        const modal = element('guestOrdersTicketModal');
+        if (!modal) return;
+        modal.classList.remove('active');
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('ticket-modal-open');
+        if (window.iOSScrollLock) {
+            window.iOSScrollLock.unlock(modal);
+        }
+        closeAllDropdowns();
+    }
+
+    let currentDetailTicket = null;
+
+    function openTicketDetail(ticket) {
+        if (!ticket) return;
+        currentDetailTicket = ticket;
+        const modal = element('myTicketDetailModal');
+        if (!modal) return;
+
+        // 1. Ticket ID & Copy
+        const ticketId = ticket.ticket_no || ticket.id || '';
+        setText('ticketDetailNo', ticketId ? `#${ticketId}` : '-');
+        const copyIdBtn = element('ticketDetailCopyIdBtn');
+        if (copyIdBtn) {
+            copyIdBtn.onclick = (e) => {
+                e.stopPropagation();
+                void handleCopyText(ticketId, copyIdBtn);
+            };
+        }
+
+        // 2. Status Badge
+        const st = resolveTicketStatus(ticket.status, Boolean(ticket.reply));
+        const statusBadge = element('ticketDetailStatusBadge');
+        if (statusBadge) {
+            statusBadge.className = `my-ticket-badge my-ticket-badge--${st.tone}`;
+            statusBadge.textContent = st.text;
+        }
+
+        // 3. Timeline
+        const submitStep = element('timelineStepSubmit');
+        if (submitStep) {
+            submitStep.className = 'my-ticket-timeline-step is-complete';
+            setText('ticketDetailSubmitTime', formatTime(ticket.created_at));
+        }
+
+        const procStep = element('timelineStepProcessing');
+        const line1 = element('timelineLine1');
+        const isRepliedOrDone = st.statKey !== 'pending';
+        if (procStep) {
+            if (isRepliedOrDone) {
+                procStep.className = 'my-ticket-timeline-step is-complete';
+                if (line1) line1.className = 'my-ticket-timeline-line is-complete';
+                setText('timelineStepProcessingTitle', '客服已受理');
+                setText('ticketDetailProcessTime', formatTime(ticket.updated_at || ticket.created_at));
+            } else {
+                procStep.className = 'my-ticket-timeline-step is-active';
+                if (line1) line1.className = 'my-ticket-timeline-line';
+                setText('timelineStepProcessingTitle', '客服受理中');
+                setText('ticketDetailProcessTime', '排队处理中');
+            }
+        }
+
+        const doneStep = element('timelineStepDone');
+        const line2 = element('timelineLine2');
+        if (doneStep) {
+            if (st.statKey === 'resolved') {
+                doneStep.className = 'my-ticket-timeline-step is-complete';
+                if (line2) line2.className = 'my-ticket-timeline-line is-complete';
+                setText('timelineStepDoneTitle', '处理完成');
+                setText('ticketDetailDoneTime', formatTime(ticket.updated_at || ticket.created_at));
+            } else if (st.statKey === 'closed') {
+                doneStep.className = 'my-ticket-timeline-step is-complete';
+                if (line2) line2.className = 'my-ticket-timeline-line is-complete';
+                setText('timelineStepDoneTitle', '工单已关闭');
+                setText('ticketDetailDoneTime', formatTime(ticket.updated_at || ticket.created_at));
+            } else {
+                doneStep.className = 'my-ticket-timeline-step';
+                if (line2) line2.className = 'my-ticket-timeline-line';
+                setText('timelineStepDoneTitle', '处理完成');
+                setText('ticketDetailDoneTime', '等待办结');
+            }
+        }
+
+        // 4. Meta
+        const typeInfo = resolveTicketType(ticket.issue_type);
+        setText('ticketDetailType', typeInfo.text);
+        setText('ticketDetailEmail', ticket.email || state.auth?.email || '-');
+
+        const orderNo = ticket.order_id || '';
+        const orderRow = element('ticketDetailOrderRow');
+        const jumpFooterBtn = element('myTicketDetailJumpFooterBtn');
+        if (orderNo) {
+            setHidden('ticketDetailOrderRow', false);
+            setText('ticketDetailOrderNo', orderNo);
+            const copyOrderBtn = element('ticketDetailCopyOrderBtn');
+            if (copyOrderBtn) {
+                copyOrderBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    void handleCopyText(orderNo, copyOrderBtn);
+                };
+            }
+            const jumpOrderBtn = element('ticketDetailJumpOrderBtn');
+            const doJump = (e) => {
+                e.stopPropagation();
+                closeTicketDetail();
+                switchView('orders');
+                void openDetail(orderNo);
+            };
+            if (jumpOrderBtn) jumpOrderBtn.onclick = doJump;
+            if (jumpFooterBtn) {
+                jumpFooterBtn.onclick = doJump;
+                setHidden('myTicketDetailJumpFooterBtn', false);
+            }
+        } else {
+            setHidden('ticketDetailOrderRow', true);
+            setHidden('myTicketDetailJumpFooterBtn', true);
+        }
+
+        // 5. Description & Conversation Stream
+        const rawDesc = String(ticket.description || '').trim();
+        const parts = rawDesc.split(/---\s*\[用户补充\s*([^\]]+)\]\s*---\s*/);
+        const initialDesc = parts[0]?.trim() || rawDesc || '无问题描述';
+        setText('ticketDetailDesc', initialDesc);
+
+        const convSection = element('ticketDetailConversationSection');
+        const convStream = element('ticketDetailConversationStream');
+        if (convStream) {
+            convStream.textContent = '';
+        }
+
+        const hasFollowups = parts.length > 1;
+        if (hasFollowups && convSection && convStream) {
+            setHidden('ticketDetailConversationSection', false);
+            for (let i = 1; i < parts.length; i += 2) {
+                const fTime = parts[i]?.trim() || '';
+                const fText = parts[i + 1]?.trim() || '';
+                if (fText) {
+                    const bubble = createNode('div', 'my-ticket-msg-bubble my-ticket-msg-bubble--user');
+                    const hdr = createNode('div', 'my-ticket-msg-header');
+                    const sdr = createNode('span', 'my-ticket-msg-sender', '用户补充');
+                    const tm = createNode('span', 'my-ticket-msg-time', fTime);
+                    hdr.appendChild(sdr);
+                    hdr.appendChild(tm);
+                    const cnt = createNode('p', 'my-ticket-msg-content', fText);
+                    bubble.appendChild(hdr);
+                    bubble.appendChild(cnt);
+                    convStream.appendChild(bubble);
+                }
+            }
+        } else if (convSection) {
+            setHidden('ticketDetailConversationSection', true);
+        }
+
+        // 6. CS Reply & Reissued Cards
+        const replyText = ticket.reply || '';
+        if (replyText) {
+            setHidden('ticketDetailReplyBox', false);
+            setHidden('ticketDetailPendingNotice', true);
+            setText('ticketDetailReplyText', replyText);
+
+            const cardRegex = /(?:【补发卡密】|卡密[：:\s]+)([\s\S]+)$/i;
+            const cardMatch = replyText.match(cardRegex);
+            const cardContent = cardMatch ? cardMatch[1].trim() : '';
+            const reissueCardBox = element('ticketDetailReissuedCard');
+            if (cardContent && reissueCardBox) {
+                setHidden('ticketDetailReissuedCard', false);
+                setText('ticketDetailCardContent', cardContent);
+                const copyCardBtn = element('ticketDetailCopyCardBtn');
+                if (copyCardBtn) {
+                    copyCardBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        void handleCopyText(cardContent, copyCardBtn);
+                    };
+                }
+            } else if (reissueCardBox) {
+                setHidden('ticketDetailReissuedCard', true);
+            }
+        } else {
+            setHidden('ticketDetailReplyBox', true);
+            setHidden('ticketDetailPendingNotice', false);
+        }
+
+        // 7. Reset User Reply Composer
+        const isClosed = st.statKey === 'closed';
+        setHidden('ticketDetailUserReplySection', isClosed);
+        const replyInput = element('ticketDetailReplyInput');
+        if (replyInput) replyInput.value = '';
+        setText('ticketDetailReplyCharCount', '0 / 1000');
+        setHidden('ticketDetailReplyError', true);
+
+        modal.classList.add('active');
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('ticket-detail-modal-open');
+        if (window.iOSScrollLock) {
+            window.iOSScrollLock.lockLight(modal);
+        }
+    }
+
+    function closeTicketDetail() {
+        const modal = element('myTicketDetailModal');
+        if (!modal) return;
+        modal.classList.remove('active');
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('ticket-detail-modal-open');
+        if (window.iOSScrollLock) {
+            window.iOSScrollLock.unlock(modal);
+        }
+        currentDetailTicket = null;
+    }
+
+    function bindTicketControls() {
+        if (state.ticketControlsBound) return;
+        state.ticketControlsBound = true;
+
+        const openBtn = element('guestOrdersOpenTicketBtn');
+        if (openBtn) {
+            openBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                openTicketModal();
+            });
+        }
+
+        const pendingBtn = element('guestOrdersPendingTicketBtn');
+        if (pendingBtn) {
+            pendingBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                openTicketModal();
+            });
+        }
+
+        const closeBtn = element('guestOrdersCloseTicketBtn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                closeTicketModal();
+            });
+        }
+
+        const cancelBtn = element('ticketModalCancelBtn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                closeTicketModal();
+            });
+        }
+
+        const modal = element('guestOrdersTicketModal');
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeTicketModal();
+                }
+            });
+        }
+
+        const closeDetailBtn = element('myTicketDetailCloseBtn');
+        if (closeDetailBtn) {
+            closeDetailBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                closeTicketDetail();
+            });
+        }
+
+        const closeDetailFooterBtn = element('myTicketDetailCloseFooterBtn');
+        if (closeDetailFooterBtn) {
+            closeDetailFooterBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                closeTicketDetail();
+            });
+        }
+
+        const detailModal = element('myTicketDetailModal');
+        if (detailModal) {
+            detailModal.addEventListener('click', (e) => {
+                if (e.target === detailModal) {
+                    closeTicketDetail();
+                }
+            });
+
+            const detailBody = detailModal.querySelector('.my-ticket-detail-body');
+            if (detailBody) {
+                let scrollTimer = null;
+                detailBody.addEventListener('scroll', () => {
+                    detailBody.classList.add('is-scrolling');
+                    if (scrollTimer) clearTimeout(scrollTimer);
+                    scrollTimer = setTimeout(() => {
+                        detailBody.classList.remove('is-scrolling');
+                    }, 800);
+                }, { passive: true });
+            }
+        }
+
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    if (!element('myTicketDetailModal')?.hidden) {
+                        closeTicketDetail();
+                    } else if (!element('guestOrdersTicketModal')?.hidden) {
+                        closeTicketModal();
+                    }
+                }
+            });
+        }
+
+        const dropdown = element('ticketIssueDropdown');
+        if (dropdown) {
+            const trigger = dropdown.querySelector('.custom-dropdown-trigger');
+            const menu = dropdown.querySelector('.custom-dropdown-menu');
+            const labelEl = element('ticketIssueLabel');
+
+            if (trigger && menu) {
+                trigger.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const isOpen = dropdown.dataset.open === 'true';
+                    closeAllDropdowns();
+                    if (!isOpen) {
+                        dropdown.dataset.open = 'true';
+                        trigger.setAttribute('aria-expanded', 'true');
+                        menu.hidden = false;
+                    }
+                });
+
+                menu.querySelectorAll('.custom-dropdown-item').forEach((item) => {
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        currentTicketIssue = item.dataset.value || 'INVALID_KEY';
+                        const leftSpan = item.querySelector('.dropdown-item-left');
+                        const text = leftSpan ? leftSpan.textContent.trim() : item.textContent.trim();
+                        if (labelEl && text) labelEl.textContent = text;
+                        const itemIcon = leftSpan?.querySelector('i');
+                        const triggerIcon = trigger.querySelector('.custom-dropdown-icon');
+                        if (itemIcon && triggerIcon) {
+                            triggerIcon.className = itemIcon.className + ' custom-dropdown-icon';
+                            triggerIcon.style.color = itemIcon.style.color || '';
+                        }
+
+                        menu.querySelectorAll('.custom-dropdown-item').forEach((it) => {
+                            const isMatch = it === item;
+                            it.classList.toggle('is-active', isMatch);
+                            it.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+                        });
+
+                        dropdown.dataset.open = 'false';
+                        trigger.setAttribute('aria-expanded', 'false');
+                        menu.hidden = true;
+                    });
+                });
+            }
+        }
+
+        const descTextarea = element('ticketModalDescription');
+        if (descTextarea) {
+            descTextarea.addEventListener('input', () => {
+                const len = descTextarea.value.length;
+                setText('ticketModalCharCount', `${len} / 1000`);
+            });
+        }
+
+        const form = element('guestOrdersTicketForm');
+        if (form) {
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const errEl = element('ticketModalError');
+                if (errEl) {
+                    errEl.textContent = '';
+                    errEl.hidden = true;
+                }
+
+                const emailInput = element('ticketModalEmail');
+                const email = String(emailInput?.value || '').trim();
+                const desc = String(descTextarea?.value || '').trim();
+                const orderNo = state.detail?.order_no || '';
+                const prodName = state.detail?.snapshot_product_name || state.detail?.product_name || '商城商品';
+
+                if (!email || !email.includes('@')) {
+                    if (errEl) {
+                        errEl.textContent = '请填写有效的联系邮箱，以便接收处理通知';
+                        errEl.hidden = false;
+                    }
+                    if (emailInput) emailInput.focus();
+                    return;
+                }
+
+                if (!desc || desc.length < 5) {
+                    if (errEl) {
+                        errEl.textContent = '请详细描述您遇到的问题（至少 5 个字）';
+                        errEl.hidden = false;
+                    }
+                    if (descTextarea) descTextarea.focus();
+                    return;
+                }
+
+                const submitBtn = element('ticketModalSubmitBtn');
+                const submitText = submitBtn?.querySelector('.submit-text');
+                const submitDots = submitBtn?.querySelector('.guest-orders-submit-dots');
+
+                if (submitBtn) submitBtn.disabled = true;
+                if (submitText) submitText.hidden = true;
+                if (submitDots) submitDots.hidden = false;
+
+                try {
+                    let createdTicket = null;
+                    if (window.ZaoyoeAccountOrdersBridge?.isLoggedIn && window.ZaoyoeAccountOrdersBridge.isLoggedIn() && window.ZaoyoeAccountOrdersBridge.createTicket) {
+                        const result = await window.ZaoyoeAccountOrdersBridge.createTicket({
+                            orderId: orderNo,
+                            issueType: currentTicketIssue,
+                            email,
+                            description: desc,
+                            title: `[售后] ${prodName} - 订单 ${orderNo}`
+                        });
+                        createdTicket = result?.ticket || result?.data || { order_id: orderNo, status: 'open', description: desc };
+                    } else {
+                        const res = await fetch('/api/support', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                action: 'create_ticket',
+                                input: {
+                                    order_id: orderNo,
+                                    contact_email: email,
+                                    email,
+                                    issue_type: currentTicketIssue,
+                                    description: desc,
+                                    reason: desc,
+                                    content: desc,
+                                    title: `[售后] ${prodName} - 订单 ${orderNo}`
+                                },
+                                order_id: orderNo,
+                                contact_email: email,
+                                email,
+                                issue_type: currentTicketIssue,
+                                description: desc,
+                                reason: desc,
+                                content: desc,
+                                title: `[售后] ${prodName} - 订单 ${orderNo}`
+                            })
+                        });
+
+                        if (!res.ok) {
+                            const errBody = await res.json().catch(() => ({}));
+                            throw new Error(errBody?.message || `提交工单失败 (${res.status})`);
+                        }
+                        const resData = await res.json();
+                        createdTicket = resData?.ticket || {
+                            id: resData?.payload?.ticket_id || resData?.ticket_id || '',
+                            order_id: orderNo,
+                            status: 'open',
+                            description: desc,
+                            created_at: new Date().toISOString()
+                        };
+                    }
+
+                    closeTicketModal();
+                    showShopToast('工单已成功提交，客服将尽快为您处理', 'success');
+                    if (createdTicket) {
+                        showTicketStatus(createdTicket);
+                        saveLocalSessionTicket(createdTicket);
+                        void loadMyTickets();
+                    }
+                } catch (err) {
+                    if (errEl) {
+                        errEl.textContent = err.message || '提交工单失败，请稍后重试';
+                        errEl.hidden = false;
+                    }
+                } finally {
+                    if (submitBtn) submitBtn.disabled = false;
+                    if (submitText) submitText.hidden = false;
+                    if (submitDots) submitDots.hidden = true;
+                }
+            });
+        }
+
+        const replyInput = element('ticketDetailReplyInput');
+        if (replyInput) {
+            replyInput.addEventListener('input', () => {
+                const len = replyInput.value.length;
+                setText('ticketDetailReplyCharCount', `${len} / 1000`);
+            });
+        }
+
+        const replySubmitBtn = element('ticketDetailReplySubmitBtn');
+        if (replySubmitBtn) {
+            replySubmitBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const errEl = element('ticketDetailReplyError');
+                if (errEl) {
+                    errEl.textContent = '';
+                    errEl.hidden = true;
+                }
+
+                if (!currentDetailTicket) {
+                    if (errEl) {
+                        errEl.textContent = '未找到当前工单信息';
+                        errEl.hidden = false;
+                    }
+                    return;
+                }
+
+                const replyText = String(replyInput?.value || '').trim();
+                if (!replyText || replyText.length < 2) {
+                    if (errEl) {
+                        errEl.textContent = '请输入回复或补充内容（至少 2 个字）';
+                        errEl.hidden = false;
+                    }
+                    if (replyInput) replyInput.focus();
+                    return;
+                }
+
+                const ticketId = currentDetailTicket.id || currentDetailTicket.ticket_id || currentDetailTicket.ticket_no;
+                if (!ticketId) {
+                    if (errEl) {
+                        errEl.textContent = '工单编号缺失，无法提交回复';
+                        errEl.hidden = false;
+                    }
+                    return;
+                }
+
+                const submitText = replySubmitBtn.querySelector('.submit-text');
+                const submitDots = replySubmitBtn.querySelector('.guest-orders-submit-dots');
+                replySubmitBtn.disabled = true;
+                if (submitText) submitText.hidden = true;
+                if (submitDots) submitDots.hidden = false;
+
+                try {
+                    let updatedTicket = null;
+                    if (window.ZaoyoeAccountOrdersBridge?.isLoggedIn && window.ZaoyoeAccountOrdersBridge.isLoggedIn() && window.ZaoyoeAccountOrdersBridge.replyTicket) {
+                        const result = await window.ZaoyoeAccountOrdersBridge.replyTicket({
+                            ticketId,
+                            reply: replyText
+                        });
+                        updatedTicket = result?.ticket || result?.data;
+                    } else {
+                        const res = await fetch('/api/support', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                action: 'reply_ticket',
+                                ticketId,
+                                reply: replyText,
+                                email: currentDetailTicket.email || state.auth?.email || ''
+                            })
+                        });
+
+                        if (!res.ok) {
+                            const errBody = await res.json().catch(() => ({}));
+                            throw new Error(errBody?.message || `回复工单失败 (${res.status})`);
+                        }
+                        const resData = await res.json();
+                        updatedTicket = resData?.ticket;
+                    }
+
+                    const now = new Date();
+                    const nowStr = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+                    const followupFormatted = `\n\n--- [用户补充 ${nowStr}] ---\n${replyText}`;
+                    currentDetailTicket.description = updatedTicket?.description || ((currentDetailTicket.description || '') + followupFormatted);
+                    currentDetailTicket.status = updatedTicket?.status || 'PENDING';
+                    currentDetailTicket.updated_at = updatedTicket?.updated_at || now.toISOString();
+
+                    // Append user bubble to conversation stream
+                    const convSection = element('ticketDetailConversationSection');
+                    const convStream = element('ticketDetailConversationStream');
+                    if (convSection && convStream) {
+                        setHidden('ticketDetailConversationSection', false);
+                        const bubble = createNode('div', 'my-ticket-msg-bubble my-ticket-msg-bubble--user');
+                        const hdr = createNode('div', 'my-ticket-msg-header');
+                        const sdr = createNode('span', 'my-ticket-msg-sender', '用户补充');
+                        const tm = createNode('span', 'my-ticket-msg-time', nowStr);
+                        hdr.appendChild(sdr);
+                        hdr.appendChild(tm);
+                        const cnt = createNode('p', 'my-ticket-msg-content', replyText);
+                        bubble.appendChild(hdr);
+                        bubble.appendChild(cnt);
+                        convStream.appendChild(bubble);
+                    }
+
+                    // Reset input
+                    if (replyInput) replyInput.value = '';
+                    setText('ticketDetailReplyCharCount', '0 / 1000');
+
+                    // Update modal status badge
+                    const st = resolveTicketStatus('PENDING', false);
+                    const statusBadge = element('ticketDetailStatusBadge');
+                    if (statusBadge) {
+                        statusBadge.className = `my-ticket-badge my-ticket-badge--${st.tone}`;
+                        statusBadge.textContent = st.text;
+                    }
+
+                    // Update modal timeline step: customer service is processing
+                    const procStep = element('timelineStepProcessing');
+                    const line1 = element('timelineLine1');
+                    if (procStep) {
+                        procStep.className = 'my-ticket-timeline-step is-active';
+                        if (line1) line1.className = 'my-ticket-timeline-line';
+                        setText('timelineStepProcessingTitle', '客服处理中');
+                        setText('ticketDetailProcessTime', '等待客服跟进');
+                    }
+                    const doneStep = element('timelineStepDone');
+                    const line2 = element('timelineLine2');
+                    if (doneStep) {
+                        doneStep.className = 'my-ticket-timeline-step';
+                        if (line2) line2.className = 'my-ticket-timeline-line';
+                        setText('timelineStepDoneTitle', '处理完成');
+                        setText('ticketDetailDoneTime', '等待办结');
+                    }
+
+                    // Update in state.myTickets and local session storage
+                    const idx = state.myTickets.findIndex((t) => (t.id || t.ticket_no) === ticketId);
+                    if (idx >= 0) {
+                        state.myTickets[idx] = { ...state.myTickets[idx], ...currentDetailTicket };
+                    }
+                    saveLocalSessionTicket(currentDetailTicket);
+                    renderMyTicketsList();
+                    updateMyTicketsStats();
+
+                    showShopToast('回复已提交，客服将继续跟进处理', 'success');
+                } catch (err) {
+                    if (errEl) {
+                        errEl.textContent = err.message || '回复工单失败，请稍后重试';
+                        errEl.hidden = false;
+                    }
+                } finally {
+                    replySubmitBtn.disabled = false;
+                    if (submitText) submitText.hidden = false;
+                    if (submitDots) submitDots.hidden = true;
+                }
+            });
+        }
+    }
+
     function renderOrders() {
         const list = element('guestOrdersList');
         if (!list) return;
         list.textContent = '';
-        const orders = Array.isArray(state.orders) ? state.orders : [];
+        const allOrders = Array.isArray(state.orders) ? state.orders : [];
+        const hasOrders = allOrders.length > 0;
+
+        // Show or hide filter card based on whether orders exist and detail is not open
+        setHidden('guestOrdersFilterCard', Boolean(state.detail) || !hasOrders);
+
+        // Compute filtered orders
+        const orders = getFilteredOrders();
+        const isClientPaging = state.isMember || hasActiveFilter();
+        const totalCount = isClientPaging
+            ? orders.length
+            : Number(state.pagination?.total ?? orders.length);
+        const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+        if (state.page > totalPages) state.page = totalPages;
+        if (state.page < 1) state.page = 1;
+
+        const startIndex = isClientPaging ? (state.page - 1) * PAGE_SIZE : 0;
+        const pageOrders = isClientPaging
+            ? orders.slice(startIndex, startIndex + PAGE_SIZE)
+            : orders.slice(0, PAGE_SIZE);
+
         // The empty state belongs to the result card, not to a single render
         // pass. Keep it hidden while a detail view is active even if a stale
         // list render happens to run afterwards.
-        setHidden('guestOrdersEmpty', Boolean(state.detail) || orders.length > 0);
+        setHidden('guestOrdersEmpty', Boolean(state.detail) || hasOrders);
+
+        // Update count badge & reset button & tag pills
+        updateFilterUi(orders.length, allOrders.length);
 
         const currentSerial = state.ordersRequestSerial;
 
-        for (const order of orders) {
+        if (hasOrders && orders.length === 0) {
+            const emptyWrap = createNode('div', 'guest-orders-empty');
+            const emptyIcon = document.createElement('i');
+            emptyIcon.className = 'fas fa-filter-circle-xmark';
+            emptyIcon.setAttribute('aria-hidden', 'true');
+            emptyWrap.appendChild(emptyIcon);
+            emptyWrap.appendChild(createNode('p', '', '未找到符合筛选条件的订单'));
+            const resetBtn = createNode('button', 'guest-orders-secondary-btn', '清空筛选条件');
+            resetBtn.type = 'button';
+            resetBtn.addEventListener('click', () => {
+                resetFilters();
+            });
+            emptyWrap.appendChild(resetBtn);
+            list.appendChild(emptyWrap);
+            renderPagination(0);
+            return;
+        }
+
+        for (const order of pageOrders) {
             const orderNo = normalizeText(order.order_no, 200);
             const cachedDetail = orderDetailsCache.get(orderNo) || null;
             const productInfo = resolveProductInfo(order, cachedDetail);
@@ -779,7 +2110,7 @@
 
             const badges = createNode('div', 'guest-orders-item-badges');
             badges.appendChild(createPaymentBadge(payment));
-            badges.appendChild(createBadge(PAYMENT_LABELS, order.payment_status));
+            badges.appendChild(createOrderStatusBadge(order));
             if (order.customer_resolution) badges.appendChild(createNode('span', 'guest-orders-badge', '已完结'));
             top.appendChild(badges);
 
@@ -858,10 +2189,10 @@
 
             list.appendChild(item);
         }
-        renderPagination(orders.length);
+        renderPagination(totalCount);
 
         // Async enrichment for visible orders
-        void enrichOrdersList(orders, currentSerial);
+        void enrichOrdersList(pageOrders, currentSerial);
     }
 
     async function enrichOrdersList(orders, expectedSerial) {
@@ -874,7 +2205,7 @@
             const orderNo = normalizeText(order.order_no, 200);
             if (!orderNo) continue;
             let detail = orderDetailsCache.get(orderNo);
-            if (!detail) {
+            if (!detail && !order.is_member_order) {
                 detail = await fetchOrderDetailForList(orderNo);
                 if (expectedSerial !== state.ordersRequestSerial) return;
             }
@@ -920,11 +2251,13 @@
 
     function renderPagination(count) {
         const pagination = element('guestOrdersPagination');
-        const total = Number(state.pagination?.total);
-        const pageSize = Number(state.pagination?.page_size) || PAGE_SIZE;
-        const page = Number(state.pagination?.page) || 1;
-        const totalPages = Number.isFinite(total) && total > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
-        const show = Boolean(count) && (Number.isFinite(total) ? total > pageSize : false);
+        const total = typeof count === 'number'
+            ? count
+            : Number(state.pagination?.total || state.orders?.length || 0);
+        const pageSize = PAGE_SIZE;
+        const page = state.page || 1;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+        const show = total > pageSize;
         setHidden('guestOrdersPagination', !show);
         if (!show) return;
         setText('guestOrdersPageInfo', `第 ${page} / ${totalPages} 页 · 共 ${total} 单`);
@@ -1185,6 +2518,17 @@
         const detail = state.detail;
         setHidden('guestOrdersDetail', !detail);
         setHidden('guestOrdersList', Boolean(detail));
+
+        const resultTitle = element('guestOrdersResultTitle');
+        if (resultTitle) {
+            resultTitle.textContent = detail ? '订单详情' : '订单列表';
+        }
+
+        const filterCard = element('guestOrdersFilterCard');
+        if (filterCard) {
+            setHidden('guestOrdersFilterCard', Boolean(detail) || (Array.isArray(state.orders) ? state.orders.length : 0) === 0);
+        }
+
         // Empty-state visibility is derived from the same result set as the
         // list. A detail deep-link has no list rows to show, so it also hides
         // the empty state while the detail card is active.
@@ -1192,8 +2536,21 @@
         setHidden('guestOrdersEmpty', Boolean(detail) || hasOrders);
         setHidden('guestOrdersPagination', Boolean(detail));
         setHidden('guestOrdersBackToListBtn', !detail);
+
+        try {
+            window.dispatchEvent(new CustomEvent('guest-orders-view-change', { detail: { hasDetail: Boolean(detail) } }));
+            if (typeof window.syncMagnifyingDockState === 'function') {
+                window.syncMagnifyingDockState('guest-orders');
+            }
+        } catch (_) {}
+
+        if (!detail) {
+            setHidden('guestOrdersDeliveryPendingBox', true);
+            setHidden('guestOrdersTicketStatusCard', true);
+            return;
+        }
         const rows = element('guestOrdersDetailRows');
-        if (!rows || !detail) return;
+        if (!rows) return;
         rows.textContent = '';
         const payment = resolvePaymentMethod(detail, detail);
         const discountData = resolveOrderDiscounts(detail);
@@ -1203,10 +2560,34 @@
             : (discountData.paidAmount > 0 ? formatAmount(discountData.paidAmount) : '-');
         const paidText = discountData.paidAmount > 0 ? formatAmount(discountData.paidAmount) : '-';
 
+        const orderStatus = resolveOrderStatus(detail);
+        const isPaid = normalizeText(detail.payment_status).toLowerCase() === 'confirmed';
+        const isDelivered = isDeliverable(detail);
+        const isFulfilling = normalizeText(detail.fulfillment_status).toLowerCase() === 'fulfilling';
+        const isRefunded = normalizeText(detail.refund_status).toLowerCase() === 'refunded'
+            || normalizeText(detail.payment_status).toLowerCase() === 'refunded'
+            || detail.status === 'refunded';
+
+        let statusLabelText = '订单状态';
+        let statusValText = orderStatus.text;
+        if (isRefunded) {
+            statusLabelText = '订单状态';
+            statusValText = '已退款';
+        } else if (isPaid && !isDelivered) {
+            statusLabelText = '发货状态';
+            statusValText = isFulfilling ? '出库发货中' : '待发货';
+        } else if (isPaid && isDelivered) {
+            statusLabelText = '订单状态';
+            statusValText = '已完成';
+        } else if (!isPaid) {
+            statusLabelText = '支付状态';
+            statusValText = '待支付';
+        }
+
         const fields = [
             ['订单号', detail.order_no || '-', true, 'order-no'],
             ['支付方式', payment?.label || '-', false, 'payment'],
-            ['支付状态', statusLabel(PAYMENT_LABELS, detail.payment_status).text, false, 'status'],
+            [statusLabelText, statusValText, false, 'status'],
             ['原始金额', origText, false, 'original-amount'],
             ['优惠金额', discountData, false, 'discount-amount'],
             ['实付金额', paidText, false, 'paid-amount']
@@ -1306,6 +2687,16 @@
                 if (key === 'paid-amount') {
                     dd.classList.add('is-paid-amount');
                 }
+                if (key === 'status') {
+                    if (isPaid && !isDelivered) {
+                        dd.classList.add('is-status-pending');
+                        dd.style.color = 'var(--go-warn, #f59e0b)';
+                        dd.style.fontWeight = '600';
+                    } else if (isPaid && isDelivered) {
+                        dd.classList.add('is-status-delivered');
+                        dd.style.color = 'var(--go-ok, #10b981)';
+                    }
+                }
                 if (label === '订单号' && value && value !== '-') {
                     dd.classList.add('is-copyable');
                     dd.title = '点击复制订单号';
@@ -1339,12 +2730,20 @@
         }
 
         const deliverable = isDeliverable(detail);
-        if (!deliverable) {
+        const pendingBox = element('guestOrdersDeliveryPendingBox');
+        if (deliverable) {
+            if (pendingBox) pendingBox.hidden = true;
+        } else {
             clearDelivery();
-            const hint = element('guestOrdersDeliveryHint');
-            if (hint) {
-                hint.textContent = '订单完成支付并发货后，这里会显示卡密内容。当前状态不会展示发货内容。';
-                hint.hidden = false;
+            if (isPaid && !isRefunded) {
+                if (pendingBox) pendingBox.hidden = false;
+            } else {
+                if (pendingBox) pendingBox.hidden = true;
+                const hint = element('guestOrdersDeliveryHint');
+                if (hint) {
+                    hint.textContent = '订单完成支付并发货后，这里会显示卡密内容。当前状态不会展示发货内容。';
+                    hint.hidden = false;
+                }
             }
         }
     }
@@ -1507,7 +2906,24 @@
         if (!list) return;
         list.textContent = '';
         const actionsBar = element('guestOrdersDeliveryActionsBar');
-        if (actionsBar) actionsBar.textContent = '';
+        if (actionsBar) {
+            actionsBar.textContent = '';
+            const openTicketBtn = element('guestOrdersOpenTicketBtn') || createNode('button', 'guest-orders-ticket-btn');
+            openTicketBtn.id = 'guestOrdersOpenTicketBtn';
+            openTicketBtn.type = 'button';
+            openTicketBtn.textContent = '';
+            const ticketIcon = document.createElement('i');
+            ticketIcon.className = 'fas fa-headset';
+            ticketIcon.setAttribute('aria-hidden', 'true');
+            const ticketSpan = createNode('span', '', '提交售后工单');
+            openTicketBtn.appendChild(ticketIcon);
+            openTicketBtn.appendChild(ticketSpan);
+            openTicketBtn.onclick = (e) => {
+                e.preventDefault();
+                openTicketModal();
+            };
+            actionsBar.appendChild(openTicketBtn);
+        }
 
         const items = normalizeDeliveryItems(payload, detail);
         if (items.length === 0) {
@@ -1518,7 +2934,7 @@
         const allSegments = items.flatMap((it) => it.contentSegments).filter((s) => s && s !== '（暂无卡密内容）');
         if (allSegments.length > 0) {
             const targetBar = actionsBar || createNode('div', 'guest-orders-delivery-actions-bar');
-            const copyAllBtn = createNode('button', 'guest-orders-delivery-copy-all-btn');
+            const copyAllBtn = createNode('button', 'guest-orders-ticket-btn guest-orders-delivery-copy-all-btn');
             copyAllBtn.type = 'button';
             copyAllBtn.dataset.action = 'copy-all';
             copyAllBtn.dataset.allContent = allSegments.join('\n----\n');
@@ -1913,6 +3329,10 @@
 
     async function loadOrders(page = 1) {
         const requestSerial = ++state.ordersRequestSerial;
+        const list = element('guestOrdersList');
+        if (list && !state.detail) {
+            renderOrdersSkeleton(list, 3);
+        }
         const payload = await requestJson(
             `${LIST_ENDPOINT}?${buildQuery({ page, pageSize: PAGE_SIZE, order_no: state.orderNoFilter })}`,
             { headers: credentialHeaders() }
@@ -1928,12 +3348,60 @@
         state.deliveryRequestSerial += 1;
         clearDelivery();
         setHidden('guestOrdersResultCard', false);
+        setHidden('guestOrdersTabsWrapper', false);
         renderDetail();
         renderOrders();
+        nextFrame(() => updateTabSlider());
     }
 
     async function openDetail(orderNo) {
         if (!orderNo) return;
+        const targetOrder = (Array.isArray(state.orders) ? state.orders : [])
+            .find((o) => String(o.order_no || o.id) === String(orderNo));
+
+        const list = element('guestOrdersList');
+        const itemEl = list ? list.querySelector(`.guest-orders-item[data-order-no="${escapeCssSelector(orderNo)}"]`) : null;
+        const hintEl = itemEl ? itemEl.querySelector('.guest-orders-meta-hint') : null;
+        let originalHintNodes = null;
+
+        if (itemEl) {
+            itemEl.classList.add('is-loading');
+            if (hintEl) {
+                originalHintNodes = Array.from(hintEl.childNodes);
+                hintEl.textContent = '';
+                const spinIcon = document.createElement('i');
+                spinIcon.className = 'fas fa-circle-notch fa-spin';
+                spinIcon.setAttribute('aria-hidden', 'true');
+                const spinText = document.createElement('span');
+                spinText.textContent = ' 正在加载详情...';
+                hintEl.appendChild(spinIcon);
+                hintEl.appendChild(spinText);
+            }
+        }
+
+        const restoreLoadingState = () => {
+            if (itemEl) {
+                itemEl.classList.remove('is-loading');
+                if (hintEl && originalHintNodes) {
+                    hintEl.textContent = '';
+                    originalHintNodes.forEach((node) => hintEl.appendChild(node));
+                }
+            }
+        };
+
+        if (targetOrder?.is_member_order && window.ZaoyoeAccountOrdersBridge?.loadOrderDetail) {
+            setBusy(true);
+            try {
+                await window.ZaoyoeAccountOrdersBridge.loadOrderDetail(orderNo);
+            } catch (err) {
+                showError(err?.message || '加载详情失败');
+            } finally {
+                setBusy(false);
+                restoreLoadingState();
+            }
+            return;
+        }
+
         const detailSerial = ++state.detailRequestSerial;
         const deliverySerial = ++state.deliveryRequestSerial;
         state.ordersRequestSerial += 1;
@@ -1970,6 +3438,7 @@
             if (detailSerial === state.detailRequestSerial) {
                 setBusy(false);
             }
+            restoreLoadingState();
         }
     }
 
@@ -2157,6 +3626,12 @@
         try {
             await login(form.email, form.password);
             state.orderNoFilter = form.orderNo;
+            if (!state.orderNoFilter) {
+                setHidden('guestOrdersResultCard', false);
+                setHidden('guestOrdersEmpty', true);
+                const list = element('guestOrdersList');
+                if (list) renderOrdersSkeleton(list, 3);
+            }
             if (state.orderNoFilter) {
                 await openDetail(state.orderNoFilter);
             } else {
@@ -2316,30 +3791,552 @@
         element('guestOrdersFeatureRetryBtn')?.addEventListener('click', () => {
             void initializeOrderAccessPage();
         });
+        bindTicketControls();
+    }
+
+    const LOCAL_TICKETS_KEY = 'zaoyoe_guest_tickets';
+
+    function getLocalSessionTickets() {
+        try {
+            const raw = sessionStorage.getItem(LOCAL_TICKETS_KEY);
+            return raw ? JSON.parse(raw) : [];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    function saveLocalSessionTicket(ticket) {
+        if (!ticket) return;
+        try {
+            const existing = getLocalSessionTickets();
+            const id = ticket.id || ticket.ticket_no || ticket.ticket_id;
+            const filtered = existing.filter((t) => (t.id || t.ticket_no || t.ticket_id) !== id);
+            filtered.unshift(ticket);
+            const json = JSON.stringify(filtered.slice(0, 30));
+            try { sessionStorage.setItem(LOCAL_TICKETS_KEY, json); } catch (_) {}
+        } catch (_) {}
+    }
+
+    function normalizeTicketItem(t) {
+        return {
+            id: normalizeText(t.id || t.ticket_no || t.ticket_id, 120),
+            ticket_no: normalizeText(t.ticket_no || (t.id ? t.id.slice(0, 8) : ''), 80),
+            order_id: normalizeText(t.order_id || t.orderId, 120),
+            issue_type: normalizeText(t.issue_type || t.issueType || 'OTHER', 60).toUpperCase(),
+            status: normalizeText(t.status || 'open', 40).toLowerCase(),
+            description: normalizeText(t.description || t.content || t.title, 2000),
+            reply: normalizeText(t.admin_notes || t.reply || t.resolution_note, 2000),
+            created_at: t.created_at || t.createdAt || new Date().toISOString()
+        };
+    }
+
+    const TICKET_TYPE_MAP = Object.freeze({
+        INVALID_KEY: { text: '卡密无效', icon: 'fas fa-key' },
+        NOT_DELIVERED: { text: '发货异常', icon: 'fas fa-truck-ramp-box' },
+        ACCOUNT_ISSUE: { text: '账号异常', icon: 'fas fa-user-xmark' },
+        REFUND: { text: '申请退款', icon: 'fas fa-rotate-left' },
+        OTHER: { text: '其他咨询', icon: 'fas fa-comment-dots' }
+    });
+
+    function resolveTicketType(typeKey) {
+        return TICKET_TYPE_MAP[typeKey] || { text: '服务咨询', icon: 'fas fa-circle-question' };
+    }
+
+    function resolveTicketStatus(status, hasReply) {
+        const s = String(status || '').toLowerCase();
+        if (s === 'resolved') {
+            return { text: '已经解决', tone: 'resolved', statKey: 'resolved' };
+        }
+        if (s === 'closed' || s === 'rejected') {
+            return { text: '已经关闭', tone: 'closed', statKey: 'closed' };
+        }
+        if (s === 'replied' || (hasReply && s !== 'resolved' && s !== 'closed')) {
+            return { text: '待我回复', tone: 'replied', statKey: 'replied' };
+        }
+        return { text: '待客服回复', tone: 'pending', statKey: 'pending' };
+    }
+
+    function updateTabSlider() {
+        const tabsContainer = element('guestOrdersViewTabs');
+        const slider = element('guestOrdersTabSlider');
+        if (!tabsContainer || !slider) return;
+        const activeTab = tabsContainer.querySelector('.guest-orders-view-tab.active');
+        if (!activeTab) return;
+
+        const containerRect = tabsContainer.getBoundingClientRect();
+        const tabRect = activeTab.getBoundingClientRect();
+        if (containerRect.width === 0 || tabRect.width === 0) return;
+
+        const offsetLeft = tabRect.left - containerRect.left;
+        const width = tabRect.width;
+
+        slider.style.transform = `translateX(${offsetLeft}px)`;
+        slider.style.width = `${width}px`;
+    }
+
+    function switchView(view) {
+        const isVerified = Boolean(state.isMember || (state.auth?.email && state.auth?.hash) || (!element('guestOrdersTabsWrapper')?.hidden && !element('guestOrdersResultCard')?.hidden));
+        if (view === 'tickets' && !isVerified) {
+            const emailInput = element('guestOrdersEmail');
+            emailInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => emailInput?.focus({ preventScroll: true }), 150);
+            return;
+        }
+
+        state.currentView = view === 'tickets' ? 'tickets' : 'orders';
+        const tabOrders = element('tabBtnOrders');
+        const tabTickets = element('tabBtnTickets');
+        const ordersPane = element('guestOrdersOrdersView');
+        const ticketsSection = element('myTicketsSection');
+
+        if (state.currentView === 'tickets') {
+            tabOrders?.classList.remove('active');
+            tabOrders?.setAttribute('aria-selected', 'false');
+            tabTickets?.classList.add('active');
+            tabTickets?.setAttribute('aria-selected', 'true');
+            if (ordersPane) ordersPane.hidden = true;
+            if (ticketsSection) ticketsSection.hidden = false;
+            nextFrame(() => updateTabSlider());
+            void loadMyTickets();
+        } else {
+            tabTickets?.classList.remove('active');
+            tabTickets?.setAttribute('aria-selected', 'false');
+            tabOrders?.classList.add('active');
+            tabOrders?.setAttribute('aria-selected', 'true');
+            if (ticketsSection) ticketsSection.hidden = true;
+            if (ordersPane) ordersPane.hidden = false;
+            nextFrame(() => updateTabSlider());
+        }
+
+        try {
+            window.dispatchEvent(new CustomEvent('guest-orders-view-change', { detail: { view: state.currentView } }));
+            if (typeof window.syncMagnifyingDockState === 'function') {
+                window.syncMagnifyingDockState('guest-orders');
+            }
+        } catch (_) {}
+    }
+
+    function initTabs() {
+        const tabsContainer = element('guestOrdersViewTabs');
+        element('tabBtnOrders')?.addEventListener('click', () => switchView('orders'));
+        element('tabBtnTickets')?.addEventListener('click', () => switchView('tickets'));
+        element('ticketStatusViewMoreBtn')?.addEventListener('click', () => switchView('tickets'));
+
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+            window.addEventListener('resize', () => {
+                nextFrame(() => updateTabSlider());
+            });
+        }
+
+        if (typeof ResizeObserver !== 'undefined' && tabsContainer && typeof tabsContainer.querySelectorAll === 'function') {
+            const ro = new ResizeObserver(() => {
+                nextFrame(() => updateTabSlider());
+            });
+            ro.observe(tabsContainer);
+            tabsContainer.querySelectorAll('.guest-orders-view-tab').forEach((t) => ro.observe(t));
+        }
+
+        try {
+            const urlParams = new URLSearchParams(window.location.search);
+            const viewParam = urlParams.get('tab') || urlParams.get('view');
+            const isVerified = Boolean(state.isMember || (state.auth?.email && state.auth?.hash) || (!element('guestOrdersTabsWrapper')?.hidden && !element('guestOrdersResultCard')?.hidden));
+            if (viewParam === 'tickets' && isVerified) {
+                switchView('tickets');
+            } else {
+                nextFrame(() => updateTabSlider());
+            }
+        } catch (_) {
+            nextFrame(() => updateTabSlider());
+        }
+    }
+
+    async function loadMyTickets() {
+        if (state.myTicketsLoading) return;
+        state.myTicketsLoading = true;
+
+        const email = state.auth?.email || element('ticketModalEmail')?.value || element('guestOrdersEmail')?.value || '';
+        const orderId = state.detail?.order_no || '';
+
+        try {
+            let fetchedTickets = [];
+            const isMember = Boolean(window.ZaoyoeAccountOrdersBridge?.isLoggedIn && window.ZaoyoeAccountOrdersBridge.isLoggedIn());
+
+            const bodyInput = { limit: 50 };
+            if (!isMember) {
+                if (email) bodyInput.email = email;
+                if (orderId) bodyInput.orderId = orderId;
+            }
+
+            const res = await fetch('/api/support', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    action: 'ticket_history',
+                    input: bodyInput
+                })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data?.payload?.tickets)) {
+                    fetchedTickets = data.payload.tickets;
+                }
+            }
+
+            const localTickets = getLocalSessionTickets();
+            const seen = new Set();
+            const merged = [];
+
+            [...localTickets, ...fetchedTickets].forEach((t) => {
+                const norm = normalizeTicketItem(t);
+                const key = norm.id || norm.ticket_no;
+                if (key && !seen.has(key)) {
+                    seen.add(key);
+                    merged.push(norm);
+                }
+            });
+
+            state.myTickets = merged;
+            updateMyTicketsStats();
+            renderMyTicketsList();
+        } catch (err) {
+            console.warn('[MyTickets] Failed to load tickets:', err);
+            const localTickets = getLocalSessionTickets().map(normalizeTicketItem);
+            state.myTickets = localTickets;
+            updateMyTicketsStats();
+            renderMyTicketsList();
+        } finally {
+            state.myTicketsLoading = false;
+        }
+    }
+
+    function updateMyTicketsStats() {
+        const tickets = Array.isArray(state.myTickets) ? state.myTickets : [];
+        let countPending = 0;
+        let countReplied = 0;
+        let countResolved = 0;
+        let countClosed = 0;
+
+        tickets.forEach((t) => {
+            const st = resolveTicketStatus(t.status, Boolean(t.reply));
+            if (st.statKey === 'pending') countPending++;
+            else if (st.statKey === 'replied') countReplied++;
+            else if (st.statKey === 'resolved') countResolved++;
+            else if (st.statKey === 'closed') countClosed++;
+        });
+
+        setText('statCountAll', String(tickets.length));
+        setText('statCountPending', String(countPending));
+        setText('statCountReplied', String(countReplied));
+        setText('statCountResolved', String(countResolved));
+        setText('statCountClosed', String(countClosed));
+
+        const badgeCountEl = element('myTicketsBadgeCount');
+        if (badgeCountEl) {
+            const unhandled = countPending + countReplied;
+            if (unhandled > 0) {
+                badgeCountEl.textContent = String(unhandled);
+                badgeCountEl.hidden = false;
+            } else {
+                badgeCountEl.hidden = true;
+            }
+        }
+        nextFrame(() => updateTabSlider());
+    }
+
+    function renderMyTicketsList() {
+        const container = element('myTicketsListContainer');
+        const emptyState = element('myTicketsEmptyState');
+        if (!container || !emptyState) return;
+
+        container.textContent = '';
+        const allTickets = Array.isArray(state.myTickets) ? state.myTickets : [];
+
+        if (allTickets.length === 0) {
+            emptyState.hidden = false;
+            container.hidden = true;
+            return;
+        }
+
+        const filter = state.myTicketsFilter;
+        const filtered = allTickets.filter((t) => {
+            const st = resolveTicketStatus(t.status, Boolean(t.reply));
+            if (filter.stat !== 'all' && st.statKey !== filter.stat) return false;
+            if (filter.type !== 'all' && t.issue_type !== filter.type) return false;
+            if (filter.keyword) {
+                const kw = filter.keyword.toLowerCase();
+                const matched = t.id.toLowerCase().includes(kw) ||
+                    t.ticket_no.toLowerCase().includes(kw) ||
+                    t.order_id.toLowerCase().includes(kw) ||
+                    t.description.toLowerCase().includes(kw);
+                if (!matched) return false;
+            }
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            emptyState.hidden = true;
+            container.hidden = false;
+            const emptyNotice = createNode('div', 'my-tickets-empty-state');
+            const noticeIcon = document.createElement('i');
+            noticeIcon.className = 'fas fa-filter-circle-xmark empty-state-icon';
+            noticeIcon.setAttribute('aria-hidden', 'true');
+            emptyNotice.appendChild(noticeIcon);
+            emptyNotice.appendChild(createNode('h4', 'empty-state-title', '未找到匹配的工单'));
+            emptyNotice.appendChild(createNode('p', 'empty-state-subtitle', '尝试调整筛选状态、类型或清空关键词重新搜索。'));
+            const resetBtn = createNode('button', 'my-tickets-action-btn', '清空工单筛选');
+            resetBtn.type = 'button';
+            resetBtn.addEventListener('click', () => {
+                resetMyTicketsFilter();
+            });
+            emptyNotice.appendChild(resetBtn);
+            container.appendChild(emptyNotice);
+            return;
+        }
+
+        emptyState.hidden = true;
+        container.hidden = false;
+
+        filtered.forEach((t) => {
+            const card = createNode('div', 'my-ticket-item-card');
+            card.setAttribute('role', 'button');
+            card.setAttribute('tabindex', '0');
+            card.setAttribute('aria-label', `查看工单 ${t.ticket_no || t.id} 处理详情`);
+            card.addEventListener('click', (event) => {
+                if (event.target && event.target.closest('a, button, .my-ticket-order-tag')) return;
+                openTicketDetail(t);
+            });
+            card.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    if (event.target && event.target.closest('a, button, .my-ticket-order-tag')) return;
+                    event.preventDefault();
+                    openTicketDetail(t);
+                }
+            });
+
+            const header = createNode('div', 'my-ticket-item-header');
+            const leftGroup = createNode('div', 'my-tickets-record-title-group');
+            const idTag = createNode('span', 'my-ticket-id-tag', `#${t.ticket_no || t.id.slice(0, 8)}`);
+            const badges = createNode('div', 'my-ticket-badges');
+
+            const typeInfo = resolveTicketType(t.issue_type);
+            const typePill = createNode('span', 'my-ticket-badge');
+            const typeIcon = document.createElement('i');
+            typeIcon.className = typeInfo.icon;
+            typeIcon.setAttribute('aria-hidden', 'true');
+            typePill.appendChild(typeIcon);
+            typePill.appendChild(createNode('span', '', typeInfo.text));
+
+            const st = resolveTicketStatus(t.status, Boolean(t.reply));
+            const statusPill = createNode('span', `my-ticket-badge my-ticket-badge--${st.tone}`, st.text);
+
+            badges.appendChild(typePill);
+            badges.appendChild(statusPill);
+            leftGroup.appendChild(idTag);
+            leftGroup.appendChild(badges);
+            header.appendChild(leftGroup);
+
+            const timeSpan = createNode('span', 'my-ticket-time', formatTime(t.created_at));
+            header.appendChild(timeSpan);
+            card.appendChild(header);
+
+            if (t.order_id) {
+                const orderTag = createNode('div', 'my-ticket-order-tag');
+                const linkIcon = document.createElement('i');
+                linkIcon.className = 'fas fa-link';
+                linkIcon.setAttribute('aria-hidden', 'true');
+                orderTag.appendChild(linkIcon);
+                orderTag.appendChild(createNode('span', '', `关联订单：${t.order_id}`));
+                orderTag.title = '点击跳转查看对应订单';
+                orderTag.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    switchView('orders');
+                    void openDetail(t.order_id);
+                });
+                card.appendChild(orderTag);
+            }
+
+            const descEl = createNode('p', 'my-ticket-desc', t.description);
+            card.appendChild(descEl);
+
+            if (t.reply) {
+                const replyBox = createNode('div', 'my-ticket-reply-box');
+                const replyTitle = createNode('div', 'my-ticket-reply-title');
+                const headset = document.createElement('i');
+                headset.className = 'fas fa-headset';
+                headset.setAttribute('aria-hidden', 'true');
+                replyTitle.appendChild(headset);
+                replyTitle.appendChild(createNode('span', '', '客服回复'));
+                replyBox.appendChild(replyTitle);
+                const replyContent = createNode('p', 'my-ticket-reply-content', t.reply);
+                replyBox.appendChild(replyContent);
+                card.appendChild(replyBox);
+            }
+
+            const footerAction = createNode('div', 'my-ticket-footer-action');
+            const viewDetailBtn = createNode('button', 'my-ticket-view-detail-btn');
+            viewDetailBtn.type = 'button';
+            viewDetailBtn.appendChild(createNode('span', '', '查看处理情况'));
+            const chevron = document.createElement('i');
+            chevron.className = 'fas fa-chevron-right';
+            chevron.setAttribute('aria-hidden', 'true');
+            viewDetailBtn.appendChild(chevron);
+            viewDetailBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openTicketDetail(t);
+            });
+            footerAction.appendChild(viewDetailBtn);
+            card.appendChild(footerAction);
+
+            container.appendChild(card);
+        });
+    }
+
+    function resetMyTicketsFilter() {
+        state.myTicketsFilter.stat = 'all';
+        state.myTicketsFilter.type = 'all';
+        state.myTicketsFilter.keyword = '';
+
+        const grid = element('myTicketsStatGrid');
+        grid?.querySelectorAll('.my-tickets-stat-card').forEach((c) => {
+            c.classList.toggle('is-active', c.dataset.statFilter === 'all');
+        });
+
+        const searchInput = element('myTicketsSearchInput');
+        if (searchInput) searchInput.value = '';
+        setHidden('myTicketsClearSearchBtn', true);
+
+        const typeLabel = element('myTicketsTypeLabel');
+        if (typeLabel) typeLabel.textContent = '全部类型';
+        const typeMenu = element('myTicketsTypeMenu');
+        typeMenu?.querySelectorAll('.custom-dropdown-item').forEach((item) => {
+            const isAll = item.dataset.value === 'all';
+            item.classList.toggle('is-active', isAll);
+            item.setAttribute('aria-selected', isAll ? 'true' : 'false');
+        });
+
+        renderMyTicketsList();
+    }
+
+    function bindMyTicketsControls() {
+        if (state.myTicketsControlsBound) return;
+        state.myTicketsControlsBound = true;
+
+        const grid = element('myTicketsStatGrid');
+        grid?.querySelectorAll?.('.my-tickets-stat-card')?.forEach((card) => {
+            card.addEventListener('click', () => {
+                grid?.querySelectorAll?.('.my-tickets-stat-card')?.forEach((c) => c.classList.toggle('is-active', c === card));
+                state.myTicketsFilter.stat = card.dataset.statFilter || 'all';
+                renderMyTicketsList();
+            });
+        });
+
+        const searchInput = element('myTicketsSearchInput');
+        const clearBtn = element('myTicketsClearSearchBtn');
+        searchInput?.addEventListener('input', () => {
+            const kw = searchInput.value.trim();
+            state.myTicketsFilter.keyword = kw;
+            if (clearBtn) clearBtn.hidden = !kw;
+            renderMyTicketsList();
+        });
+        clearBtn?.addEventListener('click', () => {
+            if (searchInput) searchInput.value = '';
+            state.myTicketsFilter.keyword = '';
+            clearBtn.hidden = true;
+            renderMyTicketsList();
+        });
+
+        const typeDropdown = element('myTicketsTypeDropdown');
+        if (typeDropdown) {
+            const trigger = typeDropdown.querySelector('.custom-dropdown-trigger');
+            const menu = typeDropdown.querySelector('.custom-dropdown-menu');
+            const label = element('myTicketsTypeLabel');
+
+            trigger?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = typeDropdown.dataset.open === 'true';
+                closeAllDropdowns();
+                if (!isOpen) {
+                    typeDropdown.dataset.open = 'true';
+                    trigger.setAttribute('aria-expanded', 'true');
+                    menu.hidden = false;
+                }
+            });
+
+            menu?.querySelectorAll?.('.custom-dropdown-item')?.forEach((item) => {
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    state.myTicketsFilter.type = item.dataset.value || 'all';
+                    const leftSpan = item.querySelector('.dropdown-item-left');
+                    if (label) label.textContent = leftSpan ? leftSpan.textContent.trim() : item.textContent.trim();
+                    menu?.querySelectorAll?.('.custom-dropdown-item')?.forEach((it) => {
+                        const isMatch = it === item;
+                        it.classList.toggle('is-active', isMatch);
+                        it.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+                    });
+                    typeDropdown.dataset.open = 'false';
+                    trigger.setAttribute('aria-expanded', 'false');
+                    menu.hidden = true;
+                    renderMyTicketsList();
+                });
+            });
+        }
+
+        element('myTicketsCreateBtn')?.addEventListener('click', () => openTicketModal());
+        element('myTicketsCreateEmptyBtn')?.addEventListener('click', () => openTicketModal());
     }
 
     function initializeOrderAccessFeatures() {
         if (state.orderAccessInitialized) return;
         state.orderAccessInitialized = true;
+        initTabs();
+        bindMyTicketsControls();
         element('guestOrdersQueryForm')?.addEventListener('submit', handleSubmit);
         bindQueryCredentialAutofillGuard();
         element('guestOrdersTogglePasswordBtn')?.addEventListener('click', (event) => {
             togglePasswordVisibility(event.currentTarget);
         });
         bindDeliveryDelegation();
+        bindFilterControls();
+        bindTicketControls();
         element('guestOrdersBackToListBtn')?.addEventListener('click', () => {
             state.detail = null;
             state.detailRequestSerial += 1;
             state.deliveryRequestSerial += 1;
             clearDelivery();
+            setHidden('guestOrdersDeliveryPendingBox', true);
+            setHidden('guestOrdersTicketStatusCard', true);
             syncDetailUrl('');
             renderDetail();
             renderOrders();
         });
         element('guestOrdersPrevBtn')?.addEventListener('click', () => {
-            if (state.page > 1) void loadOrders(state.page - 1);
+            const isClientPaging = state.isMember || hasActiveFilter();
+            if (isClientPaging) {
+                if (state.page > 1) {
+                    state.page -= 1;
+                    renderOrders();
+                }
+            } else {
+                if (state.page > 1) void loadOrders(state.page - 1);
+            }
         });
-        element('guestOrdersNextBtn')?.addEventListener('click', () => { void loadOrders(state.page + 1); });
+        element('guestOrdersNextBtn')?.addEventListener('click', () => {
+            const isClientPaging = state.isMember || hasActiveFilter();
+            if (isClientPaging) {
+                const totalCount = getFilteredOrders().length;
+                const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+                if (state.page < totalPages) {
+                    state.page += 1;
+                    renderOrders();
+                }
+            } else {
+                void loadOrders(state.page + 1);
+            }
+        });
         // --- A3 §10.5 one-time reset link ---------------------------------
         element('guestOrdersResetForm')?.addEventListener('submit', handleResetSubmit);
         element('guestOrdersResetToggleBtn')?.addEventListener('click', (event) => {
@@ -2403,6 +4400,70 @@
         bindBaseListeners();
         await initializeOrderAccessPage();
     }
+
+    window.GuestOrdersClient = Object.freeze({
+        setMemberOrders(orders) {
+            state.isMember = true;
+            state.orders = Array.isArray(orders) ? orders : [];
+            state.page = 1;
+            state.detail = null;
+            clearDelivery();
+            setHidden('guestOrdersDeliveryPendingBox', true);
+            setHidden('guestOrdersTicketStatusCard', true);
+            setHidden('guestOrdersResultCard', false);
+            setHidden('guestOrdersTabsWrapper', false);
+            setHidden('guestOrdersFilterCard', state.orders.length === 0);
+            renderOrders();
+            nextFrame(() => updateTabSlider());
+        },
+        showMemberOrderDetail(detailData) {
+            state.detail = detailData?.order || null;
+            state.delivery = detailData?.delivery || null;
+            setHidden('guestOrdersResultCard', false);
+            renderDetail();
+            const deliverable = isDeliverable(state.detail);
+            const hasContent = detailData?.delivery && Array.isArray(detailData.delivery.items) &&
+                detailData.delivery.items.some((i) => String(i.content || '').trim().length > 0);
+            if (deliverable && hasContent) {
+                renderDelivery(detailData.delivery, detailData.order);
+                setHidden('guestOrdersDeliveryPanel', false);
+                setHidden('guestOrdersDeliveryPendingBox', true);
+            } else {
+                clearDelivery();
+                if (state.detail && state.detail.payment_status === 'confirmed') {
+                    setHidden('guestOrdersDeliveryPendingBox', false);
+                }
+            }
+            syncDetailUrl(detailData?.order?.order_no || '');
+        },
+        showTicketStatus(ticket) {
+            showTicketStatus(ticket);
+        },
+        resetFilters() {
+            resetFilters();
+        },
+        switchView(view) {
+            switchView(view);
+        },
+        loadMyTickets() {
+            return loadMyTickets();
+        },
+        getMyTickets() {
+            return [...state.myTickets];
+        },
+        resetMyTicketsFilter() {
+            resetMyTicketsFilter();
+        },
+        openTicketDetail(ticket) {
+            openTicketDetail(ticket);
+        },
+        closeTicketDetail() {
+            closeTicketDetail();
+        },
+        renderOrdersSkeleton(container, count) {
+            renderOrdersSkeleton(container, count);
+        }
+    });
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { void init(); }, { once: true });
     else void init();

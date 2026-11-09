@@ -1,0 +1,6 @@
+{
+  "tests/payment-zpay-webhook-handler.test.js": "3b25531862c873ffe1bcc78271e0aa522dd27bdd5e7a4dd8fa8ca173fea26f4d",
+  "tests/security-round2-media-download.test.js": "e1411d8831b6b0058cd919e7355562a1a24c643bec86fbbeae26fbc8d9e357f8",
+  "services/kc-pay-gpt/mysql-store.js": "d4c79cd64039fecbff382143aa9ca87c8f5b6e0abe401d99d830e86cc9d7912a",
+  "services/kc-pay-gpt/.env.example": "dca9d5ba299ceb97b7ec44eb330f1f6397c8aec19549b1c63f8a5677d7046d7e"
+}

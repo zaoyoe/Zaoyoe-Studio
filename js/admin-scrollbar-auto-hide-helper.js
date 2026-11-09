@@ -11,6 +11,7 @@
     const ADMIN_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS = 'admin-scrollbar-auto-hide--visible';
     const ADMIN_SCROLLBAR_AUTO_HIDE_BOUND_ATTR = 'data-admin-scrollbar-auto-hide-helper-bound';
     const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [
+        '.sidebar-nav',
         '.modal-body',
         '.batch-modal-body',
         '.user-modal-body',

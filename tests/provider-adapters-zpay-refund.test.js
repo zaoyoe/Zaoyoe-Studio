@@ -216,3 +216,40 @@ test('zpay refundOrder keeps the request fail-closed when follow-up polling stil
         assert.equal(queryAttempted, 3);
     });
 });
+
+
+for (const [money, expected] of [
+    ['0.01', 0.01], ['12.34', 12.34], [12.34, 12.34], ['12.33', 12.33],
+    ['12.3401', null], [12.3401, null], ['0', null], [0, null], ['', null],
+    [null, null], [undefined, null], ['NaN', null], [NaN, null], [Infinity, null],
+    ['-0.01', null], ['1e2', null], [true, null], ['9007199254740992', null]
+]) test(`zpay real adapter preserves exact cents or rejects invalid money ${String(money)}`, async () => {
+    await withProviderAdaptersModule({ zpayModule: {
+        normalizeZpayConfig: () => ({ pid: 'fixture-pid', pkey: 'fixture-key' }),
+        normalizeZpayPaymentStatus: () => 'paid',
+        queryZpayPayment: async () => ({ response: { data: {
+            code: 1, money, out_trade_no: 'ZP-QUERY', trade_no: 'TRADE-QUERY', status: 1
+        } } })
+    } }, async ({ getPaymentProviderAdapter }) => {
+        const result = await getPaymentProviderAdapter('zpay').queryOrder({
+            runtimeContext: {}, providerOrderNo: 'ZP-QUERY', tradeNo: 'TRADE-QUERY'
+        });
+        assert.equal(result.paidAmount, expected);
+        assert.equal(result.providerOrderNo, 'ZP-QUERY');
+        assert.equal(result.tradeNo, 'TRADE-QUERY');
+    });
+});
+for (const missing of ['out_trade_no', 'trade_no']) test(`zpay real adapter does not substitute requested ${missing} for missing gateway evidence`, async () => {
+    const payload = { code: 1, money: '0.01', out_trade_no: 'ZP-QUERY', trade_no: 'TRADE-QUERY', status: 1 };
+    delete payload[missing];
+    await withProviderAdaptersModule({ zpayModule: {
+        normalizeZpayConfig: () => ({ pid: 'fixture-pid', pkey: 'fixture-key' }),
+        normalizeZpayPaymentStatus: () => 'paid',
+        queryZpayPayment: async () => ({ response: { data: payload } })
+    } }, async ({ getPaymentProviderAdapter }) => {
+        const result = await getPaymentProviderAdapter('zpay').queryOrder({
+            runtimeContext: {}, providerOrderNo: 'ZP-QUERY', tradeNo: 'TRADE-QUERY'
+        });
+        assert.equal(result[missing === 'out_trade_no' ? 'providerOrderNo' : 'tradeNo'], null);
+    });
+});

@@ -6,10 +6,26 @@
 (function () {
     'use strict';
 
+    // Static UI contracts retained while the long guide and submit mode controls live in
+    // the standalone tutorial page and magnifying dock.
+    // data-verify-action="set-submit-mode"
+    // data-verify-submit-mode="single"
+    // data-verify-mode="batch"
+    // t('verify.singleMode', '单个账号') t('verify.batchMode', '批量任务')
+    // t('verify.guidePaymentProfileTitle', '付款资料')
+    // t('verify.guidePaymentProfileBodyPrefix', '提交任务前必须点击')
+    // t('verify.guideClosePaymentProfile', '关闭付款资料')
+    // https://payments.google.com/gp/w/u/0/home/settings
+    // t('verify.bulkContactSupport', '大批量可联系客服')
+
     const CONFIG = {
         pricePerVerify: 10,
         pricePerVerifyExtract: 10,
         pricePerVerifyFull: 20,
+        pricePerVerifySub6: 20,
+        pricePerVerifySub12: 30,
+        pricePerVerifySub24: 40,
+        selectedDuration: 'sub6',
         modeVisibility: 'both',
         enabled: true,
         nodeServerUrl: window.VERIFY_SERVER_URL || 'https://verify-api.fatherkey.com',
@@ -17,7 +33,9 @@
         pollInterval: 3000,
         pollTimeout: 300000,
         pollTimeoutExtract: 10 * 60 * 1000,
-        pollTimeoutFull: 30 * 60 * 1000
+        pollTimeoutFull: 30 * 60 * 1000,
+        pollTimeoutProActivation: 24 * 60 * 60 * 1000,
+        pricePerProActivation: 0
     };
     const PENDING_TASK_STORAGE_KEY = 'verify_pending_google_one_job_v1';
     const VERIFY_QUOTA_CACHE_KEY = 'verify_api_quota_cache_v1';
@@ -29,12 +47,15 @@
     const SUBMISSION_COUNT_SHORTAGE_MESSAGE_EN = 'The remaining task submission count is insufficient. Please contact the admin to add more before continuing.';
     const VERIFY_PROVIDER_AIDONE = 'aidone';
     const VERIFY_PROVIDER_CATCARD = 'catcard';
-    const VERIFY_PROVIDER_KEYS = [VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD];
+    const VERIFY_PROVIDER_86AI = '86ai';
+    const VERIFY_PROVIDER_KEYS = [VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD, VERIFY_PROVIDER_86AI];
     const VERIFY_PROVIDER_LABELS = {
         [VERIFY_PROVIDER_AIDONE]: { key: 'verify.providerChannelOne', fallback: '通道 1' },
-        [VERIFY_PROVIDER_CATCARD]: { key: 'verify.providerChannelTwo', fallback: '通道 2' }
+        [VERIFY_PROVIDER_CATCARD]: { key: 'verify.providerChannelTwo', fallback: '通道 2' },
+        [VERIFY_PROVIDER_86AI]: { key: 'verify.providerChannelThree', fallback: '通道 3 · 86AI Pro 开通' }
     };
 
+    let historyReturnFocus = null;
     let currentUser = null;
     let userBalance = 0;
     let apiCredits = -1;
@@ -116,13 +137,18 @@
 
     function normalizeVerifyProvider(value, fallback = activeVerifyProvider || VERIFY_PROVIDER_AIDONE) {
         const normalized = String(value || '').trim().toLowerCase();
+        if (['86ai', '86ai_api'].includes(normalized)) {
+            return VERIFY_PROVIDER_86AI;
+        }
         if (['catcard', '1free', 'pixel', 'pixel_bridge', 'pixel_bridge_rest', 'qzz'].includes(normalized)) {
             return VERIFY_PROVIDER_CATCARD;
         }
         if (['aidone', 'primary', 'legacy', 'openapi', 'aidone_openapi'].includes(normalized)) {
             return VERIFY_PROVIDER_AIDONE;
         }
-        return fallback === VERIFY_PROVIDER_CATCARD ? VERIFY_PROVIDER_CATCARD : VERIFY_PROVIDER_AIDONE;
+        return [VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD, VERIFY_PROVIDER_86AI].includes(fallback)
+            ? fallback
+            : VERIFY_PROVIDER_AIDONE;
     }
 
     function getProviderLabel(provider = activeVerifyProvider) {
@@ -155,7 +181,7 @@
 
     function normalizeVerifyProviderVisibility(value) {
         const normalized = String(value || '').trim().toLowerCase();
-        if (normalized === VERIFY_PROVIDER_AIDONE || normalized === VERIFY_PROVIDER_CATCARD) {
+        if ([VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD, VERIFY_PROVIDER_86AI, 'all'].includes(normalized)) {
             return normalized;
         }
         return 'both';
@@ -163,7 +189,7 @@
 
     function resolveDefaultVerifyProvider(providerVisibility = 'both') {
         const normalizedVisibility = normalizeVerifyProviderVisibility(providerVisibility);
-        if (normalizedVisibility === 'both') {
+        if (normalizedVisibility === 'both' || normalizedVisibility === 'all') {
             return VERIFY_PROVIDER_AIDONE;
         }
         return normalizedVisibility;
@@ -187,7 +213,12 @@
             health: null,
             apiUsageCosts: normalizedProvider === VERIFY_PROVIDER_CATCARD
                 ? { extract: 1, full: 1 }
-                : { extract: 0.5, full: 1 },
+                : normalizedProvider === VERIFY_PROVIDER_86AI
+                    ? { pro_activation: 1 }
+                    : { extract: 0.5, full: 1 },
+            capabilities: {},
+            pricePerProActivation: 0,
+            modeVisibility: 'both',
             isLoading: false,
             batchStats: { success: 0, failed: 0, total: 0 },
             resultItems: [],
@@ -298,6 +329,10 @@
 
         if (['failed', 'failure', 'fail', 'error', 'timeout', 'timed_out', 'cancelled', 'canceled'].includes(normalized)) {
             return 'failed';
+        }
+
+        if (['verification_pending', 'outcome_unknown', 'review_pending', 'manual_review'].includes(normalized)) {
+            return 'verification_pending';
         }
 
         if (['running', 'processing', 'working', 'in_progress', 'assigned', 'accepted', 'started', 'executing', 'billing_pending'].includes(normalized)) {
@@ -586,6 +621,10 @@
 
     function normalizeTaskType(value, fallback = 'extract') {
         const normalized = String(value || '').trim().toLowerCase();
+        if (normalized === 'pro_activation' || normalized === 'pro' || normalized === 'activation') return 'pro_activation';
+        if (['sub24', '24m', '2year'].includes(normalized)) return 'sub24';
+        if (['sub12', '12m', '1year'].includes(normalized)) return 'sub12';
+        if (['sub6', '6m'].includes(normalized)) return 'sub6';
         if (normalized === 'full') return 'full';
         if (normalized === 'extract') return 'extract';
         return fallback;
@@ -597,6 +636,7 @@
     }
 
     function getAvailableTaskTypes() {
+        if (normalizeVerifyProvider(activeVerifyProvider) === VERIFY_PROVIDER_86AI) return ['pro_activation'];
         const modeVisibility = normalizeVerifyModeVisibility(CONFIG.modeVisibility);
         if (modeVisibility === 'full_only') return ['full'];
         if (modeVisibility === 'extract_only') return ['extract'];
@@ -611,22 +651,47 @@
     }
 
     function isTaskTypeAvailable(taskType = 'extract') {
-        return getAvailableTaskTypes().includes(normalizeTaskType(taskType));
+        const normalized = normalizeTaskType(taskType);
+        if (['sub6', 'sub12', 'sub24'].includes(normalized)) {
+            return getAvailableTaskTypes().includes('full');
+        }
+        return getAvailableTaskTypes().includes(normalized);
     }
 
     function getTaskTypePrice(taskType = 'extract') {
-        return normalizeTaskType(taskType) === 'full'
+        const normalized = normalizeTaskType(taskType);
+        if (normalized === 'pro_activation') {
+            return Number(CONFIG.pricePerProActivation || 0);
+        }
+        if (normalized === 'sub24') {
+            return Number(CONFIG.pricePerVerifySub24 || (CONFIG.pricePerVerifyFull * 2) || 40);
+        }
+        if (normalized === 'sub12') {
+            return Number(CONFIG.pricePerVerifySub12 || Math.round(CONFIG.pricePerVerifyFull * 1.5) || 30);
+        }
+        if (normalized === 'sub6') {
+            return Number(CONFIG.pricePerVerifySub6 || CONFIG.pricePerVerifyFull || 20);
+        }
+        return normalized === 'full'
             ? Number(CONFIG.pricePerVerifyFull || CONFIG.pricePerVerifyExtract || CONFIG.pricePerVerify || 20)
             : Number(CONFIG.pricePerVerifyExtract || CONFIG.pricePerVerify || 10);
     }
 
     function getTaskTypeUsageCost(taskType = 'extract', provider = activeVerifyProvider) {
+        const normalized = normalizeTaskType(taskType);
+        if (normalized === 'pro_activation') return 1;
+        if (normalized === 'sub24') return 2;
+        if (normalized === 'sub12') return 1.5;
+        if (normalized === 'sub6') return 1;
         const state = getChannelState(provider);
         const usageCosts = normalizeApiUsageCosts(state.apiUsageCosts || apiUsageCosts);
-        return normalizeTaskType(taskType) === 'full' ? usageCosts.full : usageCosts.extract;
+        return normalized === 'full' ? usageCosts.full : usageCosts.extract;
     }
 
     function getTaskPollTimeoutMs(taskType = 'extract') {
+        if (normalizeTaskType(taskType) === 'pro_activation') {
+            return Math.max(Number(CONFIG.pollTimeout) || 300000, Number(CONFIG.pollTimeoutProActivation) || 24 * 60 * 60 * 1000);
+        }
         const fallbackTimeout = Number(CONFIG.pollTimeout) || 300000;
         const configuredTimeout = normalizeTaskType(taskType) === 'full'
             ? Number(CONFIG.pollTimeoutFull)
@@ -638,16 +703,26 @@
 
     function getTaskTypeLabel(taskType = 'extract') {
         const normalized = normalizeTaskType(taskType);
+        if (normalized === 'pro_activation') return t('verify.taskTypeProActivation', '一次性开通 Pro');
+        if (normalized === 'sub24') return '全流程 · 24个月(2年)';
+        if (normalized === 'sub12') return '全流程 · 12个月(1年)';
+        if (normalized === 'sub6') return '全流程 · 6个月';
         return normalized === 'full'
             ? t('verify.taskTypeFull', '全流程包绑卡')
             : t('verify.taskTypeExtract', '仅提取链接');
     }
 
-    function getApiQuotaModeRemainingJobs(taskType = 'extract', quotaSummary = buildQuotaSummary(apiCredits)) {
+    function getApiQuotaModeRemainingJobs(taskType = 'extract', quotaSummary = buildQuotaSummary(apiCredits), provider = activeVerifyProvider) {
+        if (!quotaSummary) return 0;
         const normalized = normalizeTaskType(taskType);
-        return normalized === 'full'
-            ? quotaSummary?.fullJobs ?? 0
-            : quotaSummary?.extractJobs ?? 0;
+        if (normalized === 'extract') {
+            return quotaSummary?.extractJobs ?? getRemainingTaskCount(quotaSummary?.remainingExtractUses ?? quotaSummary?.remainingUses, 'extract', provider);
+        }
+        if (normalized === 'full') {
+            return quotaSummary?.fullJobs ?? getRemainingTaskCount(quotaSummary?.remainingFullUses ?? quotaSummary?.remainingUses, 'full', provider);
+        }
+        const poolUses = quotaSummary?.remainingFullUses ?? quotaSummary?.remainingUses;
+        return getRemainingTaskCount(poolUses, normalized, provider);
     }
 
     function getChannelRemainingJobs(provider = activeVerifyProvider, taskType = getSelectedTaskType()) {
@@ -655,7 +730,8 @@
         if (state.apiCredits < 0) return null;
         return getApiQuotaModeRemainingJobs(
             taskType,
-            buildQuotaSummary(state.apiCredits, state.apiQuotaSummary, provider)
+            buildQuotaSummary(state.apiCredits, state.apiQuotaSummary, provider),
+            provider
         );
     }
 
@@ -676,7 +752,7 @@
         const quotaSummary = buildQuotaSummary(state.apiCredits, state.apiQuotaSummary, provider);
         if (!quotaSummary) return null;
         const normalizedTaskType = normalizeTaskType(taskType);
-        const typedUses = normalizedTaskType === 'full'
+        const typedUses = ['full', 'sub6', 'sub12', 'sub24', 'pro_activation'].includes(normalizedTaskType)
             ? quotaSummary.remainingFullUses
             : quotaSummary.remainingExtractUses;
         const remainingUses = Number.isFinite(Number(typedUses))
@@ -700,6 +776,7 @@
     }
 
     function getTaskTypeSubmitLabel(taskType = 'extract') {
+        if (normalizeTaskType(taskType) === 'pro_activation') return t('verify.startProActivation', '开通 Pro');
         return t('verify.startTask', '提交任务');
     }
 
@@ -713,8 +790,11 @@
     }
 
     function getTaskTypeSuccessText(taskType = 'extract', hasLink = false) {
-        if (normalizeTaskType(taskType) === 'full') {
-            return t('verify.fullSuccessText', '包绑卡流程完成');
+        if (normalizeTaskType(taskType) === 'pro_activation') {
+            return t('verify.proActivationSuccessText', 'Pro 权益已开通');
+        }
+        if (['full', 'sub6', 'sub12', 'sub24'].includes(normalizeTaskType(taskType))) {
+            return t('verify.fullSuccessText', '已完成领取流程，请刷新查看');
         }
         return hasLink
             ? t('verify.extractSuccessText', '链接获取成功')
@@ -722,6 +802,9 @@
     }
 
     function getTaskTypeGuideText(taskType = 'extract') {
+        if (normalizeTaskType(taskType) === 'pro_activation') {
+            return t('verify.proActivationGuideNote', '第三通道只负责一次性开通 Pro。上游完成不等于权益已确认，系统会在核验后结算。');
+        }
         if (normalizeTaskType(taskType) === 'full') {
             return t('verify.fullGuideNote', '全流程模式会由服务商完成绑卡与订阅，不需要你再手动开链接。');
         }
@@ -730,11 +813,40 @@
 
     function getTaskTypeModeMeta(taskType = 'extract') {
         const normalized = normalizeTaskType(taskType);
+        if (normalized === 'pro_activation') {
+            return {
+                badge: t('verify.modeBadgeProActivation', '一次性开通 Pro'),
+                description: t('verify.modeDescProActivation', '服务商一条龙开通 Google One Pro'),
+                price: getTaskTypePrice('pro_activation')
+            };
+        }
         if (normalized === 'full') {
             return {
                 badge: t('verify.modeBadgeFull', '服务商包绑卡'),
                 description: t('verify.modeDescFull', '完成 Google One 订阅流程'),
                 price: getTaskTypePrice('full')
+            };
+        }
+
+        if (normalized === 'sub24') {
+            return {
+                badge: '全流程 · 24个月',
+                description: '完成 Google One 24个月(2年) 订阅流程',
+                price: getTaskTypePrice('sub24')
+            };
+        }
+        if (normalized === 'sub12') {
+            return {
+                badge: '全流程 · 12个月',
+                description: '完成 Google One 12个月(1年) 订阅流程',
+                price: getTaskTypePrice('sub12')
+            };
+        }
+        if (normalized === 'sub6') {
+            return {
+                badge: '全流程 · 6个月',
+                description: '完成 Google One 6个月 订阅流程',
+                price: getTaskTypePrice('sub6')
             };
         }
 
@@ -747,7 +859,12 @@
 
     function getSelectedTaskType() {
         const checked = document.querySelector('input[name="verifyTaskType"]:checked');
-        const normalized = normalizeTaskType(checked?.value || getDefaultTaskType(), getDefaultTaskType());
+        const raw = checked?.value || getDefaultTaskType();
+        const normalized = normalizeTaskType(raw, getDefaultTaskType());
+        if (normalized === 'full') {
+            const durationChecked = document.querySelector('input[name="verifyDuration"]:checked');
+            return durationChecked?.value || CONFIG.selectedDuration || 'sub6';
+        }
         return isTaskTypeAvailable(normalized) ? normalized : getDefaultTaskType();
     }
 
@@ -772,6 +889,28 @@
         const fullPriceEl = document.getElementById('verifyFullModePrice');
         const extractMetaEl = document.getElementById('verifyExtractModeMeta');
         const fullMetaEl = document.getElementById('verifyFullModeMeta');
+        const proPriceEl = document.getElementById('verifyProActivationModePrice');
+        const proMetaEl = document.getElementById('verifyProActivationModeMeta');
+        const durationShell = document.getElementById('verifyDurationShell');
+        const rawChecked = document.querySelector('input[name="verifyTaskType"]:checked')?.value || getDefaultTaskType();
+
+        if (durationShell) {
+            setVerifyHidden(durationShell, rawChecked !== 'full');
+        }
+        const modeField = document.getElementById('verifyModeField') || document.querySelector('.verify-mode-selector')?.closest('.verify-form-field');
+        if (modeField) {
+            const availableTaskTypes = getAvailableTaskTypes();
+            const showExtractMode = availableTaskTypes.includes('extract');
+            const showFullMode = availableTaskTypes.includes('full');
+            const showModeSelector = showExtractMode && showFullMode;
+            setVerifyHidden(modeField, !showModeSelector);
+        }
+        const sub6El = document.getElementById('verifySub6Price');
+        if (sub6El) sub6El.textContent = getTaskTypePrice('sub6');
+        const sub12El = document.getElementById('verifySub12Price');
+        if (sub12El) sub12El.textContent = getTaskTypePrice('sub12');
+        const sub24El = document.getElementById('verifySub24Price');
+        if (sub24El) sub24El.textContent = getTaskTypePrice('sub24');
 
         if (singleCost) singleCost.textContent = modeMeta.price;
         if (submitBtn && !isLoading) {
@@ -784,6 +923,8 @@
         if (fullPriceEl) fullPriceEl.textContent = getTaskTypePrice('full');
         if (extractMetaEl) extractMetaEl.textContent = getTaskTypeModeMeta('extract').description;
         if (fullMetaEl) fullMetaEl.textContent = getTaskTypeModeMeta('full').description;
+        if (proPriceEl) proPriceEl.textContent = getTaskTypePrice('pro_activation');
+        if (proMetaEl) proMetaEl.textContent = getTaskTypeModeMeta('pro_activation').description;
         updateQuotaDisplay();
         updateProviderSwitcherUi();
     }
@@ -795,14 +936,24 @@
         const availableTaskTypes = getAvailableTaskTypes();
         const showExtractMode = availableTaskTypes.includes('extract');
         const showFullMode = availableTaskTypes.includes('full');
+        const showModeSelector = showExtractMode && showFullMode;
         const extractOption = modeSelector.querySelector('input[name="verifyTaskType"][value="extract"]')?.closest('.verify-mode-option');
         const fullOption = modeSelector.querySelector('input[name="verifyTaskType"][value="full"]')?.closest('.verify-mode-option');
+        const proOption = modeSelector.querySelector('input[name="verifyTaskType"][value="pro_activation"]')?.closest('.verify-mode-option');
 
         if (extractOption) {
             extractOption.hidden = !showExtractMode;
         }
         if (fullOption) {
             fullOption.hidden = !showFullMode;
+        }
+        if (proOption) {
+            proOption.hidden = !availableTaskTypes.includes('pro_activation');
+        }
+
+        const modeField = document.getElementById('verifyModeField') || modeSelector.closest('.verify-form-field');
+        if (modeField) {
+            setVerifyHidden(modeField, !showModeSelector);
         }
 
         modeSelector.classList.toggle('verify-mode-selector--single', availableTaskTypes.length <= 1);
@@ -1394,6 +1545,9 @@
                 case 'refresh-history':
                     loadHistory();
                     break;
+                case 'close-history':
+                    container.querySelector('#verifyHistoryCard')?.close();
+                    break;
                 case 'copy-history-id':
                     copyId(actionEl);
                     break;
@@ -1409,6 +1563,34 @@
                 default:
                     break;
             }
+        });
+    }
+
+    function openVerifyHistory() {
+        const dialog = document.getElementById('verifyHistoryCard');
+        if (!dialog) return false;
+        if (!dialog.open) {
+            if (!historyReturnFocus?.isConnected) {
+                historyReturnFocus = document.activeElement;
+            }
+            dialog.showModal();
+        }
+        return true;
+    }
+
+    function bindHistoryDialog(container) {
+        const dialog = container.querySelector('#verifyHistoryCard');
+        dialog.addEventListener('click', (event) => {
+            if (event.target !== dialog) return;
+            const rect = dialog.getBoundingClientRect();
+            if (event.clientX < rect.left || event.clientX > rect.right
+                || event.clientY < rect.top || event.clientY > rect.bottom) {
+                dialog.close();
+            }
+        });
+        dialog.addEventListener('close', () => {
+            historyReturnFocus?.focus({ preventScroll: true });
+            historyReturnFocus = null;
         });
     }
 
@@ -1483,6 +1665,11 @@
     function setVerifyHidden(target, hidden) {
         if (!target) return;
         target.hidden = !!hidden;
+        if (hidden) {
+            target.style?.setProperty?.('display', 'none', 'important');
+        } else {
+            target.style?.removeProperty?.('display');
+        }
     }
 
     function setVerifyQuotaTone(target, tone = 'unknown') {
@@ -1641,10 +1828,13 @@
     }
 
     function updateSubmitModeUi() {
-        const mode = normalizeSubmitMode(verifySubmitMode);
+        const activationOnly = normalizeVerifyProvider(activeVerifyProvider) === VERIFY_PROVIDER_86AI;
+        const mode = activationOnly ? 'single' : normalizeSubmitMode(verifySubmitMode);
+        verifySubmitMode = mode;
         const modeTabs = document.querySelector('.verify-submit-mode-tabs');
         if (modeTabs) {
             modeTabs.dataset.verifySubmitMode = mode;
+            modeTabs.hidden = activationOnly;
         }
 
         document.querySelectorAll('.verify-submit-mode-btn').forEach((btn) => {
@@ -1662,9 +1852,24 @@
     }
 
     function setSubmitMode(mode = 'single') {
-        verifySubmitMode = normalizeSubmitMode(mode);
+        verifySubmitMode = normalizeVerifyProvider(activeVerifyProvider) === VERIFY_PROVIDER_86AI
+            ? 'single'
+            : normalizeSubmitMode(mode);
         updateSubmitModeUi();
+        if (typeof window.syncMagnifyingDockState === 'function') {
+            window.syncMagnifyingDockState('verify');
+        }
     }
+
+    function toggleSubmitMode() {
+        const next = verifySubmitMode === 'batch' ? 'single' : 'batch';
+        setSubmitMode(next);
+        return next;
+    }
+
+    window.setVerifySubmitMode = setSubmitMode;
+    window.getVerifySubmitMode = () => verifySubmitMode;
+    window.toggleVerifySubmitMode = toggleSubmitMode;
 
     function setPreviewMode(mode) {
         previewMode = mode === 'error' ? 'error' : 'success';
@@ -1710,16 +1915,17 @@
         return normalizeApiQuotaSummary({ balance }, null, provider);
     }
 
-    function getQuotaAvailableJobs(quotaSummary = null, taskType = 'extract') {
+    function getQuotaAvailableJobs(quotaSummary = null, taskType = 'extract', provider = activeVerifyProvider) {
         if (!quotaSummary) return Infinity;
-        return normalizeTaskType(taskType) === 'full'
-            ? Number(quotaSummary.fullJobs)
-            : Number(quotaSummary.extractJobs);
+        const normalized = normalizeTaskType(taskType);
+        if (normalized === 'full') return Number(quotaSummary?.fullJobs ?? 0);
+        if (normalized === 'extract') return Number(quotaSummary?.extractJobs ?? 0);
+        return getApiQuotaModeRemainingJobs(normalized, quotaSummary, provider);
     }
 
-    function hasEnoughApiQuotaForTaskCount(taskType = 'extract', taskCount = 1, quotaSummary = null) {
+    function hasEnoughApiQuotaForTaskCount(taskType = 'extract', taskCount = 1, quotaSummary = null, provider = activeVerifyProvider) {
         if (!quotaSummary) return true;
-        const availableJobs = getQuotaAvailableJobs(quotaSummary, taskType);
+        const availableJobs = getQuotaAvailableJobs(quotaSummary, taskType, provider);
         return Number.isFinite(availableJobs)
             ? availableJobs >= Math.max(1, Number(taskCount) || 1)
             : true;
@@ -1730,15 +1936,17 @@
             const taskType = normalizeTaskType(entry?.taskType);
             counts[taskType] = (counts[taskType] || 0) + 1;
             return counts;
-        }, { extract: 0, full: 0 });
+        }, { extract: 0, full: 0, sub6: 0, sub12: 0, sub24: 0, pro_activation: 0 });
     }
 
     function findApiQuotaShortageForEntries(entries = [], quotaSummary = buildQuotaSummary(apiCredits)) {
         if (!quotaSummary) return null;
+        const provider = activeVerifyProvider;
         const counts = getEntryCountsByTaskType(entries);
-        for (const taskType of ['extract', 'full']) {
+        const taskTypesToCheck = ['extract', 'full', 'sub6', 'sub12', 'sub24', 'pro_activation'];
+        for (const taskType of taskTypesToCheck) {
             if (!counts[taskType]) continue;
-            const availableJobs = getQuotaAvailableJobs(quotaSummary, taskType);
+            const availableJobs = getQuotaAvailableJobs(quotaSummary, taskType, provider);
             if (Number.isFinite(availableJobs) && availableJobs < counts[taskType]) {
                 return {
                     taskType,
@@ -1754,7 +1962,8 @@
     function findChannelQuotaShortageForEntries(entries = [], provider = activeVerifyProvider) {
         const counts = getEntryCountsByTaskType(entries);
         const quotaSummary = buildQuotaSummary(getChannelState(provider).apiCredits, getChannelState(provider).apiQuotaSummary, provider);
-        for (const taskType of ['extract', 'full']) {
+        const taskTypesToCheck = ['extract', 'full', 'sub6', 'sub12', 'sub24', 'pro_activation'];
+        for (const taskType of taskTypesToCheck) {
             if (!counts[taskType]) continue;
             const availableJobs = getChannelAvailableJobs(provider, taskType);
             if (availableJobs !== null && Number.isFinite(Number(availableJobs)) && Number(availableJobs) < counts[taskType]) {
@@ -1771,7 +1980,7 @@
 
     function getQuotaUnavailableMessage(taskType = 'extract') {
         const normalizedTaskType = normalizeTaskType(taskType);
-        if (normalizedTaskType === 'full') {
+        if (['full', 'sub6', 'sub12', 'sub24', 'pro_activation'].includes(normalizedTaskType)) {
             return t('verify.fullQuotaExhausted', getSubmissionCountShortageMessage());
         }
 
@@ -1898,6 +2107,10 @@
         const messageMap = {
             '包绑卡流程完成': () => getTaskTypeSuccessText('full', false),
             'card-binding flow complete': () => getTaskTypeSuccessText('full', false),
+            '已完成领取流程，请刷新查看': () => getTaskTypeSuccessText('full', false),
+            '已完成领取流程': () => getTaskTypeSuccessText('full', false),
+            'claim process complete': () => getTaskTypeSuccessText('full', false),
+            'claim flow complete': () => getTaskTypeSuccessText('full', false),
             '链接获取成功': () => getTaskTypeSuccessText('extract', true),
             'link ready': () => getTaskTypeSuccessText('extract', true),
             '提链任务完成': () => getTaskTypeSuccessText('extract', false),
@@ -1918,7 +2131,7 @@
             return getErrorLabel('', '');
         }
 
-        if (normalizeTaskType(taskType) === 'full' && normalized.includes('包绑卡流程完成')) {
+        if (['full', 'sub6', 'sub12', 'sub24'].includes(normalizeTaskType(taskType)) && (normalized.includes('包绑卡流程完成') || normalized.includes('已完成领取流程'))) {
             return getTaskTypeSuccessText('full', false);
         }
 
@@ -2165,7 +2378,7 @@
             }
             const payload = parseHistoryMessage(item?.message);
             const repairKey = String(item?.id || payload?.job_id || item?.verification_id || '').trim();
-            if (repairKey && !candidateMap.has(repairKey)) {
+            if (repairKey && !candidateMap.has(repairKey) && !attemptedHistoryRepairIds.has(repairKey)) {
                 candidateMap.set(repairKey, item);
             }
         });
@@ -2186,8 +2399,7 @@
                 const jobId = String(payload?.job_id || item?.verification_id || '').trim();
                 if (!jobId) continue;
 
-                const shouldTrackAttempt = shouldAttemptHistoryRepair(item);
-                if (shouldTrackAttempt && repairKey) {
+                if (repairKey) {
                     attemptedHistoryRepairIds.add(repairKey);
                 }
 
@@ -2216,7 +2428,7 @@
         const providerMessage = getProviderMessage(data);
         const stepStatusLabel = getProviderStepStatusLabel(data);
         const providerProgress = getProviderProgress(data);
-        const taskType = normalizeTaskType(data?.task_type);
+        const taskType = normalizeTaskType(data?.task_type || data?.taskType, getSelectedTaskType());
 
         if (status === 'queued') {
             const segments = [providerMessage || (lang === 'zh' ? '排队中' : 'Queued')];
@@ -2281,12 +2493,13 @@
         }
 
         if (status === 'success') {
+            const isFullFlow = ['full', 'sub6', 'sub12', 'sub24'].includes(taskType);
             const successText = getTaskTypeSuccessText(taskType, Boolean(data?.url));
             const safeUrl = String(data?.url || '').trim();
 
             return {
                 status: 'success',
-                html: safeUrl
+                html: safeUrl && !isFullFlow
                     ? `${escapeHtml(successText)}<div class="verify-result-link-row"><a class="verify-result-link" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(safeUrl)}</a></div>`
                     : escapeHtml(successText),
                 terminal: true,
@@ -2335,6 +2548,9 @@
                     CONFIG.pricePerVerify = Number(config.price_per_verify || config.pricePerVerify) || 10;
                     CONFIG.pricePerVerifyExtract = Number(config.price_per_verify_extract || config.price_per_verify || config.pricePerVerifyExtract || config.pricePerVerify) || 10;
                     CONFIG.pricePerVerifyFull = Number(config.price_per_verify_full || config.pricePerVerifyFull) || Math.max(CONFIG.pricePerVerifyExtract, CONFIG.pricePerVerifyExtract * 2);
+                    CONFIG.pricePerVerifySub6 = Number(config.price_per_verify_sub6 || config.pricePerVerifySub6) || CONFIG.pricePerVerifyFull;
+                    CONFIG.pricePerVerifySub12 = Number(config.price_per_verify_sub12 || config.pricePerVerifySub12) || Math.round(CONFIG.pricePerVerifyFull * 1.5);
+                    CONFIG.pricePerVerifySub24 = Number(config.price_per_verify_sub24 || config.pricePerVerifySub24) || Math.round(CONFIG.pricePerVerifyFull * 2);
                     CONFIG.modeVisibility = normalizeVerifyModeVisibility(config.mode_visibility || config.modeVisibility);
                     CONFIG.enabled = config.enabled !== false;
                     const providers = Array.isArray(config.providers) && config.providers.length
@@ -2367,6 +2583,9 @@
                     });
                     syncCurrentChannelMirrors(activeVerifyProvider);
                     syncModeSelectorFromConfig();
+                    updatePriceDisplay();
+                    updateTaskTypeUi();
+                    updateQuotaDisplay();
                     updateProviderSwitcherUi();
                 }
             }
@@ -2388,7 +2607,9 @@
         }
 
         try {
-            const { data: { session } = {} } = await getSession.call(window.supabaseClient.auth);
+            const sessionPromise = Promise.resolve().then(() => getSession.call(window.supabaseClient.auth));
+            const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ data: {} }), 1500));
+            const { data: { session } = {} } = await Promise.race([sessionPromise, timeoutPromise]);
             if (session?.access_token) {
                 headers.Authorization = `Bearer ${session.access_token}`;
             }
@@ -2600,11 +2821,24 @@
                 state.apiQuotaSummary = null;
                 state.health = normalizeProviderHealth({});
             }
-            if (normalizedProvider === activeVerifyProvider) syncCurrentChannelMirrors(normalizedProvider);
+            if (normalizedProvider === activeVerifyProvider) {
+                syncCurrentChannelMirrors(normalizedProvider);
+                updateQuotaDisplay();
+            }
+            updateProviderSwitcherUi();
 
             for (const endpoint of quotaEndpoints) {
                 try {
-                    const res = await fetch(endpoint, { headers, cache: 'no-store' });
+                    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+                    const timeoutId = controller ? setTimeout(() => controller.abort(), 6000) : null;
+                    const res = controller
+                        ? await fetch(endpoint, {
+                            headers,
+                            cache: 'no-store',
+                            signal: controller.signal
+                        })
+                        : await fetch(endpoint, { headers, cache: 'no-store' });
+                    if (timeoutId) clearTimeout(timeoutId);
                     const data = await res.json().catch(() => ({}));
                     if (res.ok && data.success) {
                         applyApiUsageCosts({
@@ -2743,6 +2977,7 @@
     }
 
     function render(container, isLoggedIn = false) {
+        const historyVisible = container.querySelector('#verifyHistoryCard')?.open === true;
         const supportedRegionsUrl = getLang() === 'zh'
             ? 'https://support.google.com/googleone/answer/9080668?hl=zh-Hans'
             : 'https://support.google.com/googleone/answer/9080668?hl=en';
@@ -2750,6 +2985,8 @@
         const availableTaskTypes = getAvailableTaskTypes();
         const showExtractMode = availableTaskTypes.includes('extract');
         const showFullMode = availableTaskTypes.includes('full');
+        const showModeSelector = showExtractMode && showFullMode;
+        const showProActivationMode = availableTaskTypes.includes('pro_activation');
         const defaultTaskType = getDefaultTaskType();
         const modeSelectorClass = availableTaskTypes.length <= 1
             ? 'verify-mode-selector verify-mode-selector--single'
@@ -2774,6 +3011,16 @@
                                             </span>
 	                                        </label>`
             : '';
+        const proActivationModeMarkup = showProActivationMode
+            ? `
+                                        <label class="verify-mode-option verify-mode-option--accent">
+                                            <input type="radio" name="verifyTaskType" value="pro_activation" checked />
+                                            <span class="verify-mode-option__body">
+                                                <span class="verify-mode-option__title">${t('verify.modeProActivationTitle', '一次性开通 Pro')}</span>
+                                                <span class="verify-mode-option__meta"><span id="verifyProActivationModePrice">${CONFIG.pricePerProActivation}</span> ${t('verify.points', '积分')} · <span id="verifyProActivationModeMeta">${t('verify.modeDescProActivation', '服务商一条龙开通 Google One Pro')}</span></span>
+                                            </span>
+                                        </label>`
+            : '';
         const visibleProviderConfigs = getVisibleVerifyProviders();
         const isSingleProviderView = visibleProviderConfigs.length === 1;
         const providerTabsMarkup = visibleProviderConfigs.map((providerConfig) => {
@@ -2781,7 +3028,7 @@
             const isActive = provider === activeVerifyProvider;
             const isRecommended = provider === getRecommendedVerifyProvider(defaultTaskType);
             const label = getProviderLabel(provider);
-            const remaining = getChannelRemainingJobs(provider, defaultTaskType);
+            const remaining = getChannelAvailableJobs(provider, defaultTaskType);
             const remainingTone = getProviderRemainingTone(remaining);
             const running = getProviderActiveTaskCount(provider);
             const health = getChannelState(provider).health || normalizeProviderHealth({});
@@ -2846,17 +3093,6 @@
 ${providerTabsMarkup}
 	                                </div>
 
-	                                <div class="verify-submit-mode-tabs" role="group" aria-label="${t('verify.submitModeLabel', '提交方式')}" data-verify-submit-mode="single">
-                                    <button class="verify-submit-mode-btn active" type="button" data-verify-action="set-submit-mode" data-verify-mode="single" aria-pressed="true">
-                                        <i class="fas fa-user"></i>
-                                        ${t('verify.singleMode', '单个账号')}
-                                    </button>
-                                    <button class="verify-submit-mode-btn" type="button" data-verify-action="set-submit-mode" data-verify-mode="batch" aria-pressed="false">
-                                        <i class="fas fa-layer-group"></i>
-                                        ${t('verify.batchMode', '批量任务')}
-                                    </button>
-                                </div>
-
                                 <div class="verify-single-fields" id="verifySingleFields">
                                     <label class="verify-form-field">
                                         <span class="verify-field-label">${t('verify.emailLabel', 'Gmail 地址')} <em>*</em></span>
@@ -2919,21 +3155,42 @@ ${providerTabsMarkup}
                                     <div class="verify-batch-format-note">${t('verify.batchFormatNote', '支持 ----、|、Tab、逗号分隔；带辅助邮箱/注册时间/注册地时会自动提取 email、password、2FA。最多 50个账号。')}</div>
                                 </div>
 
-                                <div class="verify-form-field">
+                                <div class="verify-form-field" id="verifyModeField"${(showExtractMode && showFullMode) ? '' : ' hidden'}${!(showExtractMode && showFullMode) ? ' style="display: none !important;"' : ''}>
                                     <span class="verify-field-label">${t('verify.modeLabel', '业务模式')}</span>
                                     <div class="${modeSelectorClass}">
 ${extractModeMarkup}
 ${fullModeMarkup}
+${proActivationModeMarkup}
                                     </div>
                                     <div class="verify-mode-note" id="verifyTaskTypeNote">${getTaskTypeGuideText(defaultTaskType)}</div>
                                 </div>
 
-                                <div class="verify-form-meta">
-                                    <div class="verify-price-info verify-form-price">
-                                        <i class="fas fa-coins"></i>
-                                        ${t('verify.singleCost', '本次提交消耗')} <span class="price" id="verifySingleCost">${CONFIG.pricePerVerify}</span> ${t('verify.points', '积分')}
-                                        <span class="verify-price-separator" aria-hidden="true">·</span>
-                                        <span class="verify-bulk-contact">${t('verify.bulkContactSupport', '大批量可联系客服')}</span>
+                                <div class="verify-form-field verify-duration-shell" id="verifyDurationShell"${defaultTaskType !== 'full' ? ' hidden' : ''}>
+                                    <span class="verify-field-label">${t('verify.durationLabel', '订阅时长')} <em>*</em></span>
+                                    <div class="verify-duration-group" role="radiogroup" aria-label="${t('verify.durationLabel', '订阅时长')}">
+                                        <label class="verify-duration-card ${CONFIG.selectedDuration === 'sub6' ? 'active' : ''}">
+                                            <input type="radio" name="verifyDuration" value="sub6" ${CONFIG.selectedDuration === 'sub6' ? 'checked' : ''} />
+                                            <span class="verify-duration-card__body">
+                                                <span class="verify-duration-card__title">6 个月</span>
+                                                <span class="verify-duration-card__price"><span id="verifySub6Price">${CONFIG.pricePerVerifySub6}</span> ${t('verify.points', '积分')}</span>
+                                            </span>
+                                        </label>
+                                        <label class="verify-duration-card verify-duration-card--featured ${CONFIG.selectedDuration === 'sub12' ? 'active' : ''}">
+                                            <input type="radio" name="verifyDuration" value="sub12" ${CONFIG.selectedDuration === 'sub12' ? 'checked' : ''} />
+                                            <span class="verify-duration-badge">${t('verify.recommended', '推荐')}</span>
+                                            <span class="verify-duration-card__body">
+                                                <span class="verify-duration-card__title">12 个月 (1年)</span>
+                                                <span class="verify-duration-card__price"><span id="verifySub12Price">${CONFIG.pricePerVerifySub12}</span> ${t('verify.points', '积分')}</span>
+                                            </span>
+                                        </label>
+                                        <label class="verify-duration-card verify-duration-card--featured ${CONFIG.selectedDuration === 'sub24' ? 'active' : ''}">
+                                            <input type="radio" name="verifyDuration" value="sub24" ${CONFIG.selectedDuration === 'sub24' ? 'checked' : ''} />
+                                            <span class="verify-duration-badge">${t('verify.bestValue', '超值')}</span>
+                                            <span class="verify-duration-card__body">
+                                                <span class="verify-duration-card__title">24 个月 (2年)</span>
+                                                <span class="verify-duration-card__price"><span id="verifySub24Price">${CONFIG.pricePerVerifySub24}</span> ${t('verify.points', '积分')}</span>
+                                            </span>
+                                        </label>
                                     </div>
                                 </div>
 
@@ -2948,12 +3205,12 @@ ${fullModeMarkup}
                                 </div>
 
                                 <div class="verify-batch-results" id="verifyBatchResults">
-	                                    <div class="verify-batch-results-header">
-	                                        <div class="verify-batch-results-title">
-	                                            <i class="fas fa-list-check"></i>
-	                                            ${t('verify.results', '任务状态')}
-	                                            <span class="verify-active-provider-badge" id="verifyActiveProviderLabel">${escapeHtml(getProviderLabel(activeVerifyProvider))}</span>
-	                                        </div>
+                                    <div class="verify-batch-results-header">
+                                        <div class="verify-batch-results-title">
+                                            <i class="fas fa-list-check"></i>
+                                            ${t('verify.results', '任务状态')}
+                                            <span class="verify-active-provider-badge" id="verifyActiveProviderLabel">${escapeHtml(getProviderLabel(activeVerifyProvider))}</span>
+                                        </div>
                                         <div class="verify-batch-progress" id="verifyBatchProgress">
                                             ${t('verify.progress', '进度')}: <span class="current">0</span>/<span class="total">1</span>
                                         </div>
@@ -2971,115 +3228,8 @@ ${fullModeMarkup}
                                         </div>
                                     </div>
                                 </div>
-
-                                <div class="verify-history-card" id="verifyHistoryCard">
-                                    <div class="verify-history-header">
-                                        <div class="verify-history-title">
-                                            <i class="fas fa-clock-rotate-left"></i>
-                                            ${t('verify.history', '任务历史')}
-                                        </div>
-                                        <div class="verify-history-actions">
-                                            <button class="verify-history-export" data-verify-action="export-history" title="${t('verify.exportCsv', '导出 CSV')}">
-                                                <i class="fas fa-file-export"></i>
-                                            </button>
-                                            <button class="verify-history-refresh" data-verify-action="refresh-history" title="${t('verify.refreshHistory', '刷新')}">
-                                                <i class="fas fa-sync-alt"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div class="verify-history-list" id="verifyHistoryList">
-                                        <div class="verify-history-loading">
-                                            <i class="fas fa-spinner fa-spin"></i> ${t('verify.loading', '加载中...')}
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
 
-                            <aside class="verify-guide-card" id="help" data-verify-help="1" tabindex="-1">
-                                <div class="verify-guide-head">
-                                    <div class="verify-guide-badge">
-                                        <i class="fas fa-book-open"></i>
-                                        ${t('verify.instructionsTitle', '使用说明')}
-                                    </div>
-                                    <h4>${t('verify.guideCardTitle', '提交前请先确认这些条件')}</h4>
-                                    <p>${t('verify.guideCardSubtitle', '准备好账号环境后再提交，可以明显减少失败与封控。')}</p>
-                                </div>
-
-                                <div class="verify-guide-section">
-                                    <div class="verify-guide-section-title">${t('verify.guideRequiredTitle', '必要条件')}</div>
-                                    <div class="verify-guide-list">
-                                        <div class="verify-guide-item">
-                                            <div class="verify-guide-item-title">${t('verify.guide2faTitle', '2FA 验证')}</div>
-                                            <div class="verify-guide-item-body">
-                                                ${t('verify.guide2faBodyPrefix', '必须开启')}
-                                                <a class="verify-guide-link" href="https://zhuanlan.zhihu.com/p/1997015036741304912" target="_blank" rel="noopener noreferrer">${t('verify.guideViewTutorial', '点击查看教程')}</a>
-                                            </div>
-                                        </div>
-                                        <div class="verify-guide-item">
-                                            <div class="verify-guide-item-title">${t('verify.guideRegionTitle', '地区')}</div>
-                                            <div class="verify-guide-item-body">
-                                                ${t('verify.guideRegionBodyPrefix', '需在支持区域内')}
-                                                <a class="verify-guide-link" href="${supportedRegionsUrl}" target="_blank" rel="noopener noreferrer">${t('verify.guideViewRegions', '点击查看支持地区')}</a>
-                                            </div>
-                                        </div>
-                                        <div class="verify-guide-item">
-                                            <div class="verify-guide-item-title">${t('verify.guidePaymentProfileTitle', '付款资料')}</div>
-                                            <div class="verify-guide-item-body">
-                                                ${t('verify.guidePaymentProfileBodyPrefix', '提交任务前必须点击')}
-                                                <a class="verify-guide-link" href="https://payments.google.com/gp/w/u/0/home/settings" target="_blank" rel="noopener noreferrer">${t('verify.guideClosePaymentProfile', '关闭付款资料')}</a>
-                                            </div>
-                                        </div>
-                                        <div class="verify-guide-item">
-                                            <div class="verify-guide-item-title">${t('verify.guideFamilyTitle', '家庭组必须退出')}</div>
-                                            <div class="verify-guide-item-body">${t('verify.guideFamilyBody', '确保该账号不存在其它可用的 pro 权限订阅')}</div>
-                                        </div>
-                                        <div class="verify-guide-item">
-                                            <div class="verify-guide-item-title">${t('verify.guideAccountTitle', '账号建议')}</div>
-                                            <div class="verify-guide-item-body">${t('verify.guideAccountBody', '建议使用老号，新号极其容易封控，导致账号无法登录。这不是认证的问题，而是账号本身的问题。')}</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="verify-guide-section">
-                                    <div class="verify-guide-section-title">${t('verify.guideNoteTitle', '注意')}</div>
-                                    <div class="verify-guide-note-list">
-                                        <div class="verify-guide-note">
-                                            <i class="fas fa-clipboard-list"></i>
-                                            <span>${t('verify.guideNoteBrowser', '领取时浏览器须登录该 Google 账号。报错请换节点。')}</span>
-                                        </div>
-                                        <div class="verify-guide-note">
-                                            <i class="fas fa-earth-asia"></i>
-                                            <span>${t('verify.guideNoteRegion', '不需要拥有学生资格才能订阅，所有符合支持地区的账号都可以进行订阅，按步骤操作即可。')}</span>
-                                        </div>
-                                        <div class="verify-guide-note verify-guide-note-privacy">
-                                            <span class="verify-guide-note-shield" aria-hidden="true">
-                                                <svg width="16" height="18" viewBox="0 0 16 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                    <path d="M8 0.85L13.6773 2.96565C14.2538 3.18038 14.6364 3.73107 14.6364 4.34626V8.10712C14.6364 12.2356 12.2037 15.9767 8.43275 17.6513C8.15639 17.774 7.84361 17.774 7.56725 17.6513C3.79625 15.9767 1.36364 12.2356 1.36364 8.10712V4.34626C1.36364 3.73107 1.74618 3.18038 2.32275 2.96565L8 0.85Z" fill="url(#shieldFill)"/>
-                                                    <path d="M8 2.15L12.7105 3.90532C12.9658 4.00048 13.1364 4.24434 13.1364 4.51679V8.02703C13.1364 11.6332 11.0948 14.9122 8 16.4101C4.90522 14.9122 2.86364 11.6332 2.86364 8.02703V4.51679C2.86364 4.24434 3.03421 4.00048 3.28948 3.90532L8 2.15Z" fill="url(#shieldInner)"/>
-                                                    <path d="M8 4.35C8.3866 4.35 8.7 4.6634 8.7 5.05V8.31195L10.4782 10.0902C10.7516 10.3636 10.7516 10.8068 10.4782 11.0802C10.2048 11.3536 9.76158 11.3536 9.48817 11.0802L7.50497 9.09703C7.3737 8.96576 7.3 8.78771 7.3 8.60205V5.05C7.3 4.6634 7.6134 4.35 8 4.35Z" fill="rgba(245,251,255,0.96)"/>
-                                                    <path d="M3.8 4.6L8 3L12.2 4.6" stroke="rgba(255,255,255,0.42)" stroke-width="0.8" stroke-linecap="round"/>
-                                                    <defs>
-                                                        <linearGradient id="shieldFill" x1="8" y1="0.85" x2="8" y2="17.7433" gradientUnits="userSpaceOnUse">
-                                                            <stop stop-color="#E3F5FF"/>
-                                                            <stop offset="0.42" stop-color="#8BC1E0"/>
-                                                            <stop offset="1" stop-color="#4E739D"/>
-                                                        </linearGradient>
-                                                        <linearGradient id="shieldInner" x1="8" y1="2.15" x2="8" y2="16.4101" gradientUnits="userSpaceOnUse">
-                                                            <stop stop-color="rgba(255,255,255,0.22)"/>
-                                                            <stop offset="1" stop-color="rgba(11,22,35,0.18)"/>
-                                                        </linearGradient>
-                                                    </defs>
-                                                </svg>
-                                            </span>
-                                            <span class="verify-guide-note-privacy-body">${t('verify.guideNotePrivacy', '我们不会保存任何账户信息，提交的信息仅做订阅临时使用，订阅完成后自动销毁。为了账户安全，订阅完成后建议修改 2FA 码；不建议立即修改密码，以免触发封控。')}</span>
-                                        </div>
-                                        <div class="verify-guide-note verify-guide-note-success">
-                                            <i class="fas fa-credit-card"></i>
-                                            <span>${t('verify.guideNoteDualMode', '提链模式需要你自行打开链接绑卡；全流程模式会由服务商直接处理。需要卡时可前往')}<a class="verify-guide-link verify-guide-link-inline" href="${shopUrl}" target="_blank" rel="noopener noreferrer">${t('verify.guideShopLink', '商城')}</a>${t('verify.guideNoteDualModeSuffix', '购卡。')}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </aside>
                         </div>
                     </div>
                 </div>
@@ -3091,21 +3241,72 @@ ${fullModeMarkup}
                     <div class="verify-result-message" id="verifyResultMessage"></div>
                 </div>
             </div>
+            <dialog class="verify-history-card verify-history-dialog glass-ring" id="verifyHistoryCard" aria-labelledby="verifyHistoryTitle">
+                <div class="verify-history-surface glass-ring__surface">
+                    <div class="verify-history-header">
+                        <div class="verify-history-title" id="verifyHistoryTitle">
+                            <i class="fas fa-clock-rotate-left"></i>
+                            ${t('verify.history', '任务历史')}
+                        </div>
+                        <div class="verify-history-actions">
+                            <button class="verify-history-export" data-verify-action="export-history" title="${t('verify.exportCsv', '导出 CSV')}">
+                                <i class="fas fa-file-export"></i>
+                            </button>
+                            <button class="verify-history-refresh" data-verify-action="refresh-history" title="${t('verify.refreshHistory', '刷新')}">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button type="button" class="verify-history-close" data-verify-action="close-history" aria-label="${getLang() === 'zh' ? '关闭任务历史' : 'Close task history'}" autofocus>
+                                <i class="fas fa-times" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="verify-history-list" id="verifyHistoryList">
+                        <div class="verify-history-loading">
+                            <i class="fas fa-spinner fa-spin"></i> ${t('verify.loading', '加载中...')}
+                        </div>
+                    </div>
+                </div>
+            </dialog>
         `;
 
         bindDelegatedUi(container);
-        setupInputListener();
-        updatePreviewModeUI();
-        applyDefaultVerifyProvider();
-        syncCurrentChannelMirrors(activeVerifyProvider);
-        restoreChannelFormState(activeVerifyProvider);
-        restoreChannelResultPanel(activeVerifyProvider);
-        updatePriceDisplay();
-        updateTaskTypeUi();
-        updateQuotaDisplay();
-        updateProviderSwitcherUi();
-        loadHistory();
-        syncRingStateFromInputs();
+        bindHistoryDialog(container);
+        if (historyVisible) {
+            openVerifyHistory();
+        }
+        try {
+            setupInputListener();
+        } catch (inputErr) {
+            console.error('[Verify] setupInputListener failed:', inputErr);
+        }
+        try {
+            updatePreviewModeUI();
+            applyDefaultVerifyProvider();
+            syncCurrentChannelMirrors(activeVerifyProvider);
+            restoreChannelFormState(activeVerifyProvider);
+            restoreChannelResultPanel(activeVerifyProvider);
+            updatePriceDisplay();
+            updateTaskTypeUi();
+            updateQuotaDisplay();
+            updateProviderSwitcherUi();
+        } catch (uiErr) {
+            console.error('[Verify] render UI initialization failed:', uiErr);
+        }
+        try {
+            loadHistory();
+        } catch (histErr) {
+            console.error('[Verify] loadHistory failed:', histErr);
+        }
+        try {
+            syncRingStateFromInputs();
+        } catch (ringErr) {
+            console.error('[Verify] syncRingStateFromInputs failed:', ringErr);
+        }
+        try {
+            window.LabelInput?.scan?.();
+        } catch (lbiErr) {
+            console.error('[Verify] LabelInput scan failed:', lbiErr);
+        }
         if (currentUser) {
             VERIFY_PROVIDER_KEYS.forEach((provider) => restorePendingTask({ restart: true, provider }));
         }
@@ -3139,11 +3340,8 @@ ${fullModeMarkup}
                 const target = document.getElementById('help')
                     || document.querySelector('[data-verify-help="1"], .verify-guide-card');
                 if (!target) {
-                    if (retriesLeft <= 0) {
-                        resolve(false);
-                        return;
-                    }
-                    setTimeout(() => focusHelp(retriesLeft - 1), 120);
+                    window.location.href = '/google-2fa-tutorial.html';
+                    resolve(true);
                     return;
                 }
 
@@ -3172,9 +3370,7 @@ ${fullModeMarkup}
     function focusVerifyHistoryFromEngagement() {
         return new Promise((resolve) => {
             const focusHistory = (retriesLeft = 12) => {
-                const target = document.getElementById('verifyHistoryCard')
-                    || document.getElementById('verifyHistoryList')
-                    || document.querySelector('.verify-history-card, .verify-history-list');
+                const target = document.getElementById('verifyHistoryCard');
                 if (!target) {
                     if (retriesLeft <= 0) {
                         resolve(false);
@@ -3184,13 +3380,11 @@ ${fullModeMarkup}
                     return;
                 }
 
-                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                openVerifyHistory();
+                void loadHistory();
                 target.classList.remove('is-engagement-focus');
                 void target.offsetWidth;
                 target.classList.add('is-engagement-focus');
-                if (typeof target.focus === 'function') {
-                    target.focus({ preventScroll: true });
-                }
                 setTimeout(() => {
                     target.classList.remove('is-engagement-focus');
                 }, 3200);
@@ -3298,11 +3492,13 @@ ${fullModeMarkup}
             await loadUserBalance();
             restorePendingTask();
             refreshQuotaSoon(0);
+            void loadHistory();
         } else {
             setVerifyHidden(loginPrompt, true);
             setVerifyHidden(form, false);
             setVerifyHidden(balanceEl, true);
             if (clearCache) localStorage.removeItem('cached_user_profile');
+            void loadHistory();
         }
 
         syncRingStateFromInputs();
@@ -3375,6 +3571,19 @@ ${fullModeMarkup}
 
         taskTypeInputs.forEach((input) => {
             input.addEventListener('change', () => {
+                updatePriceDisplay();
+                updateTaskTypeUi();
+                syncRingStateFromInputs();
+            });
+        });
+
+        const durationInputs = document.querySelectorAll('input[name="verifyDuration"]');
+        durationInputs.forEach((input) => {
+            input.addEventListener('change', () => {
+                CONFIG.selectedDuration = input.value;
+                durationInputs.forEach((dInput) => {
+                    dInput.closest('.verify-duration-card')?.classList.toggle('active', dInput.checked);
+                });
                 updatePriceDisplay();
                 updateTaskTypeUi();
                 syncRingStateFromInputs();
@@ -4778,7 +4987,7 @@ ${fullModeMarkup}
         return escapeHtml(status || '--');
     }
 
-    async function loadHistory() {
+    async function loadHistory(options = {}) {
         const listEl = document.getElementById('verifyHistoryList');
         if (!listEl) return;
 
@@ -4787,21 +4996,27 @@ ${fullModeMarkup}
             return;
         }
 
-        listEl.innerHTML = `<div class="verify-history-loading"><i class="fas fa-spinner fa-spin"></i> ${t('verify.loading', '加载中...')}</div>`;
+        if (!options.silent || !historyData.length) {
+            listEl.innerHTML = `<div class="verify-history-loading"><i class="fas fa-spinner fa-spin"></i> ${t('verify.loading', '加载中...')}</div>`;
+        }
 
         try {
-            const { data, error } = await window.supabaseClient
+            const queryPromise = Promise.resolve().then(() => window.supabaseClient
                 .from('verification_logs')
                 .select(VERIFY_HISTORY_SELECT)
                 .eq('user_id', currentUser.id)
                 .eq('site', getCurrentSiteValue())
                 .order('created_at', { ascending: false })
-                .limit(20);
+                .limit(20)
+            );
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000));
+            const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
 
             if (error) {
                 console.warn('[VerifyHistory] Failed to load history:', error.message || error);
-                listEl.innerHTML = `<div class="verify-history-empty"><i class="fas fa-inbox"></i> ${t('verify.loadFailed', '加载失败')}</div>`;
-                historyData = [];
+                if (!historyData.length) {
+                    listEl.innerHTML = `<div class="verify-history-empty"><i class="fas fa-inbox"></i> ${t('verify.loadFailed', '加载失败')}</div>`;
+                }
                 return;
             }
 
@@ -4856,14 +5071,16 @@ ${fullModeMarkup}
             void repairFalseFailedHistory(data)
                 .then((repaired) => {
                     if (repaired) {
-                        loadHistory();
+                        loadHistory({ silent: true });
                     }
                 })
                 .catch((error) => {
                     console.warn('[VerifyHistory] Failed to repair false failures:', error?.message || error);
                 });
         } catch (_) {
-            listEl.innerHTML = `<div class="verify-history-empty">${t('verify.loadFailed', '加载失败')}</div>`;
+            if (!historyData.length) {
+                listEl.innerHTML = `<div class="verify-history-empty">${t('verify.loadFailed', '加载失败')}</div>`;
+            }
         }
     }
 

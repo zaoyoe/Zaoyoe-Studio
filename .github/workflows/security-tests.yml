@@ -68,6 +68,8 @@ jobs:
   security_test_shards:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      KC_SESSION_ENCRYPTION_KEY: ci-kc-session-encryption-key-material-0123456789abcdef
     strategy:
       fail-fast: false
       matrix:
@@ -85,6 +87,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install KC service dependencies
+        run: npm ci --prefix services/kc-pay-gpt
 
       - name: Run security regression suite shard
         run: node --test --test-reporter=tap --test-shard=${{ matrix.shard }}/8 tests/*.test.js

@@ -1,0 +1,95 @@
+[
+  {
+    "path": "services/kc-pay-gpt/mysql-store.js",
+    "sha256": "504c70d060fc97539a536baec3f1c5a4194a1027bb8e75e773e44a67d885b759",
+    "backup": "/tmp/kc-local-settlement-20261108-backup/services/kc-pay-gpt/mysql-store.js",
+    "actual_sha256": "504c70d060fc97539a536baec3f1c5a4194a1027bb8e75e773e44a67d885b759",
+    "matches": true,
+    "readable_bytes": 189267,
+    "manifest": "/tmp/kc-local-settlement-20261108-backup/manifest.json"
+  },
+  {
+    "path": "services/kc-pay-gpt/server.js",
+    "sha256": "737c0494dadf39056091b4597356170bf16a12bd2bd1423831a737587e6432b0",
+    "backup": "/tmp/kc-local-settlement-20261108-backup/services/kc-pay-gpt/server.js",
+    "actual_sha256": "737c0494dadf39056091b4597356170bf16a12bd2bd1423831a737587e6432b0",
+    "matches": true,
+    "readable_bytes": 220421,
+    "manifest": "/tmp/kc-local-settlement-20261108-backup/manifest.json"
+  },
+  {
+    "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+    "sha256": "c3eff1747400638ad5193bcb3e439fd4af3fdd6666bcd26c243b31dec3729960",
+    "backup": "/tmp/kc-local-settlement-20261108-backup/services/kc-pay-gpt/test/recharge-routing.test.js",
+    "actual_sha256": "c3eff1747400638ad5193bcb3e439fd4af3fdd6666bcd26c243b31dec3729960",
+    "matches": true,
+    "readable_bytes": 31775,
+    "manifest": "/tmp/kc-local-settlement-20261108-backup/manifest.json"
+  },
+  {
+    "path": "services/kc-pay-gpt/server.js",
+    "sha256": "d280b05abd17f968727b3f8bb697d9c4b5d88ede503787fd6330a5d42547e6f7",
+    "backup": "/tmp/kc-round4-pending-renewal-implementation-before/services/kc-pay-gpt/server.js",
+    "actual_sha256": "d280b05abd17f968727b3f8bb697d9c4b5d88ede503787fd6330a5d42547e6f7",
+    "matches": true,
+    "readable_bytes": 222370,
+    "manifest": "/tmp/kc-round4-pending-renewal-implementation-before/manifest.json"
+  },
+  {
+    "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+    "sha256": "1afc794142379fbba6eec5c1445e38525108492840449905dce27f2762097cd4",
+    "backup": "/tmp/kc-round4-pending-renewal-implementation-before/services/kc-pay-gpt/test/recharge-routing.test.js",
+    "actual_sha256": "1afc794142379fbba6eec5c1445e38525108492840449905dce27f2762097cd4",
+    "matches": true,
+    "readable_bytes": 44763,
+    "manifest": "/tmp/kc-round4-pending-renewal-implementation-before/manifest.json"
+  },
+  {
+    "path": "tests/security-round4-kc-local-settlement.test.js",
+    "sha256": "e3d87a6eec13bf09ecd2696effb76ca52462f515e289b59579689a8f59da7973",
+    "backup": "/tmp/kc-round4-pending-renewal-implementation-before/tests/security-round4-kc-local-settlement.test.js",
+    "actual_sha256": "e3d87a6eec13bf09ecd2696effb76ca52462f515e289b59579689a8f59da7973",
+    "matches": true,
+    "readable_bytes": 13674,
+    "manifest": "/tmp/kc-round4-pending-renewal-implementation-before/manifest.json"
+  },
+  {
+    "path": "services/kc-pay-gpt/server.js",
+    "backup": "/tmp/kc-round4-worker-error-before/services/kc-pay-gpt/server.js",
+    "sha256": "23848ea5d7d0537a9ee63868670c43e20510792e341958b9574d02a19ae97edd",
+    "actual_sha256": "23848ea5d7d0537a9ee63868670c43e20510792e341958b9574d02a19ae97edd",
+    "matches": true,
+    "readable_bytes": 222676,
+    "manifest": "/tmp/kc-round4-worker-error-before/manifest.json"
+  },
+  {
+    "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+    "backup": "/tmp/kc-round4-worker-error-before/services/kc-pay-gpt/test/recharge-routing.test.js",
+    "sha256": "d1ac62a7e08e2faf0b041f6ccb518d48b1aa7869482295727834427c81202014",
+    "actual_sha256": "d1ac62a7e08e2faf0b041f6ccb518d48b1aa7869482295727834427c81202014",
+    "matches": true,
+    "readable_bytes": 48586,
+    "manifest": "/tmp/kc-round4-worker-error-before/manifest.json"
+  },
+  {
+    "backup": "/tmp/kc-round4-renewal-followup-before/services/kc-pay-gpt/server.js",
+    "actual_sha256": "d280b05abd17f968727b3f8bb697d9c4b5d88ede503787fd6330a5d42547e6f7",
+    "readable_bytes": 222370,
+    "expected_hash_available": false,
+    "note": "Archive-time readback only; no pre-recorded hash manifest."
+  },
+  {
+    "backup": "/tmp/kc-round4-renewal-followup-before/services/kc-pay-gpt/test/recharge-routing.test.js",
+    "actual_sha256": "bd53c5f2d489fa9743ebf4716043269772b8681ab2f159f1b1b7f368c66c2c3a",
+    "readable_bytes": 43324,
+    "expected_hash_available": false,
+    "note": "Archive-time readback only; no pre-recorded hash manifest."
+  },
+  {
+    "backup": "/tmp/kc-round4-renewal-followup-before/tests/security-round4-kc-local-settlement.test.js",
+    "actual_sha256": "e3d87a6eec13bf09ecd2696effb76ca52462f515e289b59579689a8f59da7973",
+    "readable_bytes": 13674,
+    "expected_hash_available": false,
+    "note": "Archive-time readback only; no pre-recorded hash manifest."
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "events": [
+    {
+      "event": "First archival guard exit",
+      "exit": 1,
+      "stage": "Before archive creation",
+      "reason": "Outside-scope file hash differs from handoff record",
+      "path": "js/engagement-runtime-loader.js",
+      "handoff_sha256": "45aa0934ef57290f023fcf5d4b6f416d3a6b0c621e48fefb90a20631a9e0ff7d",
+      "observed_sha256": "c9186bfbfe8422abe6d1676a2f47402a12c8c4df3895073bf9fb6d807af53413",
+      "source_modified_or_reverted": false
+    },
+    {
+      "event": "Second archival run",
+      "exit": 0,
+      "outside_scope_status": "REVIEW; provenance undetermined; preserved and excluded from delta"
+    }
+  ],
+  "boundary": "Archiving events only, not regression results; no production operations."
+}

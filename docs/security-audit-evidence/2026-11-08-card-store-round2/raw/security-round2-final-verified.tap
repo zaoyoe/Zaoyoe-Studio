@@ -1,0 +1,1486 @@
+TAP version 13
+# Subtest: supplier catalog list requires admin and returns only normalized upstream fields
+ok 1 - supplier catalog list requires admin and returns only normalized upstream fields
+  ---
+  duration_ms: 19.338125
+  type: 'test'
+  ...
+# Subtest: single and bulk supplier imports create only inactive local drafts and disabled mappings
+ok 2 - single and bulk supplier imports create only inactive local drafts and disabled mappings
+  ---
+  duration_ms: 2.8815
+  type: 'test'
+  ...
+# Subtest: disabled supplier accounts fail closed before any upstream request
+ok 3 - disabled supplier accounts fail closed before any upstream request
+  ---
+  duration_ms: 0.417125
+  type: 'test'
+  ...
+# Subtest: supplier catalog import fails closed with a clear migration-not-ready response
+ok 4 - supplier catalog import fails closed with a clear migration-not-ready response
+  ---
+  duration_ms: 0.2025
+  type: 'test'
+  ...
+# Subtest: re-importing an existing source listing returns its mapping without overwriting local product data
+ok 5 - re-importing an existing source listing returns its mapping without overwriting local product data
+  ---
+  duration_ms: 0.213875
+  type: 'test'
+  ...
+# Subtest: failed mapping creation compensates by removing the newly created inactive draft
+ok 6 - failed mapping creation compensates by removing the newly created inactive draft
+  ---
+  duration_ms: 0.309584
+  type: 'test'
+  ...
+# Subtest: supplier catalog route rejects unsupported methods and invalid bulk size
+ok 7 - supplier catalog route rejects unsupported methods and invalid bulk size
+  ---
+  duration_ms: 0.159708
+  type: 'test'
+  ...
+# Subtest: supplier catalog API handler is registered on the admin gateway
+ok 8 - supplier catalog API handler is registered on the admin gateway
+  ---
+  duration_ms: 2.637125
+  type: 'test'
+  ...
+# Subtest: Xiareng catalog snapshots merge duplicate goods across categories and reuse one snapshot for filters and pages
+ok 9 - Xiareng catalog snapshots merge duplicate goods across categories and reuse one snapshot for filters and pages
+  ---
+  duration_ms: 13.665917
+  type: 'test'
+  ...
+# Subtest: Xiareng catalog snapshots survive admin handler recreation between category and page requests
+ok 10 - Xiareng catalog snapshots survive admin handler recreation between category and page requests
+  ---
+  duration_ms: 2.056875
+  type: 'test'
+  ...
+# Subtest: refreshing a Xiareng snapshot in another tab does not invalidate an unexpired snapshot
+ok 11 - refreshing a Xiareng snapshot in another tab does not invalidate an unexpired snapshot
+  ---
+  duration_ms: 3.479208
+  type: 'test'
+  ...
+# Subtest: Xiareng catalog snapshots expire after the cache TTL and cannot cross site scope
+ok 12 - Xiareng catalog snapshots expire after the cache TTL and cannot cross site scope
+  ---
+  duration_ms: 4.443417
+  type: 'test'
+  ...
+# Subtest: Xiareng catalog rejects malformed or unscoped snapshot filters before reading upstream
+ok 13 - Xiareng catalog rejects malformed or unscoped snapshot filters before reading upstream
+  ---
+  duration_ms: 0.22875
+  type: 'test'
+  ...
+# Subtest: account discovery returns safe configuration metadata without adapter construction or upstream calls
+ok 14 - account discovery returns safe configuration metadata without adapter construction or upstream calls
+  ---
+  duration_ms: 1.726209
+  type: 'test'
+  ...
+# Subtest: catalog requests resolve exactly the selected provider/account and carry it to the isolated registry
+ok 15 - catalog requests resolve exactly the selected provider/account and carry it to the isolated registry
+  ---
+  duration_ms: 0.235208
+  type: 'test'
+  ...
+# Subtest: paused nondefault account and unsupported actions never construct an adapter or call upstream
+ok 16 - paused nondefault account and unsupported actions never construct an adapter or call upstream
+  ---
+  duration_ms: 0.23075
+  type: 'test'
+  ...
+# Subtest: Xiareng draft import uses one transactional RPC with a sanitized snapshot and server-validated race
+ok 17 - Xiareng draft import uses one transactional RPC with a sanitized snapshot and server-validated race
+  ---
+  duration_ms: 77.208833
+  type: 'test'
+  ...
+# Subtest: unsupported SKU, unspecified race and unsupported site do not create even an inactive product
+ok 18 - unsupported SKU, unspecified race and unsupported site do not create even an inactive product
+  ---
+  duration_ms: 2.155917
+  type: 'test'
+  ...
+# Subtest: a missing v2 database function fails explicitly without falling back to nontransactional product writes
+ok 19 - a missing v2 database function fails explicitly without falling back to nontransactional product writes
+  ---
+  duration_ms: 0.721708
+  type: 'test'
+  ...
+# Subtest: read-only preview requires stock/quote capabilities and never writes local products or mappings
+ok 20 - read-only preview requires stock/quote capabilities and never writes local products or mappings
+  ---
+  duration_ms: 1.248875
+  type: 'test'
+  ...
+# Subtest: preview returns a specific conflict when a supplier refuses draft-card inventory reads
+ok 21 - preview returns a specific conflict when a supplier refuses draft-card inventory reads
+  ---
+  duration_ms: 0.533125
+  type: 'test'
+  ...
+# Subtest: draft-card GET is admin-only, strictly paged, normalized and never writes local data
+ok 22 - draft-card GET is admin-only, strictly paged, normalized and never writes local data
+  ---
+  duration_ms: 0.306042
+  type: 'test'
+  ...
+# Subtest: draft-card request validation fails before account lookup or supplier calls
+ok 23 - draft-card request validation fails before account lookup or supplier calls
+  ---
+  duration_ms: 0.105208
+  type: 'test'
+  ...
+# Subtest: Xiareng preselected-card goods are rejected before any import RPC or write
+ok 24 - Xiareng preselected-card goods are rejected before any import RPC or write
+  ---
+  duration_ms: 0.709583
+  type: 'test'
+  ...
+# Subtest: product source summary excludes credentials and stays readable on the pre-v2 schema
+ok 25 - product source summary excludes credentials and stays readable on the pre-v2 schema
+  ---
+  duration_ms: 0.251167
+  type: 'test'
+  ...
+# Subtest: source summary allowlists stored fields and rejects malformed product IDs before reading the database
+ok 26 - source summary allowlists stored fields and rejects malformed product IDs before reading the database
+  ---
+  duration_ms: 0.183291
+  type: 'test'
+  ...
+# Subtest: procurement history needs shop.manage but no configured adapter, credential, or enabled account
+ok 27 - procurement history needs shop.manage but no configured adapter, credential, or enabled account
+  ---
+  duration_ms: 0.178167
+  type: 'test'
+  ...
+# Subtest: procurement history rejects unauthorized and invalid filters before accessing private data
+ok 28 - procurement history rejects unauthorized and invalid filters before accessing private data
+  ---
+  duration_ms: 3.819708
+  type: 'test'
+  ...
+# Subtest: procurement database failures return a safe retryable response without revealing internals
+ok 29 - procurement database failures return a safe retryable response without revealing internals
+  ---
+  duration_ms: 0.528625
+  type: 'test'
+  ...
+# Subtest: known upstream order reconciliation is read-only and returns only safe status evidence
+ok 30 - known upstream order reconciliation is read-only and returns only safe status evidence
+  ---
+  duration_ms: 0.432375
+  type: 'test'
+  ...
+# Subtest: upstream order reconciliation rejects malformed input before any database or supplier access
+ok 31 - upstream order reconciliation rejects malformed input before any database or supplier access
+  ---
+  duration_ms: 0.872125
+  type: 'test'
+  ...
+# Subtest: upstream order reconciliation fails closed on lookup errors and malformed status evidence
+ok 32 - upstream order reconciliation fails closed on lookup errors and malformed status evidence
+  ---
+  duration_ms: 4.069041
+  type: 'test'
+  ...
+# Subtest: update-mapping-ceiling validates input and updates mapping cost ceiling via RPC
+ok 33 - update-mapping-ceiling validates input and updates mapping cost ceiling via RPC
+  ---
+  duration_ms: 0.451208
+  type: 'test'
+  ...
+# Subtest: Xiareng catalog list returns categoryTree and filters items by groupKey
+ok 34 - Xiareng catalog list returns categoryTree and filters items by groupKey
+  ---
+  duration_ms: 7.601208
+  type: 'test'
+  ...
+# Subtest: Xiareng multi-variant import calls import_shop_supplier_multi_draft_v3 with multiple variants
+ok 35 - Xiareng multi-variant import calls import_shop_supplier_multi_draft_v3 with multiple variants
+  ---
+  duration_ms: 1.708166
+  type: 'test'
+  ...
+# Subtest: Xiareng draft import preserves cover imageUrl in snapshot and updates product icon
+ok 36 - Xiareng draft import preserves cover imageUrl in snapshot and updates product icon
+  ---
+  duration_ms: 8.136625
+  type: 'test'
+  ...
+# Subtest: Xiareng autoAllVariants automatically discovers races and imports multi-variant draft
+ok 37 - Xiareng autoAllVariants automatically discovers races and imports multi-variant draft
+  ---
+  duration_ms: 0.999917
+  type: 'test'
+  ...
+# Subtest: Xiareng batch import respects category payment channels and initialStatus published
+ok 38 - Xiareng batch import respects category payment channels and initialStatus published
+  ---
+  duration_ms: 0.455625
+  type: 'test'
+  ...
+# Subtest: Xiareng category-goods endpoint returns goods grouped by categoryKeys from snapshot
+ok 39 - Xiareng category-goods endpoint returns goods grouped by categoryKeys from snapshot
+  ---
+  duration_ms: 0.895542
+  type: 'test'
+  ...
+# Subtest: Xiareng multi-variant import in fallback mode creates active product with channels when initialStatus is published
+ok 40 - Xiareng multi-variant import in fallback mode creates active product with channels when initialStatus is published
+  ---
+  duration_ms: 0.605458
+  type: 'test'
+  ...
+# Subtest: Xiareng multi-variant import in fallback mode skips already imported goods when duplicatePolicy is skip
+ok 41 - Xiareng multi-variant import in fallback mode skips already imported goods when duplicatePolicy is skip
+  ---
+  duration_ms: 0.283375
+  type: 'test'
+  ...
+# Subtest: Xiareng autoAllVariants falls back to single-variant import for goods without races
+ok 42 - Xiareng autoAllVariants falls back to single-variant import for goods without races
+  ---
+  duration_ms: 0.29575
+  type: 'test'
+  ...
+# Subtest: Xiareng multi-variant import in fallback mode synchronizes stock_count from upstream availableQuantity
+ok 43 - Xiareng multi-variant import in fallback mode synchronizes stock_count from upstream availableQuantity
+  ---
+  duration_ms: 0.338125
+  type: 'test'
+  ...
+# Subtest: Xiareng supplier import automatically detects manual delivery goods and sets manual_delivery: true
+ok 44 - Xiareng supplier import automatically detects manual delivery goods and sets manual_delivery: true
+  ---
+  duration_ms: 1.551583
+  type: 'test'
+  ...
+# Subtest: Xiareng supplier import extracts purchase notes to 注意事项 and sets show_purchase_notes: true
+ok 45 - Xiareng supplier import extracts purchase notes to 注意事项 and sets show_purchase_notes: true
+  ---
+  duration_ms: 0.506916
+  type: 'test'
+  ...
+# Subtest: Xiareng supplier import without specific notes still includes exact upstream 购买须知
+ok 46 - Xiareng supplier import without specific notes still includes exact upstream 购买须知
+  ---
+  duration_ms: 0.769084
+  type: 'test'
+  ...
+# Subtest: Xiareng supplier import gracefully falls back when min_purchase_quantity column is missing in database
+ok 47 - Xiareng supplier import gracefully falls back when min_purchase_quantity column is missing in database
+  ---
+  duration_ms: 0.438542
+  type: 'test'
+  ...
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Duplicate webhook ignored: zpay:ZP123:TRADE-1:TRADE_SUCCESS
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook blocked due to IP allowlist mismatch: {"host":"www.fatherkey.com","forwarding_headers":{"x-forwarded-for":"198.51.100.22"},"socket_ip":"10.0.0.2","forwarded_ips":["198.51.100.22"],"resolved_client_ip":"198.51.100.22","trusted_proxies":["10.0.0.0/8"],"trust_all_proxies":false,"direct_peer_trusted":true,"direct_peer_trust_reason":"configured_trusted_proxy","used_forwarded_chain":true,"allowlist_rules":["203.0.113.10"],"allowlist_configured":true,"would_pass_allowlist":false}
+# [ZPAY] Webhook received
+# [ZPAY] Webhook received
+# [ZPAY] Webhook received
+# [ZPAY] Active order verification is not paid yet: pending
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# Subtest: zpay webhook uses strict verification mode when production source allowlist is missing
+ok 48 - zpay webhook uses strict verification mode when production source allowlist is missing
+  ---
+  duration_ms: 16.962417
+  type: 'test'
+  ...
+# Subtest: zpay webhook ignores a duplicate event key before crediting points
+ok 49 - zpay webhook ignores a duplicate event key before crediting points
+  ---
+  duration_ms: 2.940292
+  type: 'test'
+  ...
+# Subtest: zpay webhook without source allowlist still rejects invalid signatures before active query
+ok 50 - zpay webhook without source allowlist still rejects invalid signatures before active query
+  ---
+  duration_ms: 0.630416
+  type: 'test'
+  ...
+# Subtest: zpay webhook rejects requests outside the configured source IP allowlist
+ok 51 - zpay webhook rejects requests outside the configured source IP allowlist
+  ---
+  duration_ms: 0.324917
+  type: 'test'
+  ...
+# Subtest: zpay webhook accepts signed GET callbacks through the shared handler
+ok 52 - zpay webhook accepts signed GET callbacks through the shared handler
+  ---
+  duration_ms: 0.822417
+  type: 'test'
+  ...
+# Subtest: zpay webhook ignores internal public-route query params before signature verification
+ok 53 - zpay webhook ignores internal public-route query params before signature verification
+  ---
+  duration_ms: 1.000833
+  type: 'test'
+  ...
+# Subtest: zpay webhook does not credit points when active query reports a non-paid order
+ok 54 - zpay webhook does not credit points when active query reports a non-paid order
+  ---
+  duration_ms: 0.997542
+  type: 'test'
+  ...
+# Subtest: zpay incomplete active query (paidAmount) remains retryable without credit
+ok 55 - zpay incomplete active query (paidAmount) remains retryable without credit
+  ---
+  duration_ms: 0.409458
+  type: 'test'
+  ...
+# Subtest: zpay incomplete active query (providerOrderNo) remains retryable without credit
+ok 56 - zpay incomplete active query (providerOrderNo) remains retryable without credit
+  ---
+  duration_ms: 1.659333
+  type: 'test'
+  ...
+# Subtest: zpay incomplete active query (tradeNo) remains retryable without credit
+ok 57 - zpay incomplete active query (tradeNo) remains retryable without credit
+  ---
+  duration_ms: 0.842333
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=0.01 notice=0.01 query=0.01
+ok 58 - zpay webhook exact-cent check expected=0.01 notice=0.01 query=0.01
+  ---
+  duration_ms: 0.617458
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=12.33 query=12.34
+ok 59 - zpay webhook exact-cent check expected=12.34 notice=12.33 query=12.34
+  ---
+  duration_ms: 1.07125
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=12.34 query=12.33
+ok 60 - zpay webhook exact-cent check expected=12.34 notice=12.34 query=12.33
+  ---
+  duration_ms: 0.915375
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=12.3401 query=12.34
+ok 61 - zpay webhook exact-cent check expected=12.34 notice=12.3401 query=12.34
+  ---
+  duration_ms: 0.655292
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=12.34 query=12.3401
+ok 62 - zpay webhook exact-cent check expected=12.34 notice=12.34 query=12.3401
+  ---
+  duration_ms: 32.050917
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=0 query=12.34
+ok 63 - zpay webhook exact-cent check expected=12.34 notice=0 query=12.34
+  ---
+  duration_ms: 0.449417
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice= query=12.34
+ok 64 - zpay webhook exact-cent check expected=12.34 notice= query=12.34
+  ---
+  duration_ms: 24.467791
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=-12.34 query=12.34
+ok 65 - zpay webhook exact-cent check expected=12.34 notice=-12.34 query=12.34
+  ---
+  duration_ms: 5.713334
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=NaN query=12.34
+ok 66 - zpay webhook exact-cent check expected=12.34 notice=NaN query=12.34
+  ---
+  duration_ms: 0.370083
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=12.34 query=0
+ok 67 - zpay webhook exact-cent check expected=12.34 notice=12.34 query=0
+  ---
+  duration_ms: 0.257542
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=12.34 query=null
+ok 68 - zpay webhook exact-cent check expected=12.34 notice=12.34 query=null
+  ---
+  duration_ms: 0.218209
+  type: 'test'
+  ...
+# Subtest: zpay refundOrder treats empty refund responses as success when follow-up query confirms refunded
+ok 69 - zpay refundOrder treats empty refund responses as success when follow-up query confirms refunded
+  ---
+  duration_ms: 13.95275
+  type: 'test'
+  ...
+# Subtest: zpay refundOrder keeps the request fail-closed when follow-up polling still shows paid
+ok 70 - zpay refundOrder keeps the request fail-closed when follow-up polling still shows paid
+  ---
+  duration_ms: 0.901916
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 0.01
+ok 71 - zpay real adapter preserves exact cents or rejects invalid money 0.01
+  ---
+  duration_ms: 0.641208
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 12.34
+ok 72 - zpay real adapter preserves exact cents or rejects invalid money 12.34
+  ---
+  duration_ms: 0.558625
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 12.34
+ok 73 - zpay real adapter preserves exact cents or rejects invalid money 12.34
+  ---
+  duration_ms: 0.366959
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 12.33
+ok 74 - zpay real adapter preserves exact cents or rejects invalid money 12.33
+  ---
+  duration_ms: 1.603542
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 12.3401
+ok 75 - zpay real adapter preserves exact cents or rejects invalid money 12.3401
+  ---
+  duration_ms: 43.776708
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 12.3401
+ok 76 - zpay real adapter preserves exact cents or rejects invalid money 12.3401
+  ---
+  duration_ms: 63.567042
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 0
+ok 77 - zpay real adapter preserves exact cents or rejects invalid money 0
+  ---
+  duration_ms: 0.326125
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 0
+ok 78 - zpay real adapter preserves exact cents or rejects invalid money 0
+  ---
+  duration_ms: 0.447583
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 
+ok 79 - zpay real adapter preserves exact cents or rejects invalid money 
+  ---
+  duration_ms: 0.939125
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money null
+ok 80 - zpay real adapter preserves exact cents or rejects invalid money null
+  ---
+  duration_ms: 0.704417
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money undefined
+ok 81 - zpay real adapter preserves exact cents or rejects invalid money undefined
+  ---
+  duration_ms: 1.470916
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money NaN
+ok 82 - zpay real adapter preserves exact cents or rejects invalid money NaN
+  ---
+  duration_ms: 0.83775
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money NaN
+ok 83 - zpay real adapter preserves exact cents or rejects invalid money NaN
+  ---
+  duration_ms: 0.523875
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money Infinity
+ok 84 - zpay real adapter preserves exact cents or rejects invalid money Infinity
+  ---
+  duration_ms: 0.376333
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money -0.01
+ok 85 - zpay real adapter preserves exact cents or rejects invalid money -0.01
+  ---
+  duration_ms: 1.200083
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 1e2
+ok 86 - zpay real adapter preserves exact cents or rejects invalid money 1e2
+  ---
+  duration_ms: 0.49275
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money true
+ok 87 - zpay real adapter preserves exact cents or rejects invalid money true
+  ---
+  duration_ms: 0.245417
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 9007199254740992
+ok 88 - zpay real adapter preserves exact cents or rejects invalid money 9007199254740992
+  ---
+  duration_ms: 0.20375
+  type: 'test'
+  ...
+# Subtest: zpay real adapter does not substitute requested out_trade_no for missing gateway evidence
+ok 89 - zpay real adapter does not substitute requested out_trade_no for missing gateway evidence
+  ---
+  duration_ms: 0.294667
+  type: 'test'
+  ...
+# Subtest: zpay real adapter does not substitute requested trade_no for missing gateway evidence
+ok 90 - zpay real adapter does not substitute requested trade_no for missing gateway evidence
+  ---
+  duration_ms: 0.211792
+  type: 'test'
+  ...
+# Subtest: KC real activation handler reserves capacity before the first CDK lookup can yield
+ok 91 - KC real activation handler reserves capacity before the first CDK lookup can yield
+  ---
+  duration_ms: 5.072459
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after invalid CDK
+ok 92 - KC real activation handler releases admission after invalid CDK
+  ---
+  duration_ms: 0.604583
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after used CDK
+ok 93 - KC real activation handler releases admission after used CDK
+  ---
+  duration_ms: 0.46925
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after non-self-service CDK
+ok 94 - KC real activation handler releases admission after non-self-service CDK
+  ---
+  duration_ms: 0.467417
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after empty card pool
+ok 95 - KC real activation handler releases admission after empty card pool
+  ---
+  duration_ms: 0.461875
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after failed CDK compare-and-set
+ok 96 - KC real activation handler releases admission after failed CDK compare-and-set
+  ---
+  duration_ms: 0.414042
+  type: 'test'
+  ...
+# Subtest: KC real activation handler releases admission after CDK lookup failure
+ok 97 - KC real activation handler releases admission after CDK lookup failure
+  ---
+  duration_ms: 0.455875
+  type: 'test'
+  ...
+# Subtest: KC real activation handler resumes an existing task without reserving another worker slot
+ok 98 - KC real activation handler resumes an existing task without reserving another worker slot
+  ---
+  duration_ms: 1.051209
+  type: 'test'
+  ...
+# Subtest: KC task creation failure returns the claimed CDK and admission capacity
+ok 99 - KC task creation failure returns the claimed CDK and admission capacity
+  ---
+  duration_ms: 0.960458
+  type: 'test'
+  ...
+# Subtest: KC synchronous worker dispatch failure returns the CDK and both kinds of capacity
+ok 100 - KC synchronous worker dispatch failure returns the CDK and both kinds of capacity
+  ---
+  duration_ms: 1.000916
+  type: 'test'
+  ...
+# Subtest: KC never returns a CDK when an unstarted task cannot be retired
+ok 101 - KC never returns a CDK when an unstarted task cannot be retired
+  ---
+  duration_ms: 1.091667
+  type: 'test'
+  ...
+# Subtest: KC retires unstarted tasks before returning their CDK
+ok 102 - KC retires unstarted tasks before returning their CDK
+  ---
+  duration_ms: 33.762375
+  type: 'test'
+  ...
+# Subtest: KC maintenance and missing credentials never claim CDKs or capacity
+ok 103 - KC maintenance and missing credentials never claim CDKs or capacity
+  ---
+  duration_ms: 3.759125
+  type: 'test'
+  ...
+# Subtest: KC real status renderer displays hostile server messages as text and preserves line breaks
+ok 104 - KC real status renderer displays hostile server messages as text and preserves line breaks
+  ---
+  duration_ms: 0.694959
+  type: 'test'
+  ...
+# Subtest: KC real capsule renderer only uses static SVG markup and appends the message as text
+ok 105 - KC real capsule renderer only uses static SVG markup and appends the message as text
+  ---
+  duration_ms: 0.619541
+  type: 'test'
+  ...
+# Subtest: KC capsule replacement and manual dismiss retain their timer lifecycle
+ok 106 - KC capsule replacement and manual dismiss retain their timer lifecycle
+  ---
+  duration_ms: 0.457916
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: admin-login.html
+ok 107 - KC inline scripts compile after security changes: admin-login.html
+  ---
+  duration_ms: 1.551875
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: admin.html
+ok 108 - KC inline scripts compile after security changes: admin.html
+  ---
+  duration_ms: 4.452958
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: index.html
+ok 109 - KC inline scripts compile after security changes: index.html
+  ---
+  duration_ms: 3.347083
+  type: 'test'
+  ...
+# Subtest: KC inline scripts compile after security changes: subscription.html
+ok 110 - KC inline scripts compile after security changes: subscription.html
+  ---
+  duration_ms: 0.725125
+  type: 'test'
+  ...
+# Subtest: KC credential encryption uses random IVs and authenticated round trips
+ok 111 - KC credential encryption uses random IVs and authenticated round trips
+  ---
+  duration_ms: 9.147084
+  type: 'test'
+  ...
+# Subtest: KC credential rejects tampering with envelope field 3
+ok 112 - KC credential rejects tampering with envelope field 3
+  ---
+  duration_ms: 2.535709
+  type: 'test'
+  ...
+# Subtest: KC credential rejects tampering with envelope field 4
+ok 113 - KC credential rejects tampering with envelope field 4
+  ---
+  duration_ms: 0.403541
+  type: 'test'
+  ...
+# Subtest: KC credential rejects tampering with envelope field 5
+ok 114 - KC credential rejects tampering with envelope field 5
+  ---
+  duration_ms: 0.385834
+  type: 'test'
+  ...
+# Subtest: KC credential rejects wrong purposes, keys, versions and damaged envelopes
+ok 115 - KC credential rejects wrong purposes, keys, versions and damaged envelopes
+  ---
+  duration_ms: 1.910416
+  type: 'test'
+  ...
+# Subtest: KC credential key rotation reads retained keys and writes with the active key
+ok 116 - KC credential key rotation reads retained keys and writes with the active key
+  ---
+  duration_ms: 0.647291
+  type: 'test'
+  ...
+# Subtest: KC legacy read compatibility never enables unencrypted writes
+ok 117 - KC legacy read compatibility never enables unencrypted writes
+  ---
+  duration_ms: 0.228958
+  type: 'test'
+  ...
+# Subtest: KC credential key parser rejects invalid key configuration
+ok 118 - KC credential key parser rejects invalid key configuration
+  ---
+  duration_ms: 0.132584
+  type: 'test'
+  ...
+# Subtest: KC real store reads old TOTP and permits unconfigured accounts without a key
+ok 119 - KC real store reads old TOTP and permits unconfigured accounts without a key
+  ---
+  duration_ms: 233.242416
+  type: 'test'
+  ...
+# Subtest: KC real store encrypts active and pending values and decrypts only on reads
+ok 120 - KC real store encrypts active and pending values and decrypts only on reads
+  ---
+  duration_ms: 4.4745
+  type: 'test'
+  ...
+# Subtest: KC real store promotes encrypted pending TOTP with a new purpose and revokes enrollment
+ok 121 - KC real store promotes encrypted pending TOTP with a new purpose and revokes enrollment
+  ---
+  duration_ms: 0.924666
+  type: 'test'
+  ...
+# Subtest: KC real store refuses expired enrollment without changing the active factor
+ok 122 - KC real store refuses expired enrollment without changing the active factor
+  ---
+  duration_ms: 2.781833
+  type: 'test'
+  ...
+# Subtest: KC real store refuses version enrollment without changing the active factor
+ok 123 - KC real store refuses version enrollment without changing the active factor
+  ---
+  duration_ms: 0.894958
+  type: 'test'
+  ...
+# Subtest: KC real store refuses binding enrollment without changing the active factor
+ok 124 - KC real store refuses binding enrollment without changing the active factor
+  ---
+  duration_ms: 1.434542
+  type: 'test'
+  ...
+# Subtest: KC real store refuses pendingId enrollment without changing the active factor
+ok 125 - KC real store refuses pendingId enrollment without changing the active factor
+  ---
+  duration_ms: 1.776208
+  type: 'test'
+  ...
+# Subtest: KC real store refuses corrupt enrollment without changing the active factor
+ok 126 - KC real store refuses corrupt enrollment without changing the active factor
+  ---
+  duration_ms: 1.364458
+  type: 'test'
+  ...
+# Subtest: KC real store does not swallow encrypted credential decryption failures
+ok 127 - KC real store does not swallow encrypted credential decryption failures
+  ---
+  duration_ms: 1.410958
+  type: 'test'
+  ...
+# Subtest: KC real store can disable TOTP without an encryption key
+ok 128 - KC real store can disable TOTP without an encryption key
+  ---
+  duration_ms: 0.834
+  type: 'test'
+  ...
+# Subtest: KC shares the IP budget across expensive public endpoints and XFF variants
+ok 129 - KC shares the IP budget across expensive public endpoints and XFF variants
+  ---
+  duration_ms: 2.022458
+  type: 'test'
+  ...
+# Subtest: KC case and trailing-slash routes cannot bypass the budget
+ok 130 - KC case and trailing-slash routes cannot bypass the budget
+  ---
+  duration_ms: 0.178958
+  type: 'test'
+  ...
+# Subtest: KC per-CDK budget survives different IPs and case variants
+ok 131 - KC per-CDK budget survives different IPs and case variants
+  ---
+  duration_ms: 80.359167
+  type: 'test'
+  ...
+# Subtest: KC global budget bounds rotating IPs and codes
+ok 132 - KC global budget bounds rotating IPs and codes
+  ---
+  duration_ms: 0.331958
+  type: 'test'
+  ...
+# Subtest: KC global and per-IP inflight budgets release exactly once on completion
+ok 133 - KC global and per-IP inflight budgets release exactly once on completion
+  ---
+  duration_ms: 0.390875
+  type: 'test'
+  ...
+# Subtest: KC early client disconnect keeps upstream concurrency occupied until handler ends
+ok 134 - KC early client disconnect keeps upstream concurrency occupied until handler ends
+  ---
+  duration_ms: 0.172791
+  type: 'test'
+  ...
+# Subtest: KC expired budgets recover and Map exhaustion fails closed
+ok 135 - KC expired budgets recover and Map exhaustion fails closed
+  ---
+  duration_ms: 0.214875
+  type: 'test'
+  ...
+# Subtest: KC unrelated routes bypass this public guard
+ok 136 - KC unrelated routes bypass this public guard
+  ---
+  duration_ms: 0.143542
+  type: 'test'
+  ...
+# Subtest: KC IPv4-mapped address shares the same IP budget
+ok 137 - KC IPv4-mapped address shares the same IP budget
+  ---
+  duration_ms: 0.206583
+  type: 'test'
+  ...
+# Subtest: KC sends compatible page security headers
+ok 138 - KC sends compatible page security headers
+  ---
+  duration_ms: 0.284459
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 127.0.0.1
+ok 139 - media rejects nonpublic address 127.0.0.1
+  ---
+  duration_ms: 16.101458
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 10.1.2.3
+ok 140 - media rejects nonpublic address 10.1.2.3
+  ---
+  duration_ms: 0.292875
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 172.16.1.1
+ok 141 - media rejects nonpublic address 172.16.1.1
+  ---
+  duration_ms: 0.060708
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 192.168.1.1
+ok 142 - media rejects nonpublic address 192.168.1.1
+  ---
+  duration_ms: 0.057791
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 169.254.169.254
+ok 143 - media rejects nonpublic address 169.254.169.254
+  ---
+  duration_ms: 0.060917
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 100.64.1.1
+ok 144 - media rejects nonpublic address 100.64.1.1
+  ---
+  duration_ms: 0.042417
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 0.0.0.0
+ok 145 - media rejects nonpublic address 0.0.0.0
+  ---
+  duration_ms: 0.040541
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 192.88.99.1
+ok 146 - media rejects nonpublic address 192.88.99.1
+  ---
+  duration_ms: 0.053041
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 198.18.0.1
+ok 147 - media rejects nonpublic address 198.18.0.1
+  ---
+  duration_ms: 0.052291
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 224.0.0.1
+ok 148 - media rejects nonpublic address 224.0.0.1
+  ---
+  duration_ms: 0.09775
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address ::1
+ok 149 - media rejects nonpublic address ::1
+  ---
+  duration_ms: 60.714375
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address fc00::1
+ok 150 - media rejects nonpublic address fc00::1
+  ---
+  duration_ms: 9.230334
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address fe80::1
+ok 151 - media rejects nonpublic address fe80::1
+  ---
+  duration_ms: 0.067875
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address ::ffff:8.8.8.8
+ok 152 - media rejects nonpublic address ::ffff:8.8.8.8
+  ---
+  duration_ms: 0.029625
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 2002:0808:0808::1
+ok 153 - media rejects nonpublic address 2002:0808:0808::1
+  ---
+  duration_ms: 0.679083
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://2130706433/image
+ok 154 - media rejects unsafe URL http://2130706433/image
+  ---
+  duration_ms: 0.963458
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://0x7f000001/
+ok 155 - media rejects unsafe URL http://0x7f000001/
+  ---
+  duration_ms: 0.195125
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://127.1/
+ok 156 - media rejects unsafe URL http://127.1/
+  ---
+  duration_ms: 0.048125
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://[::1]/
+ok 157 - media rejects unsafe URL http://[::1]/
+  ---
+  duration_ms: 0.040583
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL https://user:pass@example.com/x
+ok 158 - media rejects unsafe URL https://user:pass@example.com/x
+  ---
+  duration_ms: 0.037875
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://example.com:8080/x
+ok 159 - media rejects unsafe URL http://example.com:8080/x
+  ---
+  duration_ms: 0.036417
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL file:///etc/passwd
+ok 160 - media rejects unsafe URL file:///etc/passwd
+  ---
+  duration_ms: 0.037958
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://metadata.internal/x
+ok 161 - media rejects unsafe URL http://metadata.internal/x
+  ---
+  duration_ms: 0.033417
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://localhost/x
+ok 162 - media rejects unsafe URL http://localhost/x
+  ---
+  duration_ms: 0.044333
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL https://example.com./x
+ok 163 - media rejects unsafe URL https://example.com./x
+  ---
+  duration_ms: 0.181709
+  type: 'test'
+  ...
+# Subtest: media pins the validated address and preserves HTTPS hostname
+ok 164 - media pins the validated address and preserves HTTPS hostname
+  ---
+  duration_ms: 7.470375
+  type: 'test'
+  ...
+# Subtest: media refuses mixed public/private DNS answers before connecting
+ok 165 - media refuses mixed public/private DNS answers before connecting
+  ---
+  duration_ms: 0.308708
+  type: 'test'
+  ...
+# Subtest: media revalidates every redirect DNS answer
+ok 166 - media revalidates every redirect DNS answer
+  ---
+  duration_ms: 0.17225
+  type: 'test'
+  ...
+# Subtest: media refuses literal private redirect and HTTPS downgrade
+ok 167 - media refuses literal private redirect and HTTPS downgrade
+  ---
+  duration_ms: 0.272917
+  type: 'test'
+  ...
+# Subtest: media caps redirect chains even with an excessive caller limit
+ok 168 - media caps redirect chains even with an excessive caller limit
+  ---
+  duration_ms: 0.270584
+  type: 'test'
+  ...
+# Subtest: media checks declared and streamed sizes including chunked responses
+ok 169 - media checks declared and streamed sizes including chunked responses
+  ---
+  duration_ms: 0.480375
+  type: 'test'
+  ...
+# Subtest: media refuses compressed responses, active content, and fake MIME
+ok 170 - media refuses compressed responses, active content, and fake MIME
+  ---
+  duration_ms: 1.00275
+  type: 'test'
+  ...
+# Subtest: media supports ordinary JPEG and MP4 assets
+ok 171 - media supports ordinary JPEG and MP4 assets
+  ---
+  duration_ms: 0.892875
+  type: 'test'
+  ...
+# Subtest: media honors abort before and after DNS resolution
+ok 172 - media honors abort before and after DNS resolution
+  ---
+  duration_ms: 0.9065
+  type: 'test'
+  ...
+# Subtest: HTML media sync removes rejected attributes without replacing visible text
+ok 173 - HTML media sync removes rejected attributes without replacing visible text
+  ---
+  duration_ms: 1.702667
+  type: 'test'
+  ...
+# Subtest: HTML sync bounds media batch count and escapes attribute quotes
+ok 174 - HTML sync bounds media batch count and escapes attribute quotes
+  ---
+  duration_ms: 2.034375
+  type: 'test'
+  ...
+# Subtest: cover importer rejects private URLs even without storage and never invokes the downloader
+ok 175 - cover importer rejects private URLs even without storage and never invokes the downloader
+  ---
+  duration_ms: 1.725292
+  type: 'test'
+  ...
+# Subtest: cover importer uses DNS and redirect protections without restoring failed source URLs
+ok 176 - cover importer uses DNS and redirect protections without restoring failed source URLs
+  ---
+  duration_ms: 5.527541
+  type: 'test'
+  ...
+# Subtest: cover deadline bounds stalled DNS and uploads, aborts and clears failed cache
+ok 177 - cover deadline bounds stalled DNS and uploads, aborts and clears failed cache
+  ---
+  duration_ms: 426.840625
+  type: 'test'
+  ...
+# Subtest: safe remote cover still uploads all three WebP variants with cancellation signal
+ok 178 - safe remote cover still uploads all three WebP variants with cancellation signal
+  ---
+  duration_ms: 6.009125
+  type: 'test'
+  ...
+# Subtest: backend: link content cannot bypass escaping or retain script/event handlers
+ok 179 - backend: link content cannot bypass escaping or retain script/event handlers
+  ---
+  duration_ms: 13.419792
+  type: 'test'
+  ...
+# Subtest: backend: CSS is allowlisted while legacy formatting and media survive
+ok 180 - backend: CSS is allowlisted while legacy formatting and media survive
+  ---
+  duration_ms: 2.460834
+  type: 'test'
+  ...
+# Subtest: backend: entity quotes remain attribute text and synthetic placeholders cannot be injected
+ok 181 - backend: entity quotes remain attribute text and synthetic placeholders cannot be injected
+  ---
+  duration_ms: 1.730917
+  type: 'test'
+  ...
+# Subtest: backend: unsupported media protocols cannot become active attributes
+ok 182 - backend: unsupported media protocols cannot become active attributes
+  ---
+  duration_ms: 7.113166
+  type: 'test'
+  ...
+# Subtest: admin-preview: link content cannot bypass escaping or retain script/event handlers
+ok 183 - admin-preview: link content cannot bypass escaping or retain script/event handlers
+  ---
+  duration_ms: 11.4335
+  type: 'test'
+  ...
+# Subtest: admin-preview: CSS is allowlisted while legacy formatting and media survive
+ok 184 - admin-preview: CSS is allowlisted while legacy formatting and media survive
+  ---
+  duration_ms: 1.719375
+  type: 'test'
+  ...
+# Subtest: admin-preview: entity quotes remain attribute text and synthetic placeholders cannot be injected
+ok 185 - admin-preview: entity quotes remain attribute text and synthetic placeholders cannot be injected
+  ---
+  duration_ms: 2.242875
+  type: 'test'
+  ...
+# Subtest: admin-preview: unsupported media protocols cannot become active attributes
+ok 186 - admin-preview: unsupported media protocols cannot become active attributes
+  ---
+  duration_ms: 14.946208
+  type: 'test'
+  ...
+# Subtest: supplier import never restores rejected covers or cleared HTML and propagates unexpected sync errors
+ok 187 - supplier import never restores rejected covers or cleared HTML and propagates unexpected sync errors
+  ---
+  duration_ms: 3.042542
+  type: 'test'
+  ...
+# Subtest: sanitized signed-query URLs round-trip once and encoded loopback URLs are removed
+ok 188 - sanitized signed-query URLs round-trip once and encoded loopback URLs are removed
+  ---
+  duration_ms: 7.211916
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: minimum cent string
+ok 189 - zpay exact amount: minimum cent string
+  ---
+  duration_ms: 1.574375
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: minimum cent number
+ok 190 - zpay exact amount: minimum cent number
+  ---
+  duration_ms: 0.089667
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: ordinary decimal string
+ok 191 - zpay exact amount: ordinary decimal string
+  ---
+  duration_ms: 0.052375
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: ordinary decimal number
+ok 192 - zpay exact amount: ordinary decimal number
+  ---
+  duration_ms: 0.059667
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: binary multiplication residue
+ok 193 - zpay exact amount: binary multiplication residue
+  ---
+  duration_ms: 0.051042
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: whole units
+ok 194 - zpay exact amount: whole units
+  ---
+  duration_ms: 0.041542
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: one decimal place
+ok 195 - zpay exact amount: one decimal place
+  ---
+  duration_ms: 0.043334
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: leading zeros and outer whitespace
+ok 196 - zpay exact amount: leading zeros and outer whitespace
+  ---
+  duration_ms: 0.037625
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: extremely long leading zeros
+ok 197 - zpay exact amount: extremely long leading zeros
+  ---
+  duration_ms: 0.065333
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: exact large decimal
+ok 198 - zpay exact amount: exact large decimal
+  ---
+  duration_ms: 0.086917
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: large decimal lost by numeric forwarding
+ok 199 - zpay exact amount: large decimal lost by numeric forwarding
+  ---
+  duration_ms: 3.784583
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: unsafe cents
+ok 200 - zpay exact amount: unsafe cents
+  ---
+  duration_ms: 0.086959
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: oversized integer
+ok 201 - zpay exact amount: oversized integer
+  ---
+  duration_ms: 0.041333
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: zero number
+ok 202 - zpay exact amount: zero number
+  ---
+  duration_ms: 0.043208
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: zero string
+ok 203 - zpay exact amount: zero string
+  ---
+  duration_ms: 0.041125
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: sub-cent positive number
+ok 204 - zpay exact amount: sub-cent positive number
+  ---
+  duration_ms: 0.029292
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: sub-cent string
+ok 205 - zpay exact amount: sub-cent string
+  ---
+  duration_ms: 0.043792
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: extra decimal precision
+ok 206 - zpay exact amount: extra decimal precision
+  ---
+  duration_ms: 0.030708
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: extra number precision
+ok 207 - zpay exact amount: extra number precision
+  ---
+  duration_ms: 0.029208
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: arithmetic residue fails closed
+ok 208 - zpay exact amount: arithmetic residue fails closed
+  ---
+  duration_ms: 0.024375
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: scientific string
+ok 209 - zpay exact amount: scientific string
+  ---
+  duration_ms: 0.024042
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: negative amount
+ok 210 - zpay exact amount: negative amount
+  ---
+  duration_ms: 0.025333
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: boolean
+ok 211 - zpay exact amount: boolean
+  ---
+  duration_ms: 0.023958
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: missing amount
+ok 212 - zpay exact amount: missing amount
+  ---
+  duration_ms: 0.174375
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: non-finite amount
+ok 213 - zpay exact amount: non-finite amount
+  ---
+  duration_ms: 0.050792
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: not-a-number
+ok 214 - zpay exact amount: not-a-number
+  ---
+  duration_ms: 0.039625
+  type: 'test'
+  ...
+# Subtest: zpay compares cents without collapsing adjacent large amounts
+ok 215 - zpay compares cents without collapsing adjacent large amounts
+  ---
+  duration_ms: 0.096666
+  type: 'test'
+  ...
+# Subtest: every accepted string survives the adapter numeric amount representation
+ok 216 - every accepted string survives the adapter numeric amount representation
+  ---
+  duration_ms: 0.094208
+  type: 'test'
+  ...
+# Subtest: static image renditions are bounded WebP with deterministic bytes
+ok 217 - static image renditions are bounded WebP with deterministic bytes
+  ---
+  duration_ms: 111.485042
+  type: 'test'
+  ...
+# Subtest: animated GIF and WebP renditions retain distinct frames, per-frame timing, loops and transparency
+ok 218 - animated GIF and WebP renditions retain distinct frames, per-frame timing, loops and transparency
+  ---
+  duration_ms: 25.574584
+  type: 'test'
+  ...
+# Subtest: animated supplier imports upload three real WebP renditions with matching content types
+ok 219 - animated supplier imports upload three real WebP renditions with matching content types
+  ---
+  duration_ms: 10.890334
+  type: 'test'
+  ...
+# Subtest: animation decode budgets preserve the source instead of flattening or allocating unbounded frames
+ok 220 - animation decode budgets preserve the source instead of flattening or allocating unbounded frames
+  ---
+  duration_ms: 1.887625
+  type: 'test'
+  ...
+# Subtest: supplier imports coalesce concurrent requests and address identical bytes by content
+ok 221 - supplier imports coalesce concurrent requests and address identical bytes by content
+  ---
+  duration_ms: 50.147125
+  type: 'test'
+  ...
+# Subtest: failed imports reject unsafe fallback and allow a subsequent retry
+ok 222 - failed imports reject unsafe fallback and allow a subsequent retry
+  ---
+  duration_ms: 26.282125
+  type: 'test'
+  ...
+# Subtest: oversized streamed sources fail closed before processing or upload
+ok 223 - oversized streamed sources fail closed before processing or upload
+  ---
+  duration_ms: 0.215375
+  type: 'test'
+  ...
+# Subtest: stock timestamps do not split shared image URLs on shop, homepage or admin
+ok 224 - stock timestamps do not split shared image URLs on shop, homepage or admin
+  ---
+  duration_ms: 7.079667
+  type: 'test'
+  ...
+# Subtest: list thumbnail errors fall back through card to original and then stop
+ok 225 - list thumbnail errors fall back through card to original and then stop
+  ---
+  duration_ms: 3.097584
+  type: 'test'
+  ...
+# Subtest: missing thumbnails select the card even when original uses a CDN alias
+ok 226 - missing thumbnails select the card even when original uses a CDN alias
+  ---
+  duration_ms: 2.952625
+  type: 'test'
+  ...
+# Subtest: catalog CDN aliases resolve to the same bundled thumbnail
+ok 227 - catalog CDN aliases resolve to the same bundled thumbnail
+  ---
+  duration_ms: 2.761208
+  type: 'test'
+  ...
+# Subtest: bundled variants exist, have correct dimensions and share a URL across repeated products
+ok 228 - bundled variants exist, have correct dimensions and share a URL across repeated products
+  ---
+  duration_ms: 19.989
+  type: 'test'
+  ...
+# (node:9894) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: manual product uploads reuse immutable rendition URLs across different products
+ok 229 - manual product uploads reuse immutable rendition URLs across different products
+  ---
+  duration_ms: 58.43125
+  type: 'test'
+  ...
+# Subtest: invalid or oversized thumbnails fall back without losing a valid original and card
+ok 230 - invalid or oversized thumbnails fall back without losing a valid original and card
+  ---
+  duration_ms: 10.112416
+  type: 'test'
+  ...
+# Subtest: product image authentication, permissions and rate limit still reject before any upload
+ok 231 - product image authentication, permissions and rate limit still reject before any upload
+  ---
+  duration_ms: 2.913291
+  type: 'test'
+  ...
+# Subtest: resolveFullMediaUrl resolves relative paths and preserves absolute URLs
+ok 232 - resolveFullMediaUrl resolves relative paths and preserves absolute URLs
+  ---
+  duration_ms: 1.945875
+  type: 'test'
+  ...
+# Subtest: getMediaFileExtension detects mime types and url paths with safe fallback
+ok 233 - getMediaFileExtension detects mime types and url paths with safe fallback
+  ---
+  duration_ms: 0.357834
+  type: 'test'
+  ...
+# Subtest: syncHtmlMediaToR2 resolves relative images and video sources gracefully without R2 credentials
+ok 234 - syncHtmlMediaToR2 resolves relative images and video sources gracefully without R2 credentials
+  ---
+  duration_ms: 16.724833
+  type: 'test'
+  ...
+# Subtest: syncSupplierProductStock automatically recalculates price with markupMultiplier and updates database
+ok 235 - syncSupplierProductStock automatically recalculates price with markupMultiplier and updates database
+  ---
+  duration_ms: 4.745042
+  type: 'test'
+  ...
+# Subtest: admin-config.js AdminRichTextEditor preserves img, video, source safely and does not drop images
+ok 236 - admin-config.js AdminRichTextEditor preserves img, video, source safely and does not drop images
+  ---
+  duration_ms: 7.995292
+  type: 'test'
+  ...
+# Subtest: shop-client.js rich text sanitization preserves IMG, VIDEO, SOURCE elements
+ok 237 - shop-client.js rich text sanitization preserves IMG, VIDEO, SOURCE elements
+  ---
+  duration_ms: 5.966625
+  type: 'test'
+  ...
+# Subtest: admin shop mutate handler supports up to 32,000 characters for rich text usage instructions
+ok 238 - admin shop mutate handler supports up to 32,000 characters for rich text usage instructions
+  ---
+  duration_ms: 1.497542
+  type: 'test'
+  ...
+# Subtest: supplier catalog description sanitization converts legacy font tags to styled spans and eliminates raw code
+ok 239 - supplier catalog description sanitization converts legacy font tags to styled spans and eliminates raw code
+  ---
+  duration_ms: 6.19425
+  type: 'test'
+  ...
+1..239
+# tests 239
+# suites 0
+# pass 239
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1313.741667

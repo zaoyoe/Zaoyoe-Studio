@@ -1,0 +1,10 @@
+{
+  "root": "/Volumes/chao/AI/xianyu_profit_calculator",
+  "evidence": "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03",
+  "lab": "/private/tmp/kc-hold-7d64646488d639c6",
+  "runId": "7d64646488d639c6",
+  "database": "kc_fault_lab_7d64646488d639c6",
+  "mysqld": "/opt/homebrew/Cellar/mysql@8.4/8.4.11_6/bin/mysqld",
+  "mysql": "/opt/homebrew/Cellar/mysql@8.4/8.4.11_6/bin/mysql",
+  "node": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node"
+}

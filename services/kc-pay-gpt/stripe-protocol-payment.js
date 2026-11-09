@@ -930,9 +930,7 @@ async function executeStripeHostedProtocolPayment({
     console.log(`⚡ [协议支付/Hosted] 开始 Stripe Hosted Checkout 纯协议支付 (attempt=${attemptId}, session=${sessionId}, 卡号: ...${cardLast4})...`);
 
     if (typeof onPaymentAttemptStarted === 'function') {
-        try {
-            await onPaymentAttemptStarted();
-        } catch (_) {}
+        await onPaymentAttemptStarted();
     }
 
     const stripeHeaders = buildStripeBrowserHeaders('https://pay.openai.com');
@@ -1506,9 +1504,7 @@ async function executeStripeProtocolPayment({
     console.log(`⚡ [协议支付] 开始 Stripe 纯协议直充 (attempt=${attemptId}, session=${sessionId}, 卡号: ...${cardLast4})...`);
 
     if (typeof onPaymentAttemptStarted === 'function') {
-        try {
-            await onPaymentAttemptStarted();
-        } catch (_) {}
+        await onPaymentAttemptStarted();
     }
 
     // 1. 税区必须先成功；失败时不得创建 PM、ctoken 或调用 confirm。

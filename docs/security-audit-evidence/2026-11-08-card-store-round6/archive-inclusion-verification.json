@@ -1,0 +1,157 @@
+{
+  "checked_at_utc": "2026-11-08T14:54:21.429418+00:00",
+  "status": "PASS",
+  "scope": "Evidence-log inclusion correction and round6 integrity recheck only. Workspace-wide byte identity is not PASS: see workspace_comparison. No runtime edits or test reruns. Original final-integrity.json retains its earlier checkpoint. Status-row retention does not prove every dirty workspace byte was backed up.",
+  "original_ignore_rule": ".gitignore:4:*.log",
+  "inclusion_rule_file": "docs/security-audit-evidence/2026-11-08-card-store-round6/.gitignore",
+  "inclusion_rule": "!raw/*.log",
+  "archive_metadata_prechange_backup": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-round6-archive-inclusion-before-g82_osp2",
+  "archive_metadata_backup_readback": [
+    {
+      "path": "evidence-manifest.json",
+      "sha256": "41aadbb61a549649009dd770f82a48c5ccdf20de398db9a3fc7e4f1e3dd3698b"
+    },
+    {
+      "path": "README.md",
+      "sha256": "1806d88d00230be6c29ec020bbb71fdfe4128a7e6225dcd57b3cfbc07c4ff355"
+    },
+    {
+      "path": "report-before-inclusion-note.md",
+      "sha256": "8fcc32c23f67c96a4d1a39302e1615b6e5dccdd1fb9fc2ef46fdc73e48a6d8ec"
+    }
+  ],
+  "checks": {
+    "head_unchanged": true,
+    "origin_main_unchanged": true,
+    "branch_unchanged": true,
+    "origin_canonical": true,
+    "not_behind_origin_main": true,
+    "index_unchanged": true,
+    "staging_empty": true,
+    "baseline_status_rows_retained": true,
+    "all_22_archived_source_hashes_match": true,
+    "all_9_round6_source_hashes_match": true,
+    "all_39_historical_file_hashes_match": true,
+    "all_7_backup_snapshots_match": true,
+    "all_10_original_log_hashes_match": true,
+    "all_10_original_logs_visible_and_not_ignored": true,
+    "new_gitignore_scoped_to_this_evidence_directory": true,
+    "previous_final_integrity_record_preserved": true
+  },
+  "workspace_comparison": {
+    "status": "REVIEW",
+    "scope": "Only explicitly recorded out-of-round file hashes compared; no workspace-wide byte backup or audit.",
+    "observations": [
+      {
+        "path": "js/engagement-runtime-loader.js",
+        "sha256_at_original_archive": "9fa7acff42ac8d5d81814a1d22ea281cf0c9043e15ce6802cb5e88baebd2dbb9",
+        "observed_sha256": "45aa0934ef57290f023fcf5d4b6f416d3a6b0c621e48fefb90a20631a9e0ff7d",
+        "matches_original_archive": false,
+        "round6_delta": false,
+        "action": "Preserved; not edited, restored, attributed or included in round6 delta; outside round6 verification scope."
+      }
+    ]
+  },
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "origin_main": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "index_sha256": "0cffdc8f7b49154ec9082ca7c97b5b5a0be0c4df5dd6ae1c20526f9aca9130b7",
+  "baseline_status_rows": 551,
+  "status_rows_before_inclusion": 591,
+  "status_rows_after_inclusion": 603,
+  "missing_baseline_rows": [],
+  "source_hashes_checked": 22,
+  "round6_source_hashes_checked": 9,
+  "historical_file_hashes_checked": 39,
+  "backup_snapshots_checked": 7,
+  "log_files": [
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-baseline-native.log",
+      "sha256_before": "222bf72552b132ea5f964bf479077a6c21e19b168d03244679d1abce5d251abe",
+      "sha256_after": "222bf72552b132ea5f964bf479077a6c21e19b168d03244679d1abce5d251abe",
+      "git_check_ignore_quiet_exit": 1,
+      "visible_as_untracked": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-caller-compatibility-final.log",
+      "sha256_before": "280bcfa9bac90ff2647438f8c456fbab6abf126e6d55f9a6796835fdcbcd83a0",
+      "sha256_after": "280bcfa9bac90ff2647438f8c456fbab6abf126e6d55f9a6796835fdcbcd83a0",
+      "git_check_ignore_quiet_exit": 1,
+      "visible_as_untracked": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-chatgpt-regression-final.log",
+      "sha256_before": "d3303b7470e15659a7e142265a8fae58a99966431f44573b4d7c014739a3f3f9",
+      "sha256_after": "d3303b7470e15659a7e142265a8fae58a99966431f44573b4d7c014739a3f3f9",
+      "git_check_ignore_quiet_exit": 1,
+      "visible_as_untracked": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-native-after.log",
+      "sha256_before": "c37385d7530be146f8d9276e6e97e1eeba567e0c7de806bc332956fc73339a7f",
+      "sha256_after": "c37385d7530be146f8d9276e6e97e1eeba567e0c7de806bc332956fc73339a7f",
+      "git_check_ignore_quiet_exit": 1,
+      "visible_as_untracked": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-native-final.log",
+      "sha256_before": "f57232ec6132f6793f8d70f65f14dc430ea25bd3287ec24c69bd2587a7932d19",
+      "sha256_after": "f57232ec6132f6793f8d70f65f14dc430ea25bd3287ec24c69bd2587a7932d19",
+      "git_check_ignore_quiet_exit": 1,
+      "visible_as_untracked": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-native-first.log",
+      "sha256_before": "932fa0e384ee05973e84c011c503d6df02d5f8c7217a2f061d10c0781c5a17c8",
+      "sha256_after": "932fa0e384ee05973e84c011c503d6df02d5f8c7217a2f061d10c0781c5a17c8",
+      "git_check_ignore_quiet_exit": 1,
+      "visible_as_untracked": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-retry-before-callback-fix.log",
+      "sha256_before": "4db66a48293798e6ac5aaf493fef1045fb179914a111f3fb27883c96be703f92",
+      "sha256_after": "4db66a48293798e6ac5aaf493fef1045fb179914a111f3fb27883c96be703f92",
+      "git_check_ignore_quiet_exit": 1,
+      "visible_as_untracked": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-vitest-adapted.log",
+      "sha256_before": "ab9ef745fc2b1d2dfc7649f366e3d3c2f4d320b82a54bc931cc2fbca8e35da10",
+      "sha256_after": "ab9ef745fc2b1d2dfc7649f366e3d3c2f4d320b82a54bc931cc2fbca8e35da10",
+      "git_check_ignore_quiet_exit": 1,
+      "visible_as_untracked": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-vitest-after-callback-fix.log",
+      "sha256_before": "b8042dec52cfb41f1d02cef6f56ea438ed40a6fb1fb943a3ba90f1886e2f32f7",
+      "sha256_after": "b8042dec52cfb41f1d02cef6f56ea438ed40a6fb1fb943a3ba90f1886e2f32f7",
+      "git_check_ignore_quiet_exit": 1,
+      "visible_as_untracked": true
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-08-card-store-round6/raw/kc-round6-vitest-final.log",
+      "sha256_before": "eb1e3f5e482240e32582c0a395f603d4fc609adb3c04320276a63ceaf01afaa2",
+      "sha256_after": "eb1e3f5e482240e32582c0a395f603d4fc609adb3c04320276a63ceaf01afaa2",
+      "git_check_ignore_quiet_exit": 1,
+      "visible_as_untracked": true
+    }
+  ],
+  "validation_results_preserved": {
+    "final_focused_passed": 710,
+    "final_focused_failed": 0,
+    "historical_full_suite_failed": 40,
+    "historical_full_suite_rerun": "NOT RUN",
+    "real_database_payments_and_production": "NOT RUN"
+  },
+  "not_executed": [
+    "git add",
+    "git commit",
+    "git push",
+    "PR creation",
+    "deployment",
+    "SQL",
+    "real database connection",
+    "real payment",
+    "reset/restore/clean/rebase/branch switch"
+  ],
+  "manifest_boundary": "evidence-manifest.json is refreshed after this record; it inventories report and all evidence files except itself. No signature or immutability claim."
+}

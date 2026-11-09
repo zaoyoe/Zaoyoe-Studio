@@ -1,0 +1,12 @@
+--- a/services/kc-pay-gpt/index.js
++++ b/services/kc-pay-gpt/index.js
+@@ -666,7 +666,8 @@
+         return { browserSession, browser, context, page, realUserAgent };
+     };
+ 
+-        const ownerKey = process.env.JOB_KEY || `${cdkCode || 'job'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
++        // Let payment-retry create a random owner when no task JOB_KEY exists.
++        const ownerKey = process.env.JOB_KEY || undefined;
+         const checkoutMode = String(process.env.CHECKOUT_MODE || 'auto').trim().toLowerCase();
+         const fastProtocolEnv = String(process.env.FAST_PROTOCOL_ENABLED ?? '').trim().toLowerCase();
+         const fastProtocolExplicitlyDisabled = fastProtocolEnv === 'false' || fastProtocolEnv === '0';

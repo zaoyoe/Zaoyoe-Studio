@@ -1,0 +1,4 @@
+{
+  "services/kc-pay-gpt/test/stripe-protocol-payment.test.js": "b671a782fb1eaff8df755929813d7504cc9242a42a61b7e731fb063e643cb799",
+  "tests/security-round5-kc-owner-locks.test.js": "39190f24f952590ca39ca3b8ca05a2e33db312ded95c37d26acbdc9820436e04"
+}

@@ -34,7 +34,13 @@
     });
 
     let translations = {};
-    let currentLang = DEFAULT_LANG;
+    const boot = window.__i18nBoot;
+    let currentLang = boot?.language || DEFAULT_LANG;
+    try {
+        const savedLang = localStorage.getItem(I18N_STORAGE_KEY);
+        if (SUPPORTED_LANGS.includes(savedLang)) currentLang = savedLang;
+    } catch (_) { /* Keep the parser-time language when storage is unavailable. */ }
+    document.documentElement.lang = currentLang;
     let readyResolver = null;
     const readyPromise = new Promise(resolve => { readyResolver = resolve; });
 
@@ -42,11 +48,9 @@
      * Initialize i18n system
      */
     async function init() {
-        // Load saved language preference
-        const savedLang = localStorage.getItem(I18N_STORAGE_KEY);
-        if (savedLang && SUPPORTED_LANGS.includes(savedLang)) {
-            currentLang = savedLang;
-        }
+        boot?.stop();
+        // The small first-paint dictionary also serves scripts while full JSON loads.
+        applyTranslations();
 
         // Preload translations
         await loadTranslations(currentLang);
@@ -131,7 +135,7 @@
             if (value && typeof value === 'object' && k in value) {
                 value = value[k];
             } else {
-                return fallback || null;
+                return (currentLang === boot?.language && boot.strings[key]) || fallback || null;
             }
         }
 
@@ -165,6 +169,10 @@
         // Handle placeholders
         const placeholders = document.querySelectorAll('[data-i18n-placeholder]');
         placeholders.forEach(el => {
+            if (el.closest('.lbi') || el.closest('.lbi-box')) {
+                el.removeAttribute('placeholder');
+                return;
+            }
             const key = el.getAttribute('data-i18n-placeholder');
             const translation = t(key);
             if (translation !== null && el.placeholder !== translation) {
@@ -181,6 +189,10 @@
                 el.title = translation;
             }
         });
+
+        try {
+            window.dispatchEvent(new CustomEvent('zaoyoe:label-input-refresh'));
+        } catch (_) {}
     }
 
     /**
@@ -195,10 +207,14 @@
         if (lang === currentLang) return;
 
         currentLang = lang;
-        localStorage.setItem(I18N_STORAGE_KEY, lang);
+        boot?.stop();
+        try { localStorage.setItem(I18N_STORAGE_KEY, lang); } catch (_) { /* Session-only preference. */ }
+        // Keep the current text and its language-specific typography together
+        // until translations are ready, then commit both before the next paint.
 
         // Load translations if not cached
         await loadTranslations(lang);
+        if (currentLang !== lang) return; // A newer language selection wins an older request.
 
         // Apply translations
         applyTranslations();

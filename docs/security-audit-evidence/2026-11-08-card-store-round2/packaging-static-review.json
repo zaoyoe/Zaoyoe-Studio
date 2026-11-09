@@ -1,0 +1,38 @@
+{
+  "status": "STATIC_REVIEW_ONLY",
+  "actualBuild": "NOT RUN",
+  "actualContainer": "NOT RUN",
+  "deployment": "NOT RUN",
+  "sourceFiles": [
+    {
+      "path": "scripts/deploy-kvm4-verify-server.sh",
+      "sha256": "f0a0d51c34aee6dcd816531bd9bc0909365326069e6ea94830a57dd45a900440"
+    },
+    {
+      "path": "deploy/kvm4/verify-server.Dockerfile",
+      "sha256": "084a689549a6b107d956b6bf472657bcb154b39b3971a1e8d7d0c9e2e9424caa"
+    },
+    {
+      "path": "vercel.json",
+      "sha256": "999932c7031447ab2ac5d0d4dc3500adbf56ca730b13cfd471ca57fecfcc6f1d"
+    },
+    {
+      "path": ".vercelignore",
+      "sha256": "439d5e7999c2fd6f9e32d0bb0cd32129e72a7175f61618822ed1009fd0c8c3a5"
+    },
+    {
+      "path": "services/kc-pay-gpt/Dockerfile",
+      "sha256": "023ebb80f6d25aa857053f4dc8026f55674af45ea34529a7311559af53e5fa4e"
+    },
+    {
+      "path": "services/kc-pay-gpt/.dockerignore",
+      "sha256": "5a5023d9e6dbae10022ba839347d5dab25b09016dbfaf629017cc54818890b80"
+    }
+  ],
+  "findings": [
+    "scripts/deploy-kvm4-verify-server.sh PACKAGE_PATHS includes api, server and js; verify-server.Dockerfile COPY includes those directories.",
+    "vercel.json api/admin.js and api/public.js include server/api-handlers/**/*.js; .vercelignore lines 162-167 reopen server/api-handlers. New zpay-amount is a static require of runtime payment handlers.",
+    "KC Dockerfile COPY . . includes both new root-level JS helpers; .dockerignore does not omit them.",
+    "No deployment packaging script or image build was executed. Static inclusion is not proof that a production artifact contains these changes."
+  ]
+}

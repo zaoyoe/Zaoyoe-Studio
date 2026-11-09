@@ -770,7 +770,7 @@ test('admin ai image config saves pricing rule with normalized commercial constr
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
-        assert.equal(payload.pricing.quantity, 8);
+        assert.equal(payload.pricing.quantity, 10);
         assert.equal(payload.pricing.points, 18.35);
         assert.equal(state.inserted[0].table, 'ai_image_pricing_rules');
         assert.equal(state.inserted[0].payload.created_by, 'admin-user-1');

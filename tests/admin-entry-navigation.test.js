@@ -674,3 +674,107 @@ test('getCurrentAdminAccess times out the persisted REST fallback instead of lea
         restore();
     }
 });
+
+
+function deferredSessionResponse() {
+    let resolve;
+    const promise = new Promise(yes => { resolve = yes; });
+    return { promise, resolve };
+}
+
+function sessionRaceHarness(fetch) {
+    const timers = new Set();
+    const storage = createStorage();
+    const token = `header.${encodeJwtPayload({ sub: 'offline-admin', exp: Math.floor(Date.now() / 1000) + 3600 })}.signature`;
+    let refreshes = 0;
+    const loaded = loadAdminAccess({
+        location: { href: 'https://www.fatherkey.com/admin-studio.html' },
+        sessionStorage: storage, localStorage: createStorage(),
+        fetch: (url, init) => fetch(url, init, token),
+        supabaseClient: { auth: {
+            getSession: async () => ({ data: { session: { access_token: token, refresh_token: 'offline-refresh', user: { id: 'offline-admin' } } } }),
+            setSession: async () => { refreshes++; throw new Error('A cleared session must not refresh'); }
+        } },
+        setTimeout(callback, delayMs) { const timer = { callback, delayMs, unref() {} }; timers.add(timer); return timer; },
+        clearTimeout(timer) { timers.delete(timer); }
+    });
+    return { ...loaded, timers, storage, token, refreshes: () => refreshes };
+}
+
+// Drive actual browser module interleavings. All responses and credentials are offline fixtures.
+test('logout waits for in-flight issuance, blocks new issuance and refuses its late cache and renewal', async () => {
+    const postStarted = deferredSessionResponse(), post = deferredSessionResponse(), deleted = deferredSessionResponse();
+    const calls = [];
+    const harness = sessionRaceHarness(async (_url, init) => {
+        calls.push(init);
+        if (init.method === 'POST') { postStarted.resolve(); return post.promise; }
+        return deleted.promise;
+    });
+    try {
+        const issue = harness.api.createAdminStudioSession({ userId: 'offline-admin' });
+        await postStarted.promise;
+        const clear = harness.api.clearAdminStudioSession();
+        assert.strictEqual(harness.api.clearAdminStudioSession(), clear);
+        assert.deepEqual(await harness.api.createAdminStudioSession({ forceRefresh: true }), { ok: false, reason: 'session_clearing' });
+        assert.deepEqual(calls.map(call => call.method), ['POST']);
+        post.resolve({ ok: true, status: 200, json: async () => ({ success: true, expiresInSeconds: 600 }) });
+        assert.deepEqual(await issue, { ok: false, reason: 'session_cleared' });
+        // Allow clear's allSettled continuation and fetch to run.
+        await new Promise(resolve => setImmediate(resolve));
+        assert.deepEqual(calls.map(call => call.method), ['POST', 'DELETE']);
+        assert.equal(calls[1].headers.Authorization, `Bearer ${harness.token}`);
+        assert.equal(harness.storage.getItem('zaoyoe_admin_studio_session_cache_v1'), null);
+        deleted.resolve({ ok: true });
+        assert.equal(await clear, true);
+        assert.equal(harness.timers.size, 0);
+    } finally { harness.restore(); }
+});
+
+test('logout during SDK lookup prevents a new cookie POST and still sends source identity to DELETE', async () => {
+    const calls = [];
+    const harness = sessionRaceHarness(async (_url, init) => { calls.push(init); return { ok: true }; });
+    try {
+        const issue = harness.api.createAdminStudioSession({ forceRefresh: true });
+        const clear = harness.api.clearAdminStudioSession();
+        assert.deepEqual(await issue, { ok: false, reason: 'session_cleared' });
+        assert.equal(await clear, true);
+        assert.deepEqual(calls.map(call => call.method), ['DELETE']);
+        assert.equal(calls[0].headers.Authorization, `Bearer ${harness.token}`);
+        assert.equal(harness.timers.size, 0);
+    } finally { harness.restore(); }
+});
+
+test('a late rejected POST after logout cannot restore or retry the Supabase session', async () => {
+    const started = deferredSessionResponse(), post = deferredSessionResponse();
+    const calls = [];
+    const harness = sessionRaceHarness(async (_url, init) => {
+        calls.push(init.method);
+        if (init.method === 'POST') { started.resolve(); return post.promise; }
+        return { ok: true };
+    });
+    try {
+        const issue = harness.api.createAdminStudioSession({ forceRefresh: true });
+        await started.promise;
+        const clear = harness.api.clearAdminStudioSession();
+        post.resolve({ ok: false, status: 401, json: async () => ({ success: false }) });
+        assert.equal((await issue).reason, 'session_cleared');
+        assert.equal(await clear, true);
+        assert.equal(harness.refreshes(), 0);
+        assert.deepEqual(calls, ['POST', 'DELETE']);
+        assert.equal(harness.timers.size, 0);
+    } finally { harness.restore(); }
+});
+
+for (const failure of ['status', 'network']) {
+    test(`logout reports ${failure} revocation failure and clears local authority`, async () => {
+        const harness = sessionRaceHarness(async () => {
+            if (failure === 'network') throw new Error('offline transport failed');
+            return { ok: false, status: 503 };
+        });
+        try {
+            assert.equal(await harness.api.clearAdminStudioSession(), false);
+            assert.equal(harness.storage.getItem('zaoyoe_admin_studio_session_cache_v1'), null);
+            assert.equal(harness.timers.size, 0);
+        } finally { harness.restore(); }
+    });
+}

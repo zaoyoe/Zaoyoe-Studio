@@ -1,8 +1,13 @@
 const { loadCustomerDelivery } = require('../../integrations/suppliers/delivery');
+const { tryAutoDispatchSupplierOrder } = require('../../integrations/suppliers/auto-dispatch');
 'use strict';
 
 const supplierCheckoutV2 = require('../../integrations/suppliers/checkout');
 const { supplierOrderStatus } = require('../../integrations/suppliers/order-status');
+const {
+    DEFAULT_CHECKOUT_TTL_MS,
+    syncSupplierProductStock
+} = require('../../integrations/suppliers/stock-sync');
 
 const crypto = require('node:crypto');
 const defaultSecurity = require('../../../api/_lib/guest-shop/security');
@@ -942,7 +947,7 @@ function providerQuoteChecks(provider, normalized, expected, security = defaultS
         || (isUsdtFamily(quoteCurrency) && isUsdtFamily(receivedQuoteCurrency))
     );
     const quoteAmountMatches = usdtNetworks.network(quoteCurrency) || quoteCurrency === 'usdt'
-        ? decimalEqual(normalized?.response_payload?.price_amount ?? normalized?.price_amount ?? receivedQuote, metadata.price_amount)
+        ? decimalEqual(normalized?.price_amount_text ?? normalized?.response_payload?.price_amount ?? normalized?.price_amount ?? receivedQuote, metadata.price_amount_text ?? metadata.price_amount)
         : amountMinorMatches(security, expectedQuote, receivedQuote, quoteCurrency);
     if (!(expectedQuote > 0) || !(receivedQuote > 0) || !quoteCurrency || !quoteCurrencyMatches || !quoteAmountMatches) {
         failures.push('quote');
@@ -1014,15 +1019,36 @@ function createGuestShopHandlers({
 
     function kickConfirmedOrder(orderId) {
         const id = String(orderId || '').trim();
-        if (!id || typeof kickFulfillment !== 'function') return;
-        try {
-            // Fulfillment is an optimization over the durable worker timer.
-            // Do not hold a webhook/status response open on inventory work.
-            Promise.resolve(kickFulfillment(id)).catch(() => {});
-        } catch (_) {
-            // A malformed/inactive kicker must never turn a confirmed payment
-            // into a failed buyer-facing response.
+        if (!id) return;
+        if (typeof kickFulfillment === 'function') {
+            try {
+                // Fulfillment is an optimization over the durable worker timer.
+                // Do not hold a webhook/status response open on inventory work.
+                Promise.resolve(kickFulfillment(id)).catch(() => {});
+            } catch (_) {
+                // A malformed/inactive kicker must never turn a confirmed payment
+                // into a failed buyer-facing response.
+            }
         }
+        // Link B automated dispatch for supplier_v2 orders
+        try {
+            const db = getSupabase();
+            if (db && typeof db.from === 'function') {
+                Promise.resolve().then(async () => {
+                    const isUuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id);
+                    let query = db.from('guest_shop_orders').select('*');
+                    if (isUuid) {
+                        query = query.eq('id', id);
+                    } else {
+                        query = query.eq('order_no', id);
+                    }
+                    const { data: ord } = await query.maybeSingle();
+                    if (ord && ord.fulfillment_source === 'supplier_v2' && ord.payment_status === 'confirmed' && ord.fulfillment_status !== 'delivered') {
+                        await tryAutoDispatchSupplierOrder({ supabase: db, order: ord, env });
+                    }
+                }).catch(() => {});
+            }
+        } catch (_) {}
     }
 
     function failResponse(res, error, fallback = '游客购买请求失败') {
@@ -1283,8 +1309,9 @@ function createGuestShopHandlers({
     // amount here: resolveGuestCreditUnitAmount returns a per-unit price.
     async function loadGuestSkuPricing({ supabase, productId, skuId, siteName, quantity = null }) {
         if (!supabase?.from) throw Object.assign(new Error('数据库服务不可用'), { statusCode: 503, expose: false });
-        const productSelect = 'id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_end,flash_sale_end_intl,guest_max_quantity,max_purchase_quantity';
-        const scheduledProductSelect = 'id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_start,flash_sale_start_intl,flash_sale_end,flash_sale_end_intl,guest_max_quantity,max_purchase_quantity';
+        const productSelect = 'id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_end,flash_sale_end_intl,guest_max_quantity,max_purchase_quantity,min_purchase_quantity';
+        const scheduledProductSelect = 'id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_start,flash_sale_start_intl,flash_sale_end,flash_sale_end_intl,guest_max_quantity,max_purchase_quantity,min_purchase_quantity';
+        const productSelectWithoutMin = 'id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_end,flash_sale_end_intl,guest_max_quantity,max_purchase_quantity';
         let productQuery = await supabase.from('shop_products')
             .select(scheduledProductSelect)
             .eq('id', productId).maybeSingle();
@@ -1296,15 +1323,47 @@ function createGuestShopHandlers({
                 .select(productSelect)
                 .eq('id', productId).maybeSingle();
         }
+        if (productQuery.error && /min_purchase_quantity/u.test([productQuery.error?.message, productQuery.error?.details].join(' ').toLowerCase())) {
+            productQuery = await supabase.from('shop_products')
+                .select(productSelectWithoutMin)
+                .eq('id', productId).maybeSingle();
+        }
         if (productQuery.error) throw productQuery.error;
         const product = productQuery.data;
-        const skuQuery = await supabase.from('shop_product_skus')
-            .select('id,product_id,sku_name,is_active,allow_guest_purchase,manual_delivery,guest_payment_channels,price_points,price_points_intl,quantity_rules,quantity_rules_intl,is_default,guest_max_quantity')
+        const skuSelectWithMin = 'id,product_id,sku_name,is_active,allow_guest_purchase,manual_delivery,guest_payment_channels,price_points,price_points_intl,quantity_rules,quantity_rules_intl,is_default,guest_max_quantity,min_purchase_quantity';
+        const skuSelectWithoutMin = 'id,product_id,sku_name,is_active,allow_guest_purchase,manual_delivery,guest_payment_channels,price_points,price_points_intl,quantity_rules,quantity_rules_intl,is_default,guest_max_quantity';
+        let skuQuery = await supabase.from('shop_product_skus')
+            .select(skuSelectWithMin)
             .eq('id', skuId).eq('product_id', productId).maybeSingle();
+        if (skuQuery.error && /min_purchase_quantity/u.test([skuQuery.error?.message, skuQuery.error?.details].join(' ').toLowerCase())) {
+            skuQuery = await supabase.from('shop_product_skus')
+                .select(skuSelectWithoutMin)
+                .eq('id', skuId).eq('product_id', productId).maybeSingle();
+        }
         if (skuQuery.error) throw skuQuery.error;
         const sku = skuQuery.data;
         const enabled = Boolean(sku?.allow_guest_purchase ?? product?.allow_guest_purchase);
         const currency = security.currencyForSite(siteName);
+
+        let resolvedMinQuantity = Math.max(1,
+            (Number.isSafeInteger(Number(sku?.min_purchase_quantity)) && Number(sku.min_purchase_quantity) > 0 ? Number(sku.min_purchase_quantity) : null)
+            ?? (Number.isSafeInteger(Number(product?.min_purchase_quantity)) && Number(product.min_purchase_quantity) > 0 ? Number(product.min_purchase_quantity) : null)
+            ?? 1
+        );
+        if (resolvedMinQuantity === 1 && productId) {
+            try {
+                const { data: mapping } = await supabase.from('shop_supplier_product_mappings')
+                    .select('import_snapshot')
+                    .eq('product_id', productId)
+                    .limit(1)
+                    .maybeSingle();
+                const mappingMin = Number(mapping?.import_snapshot?.minimumQuantity);
+                if (Number.isSafeInteger(mappingMin) && mappingMin > 1) {
+                    resolvedMinQuantity = mappingMin;
+                }
+            } catch (_) {}
+        }
+
         // Effective cap = min(operator env, sku.guest_max_quantity ??
         // product.guest_max_quantity ?? 1, product.max_purchase_quantity, 5),
         // mirroring the SQL expression in §6 of the L1/L2 migration. Missing
@@ -1314,13 +1373,19 @@ function createGuestShopHandlers({
             env,
             skuGuestMaxQuantity: sku?.guest_max_quantity ?? null,
             productGuestMaxQuantity: product?.guest_max_quantity ?? null,
-            productMaxPurchaseQuantity: product?.max_purchase_quantity ?? null
+            productMaxPurchaseQuantity: product?.max_purchase_quantity ?? null,
+            minPurchaseQuantity: resolvedMinQuantity
         });
-        const normalizedQuantity = defaultGuestPromo.normalizeGuestQuantity(quantity, { cap: quantityCap });
+        const normalizedQuantity = defaultGuestPromo.normalizeGuestQuantity(quantity, { cap: quantityCap, min: resolvedMinQuantity });
         if (normalizedQuantity === null) {
             // Fail closed with 400 rather than clamping: silently selling a
             // different quantity than the buyer asked for would mis-price the
             // tier and break the idempotency fingerprint contract.
+            if (quantity !== null && Number(quantity) < resolvedMinQuantity) {
+                throw new security.GuestShopSecurityError(`该商品最少需购买 ${resolvedMinQuantity} 件`, {
+                    statusCode: 400, code: 'guest_minimum_quantity_not_met', field: 'quantity', minQuantity: resolvedMinQuantity
+                });
+            }
             throw new security.GuestShopSecurityError('购买数量超出允许范围', {
                 statusCode: 400, code: 'guest_quantity_not_allowed', field: 'quantity'
             });
@@ -1369,6 +1434,7 @@ function createGuestShopHandlers({
             unitAmountMinor: price.minor,
             currency,
             channels: sku?.guest_payment_channels ?? product?.guest_payment_channels ?? [],
+            minQuantity: resolvedMinQuantity,
             // Both are echo/UX values. fn_guest_shop_create_order re-applies the
             // same cap and raises guest_quantity_not_allowed itself, so a forged
             // or stale cap from the client can never enlarge an order.
@@ -2250,6 +2316,49 @@ function createGuestShopHandlers({
         } catch (error) { return failResponse(res, error, '领取订单失败'); }
     }
 
+    async function requireAuthenticatedPaymentQuery(provider, payment, notification, verification) {
+        const query = paymentAdapter?.queryGuestPayment;
+        if (typeof query !== 'function') throw webhookError('支付渠道暂时无法核对', 'guest_payment_query_unavailable', 503, false);
+        const metadata = payment.provider_metadata || {};
+        let result;
+        try {
+            result = await query.call(paymentAdapter, {
+                provider, channel: payment.channel, site: payment.site,
+                providerOrderNo: payment.provider_order_no, merchantOrderNo: payment.merchant_order_no,
+                paymentId: metadata.payment_id || metadata.provider_payment_id, metadata
+            });
+        } catch (_) {
+            throw webhookError('支付渠道暂时无法核对', 'guest_payment_query_unavailable', 503, false);
+        }
+        const raw = result?.response_payload || {};
+        const status = String(result?.status || '').toLowerCase();
+        let valid = result?.supported === true && result.provider === provider
+            && result.merchant_order_no === payment.merchant_order_no && isFinalPaymentStatus(status);
+        if (provider === 'zpay') {
+            // Require response identities; normalized fallback fields are not evidence.
+            valid = valid && String(raw.code) === '1' && raw.out_trade_no === payment.merchant_order_no
+                && Boolean(verification.merchant_id) && String(raw.pid) === String(verification.merchant_id)
+                && raw.type === payment.channel && Boolean(raw.trade_no)
+                && Boolean(notification.transaction_id || notification.trade_no)
+                && String(raw.trade_no) === String(notification.transaction_id || notification.trade_no)
+                && (!(metadata.trade_no || metadata.provider_trade_no)
+                    || (metadata.trade_no || metadata.provider_trade_no) === payment.merchant_order_no
+                    || String(raw.trade_no) === String(metadata.trade_no || metadata.provider_trade_no))
+                && amountMinorMatches(security, payment.expected_amount, result.amount, payment.currency)
+                && (!raw.currency || String(raw.currency).toUpperCase() === String(payment.currency).toUpperCase());
+        } else if (provider === 'nowpayments') {
+            const savedId = String(metadata.payment_id || metadata.provider_payment_id || '');
+            valid = valid && Boolean(savedId) && String(raw.payment_id || raw.id || '') === savedId
+                && String(notification.payment_id || notification.provider_payment_id || '') === savedId
+                && raw.order_id === payment.merchant_order_no && raw.payment_status === 'finished'
+                && decimalEqual(result.pay_amount_text ?? raw.pay_amount, metadata.pay_amount_text ?? metadata.pay_amount)
+                && (!metadata.pay_address || raw.pay_address === metadata.pay_address)
+                && providerQuoteChecks(provider, result, payment, security).valid;
+        } else valid = false;
+        if (!valid) throw webhookError('收款结果尚未核对一致', 'guest_payment_query_unconfirmed', 503, false);
+        return result;
+    }
+
     async function processCheckoutBatchWebhook({ req, res, provider, payload, rawBody, db, lookupReference }) {
         let paymentResult = null;
         const references = [...new Set([lookupReference, provider === 'nowpayments' ? String(payload.payment_id || payload.id || '').trim() : ''].filter(Boolean))];
@@ -2306,6 +2415,7 @@ function createGuestShopHandlers({
             && isFinalPaymentStatus(observedStatus) && amountOk && currencyOk
             && providerOrderNo && (!payment.provider_order_no || payment.provider_order_no === providerOrderNo);
         if (!valid) return sendJson(res, 202, { success: true, accepted: false });
+        await requireAuthenticatedPaymentQuery(provider, payment, normalized, verification);
         const digest = crypto.createHash('sha256').update(rawBody || JSON.stringify(payload)).digest('hex');
         const eventKey = `checkout_batch_webhook:${payment.id}:${digest}`;
         const inserted = await db.from('guest_shop_payment_events').insert({
@@ -3601,6 +3711,7 @@ function responseOrder(order, extras = {}) {
                 // requires the buyer-credential switch because the database
                 // refuses an unattributable discount (migration §5,
                 // guest_discount_identity_required).
+                min_purchase_quantity: pricing.minQuantity || 1,
                 quantity_cap: pricing.quantityCap,
                 discount_enabled: defaultGuestPromo.isGuestDiscountEnabled(env)
                     && defaultBuyerCredentials.isBuyerCredentialEnabled(env),
@@ -3875,6 +3986,36 @@ function responseOrder(order, extras = {}) {
             const supplierSource = await supplierCheckoutV2.resolveSupplierSource(getSupabase(), {
                 productId: normalized.productId, productSkuId: normalized.skuId, site: siteName
             }, env);
+            if (supplierSource) {
+                try {
+                    const stockCheck = await syncSupplierProductStock(getSupabase(), {
+                        productId: normalized.productId,
+                        productSkuId: normalized.skuId,
+                        site: siteName,
+                        maxAgeMs: DEFAULT_CHECKOUT_TTL_MS,
+                        checkCostCeiling: true,
+                        env
+                    });
+                    if (stockCheck?.costExceeded === true) {
+                        return sendJson(res, 409, {
+                            success: false,
+                            code: 'supplier_cost_ceiling_exceeded',
+                            message: '该商品上游采购价已超过后台设定的单价上限，暂不可购买'
+                        });
+                    }
+                    if (stockCheck?.synced && Number.isFinite(stockCheck.stockCount) && stockCheck.stockCount < normalized.quantity) {
+                        return sendJson(res, 409, {
+                            success: false,
+                            code: 'out_of_stock',
+                            message: stockCheck.stockCount <= 0
+                                ? '上游供应商该商品刚刚售罄，库存已自动同步为 0'
+                                : `上游供应商当前仅剩 ${stockCheck.stockCount} 件，请调整购买数量`
+                        });
+                    }
+                } catch (stockCheckError) {
+                    console.warn('[guest-shop] Pre-checkout supplier stock sync warning:', stockCheckError?.message || stockCheckError);
+                }
+            }
             const createOrderParams = {
                 p_site: siteName, p_product_id: normalized.productId, p_sku_id: normalized.skuId,
                 p_idempotency_key: normalized.idempotencyKey, p_request_fingerprint: fingerprint,
@@ -5776,6 +5917,8 @@ function responseOrder(order, extras = {}) {
             const quote = providerQuoteChecks(provider, normalized, expected, security);
             const binding = expected && normalized ? security.verifyPaymentBinding({ expectedMerchantOrderNo: expected.merchant_order_no, expectedProvider: expected.provider, expectedPurpose: 'shop_direct', expectedSite: expected.site, expectedCurrency: expected.currency, expectedAmountMinor: Math.round(Number(expected.expected_amount) * 100), received: { merchantOrderNo, provider, purpose: normalized.purpose, site: expected.site, currency: expected.currency, paidAmount: provider === 'nowpayments' ? expected.expected_amount : observedAmount, finalStatus: observedStatus } }) : { valid: false, checks: {} };
             const valid = verification?.valid === true && binding.valid && quote.valid && isFinalPaymentStatus(observedStatus);
+            // Do not consume a business event key until the provider independently confirms funds.
+            if (valid) await requireAuthenticatedPaymentQuery(provider, expected, normalized, verification);
             // Invalid signatures, mismatched orders, amounts or final status
             // are audit events only.  They use a body-hash namespace so an
             // attacker cannot pre-claim the normal provider/order key and

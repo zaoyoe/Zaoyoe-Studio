@@ -60,6 +60,9 @@ async function withShopCategoriesHandler(initialState, callback) {
                                     order(column, options) {
                                         state.fromCalls.push({ table, method: 'order', args: [column, options] });
                                         return Promise.resolve(state.result);
+                                    },
+                                    not() {
+                                        return Promise.resolve({ data: [] });
                                     }
                                 };
                             }
@@ -104,7 +107,9 @@ test('shop categories handler lists categories ordered by sort_order', async () 
         assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'shop.manage' });
         assert.deepEqual(state.fromCalls, [
             { table: 'shop_categories', method: 'select', args: ['*'] },
-            { table: 'shop_categories', method: 'order', args: ['sort_order', undefined] }
+            { table: 'shop_categories', method: 'order', args: ['sort_order', undefined] },
+            { table: 'shop_products', method: 'select', args: ['category'] },
+            { table: 'system_config', method: 'select', args: ['config_value'] }
         ]);
     });
 });

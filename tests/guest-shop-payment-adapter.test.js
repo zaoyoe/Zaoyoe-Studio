@@ -999,3 +999,40 @@ test('small USDT payment rejection includes the live network minimum without ret
     assert.equal(calls.length, 2);
     assert.deepEqual(calls.map(call => call.method), ['POST', 'GET']);
 });
+
+
+test('NOWPayments keeps a raw numeric payment ID exact across checkout, callback and authenticated query', async () => {
+    const paymentId = '9007199254740993123';
+    const rawBody = '{"payment_id":9007199254740993123,"order_id":"GS20260913-000001","payment_status":"finished","pay_address":"0x1234567890abcdef1234567890abcdef12345678","pay_amount":1.73,"pay_currency":"usdtbsc","price_amount":1.73,"price_currency":"usd","actually_paid":1.73}';
+    const requests = [];
+    const adapter = makeAdapter(nowpaymentsConfig(), {
+        nowpayments_api_key: NOWPAYMENTS_API_KEY, nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET
+    }, async (url) => {
+        requests.push(String(url));
+        return { ok: true, status: 200, text: async () => rawBody };
+    });
+    const checkout = await adapter.createGuestPayment({
+        order: makeOrder({ provider: 'nowpayments', channel: 'nowpayments' }),
+        provider: 'nowpayments', channel: 'nowpayments', site: 'cn', amount: '12.34', allowedChannels: ['nowpayments']
+    });
+    assert.equal(checkout.payment_id, paymentId);
+    const callback = await adapter.parseGuestWebhook({ provider: 'nowpayments', site: 'cn', payload: JSON.parse(rawBody), rawBody });
+    assert.equal(callback.payment_id, paymentId);
+    assert.equal(callback.provider_payment_id, paymentId);
+    const queried = await adapter.queryGuestPayment({ provider: 'nowpayments', site: 'cn', paymentId });
+    assert.equal(queried.payment_id, paymentId);
+    assert.equal(queried.provider_payment_id, paymentId);
+    assert.equal(queried.response_payload.payment_id, paymentId);
+    assert.match(requests[1], new RegExp('/payment/' + paymentId + '$'));
+});
+
+test('NOWPayments query cannot invent a payment ID absent from the provider response', async () => {
+    const adapter = makeAdapter(nowpaymentsConfig(), {
+        nowpayments_api_key: NOWPAYMENTS_API_KEY, nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET
+    }, async () => responseJson({ order_id: 'GS20260913-000001', payment_status: 'finished',
+        pay_amount: '1.73', actually_paid: '1.73', pay_currency: 'usdtbsc', price_amount: '1.73', price_currency: 'usd' }));
+    const queried = await adapter.queryGuestPayment({ provider: 'nowpayments', site: 'cn', paymentId: 'saved-payment-id' });
+    assert.equal(queried.payment_id, null);
+    assert.equal(queried.provider_payment_id, null);
+    assert.equal(queried.response_payload.payment_id, null);
+});

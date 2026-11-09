@@ -155,7 +155,7 @@ const HOMEPAGE_SECTION_SHELL_COPY = {
   shop: {
     titleKey: 'home.shop.title',
     subtitleKey: 'home.shop.subtitle',
-    title: { zh: '资源商城', en: 'Featured Resource Store' },
+    title: { zh: '资源商城', en: 'Resource Store' },
     subtitle: { zh: '优质资源，助力成长', en: 'Quality resources for growth' }
   },
   gongyi: {
@@ -373,7 +373,7 @@ function getHomepagePromptPoolLastUpdatedKey(site = getHomepageRuntimeSite()) {
 }
 
 function getHomepageRuntimeLanguage() {
-  return window.i18n?.getCurrentLanguage?.() === 'en' ? 'en' : 'zh';
+  return (window.i18n?.getCurrentLanguage?.() || window.__i18nBoot?.language) === 'en' ? 'en' : 'zh';
 }
 
 function containsHomeCjkText(value) {
@@ -1029,11 +1029,28 @@ function normalizeShopProductCdnUrl(url, options = {}) {
 
 function getShopProductCdnUrlCandidates(url) {
   const trimmed = String(url || '').trim();
-  return Array.from(new Set([
-    normalizeShopProductCdnUrl(trimmed),
-    normalizeShopProductCdnUrl(trimmed, { canonical: true }),
-    trimmed
-  ].filter(Boolean)));
+  const candidates = [
+      normalizeShopProductCdnUrl(trimmed),
+      normalizeShopProductCdnUrl(trimmed, { canonical: true }),
+      trimmed
+  ];
+
+  // Older catalog assets and their generated variants can use any of these CDN aliases.
+  try {
+      const parsed = new URL(trimmed, window.location.origin);
+      const aliases = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'];
+      if (aliases.includes(parsed.hostname)) {
+          aliases.forEach((hostname) => {
+              const alias = new URL(parsed.href);
+              alias.hostname = hostname;
+              candidates.push(alias.href);
+          });
+      }
+  } catch (error) {
+      // Keep the existing candidates for relative or malformed legacy values.
+  }
+
+  return Array.from(new Set(candidates.filter(Boolean)));
 }
 
 function getShopR2CardVariantUrl(url, variant = '') {
@@ -1140,7 +1157,10 @@ function getShopProductImageAssetExplicitVariantUrl(value, variant = '') {
 }
 
 function buildShopProductImageCacheVersion(product = {}) {
-  return String(product?.image_cache_version || product?.image_updated_at || product?.updated_at || product?.created_at || '').trim();
+  const version = String(product?.image_updated_at || product?.image_cache_version || '').trim();
+  // Older catalog caches used price/stock timestamps as image revisions.
+  if (!product?.image_updated_at && [product?.updated_at, product?.created_at].some(value => String(value || '').trim() === version)) return '';
+  return version;
 }
 
 function appendShopImageUrlVersion(url, version = '') {
@@ -1152,6 +1172,7 @@ function appendShopImageUrlVersion(url, version = '') {
 
   try {
     const parsed = new URL(rawUrl, window.location.origin);
+    if (/\/(?:assets\/products-(?:card|thumb)|products\/(?:original|card|thumb)|shop\/products\/cover\/v1\/(?:original|card|thumb))\/[a-f0-9]{20}\.(?:webp|png|jpe?g|gif)$/i.test(parsed.pathname)) return rawUrl;
     parsed.searchParams.set('v', normalizedVersion);
     if (parsed.origin === window.location.origin) {
       return `${parsed.pathname}${parsed.search}${parsed.hash}`;
@@ -2286,6 +2307,7 @@ const FramerHome = {
   // Cached data
   cachedData: null,
   config: null,
+  heroConfigReady: false,
   promptPool: [],
   guestbookRuntime: null,
   gongyiTerminalRuntime: null,
@@ -2467,6 +2489,7 @@ const FramerHome = {
         writeHomepagePrefetchCache({
           cachedData: this.cachedData,
           config: this.config,
+          heroConfigReady: this.heroConfigReady,
           promptPool: Array.isArray(livePromptPool) ? livePromptPool : this.promptPool,
           sectionRows: this.sectionRows,
           sectionOrder: this.sectionOrder,
@@ -2544,6 +2567,9 @@ const FramerHome = {
       // Re-build all data with new language
       this.resetActiveExperiments();
       this.cachedData.hero = this.buildHeroData(this.config.hero || {});
+      // The root language just changed: commit Hero text in this same turn so
+      // old words never paint with the new language's font or letter spacing.
+      this.renderHeroText(this.cachedData.hero);
       this.resolveSectionExperiments('prompts', this.config.prompts || {});
       this.resolveSectionExperiments('shop', this.config.shop || {});
       this.cachedData.gongyi = this.buildGongyiData(this.config.gongyi || {});
@@ -2551,7 +2577,9 @@ const FramerHome = {
       this.resolveSectionExperiments('guestbook', this.config.guestbook || {});
 
       // CRITICAL: Rebuild ticker data with new language-specific tags
-      this.cachedData.ticker = await this.buildTickerData(this.config.ticker);
+      const ticker = await this.buildTickerData(this.config.ticker);
+      if (getHomepageRuntimeLanguage() !== e.detail.lang) return;
+      this.cachedData.ticker = ticker;
 
       // Update Prompts dropdown with new language tags
       const promptsDropdown = document.getElementById('dropdown-prompts');
@@ -2620,8 +2648,8 @@ const FramerHome = {
       const raw = sessionStorage.getItem('homepage_hero_text');
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (!parsed?.title) return null;
-      if (parsed.schemaVersion !== HOMEPAGE_HERO_TEXT_CACHE_VERSION) {
+      if (typeof parsed?.title !== 'string' || !parsed.title.trim()) return null;
+      if (parsed.source !== 'homepage-config' || parsed.schemaVersion !== HOMEPAGE_HERO_TEXT_CACHE_VERSION) {
         sessionStorage.removeItem('homepage_hero_text');
         return null;
       }
@@ -2632,7 +2660,9 @@ const FramerHome = {
         return null;
       }
       const age = Date.now() - (parsed.timestamp || 0);
-      if (age > 7 * 24 * 60 * 60 * 1000) return null;
+      const configUpdatedAt = getHomepageConfigLastUpdatedAt();
+      if (!Number.isFinite(age) || age < 0 || age >= 300000) return null;
+      if ((parsed.configUpdatedAt || 0) < configUpdatedAt || parsed.timestamp < configUpdatedAt) return null;
       return parsed;
     } catch (e) {
       return null;
@@ -2640,10 +2670,12 @@ const FramerHome = {
   },
 
   writeHeroTextCache(hero) {
-    if (!hero?.title) return;
+    if (!this.heroConfigReady || !hero?.title) return;
     try {
       sessionStorage.setItem('homepage_hero_text', JSON.stringify({
         schemaVersion: HOMEPAGE_HERO_TEXT_CACHE_VERSION,
+        source: 'homepage-config',
+        configUpdatedAt: getHomepageConfigLastUpdatedAt(),
         site: getHomepageRuntimeSite(),
         language: getHomepageRuntimeLanguage(),
         title: hero.title,
@@ -2656,10 +2688,12 @@ const FramerHome = {
   },
 
   persistHomepagePrefetch(cacheKind = 'complete') {
+    if (!this.heroConfigReady) return;
     try {
       writeHomepagePrefetchCache({
         cachedData: this.cachedData,
         config: this.config,
+        heroConfigReady: this.heroConfigReady,
         promptPool: this.promptPool,
         sectionRows: this.sectionRows,
         sectionOrder: this.sectionOrder,
@@ -3141,6 +3175,7 @@ const FramerHome = {
    */
   async loadAll(options = {}) {
     const localizationReady = options.localizationReady || Promise.resolve();
+    this.heroConfigReady = false;
     // === Check sessionStorage for prefetched data ===
     try {
         const prefetch = readHomepagePrefetchCache();
@@ -3167,11 +3202,12 @@ const FramerHome = {
           const canUsePrefetch = isCompletePrefetch || (cacheKind === 'partial' && hasPromptFastPathPayload);
 
           // Use if < 5 minutes old and contains actual translated text
-          if (age < 300000 && prefetch.cachedData && prefetch.config && isTranslated && isFreshConfig && isFreshPromptPool && canUsePrefetch) {
+          if (age >= 0 && age < 300000 && prefetch.heroConfigReady === true && prefetch.cachedData && prefetch.config && isTranslated && isFreshConfig && isFreshPromptPool && canUsePrefetch) {
             this.cachedData = {
               ...prefetch.cachedData
             };
             this.config = prefetch.config;
+            this.heroConfigReady = true;
             this.promptPool = filterHomeVisiblePrompts(
               Array.isArray(prefetch.promptPool) && prefetch.promptPool.length > 0
                 ? prefetch.promptPool
@@ -3194,7 +3230,8 @@ const FramerHome = {
             this.cachedData.shop = Array.isArray(this.cachedData.shop) ? this.cachedData.shop : [];
             this.cachedData.guestbook = Array.isArray(this.cachedData.guestbook) ? this.cachedData.guestbook : [];
             this.cachedData.shopCategories = Array.isArray(this.cachedData.shopCategories) ? this.cachedData.shopCategories : [];
-            this.writeHeroTextCache(this.cachedData.hero);
+            this.cachedData.hero = this.buildHeroData(this.config.hero || {});
+            this.renderHeroText(this.cachedData.hero);
             this.schedulePromptPoolLiveSync({ reason: 'cache-stale-while-revalidate' });
             console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
             return;
@@ -3208,10 +3245,20 @@ const FramerHome = {
         clearHomepagePrefetchCache();
     }
 
+    // Hero text belongs to the layout config, independently of prompt and language requests.
+    let resolvedConfig = null;
+    const configReady = this.fetchHomepageConfig().then((config) => {
+      resolvedConfig = config;
+      this.heroConfigReady = true;
+      this.resetActiveExperiments();
+      this.renderHeroText(this.buildHeroData(config.hero || {}));
+      return config;
+    });
+
     try {
       const [, config, basePromptPool] = await Promise.all([
         localizationReady,
-        this.fetchHomepageConfig(),
+        configReady,
         this.fetchVisiblePromptPool()
       ]);
       this.config = config;
@@ -3236,8 +3283,9 @@ const FramerHome = {
       this.persistHomepagePrefetch('partial');
     } catch (error) {
       console.error('❌ Failed to load data:', error);
-      // Use fallback default data
-      this.useFallbackData();
+      // A failed prompt request must not discard a successfully loaded Hero config.
+      await configReady.catch(() => null);
+      this.useFallbackData(resolvedConfig);
     }
   },
 
@@ -4174,7 +4222,7 @@ const FramerHome = {
   /**
   * Fallback data when config fails to load
   */
-  useFallbackData() {
+  useFallbackData(resolvedConfig = null) {
     console.warn('⚠️ Using fallback data');
     this.resetActiveExperiments();
     this.config = {
@@ -4184,14 +4232,24 @@ const FramerHome = {
       gongyi: { enable_auto: false, section_tag: 'API中转', brand_name: '核心秘钥', brand_name_en: 'Father Key', brand_subtitle: 'Subscription to API Conversion Platform', cta_text: '进入控制台', cta_link: getHomepageSiteGongyiOrigin() },
       verify: { enable_auto: true, section_title: 'Gemini Pro', section_subtitle: '快速验证您的 API 密钥' },
       guestbook: { enable_auto: true, max_items: 6, section_title: '留言板', section_subtitle: '用户的声音' },
-      ticker: { enable_auto: true, speed: 30 }
+      ticker: { enable_auto: true, speed: 30 },
+      ...(resolvedConfig || {})
     };
-    this.sectionRows = {};
-    this.sectionOrder = [...HOME_DEFAULT_SECTION_ORDER];
+    if (!resolvedConfig) {
+      this.sectionRows = {};
+      this.sectionOrder = [...HOME_DEFAULT_SECTION_ORDER];
+    }
+
+    const hero = this.buildHeroData(this.config.hero);
+    const cachedHeroText = !resolvedConfig ? this.readHeroTextCache() : null;
+    if (cachedHeroText) {
+      hero.title = cachedHeroText.title;
+      hero.subtitle = cachedHeroText.subtitle || '';
+    }
 
     // Rebuild cachedData with fallback config
     this.cachedData = {
-      hero: this.buildHeroData(this.config.hero),
+      hero,
       prompts: [],
       shop: [],
       gongyi: this.buildGongyiData(this.config.gongyi),
@@ -4212,11 +4270,11 @@ const FramerHome = {
    */
   getLocalizedField(obj, fieldBase) {
     if (HomepageContract?.getLocalizedField) {
-      return HomepageContract.getLocalizedField(obj, fieldBase, window.i18n?.getCurrentLanguage?.() || 'zh') || '';
+      return HomepageContract.getLocalizedField(obj, fieldBase, getHomepageRuntimeLanguage()) || '';
     }
 
     if (!obj) return '';
-    const lang = window.i18n?.getCurrentLanguage() || 'zh';
+    const lang = getHomepageRuntimeLanguage();
     const langField = `${fieldBase}_${lang}`;
     if (obj[langField]) return obj[langField];
     if (obj[fieldBase]) return obj[fieldBase];
@@ -4898,6 +4956,7 @@ const FramerHome = {
         if (!reducedMotion) paletteMix += (paletteTarget - paletteMix) * 0.045;
         gl.uniform1f(paletteLoc, paletteMix);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
+        canvas.__mobileGlassFrame?.();
       }
       if (!reducedMotion) {
         runtime.frame = window.requestAnimationFrame(draw);
@@ -4934,8 +4993,22 @@ const FramerHome = {
     this.heroLiquidRuntime = null;
   },
 
+  renderHeroText(data) {
+    const section = document.getElementById('hero-section');
+    if (!section || !data) return;
+    for (const field of ['title', 'subtitle']) {
+      const element = section.querySelector(`.hero-${field}`);
+      if (!element) continue;
+      const text = String(data[field] || '');
+      if (element.textContent !== text) element.textContent = text;
+      element.removeAttribute('data-i18n');
+      element.removeAttribute('data-home-hero-text-pending');
+    }
+    this.writeHeroTextCache(data);
+  },
+
   hydrateStaticHeroSection(section, data, visibleEntries, heroSignature) {
-    if (!section || section.dataset.homeStaticHero !== '1' || section.dataset.renderSignature) {
+    if (!section || section.dataset.homeStaticHero !== '1') {
       return false;
     }
 
@@ -4953,17 +5026,7 @@ const FramerHome = {
       backgroundRepeat: data.customImage ? 'no-repeat' : ''
     });
 
-    const titleEl = section.querySelector('.hero-title');
-    if (titleEl) {
-      titleEl.textContent = data.title || '';
-      titleEl.removeAttribute('data-i18n');
-    }
-
-    const subtitleEl = section.querySelector('.hero-subtitle');
-    if (subtitleEl) {
-      subtitleEl.textContent = data.subtitle || '';
-      subtitleEl.removeAttribute('data-i18n');
-    }
+    this.renderHeroText(data);
 
     if (track.querySelectorAll('.entry-card').length !== visibleEntries.length) {
       track.innerHTML = visibleEntries.map((entry, index) => this.buildHeroEntryCardMarkup(entry, index)).join('');
@@ -5394,7 +5457,7 @@ const FramerHome = {
     const shopSpeed = this.config.ticker?.shop_scroll_speed || 30;
     const sectionTitle = resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_title'), 'home.shop.title', {
       zh: '资源商城',
-      en: 'Featured Resource Store'
+      en: 'Resource Store'
     });
     const sectionSubtitle = resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_subtitle'), 'home.shop.subtitle', {
       zh: '优质资源，助力成长',
@@ -7558,14 +7621,54 @@ const FramerHome = {
     let lastScrollY = Math.max(0, window.scrollY || window.pageYOffset || 0);
     let scrollDownStartY = lastScrollY;
     let scrollTicking = false;
+    let modalWasActive = false;
 
     const SCROLL_CAPSULE_THRESHOLD = 24;
     const SCROLL_HIDE_BUFFER = 480;
     const SCROLL_DELTA_UP_THRESHOLD = 8;
 
+    const getEffectiveScrollY = () => {
+      if (document.body.classList.contains('ios-scroll-lock-fixed') || document.body.style.position === 'fixed') {
+        const top = parseFloat(document.body.style.top);
+        if (!isNaN(top) && top < 0) {
+          return Math.abs(top);
+        }
+      }
+      if (window.iOSScrollLock?.isLocked && typeof window.iOSScrollLock.savedScrollY === 'number') {
+        return window.iOSScrollLock.savedScrollY;
+      }
+      return Math.max(0, window.scrollY || window.pageYOffset || 0);
+    };
+
+    const isModalActive = () => {
+      return Boolean(window.iOSScrollLock?.isLocked) ||
+        document.body.classList.contains('has-active-modal') ||
+        document.body.classList.contains('ios-scroll-lock-fixed') ||
+        document.body.classList.contains('auth-sheet-open') ||
+        document.body.classList.contains('guestbook-composer-open') ||
+        document.body.classList.contains('wallet-modal-lock') ||
+        document.body.classList.contains('guest-shop-modal-open') ||
+        document.body.classList.contains('ai-image-workbench-open') ||
+        document.body.dataset.shopPurchaseModalOpen === 'true' ||
+        document.body.dataset.shopCartOpen === 'true';
+    };
+
     const updateNavScrollState = () => {
       if (!nav) return;
-      const scrollY = Math.max(0, window.scrollY || window.pageYOffset || 0);
+      const scrollY = getEffectiveScrollY();
+      if (isModalActive()) {
+        modalWasActive = true;
+        scrollDownStartY = scrollY;
+        lastScrollY = scrollY;
+        return;
+      }
+      if (modalWasActive) {
+        // Restoring the page after a modal is not a downward scroll gesture.
+        modalWasActive = false;
+        nav.classList.remove('nav-hidden');
+        scrollDownStartY = scrollY;
+        lastScrollY = scrollY;
+      }
 
       if (scrollY > 0 && !nav.classList.contains('nav-ready')) {
         nav.classList.add('nav-ready');
@@ -7646,6 +7749,17 @@ const FramerHome = {
     };
 
     window.addEventListener('scroll', onScroll, { passive: true });
+    // A fixed-body lock may open/close without emitting a window scroll.
+    // Observe only the body lock attributes so the resume baseline is reliable.
+    if (typeof window.MutationObserver === 'function') {
+      const modalStateObserver = new window.MutationObserver(() => {
+        if (isModalActive() || modalWasActive) onScroll();
+      });
+      modalStateObserver.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-shop-purchase-modal-open', 'data-shop-cart-open']
+      });
+    }
     updateNavScrollState();
 
     if (nav) {

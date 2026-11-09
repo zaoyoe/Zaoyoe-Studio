@@ -1,0 +1,2 @@
+# Preserve original security regression logs for a future reviewed release.
+!raw/*.log

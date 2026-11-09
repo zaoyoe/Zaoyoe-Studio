@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-visual">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="color-scheme" content="light dark">
+    <script src="./js/section-visibility-preload.js?v=75e23ac2a6e7"></script>
+    <script src="./js/theme-preload.js?v=75e23ac2a6e7"></script>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="description" content="Gemini 准备工作教程：开启 2FA (谷歌身份验证器) 及删除 Google 付款资料指引。">
+    <title>Gemini 准备工作 - 2FA 验证与付款资料清理指引</title>
+    <link rel="canonical" href="https://www.fatherkey.com/google-2fa-tutorial.html">
+    <link rel="icon" type="image/png" href="assets/favicon.png">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="vendor/fontawesome/6.4.0/css/all.min.css?v=75e23ac2a6e7">
+
+    <!-- Base Styles -->
+    <link rel="stylesheet" href="css/framer_home.css?v=75e23ac2a6e7">
+    <link rel="stylesheet" href="css/prompt-shell-page.css?v=75e23ac2a6e7">
+    <link rel="stylesheet" href="css/tutorial-page.css?v=75e23ac2a6e7&modalRim=20261108_2&modalBackdrop=20261108_1">
+    <link rel="stylesheet" href="./css/desktop-nav-glass.css?v=20261108_14">
+    <script type="module" src="./js/desktop-nav-glass.mjs?v=20261109_NAV_MOTION_1"></script>
+</head>
+
+<body class="tutorial-page prompt-shell-page">
+    <!-- Starry Sky Canvas (Dark Mode) -->
+    <canvas id="starryCanvas"></canvas>
+
+    <!-- Navigation Bar -->
+    <nav class="framer-nav">
+        <div class="nav-container">
+            <a href="/index.html" class="nav-logo" aria-label="首页">
+                <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M30 20 H80 L70 35 H20 Z" fill="white" />
+                    <path d="M40 40 H90 L80 55 H30 Z" fill="#ccc" />
+                    <path d="M20 60 H70 L60 75 H10 Z" fill="white" />
+                    <path d="M80 20 L90 15 L80 30" fill="#333" />
+                    <path d="M90 40 L100 35 L90 50" fill="#333" />
+                    <path d="M70 60 L80 55 L70 70" fill="#333" />
+                </svg>
+            </a>
+
+            <div class="nav-menu">
+                <a href="/prompts.html" class="nav-trigger" data-dropdown="prompts">提示词</a>
+                <a href="/verify.html" class="active">Gemini Pro</a>
+                <a href="https://new.fatherkey.com">核心秘钥</a>
+                <a href="/shop.html" class="nav-trigger" data-dropdown="shop">商城</a>
+                <a href="/guestbook.html">留言板</a>
+            </div>
+
+            <div class="nav-actions">
+                <div id="auth-container"></div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main id="main-content" role="main">
+        <div class="tutorial-container">
+            
+            <div class="tutorial-top-bar">
+                <a href="/verify.html" class="tutorial-back-btn">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>返回 Gemini Pro</span>
+                </a>
+            </div>
+
+            <div class="tutorial-card">
+                <!-- Page Header -->
+                <header class="tutorial-header">
+                    <div class="tutorial-badge">
+                        <i class="fas fa-shield-check"></i>
+                        <span>操作教程指引</span>
+                    </div>
+                    <h1 class="tutorial-title">Gemini 准备工作</h1>
+                    <p class="tutorial-subtitle">请按照下方指引完成两步验证（2FA）开启及付款资料清理，确保任务顺利执行。</p>
+                </header>
+
+                <!-- Precautions / 注意事项 -->
+                <section class="tutorial-section tutorial-notice-section" id="section-notice">
+                    <div class="tutorial-notice-card">
+                        <div class="tutorial-notice-header">
+                            <div class="tutorial-notice-badge">
+                                <i class="fas fa-triangle-exclamation"></i>
+                                <span>注意事项</span>
+                            </div>
+                            <h2 class="tutorial-notice-title">注意事项</h2>
+                        </div>
+                        <div class="tutorial-notice-grid">
+                            <div class="tutorial-notice-item">
+                                <div class="tutorial-notice-item-head">
+                                    <span class="tutorial-notice-number">1</span>
+                                    <h3 class="tutorial-notice-item-title">家庭组必须退出</h3>
+                                </div>
+                                <p class="tutorial-notice-item-desc">确保该账号不存在其它可用的 pro 权限订阅。</p>
+                            </div>
+
+                            <div class="tutorial-notice-item">
+                                <div class="tutorial-notice-item-head">
+                                    <span class="tutorial-notice-number">2</span>
+                                    <h3 class="tutorial-notice-item-title">账号建议</h3>
+                                </div>
+                                <p class="tutorial-notice-item-desc">建议使用老号，新号极其容易封控，导致账号无法登录。这不是认证的问题，而是账号本身的问题。</p>
+                            </div>
+
+                            <div class="tutorial-notice-item">
+                                <div class="tutorial-notice-item-head">
+                                    <span class="tutorial-notice-number">3</span>
+                                    <h3 class="tutorial-notice-item-title">隐私与安全</h3>
+                                </div>
+                                <p class="tutorial-notice-item-desc">我们不会保存您的任何账户信息和资料，提交的信息仅做订阅临时使用，订阅完成后自动销毁。为了账户安全，订阅完成后建议修改 2FA 码，但不建议立即修改密码，以免触发封控。</p>
+                            </div>
+
+                            <div class="tutorial-notice-item">
+                                <div class="tutorial-notice-item-head">
+                                    <span class="tutorial-notice-number">4</span>
+                                    <h3 class="tutorial-notice-item-title">移除 jio</h3>
+                                </div>
+                                <p class="tutorial-notice-item-desc">如需删除不必要的谷歌服务，例如 jio 的 pro 订阅，可点击下面链接选择要移除的订阅。</p>
+                                <a href="https://myaccount.google.com/deleteservices" target="_blank" rel="noopener noreferrer" class="tutorial-notice-link">
+                                    <i class="fas fa-arrow-up-right-from-square"></i>
+                                    <span>http://myaccount.google.com/deleteservices</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Section 1 -->
+                <section class="tutorial-section" id="section-2fa">
+                    <h2 class="tutorial-section-title">1. 充值前必做 开启 2FA</h2>
+                    
+                    <p class="tutorial-text">开通 2FA (谷歌验证器)</p>
+                    
+                    <a href="https://myaccount.google.com/security" target="_blank" rel="noopener noreferrer" class="tutorial-link-card">
+                        <div class="tutorial-link-card-left">
+                            <div class="tutorial-link-icon">
+                                <i class="fas fa-shield-alt"></i>
+                            </div>
+                            <div class="tutorial-link-info">
+                                <span class="tutorial-link-label">直达链接</span>
+                                <span class="tutorial-link-url">https://myaccount.google.com/security</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-arrow-up-right-from-square tutorial-link-arrow"></i>
+                    </a>
+
+                    <!-- Step Image 1 -->
+                    <div class="tutorial-image-container">
+                        <div class="tutorial-image-wrapper">
+                            <img src="assets/guide/2fa/step-1.png" alt="步骤图 1 - 谷歌账号安全性" class="tutorial-img" loading="lazy">
+                        </div>
+                    </div>
+
+                    <!-- Step Image 2 -->
+                    <div class="tutorial-image-container">
+                        <div class="tutorial-image-wrapper">
+                            <img src="assets/guide/2fa/step-2.png" alt="步骤图 2 - 两步验证设置" class="tutorial-img" loading="lazy">
+                        </div>
+                    </div>
+
+                    <!-- Step Image 3 -->
+                    <div class="tutorial-image-container">
+                        <div class="tutorial-image-wrapper">
+                            <img src="assets/guide/2fa/step-3.png" alt="步骤图 3 - 身份验证器应用" class="tutorial-img" loading="lazy">
+                        </div>
+                    </div>
+
+                    <!-- Step Image 4 -->
+                    <div class="tutorial-image-container">
+                        <div class="tutorial-image-wrapper">
+                            <img src="assets/guide/2fa/step-4.png" alt="步骤图 4 - 设置身份验证器" class="tutorial-img" loading="lazy">
+                        </div>
+                    </div>
+
+                    <div class="tutorial-callout tutorial-callout-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div>
+                            不要扫描，点<span class="tutorial-highlight-tag tutorial-tag-warning">无法扫描</span>。出现下面这个就是 2FA 密钥，复制。复制完点下一页<strong>（如同密保，需要保存下来，丢失后可能造成无法登录的问题）</strong>
+                        </div>
+                    </div>
+
+                    <!-- Step Image 5 -->
+                    <div class="tutorial-image-container">
+                        <div class="tutorial-image-wrapper">
+                            <img src="assets/guide/2fa/step-5.png" alt="步骤图 5 - 复制 2FA 密钥" class="tutorial-img" loading="lazy">
+                        </div>
+                    </div>
+
+                    <p class="tutorial-text">来到下面的网站把 2FA 密钥粘贴进去，获取验证码。</p>
+
+                    <a href="https://2fa.cn" target="_blank" rel="noopener noreferrer" class="tutorial-link-card">
+                        <div class="tutorial-link-card-left">
+                            <div class="tutorial-link-icon">
+                                <i class="fas fa-key"></i>
+                            </div>
+                            <div class="tutorial-link-info">
+                                <span class="tutorial-link-label">获取 2FA 网站</span>
+                                <span class="tutorial-link-url">https://2fa.cn</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-arrow-up-right-from-square tutorial-link-arrow"></i>
+                    </a>
+
+                    <!-- Step Image 6 -->
+                    <div class="tutorial-image-container">
+                        <div class="tutorial-image-wrapper">
+                            <img src="assets/guide/2fa/step-6.png" alt="步骤图 6 - 在 2fa.cn 获取动态验证码" class="tutorial-img" loading="lazy">
+                        </div>
+                    </div>
+
+                    <div class="tutorial-callout tutorial-callout-info">
+                        <i class="fas fa-info-circle"></i>
+                        <div>
+                            出来验证码回到身份验证器填上去。<strong>一定要填到下面的验证器上面，才能修改成功。</strong>
+                        </div>
+                    </div>
+
+                    <!-- Step Image 7 -->
+                    <div class="tutorial-image-container">
+                        <div class="tutorial-image-wrapper">
+                            <img src="assets/guide/2fa/step-7.png" alt="步骤图 7 - 填写 6 位验证码" class="tutorial-img" loading="lazy">
+                        </div>
+                    </div>
+
+                    <p class="tutorial-text">添加完 2FA 以后，一定要点这个开启两步验证。</p>
+
+                    <!-- Step Image 8 -->
+                    <div class="tutorial-image-container">
+                        <div class="tutorial-image-wrapper">
+                            <img src="assets/guide/2fa/step-8.png" alt="步骤图 8 - 点击开启两步验证" class="tutorial-img" loading="lazy">
+                        </div>
+                    </div>
+
+                    <div class="tutorial-callout tutorial-callout-success">
+                        <i class="fas fa-check-circle"></i>
+                        <div>
+                            两步验证一定要是<strong>变为绿色的才代表启动成功</strong>。
+                        </div>
+                    </div>
+
+                    <!-- Step Image 9 -->
+                    <div class="tutorial-image-container">
+                        <div class="tutorial-image-wrapper">
+                            <img src="assets/guide/2fa/step-9.png" alt="步骤图 9 - 验证两步验证状态已开启" class="tutorial-img" loading="lazy">
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Section 2 -->
+                <section class="tutorial-section" id="section-payments">
+                    <h2 class="tutorial-section-title">2. 删除付款资料</h2>
+                    
+                    <a href="https://payments.google.com/gp/w/home/reauthprompt?rtrp=/home/settings" target="_blank" rel="noopener noreferrer" class="tutorial-link-card">
+                        <div class="tutorial-link-card-left">
+                            <div class="tutorial-link-icon">
+                                <i class="fas fa-credit-card"></i>
+                            </div>
+                            <div class="tutorial-link-info">
+                                <span class="tutorial-link-label">直达地址</span>
+                                <span class="tutorial-link-url">https://payments.google.com/gp/w/home/reauthprompt?rtrp=/home/settings</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-arrow-up-right-from-square tutorial-link-arrow"></i>
+                    </a>
+
+                    <p class="tutorial-text">进去地址后 如果显示下图 直接转移第三步</p>
+
+                    <!-- Step Image 10 -->
+                    <div class="tutorial-image-container">
+                        <div class="tutorial-image-wrapper">
+                            <img src="assets/guide/2fa/step-10.png" alt="步骤图 10 - 尚未添加任何付款方式" class="tutorial-img" loading="lazy">
+                        </div>
+                    </div>
+
+                    <p class="tutorial-text tutorial-text-sub">如果不是这样，打开链接，验证是本人，然后直接拉到页面最底部。</p>
+                    <p class="tutorial-text tutorial-text-sub">找到 <strong>支付资料状态 - 点击关闭支付资料</strong> (英文等界面按钮位置一样的)。</p>
+                    <p class="tutorial-text">关闭理由随便填写。操作完成后重新打开链接，显示 <span class="tutorial-highlight-tag tutorial-tag-success">尚未添加任何付款方式</span> 说明清理成功。</p>
+                </section>
+
+                <!-- Footer Action -->
+                <div class="tutorial-bottom-action">
+                    <a href="/verify.html" class="tutorial-finish-btn">
+                        <i class="fas fa-check"></i>
+                        <span>已完成准备工作，返回提交任务</span>
+                    </a>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Image Lightbox Modal -->
+    <div id="tutorialLightbox" class="tutorial-lightbox">
+        <img id="tutorialLightboxImg" src="" alt="放大查看图片">
+    </div>
+
+    <!-- Scripts -->
+    <script src="./starry-sky.js?v=75e23ac2a6e7" defer></script>
+    <script src="./inject-auth.js?v=75e23ac2a6e7" defer></script>
+    <script src="inline-google-2fa-tutorial-6.js?v=20261109_INLINE_1"></script>
+</body>
+
+</html>

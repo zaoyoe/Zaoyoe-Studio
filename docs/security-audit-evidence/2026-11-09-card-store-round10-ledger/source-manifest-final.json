@@ -1,0 +1,27 @@
+{
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "stage": "A, NOT WIRED",
+  "previous_manifest_preserved": "source-manifest.json; predates appended workspace REVIEW note",
+  "files": [
+    {
+      "path": "services/kc-pay-gpt/lib/payment-attempt-ledger.js",
+      "bytes": 15093,
+      "sha256": "08d72b32277656f44bb6424d199d9959dc9292f69d38b72a888054e798c15f0c"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/payment-attempt-ledger/20261109-ledger-DRAFT.sql",
+      "bytes": 3781,
+      "sha256": "feaaad96e48bc507ba0679c06684baf589f324be003d5a4fa90c2c61442fe86d"
+    },
+    {
+      "path": "tests/security-round10-kc-payment-attempt-ledger.test.js",
+      "bytes": 27177,
+      "sha256": "4201cbc0e6b5669866d66edc648a64fb5c3d18cdb74e01e5e0ebce7d3dba87d4"
+    },
+    {
+      "path": "docs/security-card-store-hardening-round10-2026-11-09.md",
+      "bytes": 10055,
+      "sha256": "c3f52986a1aed5e5ac1b75529c41895386d2515d38eddd7fe495a85c69744425"
+    }
+  ]
+}

@@ -27,7 +27,7 @@ describe('Card Freeze & Unfreeze Contract', () => {
         expect(store.setCardFrozen).toBeTypeOf('function');
     });
 
-    it('freezing a card sets is_active = 0, status = 已冻结, and releases locks', async () => {
+    it('freezing an idle card sets is_active = 0 and status = 已冻结', async () => {
         const { store, execute } = harness();
         const res = await store.setCardFrozen(42, true);
         expect(res.success).toBe(true);
@@ -41,6 +41,7 @@ describe('Card Freeze & Unfreeze Contract', () => {
         expect(sql).toContain("status = '已冻结'");
         expect(sql).toContain('locked_at = NULL');
         expect(sql).toContain('locked_by = NULL');
+        expect(sql).toContain("WHERE id = ? AND in_use = 0 AND status IN ('正常', '已冻结', '已报废')");
     });
 
     it('unfreezing a card restores is_active = 1, status = 正常, and clears cooldown', async () => {
@@ -56,6 +57,7 @@ describe('Card Freeze & Unfreeze Contract', () => {
         expect(sql).toContain('is_active = 1');
         expect(sql).toContain("status = '正常'");
         expect(sql).toContain('cooldown_until = NULL');
+        expect(sql).toContain("WHERE id = ? AND in_use = 0 AND status = '已冻结'");
     });
 
     it('rejects invalid cardId gracefully', async () => {
@@ -71,6 +73,6 @@ describe('Card Freeze & Unfreeze Contract', () => {
         execute.mockResolvedValueOnce([{ affectedRows: 0 }]);
         const res = await store.setCardFrozen(999, true);
         expect(res.success).toBe(false);
-        expect(res.error).toBe('卡片不存在');
+        expect(res.error).toBe('卡片不存在或仍被占用/待核账，不能冻结或解冻');
     });
 });

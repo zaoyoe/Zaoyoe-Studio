@@ -1,0 +1,12 @@
+[
+  {
+    "path": "services/kc-pay-gpt/mysql-store.js",
+    "bytes": 194511,
+    "sha256": "8b0c12e59e929c674d9f88660fad9049e68475ba721aebe43ae2fcd6415beb83"
+  },
+  {
+    "path": "services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+    "bytes": 19582,
+    "sha256": "1a8b2908ffad6ef42e288b4c0475c28a503073408853eb42e713a8fe41e174b9"
+  }
+]

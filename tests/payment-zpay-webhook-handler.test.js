@@ -819,3 +819,58 @@ test('zpay webhook does not credit points when active query reports a non-paid o
         assert.equal(state.finalizedEvent, undefined);
     });
 });
+
+for (const missing of ['paidAmount', 'providerOrderNo', 'tradeNo']) {
+    test(`zpay incomplete active query (${missing}) remains retryable without credit`, async () => {
+        const query = { supported: true, success: true, status: 'paid', providerOrderNo: 'ZP123', tradeNo: 'TRADE-1', paidAmount: 12.34 };
+        delete query[missing];
+        const state = { queryOrderResult: query, existingPaymentOrder: {
+            id: 'order-incomplete', user_id: 'user-1', provider: 'zpay', provider_order_no: 'ZP123',
+            site: 'cn', expected_amount: 12.34, points_amount: 100, status: 'pending', provider_metadata: {}
+        } };
+        await withZpayWebhookModule(buildDependencyMocks(state), async ({ createZpayWebhookHandler }) => {
+            const handler = createZpayWebhookHandler({ supabase: createSupabaseMock(state), env: {
+                APP_ENV: 'production', APP_BASE_URL: 'https://www.fatherkey.com', TRUSTED_PROXY_IPS: '10.0.0.0/8'
+            } });
+            const res = createMockResponse();
+            await handler({ method: 'GET', url: '/api/payments/zpay/webhook?out_trade_no=ZP123&trade_no=TRADE-1&trade_status=TRADE_SUCCESS&money=12.34',
+                headers: { host: 'www.fatherkey.com', 'x-forwarded-for': '203.0.113.10' } }, res);
+            assert.equal(res.statusCode, 503);
+            assert.equal(res.body, 'query verification incomplete');
+            assert.equal(state.rechargePayload, undefined);
+            assert.equal(state.paymentOrderPatch, undefined);
+        });
+    });
+}
+
+
+for (const [expected, notification, queryAmount, shouldCredit] of [
+    [0.01, '0.01', 0.01, true], [12.34, '12.33', 12.34, false],
+    [12.34, '12.34', 12.33, false], [12.34, '12.3401', 12.34, false],
+    [12.34, '12.34', 12.3401, false], [12.34, '0', 12.34, false],
+    [12.34, '', 12.34, false], [12.34, '-12.34', 12.34, false],
+    [12.34, 'NaN', 12.34, false], [12.34, '12.34', 0, false],
+    [12.34, '12.34', null, false]
+]) test(`zpay webhook exact-cent check expected=${expected} notice=${notification} query=${queryAmount}`, async () => {
+    const state = { queryOrderResult: { supported: true, success: true, status: 'paid',
+        providerOrderNo: 'ZP123', tradeNo: 'TRADE-1', paidAmount: queryAmount }, existingPaymentOrder: {
+        id: 'order-cent-check', user_id: 'user-1', provider: 'zpay', provider_order_no: 'ZP123',
+        site: 'cn', expected_amount: expected, points_amount: 100, status: 'pending', provider_metadata: {}
+    } };
+    await withZpayWebhookModule(buildDependencyMocks(state), async ({ createZpayWebhookHandler }) => {
+        const handler = createZpayWebhookHandler({ supabase: createSupabaseMock(state), env: {
+            APP_ENV: 'production', APP_BASE_URL: 'https://www.fatherkey.com', TRUSTED_PROXY_IPS: '10.0.0.0/8'
+        } });
+        const res = createMockResponse();
+        await handler({ method: 'GET', url: '/api/payments/zpay/webhook?out_trade_no=ZP123&trade_no=TRADE-1&trade_status=TRADE_SUCCESS&money=' + encodeURIComponent(notification),
+            headers: { host: 'www.fatherkey.com', 'x-forwarded-for': '203.0.113.10' } }, res);
+        if (shouldCredit) {
+            assert.equal(res.statusCode, 200); assert.equal(res.body, 'success');
+            assert.equal(state.rechargePayload.referenceId, 'zpay_ZP123');
+            assert.equal(state.paymentOrderPatch.amount_verified, true);
+        } else {
+            assert.equal(state.rechargePayload, undefined);
+            assert.notEqual(state.paymentOrderPatch?.amount_verified, true);
+        }
+    });
+});

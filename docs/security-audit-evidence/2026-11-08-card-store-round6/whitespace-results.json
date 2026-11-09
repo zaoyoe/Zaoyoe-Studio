@@ -1,0 +1,158 @@
+{
+  "note": "git diff --no-index --check can return 1 for differing files without whitespace diagnostics; exits are recorded exactly. These compare round snapshots, not HEAD.",
+  "results": [
+    {
+      "command": [
+        "git",
+        "diff",
+        "--no-index",
+        "--check",
+        "--",
+        "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/mysql-store.js",
+        "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/mysql-store.js"
+      ],
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "",
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "interpretation": "No whitespace diagnostics"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--no-index",
+        "--check",
+        "--",
+        "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/payment-retry.js",
+        "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/payment-retry.js"
+      ],
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "",
+      "path": "services/kc-pay-gpt/payment-retry.js",
+      "interpretation": "No whitespace diagnostics"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--no-index",
+        "--check",
+        "--",
+        "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+        "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/test/mysql-card-cooldown.test.js"
+      ],
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "",
+      "path": "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "interpretation": "No whitespace diagnostics"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--no-index",
+        "--check",
+        "--",
+        "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/test/payment-retry-safety.test.js",
+        "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/test/payment-retry-safety.test.js"
+      ],
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "",
+      "path": "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "interpretation": "No whitespace diagnostics"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--no-index",
+        "--check",
+        "--",
+        "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+        "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/test/payment-protocol-fallback.test.js"
+      ],
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "",
+      "path": "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "interpretation": "No whitespace diagnostics"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--no-index",
+        "--check",
+        "--",
+        "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/index.js",
+        "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/index.js"
+      ],
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "",
+      "path": "services/kc-pay-gpt/index.js",
+      "interpretation": "No whitespace diagnostics"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--no-index",
+        "--check",
+        "--",
+        "/tmp/kc-round6-owner-cas-20261108-before/services/kc-pay-gpt/chatgpt.js",
+        "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt/chatgpt.js"
+      ],
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "",
+      "path": "services/kc-pay-gpt/chatgpt.js",
+      "interpretation": "No whitespace diagnostics"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--no-index",
+        "--check",
+        "--",
+        "/dev/null",
+        "/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js"
+      ],
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "",
+      "path": "tests/security-round6-kc-card-ownership.test.js",
+      "interpretation": "No whitespace diagnostics"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--no-index",
+        "--check",
+        "--",
+        "/dev/null",
+        "/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-payment-callers.test.js"
+      ],
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "",
+      "path": "tests/security-round6-kc-payment-callers.test.js",
+      "interpretation": "No whitespace diagnostics"
+    }
+  ]
+}

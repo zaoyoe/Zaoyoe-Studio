@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "target": "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/target.json",
+  "process_identity_verified": true,
+  "listeners": [
+    "127.0.0.1:23316"
+  ],
+  "mysql_version": "8.4.11",
+  "fixture_reexecuted": false,
+  "database_scenarios": "NOT RUN"
+}

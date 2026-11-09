@@ -1,0 +1,106 @@
+[
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/cli.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-01.log"
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-02.log"
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/plan.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-03.log"
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/safety.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-04.log"
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/store-loader.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-05.log"
+  },
+  {
+    "path": "tests/security-round8-kc-mysql-lab.test.js",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-06.log"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/preload.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-07.log"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/audited-run.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-08.log"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/post-check.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-09.log"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/audited-run-02.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-10.log"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/audited-run.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-11.log"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/diagnose-aliases.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-12.log"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/before-alias-fix-lab.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-13.log"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/before-owner-contract-fix-lab.cjs",
+    "check": "node --check",
+    "exit": 0,
+    "log": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/syntax-14.log"
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/prepare-lab.py",
+    "check": "ast.parse only",
+    "exit": 0
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/prepare-lab.py",
+    "check": "ast.parse only",
+    "exit": 0
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/prepare-lab-before-target-fix.py",
+    "check": "ast.parse only",
+    "exit": 0
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/run.py",
+    "check": "ast.parse only",
+    "exit": 0
+  }
+]

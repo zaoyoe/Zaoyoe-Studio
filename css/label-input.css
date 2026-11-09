@@ -1,0 +1,624 @@
+/* ══════════════════════════════════════════════════════════════
+   Label Input (LBI) - Universal Floating Notch Border Component
+   Single component architecture for all form input fields
+   ══════════════════════════════════════════════════════════════ */
+
+.lbi {
+    --lbi-text: #f2f5f8;
+    --lbi-bg: transparent;
+    --lbi-ink: rgba(255, 255, 255, 0.92);                                /* 聚焦标签文字：柔白 */
+    --lbi-border-focus: rgba(255, 255, 255, 0.42);                       /* 聚焦边框：柔白微光感 */
+    --lbi-ink-muted: rgba(226, 232, 240, 0.65);
+    --lbi-ink-placeholder: rgba(226, 232, 240, 0.45);                    /* 未聚焦提示词：暗底淡灰 */
+    --lbi-border: rgba(255, 255, 255, 0.22);                             /* 未聚焦边框：暗底淡灰 */
+
+    position: relative;
+    width: 100%;
+    padding-top: 14px;
+    margin-top: 0;
+    box-sizing: border-box;
+    display: block;
+}
+
+html[data-theme="light"] .lbi,
+html:not([data-theme="dark"]) .lbi {
+    --lbi-text: #0f172a;
+    --lbi-bg: transparent;
+    --lbi-ink: #0f172a;                                                   /* 聚焦标签文字：深灰石墨色 */
+    --lbi-border-focus: rgba(15, 23, 42, 0.45);                           /* 聚焦边框：深灰石墨色细线 */
+    --lbi-ink-muted: rgba(71, 85, 105, 0.78);
+    --lbi-ink-placeholder: rgba(100, 116, 139, 0.65);                    /* 未聚焦提示词：淡灰色 */
+    --lbi-border: rgba(148, 163, 184, 0.45);                             /* 未聚焦边框：淡灰色 */
+}
+
+.lbi-box {
+    position: relative;
+    width: 100%;
+    height: 48px;
+    background: transparent !important;
+    cursor: text;
+    box-sizing: border-box;
+    filter: none !important;
+    box-shadow: none !important;
+}
+
+.lbi-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+    z-index: 1;
+}
+
+html body .lbi-ring path,
+.lbi-ring path {
+    fill: none;
+    stroke: var(--lbi-border) !important;
+    stroke-width: 1px !important;
+    stroke-linecap: butt;
+    stroke-linejoin: round;
+    shape-rendering: geometricPrecision;
+    transition: stroke 240ms cubic-bezier(0.16, 1, 0.3, 1), stroke-width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html body .lbi[data-focus="true"] .lbi-ring path,
+.lbi[data-focus="true"] .lbi-ring path {
+    stroke: var(--lbi-border-focus) !important;
+    stroke-width: 1.2px !important;
+}
+
+html body .lbi-box,
+html body .lbi[data-focus="true"] .lbi-box,
+.lbi-box,
+.lbi[data-focus="true"] .lbi-box {
+    filter: none !important;
+    box-shadow: none !important;
+    border-color: var(--lbi-border-focus) !important;
+}
+
+.lbi-gap {
+    stroke-dasharray: 1 2;
+    stroke-dashoffset: 0;
+    transition: stroke 220ms ease, stroke-width 220ms ease,
+        stroke-dashoffset 420ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.lbi[data-up="true"] .lbi-gap {
+    stroke-dashoffset: -1 !important;
+}
+
+.lbi-label {
+    position: absolute;
+    left: var(--lbi-x, 22px);
+    top: 50%;
+    transform: translateY(-50%);
+    transform-origin: left center;
+    color: var(--lbi-ink-placeholder);
+    font-size: 15px;
+    line-height: 1.25;
+    white-space: pre;
+    pointer-events: none;
+    user-select: none;
+    transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), color 220ms ease;
+    z-index: 3 !important;
+    padding: 2px 0;
+}
+
+.lbi[data-up="true"] .lbi-label {
+    color: var(--lbi-ink-muted);
+    transform: translateY(-50%) translateY(-26px) scale(0.78);
+}
+
+html body .lbi[data-focus="true"] .lbi-label,
+.lbi[data-focus="true"] .lbi-label {
+    color: var(--lbi-ink) !important;
+}
+
+.lbi-label span {
+    display: inline-block;
+}
+
+.lbi[data-focus="true"] .lbi-label span {
+    animation: lbi-hop 460ms cubic-bezier(0.3, 0.7, 0.3, 1) both;
+    animation-delay: calc(var(--i) * 24ms);
+}
+
+@keyframes lbi-hop {
+    0% { transform: translateY(0); }
+    38% { transform: translateY(-3px); }
+    100% { transform: translateY(0); }
+}
+
+/* Force complete transparency on the input element so notch and label are visible */
+body .lbi-box input,
+body .lbi-box input:read-only,
+body .lbi-box input[readonly],
+html[data-theme="dark"] body .lbi-box input:read-only,
+html[data-theme="dark"] body .lbi-box input[readonly],
+body.guest-orders-page .guest-orders-field .lbi-box input,
+body.guest-orders-page .guest-orders-field .lbi-box input:read-only,
+body.guest-orders-page .guest-orders-field .lbi-box input[readonly],
+.lbi-box input,
+.lbi-box .lbi-field {
+    position: absolute !important;
+    inset: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 48px !important;
+    border: none !important;
+    outline: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border-radius: inherit !important;
+    color: var(--lbi-text) !important;
+    caret-color: var(--lbi-ink) !important;
+    font-size: 15px !important;
+    line-height: 48px !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 2 !important;
+    cursor: text !important;
+}
+
+.lbi-box input::placeholder,
+.lbi-box .lbi-field::placeholder {
+    color: transparent !important;
+    opacity: 0 !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+html body .lbi-box input:focus,
+html body .lbi-box .lbi-field:focus,
+html body .lbi-box input:focus-visible,
+html body .lbi-box .lbi-field:focus-visible,
+.verify-widget .lbi-box input.verify-input:focus,
+.verify-widget .lbi-box input.verify-input:focus-visible,
+.verify-widget .lbi-box textarea.verify-input:focus,
+.verify-widget .lbi-box textarea.verify-input:focus-visible,
+.guest-orders-field .lbi-box input:focus,
+.guest-orders-field .lbi-box input:focus-visible,
+.lbi-box input:focus,
+.lbi-box .lbi-field:focus,
+.lbi-box input:focus-visible,
+.lbi-box .lbi-field:focus-visible {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    filter: none !important;
+}
+
+.lbi-box input:-webkit-autofill,
+.lbi-box input:-webkit-autofill:hover,
+.lbi-box input:-webkit-autofill:focus,
+.lbi-box input:-webkit-autofill:active {
+    -webkit-text-fill-color: var(--lbi-text) !important;
+    caret-color: var(--lbi-ink) !important;
+    border: none !important;
+    outline: none !important;
+    border-radius: inherit !important;
+    -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+    box-shadow: 0 0 0 1000px transparent inset !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    transition: background-color 999999s ease-in-out 0s, color 999999s ease-in-out 0s !important;
+}
+
+.lbi-box input:-moz-autofill {
+    color: var(--lbi-text) !important;
+    caret-color: var(--lbi-ink) !important;
+    box-shadow: 0 0 0 1000px transparent inset !important;
+    border-radius: inherit !important;
+    background: transparent !important;
+}
+
+/* Password Eye Button */
+.lbi-eye {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--lbi-ink-placeholder);
+    z-index: 4 !important;
+    transition: color 180ms ease, background-color 180ms ease, transform 180ms ease;
+    padding: 0;
+}
+
+.lbi-eye:hover {
+    color: var(--lbi-text);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="light"] .lbi-eye:hover,
+html:not([data-theme="dark"]) .lbi-eye:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.lbi[data-focus="true"] .lbi-eye {
+    color: var(--lbi-ink);
+}
+
+.lbi-eye:active {
+    transform: translateY(-50%) scale(0.92);
+}
+
+.lbi-eye svg {
+    grid-area: 1 / 1;
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: opacity 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1), filter 220ms ease;
+}
+
+.lbi-eye svg.lbi-eye-closed,
+.lbi-eye svg:last-child {
+    opacity: 0;
+    transform: scale(0.75);
+    filter: blur(2px);
+    pointer-events: none;
+}
+
+.lbi-eye[data-show="true"] svg.lbi-eye-open,
+.lbi-eye[data-show="true"] svg:first-child {
+    opacity: 0;
+    transform: scale(0.75);
+    filter: blur(2px);
+    pointer-events: none;
+}
+
+.lbi-eye[data-show="true"] svg.lbi-eye-closed,
+.lbi-eye[data-show="true"] svg:last-child {
+    opacity: 1;
+    transform: scale(1);
+    filter: none;
+    pointer-events: auto;
+}
+
+/* External label / wrapper overrides */
+.guest-orders-field:has(.lbi) > span:first-child,
+.guest-orders-field.lbi-hide-external-label > span:first-child,
+.guest-shop-modal__field:has(.lbi) > span:first-child,
+.guest-shop-modal__field:has(.lbi) > label:first-child,
+.guest-shop-modal__field.lbi-hide-external-label > span:first-child,
+.guest-shop-modal__field.lbi-hide-external-label > label:first-child,
+.guest-orders-ticket-field:has(.lbi) > label:first-child,
+.guest-orders-ticket-field.lbi-hide-external-label > label:first-child,
+.verify-form-field:has(.lbi) > .verify-field-label,
+.verify-form-field.lbi-hide-external-label > .verify-field-label {
+    display: none !important;
+}
+
+.guest-orders-field .guest-orders-password-control > #guestOrdersTogglePasswordBtn,
+.guest-orders-field .guest-orders-password-row > #guestOrdersResetToggleBtn,
+.guest-shop-modal__password-inline-actions > #guestCashToggleOrderPasswordBtn,
+.verify-password-shell > #verifyPasswordToggle {
+    display: none !important;
+}
+
+.ticket-input-wrapper:has(.lbi) .ticket-input-icon {
+    display: none !important;
+}
+
+/* Ensure password row / control spans don't clip */
+.guest-orders-password-control:has(.lbi),
+.guest-orders-password-row:has(.lbi) {
+    display: block !important;
+    width: 100% !important;
+}
+
+.guest-shop-modal__password-input-wrap:has(.lbi) .guest-shop-modal__password-inline-actions {
+    top: 14px !important;
+    bottom: 0 !important;
+    z-index: 5 !important;
+}
+
+/* Discount code wrapper with action button */
+.shop-purchase-discount__input-wrap:has(.lbi),
+#shopPurchaseModal .shop-purchase-discount__input-wrap:has(.lbi),
+html body.shop-page #shopPurchaseModal .shop-purchase-discount__input-wrap:has(.lbi),
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-purchase-discount__input-wrap:has(.lbi),
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-purchase-dock .shop-purchase-discount__input-wrap:has(.lbi),
+html[data-theme="dark"] body.shop-page #shopPurchaseModal .shop-purchase-discount__input-wrap:has(.lbi) {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    gap: 8px !important;
+}
+
+.shop-purchase-discount__input-wrap:has(.lbi) .lbi {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+}
+
+.shop-purchase-discount__input-wrap:has(.lbi) #applyDiscountBtn {
+    height: 48px !important;
+    min-height: 48px !important;
+    border-radius: 20px !important;
+    margin-bottom: 0 !important;
+}
+
+/* Shop discount input: force absolute transparency and eliminate conflicting native borders */
+#shopPurchaseModal #purchaseDiscountCode,
+#shopPurchaseModal #purchaseDiscountCode.shop-purchase-discount__input,
+#shopPurchaseModal #purchaseDiscountCode:focus,
+#shopPurchaseModal #purchaseDiscountCode:focus-visible,
+#shopPurchaseModal #purchaseDiscountCode.shop-purchase-discount__input:focus,
+#shopPurchaseModal #purchaseDiscountCode.shop-purchase-discount__input:focus-visible,
+#shopPurchaseModal .lbi-box #purchaseDiscountCode,
+#shopPurchaseModal .lbi-box #purchaseDiscountCode:focus,
+#shopPurchaseModal .lbi-box #purchaseDiscountCode:focus-visible,
+#shopPurchaseModal .lbi-box input,
+#shopPurchaseModal .lbi-box input:focus,
+#shopPurchaseModal .lbi-box input:focus-visible,
+html body.shop-page #shopPurchaseModal #purchaseDiscountCode,
+html body.shop-page #shopPurchaseModal #purchaseDiscountCode:focus,
+html body.shop-page #shopPurchaseModal #purchaseDiscountCode:focus-visible,
+html body.shop-page #shopPurchaseModal #purchaseDiscountCode.shop-purchase-discount__input,
+html body.shop-page #shopPurchaseModal #purchaseDiscountCode.shop-purchase-discount__input:focus,
+html body.shop-page #shopPurchaseModal #purchaseDiscountCode.shop-purchase-discount__input:focus-visible,
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseDiscountCode.shop-purchase-discount__input,
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseDiscountCode.shop-purchase-discount__input:focus,
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseDiscountCode.shop-purchase-discount__input:focus-visible,
+html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseDiscountCode.shop-purchase-discount__input,
+html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseDiscountCode.shop-purchase-discount__input:focus,
+html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseDiscountCode.shop-purchase-discount__input:focus-visible,
+.shop-inline-style-attr-11.lbi-field,
+.shop-inline-style-attr-11.lbi-field:focus {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    filter: none !important;
+}
+
+/* Profile modal security & phone inputs transparent overrides */
+#profileModal .lbi-box input,
+#profileModal .lbi-box .security-input,
+#profileModal .lbi-box .security-input.glass-input,
+#profileModal .lbi-box .profile-mobile-inline-input,
+[data-theme="light"] #profileModal .lbi-box input,
+[data-theme="light"] #profileModal .lbi-box .security-input,
+[data-theme="light"] #profileModal .lbi-box .security-input.glass-input,
+[data-theme="light"] #profileModal .lbi-box .profile-mobile-inline-input,
+html:not([data-theme="dark"]) #profileModal .lbi-box input,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input.glass-input,
+html:not([data-theme="dark"]) #profileModal .lbi-box .profile-mobile-inline-input,
+html:not([data-theme="dark"]) #profileModal .mobile-security-layout .lbi-box .security-input {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+}
+
+#profileModal .lbi-box input:focus,
+#profileModal .lbi-box input:focus-visible,
+#profileModal .lbi-box .security-input:focus,
+#profileModal .lbi-box .security-input:focus-visible,
+#profileModal .lbi-box .security-input.glass-input:focus,
+#profileModal .lbi-box .security-input.glass-input:focus-visible,
+#profileModal .lbi-box .profile-mobile-inline-input:focus,
+#profileModal .lbi-box .profile-mobile-inline-input:focus-visible,
+[data-theme="light"] #profileModal .lbi-box input:focus,
+[data-theme="light"] #profileModal .lbi-box input:focus-visible,
+[data-theme="light"] #profileModal .lbi-box .security-input:focus,
+[data-theme="light"] #profileModal .lbi-box .security-input:focus-visible,
+[data-theme="light"] #profileModal .lbi-box .security-input.glass-input:focus,
+[data-theme="light"] #profileModal .lbi-box .security-input.glass-input:focus-visible,
+[data-theme="light"] #profileModal .lbi-box .profile-mobile-inline-input:focus,
+[data-theme="light"] #profileModal .lbi-box .profile-mobile-inline-input:focus-visible,
+html:not([data-theme="dark"]) #profileModal .lbi-box input:focus,
+html:not([data-theme="dark"]) #profileModal .lbi-box input:focus-visible,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input:focus,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input:focus-visible,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input.glass-input:focus,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input.glass-input:focus-visible,
+html:not([data-theme="dark"]) #profileModal .lbi-box .profile-mobile-inline-input:focus,
+html:not([data-theme="dark"]) #profileModal .lbi-box .profile-mobile-inline-input:focus-visible,
+html:not([data-theme="dark"]) #profileModal .mobile-security-layout .lbi-box .security-input:focus,
+html:not([data-theme="dark"]) #profileModal .mobile-security-layout .lbi-box .security-input:focus-visible {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+}
+
+#profileModal .lbi-box input::placeholder,
+#profileModal .lbi-box .security-input::placeholder,
+#profileModal .lbi-box input::-webkit-input-placeholder,
+#profileModal .lbi-box .security-input::-webkit-input-placeholder,
+#profileModal .lbi-box input::-moz-placeholder,
+#profileModal .lbi-box .security-input::-moz-placeholder,
+#profileModal .lbi-box input:-ms-input-placeholder,
+#profileModal .lbi-box .security-input:-ms-input-placeholder,
+[data-theme="light"] #profileModal .lbi-box input::placeholder,
+[data-theme="light"] #profileModal .lbi-box .security-input::placeholder,
+[data-theme="light"] #profileModal .lbi-box input::-webkit-input-placeholder,
+[data-theme="light"] #profileModal .lbi-box .security-input::-webkit-input-placeholder,
+html:not([data-theme="dark"]) #profileModal .lbi-box input::placeholder,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input::placeholder,
+html:not([data-theme="dark"]) #profileModal .lbi-box input::-webkit-input-placeholder,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input::-webkit-input-placeholder {
+    color: transparent !important;
+    opacity: 0 !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+#profileModal .profile-security-desktop-code-row:has(.lbi),
+#profileModal .profile-mobile-code-row:has(.lbi) {
+    display: flex !important;
+    align-items: flex-end !important;
+    gap: 10px !important;
+}
+
+#profileModal .profile-security-desktop-code-row .lbi,
+#profileModal .profile-mobile-code-row .lbi {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+}
+
+#profileModal .profile-security-desktop-code-btn,
+#profileModal .security-mobile-code-btn {
+    height: 48px !important;
+    min-height: 48px !important;
+    border-radius: 20px !important;
+    margin-bottom: 0 !important;
+    flex-shrink: 0 !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Sitewide LBI Overrides: Shop Modal, Guest Orders & Verify Page
+   Guarantees transparent input background, no native border,
+   no box-shadow glow, and zero placeholder overlap across all themes.
+   ══════════════════════════════════════════════════════════════ */
+
+/* Shop modal cash & discount inputs */
+.guest-shop-modal__field .lbi-box input,
+.guest-shop-modal__field .lbi-box input:focus,
+.guest-shop-modal__field .lbi-box input:focus-visible,
+html body.shop-page .guest-shop-modal__field .lbi-box input,
+html body.shop-page .guest-shop-modal__field .lbi-box input:focus,
+html body.shop-page .guest-shop-modal__field .lbi-box input:focus-visible,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field .lbi-box input,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field .lbi-box input:focus,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field .lbi-box input:focus-visible,
+html[data-theme="dark"] body.shop-page .guest-shop-modal__field .lbi-box input,
+html[data-theme="dark"] body.shop-page .guest-shop-modal__field .lbi-box input:focus,
+html[data-theme="dark"] body.shop-page .guest-shop-modal__field .lbi-box input:focus-visible {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+}
+
+.guest-shop-modal__field .lbi-box input::placeholder,
+html body.shop-page .guest-shop-modal__field .lbi-box input::placeholder,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field .lbi-box input::placeholder,
+html[data-theme="dark"] body.shop-page .guest-shop-modal__field .lbi-box input::placeholder,
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseDiscountCode::placeholder,
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .lbi-box #purchaseDiscountCode::placeholder {
+    color: transparent !important;
+    opacity: 0 !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+/* Guest orders page inputs */
+body.guest-orders-page .guest-orders-field .lbi-box input,
+body.guest-orders-page .guest-orders-field .lbi-box input:focus,
+body.guest-orders-page .guest-orders-field .lbi-box input:focus-visible,
+body.guest-orders-page .ticket-input-wrapper .lbi-box input,
+body.guest-orders-page .ticket-input-wrapper .lbi-box input:focus,
+body.guest-orders-page .ticket-input-wrapper .lbi-box input:focus-visible,
+html:not([data-theme="dark"]) body.guest-orders-page .guest-orders-field .lbi-box input,
+html:not([data-theme="dark"]) body.guest-orders-page .guest-orders-field .lbi-box input:focus,
+html:not([data-theme="dark"]) body.guest-orders-page .guest-orders-field .lbi-box input:focus-visible,
+html:not([data-theme="dark"]) body.guest-orders-page .ticket-input-wrapper .lbi-box input,
+html:not([data-theme="dark"]) body.guest-orders-page .ticket-input-wrapper .lbi-box input:focus,
+html:not([data-theme="dark"]) body.guest-orders-page .ticket-input-wrapper .lbi-box input:focus-visible,
+html[data-theme="dark"] body.guest-orders-page .guest-orders-field .lbi-box input,
+html[data-theme="dark"] body.guest-orders-page .guest-orders-field .lbi-box input:focus,
+html[data-theme="dark"] body.guest-orders-page .guest-orders-field .lbi-box input:focus-visible,
+html[data-theme="dark"] body.guest-orders-page .ticket-input-wrapper .lbi-box input,
+html[data-theme="dark"] body.guest-orders-page .ticket-input-wrapper .lbi-box input:focus,
+html[data-theme="dark"] body.guest-orders-page .ticket-input-wrapper .lbi-box input:focus-visible {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+}
+
+body.guest-orders-page .guest-orders-field .lbi-box input::placeholder,
+body.guest-orders-page .ticket-input-wrapper .lbi-box input::placeholder,
+html:not([data-theme="dark"]) body.guest-orders-page .guest-orders-field .lbi-box input::placeholder,
+html:not([data-theme="dark"]) body.guest-orders-page .ticket-input-wrapper .lbi-box input::placeholder,
+html[data-theme="dark"] body.guest-orders-page .guest-orders-field .lbi-box input::placeholder,
+html[data-theme="dark"] body.guest-orders-page .ticket-input-wrapper .lbi-box input::placeholder {
+    color: transparent !important;
+    opacity: 0 !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+/* Verify widget inputs */
+.verify-widget .lbi-box input,
+.verify-widget .lbi-box input.verify-input,
+.verify-widget .lbi-box input:focus,
+.verify-widget .lbi-box input:focus-visible,
+.verify-widget .lbi-box input.verify-input:focus,
+.verify-widget .lbi-box input.verify-input:focus-visible,
+html[data-theme="dark"] .verify-widget .lbi-box input,
+html[data-theme="dark"] .verify-widget .lbi-box input.verify-input,
+html[data-theme="dark"] .verify-widget .lbi-box input:focus,
+html[data-theme="dark"] .verify-widget .lbi-box input:focus-visible,
+html[data-theme="dark"] .verify-widget .lbi-box input.verify-input:focus,
+html[data-theme="dark"] .verify-widget .lbi-box input.verify-input:focus-visible,
+html:not([data-theme="dark"]) .verify-widget .lbi-box input,
+html:not([data-theme="dark"]) .verify-widget .lbi-box input.verify-input,
+html:not([data-theme="dark"]) .verify-widget .lbi-box input:focus,
+html:not([data-theme="dark"]) .verify-widget .lbi-box input:focus-visible,
+html:not([data-theme="dark"]) .verify-widget .lbi-box input.verify-input:focus,
+html:not([data-theme="dark"]) .verify-widget .lbi-box input.verify-input:focus-visible {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+}
+
+.verify-widget .lbi-box input::placeholder,
+.verify-widget .lbi-box input.verify-input::placeholder,
+html[data-theme="dark"] .verify-widget .lbi-box input::placeholder,
+html[data-theme="dark"] .verify-widget .lbi-box input.verify-input::placeholder,
+html:not([data-theme="dark"]) .verify-widget .lbi-box input::placeholder,
+html:not([data-theme="dark"]) .verify-widget .lbi-box input.verify-input::placeholder {
+    color: transparent !important;
+    opacity: 0 !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+/* Autofill clean background & text-fill for all sub-pages */
+.guest-shop-modal__field .lbi-box input:-webkit-autofill,
+.guest-orders-field .lbi-box input:-webkit-autofill,
+.ticket-input-wrapper .lbi-box input:-webkit-autofill,
+.verify-widget .lbi-box input:-webkit-autofill {
+    border: none !important;
+    outline: none !important;
+    border-radius: inherit !important;
+    -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+    box-shadow: 0 0 0 1000px transparent inset !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}

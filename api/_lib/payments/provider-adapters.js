@@ -1,3 +1,4 @@
+const { zpayAmountCents } = require('./zpay-amount');
 const usdtNetworks = require('./usdt-networks');
 const crypto = require('crypto');
 const marketFx = require('./usdt-market-fx');
@@ -695,13 +696,15 @@ const providerRegistry = {
                 gatewayPayload.trade_status,
                 gatewayPayload.status
             );
-            const paidAmount = pickFirstCurrencyAmount(gatewayPayload.money);
-            const transactionId = pickFirstText(gatewayPayload.trade_no, tradeNo) || null;
+            // Reject invalid precision before normalization; never round a gateway payment into validity.
+            const paidCents = zpayAmountCents(gatewayPayload.money);
+            const paidAmount = paidCents === null ? null : paidCents / 100;
+            const transactionId = pickFirstText(gatewayPayload.trade_no) || null;
 
             return {
                 supported: true,
                 success: gatewayCode === '1',
-                providerOrderNo: sanitizeText(gatewayPayload.out_trade_no || providerOrderNo, '', 120) || null,
+                providerOrderNo: sanitizeText(gatewayPayload.out_trade_no, '', 120) || null,
                 openOrderId: null,
                 tradeNo: transactionId,
                 status: normalizedStatus,
@@ -795,7 +798,7 @@ const providerRegistry = {
             return {
                 supported: true,
                 success: gatewayCode === '1',
-                providerOrderNo: sanitizeText(gatewayPayload.out_trade_no || providerOrderNo, '', 120) || null,
+                providerOrderNo: sanitizeText(gatewayPayload.out_trade_no, '', 120) || null,
                 openOrderId: null,
                 tradeNo: sanitizeText(gatewayPayload.trade_no || tradeNo, '', 120) || null,
                 status: gatewayCode === '1' ? 'refunded' : 'unknown',
@@ -1211,6 +1214,7 @@ const providerRegistry = {
                 paidAmountLabel: paidAmount && paidCurrency ? `${paidAmount} ${paidCurrency}` : '',
                 transactionId,
                 message: 'success',
+                responseText: queryResult.response?.text,
                 responsePayload: gatewayPayload
             };
         },

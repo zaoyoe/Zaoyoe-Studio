@@ -1,0 +1,180 @@
+{
+  "self_excluded": true,
+  "files": [
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/.gitignore",
+      "bytes": 19,
+      "sha256": "edf6424f653e188158b35baebe1173bdf8b2eb111ef8eebaad31a7743da1d0f2"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/archive-attempt-01-failure.json",
+      "bytes": 430,
+      "sha256": "d6940d712542bc714e47a950abade507bd9403ebee191e546caf5d28b3edc908"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/baseline.json",
+      "bytes": 35665,
+      "sha256": "621630a5e9ebcf74ffd0101f09730674d2cf28cc04ac78421111e0c7614b2e80"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/coverage-backup-failure.json",
+      "bytes": 491,
+      "sha256": "bd5ffe1f9ac53bfd568d5a20529878b0fc3f50ce3ec990c3ecf954597c1e0722"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/deadline-backups.json",
+      "bytes": 679,
+      "sha256": "3c070e580d7f3af955403db2b3e1a550aca320ed02c1a09adaf6deba8d011e35"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/logs/ledger-tests-01.log",
+      "bytes": 9025,
+      "sha256": "0b8121e33cc37a8a956ffff53e053376d770b53d43c467c4391a12e02185576e"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/logs/ledger-tests-02.log",
+      "bytes": 9847,
+      "sha256": "b639c27c8d8cdea9f1c8419e95dc027160c728838505ff722f65231066d5c71b"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/logs/offline-final-01.log",
+      "bytes": 27709,
+      "sha256": "e7dc48900fcaa9591855eebb4cc465ff1e40f868e9ea4c7039f98ac310e6137d"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/logs/offline-final-02.log",
+      "bytes": 27831,
+      "sha256": "cb8d0db9d478e7754d239869e45ce4db40f214b83aedbcd9ccfc0701e6ca081f"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/logs/syntax-ledger.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/logs/syntax-test.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/packaging-boundary.json",
+      "bytes": 838,
+      "sha256": "96d30552f54b3febb1ca33c1ce6c5e00b601e5af254b631a3980207bd814687b"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/paid-reference-backups.json",
+      "bytes": 719,
+      "sha256": "27c923839a969c62bc14c63e860e1d162eefa10219b93b415dbb0a880cc6e571"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/report-scope-backup.json",
+      "bytes": 309,
+      "sha256": "4c631e16ecd7da85a036eddfbb01bfdc816a67931eae2287d582775cbbd36848"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/before-deadlines-payment-attempt-ledger.js",
+      "bytes": 14087,
+      "sha256": "3ed4b53154ea1b7972d094a38ce1a414ecaf169ced471d97d42bcbddecb995de"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/before-deadlines-security-round10-kc-payment-attempt-ledger.test.js",
+      "bytes": 20957,
+      "sha256": "03fb4a6926d5ab94b1e06392c45931a51cd1c330ff4c8835c67c11c3751d5268"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/before-paid-reference-20261109-ledger-DRAFT.sql",
+      "bytes": 3178,
+      "sha256": "330b8ae85b6c6a77db1d195440728953bfcac09c1866b86da5375fc7b5d74479"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/before-paid-reference-security-round10-kc-payment-attempt-ledger.test.js",
+      "bytes": 25928,
+      "sha256": "ef328530793797fc1bca2d90f8f55fa181e1d02ac71596e46aac5998f07bdddd"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/chatgpt.js",
+      "bytes": 31154,
+      "sha256": "c50720bf0f6eecc4223e4e429f4ec9ecffa488ae15d3de946596fe7dcb7e8871"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/index.js",
+      "bytes": 65041,
+      "sha256": "21ed32ea710e25d655079cf66434f24f1bdc86a71f2948edcb25e12a4c7a3458"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/mysql-schema.sql",
+      "bytes": 11462,
+      "sha256": "5762c14dac28291cf566ced78a71af2fb26d466b915c69968cf28027b3bfc055"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/mysql-store.js",
+      "bytes": 199885,
+      "sha256": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/payment-retry.js",
+      "bytes": 51652,
+      "sha256": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/round10-report-before-scope-note.md",
+      "bytes": 9391,
+      "sha256": "e581e992801ce7bc14a142d3f970fa2b86e4f062830fef8e808fe7a32fa3f234"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/snapshots/stripe-protocol-payment.js",
+      "bytes": 82624,
+      "sha256": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/source-manifest-final.json",
+      "bytes": 982,
+      "sha256": "1fbf54cdf69145e8566bc75f92bccc95fd17c628976d3ba20f23a2d4d8ba50ce"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/source-manifest.json",
+      "bytes": 884,
+      "sha256": "0c237e9677bc7233e44fb18c37fc8934a2b9a98f2fced0e6de8ddd156506f3fe"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/sql-scope.json",
+      "bytes": 587,
+      "sha256": "dd6fe1b3cb70dfedfee675aa317cfabe1d696577968b1f1d104a4e769337a0b7"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/status-after-expanded.txt",
+      "bytes": 57799,
+      "sha256": "87882c97bc1850f1e9681052ad27dccb2db2aa908cb613894ab5937dbd2f731b"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/status-after-review.txt",
+      "bytes": 58391,
+      "sha256": "5eaca068a829e37d3f7117d69bec7b3c208084a818d769a40cac064f5df2a603"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/status-before-expanded.txt",
+      "bytes": 55652,
+      "sha256": "f41a8072d4b23504e97aa971a463d0a3084c4a6afd112bb85fd62ed55a8cb810"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/test-results.json",
+      "bytes": 1336,
+      "sha256": "970d7479f2c2097c25b232e9c41f3dc32b9e1ff3ac7c5f0a1aa95d9b7c390f5e"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/verification-results.json",
+      "bytes": 47167,
+      "sha256": "90195bcdafbd17d5c16a8c18e56c50bd603f4ff015f1aeb62a9cf77c248b048a"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/whitespace-final.json",
+      "bytes": 587,
+      "sha256": "d6b396f7a63158901209744cfe4b937da5f10d2be657d915c441178364a954aa"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round10-ledger/whitespace-review.json",
+      "bytes": 587,
+      "sha256": "d6b396f7a63158901209744cfe4b937da5f10d2be657d915c441178364a954aa"
+    }
+  ]
+}

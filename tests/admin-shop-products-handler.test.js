@@ -166,6 +166,46 @@ test('shop products handler lists products with status/category filters', async 
     });
 });
 
+test('shop products handler supports comma-separated categories for parent/child hierarchies', async () => {
+    await withShopProductsHandler({
+        queryResults: {
+            shop_products: [
+                {
+                    data: [
+                        { id: 'prod_1', name: 'Email Root', category: '邮箱', is_active: true },
+                        { id: 'prod_2', name: 'Gmail Self', category: '谷歌邮箱（自营）', is_active: true }
+                    ],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin/shop/products?status=active&categories=' + encodeURIComponent('邮箱,谷歌邮箱（自营）') + '&fields=full'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.rows.length, 2);
+        assert.deepEqual(state.queryCalls[0], {
+            table: 'shop_products',
+            operations: [
+                { method: 'select', args: ['*'] },
+                { method: 'eq', args: ['is_active', true] },
+                { method: 'in', args: ['category', ['邮箱', '谷歌邮箱（自营）']] },
+                { method: 'order', args: ['display_order', { ascending: false }] }
+            ],
+            mode: 'order'
+        });
+    });
+});
+
 test('shop products handler loads a single product by id', async () => {
     await withShopProductsHandler({
         queryResults: {

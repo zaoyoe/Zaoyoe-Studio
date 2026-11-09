@@ -28,7 +28,7 @@ const SITE_VALUES = Object.freeze(new Set(['all', 'cn', 'intl']));
 const TASK_SITE_VALUES = Object.freeze(new Set(['cn', 'intl']));
 const MODE_VALUES = Object.freeze(new Set(['text', 'image', 'video', 'reverse', 'chat', 'agent']));
 const BILLING_MODE_VALUES = Object.freeze(new Set(['points', 'api']));
-const RESOLUTION_VALUES = Object.freeze(new Set(['*', '1k', '2k', '4k', '480p', '720p', '1080p']));
+const RESOLUTION_VALUES = Object.freeze(new Set(['*', '1k', '2k', '4k', '480p', '720p', '768p', '1080p']));
 const RATIO_VALUES = Object.freeze(new Set([
     '*',
     '1:1',
@@ -356,7 +356,7 @@ function serializePricingRule(row = {}) {
         model: sanitizeText(row.model || '*', 160) || '*',
         resolution: normalizeResolution(row.resolution),
         ratio: normalizeRatio(row.ratio),
-        quantity: normalizeInteger(row.quantity, 1, { min: 1, max: 8 }),
+        quantity: normalizeInteger(row.quantity, 1, { min: 1, max: 10 }),
         points: normalizePoints(row.points, 0),
         priority: normalizeInteger(row.priority, 100, { min: 0, max: 100000 }),
         is_active: row.is_active !== false,
@@ -449,7 +449,7 @@ function buildPricingPayload(body = {}, user = {}) {
         model: sanitizeText(body.model || '*', 160) || '*',
         resolution: normalizeResolution(body.resolution),
         ratio: normalizeRatio(body.ratio || body.aspect_ratio || body.aspectRatio),
-        quantity: normalizeInteger(body.quantity || body.count || body.n, 1, { min: 1, max: 8 }),
+        quantity: normalizeInteger(body.quantity || body.count || body.n, 1, { min: 1, max: 10 }),
         points,
         priority: normalizeInteger(body.priority, 100, { min: 0, max: 100000 }),
         is_active: normalizeBoolean(body.is_active ?? body.isActive, true),

@@ -37,7 +37,7 @@ test('both provider payment requests use the configured local webhook without ch
         const body = url.includes('zpay') ? { code: 1, payurl: 'https://qr.alipay.com/test-payment', trade_no: 'test-trade' }
             : { payment_id: '123456', order_id: order.order_no, payment_status: 'waiting', pay_currency: 'usdtton', price_currency: 'usdtton',
                 pay_amount: '15', price_amount: '15', pay_address: 'EQ' + 'a'.repeat(46), expiration_estimate_date: '2026-10-17T00:05:00Z' };
-        return { ok: true, text: async () => JSON.stringify(body) };
+        return new Response(JSON.stringify(body));
     } });
     await gateway.createPayment({ order: { ...order, payment_channel: 'alipay', payment_provider: 'zpay', payment_merchant_id: '1234' } });
     const zpay = new URLSearchParams(sent[0].body);
@@ -46,8 +46,8 @@ test('both provider payment requests use the configured local webhook without ch
     const { createTgNowpaymentsGateway } = require('../server/tg/nowpayments-gateway');
     const nowpayments = createTgNowpaymentsGateway({ env, now: () => Date.parse('2026-10-17T00:00:00Z'), fetchImpl: async (url, options) => {
         sent.push({ url, body: options.body });
-        return { ok: true, text: async () => JSON.stringify({ payment_id: '123456', order_id: order.order_no, payment_status: 'waiting',
-            pay_currency: 'usdtton', price_currency: 'usdtton', pay_amount: '15', price_amount: '15', pay_address: 'EQ' + 'a'.repeat(46), expiration_estimate_date: '2026-10-17T00:05:00Z' }) };
+        return new Response(JSON.stringify({ payment_id: '123456', order_id: order.order_no, payment_status: 'waiting',
+            pay_currency: 'usdtton', price_currency: 'usdtton', pay_amount: '15', price_amount: '15', pay_address: 'EQ' + 'a'.repeat(46), expiration_estimate_date: '2026-10-17T00:05:00Z' }));
     } });
     await nowpayments.createPayment({ order: { ...order, payment_expires_at: '2026-10-17T00:10:00Z', payment_channel: 'usdt_bep20',
         payment_provider: 'nowpayments', payment_merchant_id: nowpayments.identity().merchant_id }, payCurrency: 'usdtton' });
@@ -81,7 +81,7 @@ test('preview callback preflight rejects expired tunnels and requires the live r
     const check = async (reply, ok = true) => {
         const gateway = createTgPaymentGateway({ env: PREVIEW, fetchImpl: async url => {
             const target = new URL(url); assert.equal(target.pathname, '/_tg-payment-health');
-            return { ok, text: async () => typeof reply === 'function' ? JSON.stringify(reply(target.searchParams.get('challenge'))) : reply };
+            return new Response(typeof reply === 'function' ? JSON.stringify(reply(target.searchParams.get('challenge'))) : reply, { status: ok ? 200 : 503 });
         } });
         return gateway.assertCallbackReady();
     };

@@ -76,3 +76,33 @@ test('shop profile security reuses the homepage light-theme profile modal contra
         'shop.html should load the updated shared profile modal bootstrap'
     );
 });
+
+test('profile modal background board does not use glassmorphism', () => {
+    const profileModalStyles = readRepoFile(path.join('css', 'profile-modal.css'));
+    const desktopGlassStyles = readRepoFile(path.join('css', 'desktop-nav-glass.css'));
+    const desktopGlassScript = readRepoFile(path.join('js', 'desktop-nav-glass.mjs'));
+
+    assert.match(
+        profileModalStyles,
+        /#profileModal \.modal-content\.profile-modal\s*\{[\s\S]*?backdrop-filter:\s*none\s*!important;[\s\S]*?-webkit-backdrop-filter:\s*none\s*!important;/s,
+        'profile modal container must explicitly disable backdrop-filter to prevent glassmorphism'
+    );
+
+    assert.match(
+        profileModalStyles,
+        /html:not\(\[data-theme="dark"\]\) #profileModal \.modal-content\.profile-modal\s*\{[\s\S]*?backdrop-filter:\s*none\s*!important;/s,
+        'light theme profile modal container must also disable backdrop-filter'
+    );
+
+    assert.match(
+        desktopGlassStyles,
+        /#profileModal \.modal-content\.profile-modal,\s*\.modal-content\.profile-modal\s*\{[\s\S]*?backdrop-filter:\s*none\s*!important;/s,
+        'desktop-nav-glass stylesheet must guard against styling profile modal as glass'
+    );
+
+    assert.match(
+        desktopGlassScript,
+        /'\.modal-content:not\(\.profile-modal\)'/,
+        'desktop glass candidate list must not include profile-modal'
+    );
+});

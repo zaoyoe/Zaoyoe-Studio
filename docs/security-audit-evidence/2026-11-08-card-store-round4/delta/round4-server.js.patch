@@ -1,0 +1,509 @@
+--- a/services/kc-pay-gpt/server.js
++++ b/services/kc-pay-gpt/server.js
+@@ -3917,12 +3917,55 @@
+         const checkoutScript = path.join(__dirname, 'index.js');
+         let finalRun = null;
+         const allOutputs = [];
+-        let shouldRollbackCdk = true;
++        let settlementClosed = false;
++        let persistenceUncertain = false;
++        let pendingUpdates = Promise.resolve();
+         let observedPaymentState = 'not_started';
+         let lastProgress = 0;
+         const accountEmail = extractEmailFromSession(sessionRaw) || '';
+         const platform = getPlatformForPlan(cdkDetails.plan_type);
+         let lastUsedProxy = '';
++
++        const outputPaymentEvidence = output => {
++            const text = String(output || '');
++            return (text.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g) || [])
++                .reduce((previous, marker) => mergePaymentState(previous, marker.split(':')[1]),
++                    text.includes('支付结果未知') ? 'unknown' : 'not_started');
++        };
++        // stdout callbacks are asynchronous. Serialize their writes and queue
++        // final settlement behind them so a slow callback cannot overwrite it.
++        const persistLocal = (input, options = {}) => {
++            if (Object.prototype.hasOwnProperty.call(input, 'paymentState')) {
++                observedPaymentState = mergePaymentState(observedPaymentState, input.paymentState);
++            }
++            const operation = pendingUpdates.then(async () => {
++                if (settlementClosed && !options.annotate) {
++                    throw new Error('本地充值任务已结算或归属已变更，停止旧 worker 更新');
++                }
++                let result;
++                try {
++                    const uncertain = persistenceUncertain && !options.annotate;
++                    result = await store.updateLocalActivationTask(task.jobKey, {
++                        ...input, cdkCode: cdk,
++                        paymentState: uncertain ? mergePaymentState(observedPaymentState, 'unknown') : observedPaymentState,
++                        ...(uncertain ? { status: 'manual', recoveryRequired: true,
++                            message: '任务状态持久化未确认，已保留资产，需人工复核' } : {})
++                    }, options);
++                } catch (error) {
++                    persistenceUncertain = true;
++                    throw error;
++                }
++                if (!result.applied) {
++                    settlementClosed = true;
++                    throw new Error(`本地充值任务更新被拒绝: ${result.reason || 'TASK_CHANGED'}`);
++                }
++                observedPaymentState = mergePaymentState(observedPaymentState, result.paymentState);
++                if (options.finalize) settlementClosed = true;
++                return result;
++            });
++            pendingUpdates = operation.catch(() => {});
++            return operation;
++        };
+ 
+         try {
+             for (let attempt = 1; attempt <= MAX_PROCESS_ATTEMPTS; attempt += 1) {
+@@ -3991,21 +4034,21 @@
+                                     updatePayload.failureScreenshots = combined;
+                                 }
+                             }
+-                            await store.updateTaskLog(task.jobKey, updatePayload);
++                            const savedProgress = await persistLocal(updatePayload);
+                             broadcastToTask(task.jobKey, {
+                                 type: 'progress',
+                                 jobKey: task.jobKey,
+                                 progress: runningProgress,
+-                                status: 'running',
+-                                message: '正在开通中',
++                                status: savedProgress.status,
++                                message: savedProgress.message || '正在开通中',
+                                 cdkCode: cdk,
+                                 screenshots: liveOutput ? extractTaskMediaFromOutput(liveOutput).screenshots : undefined,
+                                 videos: liveOutput ? extractTaskMediaFromOutput(liveOutput).videos : undefined
+                             });
+                         }
+                     }, async (state, message) => {
+-                        observedPaymentState = normalizePaymentState(state);
+-                        await store.updateTaskLog(task.jobKey, {
++                        observedPaymentState = mergePaymentState(observedPaymentState, state);
++                        await persistLocal({
+                             status: state === 'unknown' ? 'manual' : 'running',
+                             message: message || (state === 'started' ? '正在提交银行卡支付' : '支付状态已更新'),
+                             cdkCode: cdk,
+@@ -4019,11 +4062,9 @@
+                 allOutputs.push(`===== ATTEMPT ${attempt}${cardLast4 ? ` | CARD ${cardLast4}` : ''} =====\n${run.output}`);
+                 finalRun = { ...run, output: allOutputs.join('\n\n') };
+                 const attemptPaymentState = normalizePaymentState(
+-                    run.analysis.paymentState
+-                    || (run.output.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g)?.slice(-1)[0]?.split(':')[1])
+-                    || (run.output.includes('支付结果未知') ? 'unknown' : 'not_started')
++                    mergePaymentState(run.analysis.paymentState || 'not_started', outputPaymentEvidence(run.output))
+                 );
+-                observedPaymentState = attemptPaymentState;
++                observedPaymentState = mergePaymentState(observedPaymentState, attemptPaymentState);
+                 if (task.executionMode === 'local_card_pool'
+                     && platform === 'chatgpt'
+                     && sessionCooldownScopeKey
+@@ -4037,8 +4078,8 @@
+                     }
+                 }
+                 if (attemptPaymentState) {
+-                    await store.updateTaskLog(task.jobKey, {
+-                        status: run.analysis.status === 'success' ? 'success' : 'running',
++                    await persistLocal({
++                        status: 'running',
+                         paymentState: attemptPaymentState,
+                         recoveryRequired: ['started', 'unknown'].includes(normalizePaymentState(attemptPaymentState)),
+                         cdkCode: cdk,
+@@ -4049,16 +4090,16 @@
+                     logTask(task.jobKey, '支付结果未知，停止后续自动重试并转人工复核', 'warn');
+                 }
+ 
+-                const currentStatus = run.analysis.status === 'success' ? 'success' : 'running';
++                const currentStatus = 'running';
+                 const currentProgress = normalizeTaskProgress(
+                     getCheckoutProgress(run.output, currentStatus),
+                     currentStatus,
+                     lastProgress
+                 );
+                 lastProgress = currentProgress;
+-                await store.updateTaskLog(task.jobKey, {
++                const savedAttempt = await persistLocal({
+                     status: currentStatus,
+-                    message: currentStatus === 'success' ? '激活成功' : (attemptPaymentState === 'unknown' ? '支付结果未确认，转人工复核' : '正在开通中'),
++                    message: attemptPaymentState === 'unknown' ? '支付结果未确认，转人工复核' : '正在开通中',
+                     rawOutput: finalRun.output,
+                     progress: currentProgress,
+                     cdkCode: cdk,
+@@ -4071,13 +4112,13 @@
+                     type: 'progress',
+                     jobKey: task.jobKey,
+                     progress: currentProgress,
+-                    status: currentStatus,
+-                    message: currentStatus === 'success' ? '激活成功' : '正在开通中',
++                    status: savedAttempt.status,
++                    message: savedAttempt.message || '正在开通中',
+                     cdkCode: cdk,
+                     cardLast4
+                 });
+ 
+-                if (shouldRetainCdk({ paymentState: attemptPaymentState }) || !run.analysis.shouldRetry || attempt >= MAX_PROCESS_ATTEMPTS) {
++                if (persistenceUncertain || shouldRetainCdk({ paymentState: observedPaymentState }) || !run.analysis.shouldRetry || attempt >= MAX_PROCESS_ATTEMPTS) {
+                     logTask(task.jobKey, `尝试 ${attempt} 结束，status=${run.analysis.status} shouldRetry=${run.analysis.shouldRetry}`);
+                     break;
+                 }
+@@ -4087,152 +4128,17 @@
+ 
+             const rawOutput = finalRun?.output || '';
+             const normalizedAnalysis = finalizeRetryAnalysis(finalRun?.analysis);
+-            const outputPaymentState = rawOutput.match(/PAYMENT_STATE:(not_started|started|succeeded|declined|unknown)/g)?.slice(-1)[0]?.split(':')[1]
+-                || (rawOutput.includes('支付结果未知') ? 'unknown' : 'not_started');
+-            const finalPaymentState = mergePaymentState(
+-                outputPaymentState,
+-                normalizedAnalysis?.paymentState || 'not_started'
+-            );
+-            const finalStatus = ['started', 'unknown'].includes(finalPaymentState)
+-                ? 'manual'
+-                : (normalizedAnalysis?.status || 'failed');
+-            observedPaymentState = finalPaymentState;
+-            if (shouldRetainCdk({ paymentState: finalPaymentState })) {
+-                shouldRollbackCdk = false;
+-            }
++            const outputPaymentState = outputPaymentEvidence(rawOutput);
++            let finalPaymentState = mergePaymentState(observedPaymentState, mergePaymentState(
++                outputPaymentState, normalizedAnalysis?.paymentState || 'not_started'));
++            let finalStatus = ['started', 'unknown'].includes(finalPaymentState)
++                ? 'manual' : (normalizedAnalysis?.status || 'failed');
++            let finalMessage = normalizedAnalysis?.message || null;
++            observedPaymentState = mergePaymentState(observedPaymentState, finalPaymentState);
+ 
+             const finalProgress = normalizeTaskProgress(finalStatus === 'success' ? 100 : lastProgress, finalStatus, lastProgress);
+             const taskMedia = extractTaskMediaFromOutput(rawOutput);
+             const failureScreenshots = [...taskMedia.screenshots, ...taskMedia.videos];
+-            await store.updateTaskLog(task.jobKey, {
+-                status: finalStatus,
+-                message: normalizedAnalysis?.message || null,
+-                rawOutput,
+-                cdkCode: cdk,
+-                progress: finalProgress,
+-                failureScreenshots,
+-                paymentState: finalPaymentState || 'not_started',
+-                recoveryRequired: ['started', 'unknown'].includes(normalizePaymentState(finalPaymentState))
+-            });
+-
+-            broadcastToTask(task.jobKey, {
+-                type: 'status',
+-                jobKey: task.jobKey,
+-                status: finalStatus,
+-                message: normalizedAnalysis?.message,
+-                paymentState: finalPaymentState,
+-                recoveryRequired: ['started', 'unknown'].includes(finalPaymentState),
+-                cdkCode: cdk,
+-                progress: finalProgress,
+-                screenshots: taskMedia.screenshots,
+-                videos: taskMedia.videos
+-            });
+-
+-            logTask(
+-                task.jobKey,
+-                `任务结束 status=${finalStatus} progress=${finalProgress} message=${normalizedAnalysis?.message || ''}`
+-            );
+-
+-            if (finalStatus === 'success') {
+-                shouldRollbackCdk = false;
+-                let needsManualReview = false;
+-                if (task.executionMode === 'local_card_pool' || !task.executionMode) {
+-                    let autoRenewResult;
+-                    try {
+-                        const workerAutoRenew = extractAutoRenewResultFromOutput(rawOutput);
+-                        if (workerAutoRenew) {
+-                            autoRenewResult = workerAutoRenew;
+-                        } else if (platform === 'chatgpt') {
+-                            autoRenewResult = await cancelAutoRenew(token, {
+-                                email: accountEmail,
+-                                timezoneOffsetMin: -new Date().getTimezoneOffset(),
+-                                proxy: lastUsedProxy
+-                            });
+-                        } else {
+-                            autoRenewResult = {
+-                                ok: false,
+-                                data: { verificationUnknown: true },
+-                                error: `${platform} 充值已完成，自动续费状态需人工核实`
+-                            };
+-                        }
+-                    } catch (error) {
+-                        autoRenewResult = {
+-                            ok: false,
+-                            error: `取消自动续费请求异常：${redactSensitiveText(error.message)}`,
+-                            data: { verificationUnknown: true }
+-                        };
+-                    }
+-                    const autoRenewData = autoRenewResult.data || {};
+-                    const autoRenewClass = classifyAutoRenewCancellation(autoRenewResult);
+-                    const autoRenewStatus = autoRenewClass === 'already_disabled' ? 'disabled'
+-                        : (autoRenewClass === 'verification_unknown' ? 'verification_unknown' : 'failed');
+-                    const autoRenewConfirmed = autoRenewStatus === 'disabled';
+-                    const autoRenewMessage = autoRenewConfirmed
+-                        ? '充值完成，自动续费已确认关闭'
+-                        : (autoRenewData.message || autoRenewResult.error || '充值成功，但自动续费关闭状态未确认，请人工复核');
+-                    needsManualReview = !autoRenewConfirmed;
+-                    await store.updateTaskLog(task.jobKey, {
+-                        status: needsManualReview ? 'manual' : 'success',
+-                        message: needsManualReview ? '充值已完成，但自动续费关闭状态未确认，请联系客服人工复核' : '激活成功',
+-                        autoRenewStatus,
+-                        autoRenewMessage,
+-                        paymentState: 'succeeded',
+-                        recoveryRequired: needsManualReview
+-                    });
+-                    logTask(task.jobKey, `自动续费处理结果=${autoRenewStatus}`, autoRenewConfirmed ? 'info' : 'warn');
+-                    if (needsManualReview) {
+-                        notifyTaskOutcome({
+-                            event: 'failure',
+-                            email: accountEmail,
+-                            cdk,
+-                            jobKey: task.jobKey,
+-                            message: '充值已完成，但自动续费关闭状态未确认，请联系客服人工复核'
+-                        });
+-                    }
+-                }
+-                if (!needsManualReview) {
+-                    await store.resetCdkFailure(cdk);
+-                }
+-                if (clientIp && !needsManualReview) {
+-                    await store.resetActivationAttemptFailure('ip', clientIp);
+-                }
+-                if (!needsManualReview) {
+-                    notifyTaskOutcome({
+-                        event: 'success',
+-                        email: accountEmail,
+-                        cdk,
+-                        jobKey: task.jobKey,
+-                        message: normalizedAnalysis?.message || '激活成功'
+-                    });
+-                }
+-            } else if (isCardPoolExhaustedIssue(rawOutput, normalizedAnalysis)) {
+-                notifyTaskOutcome({
+-                    event: 'card_pool_empty',
+-                    email: accountEmail,
+-                    cdk,
+-                    jobKey: task.jobKey,
+-                    message: normalizedAnalysis?.message || '卡池资产枯竭'
+-                });
+-            } else if (finalStatus === 'failed' || finalStatus === 'manual') {
+-                notifyTaskOutcome({
+-                    event: 'failure',
+-                    email: accountEmail,
+-                    cdk,
+-                    jobKey: task.jobKey,
+-                    message: normalizedAnalysis?.message || '激活失败'
+-                });
+-            }
+-
+-            if (finalStatus === 'success') {
+-                logTask(task.jobKey, `CDK [REDACTED] 已成功核销`);
+-            } else if (shouldRollbackCdk && finalPaymentState !== 'unknown') {
+-                await store.markCdkUnused(cdk);
+-                logTask(task.jobKey, `CDK [REDACTED] 已回滚为未使用`);
+-                await store.releaseCardsByOwner(task.jobKey).catch(() => {});
+-            } else if (shouldRetainCdk({ paymentState: finalPaymentState })) {
+-                logTask(task.jobKey, `CDK [REDACTED] 保留，等待人工核对支付结果`, 'warn');
+-            }
+-
+             if (isNoActivationEligibilityMessage(normalizedAnalysis?.message)) {
+                 const cdkCooledDown = await store.recordCdkFailure(cdk);
+                 const ipCooledDown = clientIp
+@@ -4250,48 +4156,169 @@
+                         logTask(task.jobKey, `IP ${clientIp} 因连续无资格提交进入 10 分钟冷却`, 'warn');
+                     }
+                     const cooldownMessage = `${normalizedAnalysis?.message || '该账号无激活权限,请更换账号重试'}（${cooldownParts.join('，')}）`;
+-                    await store.updateTaskLog(task.jobKey, {
+-                        status: finalStatus,
+-                        message: cooldownMessage,
+-                        rawOutput,
+-                        cdkCode: cdk,
+-                        progress: finalProgress
+-                    });
+-                    broadcastToTask(task.jobKey, {
+-                        type: 'status',
+-                        jobKey: task.jobKey,
+-                        status: finalStatus,
+-                        message: cooldownMessage,
+-                        cdkCode: cdk,
+-                        progress: finalProgress
+-                    });
++                    finalMessage = cooldownMessage;
+                 }
+             }
++            // Payment completion and auto-renew confirmation are separate
++            // decisions. Persist a recoverable pending result before making
++            // the external cancellation request; a crash or failed annotation
++            // must not leave an unverified task advertised as successful.
++            const autoRenewPending = finalStatus === 'success' && finalPaymentState === 'succeeded'
++                && task.executionMode === 'local_card_pool' && !persistenceUncertain;
++            if (autoRenewPending) {
++                finalStatus = 'manual';
++                finalMessage = '充值已完成，正在核实自动续费状态，请勿重复充值';
++            } else if (['started', 'unknown'].includes(finalPaymentState)) {
++                finalMessage = '支付结果未确认，已保留 CDK 与银行卡，需人工复核，请勿重复充值';
++            }
++            const settlement = await persistLocal({
++                status: finalStatus,
++                message: finalMessage,
++                rawOutput,
++                cdkCode: cdk,
++                progress: finalProgress,
++                failureScreenshots,
++                paymentState: finalPaymentState || 'not_started',
++                recoveryRequired: autoRenewPending || ['started', 'unknown'].includes(normalizePaymentState(finalPaymentState)),
++                ...(autoRenewPending ? { autoRenewStatus: 'pending', autoRenewMessage: finalMessage } : {})
++            }, { finalize: true });
++            finalStatus = settlement.status;
++            finalPaymentState = settlement.paymentState;
++            finalMessage = settlement.message || finalMessage;
++
++            broadcastToTask(task.jobKey, {
++                type: 'status',
++                jobKey: task.jobKey,
++                status: finalStatus,
++                message: finalMessage,
++                paymentState: finalPaymentState,
++                recoveryRequired: settlement.recoveryRequired,
++                cdkCode: cdk,
++                progress: finalProgress,
++                screenshots: taskMedia.screenshots,
++                videos: taskMedia.videos
++            });
++
++            logTask(
++                task.jobKey,
++                `任务结算 status=${finalStatus} progress=${finalProgress} message=${finalMessage || ''}`
++            );
++
++            if (autoRenewPending && !persistenceUncertain && finalPaymentState === 'succeeded') {
++                let autoRenewResult;
++                try {
++                    const workerAutoRenew = extractAutoRenewResultFromOutput(rawOutput);
++                    if (workerAutoRenew) {
++                        autoRenewResult = workerAutoRenew;
++                    } else if (platform === 'chatgpt') {
++                        autoRenewResult = await cancelAutoRenew(token, {
++                            email: accountEmail,
++                            timezoneOffsetMin: -new Date().getTimezoneOffset(),
++                            proxy: lastUsedProxy
++                        });
++                    } else {
++                        autoRenewResult = {
++                            ok: false,
++                            data: { verificationUnknown: true },
++                            error: `${platform} 充值已完成，自动续费状态需人工核实`
++                        };
++                    }
++                } catch (error) {
++                    autoRenewResult = {
++                        ok: false,
++                        error: `取消自动续费请求异常：${redactSensitiveText(error.message)}`,
++                        data: { verificationUnknown: true }
++                    };
++                }
++                const autoRenewData = autoRenewResult.data || {};
++                const autoRenewClass = classifyAutoRenewCancellation(autoRenewResult);
++                const autoRenewStatus = autoRenewClass === 'already_disabled' ? 'disabled'
++                    : (autoRenewClass === 'verification_unknown' ? 'verification_unknown' : 'failed');
++                const autoRenewConfirmed = autoRenewStatus === 'disabled';
++                const autoRenewMessage = autoRenewConfirmed
++                    ? '充值完成，自动续费已确认关闭'
++                    : (autoRenewData.message || autoRenewResult.error || '充值成功，但自动续费关闭状态未确认，请人工复核');
++                const renewal = await persistLocal({
++                    status: autoRenewConfirmed ? 'success' : 'manual',
++                    message: autoRenewConfirmed ? '激活成功' : '充值已完成，但自动续费关闭状态未确认，请联系客服人工复核',
++                    autoRenewStatus,
++                    autoRenewMessage,
++                    paymentState: 'succeeded',
++                    recoveryRequired: !autoRenewConfirmed
++                }, { annotate: true });
++                finalStatus = renewal.status;
++                finalPaymentState = renewal.paymentState;
++                finalMessage = renewal.message;
++                broadcastToTask(task.jobKey, { type: 'status', jobKey: task.jobKey, cdkCode: cdk,
++                    status: finalStatus, message: finalMessage, paymentState: finalPaymentState,
++                    recoveryRequired: renewal.recoveryRequired, progress: finalProgress });
++                logTask(task.jobKey, `自动续费处理结果=${autoRenewStatus}`, autoRenewConfirmed ? 'info' : 'warn');
++            }
++            if (finalStatus === 'success') {
++                await store.resetCdkFailure(cdk);
++                if (clientIp) {
++                    await store.resetActivationAttemptFailure('ip', clientIp);
++                }
++                notifyTaskOutcome({
++                    event: 'success',
++                    email: accountEmail,
++                    cdk,
++                    jobKey: task.jobKey,
++                    message: finalMessage || '激活成功'
++                });
++            } else if (finalStatus === 'failed' && isCardPoolExhaustedIssue(rawOutput, normalizedAnalysis)) {
++                notifyTaskOutcome({
++                    event: 'card_pool_empty',
++                    email: accountEmail,
++                    cdk,
++                    jobKey: task.jobKey,
++                    message: finalMessage || '卡池资产枯竭'
++                });
++            } else if (finalStatus === 'failed' || finalStatus === 'manual') {
++                notifyTaskOutcome({
++                    event: 'failure',
++                    email: accountEmail,
++                    cdk,
++                    jobKey: task.jobKey,
++                    message: finalMessage || (finalStatus === 'manual' ? '需人工复核，请勿重复充值' : '激活失败')
++                });
++            }
++
++            if (finalStatus === 'success') {
++                logTask(task.jobKey, `CDK [REDACTED] 已成功核销`);
++            } else if (settlement.released) {
++                logTask(task.jobKey, `CDK [REDACTED] 已回滚为未使用`);
++                await store.releaseCardsByOwner(task.jobKey).catch(() => {});
++            } else if (shouldRetainCdk({ paymentState: finalPaymentState })) {
++                logTask(task.jobKey, `CDK [REDACTED] 保留，等待人工核对支付结果`, 'warn');
++            }
++
+         } catch (bgError) {
+             logTask(task.jobKey, `后台任务异常: ${redactSensitiveText(bgError.message)}`, 'error');
+-            let retainCdk = !shouldRollbackCdk || shouldRetainCdk({ paymentState: observedPaymentState });
+-            try {
+-                const latestTask = await store.getTaskStatus(task.jobKey);
+-                retainCdk = retainCdk || (latestTask && shouldRetainCdk({ paymentState: latestTask.payment_state }))
+-                    || Boolean(latestTask?.recovery_required);
+-            } catch (_) { retainCdk = true; }
++            // A refused/finished task belongs to another decision already. An
++            // uncertain write can only be retried through the same guarded
++            // transaction, with assets retained and no speculative notification.
++            if (settlementClosed) return;
++            const retainCdk = persistenceUncertain || shouldRetainCdk({ paymentState: observedPaymentState });
+             const status = retainCdk ? 'manual' : 'failed';
+-            const paymentState = retainCdk && observedPaymentState === 'not_started' ? 'unknown' : observedPaymentState;
+-            const message = retainCdk ? '支付结果未确认，已保留 CDK 与银行卡，需人工复核' : bgError.message;
++            const paymentState = persistenceUncertain ? mergePaymentState(observedPaymentState, 'unknown') : observedPaymentState;
++            const message = retainCdk ? '支付结果未确认，已保留 CDK 与银行卡，需人工复核' : '任务执行异常，请稍后重试或联系客服';
+             const update = { status, message, rawOutput: redactSensitiveText(bgError.message), cdkCode: cdk,
+                 paymentState, recoveryRequired: retainCdk, progress: normalizeTaskProgress(lastProgress, status, lastProgress) };
++            let settlement;
+             await reportTaskFailure({
+-                persist: () => store.updateTaskLog(task.jobKey, update),
++                persist: async () => { settlement = await persistLocal(update, { finalize: true }); },
+                 report: () => {
+-                    broadcastToTask(task.jobKey, { ...update, type: 'status', jobKey: task.jobKey });
+-                    notifyTaskOutcome({ event: 'failure', email: accountEmail, cdk, jobKey: task.jobKey, message });
++                    if (!settlement?.applied) return;
++                    const saved = { ...update, status: settlement.status, message: settlement.message || message,
++                        paymentState: settlement.paymentState, recoveryRequired: settlement.recoveryRequired };
++                    broadcastToTask(task.jobKey, { ...saved, type: 'status', jobKey: task.jobKey });
++                    notifyTaskOutcome({ event: 'failure', email: accountEmail, cdk, jobKey: task.jobKey, message: saved.message });
+                 },
+                 cleanup: async () => {
+-                    if (!retainCdk) {
+-                        await store.markCdkUnused(cdk);
+-                        logTask(task.jobKey, `CDK [REDACTED] 已回滚为未使用`);
+-                    } else {
+-                        logTask(task.jobKey, `CDK [REDACTED] 保留，等待人工复核`, 'warn');
++                    if (settlement?.released) {
++                        logTask(task.jobKey, 'CDK [REDACTED] 已在任务结算事务中归还');
++                        await store.releaseCardsByOwner(task.jobKey);
+                     }
+                 },
+                 onSecondaryError: (stage, error) => logTask(task.jobKey,

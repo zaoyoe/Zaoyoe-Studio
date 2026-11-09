@@ -219,7 +219,7 @@ test('race is required and must be explicitly selected from documented category 
 });
 
 for (const [label, overrides] of Object.entries({
-    sku: { config: { sku: { color: ['black', 'white'] } } }, widget: { widget: [{ name: 'email' }] },
+    sku: { config: { sku: { color: ['black', 'white'] } } },
     draft: { draft_status: 1 }, seckill: { seckill_status: 1 }, malformed: { config: 'ini text' }, unknown: { config: { newOption: true } }
 })) {
     test(`${label} configuration remains preview-only and cannot be silently imported as default`, async () => {
@@ -230,6 +230,14 @@ for (const [label, overrides] of Object.entries({
         assert.throws(() => adapter.normalizeVariant(item, {}));
     });
 }
+
+test('widget configuration allows draft import with manual delivery advice while flagging hasWidget', async () => {
+    const { adapter } = setup([fixture({ widget: [{ name: 'email' }] })]);
+    const item = await adapter.getGoodsDetail('XR-1');
+    assert.equal(item.variantRequirements.importable, true);
+    assert.equal(item.variantRequirements.hasWidget, true);
+    assert.match(item.variantRequirements.reasons.join(''), /含上游自定义填写项/);
+});
 
 test('stock and valuation use only documented read paths, preserve precision and never claim a locked cost', async () => {
     const { adapter, calls } = setup([fixture(), { stock: '0' }, fixture(), { price: '0.12345678' }]);
@@ -516,5 +524,53 @@ test('empty upstream option containers are a single default variant, not an unve
     const { adapter } = setup([fixture({ config: 'ini text' })]);
     assert.equal((await adapter.getGoodsDetail('XR-1')).variantRequirements.importable, false);
     const widgets = setup([fixture({ widget: [{ name: 'email' }] })]);
-    assert.equal((await widgets.adapter.getGoodsDetail('XR-1')).variantRequirements.importable, false);
+    const widgetItem = await widgets.adapter.getGoodsDetail('XR-1');
+    assert.equal(widgetItem.variantRequirements.importable, true);
+    assert.equal(widgetItem.variantRequirements.hasWidget, true);
+});
+
+test('getGoodsDetail caches in memory when enableCache is true and clearGoodsDetailCache purges it', async () => {
+    const { adapter, calls } = setup([fixture({ code: 'XR-CACHE' })], { enableCache: true, cacheTtlMs: 60_000 });
+    const first = await adapter.getGoodsDetail('XR-CACHE');
+    assert.equal(first.providerGoodsId, 'XR-CACHE');
+    assert.equal(calls.length, 1);
+
+    // Second call should hit memory cache without sending an HTTP request
+    const second = await adapter.getGoodsDetail('XR-CACHE');
+    assert.equal(second.providerGoodsId, 'XR-CACHE');
+    assert.equal(calls.length, 1);
+
+    // Clear cache, next call fetches again
+    const purged = setup([fixture({ code: 'XR-CACHE' }), fixture({ code: 'XR-CACHE' })], { enableCache: true, cacheTtlMs: 60_000 });
+    await purged.adapter.getGoodsDetail('XR-CACHE');
+    assert.equal(purged.calls.length, 1);
+    purged.adapter.clearGoodsDetailCache();
+    await purged.adapter.getGoodsDetail('XR-CACHE');
+    assert.equal(purged.calls.length, 2);
+});
+
+test('createPurchase reuses prequotedPrice and runs parallel preflight without extra quote request', async () => {
+    // With prequotedPrice, parallelPreflight and enableCache: true:
+    // 1. getGoodsDetail (hits network, cached)
+    // 2. Parallel preflight: inventoryState & getStock (hits cache for detail, fetches stock)
+    // 3. trade
+    // Only 4 calls total instead of 7!
+    const { adapter, calls } = setup([
+        fixture({ code: 'XR-1' }),
+        [],
+        { stock: '100' },
+        { tradeNo: '778217796203351836', amount: '0.16', secret: 'CARD-SECRET', stock: '16382' }
+    ], { enableCache: true, cacheTtlMs: 60_000 });
+    const result = await adapter.createPurchase({
+        ...PURCHASE,
+        prequotedPrice: '0.16',
+        parallelPreflight: true
+    });
+    assert.equal(result.outcome, 'accepted');
+    assert.equal(result.orderNo, '778217796203351836');
+    assert.equal(result.actualAmountCny, '0.16');
+    // Verify no valuation/quote endpoint was called
+    assert.equal(calls.some((c) => /\/valuation$/.test(c.url)), false);
+    assert.equal(calls.filter((c) => /\/trade$/.test(c.url)).length, 1);
+    assert.equal(calls.length, 4);
 });

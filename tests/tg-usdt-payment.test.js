@@ -34,7 +34,7 @@ const SAVED = { ...ORDER, provider_trade_no: CHECKOUT.payment_id, crypto_checkou
 const MARKET_FX = { id: '41444444-4444-4444-8444-444444444444', source: 'coingecko:tether/cny', cny_per_usdt: '6.68000000',
     usdt_per_cny: '0.14970060', source_updated_at: new Date(NOW).toISOString(), fetched_at: new Date(NOW).toISOString(),
     expires_at: new Date(NOW + 300000).toISOString() };
-const json = (data) => ({ ok: true, text: async () => JSON.stringify(data) });
+const json = (data) => new Response(JSON.stringify(data));
 function paymentInput(payload, order = SAVED) { return { payload, exact: parsePaymentJson(JSON.stringify(payload)).exact, order }; }
 function nowGateway(fetchImpl = async () => json(PROVIDER), changes = {}) { return createTgNowpaymentsGateway({ env: ENV, now: () => NOW, fetchImpl, ...changes }); }
 function res() { return { headers: {}, status(code) { this.statusCode = code; return this; }, setHeader(key, value) { this.headers[key] = value; return this; }, end(value) { this.text = value; try { this.body = JSON.parse(value); } catch (_) {} } }; }
@@ -284,7 +284,7 @@ test('raw numeric amount tokens retain 18 digits before BigInt comparison withou
     assert.notEqual(String(parsed.data.pay_amount), parsed.exact.pay_amount);
     const finishedRaw = JSON.stringify(FINISHED).replaceAll(`\"${PROVIDER.pay_amount}\"`, PROVIDER.pay_amount);
     const finished = parsePaymentJson(finishedRaw);
-    const verified = await nowGateway(async () => ({ ok: true, text: async () => finishedRaw })).verifyPayment({ payload: finished.data, exact: finished.exact, order: SAVED });
+    const verified = await nowGateway(async () => new Response(finishedRaw)).verifyPayment({ payload: finished.data, exact: finished.exact, order: SAVED });
     assert.equal(verified.verified_payload.actually_paid, '1.912345678912345678');
     const underpaidRaw = JSON.stringify(FINISHED).replace(`"actually_paid":"${PROVIDER.pay_amount}"`, '"actually_paid":1.912345678912345677');
     const underpaid = parsePaymentJson(underpaidRaw);

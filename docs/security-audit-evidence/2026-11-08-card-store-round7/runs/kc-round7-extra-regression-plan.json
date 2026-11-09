@@ -1,0 +1,32 @@
+[
+  {
+    "id": "native-regression-fixture-fixed",
+    "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+    "log": "/tmp/kc-round7-native-regression-fixture-fixed.log",
+    "command": [
+      "node",
+      "--test",
+      "tests/security-round2-kc-activation.test.js",
+      "tests/security-round2-kc-credentials.test.js",
+      "tests/security-round2-kc-public-guard.test.js",
+      "tests/security-round3-kc-activation-atomic.test.js",
+      "tests/security-round4-kc-local-settlement.test.js",
+      "tests/security-round5-kc-owner-locks.test.js",
+      "tests/security-round6-kc-card-ownership.test.js",
+      "tests/security-round6-kc-payment-callers.test.js",
+      "tests/security-round7-kc-payment-hold.test.js"
+    ]
+  },
+  {
+    "id": "chatgpt-regression",
+    "cwd": "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt",
+    "log": "/tmp/kc-round7-chatgpt-regression.log",
+    "command": [
+      "node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "test/chatgpt-billing.test.js",
+      "test/chatgpt-checkout-team-promo.test.js"
+    ]
+  }
+]

@@ -1,0 +1,9 @@
+{
+  "branch": "main",
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "origin_main": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "behind": 0,
+  "index_sha256": "0cffdc8f7b49154ec9082ca7c97b5b5a0be0c4df5dd6ae1c20526f9aca9130b7",
+  "dirty_lines": 551,
+  "scope": "per-file dirty snapshots only, not a whole-workspace or DB backup"
+}

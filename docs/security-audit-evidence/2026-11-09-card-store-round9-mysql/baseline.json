@@ -1,0 +1,283 @@
+{
+  "recorded_at": "2026-11-09T09:55:33.777685+08:00",
+  "authorization": "Current conversation user explicitly said 授权 after a request covering fresh local MySQL 8.4, fixture DDL, synthetic DML/cleanup and 12 lock scenarios; no production/commit/deploy.",
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "origin_main": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "branch": "main",
+  "index_sha256": "0cffdc8f7b49154ec9082ca7c97b5b5a0be0c4df5dd6ae1c20526f9aca9130b7",
+  "staged_empty": true,
+  "lab_root": "/private/tmp/kc-hold-88db804f71ff9b98",
+  "run_id": "88db804f71ff9b98",
+  "preserved_files": [
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/.gitignore",
+      "sha256": "edf6424f653e188158b35baebe1173bdf8b2eb111ef8eebaad31a7743da1d0f2"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/before-driver-error-guard/manifest.json",
+      "sha256": "6a46a9752595cfffeddeb41c8c22ae23a887a8d54a5121957fc6d759516815b7"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/before-driver-error-guard/services__kc-pay-gpt__acceptance__mysql-payment-hold__lab.cjs",
+      "sha256": "eed7c27abcc9ca2b8b7c4c3604271907641b522825fd7d9e3599d2559e53c186"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/before-driver-error-guard/tests__security-round8-kc-mysql-lab.test.js",
+      "sha256": "26cc5c257eb50521f1516717dfc59012e6efd44f9837aa0825c67753d885dbfa"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/cli.cjs",
+      "sha256": "88114dceb85b257f9760e2e4ac13b8975b1c3e7e1e46b33cb8e749267dc80fd6"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/fixture.sql",
+      "sha256": "1949fcf408ea1126ac4524fc0532a935c5430fc82cce30dcd4bd2ed2fdb590e3"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/lab.cjs",
+      "sha256": "75b2cd46404464a507f178d7ab02b48f7d5dc9538eeae3039b918ed85b200de9"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/manifest.json",
+      "sha256": "63277e57cb78fc73156e7b4a71eac4a3a790be5d5dd9a29c35606015cfc94b4a"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/plan.cjs",
+      "sha256": "079d1db4d82e193c47ca84d004b1a7f2ef6c3bf27dd34f791946a2ef05edca5c"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/safety.cjs",
+      "sha256": "ba62db8c59528947083b8f45f97a758e6a03b1c3c6c4d636e9c5846e1755fc76"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/store-loader.cjs",
+      "sha256": "425987bce97895a841965f37714561939c6a0307605666f26867103180f29851"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/cli.cjs",
+      "sha256": "88114dceb85b257f9760e2e4ac13b8975b1c3e7e1e46b33cb8e749267dc80fd6"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/fixture.sql",
+      "sha256": "b07a5fe44b53c3f1c93252e229759bf7ba40af990ad6cdb949d2730538f87ef5"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/lab.cjs",
+      "sha256": "07c0b2a4571d2512608fb9f80a09a2df73bb3fd272165adf3913388e69b5c56a"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/manifest.json",
+      "sha256": "e17d1a1afb931e76936fd55ea9ceea054fc0333d0479b41b750c93554e678891"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/plan.cjs",
+      "sha256": "0cabe2d545f33c27b27c4df8169d97b3776eddc09179533a4a7fb57799439c24"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/safety.cjs",
+      "sha256": "ba62db8c59528947083b8f45f97a758e6a03b1c3c6c4d636e9c5846e1755fc76"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-review/store-loader.cjs",
+      "sha256": "425987bce97895a841965f37714561939c6a0307605666f26867103180f29851"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/services__kc-pay-gpt__mysql-schema.sql",
+      "sha256": "5762c14dac28291cf566ced78a71af2fb26d466b915c69968cf28027b3bfc055"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/services__kc-pay-gpt__mysql-store.js",
+      "sha256": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/services__kc-pay-gpt__payment-retry.js",
+      "sha256": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/services__kc-pay-gpt__stripe-protocol-payment.js",
+      "sha256": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/baseline-status.txt",
+      "sha256": "23832ff7daa3f135a405a7e959a34511ac045745485c53b11b1be810b4cc060b"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/baseline.json",
+      "sha256": "e19ab3b30f25f25cea10f3865c466f1fe5a2bf4b4a8875f4056d3b294e7718bd"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/preload.cjs",
+      "sha256": "d4671c80c91d0eb54d7394a4eea756fc32ed083f41a222ec0bbdef8408dc47c7"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/run.py",
+      "sha256": "f944548e20d3b4e47ce3cc0c964ad3bd3f9087f2bc7f0855e2c40b59ce4dfdb5"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/log-manifest.json",
+      "sha256": "d7198dcbad1397d08e6543bd0121de5fa22b9a397ce20ec29b32bcadc12aaad6"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/offline-tests-01.log",
+      "sha256": "a5a4952dc749b16126f6e3d0afeec7674b3fabb0f171e31500ca41be81dfcaa5"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/offline-tests-02.log",
+      "sha256": "62db3122d51e4bbeee5432bfb55d20b08b72662e9d7a3f25253f08e65b5c280d"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/payment-hold-regression-01.log",
+      "sha256": "5a2179b55980c4f1fa6adce6d644323d63be413513804f040a842db97b391b74"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/plan-only-01.log",
+      "sha256": "2f5d73122b05722539697499a3b80e226c68187c53c99d6bfdd890f7176bbe95"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-cli.cjs.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-lab.cjs.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-plan.cjs.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-preload.cjs.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-safety.cjs.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-security-round8-kc-mysql-lab.test.js.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-01-store-loader.cjs.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-cli.cjs.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-lab.cjs.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-plan.cjs.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-preload.cjs.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-safety.cjs.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-security-round8-kc-mysql-lab.test.js.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/logs/syntax-02-store-loader.cjs.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/packaging-boundary.json",
+      "sha256": "10903c87be1fa71849e0670e4c53f8fab401cdae5938ef1152268083f24b55e6"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/source-manifest.json",
+      "sha256": "beadfc71df232302a6c086e566ee3a0f62bd27c37f3c66279c836f79a2e43a21"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/status-after-expanded.txt",
+      "sha256": "62adbaa46d58698ecb2254f8bc3f02c0b4dea479d5ffce943a9f2facce8265f1"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/syntax-results-01.json",
+      "sha256": "50e66a55bc2491f5c719e584fd704ecd1d3a4b3b7973df40af0d17c3206bc745"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/syntax-results-02.json",
+      "sha256": "d6f44b85ed33b79e55f259add442d27ca87a28ba87892f6c63079772f54149a3"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/test-results.json",
+      "sha256": "e914eebef87aabdb1ec3c0c7153d6a83d50ccdbc842eec238ee55c466a849027"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/verification-results.json",
+      "sha256": "fac25b8e496f3299b5e6c88c9e5c94b2900e1012b1a31184fd9e63f76ba06176"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/whitespace-results.json",
+      "sha256": "9b7e1f30f5af5bb6d53cd900a885454d15c032f2ba6124b87de626a6ca0dc941"
+    },
+    {
+      "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/whitespace-review.json",
+      "sha256": "fc1252a6722ec3ff4920294581125ea28c2f1836aef461d7277fb39016b6242d"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/README.md",
+      "sha256": "2642b5f3a067381097ccb17b56d4fb164c2c8b6448aca68202d5397e4acdb738"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/cli.cjs",
+      "sha256": "88114dceb85b257f9760e2e4ac13b8975b1c3e7e1e46b33cb8e749267dc80fd6"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/fixture.sql",
+      "sha256": "1949fcf408ea1126ac4524fc0532a935c5430fc82cce30dcd4bd2ed2fdb590e3"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs",
+      "sha256": "9819abce572eefc2a8180dc2586a476305267f9ba25bfa1ce755ad19b8d5d120"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/plan.cjs",
+      "sha256": "079d1db4d82e193c47ca84d004b1a7f2ef6c3bf27dd34f791946a2ef05edca5c"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/safety.cjs",
+      "sha256": "ba62db8c59528947083b8f45f97a758e6a03b1c3c6c4d636e9c5846e1755fc76"
+    },
+    {
+      "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/store-loader.cjs",
+      "sha256": "425987bce97895a841965f37714561939c6a0307605666f26867103180f29851"
+    },
+    {
+      "path": "tests/security-round8-kc-mysql-lab.test.js",
+      "sha256": "d067cd6f65eb3ab2cfed354afba1b0b9a65aa8785491531746966c4975b3fd5a"
+    }
+  ],
+  "runtime_files": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "sha256": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+      "snapshot": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/mysql-store.js"
+    },
+    {
+      "path": "services/kc-pay-gpt/payment-retry.js",
+      "sha256": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22",
+      "snapshot": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/payment-retry.js"
+    },
+    {
+      "path": "services/kc-pay-gpt/stripe-protocol-payment.js",
+      "sha256": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d",
+      "snapshot": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/stripe-protocol-payment.js"
+    },
+    {
+      "path": "services/kc-pay-gpt/mysql-schema.sql",
+      "sha256": "5762c14dac28291cf566ced78a71af2fb26d466b915c69968cf28027b3bfc055",
+      "snapshot": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/snapshots/mysql-schema.sql"
+    }
+  ]
+}

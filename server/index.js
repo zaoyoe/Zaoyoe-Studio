@@ -6,6 +6,8 @@
 
 require('dotenv').config();
 const express = require('express');
+const { createActivationService, errorResponse: activationErrorResponse, isActivationRequest, isActivationJob } = require('./api-handlers/_google-one-activation-runtime');
+const { loadVerifyRuntimeConfig: loadActivationRuntimeConfig } = require('./api-handlers/_verify-provider-runtime');
 const cors = require('cors');
 const { isTgNowpaymentsWebhookRequest } = require('./tg/raw-body');
 const crypto = require('crypto');
@@ -178,11 +180,14 @@ const VERIFY_TASK_UNIT_COSTS = Object.freeze({
 });
 const VERIFY_PROVIDER_AIDONE = 'aidone';
 const VERIFY_PROVIDER_CATCARD = 'catcard';
+const VERIFY_PROVIDER_86AI = '86ai';
 const VERIFY_ADAPTER_AIDONE_OPENAPI = 'aidone_openapi';
 const VERIFY_ADAPTER_PIXEL_BRIDGE_REST = 'pixel_bridge_rest';
+const VERIFY_ADAPTER_86AI_API = '86ai_api';
 const VERIFY_PROVIDER_LABELS = Object.freeze({
     [VERIFY_PROVIDER_AIDONE]: '通道 1 · aidone',
-    [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free'
+    [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free',
+    [VERIFY_PROVIDER_86AI]: '通道 3 · 86AI Pro 开通'
 });
 const PENDING_JOB_SWEEP_INTERVAL_MS = Math.max(2000, Number(process.env.VERIFY_PENDING_SWEEP_INTERVAL_MS || 5000));
 const PENDING_JOB_SWEEP_BATCH_SIZE = Math.max(1, Number(process.env.VERIFY_PENDING_SWEEP_BATCH_SIZE || 20));
@@ -508,6 +513,7 @@ async function getVerifyConfig(site = 'cn') {
         ? resolvedConfig
         : {};
     const prices = getVerifyPriceMap(config);
+    const activationRuntime = await loadActivationRuntimeConfig(supabase, process.env, { site });
     const activeProvider = normalizeVerifyProvider(
         config.active_provider
         || config.activeProvider
@@ -529,6 +535,7 @@ async function getVerifyConfig(site = 'cn') {
             site
         })
     };
+    providers['86ai'] = activationRuntime.providers['86ai'];
     const activeConfig = providers[activeProvider] || providers[VERIFY_PROVIDER_AIDONE];
 
     return {
@@ -828,13 +835,14 @@ function normalizeVerifyProviderRootUrl(value) {
 
 function normalizeVerifyProvider(value, fallback = VERIFY_PROVIDER_AIDONE) {
     const normalized = String(value || '').trim().toLowerCase();
+    if (['86ai', '86ai_api'].includes(normalized)) return VERIFY_PROVIDER_86AI;
     if (['catcard', '1free', 'pixel', 'pixel_bridge', 'pixel_bridge_rest', 'qzz'].includes(normalized)) {
         return VERIFY_PROVIDER_CATCARD;
     }
     if (['aidone', 'primary', 'legacy', 'openapi', 'aidone_openapi'].includes(normalized)) {
         return VERIFY_PROVIDER_AIDONE;
     }
-    return fallback === VERIFY_PROVIDER_CATCARD ? VERIFY_PROVIDER_CATCARD : VERIFY_PROVIDER_AIDONE;
+    return [VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD, VERIFY_PROVIDER_86AI].includes(fallback) ? fallback : VERIFY_PROVIDER_AIDONE;
 }
 
 function normalizeVerifyAdapter(value, provider = VERIFY_PROVIDER_AIDONE) {
@@ -913,7 +921,7 @@ function getVerifyProviderCapabilities(provider, adapter = '') {
 
 function normalizeVerifyTaskType(value, fallback = DEFAULT_VERIFY_TASK_TYPE) {
     const normalized = String(value || '').trim().toLowerCase();
-    if (normalized === 'full') return 'full';
+    if (['full', 'sub6', 'sub12', 'sub24'].includes(normalized)) return normalized;
     if (normalized === 'extract') return 'extract';
     return fallback;
 }
@@ -947,11 +955,28 @@ function getVerifyPriceMap(config = {}) {
 
 function getVerifyPriceForTaskType(config = {}, taskType = DEFAULT_VERIFY_TASK_TYPE) {
     const prices = getVerifyPriceMap(config);
-    return normalizeVerifyTaskType(taskType) === 'full' ? prices.full : prices.extract;
+    const normalized = normalizeVerifyTaskType(taskType);
+    if (normalized === 'sub24') {
+        const custom = Number(config.pricePerVerifySub24 || config.price_per_verify_sub24);
+        return Number.isFinite(custom) && custom > 0 ? custom : Math.round(prices.full * 2);
+    }
+    if (normalized === 'sub12') {
+        const custom = Number(config.pricePerVerifySub12 || config.price_per_verify_sub12);
+        return Number.isFinite(custom) && custom > 0 ? custom : Math.round(prices.full * 1.5);
+    }
+    if (normalized === 'sub6' || normalized === 'full') {
+        const custom = Number(config.pricePerVerifySub6 || config.price_per_verify_sub6);
+        return Number.isFinite(custom) && custom > 0 ? custom : prices.full;
+    }
+    return prices.extract;
 }
 
 function getVerifyUnitCost(taskType = DEFAULT_VERIFY_TASK_TYPE) {
-    return VERIFY_TASK_UNIT_COSTS[normalizeVerifyTaskType(taskType)] || VERIFY_TASK_UNIT_COSTS.extract;
+    const normalized = normalizeVerifyTaskType(taskType);
+    if (normalized === 'sub24') return 2;
+    if (normalized === 'sub12') return 1.5;
+    if (normalized === 'sub6' || normalized === 'full') return 1;
+    return VERIFY_TASK_UNIT_COSTS[normalized] || VERIFY_TASK_UNIT_COSTS.extract;
 }
 
 function getVerifyRemainingTaskCount(remainingUses, taskType = DEFAULT_VERIFY_TASK_TYPE) {
@@ -1049,7 +1074,11 @@ function getVerifyProviderConfigSource(config = {}, provider = VERIFY_PROVIDER_A
     const providers = config.providers && typeof config.providers === 'object' && !Array.isArray(config.providers)
         ? config.providers
         : {};
-    if (normalizeVerifyProvider(provider) === VERIFY_PROVIDER_CATCARD) {
+    const normalized = normalizeVerifyProvider(provider);
+    if (normalized === VERIFY_PROVIDER_86AI) {
+        return providers['86ai'] || providers.ai86 || {};
+    }
+    if (normalized === VERIFY_PROVIDER_CATCARD) {
         return providers.catcard || providers['1free'] || providers.pixel || providers.pixel_bridge || {};
     }
     return providers.aidone || providers.primary || providers.legacy || {};
@@ -1191,7 +1220,7 @@ function normalizeVerifyUpstreamStatus(value) {
     if (['success', 'completed', 'done', 'ok'].includes(normalized)) return 'success';
     if (['failed', 'fail', 'error', 'timeout', 'cancelled', 'canceled'].includes(normalized)) return 'failed';
     if (['running', 'processing', 'working', 'in_progress', 'assigned', 'accepted', 'started', 'executing'].includes(normalized)) return 'running';
-    if (['queued', 'queueing', 'waiting', 'pending'].includes(normalized)) return 'queued';
+    if (['queued', 'queueing', 'waiting', 'pending', 'submitting'].includes(normalized)) return 'queued';
     return normalized;
 }
 
@@ -5245,9 +5274,27 @@ async function validateUserBalance(userId, requiredPoints, site = 'cn') {
 // =============================================
 // POST /api/verify — Submit a Google One job
 // =============================================
+async function handleActivationRequest(req, res, user, method, args = {}) {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+        const service = createActivationService({ supabase });
+        const result = await service[method]({ req, user, ...args });
+        return res.json(method === 'list' ? { success: true, jobs: result } : { success: true, ...result });
+    } catch (error) {
+        const result = activationErrorResponse(error);
+        return res.status(result.status).json(result.body);
+    }
+}
+app.get('/api/verify/list', async (req, res) => {
+    const user = await requireAuthenticatedUser(req, res);
+    if (user) return handleActivationRequest(req, res, user, 'list');
+});
+
 app.post('/api/verify', async (req, res) => {
     const authenticatedUser = await requireAuthenticatedUser(req, res);
     if (!authenticatedUser) return;
+
+    if (isActivationRequest(req.body)) return handleActivationRequest(req, res, authenticatedUser, 'submit', { body: req.body });
 
     const { email, password, totpSecret, totp_secret, priority, site, taskType, task_type } = req.body || {};
     const normalizedEmail = String(email || '').trim().toLowerCase();
@@ -5274,7 +5321,9 @@ app.post('/api/verify', async (req, res) => {
     }
 
     try {
-        const config = await getVerifyConfig(currentSite);
+        const loadedConfig = await getVerifyConfig(currentSite);
+        const config = activateVerifyProviderConfig(loadedConfig, req.body?.provider || req.body?.verifyProvider || loadedConfig.provider);
+        if (config.provider === '86ai') return res.status(400).json({ success: false, code: 'invalid_task_type', message: '第三通道仅支持 Pro 一条龙开通。' });
 
         if (!config.apiKeys?.length) {
             return res.status(500).json({
@@ -5466,6 +5515,7 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
     if (!authenticatedUser) return;
 
     const { taskId } = req.params;
+    if (isActivationJob(taskId)) return handleActivationRequest(req, res, authenticatedUser, 'status', { id: taskId });
     const { site } = req.query;
     const currentSite = resolveSecureRequestSite(req, site);
 
@@ -5573,6 +5623,7 @@ async function handleVerifyJobActionRequest(req, res, forcedAction = '') {
 
     const action = String(forcedAction || req.body?.action || '').trim();
     const taskId = String(req.body?.taskId || req.body?.task_id || req.body?.jobId || req.body?.job_id || '').trim();
+    if (isActivationRequest(req.body) || isActivationJob(taskId)) return res.status(400).json({ success: false, code: 'invalid_task_type', message: 'Pro 开通任务不支持取消或提链操作。' });
     const currentSite = resolveSecureRequestSite(req, req.body?.site || req.query?.site || '');
 
     if (!['cancel_task', 'purchase_failed_link'].includes(action)) {
@@ -5777,6 +5828,36 @@ app.get('/api/quota', async (req, res) => {
         const currentSite = resolveSecureRequestSite(req, req.query?.site || '');
         const config = await getVerifyConfig(currentSite);
 
+        if (config.provider === VERIFY_PROVIDER_86AI || config.active_provider === VERIFY_PROVIDER_86AI) {
+            const cardCodes = normalizeVerifyCredentialList(
+                config.apiKeys
+                || config.apiKey
+                || config.card_codes
+                || config.cards
+                || config.cdkeys
+            );
+            return res.json({
+                success: true,
+                status: 200,
+                provider: VERIFY_PROVIDER_86AI,
+                provider_label: config.provider_label || VERIFY_PROVIDER_LABELS[VERIFY_PROVIDER_86AI],
+                adapter: VERIFY_ADAPTER_86AI_API,
+                supported: false,
+                balance: null,
+                remaining_uses: null,
+                key_count: cardCodes.length,
+                healthy_key_count: cardCodes.length,
+                key_states: cardCodes.map((key, index) => ({
+                    api_key: key,
+                    key_name: `86AI 卡密 #${index + 1}`,
+                    balance: null,
+                    status: 'configured',
+                    supported: false
+                })),
+                message: '86AI 按卡密核销，上游不提供余额接口；请在 86AI 后台核对额度。'
+            });
+        }
+
         if (!config.apiKeys?.length) {
             return res.status(500).json({ success: false, message: '验证服务未配置 CDKey' });
         }
@@ -5873,6 +5954,36 @@ app.get('/api/queue', async (req, res) => {
     try {
         const currentSite = resolveSecureRequestSite(req, req.query?.site || '');
         const config = await getVerifyConfig(currentSite);
+
+        if (config.provider === VERIFY_PROVIDER_86AI || config.active_provider === VERIFY_PROVIDER_86AI) {
+            const cardCodes = normalizeVerifyCredentialList(
+                config.apiKeys
+                || config.apiKey
+                || config.card_codes
+                || config.cards
+                || config.cdkeys
+            );
+            return res.json({
+                success: true,
+                status: 200,
+                provider: VERIFY_PROVIDER_86AI,
+                provider_label: config.provider_label || VERIFY_PROVIDER_LABELS[VERIFY_PROVIDER_86AI],
+                adapter: VERIFY_ADAPTER_86AI_API,
+                supported: false,
+                balance: null,
+                remaining_uses: null,
+                key_count: cardCodes.length,
+                healthy_key_count: cardCodes.length,
+                key_states: cardCodes.map((key, index) => ({
+                    api_key: key,
+                    key_name: `86AI 卡密 #${index + 1}`,
+                    balance: null,
+                    status: 'configured',
+                    supported: false
+                })),
+                message: '86AI 按卡密核销，上游不提供余额接口；请在 86AI 后台核对额度。'
+            });
+        }
 
         if (!config.apiKeys?.length) {
             return res.status(500).json({ success: false, message: '验证服务未配置 CDKey' });

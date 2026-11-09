@@ -1,0 +1,127 @@
+{
+  "recorded_at": "2026-11-08T19:52:32.441363+08:00",
+  "excludes_self": true,
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "376bba65191f37c293a9b0fce35d8bdf30e1e8964b0a11766ac86957af0866d3",
+      "bytes": 4504
+    },
+    {
+      "path": "backup-manifests/additional-backup-local-preview-recovery.json",
+      "sha256": "bc281890cc8cc21610ce2056107cdd1bccade73164a3b0d2bc8b3df949d474bf",
+      "bytes": 377
+    },
+    {
+      "path": "backup-manifests/manifest.json",
+      "sha256": "27c354fbf96c4ea13d58fd0f94f574e009f8dc5014ad5cb402d26143e479e80f",
+      "bytes": 993
+    },
+    {
+      "path": "backup-verification.json",
+      "sha256": "31c15ec16b458130ee19387db18c81f6eae51799080678d459c7d404bd305016",
+      "bytes": 2905
+    },
+    {
+      "path": "baseline-and-boundaries.json",
+      "sha256": "5696646b392f0140cfd13f60a0015e37c65de5ed178bce3c01e342e9c74f814d",
+      "bytes": 18221
+    },
+    {
+      "path": "delta/round3-delta.patch",
+      "sha256": "2699ead3aef5d7807427f74282e59d8826a39f835f0a2136c8e5f3c3f670e7d0",
+      "bytes": 57950
+    },
+    {
+      "path": "packaging-boundary.json",
+      "sha256": "fd5802332371315fe392a9e20459bc28291b4544678e18105876be098534cbdb",
+      "bytes": 1083
+    },
+    {
+      "path": "raw/atomic-baseline-reproduced.log",
+      "sha256": "f4710c34d4580a3a0b1c3d8b26b08fa2c0fcf614562cc4f3b4c0f4011c7ee226",
+      "bytes": 959
+    },
+    {
+      "path": "raw/atomic-baseline.log",
+      "sha256": "2db22d1bf754ac0e3abb411d164afce3dde823dc5a8fafacd4c6b1d7fb7d97b7",
+      "bytes": 2136
+    },
+    {
+      "path": "raw/atomic-final.log",
+      "sha256": "038cabb677af5bc52976a326d3c863700cfeb02a7991415408f2dbef2dd1781a",
+      "bytes": 6273
+    },
+    {
+      "path": "raw/atomic-first.log",
+      "sha256": "1c0afa4ec09cd841ed68088dee94fbedd91eb4912741823c41680a076abe1cb0",
+      "bytes": 5856
+    },
+    {
+      "path": "raw/blocked-reads.jsonl",
+      "sha256": "10c02ad99b0a064b9f5b81041376407f9b2db87d2d45349c0459a7ce0f3b825f",
+      "bytes": 31
+    },
+    {
+      "path": "raw/kc-target-final.log",
+      "sha256": "62ccedc40469a2054f2b8fd3589eff2693e62c833b7e6147ccbcb5fb922aad32",
+      "bytes": 5731
+    },
+    {
+      "path": "raw/kc-target-first.log",
+      "sha256": "161d45102755eb5d9af7c883864e9941f5db4d74b87d5d1e453b5acf09a9c0c8",
+      "bytes": 462
+    },
+    {
+      "path": "raw/kc-target-fixture-corrected.log",
+      "sha256": "ed0407ad5b7f3a8e7dba508a9359e5d2ded0ba9c2ec4660b4b85440d76a14156",
+      "bytes": 520
+    },
+    {
+      "path": "raw/preload.cjs",
+      "sha256": "d87e682b933d9a57ab604efce87a4b57f9b5df497b48e30d4f36cea4bf71a625",
+      "bytes": 1438
+    },
+    {
+      "path": "raw/round3-syntax.json",
+      "sha256": "c8fef2af0fb1cd1a4cceb53d8d53f222820a801f5e6a9bd95f8d66c1ab764f80",
+      "bytes": 713
+    },
+    {
+      "path": "raw/round3-whitespace.json",
+      "sha256": "809b32d3dbcc563b5a7f3733a6291519e12b04525a5976631ad963be6086255c",
+      "bytes": 78
+    },
+    {
+      "path": "raw/run.py",
+      "sha256": "3fbef5365d0b6779881f5ea667379c6b9f9804d1e6c84b47a8a59a02738cfe6c",
+      "bytes": 1099
+    },
+    {
+      "path": "raw/selfcheck.log",
+      "sha256": "0d94204509a3555a744907b781f2d1d976d771aab087f406a6770d5a6b167e59",
+      "bytes": 21
+    },
+    {
+      "path": "raw-provenance.json",
+      "sha256": "2e74dc6cfb45bd280ef5d297cb474348226db5afa3961d022dc1d9f4b35acd9d",
+      "bytes": 3193
+    },
+    {
+      "path": "source-manifest.json",
+      "sha256": "5038776657891c93a6da3b34b32645c5af02cae77229ce7777732c35787bb021",
+      "bytes": 3678
+    },
+    {
+      "path": "verification-results.json",
+      "sha256": "31e7ce7405606fd46e6ed00534e658e9606eae70ed06fa4d87cf17648cd164f8",
+      "bytes": 4065
+    }
+  ],
+  "report": {
+    "path": "docs/security-card-store-hardening-round3-2026-11-08.md",
+    "sha256": "8a9e56264a6f96b221a62a232158c6dacb6f748775e083d9ea9645fc0affb5a7",
+    "bytes": 11936
+  },
+  "integrity_note": "Hashes verify local file consistency; no production provenance, signature, or clean release candidate is implied."
+}

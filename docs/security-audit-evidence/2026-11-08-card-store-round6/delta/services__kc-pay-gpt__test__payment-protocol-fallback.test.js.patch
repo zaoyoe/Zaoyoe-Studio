@@ -1,0 +1,27 @@
+--- a/services/kc-pay-gpt/test/payment-protocol-fallback.test.js
++++ b/services/kc-pay-gpt/test/payment-protocol-fallback.test.js
+@@ -3,6 +3,7 @@
+ import { describe, it, expect, vi } from 'vitest';
+ import fs from 'node:fs';
+ import vm from 'node:vm';
++import { randomBytes } from 'node:crypto';
+ 
+ describe('Payment Protocol Decline UI Fallback', () => {
+     function createFixture({
+@@ -20,7 +21,7 @@
+                 card_expiry: '10/28',
+                 card_cvc: '123'
+             })),
+-            releaseCard: vi.fn(),
++            releaseCard: vi.fn(async () => 1),
+             cooldownCard: vi.fn(),
+             quarantineCardForReview: vi.fn(),
+             createBillingRecord: vi.fn(),
+@@ -45,6 +46,7 @@
+         const onPaymentState = vi.fn();
+ 
+         const dependencies = {
++            'node:crypto': { randomBytes },
+             './mysql-store': store,
+             './stripe-payment': {
+                 completeStripeCardPayment,

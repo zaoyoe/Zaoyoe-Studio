@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-11-08T08:47:52.575Z",
+  "method": "actual media helper evaluated in VM; fetch, R2 configuration and S3 client are in-memory stubs; no network, real env, SQL or storage writes",
+  "precondition": "R2 configured; authorized admin import or supplier synchronization reaches helper with attacker-controlled media URL",
+  "observed": {
+    "attempts": [
+      {
+        "url": "http://127.0.0.1:1/audit-fixture.png",
+        "redirectOption": null
+      }
+    ],
+    "uploads": [
+      {
+        "contentType": "text/html",
+        "size": 20
+      }
+    ],
+    "returnedUploadedMediaUrl": true
+  },
+  "limitations": [
+    "does not prove anonymous reachability",
+    "does not verify production egress or R2 configuration",
+    "does not access localhost or any other network target"
+  ],
+  "assertions": 5
+}

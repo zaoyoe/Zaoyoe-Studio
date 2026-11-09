@@ -131,6 +131,21 @@ body.home-page {
     position: relative;
 }
 
+/* Keep the current page position while the shared modal scroll lock is active. */
+html.no-scroll,
+body.home-page.no-scroll {
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+}
+
+body.home-page.ios-scroll-lock-fixed {
+    position: fixed;
+    left: 0;
+    right: 0;
+    width: 100%;
+    top: var(--ios-scroll-lock-offset, 0px);
+}
+
 body.home-page #main-content {
     width: 100%;
     max-width: 100%;
@@ -524,6 +539,7 @@ h3 {
     z-index: var(--z-nav);
     transition:
         transform 0.45s ease-out,
+        opacity 0.35s ease,
         width 0.45s ease-out,
         border-radius 0.45s cubic-bezier(0.65, 0, 1, 1),
         background-color 0.4s ease-out,
@@ -553,6 +569,61 @@ html[data-theme="light"] .framer-nav.nav-hidden {
     transform: translateY(calc(-100% - 40px));
     box-shadow: none;
     pointer-events: none;
+}
+
+/* Smoothly hide Capsule Navbar upward when any modal/sheet/dialog/overlay is active */
+body.has-active-modal .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+html.has-active-modal .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.modal-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.auth-sheet-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+html.auth-sheet-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.guestbook-composer-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.wallet-modal-lock .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.guest-shop-modal-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.shop-cart-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.ai-image-workbench-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+html.ai-image-workbench-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.prompt-spotlight-active .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.ticket-detail-modal-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body.ticket-modal-open .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body[data-shop-cart-open="true"] .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body[data-shop-purchase-modal-open="true"] .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#myTicketDetailModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#guestOrdersTicketModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.guest-orders-modal-overlay.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#myTicketDetailModal:not([hidden])) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#guestOrdersTicketModal:not([hidden])) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#shopPurchaseModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#shopCartDrawer.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#shopCartCheckoutModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#shopSuccessModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#guestCashPurchaseModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.guest-shop-modal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#profileModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#guestbookModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#commentModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#loginModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#authModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#adminLoginModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.auth-sheet-overlay.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#walletModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#wallet-modal-overlay.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.wallet-order-modal-overlay.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#promptModal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.poetry-modal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(#promptSpotlightOverlay.is-open) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.prompt-spotlight-overlay.is-open) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.modal-overlay.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.modal.active) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.modal.open) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.modal-layer.open) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(.codes-modal-overlay.is-visible) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)),
+body:has(dialog[open]) .framer-nav.scrolled:not(.mobile-menu-open):not(:has(.nav-hamburger.active)) {
+    transform: translateY(calc(-100% - 40px)) !important;
+    opacity: 0 !important;
+    box-shadow: none !important;
+    pointer-events: none !important;
+    transition: transform 0.44s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.32s ease, box-shadow 0.3s ease !important;
 }
 
 .framer-nav:has(.nav-hamburger.active).nav-hidden,
@@ -1303,7 +1374,10 @@ body.mobile-menu-open .chat-widget-fab {
     justify-content: center;
     align-items: center;
     text-align: center;
-    padding: var(--spacing-2xl) var(--spacing-lg);
+    --hero-content-lift: clamp(20px, 3vw, 40px);
+    /* Lift the centered text together while preserving its spacing and the full-height backdrop. */
+    padding: calc(var(--spacing-2xl) - var(--hero-content-lift)) var(--spacing-lg)
+        calc(var(--spacing-2xl) + var(--hero-content-lift));
     position: relative;
     overflow: hidden;
     isolation: isolate;
@@ -1528,6 +1602,12 @@ html[data-theme="dark"] body.home-page .hero-carousel .entry-card-ui {
     html[data-theme="dark"] body.home-page .hero-carousel {
         margin-top: 216px;
     }
+}
+
+/* 20261107_HOME_DESKTOP_HERO_CLEANUP_1: hide time scale module, hide hero carousel entries (including narrow windows) */
+.hero-progress,
+.hero-carousel {
+    display: none !important;
 }
 
 .hero-section[data-home-static-hero="1"]:not([data-render-signature]) .hero-progress-thumb {
@@ -2654,6 +2734,61 @@ body.home-page .footer-bottom {
     backdrop-filter: blur(14px);
 }
 
+.site-layout-support-detail-dialog__ring {
+    --glass-ring-width: 8px;
+    --glass-radius: 26px;
+    --glass-blur: 12px;
+    --glass-saturation: 145%;
+    --glass-panel: #0f172a;
+    --glass-outline: rgba(255, 255, 255, 0.30);
+    --glass-highlight: rgba(255, 255, 255, 0.36);
+    position: relative;
+    width: min(440px, calc(100vw - 32px));
+    box-sizing: border-box !important;
+    padding: var(--glass-ring-width, 8px) !important;
+    border-radius: var(--glass-radius, 26px) !important;
+    background:
+        linear-gradient(
+            145deg,
+            rgba(255, 255, 255, 0.24),
+            rgba(255, 255, 255, 0.10) 54%,
+            rgba(255, 255, 255, 0.18)
+        ) !important;
+    border: 1px solid var(--glass-outline) !important;
+    backdrop-filter: var(--dng-filter, blur(var(--glass-blur, 12px)) saturate(var(--glass-saturation, 145%))) !important;
+    -webkit-backdrop-filter: var(--dng-webkit-filter, blur(var(--glass-blur, 12px)) saturate(var(--glass-saturation, 145%))) !important;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36) !important;
+    transform: translateY(8px) scale(0.98);
+    transition: transform 0.18s ease;
+    display: flex;
+}
+
+.site-layout-support-detail-dialog.is-visible .site-layout-support-detail-dialog__ring {
+    transform: translateY(0) scale(1);
+}
+
+@media (max-width: 520px) {
+    .site-layout-support-detail-dialog__ring {
+        --glass-ring-width: 7px;
+        --glass-blur: 10px;
+        width: 100%;
+    }
+}
+
+html[data-theme="light"] .site-layout-support-detail-dialog__ring {
+    --glass-panel: #fffefd;
+    --glass-outline: rgba(255, 255, 255, 0.56);
+    --glass-highlight: rgba(255, 255, 255, 0.68);
+    background:
+        linear-gradient(
+            145deg,
+            rgba(255, 255, 255, 0.34),
+            rgba(255, 255, 255, 0.18) 54%,
+            rgba(255, 255, 255, 0.26)
+        ) !important;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18) !important;
+}
+
 .site-layout-support-detail-dialog__panel {
     position: relative;
     width: min(440px, calc(100vw - 32px));
@@ -2668,6 +2803,28 @@ body.home-page .footer-bottom {
     outline: none;
     transform: translateY(8px) scale(0.98);
     transition: transform 0.18s ease;
+}
+
+.site-layout-support-detail-dialog__ring > .site-layout-support-detail-dialog__panel.glass-ring__surface {
+    position: relative;
+    width: 100% !important;
+    max-height: min(720px, calc(100vh - 40px));
+    overflow: auto;
+    border-radius: max(0px, calc(var(--glass-radius, 26px) - var(--glass-ring-width, 8px))) !important;
+    background: #0f172a !important;
+    border: 1px solid rgba(255, 255, 255, 0.10) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18) !important;
+    padding: 22px;
+    outline: none;
+    transform: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="light"] .site-layout-support-detail-dialog__ring > .site-layout-support-detail-dialog__panel.glass-ring__surface {
+    background: #fffefd !important;
+    border: 1px solid rgba(255, 255, 255, 0.84) !important;
+    box-shadow: 0 2px 8px rgba(48, 42, 31, 0.045) !important;
 }
 
 .site-layout-support-detail-dialog.is-visible .site-layout-support-detail-dialog__panel {
@@ -5463,7 +5620,7 @@ html[lang^="en"] .shop-carousel-card:active {
     opacity: 0;
     visibility: hidden;
     transform: translateY(-10px) scale(0.95);
-    transition: opacity 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), visibility 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: opacity 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), visibility 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.3s ease-out;
     z-index: 9999;
 }
 
@@ -5478,7 +5635,7 @@ html[lang^="en"] .shop-carousel-card:active {
     opacity: 0;
     transform: translateY(10px);
     transition: opacity 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-        transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        transform 0.4s ease-out;
 }
 
 .avatar-dropdown.active>* {
@@ -5653,7 +5810,10 @@ html[lang^="en"] .shop-carousel-card:active {
     border-radius: 10px;
     cursor: pointer;
     color: rgba(255, 255, 255, 0.85);
-    font-size: 0.9rem;
+    font-family: var(--font-body);
+    font-size: 15px;
+    font-weight: 400;
+    letter-spacing: 0.015em;
     transition: all 0.2s ease;
     text-align: left;
 }
@@ -5663,15 +5823,34 @@ html[lang^="en"] .shop-carousel-card:active {
     color: rgba(255, 255, 255, 0.95);
 }
 
-.dropdown-action i {
+.dropdown-action i,
+.dropdown-action .dropdown-action-icon,
+.dropdown-action .dropdown-svg-icon,
+.dropdown-action svg {
     width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     text-align: center;
+    flex-shrink: 0;
     color: rgba(255, 255, 255, 0.6);
-    transition: color 0.2s ease;
+    transition: color 0.2s ease, stroke 0.2s ease;
 }
 
-.dropdown-action:hover i {
-    color: var(--admin-studio-blue, #6b9ece);
+.dropdown-action:hover i,
+.dropdown-action:hover .dropdown-action-icon,
+.dropdown-action:hover .dropdown-svg-icon,
+.dropdown-action:hover svg,
+.dropdown-action:focus i,
+.dropdown-action:focus .dropdown-action-icon,
+.dropdown-action:focus .dropdown-svg-icon,
+.dropdown-action:focus svg,
+.dropdown-action:focus-visible i,
+.dropdown-action:focus-visible .dropdown-action-icon,
+.dropdown-action:focus-visible .dropdown-svg-icon,
+.dropdown-action:focus-visible svg {
+    color: var(--admin-studio-blue, #6b9ece) !important;
 }
 
 /* Theme Toggle Button */
@@ -6663,13 +6842,16 @@ html[data-theme="light"] .framer-nav:has(.nav-hamburger.active) .nav-logo svg pa
 
 html[data-theme="light"] body:not(.home-page) .nav-menu a,
 html[data-theme="light"] .framer-nav.scrolled .nav-menu a {
-    color: rgba(15, 23, 42, 0.62);
+    color: #0f172a;
 }
 
 html[data-theme="light"] body:not(.home-page) .nav-menu a:hover,
+html[data-theme="light"] .framer-nav.scrolled .nav-menu a:hover {
+    color: rgba(15, 23, 42, 0.48) !important;
+}
+
 html[data-theme="light"] body:not(.home-page) .framer-nav .nav-menu a.active,
 html[data-theme="light"] body:not(.home-page) a.nav-trigger.active,
-html[data-theme="light"] .framer-nav.scrolled .nav-menu a:hover,
 html[data-theme="light"] .framer-nav.scrolled .nav-menu a.active,
 html[data-theme="light"] .framer-nav.scrolled a.nav-trigger.active {
     color: #0f172a !important;
@@ -6697,15 +6879,15 @@ html[data-theme="light"] .nav-dropdown-portal {
 html[data-theme="light"] .nav-support-dropdown a,
 html[data-theme="light"] .nav-dropdown a,
 html[data-theme="light"] .nav-dropdown-portal a {
-    color: rgba(15, 23, 42, 0.68) !important;
+    color: #0f172a !important;
 }
 
 html[data-theme="light"] .nav-support-dropdown a:hover,
 html[data-theme="light"] .nav-dropdown a:hover,
 html[data-theme="light"] .nav-dropdown-portal a:hover,
 html[data-theme="light"] .nav-dropdown-portal a:focus-visible {
-    color: #0f172a !important;
-    background-color: rgba(15, 23, 42, 0.08);
+    color: rgba(15, 23, 42, 0.48) !important;
+    background-color: rgba(15, 23, 42, 0.05);
     transform: translateY(1px);
 }
 
@@ -6776,7 +6958,7 @@ html[data-theme="light"] .theme-toggle-btn:hover {
 }
 
 html[data-theme="light"] .dropdown-action {
-    color: rgba(15, 23, 42, 0.78);
+    color: #0f172a;
 }
 
 html[data-theme="light"] .identity-name {
@@ -6784,16 +6966,30 @@ html[data-theme="light"] .identity-name {
 }
 
 html[data-theme="light"] .dropdown-action:hover {
-    background: rgba(15, 23, 42, 0.07);
+    background: rgba(15, 23, 42, 0.05);
     color: #0f172a;
 }
 
-html[data-theme="light"] .dropdown-action i {
-    color: rgba(15, 23, 42, 0.48);
+html[data-theme="light"] .dropdown-action i,
+html[data-theme="light"] .dropdown-action .dropdown-action-icon,
+html[data-theme="light"] .dropdown-action .dropdown-svg-icon,
+html[data-theme="light"] .dropdown-action svg {
+    color: #0f172a;
 }
 
-html[data-theme="light"] .dropdown-action:hover i {
-    color: var(--admin-studio-blue, #6b9ece);
+html[data-theme="light"] .dropdown-action:hover i,
+html[data-theme="light"] .dropdown-action:hover .dropdown-action-icon,
+html[data-theme="light"] .dropdown-action:hover .dropdown-svg-icon,
+html[data-theme="light"] .dropdown-action:hover svg,
+html[data-theme="light"] .dropdown-action:focus i,
+html[data-theme="light"] .dropdown-action:focus .dropdown-action-icon,
+html[data-theme="light"] .dropdown-action:focus .dropdown-svg-icon,
+html[data-theme="light"] .dropdown-action:focus svg,
+html[data-theme="light"] .dropdown-action:focus-visible i,
+html[data-theme="light"] .dropdown-action:focus-visible .dropdown-action-icon,
+html[data-theme="light"] .dropdown-action:focus-visible .dropdown-svg-icon,
+html[data-theme="light"] .dropdown-action:focus-visible svg {
+    color: var(--admin-studio-blue, #6b9ece) !important;
 }
 
 html[data-theme="light"] .lang-toggle-simple:hover {
@@ -6849,4 +7045,222 @@ html[data-theme="light"] .lang-toggle-simple .lang-text:hover:not(.active) {
     html:not([data-theme="dark"]) body.home-page .home-verify-live-card .verify-result-item.success {
         border-left-color: #22c55e !important;
     }
+}
+
+/* =============================================
+   Verify Duration Selector (Google One Sub6/12/24)
+   ============================================= */
+.verify-duration-shell {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.verify-duration-shell[hidden] {
+    display: none !important;
+}
+
+.verify-duration-group {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+@media (max-width: 640px) {
+    .verify-duration-group {
+        grid-template-columns: 1fr;
+    }
+}
+
+.verify-duration-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: rgba(246, 249, 252, 0.92);
+    border: 1px solid rgba(31, 54, 83, 0.1);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    user-select: none;
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.verify-duration-card *,
+.verify-duration-card *::before,
+.verify-duration-card *::after {
+    outline: none !important;
+}
+
+.verify-duration-card input[type="radio"] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    margin: 0;
+    padding: 0;
+    cursor: pointer;
+    z-index: 10;
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none !important;
+    border: none !important;
+    background: transparent !important;
+}
+
+.verify-duration-card__body {
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    width: 100%;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+.verify-duration-card__title {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: #172033;
+    transition: color 0.2s ease;
+}
+
+.verify-duration-card__price {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #d97706;
+    letter-spacing: -0.01em;
+    transition: color 0.2s ease;
+}
+
+.verify-duration-badge {
+    position: absolute;
+    top: -7px;
+    right: 8px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1.2;
+    background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(245, 158, 11, 0.25);
+    letter-spacing: 0.02em;
+    pointer-events: none;
+    z-index: 11;
+}
+
+.verify-duration-card:hover {
+    background: #f0f7ff;
+    border-color: rgba(76, 131, 183, 0.24);
+    transform: translateY(-1px);
+}
+
+.verify-duration-card.active,
+.verify-duration-card:has(input:checked) {
+    background: rgba(255, 246, 232, 0.88);
+    border-color: rgba(237, 143, 41, 0.45);
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.12), inset 0 0 0 1px rgba(237, 143, 41, 0.25);
+}
+
+.verify-duration-card.active .verify-duration-card__title,
+.verify-duration-card:has(input:checked) .verify-duration-card__title {
+    color: #b45309;
+}
+
+.verify-duration-card:focus-visible,
+.verify-duration-card:focus-within,
+.verify-duration-card:has(input:focus-visible) {
+    outline: none !important;
+    border-color: rgba(237, 143, 41, 0.7) !important;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25) !important;
+}
+
+/* =============================================
+   Dark Theme Support for Duration Selector
+   ============================================= */
+html[data-theme="dark"] .verify-duration-card,
+body.dark-mode .verify-duration-card,
+.dark .verify-duration-card {
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+html[data-theme="dark"] .verify-duration-card:hover,
+body.dark-mode .verify-duration-card:hover,
+.dark .verify-duration-card:hover {
+    background: rgba(245, 158, 11, 0.08) !important;
+    border-color: rgba(245, 158, 11, 0.35) !important;
+}
+
+html[data-theme="dark"] .verify-duration-card__body,
+body.dark-mode .verify-duration-card__body,
+.dark .verify-duration-card__body {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+html[data-theme="dark"] .verify-duration-card__title,
+body.dark-mode .verify-duration-card__title,
+.dark .verify-duration-card__title {
+    color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] .verify-duration-card__price,
+body.dark-mode .verify-duration-card__price,
+.dark .verify-duration-card__price {
+    color: #f59e0b !important;
+}
+
+html[data-theme="dark"] .verify-duration-card.active,
+html[data-theme="dark"] .verify-duration-card:has(input:checked),
+body.dark-mode .verify-duration-card.active,
+body.dark-mode .verify-duration-card:has(input:checked),
+.dark .verify-duration-card.active,
+.dark .verify-duration-card:has(input:checked) {
+    background: rgba(245, 158, 11, 0.12) !important;
+    border-color: rgba(245, 158, 11, 0.55) !important;
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25), 0 4px 14px rgba(0, 0, 0, 0.4) !important;
+}
+
+html[data-theme="dark"] .verify-duration-card.active .verify-duration-card__title,
+html[data-theme="dark"] .verify-duration-card:has(input:checked) .verify-duration-card__title,
+body.dark-mode .verify-duration-card.active .verify-duration-card__title,
+body.dark-mode .verify-duration-card:has(input:checked) .verify-duration-card__title,
+.dark .verify-duration-card.active .verify-duration-card__title,
+.dark .verify-duration-card:has(input:checked) .verify-duration-card__title {
+    color: #fef3c7 !important;
+}
+
+html[data-theme="dark"] .verify-duration-card.active .verify-duration-card__price,
+html[data-theme="dark"] .verify-duration-card:has(input:checked) .verify-duration-card__price,
+body.dark-mode .verify-duration-card.active .verify-duration-card__price,
+body.dark-mode .verify-duration-card:has(input:checked) .verify-duration-card__price,
+.dark .verify-duration-card.active .verify-duration-card__price,
+.dark .verify-duration-card:has(input:checked) .verify-duration-card__price {
+    color: #fbbf24 !important;
+}
+
+html[data-theme="dark"] .verify-duration-card:focus-visible,
+html[data-theme="dark"] .verify-duration-card:focus-within,
+html[data-theme="dark"] .verify-duration-card:has(input:focus-visible),
+body.dark-mode .verify-duration-card:focus-visible,
+body.dark-mode .verify-duration-card:focus-within,
+body.dark-mode .verify-duration-card:has(input:focus-visible),
+.dark .verify-duration-card:focus-visible,
+.dark .verify-duration-card:focus-within,
+.dark .verify-duration-card:has(input:focus-visible) {
+    outline: none !important;
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35), 0 4px 14px rgba(0, 0, 0, 0.4) !important;
 }

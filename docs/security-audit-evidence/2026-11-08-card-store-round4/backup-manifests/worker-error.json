@@ -1,0 +1,12 @@
+[
+  {
+    "path": "services/kc-pay-gpt/server.js",
+    "backup": "/tmp/kc-round4-worker-error-before/services/kc-pay-gpt/server.js",
+    "sha256": "23848ea5d7d0537a9ee63868670c43e20510792e341958b9574d02a19ae97edd"
+  },
+  {
+    "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+    "backup": "/tmp/kc-round4-worker-error-before/services/kc-pay-gpt/test/recharge-routing.test.js",
+    "sha256": "d1ac62a7e08e2faf0b041f6ccb518d48b1aa7869482295727834427c81202014"
+  }
+]

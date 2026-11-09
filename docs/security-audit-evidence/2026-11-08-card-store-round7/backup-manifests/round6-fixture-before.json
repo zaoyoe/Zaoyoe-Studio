@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-11-08T23:47:55.759755+08:00",
+  "scope": "one existing dirty test fixture only; not full workspace/database backup",
+  "snapshots": [
+    {
+      "path": "tests/security-round6-kc-card-ownership.test.js",
+      "sha256": "c43d1786e4cecbb445470eb24369fa32d9702ac4e48cb2f4e85ebf20d50229f2",
+      "bytes": 14224
+    }
+  ]
+}

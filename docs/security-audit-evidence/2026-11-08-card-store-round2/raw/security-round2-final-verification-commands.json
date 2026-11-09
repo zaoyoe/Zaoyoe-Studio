@@ -1,0 +1,43 @@
+[
+  {
+    "name": "round2-final-verified",
+    "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+    "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+    "args": [
+      "--test",
+      "--test-reporter=tap",
+      "tests/security-round2-kc-activation.test.js",
+      "tests/security-round2-kc-credentials.test.js",
+      "tests/security-round2-kc-public-guard.test.js",
+      "tests/security-round2-media-download.test.js",
+      "tests/security-round2-supplier-rich-text.test.js",
+      "tests/shop-product-image-assets.test.js",
+      "tests/shop-product-image-upload.test.js",
+      "tests/shop-supplier-media-r2-and-markup.test.js",
+      "tests/admin-shop-supplier-catalog-handler.test.js",
+      "tests/provider-adapters-zpay-refund.test.js",
+      "tests/payment-zpay-webhook-handler.test.js",
+      "tests/security-round2-zpay-amount.test.js"
+    ]
+  },
+  {
+    "name": "payment-tg-guest-verified",
+    "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+    "command": "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+    "args": [
+      "--test",
+      "--test-reporter=tap",
+      "tests/payment-public-zpay-webhook-endpoint.test.js",
+      "tests/zpay-provider.test.js",
+      "tests/zpay-checkout-flow.test.js",
+      "tests/guest-shop-payment-adapter.test.js",
+      "tests/guest-shop-webhook.test.js",
+      "tests/guest-shop-security.test.js",
+      "tests/guest-shop-order-access-endpoints.test.js",
+      "tests/tg-payment-gateway.test.js",
+      "tests/tg-zpay-reconciliation-contract.test.js",
+      "tests/tg-authenticated-payment-query-contract.test.js",
+      "tests/tg-purchase-payment-completion-contract.test.js"
+    ]
+  }
+]

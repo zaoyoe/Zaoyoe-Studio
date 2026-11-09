@@ -1,0 +1,29 @@
+{
+  "scope": "Three per-file dirty snapshots, not a full-workspace or database backup.",
+  "verified_entries": [
+    {
+      "path": "/tmp/kc-round5-owner-locks-20261108-before/services/kc-pay-gpt/mysql-store.js",
+      "expected_sha256": "8b0c12e59e929c674d9f88660fad9049e68475ba721aebe43ae2fcd6415beb83",
+      "observed_sha256": "8b0c12e59e929c674d9f88660fad9049e68475ba721aebe43ae2fcd6415beb83",
+      "expected_bytes": 194511,
+      "observed_bytes": 194511,
+      "readback_matches_preexisting_manifest": true
+    },
+    {
+      "path": "/tmp/kc-round5-owner-locks-20261108-before/services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+      "expected_sha256": "1a8b2908ffad6ef42e288b4c0475c28a503073408853eb42e713a8fe41e174b9",
+      "observed_sha256": "1a8b2908ffad6ef42e288b4c0475c28a503073408853eb42e713a8fe41e174b9",
+      "expected_bytes": 19582,
+      "observed_bytes": 19582,
+      "readback_matches_preexisting_manifest": true
+    },
+    {
+      "path": "/tmp/kc-round5-final-review-before/tests/security-round5-kc-owner-locks.test.js",
+      "expected_sha256": "8b57cfb1db216b01834a2b34ee88bdc975b3701752a6b7a3fd5a62946acf929f",
+      "observed_sha256": "8b57cfb1db216b01834a2b34ee88bdc975b3701752a6b7a3fd5a62946acf929f",
+      "expected_bytes": 13815,
+      "observed_bytes": 13815,
+      "readback_matches_preexisting_manifest": true
+    }
+  ]
+}

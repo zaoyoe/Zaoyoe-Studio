@@ -1,0 +1,357 @@
+{
+  "method": "Parse FAIL lines in preserved current Vitest human output; compare file + whitespace-normalized fullName with the archived round-2 JSON. Current output is not a JSON reporter result.",
+  "historical_source": "docs/security-audit-evidence/2026-11-08-card-store-round2/raw/security-round2-kc-full-results.json",
+  "historical_source_sha256": "9c76581a9fdd87190017a31c215d2fecdd61f8d42edd5e448e2609553f156f18",
+  "historical": {
+    "files": 71,
+    "tests": 1693,
+    "passed": 1620,
+    "failed": 72,
+    "skipped": 1,
+    "exit_code_observed": 1
+  },
+  "current": {
+    "files": 71,
+    "passed_files": 63,
+    "failed_files": 8,
+    "tests": 1712,
+    "passed": 1672,
+    "failed": 40,
+    "skipped": 0,
+    "duration_seconds": 562.76,
+    "exit_code_observed": 1
+  },
+  "failed_by_file": {
+    "test/checkout-debug-server.test.js": 26,
+    "test/gpt-outsourcing-admin.test.js": 2,
+    "test/grok-commerce.test.js": 2,
+    "test/pricing-flow.test.js": 1,
+    "test/proxy-region-matcher.test.js": 1,
+    "test/proxy-session-and-region.test.js": 1,
+    "test/recharge-card-fixed-scroll.test.js": 1,
+    "test/recharge-ui.test.js": 6
+  },
+  "repeated_failures": [
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children blocks public WebSocket diagnostic subscription before snapshots or challenge delivery"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children cancels a queued browser job and prevents child creation even if a stale callback receives a slot"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children cancels an active child and persists a terminal cancelled report"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children coalesces verbose running logs while persisting changed reports immediately and always flushing the terminal output"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children deduplicates simultaneous request_id submissions and rejects conflicting inputs"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children fails safely for 'explicit failed report'"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children fails safely for 'legacy-only success markers'"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children fails safely for 'nonzero child exit'"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children fails safely for 'report from a different plan'"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children filters paginated history and status by execution_mode without returning session payloads"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children persists successful reports without the undefined finalPaymentState regression and exposes sanitized status"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children provides diagnostic CAPTCHA only through authenticated status and admin interaction endpoints"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children recovers interrupted diagnostics without releasing CDKs or invoking asset recovery"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children rejects diagnostic CAPTCHA from public HTTP endpoints while preserving formal task interaction"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children rejects invalid cross-platform, retired, mismatched-region and credential input before dispatch"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children rejects maintenance and shared capacity limits before task creation"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children releases the reservation when task creation fails"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children requires normal admin auth and secondary auth for credentials and diagnostic records"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children reserves a shared slot before asynchronous task creation to prevent concurrent diagnostic oversubscription"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children retires a pooled browser slot when the worker reports incomplete cleanup"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children returns the canonical platform catalog and the actual configured recharge mode without secrets"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children routes 'chatgpt' credentials without a payment/card/CDK operation"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children routes 'claude' credentials without a payment/card/CDK operation"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children routes 'grok' credentials without a payment/card/CDK operation"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children saves useful running output and redacts full lines without leaking credentials split across chunks"
+    },
+    {
+      "file": "test/checkout-debug-server.test.js",
+      "full_name": "authenticated checkout diagnostics routes with isolated storage and children terminates and records timeout independently of worker success text"
+    },
+    {
+      "file": "test/gpt-outsourcing-admin.test.js",
+      "full_name": "GPT outsourcing server route contract keeps the existing secondary-auth compatibility wrapper as a pass-through"
+    },
+    {
+      "file": "test/gpt-outsourcing-admin.test.js",
+      "full_name": "GPT outsourcing server route contract mounts every handler behind normal administrator authentication and preserves existing wrappers"
+    },
+    {
+      "file": "test/grok-commerce.test.js",
+      "full_name": "Commerce request correlation and single submission rejects a mismatched token returned by AdoptCheckoutSession"
+    },
+    {
+      "file": "test/grok-commerce.test.js",
+      "full_name": "Commerce request correlation and single submission rejects a mismatched token returned by GetCheckoutSession"
+    },
+    {
+      "file": "test/pricing-flow.test.js",
+      "full_name": "pricing readiness and precise selection selects only the Plus card even with other generic actions and dialogs"
+    },
+    {
+      "file": "test/recharge-card-fixed-scroll.test.js",
+      "full_name": "Recharge Card Fixed Viewport & Scroll Containment keeps recharge card fixed in viewport without outer page scroll during Session Token entry"
+    },
+    {
+      "file": "test/recharge-ui.test.js",
+      "full_name": "restored recharge user interactions with all external effects mocked cancels the status entrance morph when recharge starts immediately"
+    },
+    {
+      "file": "test/recharge-ui.test.js",
+      "full_name": "restored recharge user interactions with all external effects mocked honors reduced motion when dismissing the Session status"
+    },
+    {
+      "file": "test/recharge-ui.test.js",
+      "full_name": "restored recharge user interactions with all external effects mocked plays the circular check, morphs the card, animates both tabs and resets cleanly"
+    },
+    {
+      "file": "test/recharge-ui.test.js",
+      "full_name": "restored recharge user interactions with all external effects mocked receives real message shapes, protects uncertain payments, and routes CAPTCHA independently"
+    }
+  ],
+  "newly_observed_failures": [
+    {
+      "file": "test/proxy-region-matcher.test.js",
+      "full_name": "proxy region matching unit tests selects region-specific proxy from database pool when region is specified",
+      "classification": "ISOLATION_BLOCKED",
+      "observed_error": "TEST_NETWORK_CONNECT_BLOCKED",
+      "scope": "MySQL connection"
+    },
+    {
+      "file": "test/proxy-session-and-region.test.js",
+      "full_name": "proxy session routing, region matching, and resilient CONNECT relay retries upstream 502 CONNECT failures transparently in the local HTTP relay",
+      "classification": "ISOLATION_BLOCKED",
+      "observed_error": "TEST_NETWORK_CONNECT_BLOCKED",
+      "scope": "loopback HTTP request"
+    },
+    {
+      "file": "test/recharge-ui.test.js",
+      "full_name": "restored recharge user interactions with all external effects mocked freezes the card while the mobile keyboard retracts through intermediate viewport heights",
+      "classification": "UI_ASSERTION_FAILED",
+      "focused_rerun": "FAIL",
+      "causality": "Newly observed against round-2 results; not attributed to the round-5 store patch."
+    },
+    {
+      "file": "test/recharge-ui.test.js",
+      "full_name": "restored recharge user interactions with all external effects mocked keeps the native-height mobile card bottom-aligned and smoothly recenters after the keyboard closes",
+      "classification": "UI_ASSERTION_FAILED",
+      "focused_rerun": "FAIL",
+      "causality": "Newly observed against round-2 results; not attributed to the round-5 store patch."
+    }
+  ],
+  "historical_failures_not_in_current_failure_set": [
+    {
+      "file": "test/billing-form.test.js",
+      "full_name": "billing state selection accepts codes, labels, and custom controls selects a custom state option from / controls"
+    },
+    {
+      "file": "test/claude-navigation.test.js",
+      "full_name": "Claude navigation state and recovery checks a connection banner appearing while account metadata is still pending"
+    },
+    {
+      "file": "test/claude-payment-flow.test.js",
+      "full_name": "offline Claude native checkout integration returns a real decline without clicking another submit button"
+    },
+    {
+      "file": "test/grok-native-flow.test.js",
+      "full_name": "isolated native Grok Commerce checkout recovers 1 explicit temporary tax failure(s), commits the same full address and pays once"
+    },
+    {
+      "file": "test/grok-native-flow.test.js",
+      "full_name": "isolated native Grok Commerce checkout stops after two tax retries without accepting terms or starting payment"
+    },
+    {
+      "file": "test/grok-native-flow.test.js",
+      "full_name": "isolated native Grok Commerce checkout stops when the address changes during tax recovery backoff"
+    },
+    {
+      "file": "test/grok-native-flow.test.js",
+      "full_name": "isolated native Grok Commerce checkout stops when the cart changes during tax recovery backoff"
+    },
+    {
+      "file": "test/grok-native-flow.test.js",
+      "full_name": "isolated native Grok Commerce checkout stops when the session changes during tax recovery backoff"
+    },
+    {
+      "file": "test/local-preview-recovery.test.js",
+      "full_name": "recharge task connection recovery detects a silent server despite continuing to send client heartbeats"
+    },
+    {
+      "file": "test/local-preview-recovery.test.js",
+      "full_name": "recharge task connection recovery does not warn or reconnect when a completed task closes its socket"
+    },
+    {
+      "file": "test/local-preview-recovery.test.js",
+      "full_name": "recharge task connection recovery ignores late close events from the previous connection"
+    },
+    {
+      "file": "test/local-preview-recovery.test.js",
+      "full_name": "recharge task connection recovery keeps the connection when server heartbeat replies arrive"
+    },
+    {
+      "file": "test/local-preview-recovery.test.js",
+      "full_name": "recharge task connection recovery warns about a disconnect and subscribes to the same task after reconnecting"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store 'chatgpt' uses only its own credential checks and execution mode"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store 'claude' does not depend on GPT supplier configuration"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store 'claude' uses only its own credential checks and execution mode"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store 'grok' does not depend on GPT supplier configuration"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store 'grok' uses only its own credential checks and execution mode"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store does not apply the local Session cooldown to third-party ChatGPT checkout"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store does not expose raw diagnostics when restoring an existing task"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store fails closed before locking the CDK when the outsourced channel is enabled without an API key"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store preserves full ChatGPT Session JSON in local mode"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store records Claude credential rejection without logging the submitted credential"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store records card-pool rejection for 'chatgpt' without leaking internal instructions or starting a task"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store records card-pool rejection for 'claude' without leaking internal instructions or starting a task"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store records card-pool rejection for 'grok' without leaking internal instructions or starting a task"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store rejects a conflicting database platform and retired Grok plan before reserving assets"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store rejects a cooled-down local ChatGPT Session before locking its CDK"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store rejects irrelevant cookie before locking any CDK"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store rejects mismatched currency before creating an outsourced task or routing to local payment"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store rejects missing API key before creating an outsourced task or routing to local payment"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store rejects missing endpoint before creating an outsourced task or routing to local payment"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store rejects profile JSON instead of login cookie before locking any CDK"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store rejects unmapped current plan before creating an outsourced task or routing to local payment"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store rejects wrong browser platform before locking any CDK"
+    },
+    {
+      "file": "test/recharge-routing.test.js",
+      "full_name": "actual activation request platform routing with a mock store releases only the lock acquired by this request when task creation fails"
+    }
+  ],
+  "historical_record_policy": "Original 72 FAIL/1 SKIP preserved. A later result neither rewrites the historical run nor establishes why each result changed."
+}

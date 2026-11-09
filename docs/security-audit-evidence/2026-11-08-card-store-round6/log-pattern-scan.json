@@ -1,0 +1,115 @@
+{
+  "scope": "Finite text-shape scan only; not a proof that all secrets are absent. No matched values emitted.",
+  "results": [
+    {
+      "path": "/tmp/kc-round6-baseline-native.log",
+      "match_counts": {
+        "private_key": 0,
+        "jwt_shape": 0,
+        "provider_token_shape": 0,
+        "credential_url": 0,
+        "cvc_label_value": 0,
+        "card_number_shape": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round6-caller-compatibility-final.log",
+      "match_counts": {
+        "private_key": 0,
+        "jwt_shape": 0,
+        "provider_token_shape": 0,
+        "credential_url": 0,
+        "cvc_label_value": 0,
+        "card_number_shape": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round6-chatgpt-regression-final.log",
+      "match_counts": {
+        "private_key": 0,
+        "jwt_shape": 0,
+        "provider_token_shape": 0,
+        "credential_url": 0,
+        "cvc_label_value": 0,
+        "card_number_shape": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round6-native-after.log",
+      "match_counts": {
+        "private_key": 0,
+        "jwt_shape": 0,
+        "provider_token_shape": 0,
+        "credential_url": 0,
+        "cvc_label_value": 0,
+        "card_number_shape": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round6-native-final.log",
+      "match_counts": {
+        "private_key": 0,
+        "jwt_shape": 0,
+        "provider_token_shape": 0,
+        "credential_url": 0,
+        "cvc_label_value": 0,
+        "card_number_shape": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round6-native-first.log",
+      "match_counts": {
+        "private_key": 0,
+        "jwt_shape": 0,
+        "provider_token_shape": 0,
+        "credential_url": 0,
+        "cvc_label_value": 0,
+        "card_number_shape": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round6-retry-before-callback-fix.log",
+      "match_counts": {
+        "private_key": 0,
+        "jwt_shape": 0,
+        "provider_token_shape": 0,
+        "credential_url": 0,
+        "cvc_label_value": 0,
+        "card_number_shape": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round6-vitest-adapted.log",
+      "match_counts": {
+        "private_key": 0,
+        "jwt_shape": 0,
+        "provider_token_shape": 0,
+        "credential_url": 0,
+        "cvc_label_value": 0,
+        "card_number_shape": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round6-vitest-after-callback-fix.log",
+      "match_counts": {
+        "private_key": 0,
+        "jwt_shape": 0,
+        "provider_token_shape": 0,
+        "credential_url": 0,
+        "cvc_label_value": 0,
+        "card_number_shape": 0
+      }
+    },
+    {
+      "path": "/tmp/kc-round6-vitest-final.log",
+      "match_counts": {
+        "private_key": 0,
+        "jwt_shape": 0,
+        "provider_token_shape": 0,
+        "credential_url": 0,
+        "cvc_label_value": 0,
+        "card_number_shape": 0
+      }
+    }
+  ]
+}

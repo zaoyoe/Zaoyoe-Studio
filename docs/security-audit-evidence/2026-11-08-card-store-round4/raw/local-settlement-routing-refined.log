@@ -1,0 +1,10 @@
+
+ RUN  v4.1.9 /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt
+
+ ✓ test/recharge-routing.test.js (67 tests) 250ms
+
+ Test Files  1 passed (1)
+      Tests  67 passed (67)
+   Start at  20:19:30
+   Duration  778ms (transform 138ms, setup 0ms, import 277ms, tests 250ms, environment 0ms)
+

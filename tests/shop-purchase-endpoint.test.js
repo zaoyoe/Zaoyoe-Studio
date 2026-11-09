@@ -150,7 +150,7 @@ test('shop purchase rejects IP-rate-limited requests before checking auth', asyn
     });
 });
 
-test('shop purchase uses the request-scoped client and normalized payload', async () => {
+test('shop purchase uses the trusted admin client and normalized payload', async () => {
     const rpcCalls = [];
     const rateLimitKeys = [];
 
@@ -161,7 +161,7 @@ test('shop purchase uses the request-scoped client and normalized payload', asyn
                     id: 'user-1',
                     email: 'member@example.com'
                 },
-                requestSupabase: {
+                adminSupabase: {
                     rpc(name, params) {
                         rpcCalls.push({ name, params });
                         return Promise.resolve({
@@ -302,7 +302,7 @@ test('shop purchase rejects manual-delivery products before purchase RPC', async
                     id: 'user-manual',
                     email: 'manual@example.com'
                 },
-                requestSupabase: {
+                adminSupabase: {
                     rpc() {
                         rpcCalled = true;
                         throw new Error('manual products should not reach RPC');
@@ -367,12 +367,6 @@ test('shop purchase responds before slow post-purchase follow-ups finish', async
     const slowFollowup = new Promise((resolve) => {
         releaseFollowups = resolve;
     });
-    const systemSupabase = {
-        from() {
-            return {};
-        }
-    };
-
     await withShopPurchaseHandler({
         async requireAuthenticatedUser() {
             return {
@@ -380,7 +374,8 @@ test('shop purchase responds before slow post-purchase follow-ups finish', async
                     id: 'user-fast-followup',
                     email: 'member@example.com'
                 },
-                requestSupabase: {
+                adminSupabase: {
+                    from() { return {}; },
                     rpc(name, params) {
                         rpcCalls.push({ name, params });
                         return Promise.resolve({
@@ -396,7 +391,6 @@ test('shop purchase responds before slow post-purchase follow-ups finish', async
                         });
                     }
                 },
-                adminSupabase: systemSupabase,
                 supabase: null
             };
         },
@@ -487,7 +481,7 @@ test('shop purchase forwards discount asset id to the purchase rpc', async () =>
                     id: 'user-asset',
                     email: 'member@example.com'
                 },
-                requestSupabase: {
+                adminSupabase: {
                     rpc(name, params) {
                         rpcCalls.push({ name, params });
                         return Promise.resolve({
@@ -582,7 +576,7 @@ test('shop purchase forwards selected product sku id to the purchase rpc', async
                     id: 'user-sku',
                     email: 'member@example.com'
                 },
-                requestSupabase: {
+                adminSupabase: {
                     rpc(name, params) {
                         rpcCalls.push({ name, params });
                         return Promise.resolve({
@@ -669,7 +663,7 @@ test('shop purchase routes multiple selected coupons through the multi-discount 
                     id: 'user-stack',
                     email: 'member@example.com'
                 },
-                requestSupabase: {
+                adminSupabase: {
                     rpc(name, params) {
                         rpcCalls.push({ name, params });
                         if (name !== 'fn_purchase_shop_item_with_discounts') {
@@ -805,7 +799,7 @@ test('shop purchase skips the discount-asset rpc signature when no asset is sele
                     id: 'user-legacy',
                     email: 'member@example.com'
                 },
-                requestSupabase: {
+                adminSupabase: {
                     rpc(name, params) {
                         rpcCalls.push({ name, params });
                         if (Object.prototype.hasOwnProperty.call(params, 'p_discount_asset_id')) {
@@ -900,7 +894,7 @@ test('shop purchase avoids the ambiguous 7-arg overload when no discount asset i
                     id: 'user-ambiguous',
                     email: 'member@example.com'
                 },
-                requestSupabase: {
+                adminSupabase: {
                     rpc(name, params) {
                         rpcCalls.push({ name, params });
                         if (Object.prototype.hasOwnProperty.call(params, 'p_discount_asset_id')) {
@@ -972,7 +966,7 @@ test('shop purchase avoids the ambiguous 7-arg overload when no discount asset i
     });
 });
 
-test('shop purchase can fall back to the admin client when authenticated legacy rpc access is revoked', async () => {
+test('shop purchase invokes the admin client once without trying the authenticated client', async () => {
     const requestRpcCalls = [];
     const adminRpcCalls = [];
     const adminClient = {
@@ -1051,7 +1045,7 @@ test('shop purchase can fall back to the admin client when authenticated legacy 
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
-        assert.equal(requestRpcCalls.length, 1);
+        assert.equal(requestRpcCalls.length, 0);
         assert.equal(adminRpcCalls.length, 1);
         assert.deepEqual(adminRpcCalls[0], {
             name: 'fn_purchase_shop_item',
@@ -1102,7 +1096,7 @@ test('shop purchase returns a diagnostic error when the purchase rpc yields no p
                     id: 'user-empty',
                     email: 'member@example.com'
                 },
-                requestSupabase: {
+                adminSupabase: {
                     rpc(name, params) {
                         rpcCalls.push({ name, params });
                         return Promise.resolve({ data: null, error: null });
@@ -1135,7 +1129,7 @@ test('shop purchase returns a diagnostic error when the purchase rpc yields no p
 
         assert.equal(res.statusCode, 502);
         assert.equal(payload.success, false);
-        assert.equal(payload.message, '商城购买服务未返回结果，请检查 fn_purchase_shop_item RPC 配置');
+        assert.equal(payload.message, '商城购买服务未返回有效结果，请核对原订单');
         assert.equal(rpcCalls.length, 1);
         assert.equal(Object.prototype.hasOwnProperty.call(rpcCalls[0].params, 'p_discount_asset_id'), false);
     }, {
@@ -1165,7 +1159,7 @@ test('shop purchase rejects duplicate submissions before executing the purchase 
                     id: 'user-dup',
                     email: 'member@example.com'
                 },
-                requestSupabase: {
+                adminSupabase: {
                     rpc() {
                         rpcCalled = true;
                         return Promise.resolve({ data: null, error: null });

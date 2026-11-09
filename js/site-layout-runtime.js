@@ -1230,25 +1230,27 @@
         dialog.setAttribute('aria-labelledby', 'siteLayoutSupportDetailTitle');
         dialog.innerHTML = `
             <div class="site-layout-support-detail-dialog__backdrop" data-site-layout-support-detail-close></div>
-            <section class="site-layout-support-detail-dialog__panel" tabindex="-1">
-                <button type="button" class="site-layout-support-detail-dialog__close" data-site-layout-support-detail-close aria-label="关闭">×</button>
-                <div class="site-layout-support-detail-dialog__head">
-                    <span class="site-layout-support-detail-dialog__eyebrow" data-site-layout-support-detail-eyebrow></span>
-                    <h2 id="siteLayoutSupportDetailTitle" data-site-layout-support-detail-title></h2>
-                    <p data-site-layout-support-detail-description></p>
-                </div>
-                <div class="site-layout-support-detail-dialog__image" data-site-layout-support-detail-image-wrap hidden>
-                    <img alt="" data-site-layout-support-detail-image>
-                </div>
-                <p class="site-layout-support-detail-dialog__body" data-site-layout-support-detail-body></p>
-                <div class="site-layout-support-detail-dialog__copy" data-site-layout-support-detail-copy-wrap hidden>
-                    <code data-site-layout-support-detail-copy-value></code>
-                    <button type="button" data-site-layout-support-detail-copy></button>
-                </div>
-                <div class="site-layout-support-detail-dialog__actions" data-site-layout-support-detail-actions hidden>
-                    <a class="site-layout-support-detail-dialog__primary" data-site-layout-support-detail-link></a>
-                </div>
-            </section>
+            <div class="glass-ring glass-ring--shell site-layout-support-detail-dialog__ring">
+                <section class="site-layout-support-detail-dialog__panel glass-ring__surface" tabindex="-1">
+                    <button type="button" class="site-layout-support-detail-dialog__close" data-site-layout-support-detail-close aria-label="关闭">×</button>
+                    <div class="site-layout-support-detail-dialog__head">
+                        <span class="site-layout-support-detail-dialog__eyebrow" data-site-layout-support-detail-eyebrow></span>
+                        <h2 id="siteLayoutSupportDetailTitle" data-site-layout-support-detail-title></h2>
+                        <p data-site-layout-support-detail-description></p>
+                    </div>
+                    <div class="site-layout-support-detail-dialog__image" data-site-layout-support-detail-image-wrap hidden>
+                        <img alt="" data-site-layout-support-detail-image>
+                    </div>
+                    <p class="site-layout-support-detail-dialog__body" data-site-layout-support-detail-body></p>
+                    <div class="site-layout-support-detail-dialog__copy" data-site-layout-support-detail-copy-wrap hidden>
+                        <code data-site-layout-support-detail-copy-value></code>
+                        <button type="button" data-site-layout-support-detail-copy></button>
+                    </div>
+                    <div class="site-layout-support-detail-dialog__actions" data-site-layout-support-detail-actions hidden>
+                        <a class="site-layout-support-detail-dialog__primary" data-site-layout-support-detail-link></a>
+                    </div>
+                </section>
+            </div>
         `;
 
         dialog.querySelectorAll('[data-site-layout-support-detail-close]').forEach((button) => {

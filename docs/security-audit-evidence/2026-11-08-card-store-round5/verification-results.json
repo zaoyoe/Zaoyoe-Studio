@@ -1,0 +1,152 @@
+{
+  "launcher": "/tmp/security-test-isolation-20261108/run.py",
+  "default_cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+  "results": [
+    {
+      "name": "initial-interrupted",
+      "log": "raw/owner-locks-initial-interrupted.tap",
+      "status": "INTERRUPTED",
+      "exit_code_observed": 1,
+      "complete_counts": null,
+      "note": "Initial harness awaited an event the baseline never reached; interrupted. No complete baseline claim."
+    },
+    {
+      "name": "baseline-before-37",
+      "log": "raw/owner-locks-before-37.tap",
+      "status": "FAIL",
+      "tests": 37,
+      "passed": 7,
+      "failed": 30,
+      "exit_code_observed": 1,
+      "baseline_store": "/tmp/kc-round5-owner-locks-20261108-before/services/kc-pay-gpt/mysql-store.js",
+      "test_snapshot": "/tmp/kc-round5-final-review-before/tests/security-round5-kc-owner-locks.test.js"
+    },
+    {
+      "name": "after-37",
+      "log": "raw/owner-locks-after-37.tap",
+      "status": "PASS",
+      "tests": 37,
+      "passed": 37,
+      "failed": 0,
+      "exit_code_observed": 0,
+      "test_snapshot": "/tmp/kc-round5-final-review-before/tests/security-round5-kc-owner-locks.test.js"
+    },
+    {
+      "name": "native-intermediate",
+      "log": "raw/native-regression-144.tap",
+      "status": "PASS",
+      "tests": 144,
+      "passed": 144,
+      "failed": 0,
+      "exit_code_observed": 0
+    },
+    {
+      "name": "baseline-final-44",
+      "log": "raw/baseline-final-44.tap",
+      "status": "FAIL",
+      "tests": 44,
+      "passed": 7,
+      "failed": 37,
+      "skipped": 0,
+      "exit_code_observed": 1,
+      "command": [
+        "node",
+        "--test",
+        "--test-reporter=tap",
+        "tests/security-round5-kc-owner-locks.test.js"
+      ],
+      "baseline_store": "/tmp/kc-round5-owner-locks-20261108-before/services/kc-pay-gpt/mysql-store.js"
+    },
+    {
+      "name": "native-final",
+      "log": "raw/native-final-151.tap",
+      "status": "PASS",
+      "tests": 151,
+      "passed": 151,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code_observed": 0,
+      "command": [
+        "node",
+        "--test",
+        "--test-reporter=tap",
+        "tests/security-round5-kc-owner-locks.test.js",
+        "tests/security-round4-kc-local-settlement.test.js",
+        "tests/security-round3-kc-activation-atomic.test.js",
+        "tests/security-round2-kc-activation.test.js"
+      ]
+    },
+    {
+      "name": "kc-focused-final",
+      "log": "raw/kc-regression-306.log",
+      "status": "PASS",
+      "files": 9,
+      "tests": 306,
+      "passed": 306,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code_observed": 0,
+      "cwd": "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt",
+      "command": [
+        "node",
+        "./node_modules/vitest/vitest.mjs",
+        "run",
+        "test/gpt-outsourcing-store.test.js",
+        "test/gpt-outsourcing-worker.test.js",
+        "test/gpt-outsourcing-recovery.test.js",
+        "test/gpt-outsourcing.test.js",
+        "test/mysql-card-cooldown.test.js",
+        "test/recharge-routing.test.js",
+        "test/task-safety.test.js",
+        "test/local-preview-recovery.test.js",
+        "test/task-diagnostics.test.js",
+        "--no-file-parallelism",
+        "--maxWorkers=1"
+      ]
+    },
+    {
+      "name": "kc-full",
+      "log": "raw/kc-full.log",
+      "status": "FAIL",
+      "files": 71,
+      "tests": 1712,
+      "passed": 1672,
+      "failed": 40,
+      "skipped": 0,
+      "exit_code_observed": 1,
+      "command_metadata": "raw/kc-full-command.json"
+    },
+    {
+      "name": "ui-two-failures-rerun",
+      "log": "raw/ui-new-failures-rerun.log",
+      "status": "FAIL",
+      "files": 1,
+      "tests": 18,
+      "passed": 0,
+      "failed": 2,
+      "skipped": 16,
+      "exit_code_observed": 1,
+      "command_metadata": "raw/ui-new-failures-command.json",
+      "note": "Only two assertions selected; does not supersede the full run."
+    }
+  ],
+  "final_focused_total": {
+    "passed": 457,
+    "failed": 0,
+    "components": [
+      "native-final",
+      "kc-focused-final"
+    ]
+  },
+  "counting_boundary": "457 is the sum of two final focused invocations. Baselines, intermediate runs, full regression and UI rerun are not added to it; full regression includes tests also run in the focused set.",
+  "syntax": {
+    "files": 3,
+    "exit_code_observed": [
+      0,
+      0,
+      0
+    ],
+    "metadata": "raw/syntax-results.json"
+  },
+  "provenance": "Raw outputs copied byte-for-byte. Metadata/commands for earlier runs reconstructed from the session record; full and UI wrapper command JSON retained. No claim that tests were run against a clean, committed release candidate."
+}

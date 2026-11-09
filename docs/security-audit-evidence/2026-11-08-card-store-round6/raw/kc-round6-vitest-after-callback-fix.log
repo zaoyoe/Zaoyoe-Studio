@@ -1,0 +1,12 @@
+
+ RUN  v4.1.9 /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt
+
+ ✓ test/payment-retry-safety.test.js (100 tests) 116ms
+ ✓ test/mysql-card-cooldown.test.js (28 tests) 112ms
+ ✓ test/payment-protocol-fallback.test.js (12 tests) 21ms
+
+ Test Files  3 passed (3)
+      Tests  140 passed (140)
+   Start at  22:21:21
+   Duration  814ms (transform 56ms, setup 0ms, import 95ms, tests 249ms, environment 0ms)
+

@@ -113,7 +113,8 @@ function createRouteHandlersForScope(scope) {
             }),
             'section-visibility-preload': createRuntimeSectionVisibilityPreloadHandler({
                 admin
-            })
+            }),
+            'glass-image-sample': require('./_lib/glass-image-sample').createGlassImageSampleHandler()
         };
     }
     case 'monitoring': {

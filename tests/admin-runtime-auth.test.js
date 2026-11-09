@@ -2,6 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const Module = require('node:module');
+const testSourceId = 'aaaaaaaa-1111-4111-8111-111111111111';
+const testGrantId = 'bbbbbbbb-1111-4111-8111-111111111111';
+function adminJwt(sub) {
+    return `offline.${Buffer.from(JSON.stringify({sub,session_id:testSourceId,exp:Math.floor(Date.now()/1000)+600})).toString('base64url')}.offline`;
+}
+
 
 async function withEnv(patch, callback) {
     const previous = {};
@@ -317,11 +323,11 @@ test('requireAdmin also falls back to admin client when no public client config 
                     kind: 'admin',
                     auth: {
                         async getUser(token) {
-                            assert.equal(token, 'admin-token');
+                            assert.equal(token, adminJwt('00000001-1111-4111-8111-111111111111'));
                             return {
                                 data: {
                                     user: {
-                                        id: 'admin-1',
+                                        id: '00000001-1111-4111-8111-111111111111',
                                         email: 'admin@example.com'
                                     }
                                 },
@@ -330,8 +336,16 @@ test('requireAdmin also falls back to admin client when no public client config 
                         }
                     },
                     async rpc(name, args) {
+                        if (name === 'admin_auth_session_active') {
+                            assert.equal(args.p_source_session_id, testSourceId);
+                            return {data:true,error:null};
+                        }
+                        if (name === 'admin_studio_session_active') {
+                            assert.equal(args.p_id, testGrantId);
+                            return {data:true,error:null};
+                        }
                         assert.equal(name, 'get_user_permissions');
-                        assert.deepEqual(args, { p_user_id: 'admin-1' });
+                        assert.deepEqual(args, { p_user_id: '00000001-1111-4111-8111-111111111111' });
                         return {
                             data: {
                                 is_admin: true,
@@ -350,11 +364,11 @@ test('requireAdmin also falls back to admin client when no public client config 
         }, async ({ adminModule }) => {
             const result = await adminModule.requireAdmin({
                 headers: {
-                    authorization: 'Bearer admin-token'
+                    authorization: `Bearer ${adminJwt('00000001-1111-4111-8111-111111111111')}`
                 }
             });
 
-            assert.equal(result.user.id, 'admin-1');
+            assert.equal(result.user.id, '00000001-1111-4111-8111-111111111111');
             assert.equal(result.requestSupabase, null);
             assert.equal(result.supabase.kind, 'admin');
             assert.equal(result.adminSupabase.kind, 'admin');
@@ -363,7 +377,7 @@ test('requireAdmin also falls back to admin client when no public client config 
     });
 });
 
-test('requireAdmin prefers an admin studio cookie session before bearer token fallback', async () => {
+test('requireAdmin accepts an active admin studio cookie when no bearer is supplied', async () => {
     await withEnv({
         SUPABASE_URL: 'https://example.supabase.co',
         SUPABASE_PUBLISHABLE_KEY: undefined,
@@ -374,7 +388,7 @@ test('requireAdmin prefers an admin studio cookie session before bearer token fa
         ADMIN_STUDIO_ACCESS_SECRET: 'runtime-auth-cookie-secret'
     }, async () => {
         const accessHelpers = await loadAdminStudioAccessHelpers();
-        const cookieToken = await accessHelpers.issueAdminStudioToken({ sub: 'cookie-admin-1' });
+        const cookieToken = await accessHelpers.issueAdminStudioToken({ sub: '00000002-1111-4111-8111-111111111111', sid: testGrantId });
         let adminLookupCalls = 0;
         let bearerLookupCalls = 0;
 
@@ -386,11 +400,11 @@ test('requireAdmin prefers an admin studio cookie session before bearer token fa
                         admin: {
                             async getUserById(userId) {
                                 adminLookupCalls += 1;
-                                assert.equal(userId, 'cookie-admin-1');
+                                assert.equal(userId, '00000002-1111-4111-8111-111111111111');
                                 return {
                                     data: {
                                         user: {
-                                            id: 'cookie-admin-1',
+                                            id: '00000002-1111-4111-8111-111111111111',
                                             email: 'cookie-admin@example.com'
                                         }
                                     },
@@ -404,8 +418,16 @@ test('requireAdmin prefers an admin studio cookie session before bearer token fa
                         }
                     },
                     async rpc(name, args) {
+                        if (name === 'admin_auth_session_active') {
+                            assert.equal(args.p_source_session_id, testSourceId);
+                            return {data:true,error:null};
+                        }
+                        if (name === 'admin_studio_session_active') {
+                            assert.equal(args.p_id, testGrantId);
+                            return {data:true,error:null};
+                        }
                         assert.equal(name, 'get_user_permissions');
-                        assert.deepEqual(args, { p_user_id: 'cookie-admin-1' });
+                        assert.deepEqual(args, { p_user_id: '00000002-1111-4111-8111-111111111111' });
                         return {
                             data: {
                                 is_admin: true,
@@ -424,12 +446,11 @@ test('requireAdmin prefers an admin studio cookie session before bearer token fa
         }, async ({ adminModule }) => {
             const result = await adminModule.requireAdmin({
                 headers: {
-                    cookie: `${accessHelpers.getAdminStudioCookieName()}=${encodeURIComponent(cookieToken)}`,
-                    authorization: 'Bearer stale-admin-token'
+                    cookie: `${accessHelpers.getAdminStudioCookieName()}=${encodeURIComponent(cookieToken)}`
                 }
             });
 
-            assert.equal(result.user.id, 'cookie-admin-1');
+            assert.equal(result.user.id, '00000002-1111-4111-8111-111111111111');
             assert.equal(result.token, '');
             assert.equal(adminLookupCalls, 1);
             assert.equal(bearerLookupCalls, 0);
@@ -468,11 +489,11 @@ test('requireAdmin falls back to bearer auth when the admin studio cookie is inv
                         },
                         async getUser(token) {
                             bearerLookupCalls += 1;
-                            assert.equal(token, 'fallback-admin-token');
+                            assert.equal(token, adminJwt('00000003-1111-4111-8111-111111111111'));
                             return {
                                 data: {
                                     user: {
-                                        id: 'bearer-admin-1',
+                                        id: '00000003-1111-4111-8111-111111111111',
                                         email: 'bearer-admin@example.com'
                                     }
                                 },
@@ -481,8 +502,16 @@ test('requireAdmin falls back to bearer auth when the admin studio cookie is inv
                         }
                     },
                     async rpc(name, args) {
+                        if (name === 'admin_auth_session_active') {
+                            assert.equal(args.p_source_session_id, testSourceId);
+                            return {data:true,error:null};
+                        }
+                        if (name === 'admin_studio_session_active') {
+                            assert.equal(args.p_id, testGrantId);
+                            return {data:true,error:null};
+                        }
                         assert.equal(name, 'get_user_permissions');
-                        assert.deepEqual(args, { p_user_id: 'bearer-admin-1' });
+                        assert.deepEqual(args, { p_user_id: '00000003-1111-4111-8111-111111111111' });
                         return {
                             data: {
                                 is_admin: true,
@@ -502,19 +531,19 @@ test('requireAdmin falls back to bearer auth when the admin studio cookie is inv
             const result = await adminModule.requireAdmin({
                 headers: {
                     cookie: 'zaoyoe_admin_studio=invalid-cookie-value',
-                    authorization: 'Bearer fallback-admin-token'
+                    authorization: `Bearer ${adminJwt('00000003-1111-4111-8111-111111111111')}`
                 }
             });
 
-            assert.equal(result.user.id, 'bearer-admin-1');
-            assert.equal(result.token, 'fallback-admin-token');
+            assert.equal(result.user.id, '00000003-1111-4111-8111-111111111111');
+            assert.equal(result.token, adminJwt('00000003-1111-4111-8111-111111111111'));
             assert.equal(adminLookupCalls, 0);
             assert.equal(bearerLookupCalls, 1);
         });
     });
 });
 
-test('requireAdmin falls back to bearer auth when admin studio cookie user lookup fails transiently', async () => {
+test('requireAdmin prioritizes an explicit bearer over another account cookie', async () => {
     await withEnv({
         SUPABASE_URL: 'https://example.supabase.co',
         SUPABASE_PUBLISHABLE_KEY: undefined,
@@ -525,7 +554,7 @@ test('requireAdmin falls back to bearer auth when admin studio cookie user looku
         ADMIN_STUDIO_ACCESS_SECRET: 'runtime-auth-cookie-secret'
     }, async () => {
         const accessHelpers = await loadAdminStudioAccessHelpers();
-        const cookieToken = await accessHelpers.issueAdminStudioToken({ sub: 'cookie-admin-2' });
+        const cookieToken = await accessHelpers.issueAdminStudioToken({ sub: '00000004-1111-4111-8111-111111111111', sid: testGrantId });
         let bearerLookupCalls = 0;
 
         await withAdminModule(({ key }) => {
@@ -540,11 +569,11 @@ test('requireAdmin falls back to bearer auth when admin studio cookie user looku
                         },
                         async getUser(token) {
                             bearerLookupCalls += 1;
-                            assert.equal(token, 'fallback-admin-token');
+                            assert.equal(token, adminJwt('00000005-1111-4111-8111-111111111111'));
                             return {
                                 data: {
                                     user: {
-                                        id: 'bearer-admin-2',
+                                        id: '00000005-1111-4111-8111-111111111111',
                                         email: 'bearer-admin-2@example.com'
                                     }
                                 },
@@ -553,8 +582,16 @@ test('requireAdmin falls back to bearer auth when admin studio cookie user looku
                         }
                     },
                     async rpc(name, args) {
+                        if (name === 'admin_auth_session_active') {
+                            assert.equal(args.p_source_session_id, testSourceId);
+                            return {data:true,error:null};
+                        }
+                        if (name === 'admin_studio_session_active') {
+                            assert.equal(args.p_id, testGrantId);
+                            return {data:true,error:null};
+                        }
                         assert.equal(name, 'get_user_permissions');
-                        assert.deepEqual(args, { p_user_id: 'bearer-admin-2' });
+                        assert.deepEqual(args, { p_user_id: '00000005-1111-4111-8111-111111111111' });
                         return {
                             data: {
                                 is_admin: true,
@@ -574,12 +611,12 @@ test('requireAdmin falls back to bearer auth when admin studio cookie user looku
             const result = await adminModule.requireAdmin({
                 headers: {
                     cookie: `${accessHelpers.getAdminStudioCookieName()}=${encodeURIComponent(cookieToken)}`,
-                    authorization: 'Bearer fallback-admin-token'
+                    authorization: `Bearer ${adminJwt('00000005-1111-4111-8111-111111111111')}`
                 }
             });
 
-            assert.equal(result.user.id, 'bearer-admin-2');
-            assert.equal(result.token, 'fallback-admin-token');
+            assert.equal(result.user.id, '00000005-1111-4111-8111-111111111111');
+            assert.equal(result.token, adminJwt('00000005-1111-4111-8111-111111111111'));
             assert.equal(bearerLookupCalls, 1);
         });
     });
@@ -603,7 +640,7 @@ test('requireAdmin rejects admins that lack the requested module permission and 
                             return {
                                 data: {
                                     user: {
-                                        id: 'admin-2',
+                                        id: '00000006-1111-4111-8111-111111111111',
                                         email: 'operator@example.com'
                                     }
                                 },
@@ -612,6 +649,7 @@ test('requireAdmin rejects admins that lack the requested module permission and 
                         }
                     },
                     async rpc(name) {
+                        if (name === 'admin_auth_session_active') return {data:true,error:null};
                         assert.equal(name, 'get_user_permissions');
                         return {
                             data: {
@@ -632,7 +670,7 @@ test('requireAdmin rejects admins that lack the requested module permission and 
             await assert.rejects(
                 () => adminModule.requireAdmin({
                     headers: {
-                        authorization: 'Bearer limited-admin-token'
+                        authorization: `Bearer ${adminJwt('00000006-1111-4111-8111-111111111111')}`
                     }
                 }, {
                     permission: 'shop.manage'
@@ -648,13 +686,13 @@ test('requireAdmin rejects admins that lack the requested module permission and 
 
             const result = await adminModule.requireAdmin({
                 headers: {
-                    authorization: 'Bearer limited-admin-token'
+                    authorization: `Bearer ${adminJwt('00000006-1111-4111-8111-111111111111')}`
                 }
             }, {
                 anyOf: ['shop.manage', 'users.manage']
             });
 
-            assert.equal(result.user.id, 'admin-2');
+            assert.equal(result.user.id, '00000006-1111-4111-8111-111111111111');
             assert.deepEqual(result.permissions, ['users.manage']);
             assert.equal(result.isSuperAdmin, false);
         });
@@ -766,5 +804,39 @@ test('mock payment completion explicitly prefers adminSupabase for privileged wr
         assert.equal(state.paymentCalls.length, 1);
         assert.equal(state.paymentCalls[0].action, 'mock-complete');
         assert.equal(state.paymentCalls[0].payload.supabase.kind, 'admin');
+    });
+});
+
+// Offline service-role RPC responses exercise runtime refusal. Database SQL is not executed.
+test('admin authorization refuses revoked or signed-out sources, missing RPCs and invalid claims', async()=>{
+    const uid='11111111-1111-4111-8111-111111111111';
+    await withEnv({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'service-key',SUPABASE_PUBLISHABLE_KEY:undefined,SUPABASE_ANON_KEY:undefined,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:undefined,NEXT_PUBLIC_SUPABASE_ANON_KEY:undefined},async()=>{
+        for(const scenario of [
+            {data:false,status:401}, {data:null,status:401}, {data:'true',status:401},
+            {error:{message:'missing function'},status:503}, {throws:true,status:503},
+            {token:'offline.invalid.offline',status:401}
+        ]) await withAdminModule(()=>({
+            auth:{async getUser(){return {data:{user:{id:uid}}};}},
+            async rpc(name){
+                assert.equal(name,'admin_auth_session_active','must stop before permissions');
+                if(scenario.throws) throw new Error('offline RPC failure');
+                return scenario;
+            }
+        }),async({adminModule})=>{
+            await assert.rejects(adminModule.requireAdmin({headers:{authorization:`Bearer ${scenario.token || adminJwt(uid)}`}}),err=>err.statusCode===scenario.status);
+        });
+    });
+});
+test('revoked or unavailable cookie grants are refused before Auth user lookup',async()=>{
+    const uid='11111111-1111-4111-8111-111111111111';
+    await withEnv({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'service-key',ADMIN_STUDIO_ACCESS_SECRET:'offline-revoked-cookie'},async()=>{
+        const helpers=await loadAdminStudioAccessHelpers();
+        const token=await helpers.issueAdminStudioToken({sub:uid,sid:testGrantId});
+        for(const unavailable of [false,true]) await withAdminModule(()=>({
+            auth:{admin:{async getUserById(){assert.fail('revoked grant reached Auth lookup');}}},
+            async rpc(name){assert.equal(name,'admin_studio_session_active');return unavailable?{error:{message:'offline'}}:{data:false};}
+        }),async({adminModule})=>{
+            await assert.rejects(adminModule.requireAdmin({headers:{cookie:`zaoyoe_admin_studio=${token}`}}),err=>err.statusCode===(unavailable?503:401));
+        });
     });
 });

@@ -37,6 +37,10 @@ function createState(overrides = {}) {
         user: { id: 'admin-processor-1', email: 'ops@example.com' },
         tickets: [],
         orders: [],
+        guestOrders: [],
+        rpcCalls: [],
+        permissionCalls: [],
+        ticketUpdates: [],
         commentWorkflows: [],
         refundCalls: [],
         refundResult: null,
@@ -53,6 +57,11 @@ function createState(overrides = {}) {
 
 function createSupabaseStub(state) {
     return {
+        async rpc(name, params) {
+            state.rpcCalls.push({ name, params });
+            if (state.rpcResult instanceof Error) throw state.rpcResult;
+            return state.rpcResult || { data: null, error: null };
+        },
         from(table) {
             const queryState = {
                 mode: 'select',
@@ -86,6 +95,8 @@ function createSupabaseStub(state) {
                         ? state.tickets
                             : table === 'shop_orders'
                                 ? state.orders
+                            : table === 'guest_shop_orders'
+                                ? state.guestOrders
                             : table === 'admin_comment_workflows'
                                 ? state.commentWorkflows
                             : table === 'chat_messages'
@@ -107,6 +118,9 @@ function createSupabaseStub(state) {
                 }
 
                 if (queryState.mode === 'update') {
+                    state.ticketUpdates.push({ table, payload: queryState.payload, filters: queryState.filters });
+                    if (state.beforeTicketUpdate) state.beforeTicketUpdate(state);
+                    if (state.ticketUpdateError) return { data: [], error: state.ticketUpdateError };
                     const rows = applyFilters(state.tickets);
                     rows.forEach((row) => Object.assign(row, queryState.payload || {}));
                     return {
@@ -247,9 +261,14 @@ async function withHandler(stateOverrides, callback) {
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return {
-                async requireAdmin() {
+                async requireAdmin(req, { permission }) {
+                    state.permissionCalls.push(permission);
+                    if (permission === 'shop.manage' && state.denyShopPermission) {
+                        throw Object.assign(new Error('Forbidden'), { statusCode: 403 });
+                    }
                     return {
                         supabase: createSupabaseStub(state),
+                        adminSupabase: state.missingFinancialClient ? null : createSupabaseStub(state),
                         user: state.user
                     };
                 },
@@ -763,5 +782,179 @@ test('ticket process blocks already handled tickets from being processed again',
         assert.equal(state.notifications.length, 0);
         assert.equal(state.auditLogs.length, 0);
         assert.equal(state.tickets[0].admin_notes, '之前已经处理完成');
+    });
+});
+
+
+function financialTicketState(overrides = {}) {
+    return {
+        tickets: [{ id: 'ticket-financial', user_id: null, order_id: null, site: 'cn',
+            status: 'PENDING', description: '[关联订单：GS20261107123456001]',
+            updated_at: '2026-11-07T12:00:00Z' }],
+        guestOrders: [{ id: 'guest-order-id', order_no: 'GS20261107123456001', site: 'cn', total_amount: 5000 }],
+        ...overrides
+    };
+}
+
+function financialRequest(extra = {}) {
+    return { method: 'POST', headers: {}, body: { ticketId: 'ticket-financial',
+        newStatus: 'RESOLVED', doRefund: true, adminReply: '支付渠道退款申请已核验', ...extra } };
+}
+
+function guestOperationResult(extra = {}) {
+    return { data: [{ order_id: 'guest-order-id', order_no: 'GS20261107123456001',
+        payment_status: 'confirmed', refund_status: 'pending', fulfillment_status: 'delivered', ...extra }], error: null };
+}
+
+for (const [label, overrides, expected] of [
+    ['missing shop permission', { denyShopPermission: true }, 403],
+    ['missing trusted service', { missingFinancialClient: true }, 503],
+    ['wrong site', { guestOrders: [{ id: 'guest-order-id', order_no: 'GS20261107123456001', site: 'intl' }] }, 409]
+]) {
+    test(`ticket financial action rejects ${label} before RPC`, async () => {
+        await withHandler(financialTicketState(overrides), async (handler, state) => {
+            const res = createMockResponse();
+            await handler(financialRequest(), res);
+            assert.equal(res.statusCode, expected);
+            assert.equal(res.json().success, false);
+            assert.equal(state.rpcCalls.length, 0);
+            assert.equal(state.ticketUpdates.length, 0);
+            assert.equal(state.notifications.length, 0);
+        });
+    });
+}
+
+for (const [label, rpcResult, expected] of [
+    ['network ambiguity', new Error('timeout'), 503],
+    ['SQL failure', { data: null, error: { message: 'private database error' } }, 409],
+    ['empty result', { data: [], error: null }, 409],
+    ['multiple results', { data: [...guestOperationResult().data, ...guestOperationResult().data] }, 409],
+    ['wrong order', guestOperationResult({ order_id: 'another-order' }), 409],
+    ['wrong order number', guestOperationResult({ order_no: 'GSOTHER' }), 409],
+    ['failed refund', guestOperationResult({ refund_status: 'failed' }), 409],
+    ['unconfirmed refund', guestOperationResult({ refund_status: 'none' }), 409]
+]) {
+    test(`guest ticket refund does not claim success after ${label}`, async () => {
+        await withHandler(financialTicketState({ rpcResult }), async (handler, state) => {
+            const res = createMockResponse();
+            await handler(financialRequest(), res);
+            assert.equal(res.statusCode, expected);
+            assert.equal(res.json().success, false);
+            assert.doesNotMatch(res.json().message, /private database error|timeout/);
+            assert.equal(state.rpcCalls.length, 1, 'never retries an ambiguous financial operation');
+            assert.equal(state.ticketUpdates.length, 0);
+            assert.equal(state.tickets[0].status, 'PENDING');
+            assert.equal(state.notifications.length, 0);
+            assert.equal(state.auditLogs.length, 0);
+        });
+    });
+}
+
+test('guest ticket refund records pending cash refund without claiming payment or points', async () => {
+    await withHandler(financialTicketState({ rpcResult: guestOperationResult() }), async (handler, state) => {
+        const res = createMockResponse();
+        await handler(financialRequest(), res);
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().guestRefundQueued, true);
+        assert.equal(res.json().refundAmount, 0);
+        assert.deepEqual(state.permissionCalls, ['tickets.manage', 'shop.manage']);
+        assert.equal(state.rpcCalls[0].params.p_expected_site, 'cn');
+        assert.equal(state.rpcCalls[0].name, 'fn_guest_shop_admin_queue_refund');
+        assert.equal(state.ticketUpdates.length, 1);
+        assert.equal(state.ticketUpdates[0].table, 'shop_tickets', 'never synthesizes an order payment status');
+        assert.doesNotMatch(state.notifications[0].content, /已退回.*积分|已退款/);
+        assert.match(state.notifications[0].content, /实际到账以支付渠道结果为准/);
+        assert.equal(state.auditLogs[0].details.refunded, false);
+        assert.equal(state.auditLogs[0].details.guest_refund_queued, true);
+    });
+});
+
+test('member ticket cannot refund another account order', async () => {
+    const initial = financialTicketState();
+    Object.assign(initial.tickets[0], { user_id: 'owner', order_id: 'member-order' });
+    initial.orders = [{ id: 'member-order', user_id: 'victim', site: 'cn' }];
+    await withHandler(initial, async (handler, state) => {
+        const res = createMockResponse();
+        await handler(financialRequest(), res);
+        assert.equal(res.statusCode, 409);
+        assert.equal(state.refundCalls.length, 0);
+        assert.equal(state.ticketUpdates.length, 0);
+    });
+});
+
+for (const action of ['refund', 'reissue']) {
+    test(`closed ticket reply cannot repeat ${action}`, async () => {
+        const initial = financialTicketState();
+        initial.tickets[0].status = 'RESOLVED';
+        await withHandler(initial, async (handler, state) => {
+            const res = createMockResponse();
+            await handler(financialRequest({ action: action === 'refund' ? 'reply' : 'reissue_card',
+                doRefund: action === 'refund', auto_fulfill: action === 'reissue' }), res);
+            assert.equal(res.statusCode, 409);
+            assert.equal(state.rpcCalls.length, 0);
+            assert.equal(state.ticketUpdates.length, 0);
+        });
+    });
+}
+
+test('explicit pure reply may follow up a closed ticket without financial service', async () => {
+    const initial = financialTicketState({ denyShopPermission: true });
+    initial.tickets[0].status = 'RESOLVED';
+    initial.tickets[0].admin_notes = 'previous reply';
+    await withHandler(initial, async (handler, state) => {
+        const res = createMockResponse();
+        await handler(financialRequest({ action: 'reply', doRefund: false }), res);
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(state.permissionCalls, ['tickets.manage']);
+        assert.equal(state.rpcCalls.length, 0);
+        assert.match(res.json().ticket.admin_notes, /previous reply/);
+    });
+});
+
+for (const [label, rpcResult, expected] of [
+    ['RPC failure', { error: { message: 'inventory unavailable' } }, 409],
+    ['unconfirmed delivery', guestOperationResult({ fulfillment_status: 'paid_unfulfillable' }), 409],
+    ['confirmed delivery', guestOperationResult(), 200]
+]) {
+    test(`guest ticket inventory reissue handles ${label}`, async () => {
+        await withHandler(financialTicketState({ rpcResult }), async (handler, state) => {
+            const res = createMockResponse();
+            await handler(financialRequest({ action: 'reissue_card', doRefund: false, auto_fulfill: true }), res);
+            assert.equal(res.statusCode, expected);
+            assert.equal(state.rpcCalls.length, 1);
+            assert.equal(state.rpcCalls[0].name, 'fn_guest_shop_admin_manual_fulfill');
+            assert.equal(state.ticketUpdates.length, expected === 200 ? 1 : 0);
+            if (expected === 200) {
+                assert.equal(res.json().reissued, true);
+                assert.equal(state.auditLogs[0].actionType, 'ticket.reissue');
+                assert.doesNotMatch(JSON.stringify(state.auditLogs[0]), /已补发新卡密/);
+            }
+        });
+    });
+}
+
+test('refund followed by ticket update failure requires reconciliation and never retries payment', async () => {
+    await withHandler(financialTicketState({ rpcResult: guestOperationResult(),
+        ticketUpdateError: { message: 'database update unavailable' } }), async (handler, state) => {
+        const res = createMockResponse();
+        await handler(financialRequest(), res);
+        assert.equal(res.statusCode, 409);
+        assert.match(res.json().message, /勿重复退款/);
+        assert.equal(state.rpcCalls.length, 1);
+        assert.equal(state.notifications.length, 0);
+        assert.equal(state.tickets[0].status, 'PENDING');
+    });
+});
+
+test('ticket update detects a concurrent reply instead of overwriting it', async () => {
+    await withHandler(financialTicketState({ beforeTicketUpdate(state) {
+        state.tickets[0].updated_at = '2026-11-07T12:01:00Z';
+        state.tickets[0].admin_notes = 'concurrent reply';
+    } }), async (handler, state) => {
+        const res = createMockResponse();
+        await handler(financialRequest({ action: 'reply', doRefund: false }), res);
+        assert.equal(res.statusCode, 409);
+        assert.equal(state.tickets[0].admin_notes, 'concurrent reply');
+        assert.equal(state.notifications.length, 0);
     });
 });

@@ -1,0 +1,74 @@
+[
+  {
+    "file": "services/kc-pay-gpt/mysql-store.js",
+    "command": [
+      "python3",
+      "/tmp/security-test-isolation-20261108/run.py",
+      "--cwd",
+      "/Volumes/chao/AI/xianyu_profit_calculator",
+      "--log",
+      "/tmp/security-test-isolation-20261108/local-settlement-syntax-store.log",
+      "--",
+      "node",
+      "--check",
+      "services/kc-pay-gpt/mysql-store.js"
+    ],
+    "exit_code": 0,
+    "launcher_output": "exit=0 log=/tmp/security-test-isolation-20261108/local-settlement-syntax-store.log",
+    "stderr": ""
+  },
+  {
+    "file": "services/kc-pay-gpt/server.js",
+    "command": [
+      "python3",
+      "/tmp/security-test-isolation-20261108/run.py",
+      "--cwd",
+      "/Volumes/chao/AI/xianyu_profit_calculator",
+      "--log",
+      "/tmp/security-test-isolation-20261108/local-settlement-syntax-worker.log",
+      "--",
+      "node",
+      "--check",
+      "services/kc-pay-gpt/server.js"
+    ],
+    "exit_code": 0,
+    "launcher_output": "exit=0 log=/tmp/security-test-isolation-20261108/local-settlement-syntax-worker.log",
+    "stderr": ""
+  },
+  {
+    "file": "services/kc-pay-gpt/test/recharge-routing.test.js",
+    "command": [
+      "python3",
+      "/tmp/security-test-isolation-20261108/run.py",
+      "--cwd",
+      "/Volumes/chao/AI/xianyu_profit_calculator",
+      "--log",
+      "/tmp/security-test-isolation-20261108/local-settlement-syntax-routing-test.log",
+      "--",
+      "node",
+      "--check",
+      "services/kc-pay-gpt/test/recharge-routing.test.js"
+    ],
+    "exit_code": 0,
+    "launcher_output": "exit=0 log=/tmp/security-test-isolation-20261108/local-settlement-syntax-routing-test.log",
+    "stderr": ""
+  },
+  {
+    "file": "tests/security-round4-kc-local-settlement.test.js",
+    "command": [
+      "python3",
+      "/tmp/security-test-isolation-20261108/run.py",
+      "--cwd",
+      "/Volumes/chao/AI/xianyu_profit_calculator",
+      "--log",
+      "/tmp/security-test-isolation-20261108/local-settlement-syntax-settlement-test.log",
+      "--",
+      "node",
+      "--check",
+      "tests/security-round4-kc-local-settlement.test.js"
+    ],
+    "exit_code": 0,
+    "launcher_output": "exit=0 log=/tmp/security-test-isolation-20261108/local-settlement-syntax-settlement-test.log",
+    "stderr": ""
+  }
+]

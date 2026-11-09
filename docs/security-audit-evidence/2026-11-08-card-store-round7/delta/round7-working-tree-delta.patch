@@ -1,0 +1,1145 @@
+--- a/services/kc-pay-gpt/mysql-store.js
++++ b/services/kc-pay-gpt/mysql-store.js
+@@ -1618,6 +1618,11 @@
+ 
+ const OWNED_NORMAL_CARD_SQL = `id = ? AND is_active = 1 AND status = '正常' AND in_use = 1
+            AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)`;
++// Ordinary releases deliberately exclude payment holds. Only a confirmed
++// settlement may transition a hold back to the reusable pool.
++const OWNED_PAYMENT_CARD_SQL = `id = ? AND is_active = 1 AND status IN ('正常', '支付处理中') AND in_use = 1
++           AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)`;
++
+ 
+ // 在事务里挑一个未占用资产并立即标记 in_use；无可用资产时返回 null 而不是阻塞。
+ // 用 FOR UPDATE SKIP LOCKED 避免两个并发任务同时抢同一行。
+@@ -1732,6 +1737,18 @@
+       AND ${GPT_API_UNSETTLED_TASK_SQL}
+ )`;
+ 
++// Missing/debug/active/uncertain local task records are not evidence of a
++// no-charge outcome. Match the full owner byte-for-byte, even on CI collations.
++const LOCAL_PAYMENT_RECLAIMABLE_CARD_SQL = `(LEFT(LOWER(COALESCE(card_assets.locked_by, '')), 8) <> 'payment_'
++    OR EXISTS (
++        SELECT 1 FROM task_logs local_task
++        WHERE CAST(card_assets.locked_by AS BINARY) = CAST(CONCAT('payment_', local_task.job_key) AS BINARY)
++          AND local_task.execution_mode = 'local_card_pool'
++          AND local_task.status IN ('failed', 'cancelled')
++          AND local_task.payment_state IN ('not_started', 'declined')
++          AND local_task.recovery_required = 0
++    ))`;
++
+ async function releaseStaleAssetLocks() {
+     const staleThreshold = new Date(Date.now() - ASSET_LOCK_STALE_MS);
+     const [phoneResult, cardResult, poolResult] = await Promise.all([
+@@ -1744,7 +1761,8 @@
+         runExecute(
+             `UPDATE card_assets
+              SET in_use = 0, locked_at = NULL, locked_by = NULL
+-             WHERE in_use = 1 AND status NOT IN ('待人工复核', '支付结果未知') AND (locked_at IS NULL OR locked_at < ?)
++             WHERE in_use = 1 AND status = '正常' AND (locked_at IS NULL OR locked_at < ?)
++               AND ${LOCAL_PAYMENT_RECLAIMABLE_CARD_SQL}
+                AND ${GPT_API_PROTECTED_CARD_SQL}`,
+             [staleThreshold]
+         ),
+@@ -1767,18 +1785,9 @@
+ 
+ // 启动时先把所有 in_use 标记彻底重置（崩溃重启场景）
+ async function resetAllAssetLocks() {
+-    const staleTasks = await listStaleRunningTasks(0);
+-    const protectedOwners = new Set(staleTasks
+-        .filter((task) => task.execution_mode === 'local_card_pool' && ['started', 'unknown', 'succeeded'].includes(String(task.payment_state || '').toLowerCase()))
+-        .map((task) => String(task.job_key || '')));
+-    const protectedLike = [...protectedOwners].map((key) => `payment_${key}`);
+-    if (protectedLike.length) {
+-        const placeholders = protectedLike.map(() => '?').join(',');
+-        await runExecute(`UPDATE card_assets SET status = '待人工复核' WHERE in_use = 1 AND locked_by IN (${placeholders})`, protectedLike);
+-    }
+     await Promise.all([
+         runExecute(`UPDATE phone_assets SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE in_use = 1`),
+-        runExecute(`UPDATE card_assets SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE in_use = 1 AND status NOT IN ('待人工复核', '支付结果未知') AND ${GPT_API_PROTECTED_CARD_SQL}`),
++        runExecute(`UPDATE card_assets SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE in_use = 1 AND status = '正常' AND ${LOCAL_PAYMENT_RECLAIMABLE_CARD_SQL} AND ${GPT_API_PROTECTED_CARD_SQL}`),
+         runExecute(`UPDATE pool_emails SET in_use = 0, locked_at = NULL, locked_by = NULL WHERE registered = 0 AND in_use = 1`)
+     ]);
+ }
+@@ -3637,6 +3646,30 @@
+     });
+ }
+ 
++/** Durable barrier: must succeed before any payment submission. No idempotent
++ * re-entry: a repeated callback must not authorize a second external attempt. */
++async function markCardPaymentStarted(cardId, ownerKey) {
++    const id = requireOwnedAssetId(cardId, ownerKey);
++    const result = await runExecute(
++        `UPDATE card_assets SET status = '支付处理中'
++         WHERE ${OWNED_NORMAL_CARD_SQL}`,
++        [id, ownerKey]
++    );
++    return requireOwnedCardChange(result);
++}
++
++/** Call only after confirmed success and its billing record have been saved. */
++async function completeCardPayment(cardId, ownerKey) {
++    const id = requireOwnedAssetId(cardId, ownerKey);
++    const result = await runExecute(
++        `UPDATE card_assets SET status = '正常', in_use = 0, locked_at = NULL, locked_by = NULL
++         WHERE id = ? AND is_active = 1 AND status = '支付处理中' AND in_use = 1
++           AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)`,
++        [id, ownerKey]
++    );
++    return requireOwnedCardChange(result);
++}
++
+ /** Move an unresolved payment's own card to manual review. */
+ async function quarantineCardForReview(cardId, reason = 'payment_result_unknown', ownerKey) {
+     const id = requireOwnedAssetId(cardId, ownerKey);
+@@ -3644,7 +3677,7 @@
+         `UPDATE card_assets
+          SET is_active = 0, status = '待人工复核', in_use = 1,
+              locked_by = CONCAT('manual_review:', ?)
+-         WHERE ${OWNED_NORMAL_CARD_SQL}`,
++         WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+         [String(reason).slice(0, 40), id, ownerKey]
+     );
+     return requireOwnedCardChange(result);
+@@ -3668,7 +3701,8 @@
+              locked_at = NULL,
+              locked_by = NULL
+          WHERE in_use = 1 AND status = '正常'
+-           AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)`,
++           AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)
++           AND ${LOCAL_PAYMENT_RECLAIMABLE_CARD_SQL}`,
+         [`payment_${jobKey}`]
+     );
+     return Number(res?.affectedRows || 0);
+@@ -3689,10 +3723,10 @@
+     const result = await runExecute(
+         `UPDATE card_assets
+          SET cooldown_until = GREATEST(COALESCE(cooldown_until, NOW()), DATE_ADD(NOW(), INTERVAL ? MINUTE)),
+-             in_use = 0,
++             status = '正常', in_use = 0,
+              locked_at = NULL,
+              locked_by = NULL
+-         WHERE ${OWNED_NORMAL_CARD_SQL}`,
++         WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+         [duration, id, ownerKey]
+     );
+     return requireOwnedCardChange(result);
+@@ -3711,7 +3745,7 @@
+              in_use = 0,
+              locked_at = NULL,
+              locked_by = NULL
+-         WHERE ${OWNED_NORMAL_CARD_SQL}`,
++         WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+         [id, ownerKey]
+     );
+     return requireOwnedCardChange(result);
+@@ -3726,7 +3760,7 @@
+  */
+ async function setCardFrozen(cardId, freeze = true) {
+     const id = Number(cardId);
+-    if (!id || !Number.isFinite(id)) {
++    if (!Number.isSafeInteger(id) || id <= 0) {
+         return { success: false, error: '无效的卡片 ID' };
+     }
+     const shouldFreeze = Boolean(freeze);
+@@ -3737,11 +3771,11 @@
+                  status = '已冻结',
+                  locked_at = NULL,
+                  locked_by = NULL
+-             WHERE id = ?`,
++             WHERE id = ? AND in_use = 0 AND status IN ('正常', '已冻结', '已报废')`,
+             [id]
+         );
+         if (result.affectedRows === 0) {
+-            return { success: false, error: '卡片不存在' };
++            return { success: false, error: '卡片不存在或仍被占用/待核账，不能冻结或解冻' };
+         }
+         return { success: true, is_frozen: true, message: '卡片已冻结，将不可被调用' };
+     } else {
+@@ -3752,11 +3786,11 @@
+                  cooldown_until = NULL,
+                  locked_at = NULL,
+                  locked_by = NULL
+-             WHERE id = ?`,
++             WHERE id = ? AND in_use = 0 AND status = '已冻结'`,
+             [id]
+         );
+         if (result.affectedRows === 0) {
+-            return { success: false, error: '卡片不存在' };
++            return { success: false, error: '卡片不存在或仍被占用/待核账，不能冻结或解冻' };
+         }
+         return { success: true, is_frozen: false, message: '卡片已解冻，已恢复正常调用' };
+     }
+@@ -3779,7 +3813,7 @@
+         const [rows] = await connection.query(
+             `SELECT daily_usage_count, daily_usage_reset_at
+              FROM card_assets
+-             WHERE ${OWNED_NORMAL_CARD_SQL}
++             WHERE ${OWNED_PAYMENT_CARD_SQL}
+              FOR UPDATE`,
+             [id, ownerKey]
+         );
+@@ -3804,7 +3838,7 @@
+                      daily_usage_reset_at = NOW(),
+                      usage_count = usage_count + 1,
+                      last_used_at = NOW()
+-                 WHERE ${OWNED_NORMAL_CARD_SQL}`,
++                 WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+                 [id, ownerKey]
+             );
+             requireOwnedCardChange(result);
+@@ -3816,7 +3850,7 @@
+                  SET daily_usage_count = daily_usage_count + 1,
+                      usage_count = usage_count + 1,
+                      last_used_at = NOW()
+-                 WHERE ${OWNED_NORMAL_CARD_SQL}`,
++                 WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+                 [id, ownerKey]
+             );
+             requireOwnedCardChange(result);
+@@ -3828,7 +3862,7 @@
+             const [result] = await connection.query(
+                 `UPDATE card_assets
+                  SET cooldown_until = DATE_ADD(NOW(), INTERVAL 24 HOUR)
+-                 WHERE ${OWNED_NORMAL_CARD_SQL}`,
++                 WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+                 [id, ownerKey]
+             );
+             requireOwnedCardChange(result);
+@@ -3857,7 +3891,7 @@
+              payment_address_state = ?,
+              payment_address_postal = ?,
+              payment_address_id = ?
+-         WHERE ${OWNED_NORMAL_CARD_SQL}`,
++         WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+         [
+             holderName,
+             String(address.line1 || ''),
+@@ -4639,6 +4673,8 @@
+     reserveCard,
+     hasAvailableCard,
+     releaseCard,
++    markCardPaymentStarted,
++    completeCardPayment,
+     releaseCardsByOwner,
+     cooldownCard,
+     quarantineCardForReview,
+--- a/services/kc-pay-gpt/payment-retry.js
++++ b/services/kc-pay-gpt/payment-retry.js
+@@ -212,12 +212,16 @@
+     }
+     // Debug calls get a bounded random owner, never a CDK or a timestamp alias.
+     const ownerKey = suppliedOwner === undefined ? `payment_debug_${randomBytes(16).toString('hex')}` : `payment_${suppliedOwner}`;
+-    const requireCardReleased = async (cardId) => {
+-        if (await store.releaseCard(cardId, ownerKey) !== 1) {
++    const requireOwnedCardChange = (affectedRows) => {
++        if (affectedRows !== 1) {
+             const error = new Error('银行卡锁归属已变化，已停止自动操作，需人工核对');
+             error.code = 'CARD_LOCK_OWNERSHIP_LOST';
+             throw error;
+         }
++    };
++
++    const requireCardReleased = async (cardId) => {
++        requireOwnedCardChange(await store.releaseCard(cardId, ownerKey));
+     };
+ 
+     const screenshots = [];
+@@ -421,6 +425,29 @@
+ 
+         let cardHandled = false;
+         let attemptStarted = false;
++        let paymentHoldAttempted = false;
++        const beginPaymentSubmission = async (message) => {
++            // Treat an ambiguous write/COMMIT as held; finally cannot undo it.
++            if (paymentHoldAttempted) {
++                const error = new Error('本次银行卡已进入支付保护，禁止重复提交');
++                error.code = 'CARD_PAYMENT_HOLD_FAILED';
++                throw error;
++            }
++            paymentHoldAttempted = true;
++            cardHandled = true;
++            attemptStarted = true;
++            try {
++                if (await store.markCardPaymentStarted(card.id, ownerKey) !== 1) {
++                    throw new Error('银行卡支付保护未写入');
++                }
++                await persistPaymentState('started', message);
++            } catch (_) {
++                const error = new Error('银行卡支付保护保存失败，已停止提交并保留卡片待核账');
++                error.code = 'CARD_PAYMENT_HOLD_FAILED';
++                throw error;
++            }
++        };
++
+         lastPersistedPaymentState = 'not_started';
+ 
+         try {
+@@ -456,8 +483,7 @@
+                             userAgent: options.userAgent || '',
+                             protocolOnly,
+                             onPaymentAttemptStarted: async () => {
+-                                attemptStarted = true;
+-                                await persistPaymentState('started', '正在提交银行卡支付 (Stripe 纯协议直充)');
++                                await beginPaymentSubmission('正在提交银行卡支付 (Stripe 纯协议直充)');
+                             }
+                         });
+ 
+@@ -492,7 +518,7 @@
+                                     paymentResult.screenshot = filePath;
+                                 } catch (_) {}
+                             }
+-                        } else if (protocolOnly) {
++                        } else if (protocolOnly || paymentHoldAttempted) {
+                             paymentResult = {
+                                 ...(protoRes || {}),
+                                 success: false,
+@@ -508,11 +534,11 @@
+                             progress(`[协议支付] ${protoRes.error || '银行卡需要 3DS 验证，平滑切入收银台 UI'}...`);
+                         }
+                     } catch (protoErr) {
+-                        console.warn(`⚠️ [协议支付] 协议尝试异常${protocolOnly ? '，停止并转人工复核' : '，平滑转入收银台 UI'}: ${protoErr.message}`);
+-                        if (protocolOnly) {
++                        console.warn(`⚠️ [协议支付] 协议尝试异常${protocolOnly || paymentHoldAttempted ? '，停止并转人工复核' : '，平滑转入收银台 UI'}: ${protoErr.message}`);
++                        if (protocolOnly || paymentHoldAttempted) {
+                             paymentResult = {
+                                 success: false,
+-                                code: 'PAYMENT_RESULT_UNKNOWN',
++                                code: protoErr.code === 'CARD_PAYMENT_HOLD_FAILED' ? protoErr.code : 'PAYMENT_RESULT_UNKNOWN',
+                                 error: `纯协议支付异常，结果未确认: ${protoErr.message}`,
+                                 submitted: attemptStarted,
+                                 submissionAttempted: attemptStarted,
+@@ -663,15 +689,14 @@
+                                 paymentCurrency: currency,
+                                 grokCheckout: options.grokCheckout,
+                                 onPaymentAttemptStarted: async () => {
+-                                    attemptStarted = true;
+-                                    await persistPaymentState('started', '正在提交银行卡支付');
++                                    await beginPaymentSubmission('正在提交银行卡支付');
+                                 }
+                             });
+                         }
+                     }
+                 }
+             } catch (error) {
+-                paymentResult = { success: false, error: error.message,
++                paymentResult = { success: false, error: error.message, code: error.code,
+                     submitted: attemptStarted, submissionAttempted: attemptStarted };
+             }
+             if (paymentResult.dueAmount > 0) {
+@@ -691,15 +716,15 @@
+             );
+ 
+             const paymentResultCode = String(paymentResult.code || '').trim().toUpperCase();
+-            const isPaymentGuardFailure = PAYMENT_GUARD_ERROR_CODES.has(paymentResultCode);
++            const isPaymentGuardFailure = paymentResultCode === 'CARD_PAYMENT_HOLD_FAILED' || PAYMENT_GUARD_ERROR_CODES.has(paymentResultCode);
+             const isDeclined = !isPaymentGuardFailure && Boolean(paymentResult.declined || paymentResult.canRetryCard
+                 || (!options.grokCheckout?.native && !isCaptchaOrNonCard && paymentResult.code !== 'PAYMENT_RESULT_UNKNOWN' && isPaymentDeclined(paymentResult.error || '')));
+ 
+             const paymentState = classifyPaymentResult({
+                 success: Boolean(paymentResult.success),
+                 declined: isDeclined,
+-                submitted: paymentResult.submitted,
+-                submissionAttempted: paymentResult.submissionAttempted,
++                submitted: paymentResult.submitted || paymentHoldAttempted,
++                submissionAttempted: paymentResult.submissionAttempted || paymentHoldAttempted,
+                 previousState: lastPersistedPaymentState,
+                 captchaRequired: paymentResult.captchaRequired,
+                 error: paymentResult.error
+@@ -707,7 +732,7 @@
+             // A submitted/terminal result owns its recovery path before any
+             // callback or bookkeeping can throw. Only confirmed pre-submit
+             // failures may use finally's ordinary release.
+-            cardHandled = paymentState !== 'not_started';
++            cardHandled = cardHandled || paymentState !== 'not_started';
+             await persistPaymentState(paymentState, paymentState === 'unknown'
+                 ? '支付结果未知，暂停自动重试并保留 CDK 与银行卡供人工复核'
+                 : '');
+@@ -733,8 +758,6 @@
+                     await markAddressBound(address.id, card.id);
+                 }
+                 await store.recordCardUsage(card.id, ownerKey);
+-                await requireCardReleased(card.id);
+-                cardHandled = true;
+                 await store.createBillingRecord({
+                     card_number: card.card_number,
+                     card_last4: cardLast4,
+@@ -747,6 +770,8 @@
+                     ...paymentCorrelation,
+                     status: 'success'
+                 });
++                requireOwnedCardChange(await store.completeCardPayment(card.id, ownerKey));
++                cardHandled = true;
+                 progress(`支付成功！卡片: ...${cardLast4}，姓名: ${holderName}，地址: ${address.line1}, ${address.city}`);
+                 if (paymentResult.screenshot) {
+                     screenshots.push(paymentResult.screenshot);
+--- a/services/kc-pay-gpt/stripe-protocol-payment.js
++++ b/services/kc-pay-gpt/stripe-protocol-payment.js
+@@ -930,9 +930,7 @@
+     console.log(`⚡ [协议支付/Hosted] 开始 Stripe Hosted Checkout 纯协议支付 (attempt=${attemptId}, session=${sessionId}, 卡号: ...${cardLast4})...`);
+ 
+     if (typeof onPaymentAttemptStarted === 'function') {
+-        try {
+-            await onPaymentAttemptStarted();
+-        } catch (_) {}
++        await onPaymentAttemptStarted();
+     }
+ 
+     const stripeHeaders = buildStripeBrowserHeaders('https://pay.openai.com');
+@@ -1506,9 +1504,7 @@
+     console.log(`⚡ [协议支付] 开始 Stripe 纯协议直充 (attempt=${attemptId}, session=${sessionId}, 卡号: ...${cardLast4})...`);
+ 
+     if (typeof onPaymentAttemptStarted === 'function') {
+-        try {
+-            await onPaymentAttemptStarted();
+-        } catch (_) {}
++        await onPaymentAttemptStarted();
+     }
+ 
+     // 1. 税区必须先成功；失败时不得创建 PM、ctoken 或调用 confirm。
+--- a/services/kc-pay-gpt/test/payment-retry-safety.test.js
++++ b/services/kc-pay-gpt/test/payment-retry-safety.test.js
+@@ -11,10 +11,11 @@
+ function harness({ started = true, failRecord = false, failQuarantine = false, throwAfterSubmit = false, native = false,
+     paymentResponse = null, address = oregonAddress, region = 'US', currency = 'USD', pickerError = false,
+     lastUsedId = null, runOptions = {}, addressRows = null, addressPoolFailure = false, failCooldown = false,
+-    checkoutDue = { amount: 20, currency }, checkoutDueError = false, page = {}, cardValidation = { valid: true } } = {}) {
++    checkoutDue = { amount: 20, currency }, checkoutDueError = false, page = {}, startCallbacks = 1, cardValidation = { valid: true } } = {}) {
+     const store = {
+         getPaymentRegion: vi.fn(async () => region), getAppConfigValue: vi.fn(async () => lastUsedId),
+         reserveCard: vi.fn(async () => ({ id: 1, card_number: 'offline-fixture-card', card_expiry: '01/30', card_cvc: '000' })),
++        markCardPaymentStarted: vi.fn(async () => 1), completeCardPayment: vi.fn(async () => 1),
+         releaseCard: vi.fn(async () => 1), cooldownCard: vi.fn(async () => { if (failCooldown) throw new Error('fixture cooldown error'); }), quarantineCardForReview: vi.fn(async () => { if (failQuarantine) throw new Error('fixture quarantine error'); }),
+         createBillingRecord: vi.fn(async () => { if (failRecord) throw new Error('fixture record error'); }),
+         bindCardPaymentProfile: vi.fn(), recordCardUsage: vi.fn(), markCardExhausted: vi.fn()
+@@ -46,8 +47,14 @@
+         return selector ? selector(...args) : address;
+     });
+     const markAddressBound = vi.fn(), onPaymentState = vi.fn();
++    const externalSubmission = vi.fn();
+     const completeStripeCardPayment = vi.fn(async (_page, _card, _address, options) => {
+-        if (started) await options.onPaymentAttemptStarted();
++        if (started) {
++            for (let i = 0; i < startCallbacks; i++) {
++                await options.onPaymentAttemptStarted();
++                externalSubmission();
++            }
++        }
+         if (throwAfterSubmit) throw new Error('fixture browser closed');
+         return paymentResponse || { success: false, submitted: false, captchaRequired: true, error: '人机验证未完成', dueAmount: 20, dueCurrency: 'USD' };
+     });
+@@ -68,7 +75,7 @@
+         module, exports: module.exports, require: key => { if (!(key in dependencies)) throw new Error('Unexpected dependency'); return dependencies[key]; },
+         process: { env: {} }, console: { log() {}, warn() {} }, Date
+     });
+-    return { store, completeStripeCardPayment, waitForCheckoutDueAmount, pickBillingAddressForCheckout, markAddressBound, onPaymentState,
++    return { store, externalSubmission, completeStripeCardPayment, waitForCheckoutDueAmount, pickBillingAddressForCheckout, markAddressBound, onPaymentState,
+         run: () => module.exports.executePaymentWithRetry(page, { ...(native
+         ? { platform: 'grok', planType: 'grok_bundle_premium_monthly', grokCheckout: { native: true } }
+         : { platform: 'claude', planType: 'claude_pro' }), ownerKey: 'fixture_job', onPaymentState, ...runOptions }) };
+@@ -393,13 +400,15 @@
+         expect(f.store.reserveCard).toHaveBeenCalledWith(ownerKey);
+         expect(f.store.releaseCard).toHaveBeenCalledExactlyOnceWith(1, ownerKey);
+     });
+-    it('uses the same owner for a successful profile, usage and release before success billing', async () => {
++    it('holds the same owner before submission and completes only after success billing', async () => {
+         const f = harness({ paymentResponse: success });
+         expect(await f.run()).toMatchObject({ success: true });
+         expect(f.store.bindCardPaymentProfile).toHaveBeenCalledExactlyOnceWith(1, { holderName: '', address: oregonAddress }, ownerKey);
+         expect(f.store.recordCardUsage).toHaveBeenCalledExactlyOnceWith(1, ownerKey);
+-        expect(f.store.releaseCard).toHaveBeenCalledExactlyOnceWith(1, ownerKey);
+-        expect(f.store.releaseCard.mock.invocationCallOrder[0]).toBeLessThan(f.store.createBillingRecord.mock.invocationCallOrder[0]);
++        expect(f.store.markCardPaymentStarted).toHaveBeenCalledExactlyOnceWith(1, ownerKey);
++        expect(f.store.completeCardPayment).toHaveBeenCalledExactlyOnceWith(1, ownerKey);
++        expect(f.store.releaseCard).not.toHaveBeenCalled();
++        expect(f.store.createBillingRecord.mock.invocationCallOrder[0]).toBeLessThan(f.store.completeCardPayment.mock.invocationCallOrder[0]);
+     });
+     it('passes the owner to unknown-result quarantine without ordinary release or rotation', async () => {
+         const f = harness({ paymentResponse: unknown });
+@@ -471,23 +480,24 @@
+         expect(f.store.releaseCard).not.toHaveBeenCalled();
+         expect(f.completeStripeCardPayment).not.toHaveBeenCalled();
+     });
+-    it.each(['bindCardPaymentProfile', 'recordCardUsage', 'releaseCard'])('stops success bookkeeping on ownership loss in %s', async action => {
++    it.each(['bindCardPaymentProfile', 'recordCardUsage', 'completeCardPayment'])('stops success bookkeeping on ownership loss in %s', async action => {
+         const f = harness({ paymentResponse: success });
+         f.store[action].mockRejectedValue(lost());
+         await expect(f.run()).rejects.toMatchObject({ code: 'CARD_LOCK_OWNERSHIP_LOST' });
+         expect(f.store.reserveCard).toHaveBeenCalledOnce();
+         expect(f.completeStripeCardPayment).toHaveBeenCalledOnce();
+-        expect(f.store.createBillingRecord).not.toHaveBeenCalled();
++        if (action === 'completeCardPayment') expect(f.store.createBillingRecord).toHaveBeenCalledOnce();
++        else expect(f.store.createBillingRecord).not.toHaveBeenCalled();
+         if (action === 'bindCardPaymentProfile') expect(f.store.recordCardUsage).not.toHaveBeenCalled();
+-        if (action !== 'releaseCard') expect(f.store.releaseCard).not.toHaveBeenCalled();
+-        else expect(f.store.releaseCard).toHaveBeenCalledOnce();
+-    });
+-    it('stops on a zero-row success release without publishing a success billing record', async () => {
++        expect(f.store.releaseCard).not.toHaveBeenCalled();
++    });
++    it('stops on a zero-row completion after preserving the success billing record', async () => {
+         const f = harness({ paymentResponse: success });
+-        f.store.releaseCard.mockResolvedValue(0);
++        f.store.completeCardPayment.mockResolvedValue(0);
+         await expect(f.run()).rejects.toMatchObject({ code: 'CARD_LOCK_OWNERSHIP_LOST' });
+-        expect(f.store.createBillingRecord).not.toHaveBeenCalled();
+-        expect(f.store.releaseCard).toHaveBeenCalledOnce();
++        expect(f.store.createBillingRecord).toHaveBeenCalledOnce();
++        expect(f.store.completeCardPayment).toHaveBeenCalledOnce();
++        expect(f.store.releaseCard).not.toHaveBeenCalled();
+         expect(f.store.reserveCard).toHaveBeenCalledOnce();
+     });
+     it('stops a confirmed-unsubmitted zero-row release without trying another card', async () => {
+@@ -547,3 +557,82 @@
+         expect(f.store.reserveCard).toHaveBeenCalledOnce();
+     });
+ });
++
++
++describe('round7 durable payment hold failures', () => {
++    const success = { success: true, submitted: true, dueAmount: 20, dueCurrency: 'USD' };
++    it.each(['zero_rows', 'write_error', 'response_lost'])('stops before external submission and retains recovery ownership on %s', async fault => {
++        const f = harness({ paymentResponse: success });
++        let durableHold = false;
++        f.store.markCardPaymentStarted.mockImplementation(async () => {
++            if (fault === 'zero_rows') return 0;
++            if (fault === 'response_lost') durableHold = true;
++            throw new Error('offline hold write/response failure');
++        });
++        const result = await f.run();
++        expect(result).toMatchObject({ success: false, paymentState: 'unknown', manualIntervention: true });
++        expect(f.externalSubmission).not.toHaveBeenCalled();
++        expect(f.store.reserveCard).toHaveBeenCalledOnce();
++        expect(f.store.markCardPaymentStarted).toHaveBeenCalledOnce();
++        expect(f.store.releaseCard).not.toHaveBeenCalled();
++        expect(f.store.completeCardPayment).not.toHaveBeenCalled();
++        expect(f.store.cooldownCard).not.toHaveBeenCalled();
++        expect(f.store.quarantineCardForReview).toHaveBeenCalledOnce();
++        expect(durableHold).toBe(fault === 'response_lost');
++    });
++    it('never submits when started-state persistence fails after the durable hold', async () => {
++        const f = harness({ paymentResponse: success });
++        f.onPaymentState.mockImplementation(async state => {
++            if (state === 'started') throw new Error('offline task persistence failure');
++        });
++        expect(await f.run()).toMatchObject({ success: false, paymentState: 'unknown' });
++        expect(f.store.markCardPaymentStarted).toHaveBeenCalledOnce();
++        expect(f.externalSubmission).not.toHaveBeenCalled();
++        expect(f.store.releaseCard).not.toHaveBeenCalled();
++        expect(f.store.reserveCard).toHaveBeenCalledOnce();
++    });
++    it('rejects a repeated start callback before a second external submission', async () => {
++        const f = harness({ startCallbacks: 2, paymentResponse: success });
++        expect(await f.run()).toMatchObject({ success: false, paymentState: 'unknown' });
++        expect(f.externalSubmission).toHaveBeenCalledOnce();
++        expect(f.store.markCardPaymentStarted).toHaveBeenCalledOnce();
++        expect(f.store.reserveCard).toHaveBeenCalledOnce();
++        expect(f.store.releaseCard).not.toHaveBeenCalled();
++        expect(f.store.completeCardPayment).not.toHaveBeenCalled();
++    });
++    it('retains the card if both hold acknowledgement and recovery quarantine fail', async () => {
++        const f = harness({ failQuarantine: true });
++        f.store.markCardPaymentStarted.mockRejectedValue(new Error('offline acknowledgement lost'));
++        await expect(f.run()).rejects.toThrow('fixture quarantine error');
++        expect(f.externalSubmission).not.toHaveBeenCalled();
++        expect(f.store.releaseCard).not.toHaveBeenCalled();
++        expect(f.store.cooldownCard).not.toHaveBeenCalled();
++        expect(f.store.reserveCard).toHaveBeenCalledOnce();
++    });
++    it.each(['address', 'billing', 'completion'])('does not release or resubmit after a successful charge with %s write failure', async fault => {
++        const f = harness({ address: { ...oregonAddress, id: 7 }, paymentResponse: success });
++        const target = fault === 'address' ? f.markAddressBound
++            : fault === 'billing' ? f.store.createBillingRecord : f.store.completeCardPayment;
++        target.mockRejectedValue(new Error('offline bookkeeping failure'));
++        await expect(f.run()).rejects.toThrow('offline bookkeeping failure');
++        expect(f.externalSubmission).toHaveBeenCalledOnce();
++        expect(f.store.reserveCard).toHaveBeenCalledOnce();
++        expect(f.store.releaseCard).not.toHaveBeenCalled();
++        expect(f.store.cooldownCard).not.toHaveBeenCalled();
++        expect(f.store.quarantineCardForReview).not.toHaveBeenCalled();
++        if (fault !== 'completion') expect(f.store.completeCardPayment).not.toHaveBeenCalled();
++    });
++    it('holds through charge and bookkeeping, then completes exactly once', async () => {
++        const f = harness({ address: { ...oregonAddress, id: 7 }, paymentResponse: success });
++        expect(await f.run()).toMatchObject({ success: true });
++        const order = spy => spy.mock.invocationCallOrder[0];
++        expect(order(f.store.markCardPaymentStarted)).toBeLessThan(order(f.externalSubmission));
++        expect(order(f.externalSubmission)).toBeLessThan(order(f.store.bindCardPaymentProfile));
++        expect(order(f.store.bindCardPaymentProfile)).toBeLessThan(order(f.markAddressBound));
++        expect(order(f.markAddressBound)).toBeLessThan(order(f.store.recordCardUsage));
++        expect(order(f.store.recordCardUsage)).toBeLessThan(order(f.store.createBillingRecord));
++        expect(order(f.store.createBillingRecord)).toBeLessThan(order(f.store.completeCardPayment));
++        expect(f.store.completeCardPayment).toHaveBeenCalledOnce();
++        expect(f.store.releaseCard).not.toHaveBeenCalled();
++    });
++});
+--- a/services/kc-pay-gpt/test/payment-protocol-fallback.test.js
++++ b/services/kc-pay-gpt/test/payment-protocol-fallback.test.js
+@@ -4,13 +4,14 @@
+ import fs from 'node:fs';
+ import vm from 'node:vm';
+ import { randomBytes } from 'node:crypto';
++import { classifyPaymentResult, classifyOpenAiCardMethodFailure } from '../task-safety.js';
+ 
+ describe('Payment Protocol Decline UI Fallback', () => {
+     function createFixture({
+         protoRes = { success: false, declined: true, error: 'Your card was declined.', code: 'card_declined' },
+         uiPaymentResult = { success: true, dueAmount: 982.14, dueCurrency: 'PHP' },
+         env = {},
+-        extraOptions = {}
++        extraOptions = {}, protocolStarted = true, protocolError = null
+     } = {}) {
+         const store = {
+             getPaymentRegion: vi.fn(async () => 'PH'),
+@@ -21,6 +22,7 @@
+                 card_expiry: '10/28',
+                 card_cvc: '123'
+             })),
++            markCardPaymentStarted: vi.fn(async () => 1), completeCardPayment: vi.fn(async () => 1),
+             releaseCard: vi.fn(async () => 1),
+             cooldownCard: vi.fn(),
+             quarantineCardForReview: vi.fn(),
+@@ -38,8 +40,15 @@
+             screenshot: vi.fn(async () => {})
+         };
+ 
+-        const executeStripeProtocolPayment = vi.fn(async () => protoRes);
+-        const completeStripeCardPayment = vi.fn(async () => uiPaymentResult);
++        const executeStripeProtocolPayment = vi.fn(async options => {
++            if (protocolStarted) await options.onPaymentAttemptStarted();
++            if (protocolError) throw protocolError;
++            return protoRes;
++        });
++        const completeStripeCardPayment = vi.fn(async (_page, _card, _address, options) => {
++            await options.onPaymentAttemptStarted();
++            return uiPaymentResult;
++        });
+         const waitForCheckoutDueAmount = vi.fn(async () => ({ amount: 982.14, currency: 'PHP' }));
+         const readCheckoutDueAmount = vi.fn(async () => ({ amount: 982.14, currency: 'PHP' }));
+         const onProgress = vi.fn();
+@@ -68,8 +77,7 @@
+             },
+             './region-config': { getRegionConfig: () => ({ currency: 'PHP' }) },
+             './task-safety': {
+-                classifyPaymentResult: () => ({ kind: 'success', category: 'paid' }),
+-                classifyOpenAiCardMethodFailure: () => null
++                classifyPaymentResult, classifyOpenAiCardMethodFailure
+             },
+             './card-validator': { validateCardNumber: () => ({ valid: true }) },
+             './public/grok-plan-catalog': {},
+@@ -246,15 +254,16 @@
+         expect(result.cardsDeclined).toBe(3);
+     });
+ 
+-    it('lazily wakes up browser and UI only when protocol explicitly requests fallbackToUi (e.g. 3DS required)', async () => {
++    it('permits UI fallback only when protocol has not entered the submission barrier', async () => {
+         const fixture = createFixture({
+             protoRes: {
+                 success: false,
+                 declined: false,
+                 fallbackToUi: true,
+                 requiresAction: true,
+-                error: '银行卡需要 3DS 验证，平滑切入收银台 UI'
+-            },
++                error: '协议预检查不支持当前页面'
++            },
++            protocolStarted: false,
+             uiPaymentResult: {
+                 success: true,
+                 dueAmount: 982.14,
+@@ -375,4 +384,47 @@
+         expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
+         expect(result.success).toBe(false);
+     });
++    it.each([
++        { success: false, fallbackToUi: true, submitted: false, error: 'offline unsupported response' },
++        { success: false, requiresAction: true, fallbackToUi: true, submitted: true, code: 'PAYMENT_REQUIRES_ACTION' },
++        { success: false, submitted: false, captchaRequired: true, error: 'captcha required' }
++    ])('never opens UI or rotates after the durable hold: %j', async protoRes => {
++        const fixture = createFixture({ protoRes });
++        const ensureBrowserPage = vi.fn();
++        const refreshCheckoutSession = vi.fn();
++        expect(await fixture.run({ ensureBrowserPage, refreshCheckoutSession })).toMatchObject({ success: false, paymentState: 'unknown' });
++        expect(fixture.executeStripeProtocolPayment).toHaveBeenCalledOnce();
++        expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
++        expect(ensureBrowserPage).not.toHaveBeenCalled();
++        expect(refreshCheckoutSession).not.toHaveBeenCalled();
++        expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
++        expect(fixture.store.releaseCard).not.toHaveBeenCalled();
++        expect(fixture.store.cooldownCard).not.toHaveBeenCalled();
++    });
++    it('never falls back after the protocol throws after payment protection', async () => {
++        const fixture = createFixture({ protocolError: new Error('offline socket response lost') });
++        expect(await fixture.run()).toMatchObject({ success: false, paymentState: 'unknown' });
++        expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
++        expect(fixture.store.markCardPaymentStarted).toHaveBeenCalledOnce();
++        expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
++        expect(fixture.store.releaseCard).not.toHaveBeenCalled();
++    });
++    it('permits one UI attempt when the protocol throws before protection', async () => {
++        const fixture = createFixture({ protocolStarted: false, protocolError: new Error('offline preflight failure') });
++        expect(await fixture.run()).toMatchObject({ success: true });
++        expect(fixture.completeStripeCardPayment).toHaveBeenCalledOnce();
++        expect(fixture.store.markCardPaymentStarted).toHaveBeenCalledOnce();
++        expect(fixture.store.completeCardPayment).toHaveBeenCalledOnce();
++        expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
++    });
++    it('stops protocol and UI when the durable hold cannot be acknowledged', async () => {
++        const fixture = createFixture();
++        fixture.store.markCardPaymentStarted.mockRejectedValue(new Error('offline hold acknowledgement lost'));
++        expect(await fixture.run()).toMatchObject({ success: false, paymentState: 'unknown' });
++        expect(fixture.completeStripeCardPayment).not.toHaveBeenCalled();
++        expect(fixture.store.reserveCard).toHaveBeenCalledOnce();
++        expect(fixture.store.releaseCard).not.toHaveBeenCalled();
++        expect(fixture.store.cooldownCard).not.toHaveBeenCalled();
++    });
++
+ });
+--- a/services/kc-pay-gpt/test/mysql-card-cooldown.test.js
++++ b/services/kc-pay-gpt/test/mysql-card-cooldown.test.js
+@@ -36,9 +36,10 @@
+         expect(sql).toContain('in_use = 0');
+         expect(sql).toContain('locked_at = NULL');
+         expect(sql).toContain('locked_by = NULL');
+-        expect(sql).toContain("WHERE id = ? AND is_active = 1 AND status = '正常' AND in_use = 1");
++        expect(sql).toContain("WHERE id = ? AND is_active = 1 AND status IN ('正常', '支付处理中') AND in_use = 1");
+         expect(sql).toContain('CAST(locked_by AS BINARY) = CAST(? AS BINARY)');
+-        expect(sql.split('WHERE')[0]).not.toMatch(/status\s*=|is_active\s*=/); // Never reactivate manual-review assets.
++        expect(sql.split('WHERE')[0]).toContain("status = '正常'"); // Only an owned, active payment card may return to the normal pool.
++        expect(sql.split('WHERE')[0]).not.toMatch(/is_active\s*=/);
+     });
+     it('defaults to 30 minutes and normalizes numeric input through bound parameters', async () => {
+         const { store, execute } = harness();
+--- a/services/kc-pay-gpt/test/card-freeze.test.js
++++ b/services/kc-pay-gpt/test/card-freeze.test.js
+@@ -27,7 +27,7 @@
+         expect(store.setCardFrozen).toBeTypeOf('function');
+     });
+ 
+-    it('freezing a card sets is_active = 0, status = 已冻结, and releases locks', async () => {
++    it('freezing an idle card sets is_active = 0 and status = 已冻结', async () => {
+         const { store, execute } = harness();
+         const res = await store.setCardFrozen(42, true);
+         expect(res.success).toBe(true);
+@@ -41,6 +41,7 @@
+         expect(sql).toContain("status = '已冻结'");
+         expect(sql).toContain('locked_at = NULL');
+         expect(sql).toContain('locked_by = NULL');
++        expect(sql).toContain("WHERE id = ? AND in_use = 0 AND status IN ('正常', '已冻结', '已报废')");
+     });
+ 
+     it('unfreezing a card restores is_active = 1, status = 正常, and clears cooldown', async () => {
+@@ -56,6 +57,7 @@
+         expect(sql).toContain('is_active = 1');
+         expect(sql).toContain("status = '正常'");
+         expect(sql).toContain('cooldown_until = NULL');
++        expect(sql).toContain("WHERE id = ? AND in_use = 0 AND status = '已冻结'");
+     });
+ 
+     it('rejects invalid cardId gracefully', async () => {
+@@ -71,6 +73,6 @@
+         execute.mockResolvedValueOnce([{ affectedRows: 0 }]);
+         const res = await store.setCardFrozen(999, true);
+         expect(res.success).toBe(false);
+-        expect(res.error).toBe('卡片不存在');
++        expect(res.error).toBe('卡片不存在或仍被占用/待核账，不能冻结或解冻');
+     });
+ });
+--- a/services/kc-pay-gpt/test/stripe-protocol-payment.test.js
++++ b/services/kc-pay-gpt/test/stripe-protocol-payment.test.js
+@@ -1,6 +1,9 @@
+ 'use strict';
+ 
+ import { describe, it, expect, vi } from 'vitest';
++import fs from 'node:fs';
++import vm from 'node:vm';
++import { createRequire } from 'node:module';
+ const {
+     createStripePaymentMethod,
+     syncCheckoutBillingTax,
+@@ -144,3 +147,33 @@
+         expect(getDefaultPlanDisplayAmount('team_5', 'USD', true)).toBe(150);
+     });
+ });
++
++
++describe('round7 actual protocol entrypoint persistence gate', () => {
++    it.each(['cs_test_offline_hold', 'oaics_offline_hold'])('propagates hold failure with zero network/browser work (%s)', async sessionId => {
++        const network = vi.fn(() => { throw new Error('unexpected offline network request'); });
++        const page = { evaluate: network, goto: network, request: { post: network, get: network } };
++        const runtimeRequire = createRequire(new URL('../stripe-protocol-payment.js', import.meta.url));
++        const module = { exports: {} };
++        vm.runInNewContext(fs.readFileSync(new URL('../stripe-protocol-payment.js', import.meta.url), 'utf8'), {
++            module, exports: module.exports, process: { env: {} }, Buffer, URL, URLSearchParams,
++            console: { log() {}, warn() {}, error() {} },
++            setTimeout: network,
++            require: name => {
++                if (name === 'axios') return { create: network, get: network, post: network, request: network };
++                if (name === './sentinel/sentinel-client') return { mintSentinelToken: network };
++                if (name === './stripe-device-fingerprint') return { registerStripeDeviceFingerprint: network };
++                if (name === './playwright-proxy') return { substituteProxySession: network, resetActiveProxyTunnels: network };
++                return runtimeRequire(name);
++            }
++        });
++        const failure = Object.assign(new Error('offline durable hold persistence failed'), { code: 'CARD_PAYMENT_HOLD_FAILED' });
++        const gate = vi.fn(async () => { throw failure; });
++        await expect(module.exports.executeStripeProtocolPayment({
++            page, card: { number: 'offline-card-fixture', expiry: '01/30', cvc: '000' },
++            sessionId, accessToken: 'offline-fixture', onPaymentAttemptStarted: gate, protocolOnly: false
++        })).rejects.toBe(failure);
++        expect(gate).toHaveBeenCalledOnce();
++        expect(network).not.toHaveBeenCalled();
++    });
++});
+--- a/tests/security-round5-kc-owner-locks.test.js
++++ b/tests/security-round5-kc-owner-locks.test.js
+@@ -78,7 +78,14 @@
+             let affectedRows = 0;
+             for (const row of state.cards) {
+                 const matches = binary ? row.locked_by === params[0] : (String(row.locked_by).toLowerCase() === String(params[0]).toLowerCase() || like(params[1]).test(row.locked_by));
+-                if (row.in_use === 1 && row.status === '正常' && matches) {
++                const localTaskGuard = !/local_task\.execution_mode/.test(sql) ||
++                    !String(row.locked_by || '').toLowerCase().startsWith('payment_') ||
++                    (state.task && row.locked_by === `payment_${state.task.job_key}` &&
++                        state.task.execution_mode === 'local_card_pool' &&
++                        ['failed', 'cancelled'].includes(state.task.status) &&
++                        ['not_started', 'declined'].includes(state.task.payment_state) &&
++                        state.task.recovery_required === 0);
++                if (row.in_use === 1 && row.status === '正常' && matches && localTaskGuard) {
+                     Object.assign(row, { in_use: 0, locked_by: null, locked_at: null }); affectedRows++;
+                 }
+             }
+@@ -117,7 +124,8 @@
+ for (const key of ['job-1', 'AbC_-123', 'gptapi_job-1', 'X'.repeat(48)]) {
+     test(`local cleanup releases only the canonical complete payment owner: ${key.slice(0, 20)}`, async () => {
+         const owner = `payment_${key}`;
+-        const h = harness({ cards: [card(1, owner), card(2, `${owner}-extra`), card(3, `x${owner}`),
++        const h = harness({ taskPatch: { job_key: key, execution_mode: 'local_card_pool', status: 'failed' },
++            cards: [card(1, owner), card(2, `${owner}-extra`), card(3, `x${owner}`),
+             card(4, owner.toLowerCase() === owner ? owner.toUpperCase() : owner.toLowerCase()),
+             card(5, `${owner} `), card(6, `gptapi_${key}`), card(7, key),
+             card(8, owner, { status: '待人工复核' }), card(9, `manual_review:${key}`)] });
+--- a/tests/security-round6-kc-card-ownership.test.js
++++ b/tests/security-round6-kc-card-ownership.test.js
+@@ -30,6 +30,8 @@
+         if (/in_use = 1/.test(where) && row.in_use !== 1) return false;
+         if (/is_active = 1/.test(where) && row.is_active !== 1) return false;
+         if (/status = '正常'/.test(where) && row.status !== '正常') return false;
++        const allowedStatuses = where.match(/\bstatus IN \(([^)]+)\)/);
++        if (allowedStatuses && ![...allowedStatuses[1].matchAll(/'([^']*)'/g)].some(match => match[1] === row.status)) return false;
+         if (/CAST\(locked_by AS BINARY\) = CAST\(\? AS BINARY\)/.test(where)) {
+             if (row.locked_by !== params[offset + 1]) return false;
+         } else if (/locked_by = \?/.test(where)) {
+--- /dev/null
++++ b/tests/security-round7-kc-payment-hold.test.js
+@@ -0,0 +1,310 @@
++'use strict';
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const vm = require('node:vm');
++const { createRequire } = require('node:module');
++
++const runtimePath = path.resolve(__dirname, '../services/kc-pay-gpt/mysql-store.js');
++const runtimeRequire = createRequire(runtimePath);
++const source = fs.readFileSync(process.env.KC_ATOMIC_STORE_SOURCE || runtimePath, 'utf8');
++const clone = value => JSON.parse(JSON.stringify(value));
++const owner = 'payment_Job-1';
++const card = (patch = {}) => ({ id: 55, is_active: 1, in_use: 1, status: '正常', locked_by: owner,
++    locked_at: '2000-01-01T00:00:00.000Z', usage_count: 0, daily_usage_count: 0,
++    daily_usage_reset_at: null, cooldown_until: null, ...patch });
++const task = (patch = {}) => ({ job_key: 'Job-1', execution_mode: 'local_card_pool',
++    status: 'failed', payment_state: 'not_started', recovery_required: 0, ...patch });
++const sqlValues = text => [...text.matchAll(/'([^']*)'/g)].map(match => match[1]);
++
++// Bounded interpreter for the actual store's SQL predicates and SET operations.
++// Unknown statements fail the fixture. This tests application transitions and
++// injected schedules only: it does not implement MySQL, InnoDB, crash durability,
++// isolation levels, concurrent connections, or an ambiguous COMMIT outcome.
++function harness({ cards = [card()], tasks = [task()], beforeUpdate, fault } = {}) {
++    const state = { cards: clone(cards), tasks: clone(tasks) };
++    const events = [];
++    let snapshot;
++    const matches = (row, sql, params) => {
++        const whereIndex = sql.indexOf(' WHERE ');
++        assert.ok(whereIndex >= 0, 'writes and locking reads must have a WHERE');
++        const wholeWhere = sql.slice(whereIndex + 7);
++        const outerWhere = wholeWhere.split(/ AND \(LEFT\(| AND NOT EXISTS/)[0];
++        const offset = (sql.slice(0, whereIndex).match(/\?/g) || []).length;
++        let parameter = offset;
++        if (/\bid = \?/.test(outerWhere) && row.id !== Number(params[parameter++])) return false;
++        for (const field of ['in_use', 'is_active']) {
++            const equal = outerWhere.match(new RegExp(`\\b${field} = ([01])`));
++            if (equal && row[field] !== Number(equal[1])) return false;
++        }
++        const equalStatus = outerWhere.match(/\bstatus = '([^']+)'/);
++        const statusList = outerWhere.match(/\bstatus IN \(([^)]+)\)/);
++        if (equalStatus && row.status !== equalStatus[1]) return false;
++        if (statusList && !sqlValues(statusList[1]).includes(row.status)) return false;
++        if (/CAST\(locked_by AS BINARY\) = CAST\(\? AS BINARY\)/.test(outerWhere)) {
++            if (row.locked_by !== params[parameter++]) return false;
++        } else if (/\blocked_by = \?/.test(outerWhere)) {
++            if (String(row.locked_by).trimEnd().toLowerCase() !== String(params[parameter++]).trimEnd().toLowerCase()) return false;
++        }
++        if (/locked_at < \?/.test(outerWhere) && row.locked_at != null &&
++            new Date(row.locked_at) >= new Date(params[parameter])) return false;
++        if (/local_task/.test(wholeWhere) && String(row.locked_by || '').toLowerCase().startsWith('payment_')) {
++            const candidates = state.tasks.filter(record =>
++                /CAST\(card_assets.locked_by AS BINARY\)/.test(wholeWhere)
++                    ? row.locked_by === `payment_${record.job_key}`
++                    : String(row.locked_by).toLowerCase() === `payment_${record.job_key}`.toLowerCase());
++            if (!candidates.some(record => {
++                for (const field of ['execution_mode', 'status', 'payment_state']) {
++                    const equal = wholeWhere.match(new RegExp(`local_task\\.${field} = '([^']+)'`));
++                    const list = wholeWhere.match(new RegExp(`local_task\\.${field} IN \\(([^)]+)\\)`));
++                    if (equal && record[field] !== equal[1]) return false;
++                    if (list && !sqlValues(list[1]).includes(record[field])) return false;
++                }
++                return !/local_task.recovery_required = 0/.test(wholeWhere) || record.recovery_required === 0;
++            })) return false;
++        }
++        if (/NOT EXISTS.*provider_task/.test(wholeWhere)) {
++            const protectedTask = state.tasks.some(record => {
++                if (row.locked_by !== `gptapi_${record.job_key}` ||
++                    !(record.execution_mode === 'third_party_api' || record.gpt_api_order_id || record.gpt_api_task_id)) return false;
++                let attempt = {};
++                try { attempt = JSON.parse(record.gpt_api_raw || '{}').attempt || {}; } catch (_) {}
++                return !['success', 'no_charge'].includes(attempt.settlement) &&
++                    (['running', 'manual'].includes(record.status) || record.recovery_required === 1 ||
++                        ['started', 'unknown'].includes(record.payment_state) || record.gpt_api_order_id ||
++                        record.gpt_api_task_id || attempt.dispatchStarted === true);
++            });
++            if (protectedTask) return false;
++        }
++        return true;
++    };
++    const query = async (rawSql, params = []) => {
++        const sql = rawSql.replace(/\s+/g, ' ').trim();
++        events.push({ sql, params: [...params] });
++        if (/^UPDATE (phone_assets|pool_emails) SET /.test(sql)) return [{ affectedRows: 0 }];
++        if (/^SELECT proxy_url FROM proxy_assets/.test(sql)) return [[]];
++        if (/^SELECT id, card_number/.test(sql)) {
++            return [clone(state.cards.filter(row => row.is_active === 1 && row.in_use === 0 &&
++                row.status === '正常' && !row.cooldown_until).slice(0, 1))];
++        }
++        if (/^SELECT daily_usage_count/.test(sql)) return [clone(state.cards.filter(row => matches(row, sql, params)))];
++        if (!/^UPDATE card_assets SET /.test(sql)) throw new Error(`Unsupported offline statement: ${sql}`);
++        beforeUpdate?.(state, sql, params);
++        const selected = state.cards.filter(row => matches(row, sql, params));
++        if (fault?.when(sql) && fault.phase === 'before') throw new Error('offline write rejected');
++        const set = sql.slice(0, sql.indexOf(' WHERE '));
++        for (const row of selected) {
++            const status = set.match(/status = '([^']+)'/);
++            if (status) row.status = status[1];
++            const active = set.match(/is_active = ([01])/);
++            if (active) row.is_active = Number(active[1]);
++            if (/in_use = 0/.test(set)) Object.assign(row, { in_use: 0, locked_by: null, locked_at: null });
++            if (/in_use = 1/.test(set)) row.in_use = 1;
++            if (/CONCAT\('manual_review:', \?\)/.test(set)) row.locked_by = `manual_review:${params[0]}`;
++            if (/SET payment_holder_name/.test(set)) Object.assign(row, { payment_holder_name: params[0], payment_address_id: params[5] });
++            if (/SET daily_usage_count/.test(set)) Object.assign(row, {
++                daily_usage_count: /daily_usage_count = 1,/.test(set) ? 1 : row.daily_usage_count + 1,
++                usage_count: row.usage_count + 1, daily_usage_reset_at: new Date().toISOString() });
++            if (/SET cooldown_until/.test(set)) {
++                const proposed = Date.now() + (/INTERVAL 24 HOUR/.test(set) ? 24 * 60 : Number(params[0])) * 60000;
++                row.cooldown_until = new Date(/GREATEST/.test(set) ? Math.max(proposed, new Date(row.cooldown_until || 0).getTime()) : proposed).toISOString();
++            }
++            if (/cooldown_until = NULL/.test(set)) row.cooldown_until = null;
++        }
++        if (fault?.when(sql) && fault.phase === 'after') throw new Error('offline durable write response lost');
++        return [{ affectedRows: selected.length, changedRows: selected.length }];
++    };
++    const connection = { query, execute: query,
++        beginTransaction: async () => { snapshot = clone(state); events.push({ tx: 'begin' }); },
++        commit: async () => events.push({ tx: 'commit' }),
++        rollback: async () => { Object.assign(state, clone(snapshot)); events.push({ tx: 'rollback' }); },
++        release: () => events.push({ tx: 'release' }) };
++    const pool = { query, execute: query, getConnection: async () => connection };
++    const module = { exports: {} };
++    vm.runInNewContext(source, { module, exports: module.exports, __dirname: path.dirname(runtimePath),
++        process: { env: {} }, Buffer, URL, console,
++        require: name => name === 'mysql2/promise' ? { createPool: () => pool } : runtimeRequire(name)
++    }, { filename: runtimePath });
++    return { store: module.exports, state, events };
++}
++const held = h => {
++    assert.equal(h.state.cards[0].in_use, 1);
++    assert.equal(h.state.cards[0].locked_by, owner);
++};
++const ownershipLost = promise => assert.rejects(promise, { code: 'CARD_LOCK_OWNERSHIP_LOST' });
++const cleanups = {
++    ordinary: h => h.store.releaseCard(55, owner),
++    runtime: h => h.store.releaseRuntimeAssets({ cardAssetId: 55, ownerKey: owner }),
++    stale: h => h.store.releaseStaleAssetLocks(),
++    restart: h => h.store.resetAllAssetLocks(),
++    bulk: h => h.store.releaseCardsByOwner('Job-1')
++};
++
++test('durable hold is a single-use transition and completes only from its own pending state', async () => {
++    const h = harness();
++    await ownershipLost(h.store.completeCardPayment(55, owner));
++    assert.equal(await h.store.markCardPaymentStarted(55, owner), 1);
++    assert.equal(h.state.cards[0].status, '支付处理中');
++    await ownershipLost(h.store.markCardPaymentStarted(55, owner));
++    assert.equal(await h.store.completeCardPayment(55, owner), 1);
++    assert.equal(h.state.cards[0].status, '正常');
++    assert.equal(h.state.cards[0].in_use, 0);
++    assert.equal(h.state.cards[0].locked_by, null);
++    await ownershipLost(h.store.completeCardPayment(55, owner));
++});
++for (const name of ['markCardPaymentStarted', 'completeCardPayment']) {
++    for (const patch of [ { locked_by: 'payment_other' }, { locked_by: owner.toLowerCase() },
++        { locked_by: `${owner} ` }, { in_use: 0 }, { is_active: 0 }, { status: '待人工复核' } ]) {
++        test(`${name} rejects ownership/state mismatch: ${JSON.stringify(patch)}`, async () => {
++            const h = harness({ cards: [card({ status: name === 'completeCardPayment' ? '支付处理中' : '正常', ...patch })] });
++            const before = clone(h.state);
++            await ownershipLost(h.store[name](55, owner));
++            assert.deepEqual(h.state, before);
++        });
++    }
++}
++for (const [name, cleanup] of Object.entries(cleanups)) {
++    test(`${name} cleanup cannot reclaim a durable payment hold`, async () => {
++        const h = harness();
++        await h.store.markCardPaymentStarted(55, owner);
++        await cleanup(h);
++        held(h);
++        assert.equal(h.state.cards[0].status, '支付处理中');
++        assert.equal(await h.store.reserveCard('payment_new'), null);
++    });
++}
++const safeTasks = [];
++for (const status of ['failed', 'cancelled']) for (const payment_state of ['not_started', 'declined']) {
++    safeTasks.push({ status, payment_state });
++}
++for (const cleanupName of ['stale', 'restart', 'bulk']) {
++    for (const patch of safeTasks) {
++        test(`${cleanupName} reclaims a normal lock with exact safe terminal task ${JSON.stringify(patch)}`, async () => {
++            const h = harness({ tasks: [task(patch)] });
++            await cleanups[cleanupName](h);
++            assert.equal(h.state.cards[0].in_use, 0);
++            assert.equal(h.state.cards[0].locked_by, null);
++        });
++    }
++    const unsafeTasks = [null, { execution_mode: 'debug' }, { execution_mode: 'third_party_api' },
++        { status: 'running' }, { status: 'manual' }, { status: 'succeeded' }, { status: 'success' },
++        { payment_state: 'started' }, { payment_state: 'unknown' }, { payment_state: 'succeeded' },
++        { recovery_required: 1 }, { recovery_required: null }, { job_key: 'job-1' }, { job_key: 'Job-1 ' }];
++    for (const patch of unsafeTasks) {
++        test(`${cleanupName} retains normal lock without safe task evidence ${JSON.stringify(patch)}`, async () => {
++            const h = harness({ tasks: patch ? [task(patch)] : [] });
++            await cleanups[cleanupName](h);
++            held(h);
++        });
++    }
++    test(`${cleanupName} retains normal lock if terminal task becomes uncertain before UPDATE`, async () => {
++        const h = harness({ beforeUpdate: (state, sql) => {
++            if (/UPDATE card_assets/.test(sql)) state.tasks[0].payment_state = 'unknown';
++        } });
++        await cleanups[cleanupName](h);
++        held(h);
++    });
++    test(`${cleanupName} cannot treat differently cased owner as a nonpayment owner`, async () => {
++        const h = harness({ cards: [card({ locked_by: owner.toUpperCase() })] });
++        await cleanups[cleanupName](h);
++        assert.equal(h.state.cards[0].in_use, 1);
++    });
++}
++for (const cleanupName of ['stale', 'restart']) {
++    test(`${cleanupName} retains an unresolved GPT provider lock`, async () => {
++        const h = harness({ cards: [card({ locked_by: 'gptapi_Job-1' })],
++            tasks: [task({ execution_mode: 'third_party_api', status: 'running' })] });
++        await cleanups[cleanupName](h);
++        assert.equal(h.state.cards[0].in_use, 1);
++    });
++    test(`${cleanupName} releases an ordinary nonpayment stale lock`, async () => {
++        const h = harness({ cards: [card({ locked_by: 'registration_Job-1' })], tasks: [] });
++        await cleanups[cleanupName](h);
++        assert.equal(h.state.cards[0].in_use, 0);
++    });
++}
++for (const freeze of [true, false]) {
++    for (const patch of [ { status: '支付处理中' }, { status: '待人工复核', is_active: 0 },
++        { status: '正常' }, { status: '已冻结', is_active: 0 }, { status: '支付处理中', in_use: 0 } ]) {
++        test(`${freeze ? 'freeze' : 'unfreeze'} cannot erase held or pending state ${JSON.stringify(patch)}`, async () => {
++            const h = harness({ cards: [card(patch)] });
++            const before = clone(h.state);
++            assert.equal((await h.store.setCardFrozen(55, freeze)).success, false);
++            assert.deepEqual(h.state, before);
++        });
++    }
++}
++test('an idle normal card can be frozen and then unfrozen', async () => {
++    const h = harness({ cards: [card({ in_use: 0, locked_by: null })] });
++    assert.equal((await h.store.setCardFrozen(55, true)).success, true);
++    assert.equal(h.state.cards[0].status, '已冻结');
++    assert.equal((await h.store.setCardFrozen(55, false)).success, true);
++    assert.equal(h.state.cards[0].status, '正常');
++    assert.equal(h.state.cards[0].is_active, 1);
++});
++const mutations = {
++    quarantine: h => h.store.quarantineCardForReview(55, 'offline', owner),
++    cooldown: h => h.store.cooldownCard(55, 30, owner),
++    exhaust: h => h.store.markCardExhausted(55, owner),
++    profile: h => h.store.bindCardPaymentProfile(55, { holderName: 'Offline', address: { id: 9 } }, owner),
++    usage: h => h.store.recordCardUsage(55, owner)
++};
++for (const [name, invoke] of Object.entries(mutations)) {
++    test(`pending card supports owner-scoped ${name}`, async () => {
++        const h = harness({ cards: [card({ status: '支付处理中' })] });
++        await invoke(h);
++        const row = h.state.cards[0];
++        if (name === 'quarantine') { assert.equal(row.status, '待人工复核'); assert.equal(row.in_use, 1); assert.equal(row.is_active, 0); }
++        if (name === 'cooldown') { assert.equal(row.status, '正常'); assert.equal(row.in_use, 0); assert.ok(row.cooldown_until); }
++        if (name === 'exhaust') { assert.equal(row.status, '已报废'); assert.equal(row.is_active, 0); }
++        if (name === 'profile') { assert.equal(row.payment_holder_name, 'Offline'); held(h); }
++        if (name === 'usage') { assert.equal(row.usage_count, 1); assert.equal(row.daily_usage_count, 1); held(h); }
++    });
++    for (const foreignOwner of ['payment_other', owner.toLowerCase(), `${owner} `]) {
++        test(`pending ${name} cannot mutate another owner ${foreignOwner}`, async () => {
++            const h = harness({ cards: [card({ status: '支付处理中', locked_by: foreignOwner })] });
++            const before = clone(h.state);
++            await ownershipLost(invoke(h));
++            assert.deepEqual(h.state, before);
++        });
++    }
++}
++test('usage transaction failure rolls back counters without clearing the payment hold', async () => {
++    const h = harness({ cards: [card({ status: '支付处理中', daily_usage_count: 2, daily_usage_reset_at: new Date().toISOString() })],
++        fault: { when: sql => /SET cooldown_until/.test(sql), phase: 'before' } });
++    await assert.rejects(h.store.recordCardUsage(55, owner), /offline write rejected/);
++    assert.equal(h.state.cards[0].usage_count, 0);
++    assert.equal(h.state.cards[0].daily_usage_count, 2);
++    held(h);
++    assert.ok(h.events.some(event => event.tx === 'rollback'));
++});
++test('cooldown preserves a longer existing cooldown when explicitly settling a decline', async () => {
++    const until = new Date(Date.now() + 12 * 3600000).toISOString();
++    const h = harness({ cards: [card({ status: '支付处理中', cooldown_until: until })] });
++    await h.store.cooldownCard(55, 30, owner);
++    assert.equal(h.state.cards[0].cooldown_until, until);
++});
++for (const phase of ['before', 'after']) {
++    test(`hold write ${phase === 'after' ? 'response lost after persistence' : 'rejected'} cannot be reclaimed without safe task evidence`, async () => {
++        const h = harness({ tasks: [task({ status: 'running' })],
++            fault: { when: sql => /SET status = '支付处理中'/.test(sql), phase } });
++        await assert.rejects(h.store.markCardPaymentStarted(55, owner), /offline/);
++        for (const name of ['stale', 'restart', 'bulk']) await cleanups[name](h);
++        held(h);
++        assert.equal(h.state.cards[0].status, phase === 'after' ? '支付处理中' : '正常');
++    });
++}
++test('failed completion update leaves the durable hold intact', async () => {
++    const h = harness({ cards: [card({ status: '支付处理中' })],
++        fault: { when: sql => /SET status = '正常', in_use = 0/.test(sql), phase: 'before' } });
++    await assert.rejects(h.store.completeCardPayment(55, owner), /offline write rejected/);
++    held(h);
++    assert.equal(h.state.cards[0].status, '支付处理中');
++});
++test('ownership transfer immediately before the hold write rejects the stale worker', async () => {
++    const h = harness({ beforeUpdate: state => { state.cards[0].locked_by = 'payment_next'; } });
++    await ownershipLost(h.store.markCardPaymentStarted(55, owner));
++    assert.equal(h.state.cards[0].locked_by, 'payment_next');
++    assert.equal(h.state.cards[0].status, '正常');
++});

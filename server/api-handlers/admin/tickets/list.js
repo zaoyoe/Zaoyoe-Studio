@@ -60,6 +60,36 @@ function normalizeAssigneeFilter(value) {
     return 'all';
 }
 
+function extractOrderIdFromText(text = '') {
+    const str = String(text || '');
+    if (!str) return '';
+    const bracketMatch = str.match(/\[关联订单[:：]\s*([A-Za-z0-9_-]+)\]/i);
+    if (bracketMatch && bracketMatch[1]) return bracketMatch[1].trim();
+
+    const prefixMatch = str.match(/(?:关联订单号?|订单号?)[：:\s]+([A-Za-z0-9_-]+)/i);
+    if (prefixMatch && prefixMatch[1]) return prefixMatch[1].trim();
+
+    const gsMatch = str.match(/\b(GS\d{14,}[A-Za-z0-9]*)\b/i);
+    if (gsMatch && gsMatch[1]) return gsMatch[1].trim();
+
+    const uuidMatch = str.match(/\b([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\b/i);
+    if (uuidMatch && uuidMatch[1]) return uuidMatch[1].trim();
+
+    return '';
+}
+
+function extractEmailFromText(text = '') {
+    const str = String(text || '');
+    if (!str) return '';
+    const prefixMatch = str.match(/(?:[（(]联系邮箱|联系邮箱|邮箱|email)[：:\s]+([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)[）)]?/i);
+    if (prefixMatch && prefixMatch[1]) return prefixMatch[1].trim();
+
+    const emailMatch = str.match(/\b([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)\b/i);
+    if (emailMatch && emailMatch[1]) return emailMatch[1].trim();
+
+    return '';
+}
+
 function normalizeBooleanFlag(value) {
     const normalized = normalizeText(value, 20).toLowerCase();
     return ['1', 'true', 'yes', 'on'].includes(normalized);
@@ -293,16 +323,120 @@ async function loadOrdersByIds(supabase, orderIds = []) {
         return new Map();
     }
 
-    const { data, error } = await supabase
-        .from('shop_orders')
-        .select('id, price_paid, refund_status')
-        .in('id', uniqueIds);
+    const orderMap = new Map();
 
-    if (error) {
-        throw error;
+    try {
+        const { data, error } = await supabase
+            .from('shop_orders')
+            .select('id, price_paid, total_price, refund_status, snapshot_product_name, delivery_status, created_at, inventory_id')
+            .in('id', uniqueIds);
+
+        if (!error && Array.isArray(data)) {
+            data.forEach((row) => {
+                const mapped = {
+                    id: row.id,
+                    order_no: row.id,
+                    price_paid: Number(row.price_paid || row.total_price || 0),
+                    total_price: Number(row.total_price || row.price_paid || 0),
+                    refund_status: row.refund_status,
+                    snapshot_product_name: row.snapshot_product_name,
+                    delivery_status: row.delivery_status,
+                    created_at: row.created_at,
+                    inventory_id: row.inventory_id,
+                    is_guest_order: false
+                };
+                orderMap.set(normalizeText(row?.id, 120), mapped);
+            });
+        }
+    } catch (_) {}
+
+    const remainingIds = uniqueIds.filter((id) => !orderMap.has(id));
+    if (remainingIds.length && supabase.from) {
+        try {
+            const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
+            const uuidIds = remainingIds.filter(isUuid);
+            let guestQuery = supabase
+                .from('guest_shop_orders')
+                .select('id, order_no, site, currency, product_id, sku_id, snapshot_product_name, snapshot_sku_name, quantity, unit_amount, total_amount, payment_status, fulfillment_status, refund_status, created_at, metadata, fulfillment_source, supplier_customer_resolution, inventory_id');
+
+            if (uuidIds.length > 0) {
+                guestQuery = guestQuery.or(`id.in.(${uuidIds.join(',')}),order_no.in.(${remainingIds.map((s) => `"${s}"`).join(',')})`);
+            } else {
+                guestQuery = guestQuery.in('order_no', remainingIds);
+            }
+
+            const { data: guestData } = await guestQuery;
+            if (Array.isArray(guestData)) {
+                guestData.forEach((row) => {
+                    let cardContent = '';
+                    if (row.supplier_customer_resolution) {
+                        if (typeof row.supplier_customer_resolution === 'string') {
+                            try {
+                                const parsed = JSON.parse(row.supplier_customer_resolution);
+                                cardContent = parsed.content || parsed.card || (Array.isArray(parsed.cards) ? parsed.cards.join('\n') : '') || row.supplier_customer_resolution;
+                            } catch (_) {
+                                cardContent = row.supplier_customer_resolution;
+                            }
+                        } else if (typeof row.supplier_customer_resolution === 'object') {
+                            cardContent = row.supplier_customer_resolution.content || row.supplier_customer_resolution.card || (Array.isArray(row.supplier_customer_resolution.cards) ? row.supplier_customer_resolution.cards.join('\n') : '');
+                        }
+                    }
+                    if (!cardContent && row.metadata) {
+                        cardContent = row.metadata.card_content || row.metadata.content || (Array.isArray(row.metadata.cards) ? row.metadata.cards.join('\n') : '');
+                    }
+
+                    const mapped = {
+                        id: row.id,
+                        order_no: row.order_no,
+                        site: row.site || 'cn',
+                        currency: row.currency || 'CNY',
+                        product_id: row.product_id,
+                        sku_id: row.sku_id,
+                        price_paid: Number(row.total_amount || 0),
+                        total_amount: Number(row.total_amount || 0),
+                        payment_status: row.payment_status || 'confirmed',
+                        refund_status: row.refund_status || 'none',
+                        snapshot_product_name: row.snapshot_product_name,
+                        snapshot_sku_name: row.snapshot_sku_name,
+                        quantity: Number(row.quantity || 1) || 1,
+                        delivery_status: row.fulfillment_status,
+                        fulfillment_status: row.fulfillment_status,
+                        fulfillment_source: row.fulfillment_source,
+                        inventory_id: row.inventory_id,
+                        card_content: cardContent,
+                        created_at: row.created_at,
+                        is_guest_order: true
+                    };
+                    if (row.id) orderMap.set(normalizeText(row.id, 120), mapped);
+                    if (row.order_no) orderMap.set(normalizeText(row.order_no, 120), mapped);
+                });
+            }
+        } catch (_) {}
     }
 
-    return new Map((data || []).map((row) => [normalizeText(row?.id, 120), row]));
+    const inventoryIds = Array.from(new Set(
+        Array.from(orderMap.values())
+            .map((o) => o.inventory_id)
+            .filter(Boolean)
+    ));
+    if (inventoryIds.length && supabase.from) {
+        try {
+            const { data: invRows } = await supabase
+                .from('shop_inventory')
+                .select('id, content')
+                .in('id', inventoryIds);
+            if (Array.isArray(invRows)) {
+                const invMap = new Map(invRows.map((r) => [r.id, r.content]));
+                orderMap.forEach((ord) => {
+                    if (ord.inventory_id && invMap.has(ord.inventory_id) && !ord.card_content) {
+                        ord.card_content = invMap.get(ord.inventory_id);
+                    }
+                });
+            }
+        } catch (_) {}
+    }
+
+    return orderMap;
 }
 
 function buildTicketSearchHaystack(ticket = {}) {
@@ -380,7 +514,10 @@ function buildTicketTimingMeta(ticket = {}, pendingOverdueMinutes = DEFAULT_TICK
 }
 
 function buildRefundMeta(ticket = {}, order = null) {
-    const orderId = normalizeText(ticket?.order_id, 120);
+    let orderId = normalizeText(ticket?.order_id, 120);
+    if (!orderId) {
+        orderId = extractOrderIdFromText(ticket?.description || ticket?.reason);
+    }
     if (!orderId) {
         return {
             order_price_paid: 0,
@@ -392,22 +529,29 @@ function buildRefundMeta(ticket = {}, order = null) {
 
     const refundStatus = normalizeText(order?.refund_status, 40).toLowerCase() || 'none';
     const refunded = refundStatus === 'refunded' || refundStatus === 'full_refund';
-    const paidAmount = Math.max(0, Math.round(Number(order?.price_paid || 0)));
+    const paidAmount = Math.max(0, Math.round(Number(order?.price_paid ?? order?.total_amount ?? 0)));
     const pendingTicket = normalizeTicketStatus(ticket?.status) === 'PENDING';
-    const canRefund = pendingTicket && !refunded && paidAmount > 0;
+    const isGuest = order?.is_guest_order === true || String(orderId).startsWith('GS');
+    const paymentStatus = normalizeText(order?.payment_status, 40).toLowerCase();
+    const isPaid = isGuest ? (['confirmed', 'paid', 'created'].includes(paymentStatus) || paymentStatus === '' || paidAmount > 0) : paidAmount > 0;
+    const canRefund = pendingTicket && !refunded && isPaid;
 
     let refundSummary = '可发起退款';
+    const unitLabel = isGuest ? '元' : '积分';
     if (refunded) {
         refundSummary = '订单已退款';
     } else if (paidAmount > 0) {
-        refundSummary = canRefund ? `可退 ${paidAmount} 积分` : `订单金额 ${paidAmount} 积分`;
+        refundSummary = canRefund ? `可退 ${paidAmount} ${unitLabel}` : `订单金额 ${paidAmount} ${unitLabel}`;
     } else {
-        refundSummary = '订单无可退积分';
+        refundSummary = isGuest ? (canRefund ? '可原路退款' : '订单无可退金额') : '订单无可退积分';
     }
 
     return {
         order_price_paid: paidAmount,
         order_refund_status: refundStatus,
+        order_product_name: normalizeText(order?.snapshot_product_name, 255),
+        order_delivery_status: normalizeText(order?.delivery_status || order?.fulfillment_status, 50),
+        is_guest_order: isGuest,
         can_refund: canRefund,
         refund_summary: refundSummary
     };
@@ -450,10 +594,28 @@ function buildPriorityMeta(ticket = {}, sourceMeta = {}, timingMeta = {}, refund
 
 function enrichTicketRow(ticket = {}, context = {}) {
     const userId = normalizeText(ticket?.user_id, 120);
-    const orderId = normalizeText(ticket?.order_id, 120);
+    let orderId = normalizeText(ticket?.order_id, 120);
+    if (!orderId) {
+        orderId = extractOrderIdFromText(ticket?.description || ticket?.reason);
+    }
     const normalizedStatus = normalizeTicketStatus(ticket?.status);
     const profile = context.profilesById.get(userId) || {};
     const order = context.ordersById.get(orderId) || null;
+    const resolvedOrderNo = order?.order_no || order?.id || orderId;
+
+    const contactEmail = normalizeText(profile?.email || ticket?.user_email, 255) || extractEmailFromText(ticket?.description || ticket?.reason);
+
+    const isGuestOrder = order?.is_guest_order === true || String(resolvedOrderNo).startsWith('GS');
+    const orderPricePaid = Number(order?.price_paid ?? order?.total_amount ?? 0) || 0;
+    const orderProductName = normalizeText(order?.snapshot_product_name, 255);
+    const orderSkuName = normalizeText(order?.snapshot_sku_name, 255);
+    const orderQuantity = Number(order?.quantity || 1) || 1;
+    const orderDeliveryStatus = normalizeText(order?.delivery_status || order?.fulfillment_status, 50);
+    const orderPaymentStatus = normalizeText(order?.payment_status, 50);
+    const orderRefundStatus = normalizeText(order?.refund_status, 50) || 'none';
+    const orderCreatedAt = order?.created_at || '';
+    const orderCardContent = normalizeText(order?.card_content, 2000);
+
     const sourceMeta = inferTicketSourceMeta(ticket);
     const timingMeta = buildTicketTimingMeta(ticket, context.pendingOverdueMinutes, context.nowDate);
     const refundMeta = buildRefundMeta(ticket, order);
@@ -468,10 +630,22 @@ function enrichTicketRow(ticket = {}, context = {}) {
 
     return {
         ...ticket,
+        order_id: resolvedOrderNo,
+        order_record_id: order?.id || orderId,
         status: normalizedStatus,
         status_label: getTicketStatusLabel(normalizedStatus),
         issue_type_label: getIssueTypeLabel(ticket?.issue_type),
-        user_email: normalizeText(profile?.email, 255),
+        user_email: contactEmail,
+        product_name: orderProductName,
+        sku_name: orderSkuName,
+        quantity: orderQuantity,
+        order_price_paid: orderPricePaid,
+        order_payment_status: orderPaymentStatus,
+        order_delivery_status: orderDeliveryStatus,
+        order_refund_status: orderRefundStatus,
+        order_created_at: orderCreatedAt,
+        order_card_content: orderCardContent,
+        is_guest_order: isGuestOrder,
         ...sourceMeta,
         ...timingMeta,
         ...refundMeta,
@@ -616,9 +790,15 @@ module.exports = async function adminTicketsListHandler(req, res) {
         });
 
         const rows = Array.isArray(ticketCollection.rows) ? ticketCollection.rows : [];
+        const orderIdsToLoad = rows.map((ticket) => {
+            const rawId = ticket?.order_id;
+            if (rawId) return rawId;
+            return extractOrderIdFromText(ticket?.description || ticket?.reason);
+        }).filter(Boolean);
+
         const [profilesById, ordersById, assignmentByTicketId] = await Promise.all([
             loadProfilesByIds(supabase, rows.map((ticket) => ticket?.user_id)),
-            loadOrdersByIds(supabase, rows.map((ticket) => ticket?.order_id)),
+            loadOrdersByIds(supabase, orderIdsToLoad),
             loadTicketAssignmentMap(supabase, rows.map((ticket) => ticket?.id)).catch(() => new Map())
         ]);
         const nowDate = new Date();

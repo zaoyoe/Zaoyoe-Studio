@@ -49,8 +49,10 @@
  * profile modal can still sit on top of the prompts page and steal taps from the
  * mobile nav, avatar dropdown, and gallery content.
  */
+#profileModal:not(.active) .profile-modal-ring,
 #profileModal:not(.active) .modal-content.profile-modal,
 #profileModal:not(.active) .modal-content.profile-modal *,
+#profileModal.profile-modal-force-hidden .profile-modal-ring,
 #profileModal.profile-modal-force-hidden .modal-content.profile-modal,
 #profileModal.profile-modal-force-hidden .modal-content.profile-modal * {
     opacity: 0 !important;
@@ -112,6 +114,33 @@
     background: transparent !important;
 }
 
+#profileModal .profile-modal-ring {
+    --glass-ring-width: 8px;
+    --glass-radius: calc(var(--profile-mobile-modal-radius, 20px) + var(--glass-ring-width, 8px));
+    --glass-panel: #0c0f13;
+    width: auto;
+    max-width: calc(100vw - 16px);
+    margin: auto;
+    transform: translate3d(0, var(--profile-modal-shift-y, 0px), 0) scale(0.95);
+    transition:
+        transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.3s ease-out;
+    will-change: transform, opacity;
+}
+
+html:not([data-theme="dark"]) #profileModal .profile-modal-ring {
+    --glass-panel: #ffffff;
+}
+
+#profileModal.active .profile-modal-ring {
+    transform: translate3d(0, var(--profile-modal-shift-y, 0px), 0) scale(1);
+}
+
+#profileModal .profile-modal-ring > .modal-content.profile-modal {
+    margin: 0 !important;
+    transform: none !important;
+}
+
 #profileModal .modal-content.profile-modal {
     width: min(400px, 90vw);
     max-width: 90vw;
@@ -124,7 +153,9 @@
     text-align: center;
     color: white;
     top: 0;
-    background: rgba(12, 15, 19, 0.92) !important;
+    background: #0c0f13 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     border: 1px solid rgba(255, 255, 255, 0.08) !important;
     border-radius: var(--profile-mobile-modal-radius) !important;
     box-shadow:
@@ -1558,6 +1589,39 @@
         transition: none !important;
     }
 
+    #profileModal .profile-modal-ring {
+        --glass-ring-width: 7px;
+        width: min(calc(480px + (var(--glass-ring-width) * 2)), 95vw);
+        max-width: 95vw;
+        margin: auto !important;
+    }
+
+    #profileModal .profile-modal-ring > .modal-content.profile-modal {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        transform: none !important;
+    }
+
+    #profileModal.active.keyboard-active .profile-modal-ring {
+        transform: translate3d(0, var(--profile-modal-shift-y, 0px), 0) scale(1) !important;
+    }
+
+    #profileModal.ios-focus-lock:not(.keyboard-active) .profile-modal-ring,
+    #profileModal.active:not(.keyboard-active):focus-within .profile-modal-ring {
+        transform: none !important;
+        transition: none !important;
+        animation: none !important;
+    }
+
+    #profileModal.profile-modal-keyboard-resizing .profile-modal-ring {
+        transition: none !important;
+    }
+
+    #profileModal.profile-modal-keyboard-animating .profile-modal-ring {
+        transition: transform var(--profile-modal-keyboard-motion-duration, 250ms) cubic-bezier(0.22, 1, 0.36, 1) !important;
+    }
+
     #profileModal.profile-modal-keyboard-animating .modal-content.profile-modal {
         transition: transform var(--profile-modal-keyboard-motion-duration, 250ms) cubic-bezier(0.22, 1, 0.36, 1) !important;
     }
@@ -1597,7 +1661,9 @@ html:not([data-theme="dark"]) #profileModal {
 
 [data-theme="light"] #profileModal .modal-content.profile-modal {
     color: #0f172a;
-    background: rgba(255, 255, 255, 0.98) !important;
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     border: 1px solid rgba(148, 163, 184, 0.2) !important;
     box-shadow:
         0 28px 60px rgba(148, 163, 184, 0.24),
@@ -1961,7 +2027,9 @@ html:not([data-theme="dark"]) #profileModal .modal-content.profile-modal::-webki
 
 html:not([data-theme="dark"]) #profileModal .modal-content.profile-modal {
     color: #0f172a;
-    background: rgba(255, 255, 255, 0.98) !important;
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     border: 1px solid rgba(148, 163, 184, 0.2) !important;
     box-shadow:
         0 28px 60px rgba(148, 163, 184, 0.24),
@@ -2341,4 +2409,303 @@ body.profile-modal-lock {
     #profileModal {
         --profile-mobile-modal-radius: 16px;
     }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Profile Modal - Universal Floating Notch Border (LBI) Integration
+   Matches login modal (#loginModal) focus/unfocus styles & logic
+   ══════════════════════════════════════════════════════════════ */
+#profileModal .lbi {
+    --lbi-text: #f2f5f8;
+    --lbi-bg: transparent;
+    --lbi-ink: rgba(255, 255, 255, 0.92);                                /* 聚焦标签文字：柔白 */
+    --lbi-border-focus: rgba(255, 255, 255, 0.42);                       /* 聚焦边框：柔白微光感 */
+    --lbi-ink-muted: rgba(226, 232, 240, 0.65);
+    --lbi-ink-placeholder: rgba(226, 232, 240, 0.45);                    /* 未聚焦提示词：暗底淡灰 */
+    --lbi-border: rgba(255, 255, 255, 0.22);                             /* 未聚焦边框：暗底淡灰 */
+    position: relative;
+    width: 100%;
+    padding-top: 14px;
+    margin-top: 0;
+    box-sizing: border-box;
+    display: block;
+}
+
+[data-theme="light"] #profileModal .lbi,
+html:not([data-theme="dark"]) #profileModal .lbi {
+    --lbi-text: #0f172a;
+    --lbi-bg: transparent;
+    --lbi-ink: #0f172a;                                                   /* 聚焦标签文字：深灰石墨色 */
+    --lbi-border-focus: rgba(15, 23, 42, 0.45);                           /* 聚焦边框：深灰石墨色细线 */
+    --lbi-ink-muted: rgba(71, 85, 105, 0.78);
+    --lbi-ink-placeholder: rgba(100, 116, 139, 0.65);                    /* 未聚焦提示词：淡灰色 */
+    --lbi-border: rgba(148, 163, 184, 0.45);                             /* 未聚焦边框：淡灰色 */
+}
+
+#profileModal .lbi-box {
+    position: relative;
+    width: 100%;
+    height: 48px;
+    background: transparent !important;
+    cursor: text;
+    box-sizing: border-box;
+    filter: none !important;
+    box-shadow: none !important;
+}
+
+#profileModal .lbi-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+    z-index: 1;
+}
+
+#profileModal .lbi-ring path {
+    fill: none;
+    stroke: var(--lbi-border) !important;
+    stroke-width: 1px !important;
+    stroke-linecap: butt;
+    stroke-linejoin: round;
+    shape-rendering: geometricPrecision;
+    transition: stroke 240ms cubic-bezier(0.16, 1, 0.3, 1), stroke-width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#profileModal .lbi[data-focus="true"] .lbi-ring path {
+    stroke: var(--lbi-border-focus) !important;
+    stroke-width: 1.2px !important;
+}
+
+#profileModal .lbi[data-focus="true"] .lbi-box {
+    filter: none !important;
+    box-shadow: none !important;
+    border-color: var(--lbi-border-focus) !important;
+}
+
+#profileModal .lbi-gap {
+    stroke-dasharray: 1 2;
+    stroke-dashoffset: 0;
+    transition: stroke 220ms ease, stroke-width 220ms ease,
+        stroke-dashoffset 420ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+#profileModal .lbi[data-up="true"] .lbi-gap {
+    stroke-dashoffset: -1 !important;
+}
+
+#profileModal .lbi-label {
+    position: absolute;
+    left: var(--lbi-x, 22px);
+    top: 50%;
+    transform: translateY(-50%);
+    transform-origin: left center;
+    color: var(--lbi-ink-placeholder) !important;
+    font-size: 15px;
+    line-height: 1.25;
+    white-space: pre;
+    pointer-events: none;
+    user-select: none;
+    transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), color 220ms ease;
+    z-index: 3 !important;
+    padding: 2px 0;
+}
+
+#profileModal .lbi[data-up="true"] .lbi-label {
+    color: var(--lbi-ink-muted) !important;
+    transform: translateY(-50%) translateY(-26px) scale(0.78);
+}
+
+#profileModal .lbi[data-focus="true"] .lbi-label {
+    color: var(--lbi-ink) !important;
+}
+
+#profileModal .lbi[data-focus="true"] .lbi-label span {
+    animation: lbi-hop 460ms cubic-bezier(0.3, 0.7, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 24ms);
+}
+
+#profileModal .lbi-box input,
+#profileModal .lbi-box .security-input,
+#profileModal .lbi-box .security-input.glass-input,
+#profileModal .lbi-box .profile-mobile-inline-input,
+[data-theme="light"] #profileModal .lbi-box input,
+[data-theme="light"] #profileModal .lbi-box .security-input,
+[data-theme="light"] #profileModal .lbi-box .security-input.glass-input,
+[data-theme="light"] #profileModal .lbi-box .profile-mobile-inline-input,
+html:not([data-theme="dark"]) #profileModal .lbi-box input,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input.glass-input,
+html:not([data-theme="dark"]) #profileModal .lbi-box .profile-mobile-inline-input,
+html:not([data-theme="dark"]) #profileModal .mobile-security-layout .lbi-box .security-input {
+    position: absolute !important;
+    inset: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 48px !important;
+    border: none !important;
+    outline: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border-radius: inherit !important;
+    color: var(--lbi-text) !important;
+    -webkit-text-fill-color: var(--lbi-text) !important;
+    caret-color: var(--lbi-ink) !important;
+    font-size: 15px !important;
+    line-height: 48px !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 2 !important;
+    cursor: text !important;
+    filter: none !important;
+}
+
+#profileModal .lbi-box input:focus,
+#profileModal .lbi-box input:focus-visible,
+#profileModal .lbi-box .security-input:focus,
+#profileModal .lbi-box .security-input:focus-visible,
+#profileModal .lbi-box .security-input.glass-input:focus,
+#profileModal .lbi-box .security-input.glass-input:focus-visible,
+#profileModal .lbi-box .profile-mobile-inline-input:focus,
+#profileModal .lbi-box .profile-mobile-inline-input:focus-visible,
+[data-theme="light"] #profileModal .lbi-box input:focus,
+[data-theme="light"] #profileModal .lbi-box input:focus-visible,
+[data-theme="light"] #profileModal .lbi-box .security-input:focus,
+[data-theme="light"] #profileModal .lbi-box .security-input:focus-visible,
+[data-theme="light"] #profileModal .lbi-box .security-input.glass-input:focus,
+[data-theme="light"] #profileModal .lbi-box .security-input.glass-input:focus-visible,
+[data-theme="light"] #profileModal .lbi-box .profile-mobile-inline-input:focus,
+[data-theme="light"] #profileModal .lbi-box .profile-mobile-inline-input:focus-visible,
+html:not([data-theme="dark"]) #profileModal .lbi-box input:focus,
+html:not([data-theme="dark"]) #profileModal .lbi-box input:focus-visible,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input:focus,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input:focus-visible,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input.glass-input:focus,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input.glass-input:focus-visible,
+html:not([data-theme="dark"]) #profileModal .lbi-box .profile-mobile-inline-input:focus,
+html:not([data-theme="dark"]) #profileModal .lbi-box .profile-mobile-inline-input:focus-visible,
+html:not([data-theme="dark"]) #profileModal .mobile-security-layout .lbi-box .security-input:focus,
+html:not([data-theme="dark"]) #profileModal .mobile-security-layout .lbi-box .security-input:focus-visible {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    filter: none !important;
+}
+
+#profileModal .lbi-box input::placeholder,
+#profileModal .lbi-box .security-input::placeholder,
+#profileModal .lbi-box input::-webkit-input-placeholder,
+#profileModal .lbi-box .security-input::-webkit-input-placeholder,
+#profileModal .lbi-box input::-moz-placeholder,
+#profileModal .lbi-box .security-input::-moz-placeholder,
+#profileModal .lbi-box input:-ms-input-placeholder,
+#profileModal .lbi-box .security-input:-ms-input-placeholder,
+[data-theme="light"] #profileModal .lbi-box input::placeholder,
+[data-theme="light"] #profileModal .lbi-box .security-input::placeholder,
+[data-theme="light"] #profileModal .lbi-box input::-webkit-input-placeholder,
+[data-theme="light"] #profileModal .lbi-box .security-input::-webkit-input-placeholder,
+html:not([data-theme="dark"]) #profileModal .lbi-box input::placeholder,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input::placeholder,
+html:not([data-theme="dark"]) #profileModal .lbi-box input::-webkit-input-placeholder,
+html:not([data-theme="dark"]) #profileModal .lbi-box .security-input::-webkit-input-placeholder {
+    color: transparent !important;
+    opacity: 0 !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+#profileModal .lbi-box input:-webkit-autofill,
+#profileModal .lbi-box input:-webkit-autofill:hover,
+#profileModal .lbi-box input:-webkit-autofill:focus,
+#profileModal .lbi-box input:-webkit-autofill:active,
+[data-theme="light"] #profileModal .lbi-box input:-webkit-autofill,
+html:not([data-theme="dark"]) #profileModal .lbi-box input:-webkit-autofill {
+    -webkit-text-fill-color: var(--lbi-text) !important;
+    caret-color: var(--lbi-ink) !important;
+    border: none !important;
+    outline: none !important;
+    border-radius: inherit !important;
+    -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+    box-shadow: 0 0 0 1000px transparent inset !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    transition: background-color 999999s ease-in-out 0s, color 999999s ease-in-out 0s !important;
+}
+
+#profileModal .lbi-eye {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--lbi-ink-placeholder);
+    z-index: 4 !important;
+    transition: color 180ms ease, transform 180ms ease;
+    padding: 0;
+}
+
+#profileModal .lbi-eye:hover {
+    color: var(--lbi-text);
+}
+
+#profileModal .lbi[data-focus="true"] .lbi-eye {
+    color: var(--lbi-ink);
+}
+
+#profileModal .lbi-eye:active {
+    transform: translateY(-50%) scale(0.92);
+}
+
+#profileModal .lbi-eye svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+}
+
+#profileModal .lbi-eye[data-show="true"] .lbi-eye-closed,
+#profileModal .lbi-eye:not([data-show="true"]) .lbi-eye-open {
+    display: none !important;
+}
+
+#profileModal .lbi-eye[data-show="true"] .lbi-eye-open,
+#profileModal .lbi-eye:not([data-show="true"]) .lbi-eye-closed {
+    display: block !important;
+}
+
+#profileModal .profile-security-desktop-code-row:has(.lbi),
+#profileModal .profile-mobile-code-row:has(.lbi) {
+    display: flex !important;
+    align-items: flex-end !important;
+    gap: 10px !important;
+}
+
+#profileModal .profile-security-desktop-code-row .lbi,
+#profileModal .profile-mobile-code-row .lbi {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+}
+
+#profileModal .profile-security-desktop-code-btn,
+#profileModal .security-mobile-code-btn {
+    height: 48px !important;
+    min-height: 48px !important;
+    border-radius: 20px !important;
+    margin-bottom: 0 !important;
+    flex-shrink: 0 !important;
 }

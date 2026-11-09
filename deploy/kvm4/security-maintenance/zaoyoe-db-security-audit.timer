@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Zaoyoe database security audit every 6 hours
+ConditionPathExists=/opt/zaoyoe-verify-server/.env
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:15:00
+AccuracySec=1m
+RandomizedDelaySec=5m
+Persistent=true
+Unit=zaoyoe-db-security-audit.service
+
+[Install]
+WantedBy=timers.target

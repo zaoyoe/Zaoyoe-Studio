@@ -1,0 +1,28 @@
+{
+  "kind": "pre-edit-file-backup-not-git-or-database-backup",
+  "root": "/Volumes/chao/AI/xianyu_profit_calculator",
+  "backup": "/var/folders/wl/8wb6rp_13z17vf97m3fkk0dw0000gn/T/kc-atomic-hardening-20261108-fozv701z",
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "files": [
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "sha256": "fa94509edeb320c5f8e6f99d0312d2037821066961cdf9ac2ebd45b1bb47dd6f",
+      "bytes": 182966
+    },
+    {
+      "path": "services/kc-pay-gpt/server.js",
+      "sha256": "119c7d6de78b7079fe730aef342d677cb378ad11ce8498ad2ce00fee16db0ddb",
+      "bytes": 220089
+    },
+    {
+      "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+      "sha256": "25b4fb536dbedf88ecce53e3f2fcc3f69e08af8856d65e226bd1a0c37c73ec1e",
+      "bytes": 30948
+    },
+    {
+      "path": "tests/security-round2-kc-activation.test.js",
+      "sha256": "9b639239765b1f786afbf65110ef51a25110860ed7b10b5ad43912bc123e71c0",
+      "bytes": 12464
+    }
+  ]
+}

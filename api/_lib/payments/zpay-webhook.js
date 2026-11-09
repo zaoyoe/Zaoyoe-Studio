@@ -1,7 +1,6 @@
 const {
     getPaymentProviderAdapter,
-    roundCurrencyAmount,
-    amountsMatch
+    roundCurrencyAmount
 } = require('./provider-adapters');
 const {
     reconcileCheckoutSessionForPaymentOrder,
@@ -39,6 +38,8 @@ const {
 const PAYMENT_ORDER_SNAPSHOT_SELECT = 'id, user_id, provider, provider_order_no, checkout_session_id, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, raw_payload, created_at, paid_at, claimed_at, verified_at, last_error';
 const zpayProvider = getPaymentProviderAdapter('zpay');
 const INTERNAL_PUBLIC_ROUTE_QUERY_KEYS = new Set(['scope', 'route', 'path']);
+
+const { zpayAmountsMatch } = require('./zpay-amount');
 
 async function safeSyncPaymentStatusUserTags(supabase, options = {}) {
     try {
@@ -510,7 +511,7 @@ async function handleZpayWebhook({
         const paymentOrder = await loadPaymentOrderSnapshotByProviderOrderNo(supabase, 'zpay', orderNo);
         const expectedAmount = roundCurrencyAmount(paymentOrder?.expected_amount ?? 0);
         const amountValid = expectedAmount > 0
-            ? amountsMatch(expectedAmount, amount)
+            ? zpayAmountsMatch(paymentOrder?.expected_amount, payload.money)
             : false;
         const ownerMatches = !paymentOrder?.user_id
             || !attachData?.user_id
@@ -560,15 +561,20 @@ async function handleZpayWebhook({
                 return sendPlainText(res, 503, 'query verification unavailable');
             }
 
-            const queryPaidAmount = roundCurrencyAmount(queryVerification?.paidAmount ?? amount);
+            const queryPaidAmount = roundCurrencyAmount(queryVerification?.paidAmount);
             const queryAmountValid = expectedAmount > 0
-                ? amountsMatch(expectedAmount, queryPaidAmount)
+                ? zpayAmountsMatch(paymentOrder?.expected_amount, queryVerification?.paidAmount)
                 : false;
             const queryState = String(queryVerification?.status || '').trim().toLowerCase();
             const queryProviderOrderNo = String(queryVerification?.providerOrderNo || '').trim();
             const queryTradeNo = String(queryVerification?.tradeNo || '').trim();
 
-            verifiedPaidAmount = queryPaidAmount > 0 ? queryPaidAmount : amount;
+            // Query evidence must be complete in its own right; never fill it from the notification.
+            if (queryVerification?.paidAmount == null || !queryProviderOrderNo || !queryTradeNo) {
+                await deletePaymentEvent(supabase, eventKey);
+                return sendPlainText(res, 503, 'query verification incomplete');
+            }
+            verifiedPaidAmount = queryPaidAmount;
 
             if (queryState !== 'paid') {
                 console.warn('[ZPAY] Active order verification is not paid yet:', queryState || 'unknown');

@@ -1,0 +1,62 @@
+[
+  {
+    "sql": "SELECT CURRENT_USER() AS current_user;",
+    "status": "FAIL",
+    "code": "ER_PARSE_ERROR",
+    "errno": 1064,
+    "sqlState": "42000"
+  },
+  {
+    "sql": "SELECT CURRENT_USER() AS `current_user`;",
+    "status": "PASS",
+    "rows": [
+      {
+        "current_user": "kc_fault_harness@%"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT CURRENT_ROLE() AS current_role;",
+    "status": "PASS",
+    "rows": [
+      {
+        "current_role": "NONE"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT CURRENT_ROLE() AS `current_role`;",
+    "status": "PASS",
+    "rows": [
+      {
+        "current_role": "NONE"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT @@server_uuid AS server_uuid, @@version AS version, CURRENT_USER() AS `current_user`, DATABASE() AS db, @@partial_revokes AS partial_revokes, CURRENT_ROLE() AS `current_role`;",
+    "status": "PASS",
+    "rows": [
+      {
+        "server_uuid": "ca19329e-dbe0-11f1-aa3c-0605081862a4",
+        "version": "8.4.11",
+        "current_user": "kc_fault_harness@%",
+        "db": "kc_fault_lab_88db804f71ff9b98",
+        "partial_revokes": 0,
+        "current_role": "NONE"
+      }
+    ]
+  },
+  {
+    "sql": "SHOW GRANTS;",
+    "status": "PASS",
+    "rows": [
+      {
+        "Grants for kc_fault_harness@%": "GRANT USAGE ON *.* TO `kc_fault_harness`@`%`"
+      },
+      {
+        "Grants for kc_fault_harness@%": "GRANT SELECT, INSERT, UPDATE, DELETE ON `kc\\_fault\\_lab\\_88db804f71ff9b98`.* TO `kc_fault_harness`@`%`"
+      }
+    ]
+  }
+]

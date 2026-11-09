@@ -1,0 +1,14 @@
+{
+  "active": {
+    "checks": 15,
+    "node_files": 12,
+    "python_ast": 3,
+    "pass": 15,
+    "fail": 0
+  },
+  "historical_snapshots_syntax_only": {
+    "checks": 3,
+    "not_operational_evidence": true
+  },
+  "raw": "syntax-results.json"
+}

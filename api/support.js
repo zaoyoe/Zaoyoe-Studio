@@ -18,6 +18,11 @@ const {
 const {
     normalizeSiteValue
 } = require('./_lib/site');
+const {
+    sanitizeTicketDescription
+} = require('./_lib/input-sanitizer');
+
+const { readGuestTicketAccess, grantGuestTicketAccess } = require('./_lib/support-ticket-access');
 
 function normalizeText(value, maxLength = 256) {
     return String(value || '').trim().slice(0, maxLength);
@@ -763,21 +768,24 @@ async function handleShopOrderContent({ requestSupabase, input, site }) {
 
 function normalizeTicketCreateInput(input) {
     if (input && typeof input === 'object' && !Array.isArray(input)) {
-        const description = normalizeText(
+        const rawDescription = normalizeText(
             input.description || input.reason || input.content || '',
             1500
         );
+        const description = sanitizeTicketDescription(rawDescription, { maxLength: 1500 });
         const issueType = normalizeText(input.issue_type || input.issueType, 60).toUpperCase() || 'OTHER';
         const normalizedOrderId = normalizeText(input.order_id || input.orderId, 120);
         return {
             description,
             issueType,
-            orderId: isUuid(normalizedOrderId) ? normalizedOrderId : ''
+            email: normalizeText(input.email || input.contact_email, 255),
+            orderId: normalizedOrderId
         };
     }
 
+    const rawDescription = normalizeText(input, 1500);
     return {
-        description: normalizeText(input, 1500),
+        description: sanitizeTicketDescription(rawDescription, { maxLength: 1500 }),
         issueType: 'OTHER',
         orderId: ''
     };
@@ -792,13 +800,17 @@ function normalizeTicketHistoryInput(input) {
     if (input && typeof input === 'object' && !Array.isArray(input)) {
         return {
             ticketId: normalizeText(input.ticket_id || input.ticketId, 120),
-            orderId: normalizeText(input.order_id || input.orderId, 120)
+            orderId: normalizeText(input.order_id || input.orderId, 120),
+            email: normalizeText(input.email || input.user_email, 255),
+            limit: Number(input.limit) || 6
         };
     }
 
     return {
         ticketId: normalizeText(input, 120),
-        orderId: ''
+        orderId: '',
+        email: '',
+        limit: 6
     };
 }
 
@@ -810,8 +822,8 @@ function shapeTicketHistoryRow(ticket = {}, focusTicketId = '') {
         order_id: normalizeText(ticket.order_id, 120) || '',
         issue_type: normalizeText(ticket.issue_type, 60).toUpperCase() || 'OTHER',
         status: normalizedStatus,
-        description: normalizeText(ticket.description, 1500),
-        admin_notes: normalizeText(ticket.admin_notes, 1500),
+        description: normalizeText(ticket.description, 4000),
+        admin_notes: normalizeText(ticket.admin_notes, 4000),
         created_at: normalizeText(ticket.created_at, 80) || '',
         updated_at: normalizeText(ticket.updated_at, 80) || '',
         is_open: !['RESOLVED', 'REJECTED'].includes(normalizedStatus),
@@ -823,7 +835,7 @@ async function loadTicketHistoryRows({ adminSupabase, userId, input, site = 'cn'
     const normalizedInput = normalizeTicketHistoryInput(input);
     const normalizedSite = normalizeSiteValue(site, { fallback: 'cn' });
     const ticketFields = 'id, user_id, order_id, issue_type, status, description, admin_notes, created_at, updated_at';
-    const historyLimit = 6;
+    const historyLimit = Math.max(6, Math.min(Number(normalizedInput.limit) || 50, 100));
     const focusTicketId = normalizedInput.ticketId;
 
     const historyQuery = adminSupabase
@@ -841,7 +853,7 @@ async function loadTicketHistoryRows({ adminSupabase, userId, input, site = 'cn'
 
     let focusTicket = null;
     if (focusTicketId) {
-        const { data, error } = await queryMaybeSingle(
+        let { data, error } = await queryMaybeSingle(
             adminSupabase
                 .from('shop_tickets')
                 .select(ticketFields)
@@ -926,7 +938,7 @@ async function fetchProfileEmailByUserId(supabase, userId) {
     }
 }
 
-async function handleCreateTicket({ requestSupabase, adminSupabase, user, input, site }) {
+async function handleCreateTicket({ requestSupabase, adminSupabase, user, input, site, guestAccess, res }) {
     const normalizedInput = normalizeTicketCreateInput(input);
     const normalizedSite = normalizeSiteValue(site, { fallback: 'cn' });
     const description = normalizedInput.description;
@@ -934,18 +946,46 @@ async function handleCreateTicket({ requestSupabase, adminSupabase, user, input,
         throw createError('请输入问题描述');
     }
 
-    const insertPayload = {
-        user_id: user.id,
-        site: normalizedSite,
-        issue_type: normalizedInput.issueType,
-        status: 'PENDING',
-        description
-    };
+    if (!user?.id && !guestAccess.enabled) {
+        throw createError('游客工单凭证尚未配置，请联系客服', 503, 'guest_ticket_access_unavailable');
+    }
+    const db = adminSupabase || requestSupabase;
+    let orderIdForDb = null;
+    let guestPrefix = '';
     if (normalizedInput.orderId) {
-        insertPayload.order_id = normalizedInput.orderId;
+        if (isUuid(normalizedInput.orderId)) {
+            if (!user?.id) throw createError('关联会员订单需要登录订单所属账号', 403, 'order_forbidden');
+            const { data: order, error: orderError } = await db.from('shop_orders')
+                .select('id').eq('id', normalizedInput.orderId).eq('user_id', user.id)
+                .eq('site', normalizedSite).maybeSingle();
+            if (orderError) throw createError('订单授权核验失败', 503, 'order_authorization_unavailable');
+            if (!order) throw createError('找不到可关联的订单', 404, 'order_not_found');
+            orderIdForDb = order.id;
+        } else {
+            // Free-form references are unverified text, never proof of order ownership.
+            guestPrefix = `[待核验订单: ${normalizedInput.orderId}] `;
+        }
     }
 
-    const { data, error } = await requestSupabase
+    const contactEmail = normalizeText(normalizedInput.email || user?.email, 255);
+    const fullDescription = `${guestPrefix}${description}${!user?.id && contactEmail ? ` (联系邮箱: ${contactEmail})` : ''}`;
+
+    const insertPayload = {
+        site: normalizedSite,
+        issue_type: normalizedInput.issueType || 'OTHER',
+        status: 'PENDING',
+        description: fullDescription
+    };
+
+    if (user?.id) {
+        insertPayload.user_id = user.id;
+    }
+    if (orderIdForDb) {
+        insertPayload.order_id = orderIdForDb;
+    }
+
+    const targetDb = user?.id && requestSupabase ? requestSupabase : (adminSupabase || requestSupabase);
+    let { data, error } = await targetDb
         .from('shop_tickets')
         .insert(insertPayload)
         .select('id, user_id, order_id, issue_type, status, description, created_at, updated_at')
@@ -955,10 +995,14 @@ async function handleCreateTicket({ requestSupabase, adminSupabase, user, input,
         throw createError(error.message || '工单提交失败', 500, 'ticket_create_failed');
     }
 
-    const profileEmail = await fetchProfileEmailByUserId(adminSupabase || requestSupabase, user.id);
+    if (!data?.id) throw createError('工单提交结果不完整', 502, 'ticket_create_invalid_result');
+    if (!user?.id) grantGuestTicketAccess(res, guestAccess, { ticketId: data.id, site: normalizedSite });
+
+    const profileEmail = user?.id ? await fetchProfileEmailByUserId(adminSupabase || requestSupabase, user.id) : '';
     const ticketAlert = buildTicketCreatedAlert({
         ...(data || insertPayload),
-        user_email: profileEmail || normalizeText(user?.email, 255) || null
+        site: normalizedSite,
+        user_email: profileEmail || contactEmail || null
     });
     if (adminSupabase?.from && ticketAlert) {
         try {
@@ -976,17 +1020,113 @@ async function handleCreateTicket({ requestSupabase, adminSupabase, user, input,
         success: true,
         payload: {
             ticket_id: data?.id || ''
-        }
+        },
+        ticket: shapeTicketHistoryRow(data || insertPayload, '')
     };
 }
 
-async function handleTicketHistory({ adminSupabase, user, input, site }) {
-    return loadTicketHistoryRows({
-        adminSupabase,
-        userId: user.id,
-        input,
-        site
-    });
+function guestTicketIds(guestAccess, site) {
+    return guestAccess.tickets.filter(ticket => ticket.site === site).map(ticket => ticket.id);
+}
+
+async function handleTicketHistory({ adminSupabase, user, input, site, guestAccess }) {
+    const normalizedSite = normalizeSiteValue(site, { fallback: 'cn' });
+    const normalizedInput = normalizeTicketHistoryInput(input);
+    const ids = guestTicketIds(guestAccess, normalizedSite);
+    const guestFocus = normalizedInput.ticketId && ids.includes(normalizedInput.ticketId);
+    if (user?.id && !guestFocus) {
+        return loadTicketHistoryRows({ adminSupabase, userId: user.id, input, site: normalizedSite });
+    }
+    if (!guestAccess.enabled) throw createError('游客工单凭证暂不可用', 503, 'guest_ticket_access_unavailable');
+    if (!ids.length || (normalizedInput.ticketId && !guestFocus)) {
+        throw createError('请使用提交工单时的浏览器凭证查询', 403, 'ticket_forbidden');
+    }
+    const { data, error } = await adminSupabase.from('shop_tickets')
+        .select('id, user_id, site, order_id, issue_type, status, description, admin_notes, created_at, updated_at')
+        .in('id', guestFocus ? [normalizedInput.ticketId] : ids)
+        .is('user_id', null).eq('site', normalizedSite)
+        .order('updated_at', { ascending: false }).limit(12);
+    if (error || !Array.isArray(data)) throw createError('工单记录查询失败', 503, 'ticket_history_failed');
+    return { success: true, payload: {
+        focus_ticket_id: normalizedInput.ticketId, order_id: normalizedInput.orderId,
+        tickets: data.filter(ticket => ids.includes(ticket.id) && ticket.user_id === null && ticket.site === normalizedSite)
+            .map(ticket => shapeTicketHistoryRow(ticket, normalizedInput.ticketId))
+    } };
+}
+
+async function handleReplyTicket({ requestSupabase, adminSupabase, user, input, site, guestAccess }) {
+    const db = adminSupabase || requestSupabase;
+    if (!db) {
+        throw createError('Support database is unavailable', 500, 'database_unavailable');
+    }
+
+    const ticketId = normalizeText(input?.ticketId || input?.ticket_id, 120);
+    const rawReplyText = normalizeText(input?.reply || input?.message || input?.content || input?.description, 2000);
+    const replyText = sanitizeTicketDescription(rawReplyText, { maxLength: 2000 });
+    const contactEmail = normalizeText(input?.email || user?.email, 255);
+
+    if (!ticketId) {
+        throw createError('工单ID不能为空', 400, 'missing_ticket_id');
+    }
+    if (!replyText) {
+        throw createError('回复内容不能为空', 400, 'missing_reply_content');
+    }
+
+    const normalizedSite = normalizeSiteValue(site, { fallback: 'cn' });
+    const isGuestTicket = guestTicketIds(guestAccess, normalizedSite).includes(ticketId);
+    if (!user?.id && !isGuestTicket) throw createError('无权操作该工单', 403, 'ticket_forbidden');
+    let ticketQuery = db.from('shop_tickets').select('*').eq('id', ticketId).eq('site', normalizedSite);
+    ticketQuery = isGuestTicket ? ticketQuery.is('user_id', null) : ticketQuery.eq('user_id', user.id);
+    const { data: ticket, error: fetchErr } = await ticketQuery.maybeSingle();
+    if (fetchErr) throw createError('工单授权核验失败', 503, 'ticket_authorization_unavailable');
+    if (!ticket || ticket.site !== normalizedSite
+        || (isGuestTicket ? ticket.user_id !== null : ticket.user_id !== user?.id)) {
+        throw createError('找不到可操作的工单', 404, 'ticket_not_found');
+    }
+
+    const now = new Date();
+    const timestamp = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+    const formattedFollowup = `\n\n--- [用户补充 ${timestamp}] ---\n${replyText}`;
+    const newDescription = `${ticket.description || ''}${formattedFollowup}`;
+
+    if (newDescription.length > 24000) throw createError('工单内容已达上限，请联系客服', 413, 'ticket_too_long');
+    let updateQuery = db.from('shop_tickets').update({
+        description: newDescription, status: 'PENDING', updated_at: now.toISOString()
+    }).eq('id', ticketId).eq('site', normalizedSite);
+    updateQuery = isGuestTicket ? updateQuery.is('user_id', null) : updateQuery.eq('user_id', user.id);
+    // Optimistic locking prevents concurrent replies or operator updates being overwritten.
+    updateQuery = ticket.description === null ? updateQuery.is('description', null) : updateQuery.eq('description', ticket.description);
+    updateQuery = updateQuery.eq('status', ticket.status);
+    const { data: updatedTicket, error: updateErr } = await updateQuery
+        .select('id, user_id, order_id, issue_type, status, description, admin_notes, created_at, updated_at').maybeSingle();
+    if (updateErr) throw createError('更新工单失败', 503, 'ticket_update_failed');
+    if (!updatedTicket) throw createError('工单已更新，请刷新后重试', 409, 'ticket_conflict');
+
+    try {
+        const profileEmail = user?.id ? await fetchProfileEmailByUserId(db, user.id) : '';
+        const ticketAlert = buildTicketCreatedAlert({
+            ...(updatedTicket || ticket),
+            site: normalizeSiteValue(site, { fallback: 'cn' }),
+            user_email: profileEmail || contactEmail || null,
+            is_reply: true,
+            reply_text: replyText
+        });
+        if (db?.from && ticketAlert) {
+            await enqueueOpsAlertJob(db, {
+                ...ticketAlert,
+                is_reply: true,
+                reply_text: replyText,
+                createdAt: updatedTicket?.updated_at || undefined,
+                source: 'support_ticket_reply'
+            });
+        }
+    } catch (_) {}
+
+    return {
+        success: true,
+        message: '工单回复已提交',
+        ticket: shapeTicketHistoryRow(updatedTicket || ticket, '')
+    };
 }
 
 module.exports = async function handler(req, res) {
@@ -998,6 +1138,8 @@ module.exports = async function handler(req, res) {
         });
     }
 
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Vary', 'Cookie, Authorization');
     const rateLimit = await takeRateLimitToken({
         supabase: getOptionalSupabaseAdmin(),
         key: `support:${resolveClientIp(req, { env: process.env }) || 'unknown'}`,
@@ -1017,15 +1159,39 @@ module.exports = async function handler(req, res) {
     try {
         const body = await parseJsonBody(req);
         const action = normalizeText(body.action, 64);
-        const input = body.input;
+        const input = (body.input !== undefined && body.input !== null) ? body.input : body;
         const requestSite = resolveSupportRequestSite(req, body, input);
-        const {
-            user,
-            requestSupabase,
-            adminSupabase
-        } = await requireAuthenticatedUser(req);
+        const guestAccess = readGuestTicketAccess(req);
+        if (['create_ticket', 'ticket_history', 'reply_ticket'].includes(action)) {
+            const origin = req.headers?.origin;
+            let sameOrigin = true;
+            if (origin) {
+                try { sameOrigin = new URL(origin).host === req.headers.host; } catch (_) { sameOrigin = false; }
+            }
+            if (req.headers?.['sec-fetch-site'] === 'cross-site' || !sameOrigin) {
+                throw createError('工单请求来源不允许', 403, 'support_origin_forbidden');
+            }
+        }
+        let user = null;
+        let requestSupabase = null;
+        let adminSupabase = null;
 
-        if (!requestSupabase || !adminSupabase) {
+        try {
+            const auth = await requireAuthenticatedUser(req);
+            user = auth.user;
+            requestSupabase = auth.requestSupabase;
+            adminSupabase = auth.adminSupabase;
+        } catch (authError) {
+            if (!req.headers?.authorization && !req.headers?.Authorization && authError.statusCode === 401
+                && ['create_ticket', 'ticket_history', 'reply_ticket'].includes(action)) {
+                adminSupabase = getOptionalSupabaseAdmin();
+                requestSupabase = adminSupabase;
+            } else {
+                throw authError;
+            }
+        }
+
+        if (!adminSupabase && !requestSupabase) {
             throw createError('Support service is not configured correctly', 500, 'support_not_configured');
         }
 
@@ -1050,10 +1216,13 @@ module.exports = async function handler(req, res) {
                 result = await handleShopOrderContent({ requestSupabase, input, site: requestSite });
                 break;
             case 'create_ticket':
-                result = await handleCreateTicket({ requestSupabase, adminSupabase, user, input, site: requestSite });
+                result = await handleCreateTicket({ requestSupabase, adminSupabase, user, input, site: requestSite, guestAccess, res });
+                break;
+            case 'reply_ticket':
+                result = await handleReplyTicket({ requestSupabase, adminSupabase, user, input, site: requestSite, guestAccess });
                 break;
             case 'ticket_history':
-                result = await handleTicketHistory({ adminSupabase, user, input, site: requestSite });
+                result = await handleTicketHistory({ adminSupabase, user, input, site: requestSite, guestAccess });
                 break;
             default:
                 throw createError('Unsupported support action', 400, 'unsupported_action');

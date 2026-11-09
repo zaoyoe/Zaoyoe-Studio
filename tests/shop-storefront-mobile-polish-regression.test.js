@@ -32,3 +32,26 @@ test('shop mobile storefront keeps card corners clean and guidance height animat
         'mobile purchase modal should restate the height transition after the base transition reset so notes and usage disclosures animate'
     );
 });
+
+test('shop purchase modal counter inline edit input adapts to light and dark themes', () => {
+    const shopCssSource = readRepoFile(path.join('css', 'shop-page.css'));
+    const styleCssSource = readRepoFile('style.css');
+
+    assert.match(
+        styleCssSource,
+        /\.modal-content input:not\(\.security-input\):not\(\.rct-edit-input\)/,
+        'style.css should exclude .rct-edit-input from the global modal-content white text !important rule'
+    );
+
+    assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal \.rct-edit-input[\s\S]*?color:\s*#0f172a !important;[\s\S]*-webkit-text-fill-color:\s*#0f172a !important;/s,
+        'light theme must explicitly set visible dark text and -webkit-text-fill-color on .rct-edit-input'
+    );
+
+    assert.match(
+        shopCssSource,
+        /html\[data-theme="dark"\] body\.shop-page #shopPurchaseModal \.rct-edit-input[\s\S]*?color:\s*#f8fafc !important;/s,
+        'dark theme must explicitly set visible light text on .rct-edit-input'
+    );
+});

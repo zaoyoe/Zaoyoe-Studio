@@ -1,0 +1,23 @@
+{
+  "round_date": "2026-11-08",
+  "archived_at": "2026-11-09T00:02:21.392153+08:00",
+  "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "origin_main": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "branch": "main",
+  "origin": "https://github.com/zaoyoe/Zaoyoe-Studio.git",
+  "behind": 0,
+  "initial_status_rows": 603,
+  "before_archive_status_rows": 607,
+  "initial_status_rows_retained": true,
+  "expected_index_sha256": "0cffdc8f7b49154ec9082ca7c97b5b5a0be0c4df5dd6ae1c20526f9aca9130b7",
+  "outside_scope": {
+    "path": "js/engagement-runtime-loader.js",
+    "sha256": "c9186bfbfe8422abe6d1676a2f47402a12c8c4df3895073bf9fb6d807af53413",
+    "handoff_expected_sha256": "45aa0934ef57290f023fcf5d4b6f416d3a6b0c621e48fefb90a20631a9e0ff7d",
+    "matches_handoff": false,
+    "status": "REVIEW",
+    "source_attribution": "Not determined; file not modified or reverted by this archive procedure.",
+    "round6_historical_review_not_reclassified": true
+  },
+  "boundary": "Current dirty working tree, not a committed or deployable candidate. No staged changes, commit, push, PR, deploy, SQL, live database, real payment or production worker operation."
+}

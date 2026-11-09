@@ -22,9 +22,9 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should seed a nonblank hero shell before homepage runtime data loads'
     );
     assert.equal(
-        indexSource.includes('class="hero-title fade-in-up visible" data-i18n="home.hero.title"'),
+        indexSource.includes('class="hero-title fade-in-up visible" data-home-hero-text-pending'),
         true,
-        'static hero title should render immediately and still be localized by i18n'
+        'static hero title should reserve its geometry until the layout config supplies its text'
     );
     assert.equal(
         indexSource.includes('homeDataPerf=20260730_HOME_PROMPT_MASK_AI_TAGS_2'),
@@ -52,7 +52,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260620_HOME_SHOP_MOBILE_HEADER_CENTER_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1&heroSwipe=20260727_HOME_HERO_NATIVE_SWIPE_1&guestbookActions=20260730_HOME_GUESTBOOK_ACTION_ROW_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260620_HOME_SHOP_MOBILE_HEADER_CENTER_1(?:&modalScroll=20261107_HOME_MODAL_SCROLL_LOCK_1)?&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1&heroSwipe=20260727_HOME_HERO_NATIVE_SWIPE_1&guestbookActions=20260730_HOME_GUESTBOOK_ACTION_ROW_1&homeSpacing=20261108_2" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
@@ -645,7 +645,7 @@ test('homepage prompt masonry renders live rows only while warming thumbnails af
     );
     assert.match(
         framerSource,
-        /const \[, config, basePromptPool\] = await Promise\.all\(\[\s*localizationReady,\s*this\.fetchHomepageConfig\(\),\s*this\.fetchVisiblePromptPool\(\)\s*\]\);[\s\S]*this\.promptPool = await this\.hydrateConfiguredPromptPool\([\s\S]*const prompts = await this\.aggregatePrompts/,
+        /const \[, config, basePromptPool\] = await Promise\.all\(\[\s*localizationReady,\s*configReady,\s*this\.fetchVisiblePromptPool\(\)\s*\]\);[\s\S]*this\.promptPool = await this\.hydrateConfiguredPromptPool\([\s\S]*const prompts = await this\.aggregatePrompts/,
         'cold homepage loads should fetch localization, config, and compact prompt summaries in parallel before aggregation'
     );
     assert.doesNotMatch(
@@ -817,7 +817,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         './js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1',
         './js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1',
         './js/section-visibility.js?v=20260528_GONGYI_SITE_AWARE_1',
-        './js/i18n.js?v=20260530_HOME_GONGYI_FATHER_KEY_1&cacheMode=20260730_HOME_CRITICAL_BOOT_1',
+        './js/i18n.js?v=20260530_HOME_GONGYI_FATHER_KEY_1&cacheMode=20260730_HOME_CRITICAL_BOOT_1&firstPaint=20261107_1&heroText=20261107_HOME_HERO_CONFIG_TEXT_1',
         './js/cache.js?v=20260512_HOME_CACHE_REFRESH_1'
     ];
 
@@ -852,7 +852,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         'guestbook intent loader should open the modal after loading deferred runtimes'
     );
     assert.equal(
-        indexSource.includes('./js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1'),
+        indexSource.includes('./js/engagement-runtime-loader.js?v=20261108_ANNOUNCEMENT_MATERIAL_1'),
         true,
         'homepage should cache-bust the split engagement bootstrap'
     );
@@ -872,7 +872,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         'homepage should gate the announcement runtime behind its first-paint signal'
     );
     assert.equal(
-        indexSource.includes('rel="preload" href="announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1" as="script"'),
+        indexSource.includes('rel="preload" href="announcement-loader.js?v=20261108_ANNOUNCEMENT_MATERIAL_1" as="script"'),
         false,
         'homepage should not compete with card data by preloading the announcement runtime'
     );
@@ -959,4 +959,32 @@ test('homepage guestbook keeps both desktop actions on one row across languages'
         true,
         'homepage should cache-bust the unified guestbook action layout'
     );
+});
+
+
+test('critical hero typography and narrow geometry match the complete stylesheet in both languages', () => {
+    function declarations(source, selector) {
+        const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const match = source.match(new RegExp('(?:^|\\n)' + escaped + '\\s*\\{([^}]+)\\}'));
+        assert.ok(match, `${selector}: rule exists`);
+        return Object.fromEntries([...match[1].matchAll(/([\w-]+)\s*:\s*([^;]+);/g)].map(([, name, value]) => [name, value.trim()]));
+    }
+    const critical = readRepoFile('css/framer_home_critical.css');
+    const complete = readRepoFile('css/framer_home.css');
+    // A narrower first-paint inset changes subtitle wrapping and moves the centered hero.
+    for (const source of [critical, complete]) {
+        for (const [, rule] of source.matchAll(/(?:^|\n)\s*\.hero-section\s*\{([^}]+)\}/g)) {
+            assert.doesNotMatch(rule, /padding-(?:left|right)\s*:/, 'hero keeps the same inline inset on narrow screens');
+        }
+    }
+    for (const [selector, properties] of [
+        ['.hero-section', ['padding']],
+        ['.hero-title', ['font-size', 'font-weight', 'letter-spacing', 'line-height']],
+        ['html[lang^="en"] .hero-title', ['font-family', 'letter-spacing']],
+        ['html[lang^="en"] .hero-subtitle', ['font-family', 'letter-spacing']]
+    ]) {
+        const early = declarations(critical, selector);
+        const final = declarations(complete, selector);
+        for (const property of properties) assert.equal(early[property], final[property], `${selector}: stable ${property}`);
+    }
 });

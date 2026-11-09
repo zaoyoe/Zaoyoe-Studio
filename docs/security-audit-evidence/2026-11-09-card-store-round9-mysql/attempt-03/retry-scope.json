@@ -1,0 +1,9 @@
+{
+  "reason": "Correct harness error-code expectation and add real stored-owner padding test; never weaken production owner check",
+  "previous_instance": "/private/tmp/kc-hold-88db804f71ff9b98",
+  "previous_data_preserved": true,
+  "new_instance": "/private/tmp/kc-hold-7d64646488d639c6",
+  "ddl_scope": "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/fixture.sql",
+  "authorization": "Same user-authorized isolated synthetic SQL/12-case experiment; no production operations",
+  "runtime_changes": false
+}

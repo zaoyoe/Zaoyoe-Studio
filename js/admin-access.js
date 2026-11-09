@@ -16,6 +16,10 @@
     const USER_PRESENCE_CHANNEL = 'zaoyoe-user-presence';
     const USER_PRESENCE_HEARTBEAT_MS = 120000;
     const USER_PRESENCE_TAB_KEY = 'zaoyoe_user_presence_tab_v1';
+    let adminStudioSessionGeneration = 0;
+    let adminStudioSessionClearPromise = null;
+    let lastAdminStudioBearer = '';
+    const inFlightAdminStudioSessions = new Set();
     let pendingAdminStudioSessionPromise = null;
     let pendingAdminStudioSessionUserId = '';
     let pendingAdminStudioSessionRenewPromise = null;
@@ -935,7 +939,17 @@
         }
     }
 
-    async function createAdminStudioSession(options = {}) {
+    function createAdminStudioSession(options = {}) {
+        if (adminStudioSessionClearPromise) return Promise.resolve({ ok: false, reason: 'session_clearing' });
+        const generation = adminStudioSessionGeneration;
+        const task = issueAdminStudioSession(options, generation);
+        inFlightAdminStudioSessions.add(task);
+        const cleanup = () => inFlightAdminStudioSessions.delete(task);
+        task.then(cleanup, cleanup);
+        return task;
+    }
+
+    async function issueAdminStudioSession(options, generation) {
         const persistedSession = readPersistedSupabaseSession(options)?.session || null;
         const explicitUserId = String(
             options?.userId ||
@@ -1005,8 +1019,11 @@
             };
         }
 
+        if (generation !== adminStudioSessionGeneration) return { ok: false, reason: 'session_cleared' };
         const resolvedUserId = explicitUserId || String(session?.user?.id || buildPersistedSessionUser(persistedSession)?.id || '').trim();
         const issueAdminStudioSessionWithToken = async (token) => {
+            if (generation !== adminStudioSessionGeneration) return { ok: false, reason: 'session_cleared' };
+            lastAdminStudioBearer = token;
             try {
                 const response = await fetchWithTimeout(
                     ADMIN_STUDIO_SESSION_ENDPOINT,
@@ -1053,7 +1070,7 @@
                 && (Number(result?.status || 0) === 401 || Number(result?.status || 0) === 403)
                 && refreshableSession?.refresh_token;
 
-            if (shouldRetryWithRestoredSession) {
+            if (shouldRetryWithRestoredSession && generation === adminStudioSessionGeneration) {
                 const restoredSession = await restoreSupabaseSessionFromRefreshToken(supabaseClient, refreshableSession);
                 const restoredToken = String(restoredSession?.access_token || '').trim();
                 if (restoredToken && restoredToken !== accessToken) {
@@ -1063,6 +1080,7 @@
                 }
             }
 
+            if (generation !== adminStudioSessionGeneration) return { ok: false, reason: 'session_cleared' };
             if (result?.ok) {
                 writeAdminStudioSessionCache(
                     resolvedUserId || String(session?.user?.id || buildPersistedSessionUser(persistedSession)?.id || '').trim(),
@@ -1090,21 +1108,33 @@
         return sessionRequest;
     }
 
-    async function clearAdminStudioSession() {
+    function clearAdminStudioSession() {
+        if (adminStudioSessionClearPromise) return adminStudioSessionClearPromise;
+        adminStudioSessionGeneration += 1;
         clearCachedAdminStudioSession();
-        try {
-            const response = await fetchWithTimeout(
-                ADMIN_STUDIO_SESSION_ENDPOINT,
-                {
-                    method: 'DELETE',
-                    credentials: 'same-origin'
-                },
-                getAdminAccessTimeout('sessionClearMs', DEFAULT_ADMIN_STUDIO_SESSION_TIMEOUT_MS)
-            );
-            return response.ok;
-        } catch (_) {
-            return false;
-        }
+        const pending = [...inFlightAdminStudioSessions];
+        adminStudioSessionClearPromise = (async () => {
+            // Wait for Set-Cookie responses before clearing the browser Cookie. The
+            // server's source tombstone also rejects requests which outlive a timeout.
+            await Promise.allSettled(pending);
+            let token = lastAdminStudioBearer;
+            if (!token) {
+                const result = await resolveWithTimeout(() => globalScope.supabaseClient?.auth?.getSession?.(), 4000, null);
+                token = String(result?.data?.session?.access_token || readPersistedSupabaseSession({})?.session?.access_token || '');
+            }
+            try {
+                const response = await fetchWithTimeout(ADMIN_STUDIO_SESSION_ENDPOINT, {
+                    method: 'DELETE', credentials: 'same-origin',
+                    headers: token ? { Authorization: `Bearer ${token}` } : {}
+                }, getAdminAccessTimeout('sessionClearMs', DEFAULT_ADMIN_STUDIO_SESSION_TIMEOUT_MS));
+                return response?.ok === true;
+            } catch (_) { return false; }
+            finally {
+                lastAdminStudioBearer = '';
+                clearCachedAdminStudioSession();
+            }
+        })().finally(() => { adminStudioSessionClearPromise = null; });
+        return adminStudioSessionClearPromise;
     }
 
     async function openAdminStudio(target = 'admin-studio.html') {

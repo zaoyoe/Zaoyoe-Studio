@@ -531,8 +531,11 @@ function deriveZpayPaymentType(channel, integration) {
     return lowerText(integration?.paymentType, 'alipay', 20) === 'wxpay' ? 'wxpay' : 'alipay';
 }
 
-function extractNowpaymentsPaymentId(payload = {}) {
-    return text(payload.payment_id || payload.id, '', 120);
+function extractNowpaymentsPaymentId(payload = {}, rawBody = null) {
+    const exact = rawBody
+        ? require('../../../server/tg/nowpayments-gateway').parsePaymentJson(String(rawBody)).exact
+        : payload;
+    return text(exact.payment_id ?? exact.id, '', 120);
 }
 
 function getNowpaymentsQuoteAmount(payload = {}) {
@@ -582,7 +585,7 @@ function normalizeNowpaymentsSettlement(payload = {}, status = 'unknown', rawBod
         const { exact } = require('../../../server/tg/nowpayments-gateway').parsePaymentJson(String(rawBody));
         // Keep the original signature/response object unchanged, but compare
         // the received amount using its exact wire representation.
-        payload = { ...payload, actually_paid: exact.actually_paid };
+        payload = { ...payload, actually_paid: exact.actually_paid, pay_amount: exact.pay_amount, price_amount: exact.price_amount };
     }
     const actuallyPaid = getNowpaymentsActuallyPaid(payload);
     const actuallyPaidText = getNowpaymentsActuallyPaidText(payload);
@@ -598,6 +601,8 @@ function normalizeNowpaymentsSettlement(payload = {}, status = 'unknown', rawBod
     return {
         actuallyPaid,
         actuallyPaidText,
+        payAmountText: payload.pay_amount == null ? null : String(payload.pay_amount),
+        priceAmountText: payload.price_amount == null ? null : String(payload.price_amount),
         paidCurrency,
         networkVerified,
         actualPaymentVerified,
@@ -1205,7 +1210,7 @@ function createGuestShopPaymentAdapter({
                 });
             }
         }
-        const paymentId = extractNowpaymentsPaymentId(payload);
+        const paymentId = extractNowpaymentsPaymentId(payload, result.response?.text);
         const payAddress = text(payload.pay_address || payload.payment_address || payload.address, '', 240);
         const payAmountRaw = safePositiveNumber(payload.pay_amount);
         const payCurrency = normalizeNowpaymentsCurrency(payload.pay_currency || context.integration.payCurrency);
@@ -1345,7 +1350,8 @@ function createGuestShopPaymentAdapter({
                 provider,
                 reason: verification.valid ? '' : (received ? 'signature_mismatch' : 'missing_signature'),
                 received_signature: received,
-                signature_version: ZPAY_SIGN_TYPE
+                signature_version: ZPAY_SIGN_TYPE,
+                merchant_id: context.integration.pid
             };
         }
         const received = text(
@@ -1426,7 +1432,7 @@ function createGuestShopPaymentAdapter({
         const quoteAmount = getNowpaymentsQuoteAmount(payload);
         const settlement = normalizeNowpaymentsSettlement(payload, status, rawBody);
         const priceCurrency = normalizeCurrency(payload.price_currency);
-        const paymentId = extractNowpaymentsPaymentId(payload);
+        const paymentId = extractNowpaymentsPaymentId(payload, rawBody);
         return {
             provider,
             purpose: GUEST_PURPOSE,
@@ -1442,6 +1448,8 @@ function createGuestShopPaymentAdapter({
             provider_amount: quoteAmount,
             actually_paid: settlement.actuallyPaid,
             actually_paid_text: settlement.actuallyPaidText,
+            pay_amount_text: settlement.payAmountText,
+            price_amount_text: settlement.priceAmountText,
             crypto_paid_amount: settlement.actuallyPaid,
             currency: priceCurrency,
             provider_currency: priceCurrency,
@@ -1476,7 +1484,7 @@ function createGuestShopPaymentAdapter({
         const channelName = lowerText(channel || provider, provider);
         assertChannelAllowed(provider, channelName, allowedChannels, { required: requireChannelAllowlist });
         const context = await resolveRuntime({ provider, site, ...options });
-        const orderNo = text(providerOrderNo || merchantOrderNo, '', MAX_PROVIDER_REFERENCE_LENGTH);
+        const orderNo = text(merchantOrderNo || providerOrderNo, '', MAX_PROVIDER_REFERENCE_LENGTH);
         if (provider === 'zpay') {
             if (!orderNo && !tradeNo) throw new GuestShopPaymentError('易支付查单缺少订单号', { code: 'guest_provider_reference_missing', statusCode: 400 });
             const result = await queryZpayPayment({
@@ -1491,6 +1499,7 @@ function createGuestShopPaymentAdapter({
             const amount = safeNumber(payload.money);
             return {
                 supported: true,
+                merchant_id: context.integration.pid,
                 provider,
                 purpose: GUEST_PURPOSE,
                 merchant_order_no: text(payload.out_trade_no || merchantOrderNo, '', MAX_ORDER_REFERENCE_LENGTH) || null,
@@ -1518,14 +1527,15 @@ function createGuestShopPaymentAdapter({
         const status = normalizeNowpaymentsPaymentStatus(statusRaw);
         const quoteAmount = getNowpaymentsQuoteAmount(payload);
         const settlement = normalizeNowpaymentsSettlement(payload, status, result.response?.text);
+        const queriedPaymentId = extractNowpaymentsPaymentId(payload, result.response?.text);
         return {
             supported: true,
             provider,
             purpose: GUEST_PURPOSE,
             merchant_order_no: text(payload.order_id || merchantOrderNo, '', MAX_ORDER_REFERENCE_LENGTH) || null,
             provider_order_no: text(payload.order_id || orderNo, '', MAX_PROVIDER_REFERENCE_LENGTH) || null,
-            provider_payment_id: text(payload.payment_id || payload.id || resolvedPaymentId, '', 120) || null,
-            payment_id: text(payload.payment_id || payload.id || resolvedPaymentId, '', 120) || null,
+            provider_payment_id: queriedPaymentId || null,
+            payment_id: queriedPaymentId || null,
             transaction_id: text(payload.outcome_transaction_hash || payload.payin_hash || payload.transaction_id || payload.txid, '', MAX_PROVIDER_REFERENCE_LENGTH) || null,
             status: settlement.effectiveStatus,
             status_raw: statusRaw,
@@ -1533,6 +1543,8 @@ function createGuestShopPaymentAdapter({
             paid_amount: quoteAmount,
             actually_paid: settlement.actuallyPaid,
             actually_paid_text: settlement.actuallyPaidText,
+            pay_amount_text: settlement.payAmountText,
+            price_amount_text: settlement.priceAmountText,
             crypto_paid_amount: settlement.actuallyPaid,
             currency: normalizeCurrency(payload.price_currency || context.integration.priceCurrency),
             paid_currency: settlement.paidCurrency,
@@ -1540,7 +1552,7 @@ function createGuestShopPaymentAdapter({
             network_verified: settlement.networkVerified,
             actual_payment_verified: settlement.actualPaymentVerified,
             effective_status: settlement.effectiveStatus,
-            response_payload: payload
+            response_payload: { ...payload, payment_id: queriedPaymentId || null }
         };
     }
 
@@ -1567,7 +1579,7 @@ function createGuestShopPaymentAdapter({
             };
         }
         const amount = normalizeDecimalAmount(money, '退款金额');
-        const orderNo = text(providerOrderNo || merchantOrderNo, '', MAX_PROVIDER_REFERENCE_LENGTH);
+        const orderNo = text(merchantOrderNo || providerOrderNo, '', MAX_PROVIDER_REFERENCE_LENGTH);
         if (!orderNo && !tradeNo) throw new GuestShopPaymentError('易支付退款缺少订单号', { code: 'guest_provider_reference_missing', statusCode: 400 });
         const result = await refundZpayPayment({
             channelConfig: context.channelConfig,

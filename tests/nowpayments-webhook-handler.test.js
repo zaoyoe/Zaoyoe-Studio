@@ -42,13 +42,15 @@ function createSupabaseMock(state) {
                 return {
                     insert(payload) {
                         state.insertedEvent = payload;
+                        state.insertedEvents ??= [];
+                        state.insertedEvents.push(payload);
                         return {
                             select() {
                                 return {
                                     limit() {
                                         return {
                                             data: [{ id: 'event-1' }],
-                                            error: null
+                                            error: state.eventInsertError || (state.duplicateEvent ? { code: '23505' } : null)
                                         };
                                     }
                                 };
@@ -169,6 +171,16 @@ function buildDependencyMocks(state) {
                                 ipnSecret: 'ipn-secret'
                             }
                         };
+                    },
+                    async queryOrder(args) {
+                        state.queryArgs = args;
+                        if (state.queryError) throw state.queryError;
+                        const metadata = state.existingPaymentOrder.provider_metadata;
+                        const receipt = { payment_id: metadata.payment_id, order_id: state.existingPaymentOrder.provider_order_no,
+                            payment_status: 'finished', price_amount: metadata.price_amount, price_currency: metadata.price_currency,
+                            pay_amount: metadata.pay_amount_text || metadata.pay_amount, actually_paid: metadata.pay_amount_text || metadata.pay_amount,
+                            pay_currency: metadata.pay_currency, pay_address: metadata.pay_address, extra_id: metadata.payin_extra_id || '', ...state.queryPatch };
+                        return { supported: true, responsePayload: receipt, responseText: state.queryText };
                     },
                     verifyWebhook({ payload, runtimeContext, receivedSignature }) {
                         state.verificationRequest = { payload, runtimeContext, receivedSignature };
@@ -424,7 +436,15 @@ test('native TON recharge keeps its immutable identity after a wrong callback an
         ]) {
             const payload = { ...valid, ...patch };
             const rawBody = JSON.stringify(payload).replace('"actually_paid":"14.82"', `"actually_paid":${rawAmount || '14.82'}`);
-            await handler({ method: 'POST', headers: { 'x-nowpayments-sig': 'expected-signature' }, body: JSON.parse(rawBody), rawBody: Buffer.from(rawBody) }, createMockResponse());
+            const res = createMockResponse();
+            await handler({ method: 'POST', headers: { 'x-nowpayments-sig': 'expected-signature' }, body: JSON.parse(rawBody), rawBody: Buffer.from(rawBody) }, res);
+            if (patch.payment_id) {
+                assert.equal(res.statusCode, 409);
+                assert.equal(state.paymentOrderPatch, undefined, 'a different payment ID cannot update the saved quote');
+                assert.equal(state.insertedEvent, undefined, 'a different payment ID cannot consume an event');
+                assert.equal(state.rechargePayload, undefined);
+                continue;
+            }
             for (const key of ['payment_id', 'pay_currency', 'price_currency', 'pay_amount', 'pay_amount_text', 'payin_extra_id']) {
                 assert.equal(state.paymentOrderPatch.provider_metadata[key], metadata[key]);
             }
@@ -506,5 +526,166 @@ test('nowpayments webhook preserves existing payment id when callback omits it',
         assert.equal(state.paymentOrderPatch.provider_metadata.payment_id, '5731943810');
         assert.equal(state.paymentOrderPatch.provider_metadata.purchase_id, 'purchase-is-not-payment-id');
         assert.equal(state.finalizedEvent.processing_result, 'ignored_confirming');
+    });
+});
+
+function receiptBoundaryFixture() {
+    const metadata = {
+        payment_id: '5731943810', local_amount: 66.66,
+        price_amount: 9.5, price_currency: 'usd', pay_amount: 9.5, pay_amount_text: '9.5',
+        pay_currency: 'usdtbsc', pay_address: 'saved-wallet', payin_extra_id: '', paid_points: 66, bonus_points: 0
+    };
+    const state = { existingPaymentOrder: {
+        id: 'payment-boundary', user_id: 'user-1', provider: 'nowpayments', provider_order_no: 'NPBOUNDARY',
+        site: 'cn', expected_amount: 66.66, points_amount: 66, status: 'pending', provider_metadata: metadata
+    } };
+    const req = { method: 'POST', headers: { host: 'www.fatherkey.com', 'x-nowpayments-sig': 'expected-signature' },
+        body: { order_id: 'NPBOUNDARY', payment_id: metadata.payment_id, payment_status: 'finished',
+            price_amount: 9.5, price_currency: 'usd', pay_amount: 9.5, actually_paid: 9.5,
+            pay_currency: 'usdtbsc', pay_address: metadata.pay_address } };
+    return { state, req, metadata };
+}
+
+for (const [reason, queryPatch] of [
+    ['payment ID', { payment_id: 'other-payment' }],
+    ['order ID', { order_id: 'OTHER-ORDER' }],
+    ['unfinished status', { payment_status: 'confirming' }],
+    ['underpayment', { actually_paid: '9.49' }],
+    ['missing received amount', { actually_paid: undefined }],
+    ['requested amount', { pay_amount: '1.00' }],
+    ['price quote', { price_amount: '9.49' }],
+    ['price currency', { price_currency: 'eur' }],
+    ['asset network', { pay_currency: 'usdtton' }],
+    ['received asset', { actually_paid_currency: 'btc' }],
+    ['payment address', { pay_address: 'other-wallet' }],
+    ['payment memo', { extra_id: 'other-memo' }]
+]) test(`an authenticated query with mismatched ${reason} cannot settle or occupy the event`, async () => {
+    const { state, req } = receiptBoundaryFixture();
+    state.queryPatch = queryPatch;
+    await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+        const handler = createNowpaymentsWebhookHandler({ supabase: createSupabaseMock(state), env: {} });
+        const res = createMockResponse();
+        await handler(req, res);
+        assert.equal(res.statusCode, 503);
+        assert.equal(state.insertedEvent, undefined);
+        assert.equal(state.finalizedEvent, undefined);
+        assert.equal(state.rechargePayload, undefined);
+        assert.equal(state.paymentOrderPatch, undefined);
+        state.queryPatch = {};
+        const retry = createMockResponse();
+        await handler(req, retry);
+        assert.equal(retry.statusCode, 200);
+        assert.equal(state.finalizedEvent.processing_result, 'processed_paid');
+        assert.equal(state.rechargePayload.paidPoints, 66);
+    });
+});
+
+test('query outage leaves the valid notification retryable and binds lookup to the saved payment', async () => {
+    const { state, req, metadata } = receiptBoundaryFixture();
+    state.queryError = new Error('temporary provider outage');
+    await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+        const handler = createNowpaymentsWebhookHandler({ supabase: createSupabaseMock(state), env: {} });
+        const res = createMockResponse();
+        await handler(req, res);
+        assert.equal(res.statusCode, 503);
+        assert.equal(state.queryArgs.paymentId, metadata.payment_id);
+        assert.equal(state.insertedEvent, undefined);
+        assert.equal(state.finalizedEvent, undefined);
+        state.queryError = null;
+        const retry = createMockResponse();
+        await handler(req, retry);
+        assert.equal(retry.statusCode, 200);
+        assert.equal(state.finalizedEvent.processing_result, 'processed_paid');
+    });
+});
+
+for (const status of ['finished', 'confirming', 'failed']) test(`a ${status} callback cannot replace a legacy order's saved payment ID`, async () => {
+    const { state, req } = receiptBoundaryFixture();
+    Object.assign(req.body, { payment_id: 'OTHER', payment_status: status });
+    await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+        const res = createMockResponse();
+        await createNowpaymentsWebhookHandler({ supabase: createSupabaseMock(state), env: {} })(req, res);
+        assert.equal(res.statusCode, 409);
+        assert.equal(state.queryArgs, undefined);
+        assert.equal(state.insertedEvent, undefined);
+        assert.equal(state.paymentOrderPatch, undefined);
+        assert.equal(state.rechargePayload, undefined);
+    });
+});
+
+test('nonfinal notifications preserve the original legacy quote for future queries', async () => {
+    const { state, req, metadata } = receiptBoundaryFixture();
+    Object.assign(req.body, { payment_status: 'confirming', pay_amount: 1, pay_currency: 'btc', price_currency: 'eur' });
+    await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+        const res = createMockResponse();
+        await createNowpaymentsWebhookHandler({ supabase: createSupabaseMock(state), env: {} })(req, res);
+        assert.equal(res.statusCode, 200);
+        for (const field of ['payment_id', 'pay_amount', 'pay_amount_text', 'pay_currency', 'price_amount', 'price_currency', 'pay_address', 'payin_extra_id']) {
+            assert.equal(state.paymentOrderPatch.provider_metadata[field], metadata[field], field);
+        }
+        assert.equal(state.rechargePayload, undefined);
+    });
+});
+
+test('invalid signatures cannot mutate an order or reserve its authentic notification key', async () => {
+    const { state, req } = receiptBoundaryFixture();
+    state.signatureValid = false;
+    await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+        const handler = createNowpaymentsWebhookHandler({ supabase: createSupabaseMock(state), env: {} });
+        const invalid = createMockResponse();
+        await handler(req, invalid);
+        assert.equal(invalid.statusCode, 401);
+        assert.match(state.insertedEvent.event_key, /^invalid:[a-f0-9]{64}$/);
+        assert.equal(state.paymentOrderPatch, undefined);
+        assert.equal(state.queryArgs, undefined);
+        state.signatureValid = true;
+        const valid = createMockResponse();
+        await handler(req, valid);
+        assert.equal(valid.statusCode, 200);
+        assert.equal(state.rechargePayload.paidPoints, 66);
+        assert.notEqual(state.insertedEvents[0].event_key, state.insertedEvents[1].event_key);
+    });
+});
+
+for (const duplicateEvent of [true, false]) test(`an ${duplicateEvent ? 'existing' : 'uncreated'} event cannot be finalized by this request`, async () => {
+    const { state, req } = receiptBoundaryFixture();
+    state.duplicateEvent = duplicateEvent;
+    if (!duplicateEvent) state.eventInsertError = { message: 'event database unavailable' };
+    await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+        const res = createMockResponse();
+        await createNowpaymentsWebhookHandler({ supabase: createSupabaseMock(state), env: {} })(req, res);
+        assert.equal(res.statusCode, duplicateEvent ? 200 : 500);
+        assert.equal(state.finalizedEvent, undefined);
+        assert.equal(state.rechargePayload, undefined);
+    });
+});
+
+test('raw authenticated amounts cannot round an atomic underpayment up to the saved quote', async () => {
+    const { state, req } = receiptBoundaryFixture();
+    state.queryText = JSON.stringify({ ...req.body, extra_id: '', actually_paid: '__EXACT_AMOUNT__' })
+        .replace('"__EXACT_AMOUNT__"', '9.499999999999999999');
+    await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+        const res = createMockResponse();
+        await createNowpaymentsWebhookHandler({ supabase: createSupabaseMock(state), env: {} })(req, res);
+        assert.equal(res.statusCode, 503);
+        assert.equal(state.insertedEvent, undefined);
+        assert.equal(state.rechargePayload, undefined);
+    });
+});
+
+test('raw provider and callback payment IDs retain precision beyond Number.MAX_SAFE_INTEGER', async () => {
+    const { state, req, metadata } = receiptBoundaryFixture();
+    metadata.payment_id = '9007199254740993';
+    req.body.payment_id = '__EXACT_ID__';
+    req.rawBody = JSON.stringify(req.body).replace('"__EXACT_ID__"', metadata.payment_id);
+    state.queryText = JSON.stringify({ ...req.body, extra_id: '', actually_paid: 9.5 })
+        .replace('"__EXACT_ID__"', metadata.payment_id);
+    await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+        const res = createMockResponse();
+        await createNowpaymentsWebhookHandler({ supabase: createSupabaseMock(state), env: {} })(req, res);
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.queryArgs.paymentId, metadata.payment_id);
+        assert.equal(state.paymentOrderPatch.provider_metadata.payment_id, metadata.payment_id);
+        assert.equal(state.finalizedEvent.processing_result, 'processed_paid');
     });
 });

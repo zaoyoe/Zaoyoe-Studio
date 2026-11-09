@@ -1,0 +1,12 @@
+✔ archived KC preflight is a MySQL 8.0.46 read-only evidence set (1.607708ms)
+✔ candidate migration has four checkpoints and no circular billing FK (0.578ms)
+✔ read-only preflight contains no mutation statement (0.587084ms)
+✔ candidate remains review-only and production schema source stays unchanged (0.538459ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 98.58175

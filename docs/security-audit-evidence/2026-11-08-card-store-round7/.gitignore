@@ -1,0 +1,4 @@
+# Preserve this round's original or explicitly redacted offline logs.
+!logs/
+!logs/*.log
+!delta/*.patch

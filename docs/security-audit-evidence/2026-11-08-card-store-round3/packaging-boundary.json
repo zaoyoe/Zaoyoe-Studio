@@ -1,0 +1,41 @@
+{
+  "review_kind": "STATIC_ONLY",
+  "docker_build": "NOT RUN",
+  "production_host_compose": "NOT INSPECTED",
+  "kc": {
+    "dockerfile": "services/kc-pay-gpt/Dockerfile",
+    "copy": "COPY . .",
+    "entrypoint": [
+      "node",
+      "server.js"
+    ],
+    "changed_runtime_not_excluded_by_dockerignore": [
+      "server.js",
+      "mysql-store.js"
+    ],
+    "repository_compose": "build: . and runtime-file bind mounts; not evidence of production host configuration.",
+    "deployment_status": "NOT RUN; independent KC artifact required"
+  },
+  "verify": {
+    "dockerfile": "deploy/kvm4/verify-server.Dockerfile",
+    "copy_roots": [
+      "adapters",
+      "api",
+      "server",
+      "js",
+      "scripts",
+      "docs",
+      "supabase"
+    ],
+    "includes_kc_runtime": false
+  },
+  "vercel_or_verify_release_proves_kc_fix_live": false,
+  "protected_host_paths": [
+    "/opt/kc-pay-gpt/.env",
+    "/opt/kc-pay-gpt/docker-compose.yml",
+    "/opt/kc-pay-gpt/data/",
+    "/opt/kc-pay-gpt/debug_screenshots/",
+    "/opt/kc-pay-gpt/product_files/",
+    "mysql_data volume"
+  ]
+}

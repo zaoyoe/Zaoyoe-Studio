@@ -1,0 +1,139 @@
+.inline-style-admin-studio-1 { display: none !important; }
+.inline-style-admin-studio-2 { margin-right:6px; }
+.inline-style-admin-studio-3 { display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-left:12px;font-size:13px;color:#a0aec0;user-select:none; }
+.inline-style-admin-studio-4 { cursor:pointer;accent-color:#6366f1; }
+.inline-style-admin-studio-5 { font-size:11px; }
+.inline-style-admin-studio-6 { color:#818cf8; }
+.inline-style-admin-studio-7 { margin-left:auto; }
+.inline-style-admin-studio-8 { max-width:960px;width:95vw;max-height:90vh;display:flex;flex-direction:column;border-radius:12px;overflow:hidden; }
+.inline-style-admin-studio-9 { flex-shrink:0; }
+.inline-style-admin-studio-10 { flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:18px; }
+.inline-style-admin-studio-11 { background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:14px 16px; }
+.inline-style-admin-studio-12 { font-weight:600;font-size:14px;margin-bottom:10px;display:flex;align-items:center;gap:6px;color:#e2e8f0; }
+.inline-style-admin-studio-13 { display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#6366f1;color:#fff;font-size:12px; }
+.inline-style-admin-studio-14 { display:flex;flex-wrap:wrap;align-items:center;gap:20px;font-size:13px; }
+.inline-style-admin-studio-15 { display:inline-flex;align-items:center;gap:6px;cursor:pointer; }
+.inline-style-admin-studio-16 { accent-color:#6366f1; }
+.inline-style-admin-studio-17 { width:65px;padding:3px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.3);color:#fff;font-size:13px;text-align:center; }
+.inline-style-admin-studio-18 { display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-left:auto; }
+.inline-style-admin-studio-19 { color:#a0aec0; }
+.inline-style-admin-studio-20 { font-size:12px;color:#a0aec0;font-weight:normal; }
+.inline-style-admin-studio-21 { display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:14px;font-size:13px; }
+.inline-style-admin-studio-22 { display:block;margin-bottom:4px;color:#cbd5e1; }
+.inline-style-admin-studio-23 { display:flex;align-items:center;gap:6px; }
+.inline-style-admin-studio-24 { width:100%;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.3);color:#fff;font-size:13px; }
+.inline-style-admin-studio-25 { width:100%;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(20,24,33,0.9);color:#fff;font-size:13px; }
+.inline-style-admin-studio-26 { grid-column:1 / -1; }
+.inline-style-admin-studio-27 { display:block;margin-bottom:6px;color:#cbd5e1; }
+.inline-style-admin-studio-28 { display:flex;align-items:center;gap:18px; }
+.inline-style-admin-studio-29 { grid-column:1 / -1;border-top:1px solid rgba(255,255,255,0.08);padding-top:12px;margin-top:4px; }
+.inline-style-admin-studio-30 { display:block;margin-bottom:8px;color:#cbd5e1;font-weight:600; }
+.inline-style-admin-studio-31 { color:#6366f1; }
+.inline-style-admin-studio-32 { display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;font-size:13px; }
+.inline-style-admin-studio-33 { display:block;margin-bottom:4px;color:#a0aec0; }
+.inline-style-admin-studio-34 { display:none; }
+.inline-style-admin-studio-35 { width:100%;padding:5px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.3);color:#fff;font-size:13px; }
+.inline-style-admin-studio-36 { display:block;margin-top:6px;color:#94a3b8;font-size:12px; }
+.inline-style-admin-studio-37 { font-weight:600;font-size:14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;color:#e2e8f0; }
+.inline-style-admin-studio-38 { font-size:12px;color:#22c55e;font-weight:normal; }
+.inline-style-admin-studio-39 { font-size:12px;color:#a0aec0; }
+.inline-style-admin-studio-40 { max-height:240px;overflow-y:auto;border:1px solid rgba(255,255,255,0.08);border-radius:6px; }
+.inline-style-admin-studio-41 { width:100%;font-size:12px;margin:0; }
+.inline-style-admin-studio-42 { background:rgba(255,255,255,0.04); }
+.inline-style-admin-studio-43 { width:40px;text-align:center; }
+.inline-style-admin-studio-44 { text-align:center; }
+.inline-style-admin-studio-45 { text-align:center;padding:16px;color:#a0aec0; }
+.inline-style-admin-studio-46 { display:flex;flex-wrap:wrap;gap:24px;font-size:13px; }
+.inline-style-admin-studio-47 { display:flex;gap:12px; }
+.inline-style-admin-studio-48 { cursor:pointer; }
+.inline-style-admin-studio-49 { display:none;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);border-radius:8px;padding:14px 16px; }
+.inline-style-admin-studio-50 { display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;font-size:13px; }
+.inline-style-admin-studio-51 { font-weight:600;color:#c7d2fe; }
+.inline-style-admin-studio-52 { font-weight:700;color:#818cf8; }
+.inline-style-admin-studio-53 { height:8px;background:rgba(255,255,255,0.1);border-radius:999px;overflow:hidden;margin-bottom:10px; }
+.inline-style-admin-studio-54 { height:100%;width:0%;background:linear-gradient(90deg, #6366f1, #a855f7);border-radius:999px;transition:width 0.3s ease; }
+.inline-style-admin-studio-55 { display:flex;align-items:center;gap:16px;font-size:12px;color:#cbd5e1; }
+.inline-style-admin-studio-56 { color:#22c55e; }
+.inline-style-admin-studio-57 { color:#f59e0b; }
+.inline-style-admin-studio-58 { color:#ef4444; }
+.inline-style-admin-studio-59 { max-width:540px;width:95vw;border-radius:12px; }
+.inline-style-admin-studio-60 { display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.08); }
+.inline-style-admin-studio-61 { margin:0;font-size:16px; }
+.inline-style-admin-studio-62 { color:#6366f1;margin-right:8px; }
+.inline-style-admin-studio-63 { padding:20px;display:flex;flex-direction:column;gap:16px; }
+.inline-style-admin-studio-64 { background:rgba(255,255,255,0.03);padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.08); }
+.inline-style-admin-studio-65 { display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:8px;color:#e2e8f0;cursor:pointer; }
+.inline-style-admin-studio-66 { opacity:0.5;pointer-events:none;display:flex;flex-direction:column;gap:8px;margin-left:22px; }
+.inline-style-admin-studio-67 { display:flex;gap:16px; }
+.inline-style-admin-studio-68 { display:flex;gap:18px; }
+.inline-style-admin-studio-69 { display:flex;align-items:center;gap:8px; }
+.inline-style-admin-studio-70 { width:90px;padding:4px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.3);color:#fff; }
+.inline-style-admin-studio-71 { cursor:pointer;font-size:12px;color:#a0aec0; }
+.inline-style-admin-studio-72 { opacity:0.5;pointer-events:none;display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-left:22px; }
+.inline-style-admin-studio-73 { width:80px;padding:4px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.3);color:#fff; }
+.inline-style-admin-studio-74 { margin-left:12px; }
+.inline-style-admin-studio-75 { display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid rgba(255,255,255,0.08); }
+.inline-style-admin-studio-76 { min-width: 205px; }
+.inline-style-admin-studio-77 { color: #60a5fa; }
+.inline-style-admin-studio-78 { color: #38bdf8; }
+.inline-style-admin-studio-79 { color: #a855f7; }
+.inline-style-admin-studio-80 { color: #34d399; }
+.inline-style-admin-studio-81 { color: #10b981; }
+.inline-style-admin-studio-82 { color: #f59e0b; }
+.inline-style-admin-studio-83 { border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; padding: 16px; margin-bottom: 20px; background: rgba(0, 0, 0, 0.015); }
+.inline-style-admin-studio-84 { font-weight: 600; font-size: 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+.inline-style-admin-studio-85 { color: #3b82f6; }
+.inline-style-admin-studio-86 { flex: 1.5; }
+.inline-style-admin-studio-87 { display: none; }
+.inline-style-admin-studio-88 { display:none; z-index: 10050; position: fixed; inset: 0; background: rgba(0,0,0,0.65); align-items: center; justify-content: center; backdrop-filter: blur(5px); }
+.inline-style-admin-studio-89 { width: 100%; max-width: 520px; border-radius: 16px; padding: 22px; background: #181d24; box-shadow: 0 24px 60px rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); color: #f8fafc; }
+.inline-style-admin-studio-90 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.inline-style-admin-studio-91 { display: flex; align-items: center; gap: 12px; }
+.inline-style-admin-studio-92 { width: 40px; height: 40px; border-radius: 10px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
+.inline-style-admin-studio-93 { width: 28px; height: 28px; object-fit: contain; }
+.inline-style-admin-studio-94 { margin: 0; font-size: 16px; font-weight: 600; color: #fff; }
+.inline-style-admin-studio-95 { margin: 2px 0 0; font-size: 12px; color: #94a3b8; }
+.inline-style-admin-studio-96 { background: none; border: none; font-size: 18px; color: #94a3b8; cursor: pointer; padding: 4px; }
+.inline-style-admin-studio-97 { margin-bottom: 16px; }
+.inline-style-admin-studio-98 { display: block; font-size: 12px; font-weight: 600; margin-bottom: 8px; color: #cbd5e1; }
+.inline-style-admin-studio-99 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; max-height: 180px; overflow-y: auto; padding: 4px; background: rgba(0,0,0,0.25); border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); }
+.inline-style-admin-studio-100 { margin-bottom: 14px; }
+.inline-style-admin-studio-101 { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: #cbd5e1; }
+.inline-style-admin-studio-102 { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.3); color: #fff; font-size: 13px; }
+.inline-style-admin-studio-103 { margin-bottom: 20px; }
+.inline-style-admin-studio-104 { font-size: 12px; color: #94a3b8; }
+.inline-style-admin-studio-105 { display: block; font-size: 11px; margin-top: 4px; color: #64748b; }
+.inline-style-admin-studio-106 { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px; }
+.inline-style-admin-studio-107 { padding: 7px 12px; font-size: 12px; border-radius: 7px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #94a3b8; cursor: pointer; }
+.inline-style-admin-studio-108 { display: flex; gap: 8px; }
+.inline-style-admin-studio-109 { padding: 7px 14px; font-size: 13px; border-radius: 7px; background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #cbd5e1; cursor: pointer; }
+.inline-style-admin-studio-110 { padding: 7px 18px; font-size: 13px; border-radius: 7px; background: #2563eb; border: none; color: #fff; font-weight: 600; cursor: pointer; }
+.inline-style-admin-studio-111 { width: 100%; max-width: 480px; border-radius: 16px; padding: 22px; background: #181d24; box-shadow: 0 24px 60px rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); color: #f8fafc; }
+.inline-style-admin-studio-112 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.inline-style-admin-studio-113 { display: flex; align-items: center; gap: 10px; }
+.inline-style-admin-studio-114 { width: 34px; height: 34px; border-radius: 9px; background: rgba(168, 85, 247, 0.18); display: flex; align-items: center; justify-content: center; color: #c084fc; font-size: 16px; }
+.inline-style-admin-studio-115 { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; margin-bottom: 16px; }
+.inline-style-admin-studio-116 { width: 22px; height: 22px; object-fit: contain; }
+.inline-style-admin-studio-117 { font-weight: 600; font-size: 14px; color: #fff; }
+.inline-style-admin-studio-118 { font-size: 12px; color: #c084fc; background: rgba(168, 85, 247, 0.15); padding: 3px 9px; border-radius: 6px; font-weight: 500; }
+.inline-style-admin-studio-119 { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: #fff; cursor: pointer; transition: all 0.18s ease; text-align: left; }
+.inline-style-admin-studio-120 { color: #34d399; font-size: 15px; }
+.inline-style-admin-studio-121 { font-weight: 600; font-size: 13.5px; color: #e2e8f0; }
+.inline-style-admin-studio-122 { font-size: 11.5px; color: #94a3b8; }
+.inline-style-admin-studio-123 { display: none; color: #34d399; font-size: 16px; }
+.inline-style-admin-studio-124 { margin-bottom: 18px; }
+.inline-style-admin-studio-125 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.inline-style-admin-studio-126 { font-size: 12px; font-weight: 600; color: #cbd5e1; }
+.inline-style-admin-studio-127 { padding: 4px 8px; font-size: 11.5px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.3); color: #fff; width: 115px; box-sizing: border-box; }
+.inline-style-admin-studio-128 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; max-height: 190px; overflow-y: auto; padding: 6px; background: rgba(0,0,0,0.25); border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); }
+.inline-style-admin-studio-129 { display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px; }
+.inline-style-admin-studio-130 { padding: 8px 16px; font-size: 13px; border-radius: 8px; background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #cbd5e1; cursor: pointer; }
+.inline-style-admin-studio-131 { padding: 8px 20px; font-size: 13px; border-radius: 8px; background: linear-gradient(135deg, #a855f7, #7c3aed); border: none; color: #fff; font-weight: 600; cursor: pointer; box-shadow: 0 4px 14px rgba(168,85,247,0.35); }
+
+/* Runtime state selectors stay after extracted page styles so delegated updates win. */
+[data-shop-display="block"] { display: block !important; }
+[data-shop-display="flex"] { display: flex !important; }
+[data-shop-display="inline-flex"] { display: inline-flex !important; }
+[data-shop-display="inline-block"] { display: inline-block !important; }
+.shop-admin-hidden { display: none !important; }
+[data-shop-progress] { width: attr(data-shop-progress type(<percentage>), 0%) !important; }

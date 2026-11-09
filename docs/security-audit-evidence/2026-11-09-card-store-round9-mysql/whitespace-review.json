@@ -1,0 +1,112 @@
+[
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/audited-run.cjs",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/post-check.cjs",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/prepare-lab.py",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/executed-statements-01.sql",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/fixture.sql",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/identity-before.sql",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/post-check.sql",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/attempt-03/sql/root-hardening.sql",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/audited-run-02.cjs",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/audited-run.cjs",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/diagnose-aliases.cjs",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/prepare-lab.py",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/diagnose-aliases-01.sql",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/executed-statements-01.sql",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/executed-statements-02.sql",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/fixture.sql",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/identity-before.sql",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/root-hardening.sql",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-card-store-hardening-round9-2026-11-09.md",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/README.md",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "tests/security-round8-kc-mysql-lab.test.js",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  }
+]

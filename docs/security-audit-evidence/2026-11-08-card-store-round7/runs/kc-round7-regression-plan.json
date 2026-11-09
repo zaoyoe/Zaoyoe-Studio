@@ -1,0 +1,46 @@
+[
+  {
+    "id": "native-regression",
+    "cwd": "/Volumes/chao/AI/xianyu_profit_calculator",
+    "log": "/tmp/kc-round7-native-regression.log",
+    "command": [
+      "node",
+      "--test",
+      "tests/security-round2-kc-activation.test.js",
+      "tests/security-round2-kc-credentials.test.js",
+      "tests/security-round2-kc-public-guard.test.js",
+      "tests/security-round3-kc-activation-atomic.test.js",
+      "tests/security-round4-kc-local-settlement.test.js",
+      "tests/security-round5-kc-owner-locks.test.js",
+      "tests/security-round6-kc-card-ownership.test.js",
+      "tests/security-round6-kc-payment-callers.test.js",
+      "tests/security-round7-kc-payment-hold.test.js"
+    ]
+  },
+  {
+    "id": "kc-regression",
+    "cwd": "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt",
+    "log": "/tmp/kc-round7-kc-regression.log",
+    "command": [
+      "node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "test/payment-retry-safety.test.js",
+      "test/payment-protocol-fallback.test.js",
+      "test/mysql-card-cooldown.test.js",
+      "test/card-freeze.test.js",
+      "test/stripe-protocol-payment.test.js",
+      "test/openai-payment-method.test.js",
+      "test/recharge-routing.test.js",
+      "test/gpt-api-client.test.js",
+      "test/task-safety.test.js",
+      "test/payment-decline-dictionary.test.js",
+      "test/gpt-outsourcing-store.test.js",
+      "test/gpt-outsourcing-worker.test.js",
+      "test/gpt-outsourcing-recovery.test.js",
+      "test/gpt-outsourcing.test.js",
+      "test/chatgpt-protocol-first.test.js",
+      "test/recharge-captcha-bridge.test.js"
+    ]
+  }
+]

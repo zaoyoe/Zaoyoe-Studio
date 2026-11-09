@@ -109,31 +109,39 @@ function resolveGuestQuantityCap({
     env = {},
     skuGuestMaxQuantity = null,
     productGuestMaxQuantity = null,
-    productMaxPurchaseQuantity = null
+    productMaxPurchaseQuantity = null,
+    minPurchaseQuantity = null
 } = {}) {
+    const minRequired = Math.max(1, positiveIntegerOrNull(minPurchaseQuantity) ?? 1);
     const guestCeiling = positiveIntegerOrNull(skuGuestMaxQuantity)
         ?? positiveIntegerOrNull(productGuestMaxQuantity)
-        ?? 1;
+        ?? minRequired;
     const purchaseCeiling = positiveIntegerOrNull(productMaxPurchaseQuantity) ?? GUEST_MAX_QUANTITY_CEILING;
-    const databaseCap = Math.min(
-        GUEST_MAX_QUANTITY_CEILING,
-        Math.max(1, guestCeiling),
-        Math.max(1, purchaseCeiling)
+    const databaseCap = Math.max(
+        minRequired,
+        Math.min(
+            GUEST_MAX_QUANTITY_CEILING,
+            Math.max(minRequired, guestCeiling),
+            Math.max(minRequired, purchaseCeiling)
+        )
     );
-    return Math.max(1, Math.min(databaseCap, resolveGuestMaxQuantity(env)));
+    const envLimit = Math.max(minRequired, resolveGuestMaxQuantity(env));
+    return Math.max(minRequired, Math.min(databaseCap, envLimit));
 }
 
 /**
  * Normalize a requested quantity. Returns null (never a clamp) when the value
- * is absent-but-invalid or outside 1..cap, so the caller fails closed with an
+ * is absent-but-invalid or outside min..cap, so the caller fails closed with an
  * explicit 400 instead of quietly selling a different amount than requested.
- * `undefined` / null / '' mean "not supplied" and resolve to 1.
+ * `undefined` / null / '' mean "not supplied" and resolve to min.
  */
-function normalizeGuestQuantity(value, { cap = GUEST_DEFAULT_QUANTITY } = {}) {
-    const limit = Math.max(1, Math.min(GUEST_MAX_QUANTITY_CEILING, parseIntegerOrNull(cap) ?? GUEST_DEFAULT_QUANTITY));
-    if (value === undefined || value === null || value === '') return GUEST_DEFAULT_QUANTITY;
+function normalizeGuestQuantity(value, { cap = GUEST_DEFAULT_QUANTITY, max, min = GUEST_DEFAULT_QUANTITY } = {}) {
+    const minLimit = Math.max(1, parseIntegerOrNull(min) ?? GUEST_DEFAULT_QUANTITY);
+    const resolvedCap = max !== undefined ? max : cap;
+    const limit = Math.max(minLimit, Math.min(GUEST_MAX_QUANTITY_CEILING, parseIntegerOrNull(resolvedCap) ?? minLimit));
+    if (value === undefined || value === null || value === '') return minLimit;
     const parsed = parseIntegerOrNull(value);
-    if (parsed === null || parsed < 1 || parsed > limit) return null;
+    if (parsed === null || parsed < minLimit || parsed > limit) return null;
     return parsed;
 }
 

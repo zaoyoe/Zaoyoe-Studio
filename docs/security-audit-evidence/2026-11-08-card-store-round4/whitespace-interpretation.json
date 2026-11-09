@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "scope": "Four round4 incremental diffs; original nonzero results preserved unchanged.",
+  "original_results": "raw/local-settlement-whitespace-results.json",
+  "controlled_probes": "raw/local-settlement-whitespace-probes.json",
+  "interpretation": "On this installed Git, a controlled clean no-index difference returned 1 with no diagnostics; intentional trailing whitespace returned 3 with diagnostics. All four actual checks returned 1 without diagnostics. The earlier wrapper incorrectly treated any nonzero as failure; no source was altered to change this result.",
+  "does_not_assert": "Whole-worktree whitespace cleanliness; no entire-worktree check was used to hide existing changes."
+}

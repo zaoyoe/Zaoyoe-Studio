@@ -1,0 +1,283 @@
+TAP version 13
+# Subtest: zpay exact amount: minimum cent string
+ok 1 - zpay exact amount: minimum cent string
+  ---
+  duration_ms: 1.0515
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: minimum cent number
+ok 2 - zpay exact amount: minimum cent number
+  ---
+  duration_ms: 0.062959
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: ordinary decimal string
+ok 3 - zpay exact amount: ordinary decimal string
+  ---
+  duration_ms: 0.080166
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: ordinary decimal number
+ok 4 - zpay exact amount: ordinary decimal number
+  ---
+  duration_ms: 0.058333
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: binary multiplication residue
+ok 5 - zpay exact amount: binary multiplication residue
+  ---
+  duration_ms: 0.053083
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: whole units
+ok 6 - zpay exact amount: whole units
+  ---
+  duration_ms: 0.040542
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: one decimal place
+ok 7 - zpay exact amount: one decimal place
+  ---
+  duration_ms: 0.044041
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: leading zeros and outer whitespace
+ok 8 - zpay exact amount: leading zeros and outer whitespace
+  ---
+  duration_ms: 0.036459
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: extremely long leading zeros
+ok 9 - zpay exact amount: extremely long leading zeros
+  ---
+  duration_ms: 0.066542
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: exact large decimal
+not ok 10 - zpay exact amount: exact large decimal
+  ---
+  duration_ms: 1.35125
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-zpay-amount.test.js:34:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 9007199254740991
+    - 9007199254740990
+                     ^
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 9007199254740990
+  actual: 9007199254740991
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-zpay-amount.test.js:34:53)
+    Test.runInAsyncScope (node:async_hooks:226:14)
+    Test.run (node:internal/test_runner/test:1201:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+    Test.postRun (node:internal/test_runner/test:1330:19)
+    Test.run (node:internal/test_runner/test:1258:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: zpay exact amount: large decimal lost by numeric forwarding
+not ok 11 - zpay exact amount: large decimal lost by numeric forwarding
+  ---
+  duration_ms: 0.16925
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-zpay-amount.test.js:34:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 9007199254740991
+    - null
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ~
+  actual: 9007199254740991
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-zpay-amount.test.js:34:53)
+    Test.runInAsyncScope (node:async_hooks:226:14)
+    Test.run (node:internal/test_runner/test:1201:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+    Test.postRun (node:internal/test_runner/test:1330:19)
+    Test.run (node:internal/test_runner/test:1258:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: zpay exact amount: unsafe cents
+ok 12 - zpay exact amount: unsafe cents
+  ---
+  duration_ms: 0.051167
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: oversized integer
+ok 13 - zpay exact amount: oversized integer
+  ---
+  duration_ms: 0.044375
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: zero number
+ok 14 - zpay exact amount: zero number
+  ---
+  duration_ms: 0.023541
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: zero string
+ok 15 - zpay exact amount: zero string
+  ---
+  duration_ms: 0.031083
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: sub-cent positive number
+not ok 16 - zpay exact amount: sub-cent positive number
+  ---
+  duration_ms: 0.10525
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-zpay-amount.test.js:34:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    0 !== null
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ~
+  actual: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-zpay-amount.test.js:34:53)
+    Test.runInAsyncScope (node:async_hooks:226:14)
+    Test.run (node:internal/test_runner/test:1201:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+    Test.postRun (node:internal/test_runner/test:1330:19)
+    Test.run (node:internal/test_runner/test:1258:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: zpay exact amount: sub-cent string
+ok 17 - zpay exact amount: sub-cent string
+  ---
+  duration_ms: 0.023125
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: extra decimal precision
+ok 18 - zpay exact amount: extra decimal precision
+  ---
+  duration_ms: 0.02125
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: extra number precision
+ok 19 - zpay exact amount: extra number precision
+  ---
+  duration_ms: 0.030916
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: arithmetic residue fails closed
+not ok 20 - zpay exact amount: arithmetic residue fails closed
+  ---
+  duration_ms: 0.081083
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-zpay-amount.test.js:34:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    30 !== null
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ~
+  actual: 30
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-zpay-amount.test.js:34:53)
+    Test.runInAsyncScope (node:async_hooks:226:14)
+    Test.run (node:internal/test_runner/test:1201:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+    Test.postRun (node:internal/test_runner/test:1330:19)
+    Test.run (node:internal/test_runner/test:1258:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: zpay exact amount: scientific string
+ok 21 - zpay exact amount: scientific string
+  ---
+  duration_ms: 0.020625
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: negative amount
+ok 22 - zpay exact amount: negative amount
+  ---
+  duration_ms: 0.031709
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: boolean
+ok 23 - zpay exact amount: boolean
+  ---
+  duration_ms: 0.017375
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: missing amount
+ok 24 - zpay exact amount: missing amount
+  ---
+  duration_ms: 0.018833
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: non-finite amount
+ok 25 - zpay exact amount: non-finite amount
+  ---
+  duration_ms: 0.018958
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: not-a-number
+ok 26 - zpay exact amount: not-a-number
+  ---
+  duration_ms: 0.018541
+  type: 'test'
+  ...
+# Subtest: zpay compares cents without collapsing adjacent large amounts
+not ok 27 - zpay compares cents without collapsing adjacent large amounts
+  ---
+  duration_ms: 0.083834
+  type: 'test'
+  location: '/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-zpay-amount.test.js:37:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round2-zpay-amount.test.js:38:12)
+    Test.runInAsyncScope (node:async_hooks:226:14)
+    Test.run (node:internal/test_runner/test:1201:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+    Test.postRun (node:internal/test_runner/test:1330:19)
+    Test.run (node:internal/test_runner/test:1258:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+  ...
+# Subtest: every accepted string survives the adapter numeric amount representation
+ok 28 - every accepted string survives the adapter numeric amount representation
+  ---
+  duration_ms: 0.04625
+  type: 'test'
+  ...
+1..28
+# tests 28
+# suites 0
+# pass 23
+# fail 5
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 103.638167

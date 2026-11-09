@@ -280,6 +280,7 @@ function loadFreshAdminApiHandler(repoRoot = path.resolve(__dirname, '..')) {
     clearRequireCacheByPrefixes([
         path.join(normalizedRepoRoot, 'api'),
         path.join(normalizedRepoRoot, 'server', 'api-handlers'),
+        path.join(normalizedRepoRoot, 'server', 'integrations'),
         path.join(normalizedRepoRoot, 'server', 'tg'),
         path.join(normalizedRepoRoot, 'js', 'tg-payment-pricing.js')
     ]);
@@ -291,6 +292,7 @@ function loadFreshPublicApiHandler(repoRoot = path.resolve(__dirname, '..')) {
     clearRequireCacheByPrefixes([
         path.join(normalizedRepoRoot, 'api'),
         path.join(normalizedRepoRoot, 'server', 'api-handlers'),
+        path.join(normalizedRepoRoot, 'server', 'integrations'),
         path.join(normalizedRepoRoot, 'server', 'tg'),
         path.join(normalizedRepoRoot, 'js', 'tg-payment-pricing.js')
     ]);
@@ -672,6 +674,8 @@ function createLocalPreviewApp(options = {}) {
         res.status(200).send(script);
     });
 
+    app.get('/api/runtime/glass-image-sample', require('../api/_lib/glass-image-sample').createGlassImageSampleHandler());
+
     app.get('/api/runtime/section-visibility-preload', async (req, res) => {
         await dispatchLocalPreviewApiRequest(req, res, {
             kind: 'runtime public api',
@@ -944,6 +948,44 @@ function createLocalPreviewApp(options = {}) {
 }
 
 if (require.main === module) {
+    const repoRoot = path.resolve(__dirname, '..');
+    const previewEnv = loadPreviewEnv(getDefaultEnvFiles(repoRoot), process.env);
+    const resolvedProxy = resolveLocalPreviewSupabaseProxy(previewEnv);
+    const canUseEnvProxy = Boolean(process.allowedNodeEnvironmentFlags?.has('--use-env-proxy'));
+    const hasEnvProxyArg = process.execArgv.includes('--use-env-proxy');
+
+    if (resolvedProxy && canUseEnvProxy && !hasEnvProxyArg && !process.env.__ZAOYOE_RESPAWNED_WITH_PROXY) {
+        const { spawn } = require('node:child_process');
+        const childEnv = {
+            ...process.env,
+            HTTPS_PROXY: resolvedProxy,
+            LOCAL_PREVIEW_SUPABASE_PROXY: resolvedProxy,
+            __ZAOYOE_RESPAWNED_WITH_PROXY: '1'
+        };
+        const noProxyEntries = [previewEnv.NO_PROXY, previewEnv.no_proxy, 'localhost', '127.0.0.1', '::1', '.localhost']
+            .flatMap((v) => String(v || '').split(','))
+            .map((v) => v.trim())
+            .filter(Boolean);
+        childEnv.NO_PROXY = [...new Set(noProxyEntries)].join(',');
+        childEnv.no_proxy = childEnv.NO_PROXY;
+
+        const child = spawn(process.execPath, ['--use-env-proxy', ...process.execArgv, __filename, ...process.argv.slice(2)], {
+            cwd: repoRoot,
+            env: childEnv,
+            stdio: 'inherit'
+        });
+        for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+            process.on(sig, () => {
+                child.kill(sig);
+            });
+        }
+        process.on('exit', () => {
+            child.kill();
+        });
+        child.on('exit', (code, sig) => process.exit(Number.isInteger(code) ? code : (sig ? 1 : 0)));
+        return;
+    }
+
     const { app, port, sourceCommit, sourceState, supabaseProxy, guestShopApi } = createLocalPreviewApp();
     const listenHost = resolveLocalPreviewListenHost();
     const onListening = () => {

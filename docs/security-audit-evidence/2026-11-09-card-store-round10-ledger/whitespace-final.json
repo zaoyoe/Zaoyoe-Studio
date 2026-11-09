@@ -1,0 +1,22 @@
+[
+  {
+    "path": "services/kc-pay-gpt/lib/payment-attempt-ledger.js",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/payment-attempt-ledger/20261109-ledger-DRAFT.sql",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "tests/security-round10-kc-payment-attempt-ledger.test.js",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  },
+  {
+    "path": "docs/security-card-store-hardening-round10-2026-11-09.md",
+    "trailing_whitespace": [],
+    "ends_with_newline": true
+  }
+]

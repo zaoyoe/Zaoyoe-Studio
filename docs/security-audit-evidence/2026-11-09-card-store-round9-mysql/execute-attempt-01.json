@@ -1,0 +1,15 @@
+{
+  "exit": 1,
+  "log": "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/logs/execute-01.log",
+  "statement_audit": "/Volumes/chao/AI/xianyu_profit_calculator/docs/security-audit-evidence/2026-11-09-card-store-round9-mysql/sql/executed-statements-01.sql",
+  "configuration": "clean environment; restricted Node network API; exact lab pool options",
+  "environment_variable_names": [
+    "CI",
+    "HOME",
+    "LANG",
+    "NO_COLOR",
+    "PATH",
+    "TMPDIR",
+    "TZ"
+  ]
+}

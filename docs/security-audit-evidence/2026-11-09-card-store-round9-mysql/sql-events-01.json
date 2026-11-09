@@ -1,0 +1,18 @@
+{
+  "pools": 1,
+  "events": [
+    {
+      "sequence": 1,
+      "method": "query",
+      "verb": "SET",
+      "status": "ACK"
+    },
+    {
+      "sequence": 2,
+      "method": "query",
+      "verb": "SELECT",
+      "status": "ERROR",
+      "code": "ER_PARSE_ERROR"
+    }
+  ]
+}

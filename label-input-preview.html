@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3f5f4" />
+    <title>Label input · Preview</title>
+
+      <link rel="stylesheet" href="inline-label-input-preview-1.css">
+</head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <div class="wordmark">
+          <span class="mark" aria-hidden="true">
+            <svg viewBox="0 0 16 16"><path d="M3 4.5h10M3 8h6M3 11.5h8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+          </span>
+          <span>Bencho / Components</span>
+        </div>
+        <span class="license">MIT licensed</span>
+      </header>
+
+      <main>
+        <section class="intro" aria-labelledby="title">
+          <p class="eyebrow">Form fields · 01</p>
+          <h1 id="title">Label input</h1>
+          <p class="lede">A small motion study in the edge of a field.</p>
+        </section>
+
+        <section class="fields" aria-label="Label input examples">
+          <div class="field-demo">
+            <p class="field-kind">Email</p>
+            <div class="lbi" data-field="Email" data-up="false" data-focus="false" data-filled="false">
+              <div class="lbi-box">
+                <svg class="lbi-ring" viewBox="0 0 280 52" aria-hidden="true">
+                  <path class="lbi-right"></path>
+                  <path class="lbi-left"></path>
+                  <path class="lbi-gap lbi-gap-left" pathLength="1"></path>
+                  <path class="lbi-gap lbi-gap-right" pathLength="1"></path>
+                </svg>
+                <label class="lbi-label"><span>Email</span></label>
+                <input class="lbi-field" type="text" name="search-preview" aria-label="Email" autocomplete="off" autocapitalize="off" spellcheck="false" />
+              </div>
+            </div>
+          </div>
+
+          <div class="field-demo">
+            <p class="field-kind">Password</p>
+            <div class="lbi" data-field="Password" data-up="false" data-focus="false" data-filled="false">
+              <div class="lbi-box">
+                <svg class="lbi-ring" viewBox="0 0 280 52" aria-hidden="true">
+                  <path class="lbi-right"></path>
+                  <path class="lbi-left"></path>
+                  <path class="lbi-gap lbi-gap-left" pathLength="1"></path>
+                  <path class="lbi-gap lbi-gap-right" pathLength="1"></path>
+                </svg>
+                <label class="lbi-label"><span>Password</span></label>
+                <input class="lbi-field" type="text" name="search-preview" aria-label="Password" autocomplete="off" autocapitalize="off" spellcheck="false" />
+                <button class="lbi-eye" type="button" aria-label="Show password" data-show="false">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.1 3.8M6.2 6.2C3.5 8.1 2 12 2 12s3.6 7 10 7c1.4 0 2.7-.3 3.8-.8"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="shape-control">
+          <span class="shape-label">Corner radius</span>
+          <div class="segmented" role="group" aria-label="Corner radius">
+            <button type="button" data-corner="10" aria-pressed="false">Soft</button>
+            <button type="button" data-corner="20" aria-pressed="true">Round</button>
+            <button type="button" data-corner="26" aria-pressed="false">Pill</button>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <span>BENCHO · INTERACTION STUDY</span>
+        <span>Preview</span>
+      </footer>
+    </div>
+
+    <script src="inline-label-input-preview-1.js?v=20261109_INLINE_1"></script>
+  </body>
+</html>

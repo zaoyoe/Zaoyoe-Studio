@@ -1,0 +1,16 @@
+[Unit]
+Description=Zaoyoe CDK crypto-shredding daily maintenance tick
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+ConditionPathExists=/opt/zaoyoe-verify-server/.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/zaoyoe-cdk-shredder
+TimeoutStartSec=180
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/lock

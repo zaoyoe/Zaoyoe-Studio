@@ -1,0 +1,38 @@
+[
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/cli.cjs",
+    "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/cli.cjs",
+    "sha256": "88114dceb85b257f9760e2e4ac13b8975b1c3e7e1e46b33cb8e749267dc80fd6",
+    "readback_verified": true
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/fixture.sql",
+    "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/fixture.sql",
+    "sha256": "1949fcf408ea1126ac4524fc0532a935c5430fc82cce30dcd4bd2ed2fdb590e3",
+    "readback_verified": true
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs",
+    "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/lab.cjs",
+    "sha256": "75b2cd46404464a507f178d7ab02b48f7d5dc9538eeae3039b918ed85b200de9",
+    "readback_verified": true
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/plan.cjs",
+    "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/plan.cjs",
+    "sha256": "079d1db4d82e193c47ca84d004b1a7f2ef6c3bf27dd34f791946a2ef05edca5c",
+    "readback_verified": true
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/safety.cjs",
+    "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/safety.cjs",
+    "sha256": "ba62db8c59528947083b8f45f97a758e6a03b1c3c6c4d636e9c5846e1755fc76",
+    "readback_verified": true
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/store-loader.cjs",
+    "backup": "docs/security-audit-evidence/2026-11-09-card-store-round8/backups/harness-before-offline-tests/store-loader.cjs",
+    "sha256": "425987bce97895a841965f37714561939c6a0307605666f26867103180f29851",
+    "readback_verified": true
+  }
+]

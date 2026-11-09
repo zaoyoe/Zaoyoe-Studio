@@ -1,0 +1,248 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const { createRequire } = require('node:module');
+
+const runtimePath = path.resolve(__dirname, '../services/kc-pay-gpt/mysql-store.js');
+const runtimeRequire = createRequire(runtimePath);
+const source = fs.readFileSync(process.env.KC_ATOMIC_STORE_SOURCE || runtimePath, 'utf8');
+const clone = value => JSON.parse(JSON.stringify(value));
+const binding = { attemptId: 'offline-attempt', clientRef: 'offline-ref', idempotencyKey: 'offline-idem',
+    endpoint: 'https://provider.example', apiKeyFingerprint: 'offline-fingerprint', planKey: 'plus',
+    dispatchStarted: false, recoveryRequired: false };
+const task = (patch = {}) => ({ id: 1, job_key: 'job-1', cdk_code: 'CDK-1', execution_mode: 'third_party_api',
+    status: 'running', payment_state: 'not_started', recovery_required: 0,
+    gpt_api_order_id: null, gpt_api_task_id: null, gpt_api_raw: null, ...patch });
+const card = (id, locked_by, patch = {}) => ({ id, locked_by, in_use: 1, status: '正常', locked_at: 'offline', ...patch });
+
+// Execute the real store with an offline state model. Lock events and a paused
+// CDK lock model an adversarial schedule; this is not an InnoDB lock simulator.
+function harness({ taskPatch = {}, missingTask = false, missingCdk = false, cards = [], onCdkLock,
+    beforeTaskLock, fail = '', pauseCdk = false, newOwner = false } = {}) {
+    const state = { task: missingTask ? null : task(taskPatch),
+        cdk: missingCdk ? null : { cdk_code: 'CDK-1', used_at: 'offline-held', is_active: 1 },
+        cards: clone(cards), writes: 0 };
+    const events = [];
+    let snapshot;
+    let unlockCdk;
+    let cdkReached;
+    const reachedCdk = new Promise(resolve => { cdkReached = resolve; });
+    const cdkGate = pauseCdk ? new Promise(resolve => { unlockCdk = resolve; }) : Promise.resolve();
+    const query = async (sql, params = []) => {
+        events.push({ sql, params: [...params] });
+        if (/SELECT \* FROM task_logs WHERE job_key/.test(sql)) {
+            if (/FOR UPDATE/.test(sql)) beforeTaskLock?.(state);
+            return [state.task ? [clone(state.task)] : []];
+        }
+        if (/SELECT (?:\*|cdk_code, used_at) FROM cdk_codes/.test(sql)) {
+            if (/FOR UPDATE/.test(sql)) {
+                cdkReached();
+                await cdkGate;
+                onCdkLock?.(state);
+            }
+            return [state.cdk && state.cdk.cdk_code === params[0] && (!sql.includes('is_active = 1') || state.cdk.is_active === 1) ? [clone(state.cdk)] : []];
+        }
+        if (/SELECT job_key FROM task_logs WHERE cdk_code/.test(sql)) return [[{ job_key: newOwner ? 'job-2' : state.task?.job_key }]];
+        if (/SELECT provider_task\.\*/.test(sql)) return [[]];
+        if (/SELECT \* FROM card_assets WHERE id/.test(sql)) return [clone(state.cards.filter(row => row.id === params[0] &&
+            (!sql.includes('locked_by = ?') || row.locked_by === params[1])))];
+        if (/SELECT id, card_number/.test(sql)) return [clone(state.cards.filter(row => row.in_use === 0).slice(0, 1))];
+        if (/^(UPDATE|INSERT)/.test(sql)) {
+            if (fail && sql.includes(fail)) throw new Error('offline-write-failed');
+            state.writes++;
+            if (/UPDATE task_logs SET gpt_api_raw/.test(sql)) {
+                Object.assign(state.task, { gpt_api_raw: params[0], gpt_api_order_id: params[1],
+                    gpt_api_task_id: params[2], recovery_required: params[4] });
+            } else if (/UPDATE task_logs SET status = 'failed'/.test(sql)) {
+                Object.assign(state.task, { status: 'failed', session_payload: null, session_payload_encrypted: null });
+            } else if (/UPDATE task_logs SET status = \?/.test(sql)) {
+                Object.assign(state.task, { status: params[0], payment_state: params[3], recovery_required: params[4] });
+            } else if (/UPDATE cdk_codes SET used_at = NULL/.test(sql)) state.cdk.used_at = null;
+            else if (/UPDATE card_assets SET in_use = 1/.test(sql)) Object.assign(state.cards.find(row => row.id === params[1]), { in_use: 1, locked_by: params[0] });
+            else if (/UPDATE card_assets SET in_use = 0/.test(sql)) Object.assign(state.cards.find(row => row.id === params[0]), { in_use: 0, locked_by: null });
+            else if (/UPDATE card_assets SET daily_usage_count/.test(sql)) state.cards.find(row => row.id === params[4]).usage_count++;
+            return [{ affectedRows: 1 }];
+        }
+        throw new Error(`Unhandled offline query: ${sql}`);
+    };
+    const execute = async (sql, params = []) => {
+        if (/UPDATE card_assets/.test(sql)) {
+            events.push({ sql, params: [...params] });
+            // Model the old case-insensitive LIKE path and the new binary exact
+            // path separately so the pre-fix query can actually misrelease rows.
+            const like = pattern => new RegExp('^' + [...pattern].map(char => char === '%' ? '.*' : char === '_' ? '.' : char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('') + '$', 'i');
+            const binary = /CAST\(locked_by AS BINARY\)/.test(sql);
+            let affectedRows = 0;
+            for (const row of state.cards) {
+                const matches = binary ? row.locked_by === params[0] : (String(row.locked_by).toLowerCase() === String(params[0]).toLowerCase() || like(params[1]).test(row.locked_by));
+                const localTaskGuard = !/local_task\.execution_mode/.test(sql) ||
+                    !String(row.locked_by || '').toLowerCase().startsWith('payment_') ||
+                    (state.task && row.locked_by === `payment_${state.task.job_key}` &&
+                        state.task.execution_mode === 'local_card_pool' &&
+                        ['failed', 'cancelled'].includes(state.task.status) &&
+                        ['not_started', 'declined'].includes(state.task.payment_state) &&
+                        state.task.recovery_required === 0);
+                if (row.in_use === 1 && row.status === '正常' && matches && localTaskGuard) {
+                    Object.assign(row, { in_use: 0, locked_by: null, locked_at: null }); affectedRows++;
+                }
+            }
+            return [{ affectedRows }];
+        }
+        return query(sql, params);
+    };
+    const connection = { query, execute,
+        beginTransaction: async () => { snapshot = clone(state); events.push({ tx: 'begin' }); },
+        commit: async () => { if (fail === 'commit') throw new Error('offline-commit-unknown'); events.push({ tx: 'commit' }); },
+        rollback: async () => { Object.assign(state, clone(snapshot)); events.push({ tx: 'rollback' }); },
+        release: () => events.push({ tx: 'release' }) };
+    const pool = { query, execute, getConnection: async () => connection };
+    const module = { exports: {} };
+    vm.runInNewContext(source, { module, exports: module.exports, __dirname: path.dirname(runtimePath),
+        process: { env: {} }, Buffer, URL, console,
+        require: name => name === 'mysql2/promise' ? { createPool: () => pool } : runtimeRequire(name) }, { filename: runtimePath });
+    return { store: module.exports, state, events, reachedCdk, unlockCdk };
+}
+
+function assertCdkFirst(h, expectedCode = 'CDK-1') {
+    const locks = h.events.filter(event => /FOR UPDATE/.test(event.sql || ''));
+    assert.match(locks[0]?.sql || '', /FROM cdk_codes/, 'the first locking read must lock the CDK');
+    assert.equal(locks[0].params[0], expectedCode);
+    const taskLock = locks.findIndex(event => /FROM task_logs WHERE job_key/.test(event.sql));
+    assert.ok(taskLock > 0, 'task must be locked after the CDK');
+}
+
+const paths = {
+    retirement: h => h.store.retireSafeActivationTask('job-1'),
+    save: h => h.store.saveGptApiAttempt('job-1', binding),
+    reserve: h => h.store.reserveGptApiCard('job-1', binding),
+    finalize: h => h.store.finalizeGptApiAttempt('job-1', { outcome: 'no_charge' })
+};
+
+for (const key of ['job-1', 'AbC_-123', 'gptapi_job-1', 'X'.repeat(48)]) {
+    test(`local cleanup releases only the canonical complete payment owner: ${key.slice(0, 20)}`, async () => {
+        const owner = `payment_${key}`;
+        const h = harness({ taskPatch: { job_key: key, execution_mode: 'local_card_pool', status: 'failed' },
+            cards: [card(1, owner), card(2, `${owner}-extra`), card(3, `x${owner}`),
+            card(4, owner.toLowerCase() === owner ? owner.toUpperCase() : owner.toLowerCase()),
+            card(5, `${owner} `), card(6, `gptapi_${key}`), card(7, key),
+            card(8, owner, { status: '待人工复核' }), card(9, `manual_review:${key}`)] });
+        assert.equal(await h.store.releaseCardsByOwner(key), 1);
+        assert.deepEqual(h.state.cards.map(row => row.in_use), [0, 1, 1, 1, 1, 1, 1, 1, 1]);
+        assert.equal(await h.store.releaseCardsByOwner(key), 0, 'repeating cleanup is harmless');
+    });
+}
+for (const key of [null, undefined, '', '%', '_%', 'job%1', 'job 1', ' job-1', 'job-1\n', 'X'.repeat(49), 123, {}, ['job-1']]) {
+    test(`invalid owner cannot widen cleanup: ${JSON.stringify(key)}`, async () => {
+        const h = harness({ cards: [card(1, 'payment_job-1'), card(2, 'payment_X'.repeat(10))] });
+        assert.equal(await h.store.releaseCardsByOwner(key), 0);
+        assert.equal(h.events.length, 0, 'invalid owner must not issue SQL');
+        assert.ok(h.state.cards.every(row => row.in_use === 1));
+    });
+}
+for (const [name, invoke] of Object.entries(paths)) {
+    test(`${name} follows CDK then fresh task lock order`, async () => {
+        const h = harness();
+        await invoke(h);
+        assertCdkFirst(h);
+        assert.equal(h.events.at(-1).tx, 'release');
+    });
+    test(`${name} aborts if the task CDK changes after discovery`, async () => {
+        const h = harness({ onCdkLock: state => { state.task.cdk_code = 'CDK-2'; } });
+        await assert.rejects(invoke(h), { code: 'ACTIVATION_TASK_BINDING_CHANGED' });
+        assert.equal(h.state.writes, 0);
+        assert.equal(h.events.at(-2).tx, 'rollback');
+        assert.equal(h.events.at(-1).tx, 'release');
+        assert.ok(h.events.filter(event => /FOR UPDATE/.test(event.sql || '') && /cdk_codes/.test(event.sql)).every(event => event.params[0] === 'CDK-1'));
+    });
+    test(`${name} rejects a replacement task using the same job key`, async () => {
+        const h = harness({ onCdkLock: state => { state.task.id = 2; } });
+        await assert.rejects(invoke(h), { code: 'ACTIVATION_TASK_BINDING_CHANGED' });
+        assert.equal(h.state.writes, 0);
+        assert.equal(h.state.cdk.used_at, 'offline-held');
+        assert.equal(h.events.at(-2).tx, 'rollback');
+        assert.equal(h.events.at(-1).tx, 'release');
+    });
+    test(`${name} waits for a CDK holder without holding a task lock`, async () => {
+        const h = harness({ pauseCdk: true, newOwner: true });
+        const result = invoke(h).then(value => ({ value }), error => ({ error }));
+        const reachedCdk = await Promise.race([h.reachedCdk.then(() => true), result.then(() => false)]);
+        const taskLockedWhileCdkBlocked = h.events.some(event => /task_logs.*FOR UPDATE/.test(event.sql || ''));
+        h.unlockCdk();
+        const settled = await result;
+        assert.equal(reachedCdk, true, 'the operation must lock the CDK');
+        assert.equal(taskLockedWhileCdkBlocked, false, 'a competing CDK holder must be free to lock the task');
+        assertCdkFirst(h);
+        if (name === 'retirement') assert.equal(settled.value.released, false);
+        if (name === 'reserve') assert.equal(settled.error?.code, 'GPT_API_CDK_OWNER_MISMATCH');
+        if (name === 'finalize') assert.equal(settled.value.assetsHeld, true);
+        assert.equal(h.state.cdk.used_at, 'offline-held');
+    });
+}
+
+test('retirement evaluates the fresh payment evidence after locking', async () => {
+    const h = harness({ onCdkLock: state => { state.task.payment_state = 'started'; } });
+    assert.equal((await h.store.retireSafeActivationTask('job-1')).released, false);
+    assert.equal(h.state.writes, 0);
+    assert.equal(h.state.cdk.used_at, 'offline-held');
+});
+for (const patch of [
+    { execution_mode: 'legacy_unknown' },
+    { gpt_api_order_id: 'offline-dispatched-order' },
+    { recovery_required: 1 }
+]) {
+    test(`retirement retains assets when fresh task evidence changes: ${Object.keys(patch)[0]}`, async () => {
+        const h = harness({ onCdkLock: state => { Object.assign(state.task, patch); } });
+        assert.equal((await h.store.retireSafeActivationTask('job-1')).released, false);
+        assert.equal(h.state.writes, 0);
+        assert.equal(h.state.cdk.used_at, 'offline-held');
+    });
+}
+test('missing task never releases assets', async () => {
+    const h = harness({ missingTask: true });
+    assert.equal((await h.store.retireSafeActivationTask('job-1')).released, false);
+    await assert.rejects(h.store.saveGptApiAttempt('job-1', binding), { code: 'GPT_API_TASK_INVALID' });
+    assert.equal(h.state.writes, 0);
+});
+test('missing CDK still permits legacy hold without releasing assets', async () => {
+    const h = harness({ missingCdk: true, taskPatch: { execution_mode: 'legacy', gpt_api_order_id: 'offline-old-order' } });
+    const result = await h.store.finalizeGptApiAttempt('job-1', { outcome: 'hold' });
+    assertCdkFirst(h);
+    assert.equal(result.assetsHeld, true);
+    assert.equal(result.status, 'manual');
+    assert.equal(h.state.task.recovery_required, 1);
+});
+test('legacy task without CDK can be held but cannot settle', async () => {
+    const h = harness({ missingCdk: true, taskPatch: { cdk_code: null, execution_mode: 'legacy', gpt_api_task_id: 'offline-old-task' } });
+    const result = await h.store.finalizeGptApiAttempt('job-1', { outcome: 'hold' });
+    assert.equal(result.assetsHeld, true);
+    assert.equal(result.status, 'manual');
+    await assert.rejects(h.store.finalizeGptApiAttempt('job-1', { outcome: 'success' }), { code: 'GPT_API_TASK_INVALID' });
+});
+test('case-insensitive task lookup cannot authorize a different job ID', async () => {
+    const h = harness({ taskPatch: { job_key: 'JOB-1' } });
+    await assert.rejects(h.store.saveGptApiAttempt('job-1', binding), { code: 'ACTIVATION_TASK_BINDING_CHANGED' });
+    assert.equal(h.state.writes, 0);
+});
+test('deleted task after discovery cannot authorize a release', async () => {
+    const h = harness({ onCdkLock: state => { state.task = null; } });
+    assert.equal((await h.store.retireSafeActivationTask('job-1')).released, false);
+    assert.equal(h.state.writes, 0);
+    assert.equal(h.state.cdk.used_at, 'offline-held');
+});
+test('inactive CDK refuses provider card reservation', async () => {
+    const h = harness(); h.state.cdk.is_active = 0;
+    await assert.rejects(h.store.reserveGptApiCard('job-1', binding), { code: 'GPT_API_CDK_OWNER_MISMATCH' });
+    assert.equal(h.state.writes, 0);
+});
+test('write failure after CDK-first retirement rolls back and releases the connection', async () => {
+    const h = harness({ fail: 'UPDATE cdk_codes SET used_at = NULL' });
+    await assert.rejects(h.store.retireSafeActivationTask('job-1'), /offline-write-failed/);
+    assertCdkFirst(h);
+    assert.equal(h.state.task.status, 'running');
+    assert.equal(h.state.cdk.used_at, 'offline-held');
+    assert.equal(h.events.at(-2).tx, 'rollback');
+    assert.equal(h.events.at(-1).tx, 'release');
+});

@@ -1,0 +1,175 @@
+/* Modal rims share one material regardless of component or stylesheet load order.
+   The site theme selects the base palette. Background sampling still controls
+   density/saturation and the live lens still refracts the actual backdrop. */
+.glass-ring {
+  --dng-k: .94 !important;
+  --dng-tint: #ffffff !important;
+  --dng-thin: .06 !important;
+  --dng-dense: .22 !important;
+  --dng-sat: 1.55 !important;
+  --dng-bri: 1.05 !important;
+  --dng-ink: rgba(0, 0, 0, .86) !important;
+  --dng-density: .35;
+  --dng-keep: 1;
+  --dng-floor: 0;
+  --dng-veil: min(1, var(--dng-k)) !important;
+  --dng-alpha: min(.95, max(var(--dng-floor), calc((var(--dng-thin) + (var(--dng-dense) - var(--dng-thin)) * var(--dng-density)) * var(--dng-k)))) !important;
+  --dng-filter: blur(7px) saturate(var(--dng-sat)) contrast(calc(1 + .04 * var(--dng-veil))) brightness(calc(1 + (var(--dng-bri) - 1) * var(--dng-veil))) saturate(var(--dng-keep)) !important;
+  --dng-shadow:
+    inset 1.5px 1.5px 1px -1px rgb(255 255 255 / 1),
+    inset -1.5px -1.5px 1px -1px rgb(255 255 255 / .6),
+    inset 0 0 0 .5px rgb(255 255 255 / .3),
+    0 0 0 .5px rgb(0 0 0 / .12),
+    0 4px 16px rgb(0 0 0 / .1),
+    inset 0 6px 8px -6px rgb(255 255 255 / calc(.5 * var(--dng-veil))),
+    inset 4px 0 8px -6px rgb(255 255 255 / calc(.22 * var(--dng-veil))),
+    inset -4px 0 8px -6px rgb(255 255 255 / calc(.12 * var(--dng-veil))),
+    inset 0 -6px 8px -6px rgb(0 0 0 / calc(.06 * var(--dng-veil))) !important;
+  --glass-ring-fallback-bg: #e5e7eb !important;
+  border: 0 !important;
+  box-shadow: var(--dng-shadow) !important;
+}
+
+html[data-theme="dark"] .glass-ring {
+  --dng-tint: #1e1e22 !important;
+  --dng-thin: .16 !important;
+  --dng-dense: .38 !important;
+  --dng-sat: 1.45 !important;
+  --dng-bri: .78 !important;
+  --dng-ink: rgba(255, 255, 255, .94) !important;
+  --dng-shadow:
+    inset 1px 1px .5px -.5px rgb(255 255 255 / .46),
+    inset -1px -1px .5px -.5px rgb(255 255 255 / .18),
+    inset 0 0 0 .5px rgb(255 255 255 / .06),
+    0 0 0 .5px rgb(0 0 0 / .28),
+    0 4px 14px rgb(0 0 0 / .22),
+    inset 0 6px 8px -6px rgb(255 255 255 / calc(.18 * var(--dng-veil))),
+    inset 4px 0 8px -6px rgb(255 255 255 / calc(.07 * var(--dng-veil))),
+    inset -4px 0 8px -6px rgb(255 255 255 / calc(.04 * var(--dng-veil))),
+    inset 0 -6px 8px -6px rgb(0 0 0 / calc(.08 * var(--dng-veil))) !important;
+  --glass-ring-fallback-bg: #24272d !important;
+}
+
+@media (hover: none) and (pointer: coarse), (max-width: 768px) and (pointer: coarse) {
+  .glass-ring {
+    --mg-blur: 6px !important;
+    --mg-refraction: 1.1 !important;
+    --mg-tint: 255, 255, 255 !important;
+    --mg-alpha: .56 !important;
+    --mg-brightness: 1.039 !important;
+    --mg-surface-shadow:
+      inset 0 .5px .5px rgb(255 255 255 / .62),
+      inset .5px 0 1px rgb(255 255 255 / .26),
+      inset -1px -2px 3px rgb(0 0 0 / .16),
+      inset 0 0 calc(8px * var(--mg-refraction)) rgb(255 255 255 / .16),
+      0 6px 24px rgb(0 0 0 / .10) !important;
+    box-shadow: var(--mg-surface-shadow) !important;
+  }
+  html[data-theme="dark"] .glass-ring {
+    --mg-tint: 24, 27, 32 !important;
+    --mg-alpha: .64 !important;
+    --mg-brightness: .8284 !important;
+  }
+}
+
+/* Imported into the first glass layer by each material entry. These structural
+   rules must beat component/material !important declarations in any load order.
+   Only an empty, hollow decoration may filter the card perimeter.
+   Fullscreen scrims retain their own background blur behind the clear panel. */
+.glass-ring,
+.engagement-surface--modal {
+  background: transparent !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.glass-ring__surface {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.glass-ring::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  box-sizing: border-box !important;
+  border: 0 !important;
+  border-radius: inherit !important;
+  corner-shape: inherit !important;
+  padding: var(--glass-ring-width, 8px) !important;
+  pointer-events: none !important;
+  /* Without mask support, an inset shadow still draws only the perimeter. */
+  background: transparent !important;
+  box-shadow: inset 0 0 0 var(--glass-ring-width, 8px) var(--glass-ring-fallback-bg, #e5e7eb) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
+  .glass-ring::before {
+    /* Subtract the content box from the full box. The hole equals the panel,
+       rather than the old 0.75px decorative stroke around a full glass pane. */
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0) !important;
+    -webkit-mask-composite: xor !important;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0) !important;
+    mask-composite: exclude !important;
+    background: color-mix(in srgb, var(--dng-tint, #fff) calc(var(--dng-alpha, .16) * 100%), transparent) !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: var(--dng-filter, blur(7px) saturate(1.4)) !important;
+    backdrop-filter: var(--dng-filter, blur(7px) saturate(1.4)) var(--desktop-glass-lens,) !important;
+  }
+
+  @media (hover: none) and (pointer: coarse), (max-width: 768px) and (pointer: coarse) {
+    .glass-ring::before {
+      background: rgba(var(--mg-tint, 255, 255, 255), var(--mg-alpha, .56)) !important;
+      -webkit-backdrop-filter: blur(var(--mg-blur, 6px)) saturate(1.35) brightness(var(--mg-brightness, 1)) !important;
+      backdrop-filter: blur(var(--mg-blur, 6px)) saturate(1.35) brightness(var(--mg-brightness, 1)) !important;
+    }
+  }
+}
+
+/* Native rim optics replace the rectangular mobile source canvas. */
+.glass-ring > .mobile-glass-optics {
+  display: none !important;
+}
+
+:is([hidden], [aria-hidden="true"], .wallet-modal-force-hidden,
+  .announcement-modal-force-hidden, .auth-sheet-force-hidden,
+  .profile-modal-force-hidden, .shop-purchase-force-hidden, .shop-modal-force-hidden,
+  .guestbook-modal-force-hidden, .comment-modal-force-hidden,
+  .prompt-modal-force-hidden, .ai-image-force-hidden) .glass-ring::before,
+.glass-ring[hidden]::before,
+dialog.glass-ring:not([open])::before,
+dialog:not([open]) .glass-ring::before {
+  content: none !important;
+  display: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-ring::before {
+    background: transparent !important;
+    box-shadow: inset 0 0 0 var(--glass-ring-width, 8px) var(--glass-ring-fallback-bg, #e5e7eb) !important;
+    -webkit-mask: none !important;
+    mask: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .glass-ring {
+    box-shadow: none !important;
+  }
+  .glass-ring::before {
+    background: transparent !important;
+    box-shadow: inset 0 0 0 var(--glass-ring-width, 8px) CanvasText !important;
+    -webkit-mask: none !important;
+    mask: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}

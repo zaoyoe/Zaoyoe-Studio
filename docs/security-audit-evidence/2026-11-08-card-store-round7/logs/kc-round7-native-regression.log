@@ -1,0 +1,697 @@
+✔ KC real activation handler reserves capacity before the first CDK lookup can yield (7.51975ms)
+✔ KC real activation handler releases admission after invalid CDK (0.538291ms)
+✔ KC real activation handler releases admission after used CDK (0.428834ms)
+✔ KC real activation handler releases admission after non-self-service CDK (0.421334ms)
+✔ KC real activation handler releases admission after empty card pool (0.423708ms)
+✔ KC real activation handler releases admission after failed CDK compare-and-set (2.31375ms)
+✔ KC real activation handler releases admission after CDK lookup failure (0.570333ms)
+✔ KC real activation handler resumes an existing task without reserving another worker slot (0.419041ms)
+✔ KC atomic admission failure returns capacity without unscoped CDK compensation (0.46925ms)
+✔ KC synchronous dispatch failure retains the CDK and task capacity for recovery (0.491833ms)
+✔ KC failure before dispatch retires only the created task through the atomic primitive (0.441083ms)
+✔ KC never falls back to an unscoped CDK unlock when retirement refused (3.665458ms)
+✔ KC never falls back to an unscoped CDK unlock when retirement throws (0.441792ms)
+✔ KC admission resumes a task discovered under the transaction lock without redispatch (0.411458ms)
+✔ KC maintenance and missing credentials never claim CDKs or capacity (0.340042ms)
+✔ KC real status renderer displays hostile server messages as text and preserves line breaks (0.54ms)
+✔ KC real capsule renderer only uses static SVG markup and appends the message as text (0.588917ms)
+✔ KC capsule replacement and manual dismiss retain their timer lifecycle (0.432416ms)
+✔ KC inline scripts compile after security changes: admin-login.html (3.3885ms)
+✔ KC inline scripts compile after security changes: admin.html (5.551708ms)
+✔ KC inline scripts compile after security changes: index.html (1.501542ms)
+✔ KC inline scripts compile after security changes: subscription.html (1.054ms)
+✔ KC credential encryption uses random IVs and authenticated round trips (4.995792ms)
+✔ KC credential rejects tampering with envelope field 3 (0.352792ms)
+✔ KC credential rejects tampering with envelope field 4 (0.11ms)
+✔ KC credential rejects tampering with envelope field 5 (0.105709ms)
+✔ KC credential rejects wrong purposes, keys, versions and damaged envelopes (0.21675ms)
+✔ KC credential key rotation reads retained keys and writes with the active key (0.172875ms)
+✔ KC legacy read compatibility never enables unencrypted writes (0.194208ms)
+✔ KC credential key parser rejects invalid key configuration (4.732542ms)
+✔ KC real store reads old TOTP and permits unconfigured accounts without a key (86.850666ms)
+✔ KC real store encrypts active and pending values and decrypts only on reads (2.792875ms)
+✔ KC real store promotes encrypted pending TOTP with a new purpose and revokes enrollment (0.838833ms)
+✔ KC real store refuses expired enrollment without changing the active factor (0.616417ms)
+✔ KC real store refuses version enrollment without changing the active factor (0.512459ms)
+✔ KC real store refuses binding enrollment without changing the active factor (0.522166ms)
+✔ KC real store refuses pendingId enrollment without changing the active factor (0.511583ms)
+✔ KC real store refuses corrupt enrollment without changing the active factor (0.548666ms)
+✔ KC real store does not swallow encrypted credential decryption failures (0.6465ms)
+✔ KC real store can disable TOTP without an encryption key (0.632417ms)
+✔ KC shares the IP budget across expensive public endpoints and XFF variants (1.443208ms)
+✔ KC case and trailing-slash routes cannot bypass the budget (0.167375ms)
+✔ KC per-CDK budget survives different IPs and case variants (0.152125ms)
+✔ KC global budget bounds rotating IPs and codes (1.564208ms)
+✔ KC global and per-IP inflight budgets release exactly once on completion (0.200958ms)
+✔ KC early client disconnect keeps upstream concurrency occupied until handler ends (0.079042ms)
+✔ KC expired budgets recover and Map exhaustion fails closed (0.095125ms)
+✔ KC unrelated routes bypass this public guard (0.060625ms)
+✔ KC IPv4-mapped address shares the same IP budget (0.081917ms)
+✔ KC sends compatible page security headers (0.18025ms)
+✔ atomic admission rolls back CDK consumption when task INSERT fails (108.230709ms)
+✔ atomic admission encrypts Session and commits the task on the consuming connection (1.202084ms)
+✔ atomic admission leaves no orphan consumption after encryption failure (1.53025ms)
+✔ atomic admission leaves no orphan consumption after commit rejection (2.676292ms)
+✔ atomic admission leaves no orphan consumption after CDK CAS conflict (1.385ms)
+✔ atomic admission leaves no orphan consumption after deadlock victim (0.675667ms)
+✔ lost COMMIT response keeps both task and CDK, and retry resumes without inserting again (1.125542ms)
+✔ concurrent admission in the serialized transaction model creates only one task (1.440166ms)
+✔ transaction rechecks disabled CDKs (2.8845ms)
+✔ transaction rechecks used CDKs (0.7945ms)
+✔ transaction rechecks non-self-service CDKs (1.235834ms)
+✔ transaction rechecks cooling down CDKs (3.586625ms)
+✔ transaction rechecks changed platform CDKs (2.350792ms)
+✔ transaction rechecks changed plan CDKs (0.744292ms)
+✔ transaction rechecks changed region CDKs (0.705ms)
+✔ transaction rejects a deleted CDK (0.908458ms)
+✔ admission blocks unresolved prior task: {"status":"manual"} (1.796292ms)
+✔ admission blocks unresolved prior task: {"status":"failed","payment_state":"unknown"} (1.06975ms)
+✔ admission blocks unresolved prior task: {"status":"failed","recovery_required":1} (0.622583ms)
+✔ admission blocks unresolved prior task: {"status":"failed","execution_mode":"third_party_api","gpt_api_order_id":"offline-order"} (0.884542ms)
+✔ admission blocks unresolved prior task: {"status":"failed","execution_mode":"third_party_api","gpt_api_raw":"{\"attempt\":{\"dispatchStarted\":true}}"} (1.201792ms)
+✔ admission refuses incomplete binding and unknown execution mode before opening a transaction (7.438166ms)
+✔ task-owned retirement atomically clears Session, finishes the task and returns its CDK (2.953625ms)
+✔ retirement rolls back both writes after retire failure (1.726209ms)
+✔ retirement rolls back both writes after retire_cas failure (2.0275ms)
+✔ retirement rolls back both writes after release failure (0.764208ms)
+✔ retirement rolls back both writes after release_cas failure (0.737041ms)
+✔ retirement preserves a consistent task and CDK after before_apply commit failure (0.8115ms)
+✔ retirement preserves a consistent task and CDK after after_apply commit failure (0.891958ms)
+✔ retirement retains a task whose payment state is started (0.788709ms)
+✔ retirement retains a task whose payment state is unknown (0.718625ms)
+✔ retirement retains a task whose payment state is succeeded (0.686583ms)
+✔ retirement retains a task whose payment state is declined (0.598417ms)
+✔ retirement retains a task whose payment state is null (0.563584ms)
+✔ retirement refuses risk evidence: {"status":"manual"} (0.568042ms)
+✔ retirement refuses risk evidence: {"recovery_required":1} (0.526916ms)
+✔ retirement refuses risk evidence: {"execution_mode":"legacy_unknown"} (0.684959ms)
+✔ retirement refuses risk evidence: {"gpt_api_order_id":"offline-order"} (0.8755ms)
+✔ retirement refuses risk evidence: {"gpt_api_task_id":"offline-provider-task"} (0.817458ms)
+✔ retirement refuses risk evidence: {"gpt_api_raw":"{}"} (0.71625ms)
+✔ startup recovery may retire only an explicitly declined local task (1.313167ms)
+✔ late old-task retirement never releases the newer owner CDK (0.736833ms)
+✔ another unresolved task blocks retirement even when the retiring task is the latest owner (0.725375ms)
+✔ retirement refuses an inactive or already unheld CDK (1.266291ms)
+✔ diagnostic createTaskLog remains callable outside an activation transaction (0.775625ms)
+✔ HTTP handler preserves committed consumption after a lost COMMIT response (2.303208ms)
+✔ HTTP retry after a lost COMMIT response resumes its persisted task without dispatching again (2.029416ms)
+✔ HTTP handler retains the committed task after entering an uncertain dispatch (1.796625ms)
+✔ startup recovery rechecks current payment evidence instead of releasing from a stale snapshot (1.506417ms)
+✔ local settlement rolls back task result when CDK return fails (103.165917ms)
+✔ safe failure returns only its CDK and clears Session in the same transaction (2.938083ms)
+✔ local settlement rollback preserves both rows on task_write (1.507333ms)
+✔ local settlement rollback preserves both rows on task_cas (0.769875ms)
+✔ local settlement rollback preserves both rows on session_clear (0.765667ms)
+✔ local settlement rollback preserves both rows on session_cas (0.70625ms)
+✔ local settlement rollback preserves both rows on release_cas (1.717417ms)
+✔ persisted started cannot be downgraded by a safe failure (1.720708ms)
+✔ persisted unknown cannot be downgraded by a safe failure (0.90525ms)
+✔ persisted succeeded cannot be downgraded by a safe failure (0.762708ms)
+✔ persisted null cannot be downgraded by a safe failure (0.6695ms)
+✔ persisted unrecognized cannot be downgraded by a safe failure (0.613542ms)
+✔ refuses incompatible, completed or foreign task {"execution_mode":"third_party_api"} (0.638333ms)
+✔ refuses incompatible, completed or foreign task {"execution_mode":"legacy_unknown"} (0.573084ms)
+✔ refuses incompatible, completed or foreign task {"gpt_api_order_id":"offline-provider-order"} (0.5435ms)
+✔ refuses incompatible, completed or foreign task {"gpt_api_task_id":"offline-provider-task"} (0.557458ms)
+✔ refuses incompatible, completed or foreign task {"gpt_api_raw":"{}"} (0.585458ms)
+✔ refuses incompatible, completed or foreign task {"cdk_code":"OTHER-CDK"} (0.531625ms)
+✔ refuses incompatible, completed or foreign task {"status":"failed","finished_at":"offline-finished"} (1.79525ms)
+✔ refuses incompatible, completed or foreign task {"status":"success","payment_state":"succeeded","finished_at":"offline-finished"} (0.68675ms)
+✔ refuses incompatible, completed or foreign task {"status":"cancelled"} (0.71575ms)
+✔ refuses incompatible, completed or foreign task {"status":"maintenance"} (0.783792ms)
+✔ unavailable CDK does not become reusable {"used_at":null} (0.928791ms)
+✔ unavailable CDK does not become reusable {"is_active":0} (0.773666ms)
+✔ late old task cannot return or modify a newer owner CDK (0.752792ms)
+✔ another unresolved task blocks safe release even if current task is newest (2.863917ms)
+✔ duplicate completion is idempotent and a late payment callback cannot resurrect it (4.640792ms)
+✔ concurrent finalizations return the CDK once in the offline serial model (1.004375ms)
+✔ intermediate unknown state stays recoverable until an affirmative success (0.759417ms)
+✔ post-success auto-renew annotation can require review without returning CDK (0.67325ms)
+✔ pending auto-renew completion can become success without returning CDK or restoring Session (0.613416ms)
+✔ failed auto-renew annotation preserves the committed pending result (0.621292ms)
+✔ late auto-renew annotation cannot change a task after the CDK gains another owner (0.561417ms)
+✔ commit uncertainty before_apply never triggers a separate CDK unlock (0.670666ms)
+✔ commit uncertainty after_apply never triggers a separate CDK unlock (0.581625ms)
+✔ rollback failure does not replace the original transaction failure (0.605167ms)
+✔ local cleanup releases only the canonical complete payment owner: job-1 (88.656958ms)
+✔ local cleanup releases only the canonical complete payment owner: AbC_-123 (1.424834ms)
+✔ local cleanup releases only the canonical complete payment owner: gptapi_job-1 (0.717125ms)
+✔ local cleanup releases only the canonical complete payment owner: XXXXXXXXXXXXXXXXXXXX (0.65975ms)
+✔ invalid owner cannot widen cleanup: null (0.749208ms)
+✔ invalid owner cannot widen cleanup: undefined (0.667459ms)
+✔ invalid owner cannot widen cleanup: "" (0.614333ms)
+✔ invalid owner cannot widen cleanup: "%" (0.586875ms)
+✔ invalid owner cannot widen cleanup: "_%" (0.756875ms)
+✔ invalid owner cannot widen cleanup: "job%1" (1.230208ms)
+✔ invalid owner cannot widen cleanup: "job 1" (0.902166ms)
+✔ invalid owner cannot widen cleanup: " job-1" (0.61ms)
+✔ invalid owner cannot widen cleanup: "job-1\n" (0.574ms)
+✔ invalid owner cannot widen cleanup: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" (0.5425ms)
+✔ invalid owner cannot widen cleanup: 123 (0.53325ms)
+✔ invalid owner cannot widen cleanup: {} (0.525ms)
+✔ invalid owner cannot widen cleanup: ["job-1"] (0.536333ms)
+✔ retirement follows CDK then fresh task lock order (1.712ms)
+✔ retirement aborts if the task CDK changes after discovery (0.912583ms)
+✔ retirement rejects a replacement task using the same job key (0.904041ms)
+✔ retirement waits for a CDK holder without holding a task lock (0.946833ms)
+✔ save follows CDK then fresh task lock order (10.237375ms)
+✔ save aborts if the task CDK changes after discovery (7.4685ms)
+✔ save rejects a replacement task using the same job key (0.65ms)
+✔ save waits for a CDK holder without holding a task lock (0.720667ms)
+✔ reserve follows CDK then fresh task lock order (0.797791ms)
+✔ reserve aborts if the task CDK changes after discovery (0.542916ms)
+✔ reserve rejects a replacement task using the same job key (0.527375ms)
+✔ reserve waits for a CDK holder without holding a task lock (0.613125ms)
+✔ finalize follows CDK then fresh task lock order (0.810084ms)
+✔ finalize aborts if the task CDK changes after discovery (0.531666ms)
+✔ finalize rejects a replacement task using the same job key (4.108625ms)
+✔ finalize waits for a CDK holder without holding a task lock (0.929584ms)
+✔ retirement evaluates the fresh payment evidence after locking (0.645667ms)
+✔ retirement retains assets when fresh task evidence changes: execution_mode (0.590709ms)
+✔ retirement retains assets when fresh task evidence changes: gpt_api_order_id (0.527667ms)
+✔ retirement retains assets when fresh task evidence changes: recovery_required (0.525041ms)
+✔ missing task never releases assets (0.572792ms)
+✔ missing CDK still permits legacy hold without releasing assets (0.6545ms)
+✔ legacy task without CDK can be held but cannot settle (0.622792ms)
+✔ case-insensitive task lookup cannot authorize a different job ID (0.539167ms)
+✔ deleted task after discovery cannot authorize a release (0.525042ms)
+✔ inactive CDK refuses provider card reservation (0.58075ms)
+✔ write failure after CDK-first retirement rolls back and releases the connection (0.706333ms)
+✔ release: an old task cannot change a card owned by "payment_next-job" (95.713875ms)
+✔ release: an old task cannot change a card owned by "payment_job-1" (0.79075ms)
+✔ release: an old task cannot change a card owned by "payment_Job-1-extra" (0.711208ms)
+✔ release: an old task cannot change a card owned by "payment_Job-1 " (0.657375ms)
+✔ release: an old task cannot change a card owned by null (0.646833ms)
+✔ release: ordinary task cannot mutate protected state {"in_use":0} (0.66375ms)
+✔ release: ordinary task cannot mutate protected state {"is_active":0} (0.738125ms)
+✔ release: ordinary task cannot mutate protected state {"status":"待人工复核"} (1.767417ms)
+✔ release: ordinary task cannot mutate protected state {"status":"已冻结"} (0.727959ms)
+✔ release: ordinary task cannot mutate protected state {"status":"已报废"} (0.804ms)
+✔ release: invalid/missing owner fails before persistence ("") (1.038875ms)
+✔ release: invalid/missing owner fails before persistence (null) (0.608958ms)
+✔ release: invalid/missing owner fails before persistence (true) (0.60725ms)
+✔ release: invalid/missing owner fails before persistence ("payment_bad key") (1.583458ms)
+✔ release: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") (0.689083ms)
+✔ release: invalid/missing owner fails before persistence ({}) (0.765709ms)
+✔ release: invalid/missing owner fails before persistence (["payment_Job-1"]) (0.561542ms)
+✔ release: invalid asset ID fails before persistence (true) (0.557042ms)
+✔ release: invalid asset ID fails before persistence (-1) (0.760625ms)
+✔ release: invalid asset ID fails before persistence (1.5) (0.641042ms)
+✔ release: invalid asset ID fails before persistence ("55 OR 1=1") (0.664167ms)
+✔ release: invalid asset ID fails before persistence ([]) (0.633958ms)
+✔ release: invalid asset ID fails before persistence ([REDACTED_PAN_13_19]) (0.726292ms)
+✔ cooldown: an old task cannot change a card owned by "payment_next-job" (0.742542ms)
+✔ cooldown: an old task cannot change a card owned by "payment_job-1" (0.671917ms)
+✔ cooldown: an old task cannot change a card owned by "payment_Job-1-extra" (3.04025ms)
+✔ cooldown: an old task cannot change a card owned by "payment_Job-1 " (2.515958ms)
+✔ cooldown: an old task cannot change a card owned by null (1.484458ms)
+✔ cooldown: ordinary task cannot mutate protected state {"in_use":0} (1.724334ms)
+✔ cooldown: ordinary task cannot mutate protected state {"is_active":0} (1.040916ms)
+✖ cooldown: ordinary task cannot mutate protected state {"status":"待人工复核"} (1.256292ms)
+✖ cooldown: ordinary task cannot mutate protected state {"status":"已冻结"} (0.641333ms)
+✖ cooldown: ordinary task cannot mutate protected state {"status":"已报废"} (0.588292ms)
+✔ cooldown: invalid/missing owner fails before persistence ("") (0.540625ms)
+✔ cooldown: invalid/missing owner fails before persistence (null) (1.303416ms)
+✔ cooldown: invalid/missing owner fails before persistence (true) (0.727375ms)
+✔ cooldown: invalid/missing owner fails before persistence ("payment_bad key") (0.642791ms)
+✔ cooldown: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") (2.85575ms)
+✔ cooldown: invalid/missing owner fails before persistence ({}) (2.969833ms)
+✔ cooldown: invalid/missing owner fails before persistence (["payment_Job-1"]) (0.60825ms)
+✔ cooldown: invalid asset ID fails before persistence (true) (8.540375ms)
+✔ cooldown: invalid asset ID fails before persistence (-1) (0.67725ms)
+✔ cooldown: invalid asset ID fails before persistence (1.5) (0.568709ms)
+✔ cooldown: invalid asset ID fails before persistence ("55 OR 1=1") (0.58125ms)
+✔ cooldown: invalid asset ID fails before persistence ([]) (0.554708ms)
+✔ cooldown: invalid asset ID fails before persistence ([REDACTED_PAN_13_19]) (0.718ms)
+✔ quarantine: an old task cannot change a card owned by "payment_next-job" (0.739ms)
+✔ quarantine: an old task cannot change a card owned by "payment_job-1" (0.87875ms)
+✔ quarantine: an old task cannot change a card owned by "payment_Job-1-extra" (0.714292ms)
+✔ quarantine: an old task cannot change a card owned by "payment_Job-1 " (0.614167ms)
+✔ quarantine: an old task cannot change a card owned by null (0.62275ms)
+✔ quarantine: ordinary task cannot mutate protected state {"in_use":0} (0.729208ms)
+✔ quarantine: ordinary task cannot mutate protected state {"is_active":0} (0.642042ms)
+✖ quarantine: ordinary task cannot mutate protected state {"status":"待人工复核"} (0.646417ms)
+✖ quarantine: ordinary task cannot mutate protected state {"status":"已冻结"} (0.78775ms)
+✖ quarantine: ordinary task cannot mutate protected state {"status":"已报废"} (0.590666ms)
+✔ quarantine: invalid/missing owner fails before persistence ("") (0.527375ms)
+✔ quarantine: invalid/missing owner fails before persistence (null) (0.502209ms)
+✔ quarantine: invalid/missing owner fails before persistence (true) (0.80825ms)
+✔ quarantine: invalid/missing owner fails before persistence ("payment_bad key") (0.656916ms)
+✔ quarantine: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") (0.579709ms)
+✔ quarantine: invalid/missing owner fails before persistence ({}) (0.533416ms)
+✔ quarantine: invalid/missing owner fails before persistence (["payment_Job-1"]) (0.523917ms)
+✔ quarantine: invalid asset ID fails before persistence (true) (0.510334ms)
+✔ quarantine: invalid asset ID fails before persistence (-1) (0.537709ms)
+✔ quarantine: invalid asset ID fails before persistence (1.5) (0.495084ms)
+✔ quarantine: invalid asset ID fails before persistence ("55 OR 1=1") (0.549208ms)
+✔ quarantine: invalid asset ID fails before persistence ([]) (0.505042ms)
+✔ quarantine: invalid asset ID fails before persistence ([REDACTED_PAN_13_19]) (0.504542ms)
+✔ exhaust: an old task cannot change a card owned by "payment_next-job" (0.582541ms)
+✔ exhaust: an old task cannot change a card owned by "payment_job-1" (0.563458ms)
+✔ exhaust: an old task cannot change a card owned by "payment_Job-1-extra" (0.540875ms)
+✔ exhaust: an old task cannot change a card owned by "payment_Job-1 " (0.523541ms)
+✔ exhaust: an old task cannot change a card owned by null (0.511209ms)
+✔ exhaust: ordinary task cannot mutate protected state {"in_use":0} (0.525917ms)
+✔ exhaust: ordinary task cannot mutate protected state {"is_active":0} (0.505292ms)
+✖ exhaust: ordinary task cannot mutate protected state {"status":"待人工复核"} (0.5975ms)
+✖ exhaust: ordinary task cannot mutate protected state {"status":"已冻结"} (0.714417ms)
+✖ exhaust: ordinary task cannot mutate protected state {"status":"已报废"} (0.674167ms)
+✔ exhaust: invalid/missing owner fails before persistence ("") (0.559834ms)
+✔ exhaust: invalid/missing owner fails before persistence (null) (0.955ms)
+✔ exhaust: invalid/missing owner fails before persistence (true) (1.093542ms)
+✔ exhaust: invalid/missing owner fails before persistence ("payment_bad key") (1.049375ms)
+✔ exhaust: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") (0.632666ms)
+✔ exhaust: invalid/missing owner fails before persistence ({}) (0.559666ms)
+✔ exhaust: invalid/missing owner fails before persistence (["payment_Job-1"]) (0.764541ms)
+✔ exhaust: invalid asset ID fails before persistence (true) (0.688125ms)
+✔ exhaust: invalid asset ID fails before persistence (-1) (1.779167ms)
+✔ exhaust: invalid asset ID fails before persistence (1.5) (0.663375ms)
+✔ exhaust: invalid asset ID fails before persistence ("55 OR 1=1") (0.614458ms)
+✔ exhaust: invalid asset ID fails before persistence ([]) (0.594791ms)
+✔ exhaust: invalid asset ID fails before persistence ([REDACTED_PAN_13_19]) (1.814917ms)
+✔ usage: an old task cannot change a card owned by "payment_next-job" (0.780292ms)
+✔ usage: an old task cannot change a card owned by "payment_job-1" (0.590958ms)
+✔ usage: an old task cannot change a card owned by "payment_Job-1-extra" (0.666083ms)
+✔ usage: an old task cannot change a card owned by "payment_Job-1 " (0.549584ms)
+✔ usage: an old task cannot change a card owned by null (0.581667ms)
+✔ usage: ordinary task cannot mutate protected state {"in_use":0} (0.569791ms)
+✔ usage: ordinary task cannot mutate protected state {"is_active":0} (0.594375ms)
+✖ usage: ordinary task cannot mutate protected state {"status":"待人工复核"} (1.754166ms)
+✖ usage: ordinary task cannot mutate protected state {"status":"已冻结"} (1.487583ms)
+✖ usage: ordinary task cannot mutate protected state {"status":"已报废"} (0.908791ms)
+✔ usage: invalid/missing owner fails before persistence ("") (0.822792ms)
+✔ usage: invalid/missing owner fails before persistence (null) (0.617167ms)
+✔ usage: invalid/missing owner fails before persistence (true) (0.564042ms)
+✔ usage: invalid/missing owner fails before persistence ("payment_bad key") (0.535875ms)
+✔ usage: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") (0.551042ms)
+✔ usage: invalid/missing owner fails before persistence ({}) (0.512458ms)
+✔ usage: invalid/missing owner fails before persistence (["payment_Job-1"]) (0.515792ms)
+✔ usage: invalid asset ID fails before persistence (true) (0.535625ms)
+✔ usage: invalid asset ID fails before persistence (-1) (0.605084ms)
+✔ usage: invalid asset ID fails before persistence (1.5) (0.500417ms)
+✔ usage: invalid asset ID fails before persistence ("55 OR 1=1") (0.503958ms)
+✔ usage: invalid asset ID fails before persistence ([]) (0.505667ms)
+✔ usage: invalid asset ID fails before persistence ([REDACTED_PAN_13_19]) (0.550833ms)
+✔ profile: an old task cannot change a card owned by "payment_next-job" (0.587083ms)
+✔ profile: an old task cannot change a card owned by "payment_job-1" (0.54075ms)
+✔ profile: an old task cannot change a card owned by "payment_Job-1-extra" (0.54075ms)
+✔ profile: an old task cannot change a card owned by "payment_Job-1 " (0.559125ms)
+✔ profile: an old task cannot change a card owned by null (0.499292ms)
+✔ profile: ordinary task cannot mutate protected state {"in_use":0} (0.526625ms)
+✔ profile: ordinary task cannot mutate protected state {"is_active":0} (0.556458ms)
+✖ profile: ordinary task cannot mutate protected state {"status":"待人工复核"} (0.637041ms)
+✖ profile: ordinary task cannot mutate protected state {"status":"已冻结"} (0.566209ms)
+✖ profile: ordinary task cannot mutate protected state {"status":"已报废"} (6.8115ms)
+✔ profile: invalid/missing owner fails before persistence ("") (0.58225ms)
+✔ profile: invalid/missing owner fails before persistence (null) (0.541917ms)
+✔ profile: invalid/missing owner fails before persistence (true) (0.50475ms)
+✔ profile: invalid/missing owner fails before persistence ("payment_bad key") (0.533708ms)
+✔ profile: invalid/missing owner fails before persistence ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") (0.612708ms)
+✔ profile: invalid/missing owner fails before persistence ({}) (0.557584ms)
+✔ profile: invalid/missing owner fails before persistence (["payment_Job-1"]) (0.483958ms)
+✔ profile: invalid asset ID fails before persistence (true) (0.490125ms)
+✔ profile: invalid asset ID fails before persistence (-1) (0.521709ms)
+✔ profile: invalid asset ID fails before persistence (1.5) (0.538875ms)
+✔ profile: invalid asset ID fails before persistence ("55 OR 1=1") (0.482834ms)
+✔ profile: invalid asset ID fails before persistence ([]) (0.492208ms)
+✔ profile: invalid asset ID fails before persistence ([REDACTED_PAN_13_19]) (0.515209ms)
+✔ owned release is idempotent and cannot release a subsequent owner (0.632042ms)
+✔ an ownership transfer just before release is checked by the UPDATE itself (0.541625ms)
+✔ matching owner can cool down, exhaust and quarantine, preserving the respective states (8.262833ms)
+✔ usage and payment profile require ownership and retain the lock for final release (1.516042ms)
+✔ daily usage cooldown and write rollback retain their existing safety behavior (4.771958ms)
+✔ runtime release checks phone and card ownership separately (0.868708ms)
+✔ runtime release with no owner cannot clear either asset (0.58825ms)
+✔ reserveCard: return the exact owner as a reservation receipt (0.672375ms)
+✔ reserveCard: never truncate or accept unowned reservations (undefined) (0.559291ms)
+✔ reserveCard: never truncate or accept unowned reservations ("") (0.561625ms)
+✔ reserveCard: never truncate or accept unowned reservations (true) (0.821542ms)
+✔ reserveCard: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") (0.615916ms)
+✔ reserveCard: never truncate or accept unowned reservations ("bad owner") (0.594708ms)
+✔ reserveRuntimeAssets: return the exact owner as a reservation receipt (0.753666ms)
+✔ reserveRuntimeAssets: never truncate or accept unowned reservations (undefined) (0.512916ms)
+✔ reserveRuntimeAssets: never truncate or accept unowned reservations ("") (0.533959ms)
+✔ reserveRuntimeAssets: never truncate or accept unowned reservations (true) (0.715084ms)
+✔ reserveRuntimeAssets: never truncate or accept unowned reservations ("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") (3.184834ms)
+✔ reserveRuntimeAssets: never truncate or accept unowned reservations ("bad owner") (0.656875ms)
+✔ unchanged owned profile accepts matched rows even when changedRows is zero (0.677375ms)
+✔ the installed mysql2 config keeps FOUND_ROWS for the actual store pool options (no connection) (17.472708ms)
+✔ cooldown: transfer immediately before UPDATE cannot mutate a new owner's card (0.881125ms)
+✔ exhaust: transfer immediately before UPDATE cannot mutate a new owner's card (2.364292ms)
+✔ quarantine: transfer immediately before UPDATE cannot mutate a new owner's card (0.67ms)
+✔ profile: transfer immediately before UPDATE cannot mutate a new owner's card (0.586958ms)
+✔ runtime release validates both IDs before clearing either asset (2.066417ms)
+✔ KC payment caller processStripePayment: normal task (3.077ms)
+✔ KC payment caller activateSubscription: normal task (0.669833ms)
+✔ KC CLI owner declaration contract: normal task (1.329834ms)
+✔ KC payment caller processStripePayment: missing task (1.340541ms)
+✔ KC payment caller activateSubscription: missing task (1.329041ms)
+✔ KC CLI owner declaration contract: missing task (1.250208ms)
+✔ KC payment caller processStripePayment: empty task (1.442625ms)
+✔ KC payment caller activateSubscription: empty task (1.48325ms)
+✔ KC CLI owner declaration contract: empty task (1.98525ms)
+✔ KC payment caller processStripePayment: invalid task remains invalid (1.942792ms)
+✔ KC payment caller activateSubscription: invalid task remains invalid (1.316958ms)
+✔ KC CLI owner declaration contract: invalid task remains invalid (0.828708ms)
+✔ KC payment caller processStripePayment: oversized task remains invalid (0.807ms)
+✔ KC payment caller activateSubscription: oversized task remains invalid (0.717292ms)
+✔ KC CLI owner declaration contract: oversized task remains invalid (0.505125ms)
+✔ durable hold is a single-use transition and completes only from its own pending state (111.912709ms)
+✔ markCardPaymentStarted rejects ownership/state mismatch: {"locked_by":"payment_other"} (1.045375ms)
+✔ markCardPaymentStarted rejects ownership/state mismatch: {"locked_by":"payment_job-1"} (0.81525ms)
+✔ markCardPaymentStarted rejects ownership/state mismatch: {"locked_by":"payment_Job-1 "} (0.721583ms)
+✔ markCardPaymentStarted rejects ownership/state mismatch: {"in_use":0} (0.660542ms)
+✔ markCardPaymentStarted rejects ownership/state mismatch: {"is_active":0} (0.613167ms)
+✔ markCardPaymentStarted rejects ownership/state mismatch: {"status":"待人工复核"} (0.685708ms)
+✔ completeCardPayment rejects ownership/state mismatch: {"locked_by":"payment_other"} (0.654875ms)
+✔ completeCardPayment rejects ownership/state mismatch: {"locked_by":"payment_job-1"} (0.644ms)
+✔ completeCardPayment rejects ownership/state mismatch: {"locked_by":"payment_Job-1 "} (0.687834ms)
+✔ completeCardPayment rejects ownership/state mismatch: {"in_use":0} (0.61975ms)
+✔ completeCardPayment rejects ownership/state mismatch: {"is_active":0} (0.5985ms)
+✔ completeCardPayment rejects ownership/state mismatch: {"status":"待人工复核"} (0.557208ms)
+✔ ordinary cleanup cannot reclaim a durable payment hold (0.803083ms)
+✔ runtime cleanup cannot reclaim a durable payment hold (0.687542ms)
+✔ stale cleanup cannot reclaim a durable payment hold (3.215708ms)
+✔ restart cleanup cannot reclaim a durable payment hold (0.667959ms)
+✔ bulk cleanup cannot reclaim a durable payment hold (0.614625ms)
+✔ stale reclaims a normal lock with exact safe terminal task {"status":"failed","payment_state":"not_started"} (1.005083ms)
+✔ stale reclaims a normal lock with exact safe terminal task {"status":"failed","payment_state":"declined"} (0.714625ms)
+✔ stale reclaims a normal lock with exact safe terminal task {"status":"cancelled","payment_state":"not_started"} (0.685125ms)
+✔ stale reclaims a normal lock with exact safe terminal task {"status":"cancelled","payment_state":"declined"} (0.680458ms)
+✔ stale retains normal lock without safe task evidence null (0.710208ms)
+✔ stale retains normal lock without safe task evidence {"execution_mode":"debug"} (2.391917ms)
+✔ stale retains normal lock without safe task evidence {"execution_mode":"third_party_api"} (1.280125ms)
+✔ stale retains normal lock without safe task evidence {"status":"running"} (0.638209ms)
+✔ stale retains normal lock without safe task evidence {"status":"manual"} (0.58275ms)
+✔ stale retains normal lock without safe task evidence {"status":"succeeded"} (0.750292ms)
+✔ stale retains normal lock without safe task evidence {"status":"success"} (0.707959ms)
+✔ stale retains normal lock without safe task evidence {"payment_state":"started"} (1.6485ms)
+✔ stale retains normal lock without safe task evidence {"payment_state":"unknown"} (1.091ms)
+✔ stale retains normal lock without safe task evidence {"payment_state":"succeeded"} (0.600917ms)
+✔ stale retains normal lock without safe task evidence {"recovery_required":1} (0.555166ms)
+✔ stale retains normal lock without safe task evidence {"recovery_required":null} (0.535042ms)
+✔ stale retains normal lock without safe task evidence {"job_key":"job-1"} (0.511ms)
+✔ stale retains normal lock without safe task evidence {"job_key":"Job-1 "} (0.527917ms)
+✔ stale retains normal lock if terminal task becomes uncertain before UPDATE (0.583875ms)
+✔ stale cannot treat differently cased owner as a nonpayment owner (0.541375ms)
+✔ restart reclaims a normal lock with exact safe terminal task {"status":"failed","payment_state":"not_started"} (0.5275ms)
+✔ restart reclaims a normal lock with exact safe terminal task {"status":"failed","payment_state":"declined"} (0.594667ms)
+✔ restart reclaims a normal lock with exact safe terminal task {"status":"cancelled","payment_state":"not_started"} (0.549292ms)
+✔ restart reclaims a normal lock with exact safe terminal task {"status":"cancelled","payment_state":"declined"} (0.545208ms)
+✔ restart retains normal lock without safe task evidence null (0.527291ms)
+✔ restart retains normal lock without safe task evidence {"execution_mode":"debug"} (1.279125ms)
+✔ restart retains normal lock without safe task evidence {"execution_mode":"third_party_api"} (1.436584ms)
+✔ restart retains normal lock without safe task evidence {"status":"running"} (1.273375ms)
+✔ restart retains normal lock without safe task evidence {"status":"manual"} (0.85075ms)
+✔ restart retains normal lock without safe task evidence {"status":"succeeded"} (0.99275ms)
+✔ restart retains normal lock without safe task evidence {"status":"success"} (1.217125ms)
+✔ restart retains normal lock without safe task evidence {"payment_state":"started"} (2.326417ms)
+✔ restart retains normal lock without safe task evidence {"payment_state":"unknown"} (1.038375ms)
+✔ restart retains normal lock without safe task evidence {"payment_state":"succeeded"} (0.696416ms)
+✔ restart retains normal lock without safe task evidence {"recovery_required":1} (0.6345ms)
+✔ restart retains normal lock without safe task evidence {"recovery_required":null} (0.581959ms)
+✔ restart retains normal lock without safe task evidence {"job_key":"job-1"} (0.578666ms)
+✔ restart retains normal lock without safe task evidence {"job_key":"Job-1 "} (0.590709ms)
+✔ restart retains normal lock if terminal task becomes uncertain before UPDATE (0.786792ms)
+✔ restart cannot treat differently cased owner as a nonpayment owner (0.662458ms)
+✔ bulk reclaims a normal lock with exact safe terminal task {"status":"failed","payment_state":"not_started"} (0.601542ms)
+✔ bulk reclaims a normal lock with exact safe terminal task {"status":"failed","payment_state":"declined"} (0.586792ms)
+✔ bulk reclaims a normal lock with exact safe terminal task {"status":"cancelled","payment_state":"not_started"} (0.552125ms)
+✔ bulk reclaims a normal lock with exact safe terminal task {"status":"cancelled","payment_state":"declined"} (0.971167ms)
+✔ bulk retains normal lock without safe task evidence null (0.705333ms)
+✔ bulk retains normal lock without safe task evidence {"execution_mode":"debug"} (0.600625ms)
+✔ bulk retains normal lock without safe task evidence {"execution_mode":"third_party_api"} (0.556666ms)
+✔ bulk retains normal lock without safe task evidence {"status":"running"} (0.727375ms)
+✔ bulk retains normal lock without safe task evidence {"status":"manual"} (0.624958ms)
+✔ bulk retains normal lock without safe task evidence {"status":"succeeded"} (0.60775ms)
+✔ bulk retains normal lock without safe task evidence {"status":"success"} (0.576292ms)
+✔ bulk retains normal lock without safe task evidence {"payment_state":"started"} (0.5605ms)
+✔ bulk retains normal lock without safe task evidence {"payment_state":"unknown"} (0.503917ms)
+✔ bulk retains normal lock without safe task evidence {"payment_state":"succeeded"} (0.529792ms)
+✔ bulk retains normal lock without safe task evidence {"recovery_required":1} (0.510875ms)
+✔ bulk retains normal lock without safe task evidence {"recovery_required":null} (0.532792ms)
+✔ bulk retains normal lock without safe task evidence {"job_key":"job-1"} (0.487ms)
+✔ bulk retains normal lock without safe task evidence {"job_key":"Job-1 "} (0.520666ms)
+✔ bulk retains normal lock if terminal task becomes uncertain before UPDATE (0.508792ms)
+✔ bulk cannot treat differently cased owner as a nonpayment owner (0.525667ms)
+✔ stale retains an unresolved GPT provider lock (0.678583ms)
+✔ stale releases an ordinary nonpayment stale lock (1.532667ms)
+✔ restart retains an unresolved GPT provider lock (0.559584ms)
+✔ restart releases an ordinary nonpayment stale lock (0.537625ms)
+✔ freeze cannot erase held or pending state {"status":"支付处理中"} (0.585125ms)
+✔ freeze cannot erase held or pending state {"status":"待人工复核","is_active":0} (0.525583ms)
+✔ freeze cannot erase held or pending state {"status":"正常"} (0.502458ms)
+✔ freeze cannot erase held or pending state {"status":"已冻结","is_active":0} (0.514583ms)
+✔ freeze cannot erase held or pending state {"status":"支付处理中","in_use":0} (0.501458ms)
+✔ unfreeze cannot erase held or pending state {"status":"支付处理中"} (0.518834ms)
+✔ unfreeze cannot erase held or pending state {"status":"待人工复核","is_active":0} (0.491333ms)
+✔ unfreeze cannot erase held or pending state {"status":"正常"} (0.564709ms)
+✔ unfreeze cannot erase held or pending state {"status":"已冻结","is_active":0} (0.67375ms)
+✔ unfreeze cannot erase held or pending state {"status":"支付处理中","in_use":0} (0.622792ms)
+✔ an idle normal card can be frozen and then unfrozen (1.455792ms)
+✔ pending card supports owner-scoped quarantine (1.057209ms)
+✔ pending quarantine cannot mutate another owner payment_other (0.676833ms)
+✔ pending quarantine cannot mutate another owner payment_job-1 (0.601917ms)
+✔ pending quarantine cannot mutate another owner payment_Job-1  (0.557709ms)
+✔ pending card supports owner-scoped cooldown (0.736125ms)
+✔ pending cooldown cannot mutate another owner payment_other (0.599125ms)
+✔ pending cooldown cannot mutate another owner payment_job-1 (0.559958ms)
+✔ pending cooldown cannot mutate another owner payment_Job-1  (0.530625ms)
+✔ pending card supports owner-scoped exhaust (0.611584ms)
+✔ pending exhaust cannot mutate another owner payment_other (0.535291ms)
+✔ pending exhaust cannot mutate another owner payment_job-1 (0.549125ms)
+✔ pending exhaust cannot mutate another owner payment_Job-1  (0.535834ms)
+✔ pending card supports owner-scoped profile (0.592959ms)
+✔ pending profile cannot mutate another owner payment_other (0.56275ms)
+✔ pending profile cannot mutate another owner payment_job-1 (0.554166ms)
+✔ pending profile cannot mutate another owner payment_Job-1  (0.529083ms)
+✔ pending card supports owner-scoped usage (0.675459ms)
+✔ pending usage cannot mutate another owner payment_other (0.907666ms)
+✔ pending usage cannot mutate another owner payment_job-1 (0.746ms)
+✔ pending usage cannot mutate another owner payment_Job-1  (0.609041ms)
+✔ usage transaction failure rolls back counters without clearing the payment hold (2.54225ms)
+✔ cooldown preserves a longer existing cooldown when explicitly settling a decline (1.03975ms)
+✔ hold write rejected cannot be reclaimed without safe task evidence (0.810625ms)
+✔ hold write response lost after persistence cannot be reclaimed without safe task evidence (0.650791ms)
+✔ failed completion update leaves the durable hold intact (0.597583ms)
+✔ ownership transfer immediately before the hold write rejects the stale worker (0.56375ms)
+ℹ tests 477
+ℹ suites 0
+ℹ pass 462
+ℹ fail 15
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 572.631875
+
+✖ failing tests:
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ cooldown: ordinary task cannot mutate protected state {"status":"待人工复核"} (1.256292ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ cooldown: ordinary task cannot mutate protected state {"status":"已冻结"} (0.641333ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ cooldown: ordinary task cannot mutate protected state {"status":"已报废"} (0.588292ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ quarantine: ordinary task cannot mutate protected state {"status":"待人工复核"} (0.646417ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ quarantine: ordinary task cannot mutate protected state {"status":"已冻结"} (0.78775ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ quarantine: ordinary task cannot mutate protected state {"status":"已报废"} (0.590666ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ exhaust: ordinary task cannot mutate protected state {"status":"待人工复核"} (0.5975ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ exhaust: ordinary task cannot mutate protected state {"status":"已冻结"} (0.714417ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ exhaust: ordinary task cannot mutate protected state {"status":"已报废"} (0.674167ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ usage: ordinary task cannot mutate protected state {"status":"待人工复核"} (1.754166ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ usage: ordinary task cannot mutate protected state {"status":"已冻结"} (1.487583ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ usage: ordinary task cannot mutate protected state {"status":"已报废"} (0.908791ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ profile: ordinary task cannot mutate protected state {"status":"待人工复核"} (0.637041ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ profile: ordinary task cannot mutate protected state {"status":"已冻结"} (0.566209ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/security-round6-kc-card-ownership.test.js:101:9
+✖ profile: ordinary task cannot mutate protected state {"status":"已报废"} (6.8115ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Volumes/chao/AI/xianyu_profit_calculator/tests/security-round6-kc-card-ownership.test.js:105:18)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { code: 'CARD_LOCK_OWNERSHIP_LOST' },
+    operator: 'rejects',
+    diff: 'simple'
+  }

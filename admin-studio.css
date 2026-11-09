@@ -43409,6 +43409,25 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     min-width: 0;
 }
 
+#settings-view-google-one .verify-duration-prices-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+    width: 100%;
+}
+
+#settings-view-google-one .verify-duration-price-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+#settings-view-google-one .verify-duration-price-label {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
 #settings-view-google-one .verify-provider-stack {
     display: flex;
     flex-direction: column;
@@ -55438,11 +55457,19 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
     pointer-events: none;
 }
 
-/* Links in WYSIWYG editor */
+/* Links and paragraphs in WYSIWYG editor */
+.wysiwyg-editor p {
+    margin: 0 0 10px;
+}
+
+.wysiwyg-editor p:last-child {
+    margin-bottom: 0;
+}
+
 .wysiwyg-editor a {
-    color: var(--accent-starry, #6b9ece);
+    color: var(--accent-starry, #38bdf8);
     text-decoration: underline;
-    text-underline-offset: 2px;
+    text-underline-offset: 3px;
 }
 
 .wysiwyg-editor a:hover {
@@ -59460,4 +59487,97 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     .shop-sku-delete-guard-modal__btn {
         width: 100%;
     }
+}
+
+/* 86AI Pro Activation Jobs Monitor Styles */
+.verify-activation-job-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+    gap: 16px;
+    transition: background-color 0.2s ease;
+}
+
+.verify-activation-job-row:last-child {
+    border-bottom: none;
+}
+
+.verify-activation-job-row--pending {
+    background: rgba(245, 158, 11, 0.06);
+    border-left: 3px solid #f59e0b;
+}
+
+.verify-activation-job-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.verify-activation-job-actions .btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    border: none;
+}
+
+.verify-activation-job-actions .btn-success {
+    background-color: #10b981;
+    color: #fff;
+}
+
+.verify-activation-job-actions .btn-danger {
+    background-color: #ef4444;
+    color: #fff;
+}
+
+.verify-activation-job-actions .btn-secondary {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: var(--text-color, #e5e7eb);
+}
+
+.verify-activation-job-actions .btn-outline-primary {
+    background-color: transparent;
+    border: 1px solid #3b82f6;
+    color: #3b82f6;
+}
+
+.admin-ticket-reply-followup-block {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: rgba(59, 130, 246, 0.08);
+    border-left: 3px solid #3b82f6;
+    border-radius: 4px 8px 8px 4px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.admin-ticket-reply-followup-head {
+    font-weight: 600;
+    color: #2563eb;
+    margin-bottom: 4px;
+    font-size: 12px;
+}
+
+.admin-ticket-reply-followup-body {
+    color: var(--text-color, #1f2937);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* Provider-specific media capability summary. */
+.ai-image-admin-model-capability {
+    display: block;
+    max-width: 30rem;
+    white-space: normal;
+    color: var(--text-secondary, #888);
+    font-size: 11px;
+    line-height: 1.5;
 }

@@ -370,3 +370,103 @@ test('takeRateLimitTokens does not treat an invalid empty batch response as unli
     assert.equal(first[0].allowed, true);
     assert.equal(second[0].allowed, false);
 });
+
+test('persistent-only rate limiting rejects empty keys and explicitly disabled backends without memory fallback', async () => {
+    const store = new Map();
+    let rpcCalls = 0;
+    const supabase = { rpc() { rpcCalls += 1; throw new Error('unexpected RPC'); } };
+    for (const options of [
+        { key: '' },
+        { key: '   ' },
+        { key: 'account', env: { RATE_LIMIT_BACKEND: 'memory' } },
+        { key: 'account', env: { DISABLE_PERSISTENT_RATE_LIMITS: 'true' } }
+    ]) {
+        const result = await takeRateLimitToken({
+            supabase, store, requirePersistent: true, now: 1_000, env: {}, ...options
+        });
+        assert.equal(result.allowed, false);
+        assert.equal(result.unavailable, true);
+    }
+    assert.equal(rpcCalls, 0);
+    assert.equal(store.size, 0);
+});
+
+test('persistent-only rate limiting rejects ambiguous rows and non-boolean decisions', async () => {
+    const store = new Map();
+    for (const data of [null, [], {}, { allowed: 'true' }, { allowed: 1 },
+        [{ allowed: true }, { allowed: false }], [null]]) {
+        const result = await takeRateLimitToken({
+            supabase: { async rpc() { return { data, error: null }; } },
+            store, key: 'step-up:account', requirePersistent: true, now: 1_000, env: {}
+        });
+        assert.equal(result.allowed, false, JSON.stringify(data));
+        assert.equal(result.unavailable, true, JSON.stringify(data));
+    }
+    assert.equal(store.size, 0);
+});
+
+test('persistent-only rate limiting accepts one valid row and preserves a real denial', async () => {
+    for (const allowed of [true, false]) {
+        const result = await takeRateLimitToken({
+            supabase: { async rpc() { return { data: [{ allowed }], error: null }; } },
+            key: 'step-up:account', requirePersistent: true, now: 1_000, env: {}
+        });
+        assert.equal(result.allowed, allowed);
+        assert.equal(result.unavailable, undefined);
+    }
+});
+
+test('optional persistent rate limiting still applies a local quota when RPC data is malformed', async () => {
+    const store = new Map();
+    const options = {
+        supabase: { async rpc() { return { data: [{ allowed: true }, { allowed: true }], error: null }; } },
+        store, key: 'optional:account', limit: 1, now: 1_000, env: {}
+    };
+    assert.equal((await takeRateLimitToken(options)).allowed, true);
+    assert.equal((await takeRateLimitToken(options)).allowed, false);
+});
+
+test('batch rate limiting never treats malformed decisions or extra rows as unlimited access', async () => {
+    for (const data of [[{}], [{ allowed: 'true' }], [null], [{ allowed: true }, { allowed: true }]]) {
+        const store = new Map();
+        const options = {
+            supabase: { async rpc() { return { data, error: null }; } },
+            store, now: 1_000, env: {},
+            checks: [{ scope: 'submit:user', key: 'user:1', limit: 1, windowMs: 60_000 }]
+        };
+        assert.equal((await takeRateLimitTokens(options))[0].allowed, true);
+        assert.equal((await takeRateLimitTokens(options))[0].allowed, false);
+    }
+});
+
+test('a malformed forwarded hop invalidates the entire chain instead of changing its trust boundary', () => {
+    for (const chain of ['198.51.100.1, bad-ip, 10.0.0.3', '198.51.100.1,,10.0.0.3',
+        '198.51.100.1,999.999.999.999', 'for=198.51.100.1', '198.51.100.1\r\nx-real-ip: 127.0.0.1',
+        Array(65).fill('10.0.0.3').join(',')]) {
+        const req = { headers: { 'x-forwarded-for': chain }, socket: { remoteAddress: '10.0.0.2' } };
+        const result = explainClientIpResolution(req, { env: {}, trustedProxies: '10.0.0.0/8' });
+        assert.equal(result.resolvedClientIp, '10.0.0.2', chain);
+        assert.deepEqual(result.forwardedIps, [], chain);
+    }
+});
+
+test('the nearest untrusted forwarding hop stops a forged leftmost client identity', () => {
+    const req = { headers: { 'x-forwarded-for': '127.0.0.1, 198.51.100.23, 10.0.0.3' }, socket: { remoteAddress: '10.0.0.2' } };
+    assert.equal(resolveClientIp(req, { env: {}, trustedProxies: '10.0.0.0/8' }), '198.51.100.23');
+});
+
+test('Vercel IP headers require the actual platform runtime and a valid literal', () => {
+    const req = { headers: { 'x-vercel-id': 'forged', 'x-vercel-forwarded-for': '127.0.0.1',
+        'x-real-ip': '127.0.0.1', 'cf-connecting-ip': '127.0.0.1', 'x-forwarded-for': '198.51.100.23' },
+        socket: { remoteAddress: '203.0.113.1' } };
+    for (const env of [{}, { VERCEL_ENV: 'production' }, { VERCEL: '1' }, { VERCEL: '1', VERCEL_ENV: 'development' }]) {
+        const diagnostic = explainClientIpResolution(req, { env });
+        assert.equal(diagnostic.resolvedClientIp, '203.0.113.1'); assert.equal(diagnostic.platformIngress, null);
+    }
+    for (const VERCEL_ENV of ['production', 'preview']) {
+        const diagnostic = explainClientIpResolution(req, { env: { VERCEL: '1', VERCEL_ENV } });
+        assert.equal(diagnostic.resolvedClientIp, '127.0.0.1'); assert.equal(diagnostic.platformIngress, 'vercel');
+        assert.equal(resolveClientIp({ ...req, headers: { ...req.headers, 'x-vercel-forwarded-for': '127.0.0.1,bad' } },
+            { env: { VERCEL: '1', VERCEL_ENV } }), '203.0.113.1');
+    }
+});

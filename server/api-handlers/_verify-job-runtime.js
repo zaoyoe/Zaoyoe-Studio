@@ -132,7 +132,7 @@ function verifyProviderSupportsJobAction(config = {}, action = '') {
 
 function normalizeVerifyTaskType(value, fallback = DEFAULT_VERIFY_TASK_TYPE) {
     const normalized = String(value || '').trim().toLowerCase();
-    if (normalized === 'full') return 'full';
+    if (['full', 'sub6', 'sub12', 'sub24'].includes(normalized)) return normalized;
     if (normalized === 'extract') return 'extract';
     return fallback;
 }
@@ -180,9 +180,21 @@ function resolveVerifyApiKeyByFingerprint(config = {}, fingerprint = '') {
 }
 
 function getVerifyPriceForTaskType(config = {}, taskType = DEFAULT_VERIFY_TASK_TYPE) {
-    return normalizeVerifyTaskType(taskType) === 'full'
-        ? Number(config.pricePerVerifyFull || config.pricePerVerifyExtract || config.pricePerVerify || 20)
-        : Number(config.pricePerVerifyExtract || config.pricePerVerify || 10);
+    const normalized = normalizeVerifyTaskType(taskType);
+    const fullPrice = Number(config.pricePerVerifyFull || config.price_per_verify_full || config.pricePerVerify || 20);
+    if (normalized === 'sub24') {
+        const custom = Number(config.pricePerVerifySub24 || config.price_per_verify_sub24);
+        return Number.isFinite(custom) && custom > 0 ? custom : Math.round(fullPrice * 2);
+    }
+    if (normalized === 'sub12') {
+        const custom = Number(config.pricePerVerifySub12 || config.price_per_verify_sub12);
+        return Number.isFinite(custom) && custom > 0 ? custom : Math.round(fullPrice * 1.5);
+    }
+    if (normalized === 'sub6' || normalized === 'full') {
+        const custom = Number(config.pricePerVerifySub6 || config.price_per_verify_sub6);
+        return Number.isFinite(custom) && custom > 0 ? custom : fullPrice;
+    }
+    return Number(config.pricePerVerifyExtract || config.pricePerVerify || 10);
 }
 
 function normalizeVerifyPoints(value, fallback = 0) {
@@ -452,7 +464,7 @@ function normalizeVerifyUpstreamStatus(value) {
     if (['success', 'completed', 'done', 'ok'].includes(normalized)) return 'success';
     if (['failed', 'fail', 'error', 'timeout', 'cancelled', 'canceled'].includes(normalized)) return 'failed';
     if (['running', 'processing', 'working', 'in_progress', 'assigned', 'accepted', 'started', 'executing'].includes(normalized)) return 'running';
-    if (['queued', 'queueing', 'waiting', 'pending'].includes(normalized)) return 'queued';
+    if (['queued', 'queueing', 'waiting', 'pending', 'submitting'].includes(normalized)) return 'queued';
     return normalized;
 }
 
@@ -756,12 +768,14 @@ async function postVerifyProviderAction(config = {}, payload = {}, options = {})
 }
 
 function isLocalRequestOrigin(req) {
-    const origin = String(req?.headers?.origin || req?.headers?.Origin || '').trim().toLowerCase();
-    const host = String(req?.headers?.host || req?.headers?.Host || '').trim().toLowerCase();
-    return origin.includes('localhost')
-        || origin.includes('127.0.0.1')
-        || host.includes('localhost')
-        || host.includes('127.0.0.1');
+    // Never allow substring matches such as localhost.attacker.example.
+    const local = value => {
+        try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value).hostname.toLowerCase()); }
+        catch { return false; }
+    };
+    const host = String(req?.headers?.host || req?.headers?.Host || '').trim();
+    const origin = String(req?.headers?.origin || req?.headers?.Origin || '').trim();
+    return local(`http://${host}`) && (!origin || local(origin));
 }
 
 function resolveVerifyRequestSite(req, explicitSite = '') {
@@ -1125,13 +1139,19 @@ async function deductPointsForJob({
     }
 
     const normalizedTaskType = normalizeVerifyTaskType(taskType);
+    let reason = 'Google One 试用链接提取服务';
+    if (normalizedTaskType === 'sub24') {
+        reason = 'Google One 全流程包绑卡服务（24个月/2年）';
+    } else if (normalizedTaskType === 'sub12') {
+        reason = 'Google One 全流程包绑卡服务（12个月/1年）';
+    } else if (normalizedTaskType === 'sub6' || normalizedTaskType === 'full') {
+        reason = 'Google One 全流程包绑卡服务（6个月）';
+    }
     const { data: deductData, error } = await deductPointsForService({
         supabase,
         userId,
         amount,
-        reason: normalizedTaskType === 'full'
-            ? 'Google One 全流程包绑卡服务'
-            : 'Google One 试用链接提取服务',
+        reason,
         referenceId: jobId,
         site
     });

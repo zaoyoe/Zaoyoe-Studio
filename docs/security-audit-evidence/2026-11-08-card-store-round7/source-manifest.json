@@ -1,0 +1,265 @@
+{
+  "head_reference": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+  "source": "Current dirty working tree, not a committed release candidate. Hashes captured after final tests; only documentation/evidence archiving followed.",
+  "round_changed_files": [
+    "services/kc-pay-gpt/mysql-store.js",
+    "services/kc-pay-gpt/payment-retry.js",
+    "services/kc-pay-gpt/stripe-protocol-payment.js",
+    "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+    "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+    "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+    "services/kc-pay-gpt/test/card-freeze.test.js",
+    "services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+    "tests/security-round5-kc-owner-locks.test.js",
+    "tests/security-round6-kc-card-ownership.test.js",
+    "tests/security-round7-kc-payment-hold.test.js"
+  ],
+  "earliest_snapshot_comparison": "Ten existing files use earliest verified dirty snapshots; round7 root test is new. Round5 and round6 tests were already untracked before this round.",
+  "files": [
+    {
+      "path": "services/kc-pay-gpt/.dockerignore",
+      "bytes": 127,
+      "sha256": "5a5023d9e6dbae10022ba839347d5dab25b09016dbfaf629017cc54818890b80",
+      "changed_this_round": false,
+      "tested_this_round": false
+    },
+    {
+      "path": "services/kc-pay-gpt/Dockerfile",
+      "bytes": 2016,
+      "sha256": "023ebb80f6d25aa857053f4dc8026f55674af45ea34529a7311559af53e5fa4e",
+      "changed_this_round": false,
+      "tested_this_round": false
+    },
+    {
+      "path": "services/kc-pay-gpt/grok-native-payment.js",
+      "bytes": 19673,
+      "sha256": "c1c9adf9d305b5cdafbf9c8403a997f9dd1292468dad7deb5d3b43658164ce65",
+      "changed_this_round": false,
+      "tested_this_round": false
+    },
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "bytes": 199885,
+      "sha256": "864975197d6f85eec93c2c2f1da49edba3b3fff4aad18c034ddaba2ab277751d",
+      "changed_this_round": true,
+      "tested_this_round": false
+    },
+    {
+      "path": "services/kc-pay-gpt/package-lock.json",
+      "bytes": 193141,
+      "sha256": "7fc5737ba42f9d82a7219e5050d1a5741a60f2a45d11395f44c3ba4e5fb7e9c2",
+      "changed_this_round": false,
+      "tested_this_round": false
+    },
+    {
+      "path": "services/kc-pay-gpt/package.json",
+      "bytes": 1315,
+      "sha256": "aa9e7d6266251cf4160b3714332e1930315636952a18edbb87b493f7c20880b6",
+      "changed_this_round": false,
+      "tested_this_round": false
+    },
+    {
+      "path": "services/kc-pay-gpt/payment-retry.js",
+      "bytes": 51652,
+      "sha256": "40373f4a17735335b3de27c5dbcde1bd575413e5ca768f6ffbcb6650163d8e22",
+      "changed_this_round": true,
+      "tested_this_round": false
+    },
+    {
+      "path": "services/kc-pay-gpt/stripe-payment.js",
+      "bytes": 237730,
+      "sha256": "b24f9e38166701c094952f8f88f76c851cf21c5ed535ca593ccce43f6fddc30a",
+      "changed_this_round": false,
+      "tested_this_round": false
+    },
+    {
+      "path": "services/kc-pay-gpt/stripe-protocol-payment.js",
+      "bytes": 82624,
+      "sha256": "93a924c273a4fc19f33e8cbefed95a3210a608d7dfc159342a84e92e949f690d",
+      "changed_this_round": true,
+      "tested_this_round": false
+    },
+    {
+      "path": "services/kc-pay-gpt/test/card-freeze.test.js",
+      "bytes": 3368,
+      "sha256": "ebbb32bc5a773fd89f19f392a79440fb5ddfccb5fb7f352c6821fedb5227a312",
+      "changed_this_round": true,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/chatgpt-billing.test.js",
+      "bytes": 3922,
+      "sha256": "8f68e09626c446f3a11eb97fe77ae518c2ff5a85085967e7318d34ef6f32e5a1",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/chatgpt-checkout-team-promo.test.js",
+      "bytes": 11869,
+      "sha256": "6ecb85e5f0d6b6aeec2b00cf5528fe4fc62020bb0dc59f3f00f1910e255e18a9",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-api-client.test.js",
+      "bytes": 13628,
+      "sha256": "b73470a7a8440a79898183fcbd8f942d50ed77addbbe93ba2727bdc5517e6950",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing-recovery.test.js",
+      "bytes": 5335,
+      "sha256": "340d1d017616094a37687e3871f7f9abe2412f8ca1d87f4536f7a7c42a23b669",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+      "bytes": 19596,
+      "sha256": "7ae006a5872cd8feeb20495203efe12b52816f081d4e7fdb4e600b013507e36a",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing-worker.test.js",
+      "bytes": 16803,
+      "sha256": "137b00a23270687c2f909062902e012579ab591cf4fe2b74b1379c582b94b09d",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/gpt-outsourcing.test.js",
+      "bytes": 9484,
+      "sha256": "3f4ba14451f97c260e17215b46ee53f99ccfe547c314cd395e5a2a3cac2fc9e4",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/mysql-card-cooldown.test.js",
+      "bytes": 5489,
+      "sha256": "ba5523d9ade2832c42e46fa01c7d2eb094a84a5d14ae3755ec9f2d65be831b5f",
+      "changed_this_round": true,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/openai-payment-method.test.js",
+      "bytes": 22906,
+      "sha256": "287e135c4f5c371b5267b3b2efd890ecaab095c71bd458b460a67b4e54440d3d",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-decline-dictionary.test.js",
+      "bytes": 5410,
+      "sha256": "ba4d6f3cfcc7c58fe096a2fcaa2172cfe51065c546e0486d1d582e6f08a0c2ed",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-protocol-fallback.test.js",
+      "bytes": 18720,
+      "sha256": "8dd381041bfd0cc910c35ec3cd1e67720ca886d95907d36b4cbae31d37adee94",
+      "changed_this_round": true,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/payment-retry-safety.test.js",
+      "bytes": 44980,
+      "sha256": "d7675bf3fd08afcf7a8bc4a1db2e06e6eb8a5585b3b05e4c7a9e6c38f2eb6dc1",
+      "changed_this_round": true,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/recharge-captcha-bridge.test.js",
+      "bytes": 4129,
+      "sha256": "a38c1789fd7c9c0ccc1384a598bf7411cb5c3642c358862c3fbee9e165bc3d83",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+      "bytes": 49419,
+      "sha256": "3f846e4ee51ecc0e18113892d1a1d3b582fc1b2ddfe39ac44ce2a264e86cadf5",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/stripe-protocol-payment.test.js",
+      "bytes": 8410,
+      "sha256": "75a46fdd8c6234038f67f29f94a0bd65526ad264d8830ec45b8cedd2e5d87b42",
+      "changed_this_round": true,
+      "tested_this_round": true
+    },
+    {
+      "path": "services/kc-pay-gpt/test/task-safety.test.js",
+      "bytes": 11061,
+      "sha256": "b9fac87e62510596231a34b94faccf0b772fbf5d10e8af1592bf2100761454a1",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "tests/security-round2-kc-activation.test.js",
+      "bytes": 13782,
+      "sha256": "0fc07c07133f3420bfa95a4e928e34c790b85ee6df233a549b721bd06ee916c6",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "tests/security-round2-kc-credentials.test.js",
+      "bytes": 11238,
+      "sha256": "d83e88db72b8fa3e84828cfa5fd589856f1f81fc49ebfd7c2efac9fbd55c4b38",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "tests/security-round2-kc-public-guard.test.js",
+      "bytes": 4564,
+      "sha256": "a2e3f5ad5a1839b076a868e1de0c6e1293c6bb3f8405adfc7993647a421555c5",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "tests/security-round3-kc-activation-atomic.test.js",
+      "bytes": 23717,
+      "sha256": "6919ebdc2b15868ed9543c479d54a06ce6888a27b2cbf86252e31f6e0bf4189b",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "tests/security-round4-kc-local-settlement.test.js",
+      "bytes": 16026,
+      "sha256": "4fc4446cca9aab38d8230633b01c18ed9cb20de5a64c4609855d84e50d670e06",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "tests/security-round5-kc-owner-locks.test.js",
+      "bytes": 15503,
+      "sha256": "e6e5f5d7eb17c3161735e6cc1576ea8744134916d5493f25bab82658cbc93079",
+      "changed_this_round": true,
+      "tested_this_round": true
+    },
+    {
+      "path": "tests/security-round6-kc-card-ownership.test.js",
+      "bytes": 14429,
+      "sha256": "824122a09c7bffaf7274773da7e8452f41c6e19a9fff92bb7d5ed62d86f25859",
+      "changed_this_round": true,
+      "tested_this_round": true
+    },
+    {
+      "path": "tests/security-round6-kc-payment-callers.test.js",
+      "bytes": 3708,
+      "sha256": "e2505a01acb904ec6cda98aabcec042ad645954c97e33bc98b20c542c11f535a",
+      "changed_this_round": false,
+      "tested_this_round": true
+    },
+    {
+      "path": "tests/security-round7-kc-payment-hold.test.js",
+      "bytes": 18771,
+      "sha256": "fe1620710ec237f7e2e4d618ed5165d08b580a544869f3ecd90f3927920eb9c1",
+      "changed_this_round": true,
+      "tested_this_round": true
+    }
+  ]
+}

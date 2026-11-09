@@ -112,7 +112,7 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
     );
     assert.match(
         shopStyles,
-        /#shopPurchaseModal #purchaseStageTitle\s*\{[\s\S]*font-size:\s*24px;[\s\S]*font-weight:\s*700;[\s\S]*line-height:\s*1\.6;[\s\S]*letter-spacing:\s*0\.5px;[\s\S]*text-align:\s*center;/,
+        /#shopPurchaseModal #purchaseStageTitle\s*\{[\s\S]*font-size:\s*18px;[\s\S]*font-weight:\s*700;[\s\S]*line-height:\s*1\.5;[\s\S]*letter-spacing:\s*0\.3px;[\s\S]*text-align:\s*center;/,
         'purchase modal product title should use the same compact card-title scale as the success modal title'
     );
     assert.match(

@@ -68,7 +68,7 @@ test('image upload edge function enforces server-side type size and rate guardra
     assert.match(source, /'guestbook'/);
     assert.match(source, /'homepage'/);
     assert.match(source, /const ALLOWED_IMAGE_CONTENT_TYPES = new Set/);
-    assert.match(source, /const UPLOAD_SIZE_LIMITS: Record<UploadType \| 'card', number>/);
+    assert.match(source, /const UPLOAD_SIZE_LIMITS: Record<UploadType \| 'card' \| 'thumb', number>/);
     assert.match(source, /const UPLOAD_RATE_LIMITS: Record<UploadType/);
     assert.match(source, /const REQUIRED_HOMEPAGE_UPLOAD_PERMISSION = 'homepage\.manage'/);
     assert.match(source, /const ADMIN_UPLOAD_PERMISSIONS: Partial<Record<UploadType, string>>/);

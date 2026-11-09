@@ -1,0 +1,57 @@
+[
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/README.md",
+    "exit": 1,
+    "output": ""
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/cli.cjs",
+    "exit": 1,
+    "output": ""
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/fixture.sql",
+    "exit": 1,
+    "output": ""
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/lab.cjs",
+    "exit": 1,
+    "output": ""
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/plan.cjs",
+    "exit": 1,
+    "output": ""
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/safety.cjs",
+    "exit": 1,
+    "output": ""
+  },
+  {
+    "path": "services/kc-pay-gpt/acceptance/mysql-payment-hold/store-loader.cjs",
+    "exit": 1,
+    "output": ""
+  },
+  {
+    "path": "tests/security-round8-kc-mysql-lab.test.js",
+    "exit": 1,
+    "output": ""
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/preload.cjs",
+    "exit": 1,
+    "output": ""
+  },
+  {
+    "path": "docs/security-audit-evidence/2026-11-09-card-store-round8/isolation/run.py",
+    "exit": 1,
+    "output": ""
+  },
+  {
+    "path": "docs/security-card-store-hardening-round8-2026-11-09.md",
+    "exit": 1,
+    "output": ""
+  }
+]

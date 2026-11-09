@@ -163,6 +163,7 @@ function getFullSelectAttempts() {
             'is_active',
             'quantity_rules',
             'quantity_rules_intl',
+            'min_purchase_quantity',
             'max_purchase_quantity',
             'purchase_limit_24h_quantity',
             'purchase_limit_window_quantity',
@@ -197,13 +198,14 @@ function getFullSelectAttempts() {
             'flash_sale_start',
             'flash_sale_start_intl',
             'flash_sale_end',
-            'flash_sale_end_intl'
+            'flash_sale_end_intl',
+            'sales_config'
         ].join(', ')
     ];
 }
 
 function buildShopProductImageCacheVersion(row = {}) {
-    return normalizeText(row?.image_updated_at || row?.updated_at || row?.created_at || '', 80);
+    return normalizeText(row?.image_updated_at || '', 80);
 }
 
 function attachShopProductImageCacheVersion(row = {}) {
@@ -338,7 +340,7 @@ module.exports = async function adminShopProductsHandler(req, res) {
             ['display_order_desc', 'name_asc', 'sort_order_asc'],
             fields === 'names' || fields === 'picker' ? 'name_asc' : 'display_order_desc'
         );
-        const category = normalizeText(searchParams.get('category'), 120);
+        const category = normalizeText(searchParams.get('categories') || searchParams.get('category'), 240);
         const includeSkus = normalizeBoolean(searchParams.get('includeSkus') || searchParams.get('include_skus'), false);
 
         if (productId) {
@@ -394,7 +396,12 @@ module.exports = async function adminShopProductsHandler(req, res) {
             }
 
             if (category && category !== 'all') {
-                query = query.eq('category', category);
+                const categoryList = category.split(',').map((c) => c.trim()).filter(Boolean);
+                if (categoryList.length === 1) {
+                    query = query.eq('category', categoryList[0]);
+                } else if (categoryList.length > 1) {
+                    query = query.in('category', categoryList);
+                }
             }
 
             if (deliveryType === 'key') {

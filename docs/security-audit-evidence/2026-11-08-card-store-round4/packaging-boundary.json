@@ -1,0 +1,28 @@
+{
+  "basis": "Read-only static source review, no Docker build or host inspection",
+  "kc": {
+    "dockerfile": "services/kc-pay-gpt/Dockerfile",
+    "copy": "COPY . .",
+    "entrypoint": "node server.js",
+    "runtime_files_not_excluded_by_dockerignore": [
+      "mysql-store.js",
+      "server.js",
+      "task-safety.js"
+    ],
+    "compose": "Repository build context and bind mounts include KC source; production host-level compose is unverified."
+  },
+  "verify": {
+    "dockerfile": "deploy/kvm4/verify-server.Dockerfile",
+    "does_not_copy": "services/kc-pay-gpt"
+  },
+  "consequence": "KC requires a separately verified artifact. Vercel or Verify success alone cannot prove KC changes are live.",
+  "production_protected": [
+    "/opt/kc-pay-gpt/.env",
+    "/opt/kc-pay-gpt/docker-compose.yml",
+    "data/",
+    "debug_screenshots/",
+    "product_files/",
+    "mysql_data"
+  ],
+  "mysql2_found_rows": "Installed local mysql2 default flags include FOUND_ROWS; local store pool does not override flags. Production installed package and actual affectedRows semantics NOT RUN."
+}

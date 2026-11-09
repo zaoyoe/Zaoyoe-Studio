@@ -1,3 +1,4 @@
+const { createActivationService, errorResponse: activationErrorResponse, isActivationRequest, isActivationJob } = require('../_google-one-activation-runtime');
 const {
     activateVerifyProviderConfig,
     loadVerifyRuntimeConfig,
@@ -76,9 +77,9 @@ function createPublicVerifyHandlers({
         }
 
         const auth = await requireAuthenticatedUser(req);
-        const supabase = auth?.adminSupabase
-            || auth?.supabase
+        const adminSupabase = auth?.adminSupabase
             || (typeof getOptionalSupabaseAdmin === 'function' ? getOptionalSupabaseAdmin() : null);
+        const supabase = adminSupabase || auth?.supabase;
 
         if (!supabase?.from) {
             const error = new Error('Verify service is unavailable');
@@ -88,8 +89,25 @@ function createPublicVerifyHandlers({
 
         return {
             user: auth.user,
-            supabase
+            supabase,
+            adminSupabase
         };
+    }
+
+    // Activation RPCs must never run with the authenticated user's ordinary client.
+    async function activationRequest(req, res, context, method, args = {}) {
+        res.setHeader('Cache-Control', 'no-store');
+        try {
+            if (!context.adminSupabase?.rpc) throw new Error('activation_unavailable');
+            const service = createActivationService({
+                supabase: context.adminSupabase, env, fetchImpl, loadConfig: runtimeLoadVerifyRuntimeConfig
+            });
+            const result = await service[method]({ req, user: context.user, ...args });
+            return sendJson(res, 200, method === 'list' ? { success: true, jobs: result } : { success: true, ...result });
+        } catch (error) {
+            const failure = activationErrorResponse(error);
+            return sendJson(res, failure.status, failure.body);
+        }
     }
 
     async function submitHandler(req, res) {
@@ -101,10 +119,13 @@ function createPublicVerifyHandlers({
             });
         }
 
-        const { user, supabase } = await resolveHandlerContext(req);
+        const context = await resolveHandlerContext(req);
+        const { user, supabase } = context;
         const body = typeof parseJsonBody === 'function'
             ? await parseJsonBody(req)
             : (req.body && typeof req.body === 'object' ? req.body : {});
+
+        if (isActivationRequest(body)) return activationRequest(req, res, context, 'submit', { body });
 
         const {
             email,
@@ -149,6 +170,10 @@ function createPublicVerifyHandlers({
             provider || verifyProvider || verify_provider || loadedConfig.provider,
             loadedConfig.provider
         );
+        if (requestedProvider === '86ai') {
+            const failure = activationErrorResponse({ code: 'invalid_task_type' });
+            return sendJson(res, failure.status, failure.body);
+        }
         const config = runtimeActivateVerifyProviderConfig(loadedConfig, requestedProvider);
         if (!config.apiKey) {
             return sendJson(res, 500, {
@@ -159,7 +184,7 @@ function createPublicVerifyHandlers({
         }
 
         const priceForTask = runtimeGetVerifyPriceForTaskType(config, normalizedTaskType);
-        const requiredUses = normalizedTaskType === 'full' ? 1 : 0.5;
+        const requiredUses = normalizedTaskType === 'sub24' ? 2 : (normalizedTaskType === 'sub12' ? 1.5 : (['full', 'sub6'].includes(normalizedTaskType) ? 1 : 0.5));
         const balanceCheck = await runtimeValidateUserBalance({
             supabase,
             userId: user.id,
@@ -347,10 +372,12 @@ function createPublicVerifyHandlers({
             });
         }
 
-        const { user, supabase } = await resolveHandlerContext(req);
+        const context = await resolveHandlerContext(req);
+        const { user, supabase } = context;
         const url = new URL(req.url || '', 'http://localhost');
         const taskId = String(url.searchParams.get('taskId') || '').trim();
         const currentSite = runtimeResolveVerifyRequestSite(req, url.searchParams.get('site') || '');
+        if (isActivationJob(taskId)) return activationRequest(req, res, context, 'status', { id: taskId });
 
         if (!taskId) {
             return sendJson(res, 400, {
@@ -475,6 +502,11 @@ function createPublicVerifyHandlers({
         const action = String(body?.action || '').trim();
         const taskId = String(body?.taskId || body?.task_id || body?.jobId || body?.job_id || '').trim();
         const currentSite = runtimeResolveVerifyRequestSite(req, body?.site || '');
+
+        if (isActivationRequest(body) || isActivationJob(taskId)) {
+            const failure = activationErrorResponse({ code: 'invalid_task_type' });
+            return sendJson(res, failure.status, failure.body);
+        }
 
         if (!['cancel_task', 'purchase_failed_link'].includes(action)) {
             return sendJson(res, 400, {
@@ -665,6 +697,17 @@ function createPublicVerifyHandlers({
     }
 
     return {
+        list: async (req, res) => {
+            if (req.method !== 'GET') {
+                res.setHeader('Allow', 'GET');
+                return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+            }
+            try {
+                return await activationRequest(req, res, await resolveHandlerContext(req), 'list');
+            } catch (error) {
+                return sendJson(res, error.statusCode === 401 ? 401 : 503, { success: false, message: '无法读取开通任务' });
+            }
+        },
         action: async (req, res) => {
             try {
                 return await actionHandler(req, res);

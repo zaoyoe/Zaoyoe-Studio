@@ -1,0 +1,32 @@
+{
+  "archive_time_utc": "2026-11-08T14:46:32.464321+00:00",
+  "git_baseline": {
+    "branch": "main",
+    "head": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+    "origin_main": "75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8",
+    "behind": 0,
+    "index_sha256": "0cffdc8f7b49154ec9082ca7c97b5b5a0be0c4df5dd6ae1c20526f9aca9130b7",
+    "dirty_lines": 551,
+    "scope": "per-file dirty snapshots only, not a whole-workspace or DB backup"
+  },
+  "remote": "https://github.com/zaoyoe/Zaoyoe-Studio.git",
+  "fetch": "git fetch origin main succeeded immediately before this archive; HEAD and origin/main unchanged; behind=0.",
+  "authorization": "Local implementation, offline verification, and evidence archive only. No staging, commit, push, PR or deployment. No SQL, real DB, real payment, production configuration or worker changes.",
+  "test_isolation": "Launcher only inherits PATH/TMPDIR/LANG/TZ and injects a synthetic session key. Node fs guard blocks actual .env* reads; Node net/tls/dgram outbound connections are blocked, including loopback. Not an OS, browser, native-addon or independent-subprocess network sandbox. Cumulative blocked-read logs are not new round-6 evidence.",
+  "unattributed_extra_status_before_archive": [
+    " M js/engagement-runtime-loader.js"
+  ],
+  "unattributed_scope_note": "Observed outside this round; retained without attributing origin, restoring, or including in the round patch. Baseline status rows record paths/status, not all workspace bytes.",
+  "not_run": [
+    "Real MySQL concurrency/locking/affectedRows semantics",
+    "deadlocks",
+    "disconnects and ambiguous COMMIT",
+    "crash recovery",
+    "full KC suite rerun in round6",
+    "main-site/TG/NewAPI/WAF production verification"
+  ],
+  "out_of_scope": [
+    "虎皮椒",
+    "爱发电"
+  ]
+}

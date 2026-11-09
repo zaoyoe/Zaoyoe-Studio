@@ -1,6 +1,11 @@
 const { loadCustomerDelivery } = require('../../integrations/suppliers/delivery');
 const { supplierOrderStatus } = require('../../integrations/suppliers/order-status');
 const supplierCheckoutV2 = require('../../integrations/suppliers/checkout');
+const {
+    DEFAULT_DETAIL_TTL_MS,
+    DEFAULT_CHECKOUT_TTL_MS,
+    syncSupplierProductStock
+} = require('../../integrations/suppliers/stock-sync');
 const crypto = require('node:crypto');
 const {
     decryptCdk,
@@ -22,6 +27,7 @@ const {
 const {
     safeSyncOrderProfitLedgerByOrderId
 } = require('../admin/shop/_profit-ledger');
+const { matchCategoryIconUrl } = require('../../integrations/suppliers/xiareng/category-groups');
 
 let vercelWaitUntil = null;
 try {
@@ -266,12 +272,105 @@ function maybeLogSlowShopCatalogRequest({
     );
 }
 
+function stringToHash(str) {
+    let hash = 2166136261;
+    const s = String(str || '');
+    for (let i = 0; i < s.length; i += 1) {
+        hash ^= s.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+}
+
+function getDeterministicDailyRandom(seed, dayIndex, min, max) {
+    const low = Math.max(0, Math.trunc(min || 0));
+    const high = Math.max(low, Math.trunc(max || low));
+    if (low >= high) return low;
+    let t = (seed + dayIndex * 2654435761) >>> 0;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    const randFloat = ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    return low + Math.floor(randFloat * (high - low + 1));
+}
+
+function getCstDateString(date = new Date()) {
+    const d = new Date(date);
+    const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+    const cst = new Date(utc + (3600000 * 8));
+    const year = cst.getFullYear();
+    const month = String(cst.getMonth() + 1).padStart(2, '0');
+    const day = String(cst.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getDaysBetweenCstDates(startStr, endStr) {
+    const start = Date.parse(`${startStr}T00:00:00+08:00`);
+    const end = Date.parse(`${endStr}T00:00:00+08:00`);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+    if (end < start) return -1;
+    return Math.floor((end - start) / 86400000);
+}
+
+function calculateProductDisplaySales(product, realSalesCount, options = {}) {
+    const rawConfig = product?.sales_config;
+    const config = (rawConfig && typeof rawConfig === 'object') ? rawConfig : null;
+    const realSales = Math.max(0, Math.trunc(realSalesCount || 0));
+
+    if (!config) {
+        return realSales;
+    }
+
+    const mode = Number(config.mode);
+    // 模式三：完全真实的销量
+    if (mode === 3) {
+        return realSales;
+    }
+
+    const baseSales = Math.max(0, Number.parseInt(String(config.base_sales || 0), 10) || 0);
+
+    // 模式一：对外展示销量 = 真实成交量 + 销量基数
+    if (mode === 1) {
+        return realSales + baseSales;
+    }
+
+    // 模式二：每日增加的随机种子数 + 销售基数
+    if (mode === 2) {
+        const min = Math.max(0, Number.parseInt(String(config.daily_random_min || 0), 10) || 0);
+        const max = Math.max(min, Number.parseInt(String(config.daily_random_max || min), 10) || min);
+        const seedStr = String(config.random_seed || product?.id || 'seed').trim();
+        const currentDateStr = options.currentDateStr || getCstDateString();
+        const startDateStr = (typeof config.start_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(config.start_date.trim()))
+            ? config.start_date.trim()
+            : currentDateStr;
+        const daysElapsed = getDaysBetweenCstDates(startDateStr, currentDateStr);
+        if (daysElapsed < 0) {
+            return baseSales;
+        }
+
+        let accumulatedIncrement = 0;
+        const seed = stringToHash(seedStr);
+        const cappedDays = Math.min(daysElapsed, 1825);
+        if (min === max) {
+            accumulatedIncrement = (cappedDays + 1) * min;
+        } else {
+            for (let d = 0; d <= cappedDays; d += 1) {
+                accumulatedIncrement += getDeterministicDailyRandom(seed, d, min, max);
+            }
+        }
+
+        return baseSales + accumulatedIncrement;
+    }
+
+    return realSales;
+}
+
 function createShopHandlers({
     admin,
     requestSecurity,
     site,
     discountAssets,
     discountPricing,
+    opsAlerts,
     env = process.env
 } = {}) {
     const {
@@ -279,12 +378,17 @@ function createShopHandlers({
     } = require('../../../api/_lib/admin-notifications');
     const {
         getOptionalSupabaseAdmin,
+        createSupabasePasswordVerificationClient,
         parseJsonBody,
         requireAuthenticatedUser,
         sendJson
     } = admin || {};
     const {
+        enqueueOpsAlertJob
+    } = opsAlerts || {};
+    const {
         applyRateLimitHeaders,
+        isAllowedRequestOrigin,
         resolveClientIp,
         takeRateLimitToken
     } = requestSecurity || {};
@@ -612,23 +716,56 @@ function createShopHandlers({
         const rows = Array.isArray(products) ? products : [];
         if (!rows.length) return rows;
 
-        const salesResult = await loadPublicShopProductSalesCounts(
-            dataSupabase,
-            rows.map((product) => product?.id),
-            currentSite
-        );
+        const normalizedProductIds = rows.map((product) => normalizeText(product?.id, 160)).filter(Boolean);
+
+        const [salesResult, upstreamSalesRes] = await Promise.all([
+            loadPublicShopProductSalesCounts(dataSupabase, normalizedProductIds, currentSite),
+            (async () => {
+                const map = new Map();
+                if (!dataSupabase?.from || !normalizedProductIds.length) return map;
+                try {
+                    const { data: mappings, error } = await dataSupabase
+                        .from('shop_supplier_product_mappings')
+                        .select('product_id, import_snapshot')
+                        .in('product_id', normalizedProductIds)
+                        .eq('is_enabled', true);
+                    if (!error && Array.isArray(mappings)) {
+                        mappings.forEach((m) => {
+                            const pid = normalizeText(m?.product_id, 160);
+                            const raw = m?.import_snapshot?.salesCount ?? m?.import_snapshot?.sales_count;
+                            const num = Number(raw);
+                            if (pid && Number.isFinite(num) && num > 0) {
+                                map.set(pid, Math.max(map.get(pid) || 0, Math.trunc(num)));
+                            }
+                        });
+                    }
+                } catch (_) {}
+                return map;
+            })()
+        ]);
+
         if (!salesResult.available) {
             return rows;
         }
 
         return rows.map((product) => {
             const productId = normalizeText(product?.id, 160);
+            const localCount = salesResult.counts.get(productId) || 0;
+            const upstreamCount = upstreamSalesRes.get(productId) || 0;
+            const realSales = localCount + upstreamCount;
+            const displaySales = calculateProductDisplaySales(product, realSales);
+            const { sales_config: _salesConfig, ...cleanProduct } = product;
             return {
-                ...product,
-                sales_count: salesResult.counts.get(productId) || 0
+                ...cleanProduct,
+                sales_count: displaySales
             };
         });
     }
+
+    attachPublicShopProductSales.calculateProductDisplaySales = calculateProductDisplaySales;
+    attachPublicShopProductSales.getDeterministicDailyRandom = getDeterministicDailyRandom;
+    attachPublicShopProductSales.getDaysBetweenCstDates = getDaysBetweenCstDates;
+    attachPublicShopProductSales.stringToHash = stringToHash;
 
     function shouldRetryShopCatalogSelect(error) {
         return [
@@ -642,6 +779,7 @@ function createShopHandlers({
             'description_intl_zh',
             'quantity_rules',
             'quantity_rules_intl',
+            'min_purchase_quantity',
             'max_purchase_quantity',
             'show_product_description',
             'show_product_description_intl',
@@ -665,6 +803,7 @@ function createShopHandlers({
             'flash_sale_start_intl',
             'flash_sale_end',
             'flash_sale_end_intl',
+            'sales_config',
             'manual_delivery',
             'updated_at',
             'created_at'
@@ -705,17 +844,35 @@ function createShopHandlers({
     }
 
     function filterShopCategoriesWithVisibleProducts(categories = [], products = []) {
+        const catList = Array.isArray(categories) ? categories : [];
         const visibleCategoryNames = new Set(
             (Array.isArray(products) ? products : [])
                 .map((product) => normalizeText(product?.category, 120))
                 .filter(Boolean)
         );
 
-        return (Array.isArray(categories) ? categories : [])
-            .filter((category) => {
-                const categoryName = normalizeText(category?.name, 120);
-                return categoryName && visibleCategoryNames.has(categoryName);
-            });
+        // Also if a child category has visible products, ensure its parent category is kept visible
+        const categoryMap = new Map();
+        catList.forEach((c) => {
+            if (c.id) categoryMap.set(String(c.id), c);
+            if (c.name) categoryMap.set(String(c.name).toLowerCase(), c);
+        });
+
+        catList.forEach((c) => {
+            const cName = normalizeText(c?.name, 120);
+            if (visibleCategoryNames.has(cName)) {
+                const pKey = c.parent_id || c.parent_name;
+                const parentCat = pKey ? (categoryMap.get(String(pKey)) || categoryMap.get(String(pKey).toLowerCase())) : null;
+                if (parentCat?.name) {
+                    visibleCategoryNames.add(normalizeText(parentCat.name, 120));
+                }
+            }
+        });
+
+        return catList.filter((category) => {
+            const categoryName = normalizeText(category?.name, 120);
+            return categoryName && visibleCategoryNames.has(categoryName);
+        });
     }
 
     function isShopCatalogProductAvailableForSite(product = {}, currentSite = 'cn') {
@@ -915,7 +1072,7 @@ function createShopHandlers({
             .map((sku) => normalizeText(sku?.id, 160))
             .filter(Boolean));
         const imageCacheVersion = normalizeText(
-            product?.image_cache_version || product?.image_updated_at || product?.updated_at || product?.created_at,
+            product?.image_updated_at || '',
             80
         );
         const { inventoryStockBySkuId: _inventoryStockBySkuId, ...publicProduct } = product;
@@ -929,8 +1086,13 @@ function createShopHandlers({
         const skus = inventorySkus
             .filter((sku) => sku.price_points !== null && sku.price_points !== undefined && sku.price_points !== '');
 
+        const aggregatedStockCount = skus.length
+            ? skus.reduce((total, s) => total + (Number(s.stock_count) || 0), 0)
+            : Math.max(0, Math.trunc(Number(product?.stock_count || 0) || 0));
+
         return {
             ...publicProduct,
+            stock_count: aggregatedStockCount,
             description,
             show_product_description: showProductDescription,
             show_purchase_notes: showPurchaseNotes,
@@ -1036,6 +1198,57 @@ function createShopHandlers({
                 stockBySkuId.set(skuId, (stockBySkuId.get(skuId) || 0) + 1);
             });
 
+            // Also load available stock from supplier mappings & availability
+            // so that supplier-backed products (e.g. Xiareng) display their upstream stock in catalog.
+            try {
+                const { data: mappings, error: mapErr } = await dataSupabase
+                    .from('shop_supplier_product_mappings')
+                    .select('id, product_id, sku_id, import_snapshot')
+                    .in('product_id', normalizedProductIds)
+                    .eq('site', normalizedSite)
+                    .eq('is_enabled', true);
+
+                if (!mapErr && Array.isArray(mappings) && mappings.length) {
+                    const mappingIds = mappings.map((m) => m?.id).filter(Boolean);
+                    if (mappingIds.length) {
+                        const { data: availRows, error: availErr } = await dataSupabase
+                            .from('shop_supplier_availability')
+                            .select('mapping_id, available_quantity, availability_status')
+                            .in('mapping_id', mappingIds);
+
+                        const availByMappingId = new Map(
+                            (!availErr && Array.isArray(availRows) ? availRows : []).map((r) => [r.mapping_id, r])
+                        );
+
+                        mappings.forEach((mapping) => {
+                            const productId = normalizeText(mapping.product_id, 160);
+                            if (!productId) return;
+                            const avail = availByMappingId.get(mapping.id);
+                            let qty = null;
+                            if (avail && avail.available_quantity != null && Number.isFinite(Number(avail.available_quantity))) {
+                                qty = Math.max(0, Math.trunc(Number(avail.available_quantity)));
+                            } else if (mapping.import_snapshot?.availableQuantity != null && Number.isFinite(Number(mapping.import_snapshot.availableQuantity))) {
+                                qty = Math.max(0, Math.trunc(Number(mapping.import_snapshot.availableQuantity)));
+                            }
+                            if (qty === null) return;
+
+                            if (!stockByProductId.has(productId)) {
+                                stockByProductId.set(productId, new Map());
+                            }
+                            const stockBySkuId = stockByProductId.get(productId);
+                            const skuId = normalizeText(mapping.sku_id, 160) || '__default__';
+                            if (!stockBySkuId.has(skuId)) {
+                                stockBySkuId.set(skuId, qty);
+                            } else {
+                                stockBySkuId.set(skuId, Math.max(stockBySkuId.get(skuId), qty));
+                            }
+                        });
+                    }
+                }
+            } catch (_) {
+                // Supplier mappings or availability may not be enabled/present
+            }
+
             return stockByProductId;
         } catch (error) {
             if (
@@ -1058,6 +1271,7 @@ function createShopHandlers({
 
         try {
             const selectAttempts = [
+                'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, inventory_source_sku_ids_intl, manual_delivery, allow_guest_purchase, guest_payment_channels, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order, min_purchase_quantity',
                 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, inventory_source_sku_ids_intl, manual_delivery, allow_guest_purchase, guest_payment_channels, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
                 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, inventory_source_sku_ids_intl, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
                 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
@@ -1080,7 +1294,8 @@ function createShopHandlers({
                     break;
                 }
                 if (
-                    !isMissingColumnError(response.error, 'inventory_sku_id')
+                    !isMissingColumnError(response.error, 'min_purchase_quantity')
+                    && !isMissingColumnError(response.error, 'inventory_sku_id')
                     && !isMissingColumnError(response.error, 'inventory_source_sku_ids')
                     && !isMissingColumnError(response.error, 'inventory_source_sku_ids_intl')
                     && !isMissingColumnError(response.error, 'manual_delivery')
@@ -1128,7 +1343,59 @@ function createShopHandlers({
             }
             throw error;
         }
-        return Array.isArray(data) ? data : [];
+        const categories = Array.isArray(data) ? data : [];
+        for (const row of categories) {
+            const nameLower = String(row.name || '').toLowerCase();
+            const isMisassignedAiIcon = row.icon_url && (
+                row.icon_url.includes('202608282029589417833') ||
+                row.icon_url.includes('202606030325329662693')
+            ) && (nameLower.includes('gemini') || nameLower.includes('claude'));
+
+            if ((!row.icon_url || isMisassignedAiIcon) && row.name) {
+                const seedIcon = matchCategoryIconUrl(row.name);
+                if (seedIcon) row.icon_url = seedIcon;
+            }
+        }
+        // Overlay hierarchy from system_config if available
+        try {
+            let hierarchy = {};
+            try {
+                const { data: configRow } = await dataSupabase
+                    .from('system_config')
+                    .select('config_value')
+                    .eq('config_key', 'shop_category_hierarchy')
+                    .maybeSingle();
+                if (configRow?.config_value && typeof configRow.config_value === 'object') {
+                    hierarchy = configRow.config_value;
+                }
+            } catch (_) {}
+
+            if (!hierarchy || Object.keys(hierarchy).length === 0) {
+                try {
+                    const { data: fallbackRow } = await dataSupabase
+                        .from('system_config')
+                        .select('value')
+                        .eq('key', 'shop_category_hierarchy')
+                        .maybeSingle();
+                    if (fallbackRow?.value && typeof fallbackRow.value === 'object') {
+                        hierarchy = fallbackRow.value;
+                    }
+                } catch (_) {}
+            }
+
+            for (const row of categories) {
+                const h = hierarchy[row.id] || hierarchy[row.name];
+                if (h) {
+                    row.parent_id = row.parent_id || h.parentId || null;
+                    row.parent_name = row.parent_name || h.parentName || null;
+                } else if (!row.parent_id) {
+                    row.parent_id = null;
+                    row.parent_name = null;
+                }
+            }
+        } catch (_) {}
+
+        return categories;
     }
 
     async function loadHomepageShopProducts(dataSupabase, {
@@ -1152,12 +1419,14 @@ function createShopHandlers({
                 'price_points',
                 'price_points_intl',
                 'stock_count',
+                'sales_config',
                 'manual_delivery',
                 'category',
                 'display_order',
                 'is_active',
                 'allow_guest_purchase',
                 'guest_payment_channels',
+                'min_purchase_quantity',
                 'updated_at',
                 'created_at'
             ].join(', '),
@@ -1172,6 +1441,7 @@ function createShopHandlers({
                 'price_points',
                 'price_points_intl',
                 'stock_count',
+                'sales_config',
                 'manual_delivery',
                 'category',
                 'display_order',
@@ -1244,6 +1514,59 @@ function createShopHandlers({
                 'price_points',
                 'price_points_intl',
                 'stock_count',
+                'sales_config',
+                'category',
+                'tags',
+                'display_order',
+                'is_active',
+                'allow_guest_purchase',
+                'guest_payment_channels',
+                'quantity_rules',
+                'quantity_rules_intl',
+                'min_purchase_quantity',
+                'max_purchase_quantity',
+                'manual_delivery',
+                'show_product_description',
+                'show_product_description_intl',
+                'show_purchase_notes',
+                'show_purchase_notes_intl',
+                'purchase_notes',
+                'purchase_notes_zh',
+                'purchase_notes_en',
+                'purchase_notes_intl',
+                'purchase_notes_intl_zh',
+                'show_usage_instructions',
+                'show_usage_instructions_intl',
+                'usage_instructions',
+                'usage_instructions_zh',
+                'usage_instructions_en',
+                'usage_instructions_intl',
+                'usage_instructions_intl_zh',
+                'flash_sale_price',
+                'flash_sale_price_intl',
+                'flash_sale_start',
+                'flash_sale_start_intl',
+                'flash_sale_end',
+                'flash_sale_end_intl',
+                'updated_at',
+                'created_at'
+            ].join(', '),
+            [
+                'id',
+                'name',
+                'name_en',
+                'name_intl',
+                'name_intl_zh',
+                'description',
+                'description_en',
+                'description_intl',
+                'description_intl_zh',
+                'icon_url',
+                'image_assets',
+                'price_points',
+                'price_points_intl',
+                'stock_count',
+                'sales_config',
                 'category',
                 'tags',
                 'display_order',
@@ -1289,11 +1612,15 @@ function createShopHandlers({
                 'price_points',
                 'price_points_intl',
                 'stock_count',
+                'sales_config',
                 'category',
                 'tags',
                 'display_order',
                 'is_active',
+                'allow_guest_purchase',
+                'guest_payment_channels',
                 'quantity_rules',
+                'min_purchase_quantity',
                 'max_purchase_quantity',
                 'manual_delivery',
                 'show_product_description',
@@ -2907,6 +3234,11 @@ function createShopHandlers({
             discountAssetId,
             discountSelections,
             agentId: String(body?.agentId || body?.p_agent_id || '').trim() || null,
+            // Client confirmation flags are never proof of authentication.
+            confirmPassword: typeof (body?.confirmPassword ?? body?.confirm_password) === 'string'
+                ? (body.confirmPassword ?? body.confirm_password) : '',
+            captchaToken: typeof body?.captchaToken === 'string' && body.captchaToken.length <= 4096
+                ? body.captchaToken : '',
             idempotencyKey: String(
                 body?.idempotencyKey
                 || body?.idempotency_key
@@ -2930,6 +3262,8 @@ function createShopHandlers({
         }
 
         const selectAttempts = [
+            'id, is_active, manual_delivery, min_purchase_quantity, max_purchase_quantity',
+            'id, is_active, manual_delivery, max_purchase_quantity',
             'id, is_active, manual_delivery',
             'id, is_active'
         ];
@@ -2959,6 +3293,8 @@ function createShopHandlers({
                 const productManualDelivery = normalizeBoolean(data?.manual_delivery, false);
                 if (normalizedProductSkuId || data?.id) {
                     const skuSelectAttempts = [
+                        'id, product_id, is_active, is_default, manual_delivery, min_purchase_quantity, max_purchase_quantity',
+                        'id, product_id, is_active, is_default, manual_delivery, max_purchase_quantity',
                         'id, product_id, is_active, is_default, manual_delivery',
                         'id, product_id, is_active, is_default'
                     ];
@@ -2985,10 +3321,19 @@ function createShopHandlers({
                                 const hasSkuManualDelivery = skuData
                                     && typeof skuData === 'object'
                                     && Object.prototype.hasOwnProperty.call(skuData, 'manual_delivery');
+                                const minPurchaseQuantity = Math.max(1,
+                                    (Number.isSafeInteger(Number(skuData?.min_purchase_quantity)) && Number(skuData.min_purchase_quantity) > 0 ? Number(skuData.min_purchase_quantity) : null)
+                                    ?? (Number.isSafeInteger(Number(data?.min_purchase_quantity)) && Number(data.min_purchase_quantity) > 0 ? Number(data.min_purchase_quantity) : null)
+                                    ?? 1
+                                );
+                                const maxPurchaseQuantity = (Number.isSafeInteger(Number(skuData?.max_purchase_quantity)) && Number(skuData.max_purchase_quantity) > 0 ? Number(skuData.max_purchase_quantity) : null)
+                                    ?? (Number.isSafeInteger(Number(data?.max_purchase_quantity)) && Number(data.max_purchase_quantity) > 0 ? Number(data.max_purchase_quantity) : null);
                                 return {
                                     manualDelivery: hasSkuManualDelivery
                                         ? normalizeBoolean(skuData?.manual_delivery, false)
                                         : productManualDelivery,
+                                    minPurchaseQuantity,
+                                    maxPurchaseQuantity,
                                     product: data || null,
                                     sku: skuData || null
                                 };
@@ -3149,114 +3494,35 @@ function createShopHandlers({
         return params;
     }
 
-    async function executeMultiDiscountPurchaseRpc({
-        payload,
-        userId,
-        requestSupabase,
-        adminSupabase,
-        fallbackSupabase
-    }) {
-        const clients = [];
-        for (const client of [requestSupabase, adminSupabase, fallbackSupabase]) {
-            if (client?.rpc && !clients.includes(client)) {
-                clients.push(client);
-            }
+    async function executeTrustedPurchaseRpc(adminSupabase, name, params, capabilityRequired) {
+        if (typeof adminSupabase?.rpc !== 'function') {
+            throw Object.assign(new Error('商城购买服务暂时不可用'), { statusCode: 503 });
         }
-
-        if (!clients.length) {
-            const error = new Error('商城购买服务暂时不可用');
-            error.statusCode = 503;
+        // A timeout can occur AFTER commit. Never retry a financial RPC on another client.
+        const { data, error } = await adminSupabase.rpc(name, params);
+        if (error) {
+            if (capabilityRequired && isMissingRpcCapabilityError(error)) {
+                throw Object.assign(new Error('商城购买接口版本不兼容，请检查迁移和 schema cache'), { statusCode: 502 });
+            }
             throw error;
         }
-
-        const params = buildMultiDiscountPurchaseRpcParams(payload, userId);
-        let lastError = null;
-
-        for (const client of clients) {
-            try {
-                const { data, error } = await client.rpc('fn_purchase_shop_item_with_discounts', params);
-                if (error) {
-                    throw error;
-                }
-
-                const rpcPayload = getRpcSingleRow(data);
-                if (rpcPayload) {
-                    return rpcPayload;
-                }
-            } catch (error) {
-                lastError = error;
-            }
+        const result = getRpcSingleRow(data);
+        if (!result || typeof result.success !== 'boolean') {
+            throw Object.assign(new Error('商城购买服务未返回有效结果，请核对原订单'), { statusCode: 502 });
         }
-
-        if (isMissingRpcCapabilityError(lastError)) {
-            const error = new Error('当前数据库尚未启用多券叠加，请先执行最新的 shop discount stacking 迁移');
-            error.statusCode = 503;
-            throw error;
-        }
-
-        if (lastError) {
-            throw lastError;
-        }
-
-        const error = new Error('多券购买服务未返回结果，请检查 fn_purchase_shop_item_with_discounts RPC 配置');
-        error.statusCode = 502;
-        throw error;
+        return result;
     }
 
-    async function executePurchaseRpc({
-        payload,
-        userId,
-        requestSupabase,
-        adminSupabase,
-        fallbackSupabase
-    }) {
-        const clients = [];
-        for (const client of [requestSupabase, adminSupabase, fallbackSupabase]) {
-            if (client?.rpc && !clients.includes(client)) {
-                clients.push(client);
-            }
-        }
+    async function executeMultiDiscountPurchaseRpc({ payload, userId, adminSupabase }) {
+        return executeTrustedPurchaseRpc(adminSupabase, 'fn_purchase_shop_item_with_discounts',
+            buildMultiDiscountPurchaseRpcParams(payload, userId), true);
+    }
 
-        if (!clients.length) {
-            const error = new Error('商城购买服务暂时不可用');
-            error.statusCode = 503;
-            throw error;
-        }
-
-        const params = buildPurchaseRpcParams(payload, userId, {
-            includeDiscountAssetId: Boolean(payload.discountAssetId || payload.productSkuId)
-        });
-        let lastError = null;
-
-        for (const client of clients) {
-            try {
-                const { data, error } = await client.rpc('fn_purchase_shop_item', params);
-                if (error) {
-                    throw error;
-                }
-
-                const rpcPayload = getRpcSingleRow(data);
-                if (rpcPayload) {
-                    return rpcPayload;
-                }
-            } catch (error) {
-                lastError = error;
-            }
-        }
-
-        if ((payload.discountAssetId || payload.productSkuId) && isMissingRpcCapabilityError(lastError)) {
-            const error = new Error('商城购买接口版本不兼容，请检查 fn_purchase_shop_item 迁移和 schema cache');
-            error.statusCode = 502;
-            throw error;
-        }
-
-        if (lastError) {
-            throw lastError;
-        }
-
-        const error = new Error('商城购买服务未返回结果，请检查 fn_purchase_shop_item RPC 配置');
-        error.statusCode = 502;
-        throw error;
+    async function executePurchaseRpc({ payload, userId, adminSupabase }) {
+        return executeTrustedPurchaseRpc(adminSupabase, 'fn_purchase_shop_item',
+            buildPurchaseRpcParams(payload, userId, {
+                includeDiscountAssetId: Boolean(payload.discountAssetId || payload.productSkuId)
+            }), Boolean(payload.discountAssetId || payload.productSkuId));
     }
 
     function normalizeOrderDetailId(body = {}) {
@@ -3503,7 +3769,11 @@ function createShopHandlers({
                 applied_discounts: Array.isArray(order?.discount_snapshot?.applied_discounts)
                     ? order.discount_snapshot.applied_discounts
                     : [],
-                item_count: Math.max(1, Number(order.item_count || items.length || 1) || 1)
+                item_count: Math.max(1, Number(order.item_count || items.length || 1) || 1),
+                delivery_status: (supplierDelivery ? (supplierDelivery.status === 'delivered' ? 'delivered' : 'pending') : order.delivery_status) || (items.some((i) => i.content) ? 'delivered' : 'pending'),
+                fulfillment_source: order.fulfillment_source || 'inventory',
+                refund_status: order.refund_status || null,
+                status: order.status || 'completed'
             },
             items,
             guidance: {
@@ -4512,11 +4782,35 @@ function createShopHandlers({
                     });
                 }
 
-                const data = await loadProductGuidance(dataSupabase, {
-                    productId,
-                    site: currentSite,
-                    language
-                });
+                const [data, supplierSync] = await Promise.all([
+                    loadProductGuidance(dataSupabase, {
+                        productId,
+                        site: currentSite,
+                        language
+                    }),
+                    syncSupplierProductStock(dataSupabase, {
+                        productId,
+                        site: currentSite,
+                        maxAgeMs: DEFAULT_DETAIL_TTL_MS,
+                        env
+                    })
+                ]);
+
+                if (supplierSync?.isSupplierProduct) {
+                    data.stock_count = supplierSync.stockCount;
+                    data.sku_stock_map = supplierSync.skuStockMap;
+                    if (supplierSync.priceCny != null) {
+                        data.price_cny = supplierSync.priceCny;
+                        if (site === 'intl') {
+                            data.price_points_intl = supplierSync.priceCny;
+                        } else {
+                            data.price_points = supplierSync.priceCny;
+                        }
+                    }
+                    if (supplierSync.skuPriceMap && Object.keys(supplierSync.skuPriceMap).length > 0) {
+                        data.sku_price_map = supplierSync.skuPriceMap;
+                    }
+                }
 
                 return sendJson(res, 200, {
                     success: true,
@@ -4550,6 +4844,25 @@ function createShopHandlers({
             }
             setPrivateApiCache(res);
 
+            if (env.ENABLE_CSRF_PROTECTION === 'true') {
+                let originCheck;
+                try {
+                    const originValidator = isAllowedRequestOrigin || require('../../../api/_lib/request-security').isAllowedRequestOrigin;
+                    originCheck = typeof originValidator === 'function' ? originValidator(req, { env }) : null;
+                } catch (_) { originCheck = null; }
+                if (!originCheck || typeof originCheck.allowed !== 'boolean') {
+                    return respond(503, { success: false, code: 'csrf_check_unavailable',
+                        message: '暂时无法完成请求来源校验，请稍后重试', purchaseNotStarted: true });
+                }
+                if (!originCheck.allowed) {
+                        return respond(403, {
+                            success: false,
+                            code: 'csrf_origin_rejected',
+                            message: '跨站请求伪造防护已拦截该请求'
+                        }, { clientIp: resolveClientIp(req, { env }) || 'unknown' });
+                }
+            }
+
             const adminSupabase = getOptionalSupabaseAdmin();
             const clientIp = resolveClientIp(req, { env }) || 'unknown';
             const ipRateLimitStartedAt = Date.now();
@@ -4568,6 +4881,21 @@ function createShopHandlers({
                     message: '商城购买请求过于频繁，请稍后重试',
                     retry_after_seconds: ipRateLimit.retryAfterSeconds
                 });
+            }
+
+            if (env.ENABLE_PURCHASE_IP_BLOCKLIST_CHECK === 'true') {
+                try {
+                    if (!adminSupabase?.rpc || clientIp === 'unknown') throw new Error('unavailable');
+                    const { data, error } = await adminSupabase.rpc('check_ip_blacklisted', { client_ip: clientIp });
+                    if (error || typeof data?.blocked !== 'boolean') throw new Error('unavailable');
+                    if (data.blocked) {
+                        return respond(403, { success: false, code: 'ip_blocked',
+                            message: '当前 IP 地址受限，已被系统拦截' });
+                    }
+                } catch (_) {
+                    return respond(503, { success: false, code: 'ip_blocklist_unavailable',
+                        message: '安全检查暂时不可用，请稍后重试', purchaseNotStarted: true });
+                }
             }
 
             try {
@@ -4643,6 +4971,26 @@ function createShopHandlers({
                 const availabilityClient = requestAdminSupabase || adminSupabase || supabase;
                 const purchaseAvailability = await loadShopProductPurchaseAvailability(availabilityClient, payload.productId, payload.productSkuId);
                 recordServerTimingPhase(timingTracker, 'shop-purchase-availability', availabilityStartedAt);
+                if (purchaseAvailability.minPurchaseQuantity > 1 && payload.quantity < purchaseAvailability.minPurchaseQuantity) {
+                    return respond(400, {
+                        success: false,
+                        code: 'minimum_quantity_not_met',
+                        message: `该商品最少需购买 ${purchaseAvailability.minPurchaseQuantity} 件`
+                    }, {
+                        userId: user.id,
+                        productId: payload.productId
+                    });
+                }
+                if (purchaseAvailability.maxPurchaseQuantity > 0 && payload.quantity > purchaseAvailability.maxPurchaseQuantity) {
+                    return respond(400, {
+                        success: false,
+                        code: 'maximum_quantity_exceeded',
+                        message: `该商品单笔最多购买 ${purchaseAvailability.maxPurchaseQuantity} 件`
+                    }, {
+                        userId: user.id,
+                        productId: payload.productId
+                    });
+                }
                 if (purchaseAvailability.manualDelivery === true) {
                     return respond(409, {
                         success: false,
@@ -4654,6 +5002,58 @@ function createShopHandlers({
                     });
                 }
 
+                const configuredThreshold = Number(env.SHOP_HIGH_VALUE_THRESHOLD_QUANTITY || 20);
+                const highValueThreshold = Number.isSafeInteger(configuredThreshold) && configuredThreshold > 0
+                    ? configuredThreshold : 20;
+                const requiresQuantityStepUp = env.ENABLE_HIGH_VALUE_STEP_UP_VERIFICATION === 'true'
+                    && payload.quantity >= highValueThreshold;
+                const sessionSecurity = require('../../../api/_lib/session-security');
+                const sessionRisk = env.ENABLE_SESSION_ANOMALY_DETECTION === 'true'
+                    ? sessionSecurity.detectSessionAnomaly(req, user, { env }) : null;
+                const requiresSessionStepUp = sessionRisk?.anomalyDetected && sessionRisk.riskScore >= 70;
+                if (requiresQuantityStepUp || requiresSessionStepUp) {
+                    if (!payload.confirmPassword) {
+                        return respond(403, {
+                            success: false,
+                            code: requiresSessionStepUp ? 'session_anomaly_detected' : 'step_up_confirmation_required',
+                            message: '本次购买需要输入登录密码进行安全二次验证',
+                            requiresConfirmation: true,
+                            purchaseNotStarted: true
+                        }, { userId: user.id, productId: payload.productId });
+                    }
+                    const verificationLimit = await takeRateLimitToken({
+                        supabase: requestAdminSupabase || adminSupabase,
+                        key: `shop-step-up:user:${user.id}`,
+                        limit: 5, windowMs: 60_000, requirePersistent: true, env
+                    });
+                    if (!verificationLimit || verificationLimit.unavailable || typeof verificationLimit.allowed !== 'boolean') {
+                        return respond(503, { success: false, code: 'step_up_unavailable',
+                            message: '暂时无法完成安全二次验证，请稍后重试', purchaseNotStarted: true });
+                    }
+                    if (!verificationLimit.allowed) {
+                        return respond(429, {
+                            success: false, code: 'step_up_rate_limited',
+                            message: '密码验证过于频繁，请稍后重试', purchaseNotStarted: true,
+                            retry_after_seconds: verificationLimit.retryAfterSeconds
+                        });
+                    }
+                    const { verifyPurchasePassword } = require('../../../api/_lib/purchase-step-up');
+                    const verification = await verifyPurchasePassword({
+                        user, password: payload.confirmPassword, captchaToken: payload.captchaToken,
+                        createClient: createSupabasePasswordVerificationClient
+                    });
+                    if (!verification.ok) {
+                        return respond(verification.status, {
+                            success: false, code: verification.code, purchaseNotStarted: true,
+                            message: verification.status === 401 ? '安全二次验证失败：登录密码错误'
+                                : '暂时无法完成安全二次验证，请稍后重试'
+                        });
+                    }
+                    if (requiresSessionStepUp) {
+                        sessionSecurity.recordSessionReauthentication(user.id, sessionSecurity.extractClientFingerprint(req, { env }));
+                    }
+                }
+
                 const supplierSource = await supplierCheckoutV2.resolveSupplierSource(
                     requestAdminSupabase || adminSupabase, payload, env
                 );
@@ -4662,6 +5062,37 @@ function createShopHandlers({
                     && (!['local', 'supplier_v2'].includes(body.recoverySource)
                         || body.recoverySource !== (supplierSource ? 'supplier_v2' : 'local'))) {
                     return respond(409, { success: false, code: 'purchase_source_changed', message: '商品供货方式已更新，请重新核对订单' });
+                }
+
+                if (supplierSource) {
+                    const supplierStockCheck = await syncSupplierProductStock(requestAdminSupabase || adminSupabase, {
+                        productId: supplierSource.productId,
+                        skuId: supplierSource.skuId,
+                        site: payload.site || 'cn',
+                        maxAgeMs: DEFAULT_CHECKOUT_TTL_MS,
+                        checkCostCeiling: true,
+                        env
+                    });
+                    if (supplierStockCheck?.costExceeded === true) {
+                        return respond(409, {
+                            success: false,
+                            code: 'supplier_cost_ceiling_exceeded',
+                            message: '该商品上游采购价已超过后台设定的单价上限，暂不可购买'
+                        }, {
+                            userId: user.id,
+                            productId: payload.productId
+                        });
+                    }
+                    if (supplierStockCheck?.isSupplierProduct && supplierStockCheck.stockCount < 1) {
+                        return respond(409, {
+                            success: false,
+                            code: 'out_of_stock',
+                            message: '手慢了，该商品上游库存刚刚售罄'
+                        }, {
+                            userId: user.id,
+                            productId: payload.productId
+                        });
+                    }
                 }
                 const idempotencyFingerprint = buildIdempotencyFingerprint({
                     userId: user.id,
@@ -4695,11 +5126,53 @@ function createShopHandlers({
                         recordServerTimingPhase(timingTracker, 'shop-purchase-idempotency', idempotencyStartedAt);
                     }
                 })();
+                const globalRateLimitMax = Number(env.SHOP_PURCHASE_GLOBAL_RATE_LIMIT_MAX || 0);
+                const globalBreakerStartedAt = Date.now();
+                const globalBreakerPromise = (async () => {
+                    if (globalRateLimitMax <= 0) return { allowed: true };
+                    try {
+                        return await takeRateLimitToken({
+                            supabase: adminSupabase,
+                            key: 'shop-purchase:global-safety-breaker',
+                            limit: globalRateLimitMax,
+                            windowMs: Math.max(10_000, Number(env.SHOP_PURCHASE_GLOBAL_RATE_LIMIT_WINDOW_MS || 60_000))
+                        });
+                    } finally {
+                        recordServerTimingPhase(timingTracker, 'shop-purchase-globallimit', globalBreakerStartedAt);
+                    }
+                })();
                 const [userRateLimit, idempotencyResult] = await Promise.all([
                     userRateLimitPromise,
                     idempotencyPromise
                 ]);
+                const globalBreakerResult = await globalBreakerPromise;
                 applyRateLimitHeaders(res, userRateLimit);
+                if (globalBreakerResult && !globalBreakerResult.allowed) {
+                    if (adminSupabase && typeof enqueueOpsAlertJob === 'function') {
+                        enqueueOpsAlertJob(adminSupabase, {
+                            alertType: 'shop_global_circuit_breaker_tripped',
+                            title: '[高危防护] 商城出库全局断路器已触发',
+                            content: `商城全局出库保护断路器已被触发，系统已自动拦截突发高频出单请求。当前请求 IP: ${clientIp}, 用户: ${user.id}, 商品: ${payload.productId}。`,
+                            severity: 'critical',
+                            payload: {
+                                clientIp,
+                                userId: user.id,
+                                productId: payload.productId,
+                                retryAfterSeconds: globalBreakerResult.retryAfterSeconds || 60
+                            }
+                        }, { env }).catch(() => {});
+                    }
+
+                    return respond(429, {
+                        success: false,
+                        code: 'global_rate_limited',
+                        message: '商城当前出单并发过高，系统防护已触发，请稍后重试',
+                        retry_after_seconds: globalBreakerResult.retryAfterSeconds || 60
+                    }, {
+                        userId: user.id,
+                        productId: payload.productId
+                    });
+                }
                 if (!userRateLimit.allowed) {
                     return respond(429, {
                         success: false,
@@ -4737,16 +5210,12 @@ function createShopHandlers({
                         ? await executeMultiDiscountPurchaseRpc({
                             payload,
                             userId: user.id,
-                            requestSupabase,
-                            adminSupabase,
-                            fallbackSupabase: supabase
+                            adminSupabase: requestAdminSupabase || adminSupabase
                         })
                         : await executePurchaseRpc({
                             payload,
                             userId: user.id,
-                            requestSupabase,
-                            adminSupabase,
-                            fallbackSupabase: supabase
+                            adminSupabase: requestAdminSupabase || adminSupabase
                         });
                 } finally {
                     recordServerTimingPhase(timingTracker, rpcPhaseName, rpcStartedAt);
@@ -4858,12 +5327,18 @@ function createShopHandlers({
                     message: error.message || '兑换失败'
                 });
             }
-        }
+        },
+        attachPublicShopProductSales,
+        calculateProductDisplaySales
     };
 }
 
 module.exports = {
     createShopHandlers,
     loadProductGuidanceRow,
-    buildProductGuidancePayload
+    buildProductGuidancePayload,
+    calculateProductDisplaySales,
+    getDeterministicDailyRandom,
+    getDaysBetweenCstDates,
+    stringToHash
 };

@@ -1,0 +1,62 @@
+
+ RUN  v4.1.9 /Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt
+
+ ❯ test/recharge-ui.test.js (18 tests | 2 failed | 16 skipped) 1927ms
+     ↓ keeps mobile inputs at a non-zooming size and disables page scaling
+     ↓ keeps the AI recharge action visible when the mobile keyboard reduces the viewport
+     × keeps the native-height mobile card bottom-aligned and smoothly recenters after the keyboard closes 908ms
+     × freezes the card while the mobile keyboard retracts through intermediate viewport heights 741ms
+     ↓ does not force the mobile page back to scroll position zero during focus handling
+     ↓ collapses the Session status and card together on desktop
+     ↓ collapses the Session status and card together on compact desktop
+     ↓ collapses the Session status and card together on mobile
+     ↓ honors reduced motion when dismissing the Session status
+     ↓ cancels the status entrance morph when recharge starts immediately
+     ↓ plays the circular check, morphs the card, animates both tabs and resets cleanly
+     ↓ receives real message shapes, protects uncertain payments, and routes CAPTCHA independently
+     ↓ fits a narrow viewport in light mode and shows a working scroll hint
+     ↓ fits a narrow viewport in dark mode and shows a working scroll hint
+     ↓ restores the progress completion animation and success expansion
+     ↓ prevents progress from shrinking backwards when an initial snapshot is received
+     ↓ centers step 1 cleanly after reset and does not push card into dynamic island when reopening keyboard
+     ↓ keeps step 2 card stable, un-squished, and comfortably above keyboard even when visualViewport pans
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/recharge-ui.test.js > restored recharge user interactions with all external effects mocked > keeps the native-height mobile card bottom-aligned and smoothly recenters after the keyboard closes
+AssertionError: expected 153.71151733398438 to be less than 50
+ ❯ test/recharge-ui.test.js:186:38
+    184|                 return restoreDirection > 0 ? top < previous - 1 : top…
+    185|             });
+    186|             expect(largestFrameMove).toBeLessThan(50);
+       |                                      ^
+    187|             expect(reverseFrames).toHaveLength(0);
+    188|             expect(restoredTop).toBeGreaterThan(100);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/recharge-ui.test.js > restored recharge user interactions with all external effects mocked > freezes the card while the mobile keyboard retracts through intermediate viewport heights
+AssertionError: expected [ 215.6873016357422, …(1) ] to have a length of +0 but got 2
+
+- Expected
++ Received
+
+- 0
++ 2
+
+ ❯ test/recharge-ui.test.js:225:35
+    223|                 return direction > 0 ? top < previous - 1 : top > prev…
+    224|             });
+    225|             expect(reverseFrames).toHaveLength(0);
+       |                                   ^
+    226|             expect(Math.max(...tops.slice(1).map((top, index) => Math.…
+    227|             expect(await f.page.locator('.page-shell').evaluate(shell …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 16 skipped (18)
+   Start at  21:39:29
+   Duration  2.29s (transform 25ms, setup 0ms, import 208ms, tests 1.93s, environment 0ms)
+

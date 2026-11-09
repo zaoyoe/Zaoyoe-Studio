@@ -1,0 +1,38 @@
+[
+  {
+    "file": "services/kc-pay-gpt/mysql-store.js",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "file": "services/kc-pay-gpt/server.js",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "file": "services/kc-pay-gpt/test/recharge-routing.test.js",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "file": "services/kc-pay-gpt/test/local-preview-recovery.test.js",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "file": "tests/security-round2-kc-activation.test.js",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "file": "tests/security-round3-kc-activation-atomic.test.js",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

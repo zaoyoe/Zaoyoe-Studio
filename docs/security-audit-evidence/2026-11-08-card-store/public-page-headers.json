@@ -1,0 +1,72 @@
+{
+  "method": "anonymous GET of public page only, discard response bodies; allowlisted response headers only",
+  "results": [
+    {
+      "url": "https://www.fatherkey.com/",
+      "observedAt": "2026-11-08T08:36:54.973200+00:00",
+      "exitCode": 0,
+      "hops": [
+        {
+          "status": "HTTP/2 200 ",
+          "headers": {
+            "content-type": "text/html; charset=utf-8",
+            "content-security-policy": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.sheetjs.com https://accounts.google.com https://www.gstatic.com; script-src-elem 'self' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.sheetjs.com https://accounts.google.com https://www.gstatic.com; script-src-attr 'none'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://verify-api.fatherkey.com https://ipinfo.io https://ipwho.is https://ipapi.co https://api.ipify.org https://api.qrserver.com https://accounts.google.com https://api.emailjs.com; frame-src https://accounts.google.com;",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "referrer-policy": "strict-origin-when-cross-origin",
+            "server": "cloudflare",
+            "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY"
+          }
+        }
+      ],
+      "error": ""
+    },
+    {
+      "url": "https://redeem.fatherkey.com/",
+      "observedAt": "2026-11-08T08:36:55.298146+00:00",
+      "exitCode": 0,
+      "hops": [
+        {
+          "status": "HTTP/2 200 ",
+          "headers": {
+            "content-type": "text/html; charset=UTF-8",
+            "server": "cloudflare",
+            "x-powered-by": "Express"
+          }
+        }
+      ],
+      "error": ""
+    },
+    {
+      "url": "https://tg.fatherkey.com/",
+      "observedAt": "2026-11-08T08:36:52.584254+00:00",
+      "exitCode": 0,
+      "hops": [
+        {
+          "status": "HTTP/2 307 ",
+          "headers": {
+            "content-type": "text/plain",
+            "location": "/tg",
+            "server": "Vercel",
+            "strict-transport-security": "max-age=63072000"
+          }
+        },
+        {
+          "status": "HTTP/2 200 ",
+          "headers": {
+            "content-security-policy": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.sheetjs.com https://accounts.google.com https://www.gstatic.com; script-src-elem 'self' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.sheetjs.com https://accounts.google.com https://www.gstatic.com; script-src-attr 'none'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://verify-api.fatherkey.com https://ipinfo.io https://ipwho.is https://ipapi.co https://api.ipify.org https://api.qrserver.com https://accounts.google.com https://api.emailjs.com; frame-src https://accounts.google.com;",
+            "content-type": "text/html; charset=utf-8",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "referrer-policy": "no-referrer",
+            "server": "Vercel",
+            "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY"
+          }
+        }
+      ],
+      "error": ""
+    }
+  ]
+}

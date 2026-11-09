@@ -1,0 +1,476 @@
+TAP version 13
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Duplicate webhook ignored: zpay:ZP123:TRADE-1:TRADE_SUCCESS
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook blocked due to IP allowlist mismatch: {"host":"www.fatherkey.com","forwarding_headers":{"x-forwarded-for":"198.51.100.22"},"socket_ip":"10.0.0.2","forwarded_ips":["198.51.100.22"],"resolved_client_ip":"198.51.100.22","trusted_proxies":["10.0.0.0/8"],"trust_all_proxies":false,"direct_peer_trusted":true,"direct_peer_trust_reason":"configured_trusted_proxy","used_forwarded_chain":true,"allowlist_rules":["203.0.113.10"],"allowlist_configured":true,"would_pass_allowlist":false}
+# [ZPAY] Webhook received
+# [ZPAY] Webhook received
+# [ZPAY] Webhook received
+# [ZPAY] Active order verification is not paid yet: pending
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook received
+# [ZPAY] Webhook received
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# [ZPAY] Webhook received
+# [ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification
+# Subtest: zpay webhook uses strict verification mode when production source allowlist is missing
+ok 1 - zpay webhook uses strict verification mode when production source allowlist is missing
+  ---
+  duration_ms: 15.931625
+  type: 'test'
+  ...
+# Subtest: zpay webhook ignores a duplicate event key before crediting points
+ok 2 - zpay webhook ignores a duplicate event key before crediting points
+  ---
+  duration_ms: 1.804292
+  type: 'test'
+  ...
+# Subtest: zpay webhook without source allowlist still rejects invalid signatures before active query
+ok 3 - zpay webhook without source allowlist still rejects invalid signatures before active query
+  ---
+  duration_ms: 0.58675
+  type: 'test'
+  ...
+# Subtest: zpay webhook rejects requests outside the configured source IP allowlist
+ok 4 - zpay webhook rejects requests outside the configured source IP allowlist
+  ---
+  duration_ms: 0.336958
+  type: 'test'
+  ...
+# Subtest: zpay webhook accepts signed GET callbacks through the shared handler
+ok 5 - zpay webhook accepts signed GET callbacks through the shared handler
+  ---
+  duration_ms: 0.686125
+  type: 'test'
+  ...
+# Subtest: zpay webhook ignores internal public-route query params before signature verification
+ok 6 - zpay webhook ignores internal public-route query params before signature verification
+  ---
+  duration_ms: 0.704584
+  type: 'test'
+  ...
+# Subtest: zpay webhook does not credit points when active query reports a non-paid order
+ok 7 - zpay webhook does not credit points when active query reports a non-paid order
+  ---
+  duration_ms: 0.828542
+  type: 'test'
+  ...
+# Subtest: zpay incomplete active query (paidAmount) remains retryable without credit
+ok 8 - zpay incomplete active query (paidAmount) remains retryable without credit
+  ---
+  duration_ms: 0.376166
+  type: 'test'
+  ...
+# Subtest: zpay incomplete active query (providerOrderNo) remains retryable without credit
+ok 9 - zpay incomplete active query (providerOrderNo) remains retryable without credit
+  ---
+  duration_ms: 0.925167
+  type: 'test'
+  ...
+# Subtest: zpay incomplete active query (tradeNo) remains retryable without credit
+ok 10 - zpay incomplete active query (tradeNo) remains retryable without credit
+  ---
+  duration_ms: 0.367333
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=0.01 notice=0.01 query=0.01
+ok 11 - zpay webhook exact-cent check expected=0.01 notice=0.01 query=0.01
+  ---
+  duration_ms: 0.410708
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=12.33 query=12.34
+ok 12 - zpay webhook exact-cent check expected=12.34 notice=12.33 query=12.34
+  ---
+  duration_ms: 0.251875
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=12.34 query=12.33
+ok 13 - zpay webhook exact-cent check expected=12.34 notice=12.34 query=12.33
+  ---
+  duration_ms: 0.293042
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=12.3401 query=12.34
+ok 14 - zpay webhook exact-cent check expected=12.34 notice=12.3401 query=12.34
+  ---
+  duration_ms: 0.265375
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=12.34 query=12.3401
+ok 15 - zpay webhook exact-cent check expected=12.34 notice=12.34 query=12.3401
+  ---
+  duration_ms: 0.228041
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=0 query=12.34
+ok 16 - zpay webhook exact-cent check expected=12.34 notice=0 query=12.34
+  ---
+  duration_ms: 0.219917
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice= query=12.34
+ok 17 - zpay webhook exact-cent check expected=12.34 notice= query=12.34
+  ---
+  duration_ms: 0.208209
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=-12.34 query=12.34
+ok 18 - zpay webhook exact-cent check expected=12.34 notice=-12.34 query=12.34
+  ---
+  duration_ms: 0.209083
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=NaN query=12.34
+ok 19 - zpay webhook exact-cent check expected=12.34 notice=NaN query=12.34
+  ---
+  duration_ms: 0.190208
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=12.34 query=0
+ok 20 - zpay webhook exact-cent check expected=12.34 notice=12.34 query=0
+  ---
+  duration_ms: 0.190292
+  type: 'test'
+  ...
+# Subtest: zpay webhook exact-cent check expected=12.34 notice=12.34 query=null
+ok 21 - zpay webhook exact-cent check expected=12.34 notice=12.34 query=null
+  ---
+  duration_ms: 0.187833
+  type: 'test'
+  ...
+# Subtest: zpay refundOrder treats empty refund responses as success when follow-up query confirms refunded
+ok 22 - zpay refundOrder treats empty refund responses as success when follow-up query confirms refunded
+  ---
+  duration_ms: 14.327042
+  type: 'test'
+  ...
+# Subtest: zpay refundOrder keeps the request fail-closed when follow-up polling still shows paid
+ok 23 - zpay refundOrder keeps the request fail-closed when follow-up polling still shows paid
+  ---
+  duration_ms: 1.398084
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 0.01
+ok 24 - zpay real adapter preserves exact cents or rejects invalid money 0.01
+  ---
+  duration_ms: 0.581125
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 12.34
+ok 25 - zpay real adapter preserves exact cents or rejects invalid money 12.34
+  ---
+  duration_ms: 0.28725
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 12.34
+ok 26 - zpay real adapter preserves exact cents or rejects invalid money 12.34
+  ---
+  duration_ms: 0.266083
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 12.33
+ok 27 - zpay real adapter preserves exact cents or rejects invalid money 12.33
+  ---
+  duration_ms: 0.274916
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 12.3401
+ok 28 - zpay real adapter preserves exact cents or rejects invalid money 12.3401
+  ---
+  duration_ms: 0.264958
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 12.3401
+ok 29 - zpay real adapter preserves exact cents or rejects invalid money 12.3401
+  ---
+  duration_ms: 0.398542
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 0
+ok 30 - zpay real adapter preserves exact cents or rejects invalid money 0
+  ---
+  duration_ms: 0.403791
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 0
+ok 31 - zpay real adapter preserves exact cents or rejects invalid money 0
+  ---
+  duration_ms: 0.382458
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 
+ok 32 - zpay real adapter preserves exact cents or rejects invalid money 
+  ---
+  duration_ms: 0.2565
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money null
+ok 33 - zpay real adapter preserves exact cents or rejects invalid money null
+  ---
+  duration_ms: 0.2345
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money undefined
+ok 34 - zpay real adapter preserves exact cents or rejects invalid money undefined
+  ---
+  duration_ms: 0.237584
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money NaN
+ok 35 - zpay real adapter preserves exact cents or rejects invalid money NaN
+  ---
+  duration_ms: 0.214792
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money NaN
+ok 36 - zpay real adapter preserves exact cents or rejects invalid money NaN
+  ---
+  duration_ms: 0.196834
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money Infinity
+ok 37 - zpay real adapter preserves exact cents or rejects invalid money Infinity
+  ---
+  duration_ms: 0.18875
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money -0.01
+ok 38 - zpay real adapter preserves exact cents or rejects invalid money -0.01
+  ---
+  duration_ms: 1.197625
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 1e2
+ok 39 - zpay real adapter preserves exact cents or rejects invalid money 1e2
+  ---
+  duration_ms: 0.655625
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money true
+ok 40 - zpay real adapter preserves exact cents or rejects invalid money true
+  ---
+  duration_ms: 0.382167
+  type: 'test'
+  ...
+# Subtest: zpay real adapter preserves exact cents or rejects invalid money 9007199254740992
+ok 41 - zpay real adapter preserves exact cents or rejects invalid money 9007199254740992
+  ---
+  duration_ms: 0.220625
+  type: 'test'
+  ...
+# Subtest: zpay real adapter does not substitute requested out_trade_no for missing gateway evidence
+ok 42 - zpay real adapter does not substitute requested out_trade_no for missing gateway evidence
+  ---
+  duration_ms: 0.346166
+  type: 'test'
+  ...
+# Subtest: zpay real adapter does not substitute requested trade_no for missing gateway evidence
+ok 43 - zpay real adapter does not substitute requested trade_no for missing gateway evidence
+  ---
+  duration_ms: 0.216541
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: minimum cent string
+ok 44 - zpay exact amount: minimum cent string
+  ---
+  duration_ms: 1.187834
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: minimum cent number
+ok 45 - zpay exact amount: minimum cent number
+  ---
+  duration_ms: 0.062042
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: ordinary decimal string
+ok 46 - zpay exact amount: ordinary decimal string
+  ---
+  duration_ms: 0.045
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: ordinary decimal number
+ok 47 - zpay exact amount: ordinary decimal number
+  ---
+  duration_ms: 0.052458
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: binary multiplication residue
+ok 48 - zpay exact amount: binary multiplication residue
+  ---
+  duration_ms: 0.0535
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: whole units
+ok 49 - zpay exact amount: whole units
+  ---
+  duration_ms: 0.039875
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: one decimal place
+ok 50 - zpay exact amount: one decimal place
+  ---
+  duration_ms: 0.051042
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: leading zeros and outer whitespace
+ok 51 - zpay exact amount: leading zeros and outer whitespace
+  ---
+  duration_ms: 0.149833
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: extremely long leading zeros
+ok 52 - zpay exact amount: extremely long leading zeros
+  ---
+  duration_ms: 0.092583
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: exact large decimal
+ok 53 - zpay exact amount: exact large decimal
+  ---
+  duration_ms: 0.830375
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: large decimal lost by numeric forwarding
+ok 54 - zpay exact amount: large decimal lost by numeric forwarding
+  ---
+  duration_ms: 0.074917
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: unsafe cents
+ok 55 - zpay exact amount: unsafe cents
+  ---
+  duration_ms: 0.054166
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: oversized integer
+ok 56 - zpay exact amount: oversized integer
+  ---
+  duration_ms: 0.029084
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: zero number
+ok 57 - zpay exact amount: zero number
+  ---
+  duration_ms: 0.054375
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: zero string
+ok 58 - zpay exact amount: zero string
+  ---
+  duration_ms: 0.039292
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: sub-cent positive number
+ok 59 - zpay exact amount: sub-cent positive number
+  ---
+  duration_ms: 0.0235
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: sub-cent string
+ok 60 - zpay exact amount: sub-cent string
+  ---
+  duration_ms: 0.033542
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: extra decimal precision
+ok 61 - zpay exact amount: extra decimal precision
+  ---
+  duration_ms: 0.053708
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: extra number precision
+ok 62 - zpay exact amount: extra number precision
+  ---
+  duration_ms: 0.060875
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: arithmetic residue fails closed
+ok 63 - zpay exact amount: arithmetic residue fails closed
+  ---
+  duration_ms: 0.03175
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: scientific string
+ok 64 - zpay exact amount: scientific string
+  ---
+  duration_ms: 0.024292
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: negative amount
+ok 65 - zpay exact amount: negative amount
+  ---
+  duration_ms: 0.020583
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: boolean
+ok 66 - zpay exact amount: boolean
+  ---
+  duration_ms: 0.059083
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: missing amount
+ok 67 - zpay exact amount: missing amount
+  ---
+  duration_ms: 0.023917
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: non-finite amount
+ok 68 - zpay exact amount: non-finite amount
+  ---
+  duration_ms: 0.028666
+  type: 'test'
+  ...
+# Subtest: zpay exact amount: not-a-number
+ok 69 - zpay exact amount: not-a-number
+  ---
+  duration_ms: 0.0205
+  type: 'test'
+  ...
+# Subtest: zpay compares cents without collapsing adjacent large amounts
+ok 70 - zpay compares cents without collapsing adjacent large amounts
+  ---
+  duration_ms: 0.053208
+  type: 'test'
+  ...
+# Subtest: every accepted string survives the adapter numeric amount representation
+ok 71 - every accepted string survives the adapter numeric amount representation
+  ---
+  duration_ms: 0.048792
+  type: 'test'
+  ...
+1..71
+# tests 71
+# suites 0
+# pass 71
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 134.978167

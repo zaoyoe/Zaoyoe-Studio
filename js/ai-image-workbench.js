@@ -16,6 +16,8 @@
     const RELOADABLE_BILLING_RECORD_MIN_AGE_MS = 5 * 60 * 1000;
     const INCOMPLETE_SUCCEEDED_IMAGE_RESULT_GRACE_MS = 5 * 60 * 1000;
     const MAX_REFERENCE_IMAGE_INPUTS = 16;
+    const MAX_MEDIA_REFERENCE_INPUTS = 50;
+    const mediaVideoResumeInFlight = new Set();
     const MAX_REFERENCE_IMAGE_FILE_BYTES = 12 * 1024 * 1024;
     const MAX_VIDEO_REFERENCE_IMAGE_INPUTS = 4;
     const MAX_CHAT_ATTACHMENT_COUNT = 8;
@@ -146,6 +148,13 @@
         videoAudio: 'true',
         videoWatermark: 'false',
         videoCameraFixed: 'false',
+        outputFormat: 'png',
+        frameCount: 9,
+        frameDurationMs: 200,
+        referenceVideos: [],
+        referenceAudios: [],
+        firstImageUrl: '',
+        lastImageUrl: '',
         model: 'gpt-image',
         quantity: 2,
         prompt: '',
@@ -336,6 +345,8 @@
     const VIDEO_RESOLUTION_META = Object.freeze({
         '480p': { label: '480p', hint: 'Seedance 官方视频分辨率' },
         '720p': { label: '720p', hint: 'Seedance 2.0 / 1.5 Pro 官方默认' },
+        '768p': { label: '768P', hint: '按所选模型支持的档位生成' },
+        '2k': { label: '2K', hint: '按所选模型支持的档位生成' },
         '1080p': { label: '1080p', hint: 'Seedance 2.0 Fast / Mini 不支持' },
         '4k': { label: '4k', hint: '仅 Seedance 2.0 支持' }
     });
@@ -429,6 +440,7 @@
     let selectedHistoryTaskIds = new Set();
     let seenTaskIds = new Set();
     let openHistoryAccentMenu = false;
+    const expandedPromptTaskIds = new Set();
     let currentAuthSession = null;
     const loadedImageUrls = new Set();
     const failedImageUrls = new Set();
@@ -1122,7 +1134,7 @@
                 seen.add(item.image);
                 return true;
             })
-            .slice(0, MAX_REFERENCE_IMAGE_INPUTS);
+            .slice(0, MAX_MEDIA_REFERENCE_INPUTS);
     }
 
     function normalizeChatAttachmentItem(value = null) {
@@ -1265,7 +1277,8 @@
             vendorLabel,
             vendor,
             protocol,
-            supportsImageInput
+            supportsImageInput,
+            mediaCapability: item.mediaCapability || fallbackProvider.mediaCapabilities?.[id] || null
         };
     }
 
@@ -2312,6 +2325,13 @@
                 videoAudio: state.videoAudio,
                 videoWatermark: state.videoWatermark,
                 videoCameraFixed: state.videoCameraFixed,
+                outputFormat: state.outputFormat,
+                frameCount: state.frameCount,
+                frameDurationMs: state.frameDurationMs,
+                referenceVideos: state.referenceVideos,
+                referenceAudios: state.referenceAudios,
+                firstImageUrl: state.firstImageUrl,
+                lastImageUrl: state.lastImageUrl,
                 model: state.model,
                 quantity: state.quantity,
                 prompt: '',
@@ -2319,7 +2339,7 @@
                 referenceTitle: state.referenceTitle,
                 referenceIntent: state.referenceIntent,
                 referenceImages: state.referenceImages,
-                continuationImage: state.continuationImage
+                continuationImage: null
             };
             global.localStorage?.setItem(STORAGE_KEY, JSON.stringify(serializable));
             persistUserScopedState();
@@ -2455,14 +2475,21 @@
         state.resolution = RESOLUTION_META[stored.resolution] ? stored.resolution : '1k';
         state.videoRatio = VIDEO_RATIO_META[stored.videoRatio || stored.video_ratio] ? (stored.videoRatio || stored.video_ratio) : DEFAULT_STATE.videoRatio;
         state.videoResolution = VIDEO_RESOLUTION_META[stored.videoResolution || stored.video_resolution] ? (stored.videoResolution || stored.video_resolution) : DEFAULT_STATE.videoResolution;
-        state.videoDuration = VIDEO_DURATION_META[String(stored.videoDuration || stored.video_duration || '')] ? String(stored.videoDuration || stored.video_duration) : DEFAULT_STATE.videoDuration;
+        state.videoDuration = String(clampNumber(stored.videoDuration || stored.video_duration, 1, 30, 5));
         state.videoAudio = VIDEO_AUDIO_META[String(stored.videoAudio ?? stored.video_audio ?? '')] ? String(stored.videoAudio ?? stored.video_audio) : DEFAULT_STATE.videoAudio;
         state.videoWatermark = VIDEO_WATERMARK_META[String(stored.videoWatermark ?? stored.video_watermark ?? '')] ? String(stored.videoWatermark ?? stored.video_watermark) : DEFAULT_STATE.videoWatermark;
         state.videoCameraFixed = VIDEO_CAMERA_FIXED_META[String(stored.videoCameraFixed ?? stored.video_camera_fixed ?? '')] ? String(stored.videoCameraFixed ?? stored.video_camera_fixed) : DEFAULT_STATE.videoCameraFixed;
         state.model = getActiveModelOptions('text').some((model) => model.id === stored.model)
             ? stored.model
             : (getActiveModelOptions('text')[0]?.id || DEFAULT_STATE.model);
-        state.quantity = clampNumber(stored.quantity, 1, 4, DEFAULT_STATE.quantity);
+        state.quantity = clampNumber(stored.quantity, 1, 10, DEFAULT_STATE.quantity);
+        state.outputFormat = ['png', 'jpeg', 'webp', 'gif'].includes(stored.outputFormat) ? stored.outputFormat : 'png';
+        state.frameCount = clampNumber(stored.frameCount, 2, 64, 9);
+        state.frameDurationMs = clampNumber(stored.frameDurationMs, 20, 2000, 200);
+        state.referenceVideos = Array.isArray(stored.referenceVideos) ? stored.referenceVideos.slice(0, 50) : [];
+        state.referenceAudios = Array.isArray(stored.referenceAudios) ? stored.referenceAudios.slice(0, 50) : [];
+        state.firstImageUrl = String(stored.firstImageUrl || '');
+        state.lastImageUrl = String(stored.lastImageUrl || '');
         state.agent = '';
         state.prompt = '';
         state.referenceImage = String(stored.referenceImage || '');
@@ -2470,7 +2497,7 @@
         state.referenceIntent = ['variation'].includes(stored.referenceIntent) ? stored.referenceIntent : '';
         state.referenceImages = normalizeReferenceList(stored.referenceImages || stored.reference_images);
         state.chatAttachments = [];
-        state.continuationImage = normalizeReferenceItem(stored.continuationImage || stored.continuation_image);
+        state.continuationImage = null;
         state.composerError = '';
         state.open = isStandaloneMode();
         if (shouldRestoreUserScopedData) {
@@ -2684,16 +2711,25 @@
             prompt: String(task.prompt || '').slice(0, 4000),
             referenceImage: String(task.referenceImage || task.referenceImageUrl || task.reference_image_url || ''),
             referenceTitle: String(task.referenceTitle || task.reference_title || ''),
+            referenceTaskId: String(task.referenceTaskId || task.reference_task_id || metadata.reference_task_id || metadata.referenceTaskId || ''),
+            referenceResultId: String(task.referenceResultId || task.reference_result_id || metadata.reference_result_id || metadata.referenceResultId || ''),
+            referenceResultIndex: task.referenceResultIndex ?? task.reference_result_index ?? metadata.reference_result_index ?? metadata.referenceResultIndex ?? '',
             referenceImages: normalizeReferenceList(task.referenceImages || task.reference_images || metadata.reference_images || metadata.referenceImages),
             ratio: isVideoMode(mode)
-                ? (VIDEO_RATIO_META[task.ratio] ? task.ratio : (VIDEO_RATIO_META[metadata.video_ratio || metadata.ratio] ? (metadata.video_ratio || metadata.ratio) : DEFAULT_STATE.videoRatio))
+                ? String(task.ratio || metadata.video_ratio || metadata.ratio || DEFAULT_STATE.videoRatio).slice(0, 32)
                 : (RATIO_META[task.ratio] ? task.ratio : '1:1'),
             resolution: isVideoMode(mode)
-                ? (VIDEO_RESOLUTION_META[task.resolution] ? task.resolution : (VIDEO_RESOLUTION_META[metadata.video_resolution || metadata.resolution] ? (metadata.video_resolution || metadata.resolution) : DEFAULT_STATE.videoResolution))
+                ? String(task.resolution || metadata.video_resolution || metadata.resolution || DEFAULT_STATE.videoResolution).slice(0, 32)
                 : (RESOLUTION_META[task.resolution] ? task.resolution : '1k'),
-            videoDuration: isVideoMode(mode) && VIDEO_DURATION_META[String(metadata.video_duration ?? metadata.duration ?? task.videoDuration ?? task.video_duration ?? '')]
-                ? String(metadata.video_duration ?? metadata.duration ?? task.videoDuration ?? task.video_duration)
-                : DEFAULT_STATE.videoDuration,
+            videoDuration: String(clampNumber(metadata.video_duration ?? metadata.duration ?? task.videoDuration ?? task.video_duration, 1, 30, 5)),
+            outputFormat: String(task.outputFormat || metadata.output_format || 'png'),
+            frameCount: Number(task.frameCount || metadata.frame_count || 9),
+            frameDurationMs: Number(task.frameDurationMs || metadata.frame_duration_ms || 200),
+            referenceVideos: task.referenceVideos || metadata.reference_videos || [],
+            referenceAudios: task.referenceAudios || metadata.reference_audios || [],
+            firstImageUrl: String(task.firstImageUrl || metadata.first_image_url || ''),
+            lastImageUrl: String(task.lastImageUrl || metadata.last_image_url || ''),
+            nextPollAt: task.nextPollAt || metadata.next_poll_at || '',
             videoAudio: isVideoMode(mode) && VIDEO_AUDIO_META[String(metadata.generate_audio ?? metadata.video_audio ?? task.videoAudio ?? task.video_audio ?? '')]
                 ? String(metadata.generate_audio ?? metadata.video_audio ?? task.videoAudio ?? task.video_audio)
                 : DEFAULT_STATE.videoAudio,
@@ -2722,7 +2758,7 @@
             quantity: clampNumber(
                 Number.isFinite(requestedImageCount) && requestedImageCount > 0 ? requestedImageCount : task.quantity,
                 1,
-                4,
+                10,
                 2
             ),
             agent: agentId,
@@ -2736,7 +2772,7 @@
             completedAt,
             generationCompletedAt,
             updatedAt,
-            images: Array.isArray(serverImages) ? serverImages.slice(0, 4).map((image, index) => normalizeResultImage(image, index, task)).filter(Boolean) : [],
+            images: Array.isArray(serverImages) ? serverImages.slice(0, 10).map((image, index) => normalizeResultImage(image, index, task)).filter(Boolean) : [],
             deliveredImageCount: Number.isFinite(deliveredImageCount) && deliveredImageCount >= 0 ? deliveredImageCount : 0,
             resultPrompt: String(task.resultPrompt || task.result_prompt || ''),
             reasoningText: String(task.reasoningText || task.reasoning_text || metadata.reasoning_content || metadata.reasoningContent || '').slice(0, 12000),
@@ -3700,13 +3736,14 @@
             if (usagePayload) {
                 updateActivitySummary(usagePayload);
             }
-            const tasksChanged = mergeRemoteTasks(payload.tasks || payload.records || []);
+            let tasksChanged = mergeRemoteTasks(payload.tasks || payload.records || []);
             const activityChanged = beforeActivitySignature !== getActivitySummarySignature();
             const previewChanged = syncImagePreviewFromTasks();
             if (imagePreview?.originalReady && !imagePreview.originalLoaded) {
                 preloadImagePreviewOriginal();
             }
             remoteRecordsLoaded = true;
+            tasksChanged = (await resumeBblabuApiVideos()) || tasksChanged;
             const afterBusyCount = getRemotePollBusyTasks().length;
             const busySettled = beforeBusyCount > 0 && afterBusyCount === 0;
             lastBusyTaskCount = afterBusyCount;
@@ -3751,6 +3788,27 @@
             }
             console.warn('[AIImageWorkbench] Remote records unavailable, using local records:', error?.message || error);
         }
+    }
+
+    async function resumeBblabuApiVideos() {
+        let changed = false;
+        for (const task of state.tasks) {
+            if (task.mode !== 'video' || task.billingMode !== 'api' || task.status !== 'queued' || !task.providerTaskId) continue;
+            if (!global.AIMediaModelCapabilities?.isBblabu(task.apiBaseUrl) || !isConfiguredApiBaseUrl(task.apiBaseUrl)) continue;
+            if (mediaVideoResumeInFlight.has(task.id) || Date.parse(task.nextPollAt || '') > Date.now()) continue;
+            const typedKeyMatches = Boolean(state.apiKey.trim()) && normalizeApiBaseUrl(task.apiBaseUrl) === normalizeApiBaseUrl(state.apiBaseUrl);
+            if (!typedKeyMatches && !getStoredApiKeyStatus(task.apiBaseUrl)?.configured) continue;
+            mediaVideoResumeInFlight.add(task.id);
+            try {
+                const payload = await requestAiImage('submit', { method: 'POST', body: buildSubmitPayload(task), auth: true });
+                if (payload?.task) { replaceTask(task.id, payload.task); changed = true; }
+            } catch (error) {
+                // A query/network failure must never resubmit a new upstream generation.
+                task.nextPollAt = new Date(Date.now() + 8000).toISOString();
+                changed = true;
+            } finally { mediaVideoResumeInFlight.delete(task.id); }
+        }
+        return changed;
     }
 
     async function recoverRemoteTaskByClientId(localTask = {}) {
@@ -4143,7 +4201,8 @@
 	    }
 
         function getReferenceImageInputLimit(mode = inferWorkbenchMode()) {
-            return isVideoMode(mode) ? MAX_VIDEO_REFERENCE_IMAGE_INPUTS : MAX_REFERENCE_IMAGE_INPUTS;
+            const profile = getMediaCapability(mode);
+            return profile ? (profile.kind === 'video' ? profile.references?.images || 0 : profile.maxImages || 0) : (isVideoMode(mode) ? MAX_VIDEO_REFERENCE_IMAGE_INPUTS : MAX_REFERENCE_IMAGE_INPUTS);
         }
 
         function getReferenceImageFileByteLimit(mode = inferWorkbenchMode()) {
@@ -4166,8 +4225,96 @@
             return options.find((model) => model.id === modelId) || null;
         }
 
+    function getMediaCapability(mode = inferWorkbenchMode()) {
+        if (isTextVisionMode(mode)) return null;
+        if (state.billingMode === 'api') {
+            if (!isConfiguredApiBaseUrl()) return null;
+            return global.AIMediaModelCapabilities?.resolve({ baseUrl: state.apiBaseUrl, model: getActiveModelValue(mode) }) || null;
+        }
+        return getSelectedModelOption(mode)?.mediaCapability
+            || global.AIMediaModelCapabilities?.resolve({ model: getActiveModelValue(mode) }) || null;
+    }
+
+    function mediaOptions(field, mode = inferWorkbenchMode()) {
+        const profile = getMediaCapability(mode);
+        const meta = { ratio: RATIO_META, resolution: RESOLUTION_META, videoRatio: VIDEO_RATIO_META, videoResolution: VIDEO_RESOLUTION_META, videoDuration: VIDEO_DURATION_META, videoAudio: VIDEO_AUDIO_META, videoWatermark: VIDEO_WATERMARK_META }[field] || {};
+        let values;
+        if (profile?.execution === 'ready') {
+            if (field === 'ratio' || field === 'videoRatio') values = profile.ratios;
+            if (field === 'resolution' || field === 'videoResolution') values = profile.resolutions;
+            if (field === 'quantity') values = Array.from({ length: profile.maxQuantity || 1 }, (_, i) => i + 1);
+            if (field === 'outputFormat') values = profile.formats;
+            if (field === 'videoDuration') values = profile.duration_options?.length ? profile.duration_options : Array.from({ length: profile.duration_max - profile.duration_min + 1 }, (_, i) => i + profile.duration_min);
+        }
+        if (!values) values = field === 'quantity' ? [1, 2, 4] : Object.keys(meta);
+        return values.map(value => ({ value: String(value), label: field === 'quantity' ? `${value} 张` : (field === 'outputFormat' ? String(value).toUpperCase() : meta[String(value)]?.shortLabel || meta[String(value)]?.label || (field === 'videoDuration' ? `${value} 秒` : String(value))) }));
+    }
+
+    function syncMediaSettings(mode = inferWorkbenchMode()) {
+        const profile = getMediaCapability(mode);
+        if (profile?.execution !== 'ready') return;
+        const fields = isVideoMode(mode) ? ['videoRatio', 'videoResolution', 'videoDuration'] : ['ratio', 'resolution', 'quantity', 'outputFormat'];
+        fields.forEach(field => {
+            const options = mediaOptions(field, mode);
+            if (options.length && !options.some(option => option.value === String(state[field]))) {
+                const preferred = field === 'videoDuration' ? profile.duration_default : field === 'videoResolution' ? profile.resolution_default : null;
+                state[field] = field === 'quantity' ? Number(options[0].value) : String(preferred || options[0].value);
+            }
+        });
+    }
+
+    function getMediaValidationMessage(mode = inferWorkbenchMode()) {
+        const profile = getMediaCapability(mode);
+        if (!profile) return '';
+        if (profile.execution !== 'ready') return profile.reviewReason || '该型号尚未完成适配';
+        try {
+            const context = getCurrentImageContext();
+            global.AIMediaModelCapabilities.normalizeInput({
+                quantity: isVideoMode(mode) ? 1 : state.quantity,
+                ratio: isVideoMode(mode) ? state.videoRatio : state.ratio,
+                resolution: isVideoMode(mode) ? state.videoResolution : state.resolution,
+                outputFormat: state.outputFormat, frameCount: state.frameCount, frameDurationMs: state.frameDurationMs,
+                referenceImageUrl: context.image || '', referenceImages: state.referenceImages,
+                videoSettings: { duration: state.videoDuration, generateAudio: state.videoAudio, watermark: state.videoWatermark },
+                referenceVideos: state.referenceVideos, referenceAudios: state.referenceAudios,
+                firstImageUrl: state.firstImageUrl, lastImageUrl: state.lastImageUrl
+            }, profile);
+            return '';
+        } catch (error) { return error.message; }
+    }
+
+    function renderMediaCapabilityFields(mode) {
+        const profile = getMediaCapability(mode);
+        if (!profile) return '';
+        const message = getMediaValidationMessage(mode);
+        const input = (field, label, type = 'url', extra = '') => `<label>${escapeHtml(label)}<input type="${type}" data-aiw-media-field="${field}" value="${escapeHtml(String(state[field]))}" ${extra}></label>`;
+        if (profile.execution !== 'ready') return `<div class="ai-image-media-fields" role="status">${escapeHtml(message)}</div>`;
+        let controls = '';
+        if (profile.kind === 'image') {
+            controls += renderCustomSelect({ field: 'outputFormat', label: '输出格式', icon: 'fa-file-image', value: state.outputFormat, options: mediaOptions('outputFormat', mode) });
+            if (state.outputFormat === 'gif') controls += input('frameCount', 'GIF 帧数（2–64）', 'number', 'min="2" max="64" step="1"') + input('frameDurationMs', '每帧毫秒（20–2000）', 'number', 'min="20" max="2000" step="1"');
+        } else {
+            [['referenceVideos', '参考视频', profile.references.videos], ['referenceAudios', '参考音频', profile.references.audios]].forEach(([field, label, max]) => {
+                if (max) controls += `<label>${label}（最多 ${max} 个，${field === 'referenceVideos' && profile.maxCombinedVideoSeconds ? '每行填写 HTTPS 地址及空格分隔的时长秒数' : '每行一个 HTTPS 地址'}）<textarea data-aiw-media-field="${field}" rows="2" placeholder="${field === 'referenceVideos' && profile.maxCombinedVideoSeconds ? 'https://example.com/video.mp4 8.5' : 'https://'}">${escapeHtml(state[field].map(value => typeof value === 'object' ? `${value.url}${value.duration != null ? ` ${value.duration}` : ''}` : value).join('\n'))}</textarea></label>`;
+            });
+            if (profile.maxCombinedVideoSeconds) controls += `<small>成片与参考视频总时长须 ≤ ${profile.maxCombinedVideoSeconds} 秒，请填写每段素材的实际时长。</small>`;
+            if (profile.audioRequiresVisualReference) controls += '<small>参考音频须同时搭配参考图或参考视频。</small>';
+            if (profile.omitRatioWithFirstFrame) controls += '<small>使用首帧时，画幅由首帧决定。</small>';
+            if (profile.frames.enabled) controls += input('firstImageUrl', '首帧 HTTPS 地址') + input('lastImageUrl', '尾帧 HTTPS 地址（须有首帧）');
+            controls += `<small>参考图最多 ${profile.references.images} 张${profile.references.total ? `，素材合计最多 ${profile.references.total} 个` : ''}。${profile.frames.enabled && !profile.frames.allowWithReferences ? '首尾帧与普通参考素材互斥。' : ''}</small>`;
+        }
+        return `<div class="ai-image-media-fields">${controls}<small data-aiw-media-validation role="status">${escapeHtml(message)}</small></div>`;
+    }
+
         function getCanonicalUpstreamModelId(modelId = '') {
             return String(modelId || '').trim().toLowerCase().split(/[/:]/).filter(Boolean).pop() || '';
+        }
+
+        function isDocumentedImageEditModel(canonicalModelId = '') {
+            const id = String(canonicalModelId || '').toLowerCase();
+            return id.includes('banana')
+                || id.includes('gpt-image')
+                || ['gpt-image-2', 'gpt-image-2-all', 'nano-banana-2.1', 'nano-banana-2', 'nano-banana-pro', 'gpt-image-2.5'].includes(id);
         }
 
         function getComposerUploadReferenceStandard(mode = inferWorkbenchMode()) {
@@ -4285,13 +4432,14 @@
                 };
             }
 
-            const supportsDocumentedImageEdits = ['gpt-image-2', 'gpt-image-2-all'].includes(canonicalModelId);
+            const supportsDocumentedImageEdits = isDocumentedImageEditModel(canonicalModelId)
+                || ['gpt-image-2', 'gpt-image-2-all'].includes(canonicalModelId);
             const isDocumentedGeminiGeneration = canonicalModelId === 'gemini-3.1-flash-image';
             return {
                 tone: supportsDocumentedImageEdits ? 'supported' : 'unsupported',
                 title,
                 lead: supportsDocumentedImageEdits
-                    ? '上游文档确认该模型支持图片编辑/换图。'
+                    ? '上游文档已确认该模型支持图片参考与编辑（图生图）。'
                     : (isDocumentedGeminiGeneration
                         ? '上游文档只确认该模型可生成图片，未给出参考图读取或编辑标准。'
                         : '当前模型不在上游文档已确认的图片编辑模型名单内，不保证会读取上传图片。'),
@@ -4300,7 +4448,7 @@
                     { label: '数量', value: `上游未注明上限；当前工作台最多 ${MAX_REFERENCE_IMAGE_INPUTS} 张（含续作底图）` }
                 ] : [],
                 note: supportsDocumentedImageEdits
-                    ? '该模式不接收文档、视频或音频。'
+                    ? '该模式接收图片输入，不接收文档、视频或音频。点击侧栏叹号查看完整模型协议文档。'
                     : '如模型仅支持文生图，上传图片不会形成可靠的模型输入。'
             };
         }
@@ -4629,9 +4777,7 @@
     }
 
     function getContinuationSourceTask() {
-        if (state.billingMode === 'api' && !state.apiImageTool) return null;
-        if (state.continuationImage || state.referenceImage) return null;
-        return getLatestThreadImageTask(getTaskThreadRoot());
+        return null;
     }
 
     function getCurrentImageContext() {
@@ -4812,7 +4958,7 @@
             model: getActiveModelValue(mode),
             resolution: getActiveResolution(mode),
             ratio: getActiveRatio(mode),
-            quantity: mode === 'reverse' || isVideoMode(mode) ? 1 : clampNumber(state.quantity, 1, 4, 2)
+            quantity: mode === 'reverse' || isVideoMode(mode) ? 1 : clampNumber(state.quantity, 1, 10, 2)
         });
     }
 
@@ -4840,7 +4986,7 @@
         if (state.billingMode === 'api') return 0;
         if (!remoteConfigLoaded || !remoteConfigAvailable) return 0;
         const mode = MODE_META[modeOverride] ? modeOverride : state.mode;
-        const quantity = mode === 'reverse' || isVideoMode(mode) ? 1 : clampNumber(state.quantity, 1, 4, 2);
+        const quantity = mode === 'reverse' || isVideoMode(mode) ? 1 : clampNumber(state.quantity, 1, 10, 2);
         const resolution = getActiveResolution(mode);
         const matchedRule = getRuntimePointPricingRule(mode);
         if (matchedRule) {
@@ -4946,11 +5092,12 @@
             '2k': 1.6,
             '1k': 1
         }[String(resolution || '').toLowerCase()] || 1;
-        return Math.round(90 * resolutionMultiplier * clampNumber(quantity, 1, 4, 1));
+        return Math.round(90 * resolutionMultiplier * clampNumber(quantity, 1, 10, 1));
     }
 
     function canSubmitWorkbench(mode = inferWorkbenchMode()) {
         if (referenceUploadBusy) return false;
+        if (getMediaValidationMessage(mode)) return false;
         if (!state.billingMode) return false;
         if (isWorkbenchAuthOrBillingBlocked()) return false;
         const hasPrompt = Boolean(String(state.prompt || '').trim());
@@ -4996,7 +5143,7 @@
             const completed = task?.status === 'succeeded' && Array.isArray(task?.images) && task.images.length ? 1 : 0;
             return { completed, total: 1 };
         }
-        const total = clampNumber(task?.quantity, 1, 4, 1);
+        const total = clampNumber(task?.quantity, 1, 10, 1);
         const deliveredCount = Number(task?.deliveredImageCount);
         const imageCount = Array.isArray(task?.images) ? task.images.length : 0;
         const completed = Math.min(total, Math.max(0, Number.isFinite(deliveredCount) && deliveredCount > 0 ? deliveredCount : imageCount));
@@ -6984,15 +7131,15 @@
             const value = selectOption.getAttribute('data-aiw-select-value') || '';
             const selectedProviderId = selectOption.getAttribute('data-aiw-select-provider') || '';
             const isComposerOption = Boolean(selectOption.closest('.ai-image-main-composer'));
-            if (field === 'ratio' && RATIO_META[value]) state.ratio = value;
-            if (field === 'resolution' && RESOLUTION_META[value]) state.resolution = value;
-            if (field === 'videoRatio' && VIDEO_RATIO_META[value]) state.videoRatio = value;
-            if (field === 'videoResolution' && VIDEO_RESOLUTION_META[value]) state.videoResolution = value;
-            if (field === 'videoDuration' && VIDEO_DURATION_META[String(value)]) state.videoDuration = String(value);
+            if (field === 'ratio' && mediaOptions(field).some(option => option.value === value)) state.ratio = value;
+            if (field === 'resolution' && mediaOptions(field).some(option => option.value === value)) state.resolution = value;
+            if (field === 'videoRatio' && mediaOptions(field).some(option => option.value === value)) state.videoRatio = value;
+            if (field === 'videoResolution' && mediaOptions(field).some(option => option.value === value)) state.videoResolution = value;
+            if (field === 'videoDuration' && mediaOptions(field).some(option => option.value === String(value))) state.videoDuration = String(value);
             if (field === 'videoAudio' && VIDEO_AUDIO_META[String(value)]) state.videoAudio = String(value);
             if (field === 'videoWatermark' && VIDEO_WATERMARK_META[String(value)]) state.videoWatermark = String(value);
             if (field === 'videoCameraFixed' && VIDEO_CAMERA_FIXED_META[String(value)]) state.videoCameraFixed = String(value);
-            if (field === 'quantity') state.quantity = clampNumber(value, 1, 4, 2);
+            if (field === 'quantity') state.quantity = clampNumber(value, 1, getMediaCapability()?.maxQuantity || 4, 2);
             if (field === 'model') {
                 const activeMode = inferWorkbenchMode();
                 const activeModelOptions = getRuntimeModelGroupOptions(activeMode);
@@ -7017,7 +7164,8 @@
                     setStoredModelProviderId(activeMode, selectedProviderId);
                 }
             }
-            if (field === 'model' || field === 'apiModel') openModelProvider = '';
+            if (field === 'outputFormat' && mediaOptions(field).some(option => option.value === value)) state.outputFormat = value;
+            if (field === 'model' || field === 'apiModel') { openModelProvider = ''; syncMediaSettings(); }
             openSelect = target.closest('[data-aiw-image-settings]') ? 'imageSettings' : (target.closest('[data-aiw-video-settings]') ? 'videoSettings' : (target.closest('[data-aiw-chat-settings]') ? 'chatSettings' : ''));
             if (openSelect === 'imageSettings') {
                 openImageSettingsSection = field || openImageSettingsSection;
@@ -7067,15 +7215,15 @@
         if (chip) {
             event.preventDefault();
             const [field, value] = String(chip.getAttribute('data-aiw-chip') || '').split(':');
-            if (field === 'ratio' && RATIO_META[value]) state.ratio = value;
-            if (field === 'resolution' && RESOLUTION_META[value]) state.resolution = value;
-            if (field === 'videoRatio' && VIDEO_RATIO_META[value]) state.videoRatio = value;
-            if (field === 'videoResolution' && VIDEO_RESOLUTION_META[value]) state.videoResolution = value;
-            if (field === 'videoDuration' && VIDEO_DURATION_META[String(value)]) state.videoDuration = String(value);
+            if (field === 'ratio' && mediaOptions(field).some(option => option.value === value)) state.ratio = value;
+            if (field === 'resolution' && mediaOptions(field).some(option => option.value === value)) state.resolution = value;
+            if (field === 'videoRatio' && mediaOptions(field).some(option => option.value === value)) state.videoRatio = value;
+            if (field === 'videoResolution' && mediaOptions(field).some(option => option.value === value)) state.videoResolution = value;
+            if (field === 'videoDuration' && mediaOptions(field).some(option => option.value === String(value))) state.videoDuration = String(value);
             if (field === 'videoAudio' && VIDEO_AUDIO_META[String(value)]) state.videoAudio = String(value);
             if (field === 'videoWatermark' && VIDEO_WATERMARK_META[String(value)]) state.videoWatermark = String(value);
             if (field === 'videoCameraFixed' && VIDEO_CAMERA_FIXED_META[String(value)]) state.videoCameraFixed = String(value);
-	            if (field === 'quantity') state.quantity = clampNumber(value, 1, 4, 2);
+	            if (field === 'quantity') state.quantity = clampNumber(value, 1, getMediaCapability()?.maxQuantity || 4, 2);
 	            if (field === 'billing' && ['points', 'api'].includes(value)) state.billingMode = value;
 	            if (field === 'apiTool') setWorkbenchToolMode(value);
 	            if (field === 'memory' && CHAT_MEMORY_OPTIONS.some((option) => option.id === value)) state.chatMemoryMode = value;
@@ -7131,6 +7279,20 @@
 
     function handleRootPointerOver(event) {
         const target = event.target instanceof Element ? event.target : null;
+        const providerEl = target?.closest?.('.ai-image-model-provider');
+        if (providerEl) {
+            const providerId = providerEl.getAttribute('data-aiw-model-provider') || '';
+            const menu = providerEl.closest('.ai-image-model-menu');
+            if (menu && providerId && openModelProvider !== providerId) {
+                openModelProvider = providerId;
+                menu.querySelectorAll('.ai-image-model-provider').forEach((item) => {
+                    const match = item === providerEl;
+                    item.classList.toggle('is-open', match);
+                    const trigger = item.querySelector('.ai-image-model-provider-trigger');
+                    if (trigger) trigger.setAttribute('aria-expanded', match ? 'true' : 'false');
+                });
+            }
+        }
         const historyNavButton = target?.closest?.('[data-aiw-history-nav-id]');
         if (historyNavButton) {
             showHistoryLocatorPreview(historyNavButton);
@@ -7462,8 +7624,8 @@
             render({ preserveStageScroll: false, preservePromptFocus: false });
             return;
         }
-        if (action === 'retry-model-pricing') {
-            loadModelPricing({ force: true });
+        if (action === 'retry-model-pricing' || action === 'refresh-model-pricing') {
+            refreshModelPricingView();
             return;
         }
         if (action === 'set-model-pricing-tab') {
@@ -7562,6 +7724,24 @@
         }
         if (action === 'copy-task-prompt') {
             copyTaskPrompt(element);
+            return;
+        }
+        if (action === 'toggle-prompt-expand') {
+            const selection = typeof global.getSelection === 'function' ? global.getSelection()?.toString?.() : '';
+            if (selection) return;
+            const taskId = String(element?.dataset?.taskId || '').trim();
+            const container = element.closest('.ai-image-result-prompt, .ai-image-thread-prompt');
+            if (container) {
+                const willExpand = !container.classList.contains('is-expanded');
+                container.classList.toggle('is-expanded', willExpand);
+                if (taskId) {
+                    if (willExpand) {
+                        expandedPromptTaskIds.add(taskId);
+                    } else {
+                        expandedPromptTaskIds.delete(taskId);
+                    }
+                }
+            }
             return;
         }
         if (action === 'copy-chat-text') {
@@ -7742,7 +7922,19 @@
             if (nextSidebar) {
                 sidebar.className = nextSidebar.className;
                 sidebar.setAttribute('aria-label', nextSidebar.getAttribute('aria-label') || '生成记录');
-                sidebar.innerHTML = nextSidebar.innerHTML;
+                const currentExpanded = sidebar.querySelector('.ai-image-history-expanded');
+                const nextExpanded = nextSidebar.querySelector('.ai-image-history-expanded');
+                const currentRail = sidebar.querySelector('.ai-image-history-rail');
+                const nextRail = nextSidebar.querySelector('.ai-image-history-rail');
+                if (currentExpanded && nextExpanded) {
+                    currentExpanded.className = nextExpanded.className;
+                    currentExpanded.innerHTML = nextExpanded.innerHTML;
+                } else {
+                    sidebar.innerHTML = nextSidebar.innerHTML;
+                }
+                if (currentRail && nextRail && currentRail.innerHTML !== nextRail.innerHTML) {
+                    currentRail.innerHTML = nextRail.innerHTML;
+                }
             }
         }
         sidebarEnteredView = '';
@@ -7761,7 +7953,32 @@
         if (!nextSidebar) return;
         sidebar.className = nextSidebar.className;
         sidebar.setAttribute('aria-label', nextSidebar.getAttribute('aria-label') || '生成记录');
-        sidebar.innerHTML = nextSidebar.innerHTML;
+        const currentExpanded = sidebar.querySelector('.ai-image-history-expanded');
+        const nextExpanded = nextSidebar.querySelector('.ai-image-history-expanded');
+        const currentRail = sidebar.querySelector('.ai-image-history-rail');
+        const nextRail = nextSidebar.querySelector('.ai-image-history-rail');
+
+        if (currentExpanded && nextExpanded) {
+            const currentScroll = currentExpanded.querySelector('.ai-image-history-scroll');
+            const savedScrollTop = currentScroll?.scrollTop || 0;
+            const savedScrollLeft = currentScroll?.scrollLeft || 0;
+
+            currentExpanded.className = nextExpanded.className;
+            currentExpanded.innerHTML = nextExpanded.innerHTML;
+
+            const nextScroller = currentExpanded.querySelector('.ai-image-history-scroll');
+            if (nextScroller) {
+                nextScroller.scrollTop = savedScrollTop;
+                nextScroller.scrollLeft = savedScrollLeft;
+            }
+        } else {
+            sidebar.innerHTML = nextSidebar.innerHTML;
+        }
+
+        if (currentRail && nextRail && currentRail.innerHTML !== nextRail.innerHTML) {
+            currentRail.innerHTML = nextRail.innerHTML;
+        }
+
         if (focusSearch) {
             const searchInput = sidebar.querySelector('[data-aiw-history-search]');
             if (searchInput instanceof HTMLInputElement) {
@@ -7777,6 +7994,11 @@
         const scrollTop = Number(scroller?.scrollTop || 0);
         const scrollLeft = Number(scroller?.scrollLeft || 0);
         renderFn();
+        const nextScroller = overlay?.querySelector?.('.ai-image-history-scroll');
+        if (nextScroller) {
+            nextScroller.scrollTop = scrollTop;
+            nextScroller.scrollLeft = scrollLeft;
+        }
         if (!scrollTop && !scrollLeft) return;
         window.requestAnimationFrame(() => {
             const nextScroller = overlay?.querySelector?.('.ai-image-history-scroll');
@@ -7851,6 +8073,21 @@
 
     function handleRootInput(event) {
         const target = event.target;
+        if (target.matches?.('[data-aiw-media-field]')) {
+            const field = target.getAttribute('data-aiw-media-field');
+            if (['referenceVideos', 'referenceAudios'].includes(field)) state[field] = target.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean).map(value => {
+                const match = field === 'referenceVideos' && /^(\S+)\s+(\S+)$/.exec(value);
+                return match ? { url: match[1], duration: Number(match[2]) } : value;
+            });
+            else if (['frameCount', 'frameDurationMs'].includes(field)) state[field] = target.value === '' ? '' : Number(target.value);
+            else if (['firstImageUrl', 'lastImageUrl'].includes(field)) state[field] = target.value.trim();
+            const message = getMediaValidationMessage();
+            const status = document.querySelector('[data-aiw-media-validation]');
+            if (status) status.textContent = message;
+            syncComposerSubmitButtonState();
+            persistState();
+            return;
+        }
         if (target instanceof HTMLTextAreaElement && target.matches('[data-aiw-prompt]')) {
             state.prompt = target.value.slice(0, 4000);
             clearComposerError();
@@ -7917,6 +8154,12 @@
             if (composerReferencePreview && (event.key === 'Enter' || event.key === ' ')) {
                 event.preventDefault();
                 composerReferencePreview.click?.();
+                return;
+            }
+            const togglePrompt = target.closest('[data-aiw-action="toggle-prompt-expand"]');
+            if (togglePrompt && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault();
+                togglePrompt.click?.();
                 return;
             }
             if (!target.closest('[data-aiw-download]')) {
@@ -8570,6 +8813,13 @@
             referenceImageUrl: task.referenceImage,
             referenceTitle: task.referenceTitle,
             referenceImages: task.referenceImages,
+            outputFormat: task.outputFormat || 'png',
+            frameCount: task.frameCount,
+            frameDurationMs: task.frameDurationMs,
+            referenceVideos: task.referenceVideos || [],
+            referenceAudios: task.referenceAudios || [],
+            firstImageUrl: task.firstImageUrl || '',
+            lastImageUrl: task.lastImageUrl || '',
             ratio: task.ratio,
             resolution: task.resolution,
             videoSettings: isVideoMode(task.mode) ? {
@@ -8595,7 +8845,7 @@
 		            memoryMode: state.chatMemoryMode,
 	            memoryMessageLimit: getChatMemoryOption().messageLimit,
 	            memoryTokenBudget: getChatMemoryOption().tokenBudget,
-	            clientTaskId: task.id,
+	            clientTaskId: task.clientTaskId || task.id,
 	            output: isTextVisionMode(task.mode) ? 'text' : (isVideoMode(task.mode) ? 'video' : 'image')
 	        };
 	        if (task.billingMode === 'points') {
@@ -8650,7 +8900,7 @@
 	            }));
 	        }
         const apiKey = String(state.apiKey || '').trim();
-        if (task.billingMode === 'api' && apiKey) {
+        if (task.billingMode === 'api' && apiKey && normalizeApiBaseUrl(task.apiBaseUrl) === normalizeApiBaseUrl(state.apiBaseUrl)) {
             payload.apiKey = apiKey;
         }
         return payload;
@@ -9064,6 +9314,9 @@
     async function submitWorkbenchTask() {
         const prompt = String(state.prompt || '').trim();
         const inferredMode = inferWorkbenchMode();
+        syncMediaSettings(inferredMode);
+        const mediaError = getMediaValidationMessage(inferredMode);
+        if (mediaError) { setComposerError(mediaError); render(); return; }
         const draftChatAttachments = inferredMode === 'chat'
             ? normalizeChatAttachmentList(state.chatAttachments)
             : [];
@@ -9251,6 +9504,13 @@
             videoAudio: isVideoMode(inferredMode) ? state.videoAudio : '',
             videoWatermark: isVideoMode(inferredMode) ? state.videoWatermark : '',
             videoCameraFixed: isVideoMode(inferredMode) ? state.videoCameraFixed : '',
+            outputFormat: state.outputFormat,
+            frameCount: state.frameCount,
+            frameDurationMs: state.frameDurationMs,
+            referenceVideos: isVideoMode(inferredMode) ? state.referenceVideos.slice() : [],
+            referenceAudios: isVideoMode(inferredMode) ? state.referenceAudios.slice() : [],
+            firstImageUrl: isVideoMode(inferredMode) ? state.firstImageUrl : '',
+            lastImageUrl: isVideoMode(inferredMode) ? state.lastImageUrl : '',
             model: activeModelValue,
             modelProviderId: activeModelProviderId,
             providerId: activeModelProviderId,
@@ -10811,9 +11071,8 @@
         const returnTooltip = '返回灵感库';
         const closeTitle = modelPricingView.open ? '关闭模型价格' : (isStandalone ? returnTooltip : '关闭 AI 工作台');
         const closeIcon = modelPricingView.open ? 'fa-times' : (isStandalone ? 'fa-arrow-left' : 'fa-times');
-
-        overlay.innerHTML = `
-            <section class="ai-image-shell ${modelPricingView.open ? 'is-model-pricing' : ''}" role="dialog" aria-modal="true" aria-label="${isStandalone ? 'AI 工作台' : 'AI 图片工作台'}">
+        const shellMarkup = `
+            <section class="ai-image-shell ${modelPricingView.open ? 'is-model-pricing' : ''}${!isStandalone ? ' glass-ring__surface' : ''}" role="dialog" aria-modal="true" aria-label="${isStandalone ? 'AI 工作台' : 'AI 图片工作台'}">
                 <button class="ai-image-shell-close" type="button" data-aiw-action="${modelPricingView.open ? 'close-model-pricing' : 'close'}" aria-label="${escapeHtml(closeTitle)}" title="${escapeHtml(closeTitle)}" data-tooltip="${escapeHtml(closeTitle)}">
                     <i class="fas ${escapeHtml(closeIcon)}" aria-hidden="true"></i>
                 </button>
@@ -10823,6 +11082,10 @@
                 </div>
                 ${renderChatNavigationLayer()}
             </section>
+        `;
+
+        overlay.innerHTML = `
+            ${isStandalone ? shellMarkup : `<div class="glass-ring glass-ring--shell ai-image-shell-ring">${shellMarkup}</div>`}
             ${renderImagePreview()}
         `;
     }
@@ -10927,21 +11190,21 @@
                                 label: '画幅比例',
                                 icon: 'fa-crop-simple',
                                 value: state.ratio,
-                                options: Object.entries(RATIO_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+                                options: mediaOptions('ratio')
                             })}
                             ${renderCustomSelect({
                                 field: 'resolution',
                                 label: '分辨率',
                                 icon: 'fa-expand',
                                 value: state.resolution,
-                                options: Object.entries(RESOLUTION_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+                                options: mediaOptions('resolution')
                             })}
                             ${isVideo ? '' : renderCustomSelect({
                                 field: 'quantity',
                                 label: '生成数量',
                                 icon: 'fa-layer-group',
                                 value: String(state.quantity),
-                                options: [1, 2, 4].map((value) => ({ value: String(value), label: `${value} 张` }))
+                                options: mediaOptions('quantity')
                             })}
                             `}
                         </div>
@@ -11111,16 +11374,19 @@
 
     function renderComposerUploadButton(inferredMode = inferWorkbenchMode()) {
         const isChatMode = inferredMode === 'chat';
-	        const imageLimit = getReferenceImageInputLimit(inferredMode);
-	        const label = isChatMode
-	            ? (shouldExposeChatImageInput() ? '上传图片或文档/PDF' : '上传文档/PDF')
-	            : `上传图片（最多 ${imageLimit} 张）`;
-	        return `
+        const imageLimit = getReferenceImageInputLimit(inferredMode);
+        const standard = getComposerUploadReferenceStandard(inferredMode);
+        const label = isChatMode
+            ? (shouldExposeChatImageInput() ? '上传图片或文档/PDF' : '上传文档/PDF')
+            : (standard.tone === 'supported'
+                ? `上传参考图片（支持 JPG/PNG/WebP，最多 ${imageLimit} 张）`
+                : `上传图片（最多 ${imageLimit} 张）`);
+        return `
                     <button class="ai-image-main-plus" type="button" data-aiw-action="upload-reference" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
                         <i class="fas fa-plus"></i>
                     </button>
-	        `;
-	    }
+        `;
+    }
 
         function renderComposerUploadHelp(inferredMode = inferWorkbenchMode()) {
             const standard = getComposerUploadReferenceStandard(inferredMode);
@@ -11203,44 +11469,46 @@
     }
 
     function renderVideoComposerControls({ compactLabels = false } = {}) {
+        syncMediaSettings('video');
         const videoModelId = getActiveModelValue('video');
-        const showCameraFixed = supportsVideoCameraFixed(videoModelId);
+        const profile = getMediaCapability('video');
+        const showCameraFixed = !profile && supportsVideoCameraFixed(videoModelId);
         return `
             ${renderCustomSelect({
                 field: 'videoRatio',
                 label: compactLabels ? '比例' : '画幅比例',
                 icon: 'fa-crop-simple',
                 value: state.videoRatio,
-                options: Object.entries(VIDEO_RATIO_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+                options: mediaOptions('videoRatio')
             })}
             ${renderCustomSelect({
                 field: 'videoResolution',
                 label: '分辨率',
                 icon: 'fa-expand',
                 value: state.videoResolution,
-                options: Object.entries(VIDEO_RESOLUTION_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+                options: mediaOptions('videoResolution')
             })}
             ${renderCustomSelect({
                 field: 'videoDuration',
                 label: '时长',
                 icon: 'fa-clock',
                 value: state.videoDuration,
-                options: Object.entries(VIDEO_DURATION_META).map(([id, meta]) => ({ value: id, label: meta.shortLabel || meta.label }))
+                options: mediaOptions('videoDuration')
             })}
-            ${renderCustomSelect({
+            ${!profile || profile.generate_audio ? renderCustomSelect({
                 field: 'videoAudio',
                 label: '音频',
                 icon: 'fa-volume-high',
                 value: state.videoAudio,
                 options: Object.entries(VIDEO_AUDIO_META).map(([id, meta]) => ({ value: id, label: meta.label }))
-            })}
-            ${renderCustomSelect({
+            }) : ''}
+            ${!profile || profile.watermark ? renderCustomSelect({
                 field: 'videoWatermark',
                 label: '水印',
                 icon: 'fa-stamp',
                 value: state.videoWatermark,
                 options: Object.entries(VIDEO_WATERMARK_META).map(([id, meta]) => ({ value: id, label: meta.label }))
-            })}
+            }) : ''}
             ${showCameraFixed ? renderCustomSelect({
                 field: 'videoCameraFixed',
                 label: '镜头',
@@ -11288,30 +11556,31 @@
         return [
             RATIO_META[state.ratio]?.label || state.ratio,
             RESOLUTION_META[state.resolution]?.label || state.resolution,
-            `${clampNumber(state.quantity, 1, 4, 2)}张`
+            `${clampNumber(state.quantity, 1, 10, 2)}张`
         ].filter(Boolean).join(' / ');
     }
 
     function renderImageSettingsSelect() {
+        syncMediaSettings();
         const isOpen = openSelect === 'imageSettings';
         const sections = [
             {
                 title: '比例',
                 field: 'ratio',
                 value: state.ratio,
-                options: Object.entries(RATIO_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+                options: mediaOptions('ratio')
             },
             {
                 title: '分辨率',
                 field: 'resolution',
                 value: state.resolution,
-                options: Object.entries(RESOLUTION_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+                options: mediaOptions('resolution')
             },
             {
                 title: '张数',
                 field: 'quantity',
                 value: String(state.quantity),
-                options: [1, 2, 4].map((value) => ({ value: String(value), label: `${value} 张` }))
+                options: mediaOptions('quantity')
             }
         ];
 
@@ -11345,39 +11614,40 @@
 
     function renderVideoSettingsSelect() {
         const videoModelId = getActiveModelValue('video');
-        const showCameraFixed = supportsVideoCameraFixed(videoModelId);
+        const profile = getMediaCapability('video');
+        const showCameraFixed = !profile && supportsVideoCameraFixed(videoModelId);
         const isOpen = openSelect === 'videoSettings';
         const sections = [
             {
                 title: '画面比例',
                 field: 'videoRatio',
                 value: state.videoRatio,
-                options: Object.entries(VIDEO_RATIO_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+                options: mediaOptions('videoRatio')
             },
             {
                 title: '分辨率',
                 field: 'videoResolution',
                 value: state.videoResolution,
-                options: Object.entries(VIDEO_RESOLUTION_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+                options: mediaOptions('videoResolution')
             },
             {
                 title: '时长',
                 field: 'videoDuration',
                 value: state.videoDuration,
-                options: Object.entries(VIDEO_DURATION_META).map(([id, meta]) => ({ value: id, label: meta.shortLabel || meta.label }))
+                options: mediaOptions('videoDuration')
             },
-            {
+            !profile || profile.generate_audio ? {
                 title: '音频',
                 field: 'videoAudio',
                 value: state.videoAudio,
                 options: Object.entries(VIDEO_AUDIO_META).map(([id, meta]) => ({ value: id, label: meta.shortLabel || meta.label }))
-            },
-            {
+            } : null,
+            !profile || profile.watermark ? {
                 title: '水印',
                 field: 'videoWatermark',
                 value: state.videoWatermark,
                 options: Object.entries(VIDEO_WATERMARK_META).map(([id, meta]) => ({ value: id, label: meta.shortLabel || meta.label }))
-            },
+            } : null,
             showCameraFixed ? {
                 title: '镜头',
                 field: 'videoCameraFixed',
@@ -11497,7 +11767,7 @@
         const canUseComposerImages = inferredMode !== 'chat' || shouldExposeChatImageInput();
         const hasVisibleImage = hasImage && canUseComposerImages;
         const visibleExtraReferences = canUseComposerImages ? extraReferences : [];
-        const isImplicitContinuation = Boolean(imageContext.isContinuation);
+        const isImplicitContinuation = Boolean(imageContext.isContinuation && !imageContext.explicit);
         const modeLabel = getModeLabel(inferredMode);
         const canSubmit = canSubmitWorkbench(inferredMode);
         const isVariationReference = Boolean(state.referenceIntent === 'variation' && state.referenceImage && !isImplicitContinuation);
@@ -11514,12 +11784,12 @@
         const promptPlaceholder = hasVisibleImage
             ? (inferredMode === 'chat'
                 ? '围绕已上传图片提问，或继续输入你的问题'
-                : (isImplicitContinuation ? '基于上方生成图继续描述你的调整方向' : (isVariationReference ? '描述你希望基于这张图发散出的方向' : '描述你想如何处理这张图，或输入“反推提示词”')))
+                : (imageContext.isContinuation ? '基于上方生成图继续描述你的调整方向' : (isVariationReference ? '描述你希望基于这张图发散出的方向' : '描述你想如何处理这张图，或输入“反推提示词”')))
             : '输入你的想象';
-        const continuationMatch = isImplicitContinuation
+        const continuationMatch = imageContext.isContinuation
             ? getResultImageByIdentity(imageContext.sourceTask?.id || state.continuationImage?.taskId || '', imageContext.resultId || state.continuationImage?.resultId || '', imageContext.resultIndex || state.continuationImage?.resultIndex || '')
             : null;
-        const continuationPreview = isImplicitContinuation
+        const continuationPreview = imageContext.isContinuation
             ? getResultPreviewPayload(continuationMatch?.task || imageContext.sourceTask, continuationMatch?.image, imageContext.image)
             : null;
         const uploadButtonHtml = renderComposerUploadButton(inferredMode);
@@ -11532,8 +11802,8 @@
                         ${hasVisibleImage ? `
                             <div class="ai-image-main-reference ${isImplicitContinuation ? 'is-implicit' : ''}" role="button" tabindex="0" data-aiw-reference-preview="${isImplicitContinuation ? 'continuation' : 'reference'}" data-aiw-preview-src="${escapeHtml(continuationPreview?.previewSrc || imageContext.image)}" data-aiw-preview-original-src="${escapeHtml(continuationPreview?.originalSrc || imageContext.image)}" data-aiw-preview-bytes="${escapeHtml(continuationPreview?.previewBytes || 0)}" data-aiw-original-bytes="${escapeHtml(continuationPreview?.originalBytes || 0)}" data-aiw-original-ready="${continuationPreview?.originalReady ? 'true' : 'false'}" data-aiw-original-status="${escapeHtml(continuationPreview?.originalStatus || '')}" data-aiw-preview-title="${escapeHtml(continuationPreview?.title || imageContext.title || '参考图片')}" data-aiw-preview-meta="${escapeHtml(continuationPreview?.meta || '参考图片')}" data-task-id="${escapeHtml(imageContext.sourceTask?.id || state.continuationImage?.taskId || '')}" data-result-id="${escapeHtml(imageContext.resultId || state.continuationImage?.resultId || '')}" data-result-index="${escapeHtml(imageContext.resultIndex || state.continuationImage?.resultIndex || '')}" aria-label="${escapeHtml(isImplicitContinuation ? '定位自动续作底图' : '预览参考图片')}" title="${escapeHtml(isImplicitContinuation ? '定位自动续作底图' : '预览参考图片')}">
                                 <span><img src="${escapeHtml(imageContext.image)}" alt="参考图片"></span>
-                                ${isImplicitContinuation ? '' : `<strong>${escapeHtml(isVariationReference ? '图像发散' : (imageContext.title || '参考图片'))}</strong>`}
-                                ${isImplicitContinuation ? '<em>自动续作</em>' : '<button type="button" data-aiw-action="clear-reference" aria-label="清除参考图片"><i class="fas fa-xmark"></i></button>'}
+                                ${isImplicitContinuation ? '<em>自动续作</em>' : `<strong>${escapeHtml(isVariationReference ? '图像发散' : (imageContext.title || '参考图片'))}</strong>`}
+                                <button type="button" data-aiw-action="clear-reference" aria-label="清除参考图片"><i class="fas fa-xmark"></i></button>
                             </div>
                         ` : ''}
                         ${visibleExtraReferences.length ? `
@@ -11560,7 +11830,6 @@
                 ` : ''}
                 <div class="ai-image-main-composer-input ${uploadButtonHtml ? '' : 'has-no-upload'}">
                     <div class="ai-image-main-attach-action">
-                        ${uploadHelpHtml}
                         ${uploadButtonHtml}
                     </div>
                     <textarea class="ai-image-main-prompt" data-aiw-prompt rows="1" placeholder="${escapeHtml(promptPlaceholder)}"${isMobileKeyboardDevice() ? ' readonly inputmode="none" tabindex="-1" role="button" aria-haspopup="dialog"' : ''}>${escapeHtml(state.prompt)}</textarea>
@@ -11570,6 +11839,7 @@
                         </button>
                     </div>
                 </div>
+                ${renderMediaCapabilityFields(inferredMode)}
                 <div class="ai-image-main-tools">
                     <div class="ai-image-main-tool-options">
                         ${isVideoMode(inferredMode) ? `${renderVideoComposerControls({ compactLabels: true })}${renderVideoSettingsSelect()}` : ''}
@@ -11579,21 +11849,21 @@
                             label: '比例',
                             icon: 'fa-crop-simple',
                             value: state.ratio,
-                            options: Object.entries(RATIO_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+                            options: mediaOptions('ratio')
                         }) : ''}
                         ${!isTextVisionMode(inferredMode) && !isVideoMode(inferredMode) ? renderCustomSelect({
                             field: 'resolution',
                             label: '分辨率',
                             icon: 'fa-expand',
                             value: state.resolution,
-                            options: Object.entries(RESOLUTION_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+                            options: mediaOptions('resolution')
                         }) : ''}
                         ${!isTextVisionMode(inferredMode) && !isVideoMode(inferredMode) ? renderCustomSelect({
                             field: 'quantity',
                             label: '数量',
                             icon: 'fa-layer-group',
                             value: String(state.quantity),
-                            options: [1, 2, 4].map((value) => ({ value: String(value), label: `${value} 张` }))
+                            options: mediaOptions('quantity')
                         }) : ''}
                         ${renderModelProviderSelect({
                             field: modelField,
@@ -11627,8 +11897,13 @@
             sidebarEnteredView = '';
         }
         render({ preserveStageScroll: false, preservePromptFocus: false });
-        loadRemoteConfig();
-        loadModelPricing();
+        loadRemoteConfig({ force: true });
+        loadModelPricing({ force: true });
+    }
+
+    function refreshModelPricingView() {
+        loadRemoteConfig({ force: true });
+        loadModelPricing({ force: true });
     }
 
     async function loadModelPricing({ force = false } = {}) {
@@ -11776,45 +12051,93 @@
 
     function getAdminPricingRows(group = 'image') {
         const site = getRuntimeSite();
+        const mode = group === 'video' ? 'video' : 'image';
         const allowedModes = group === 'video' ? new Set(['video']) : new Set(['text', 'image', 'agent']);
         const seen = new Set();
-        return (Array.isArray(runtimePricingRules) ? runtimePricingRules : [])
+        const configuredModels = group === 'video' ? runtimeAdminVideoModels : runtimeAdminImageModels;
+        const rows = [];
+
+        if (Array.isArray(configuredModels) && configuredModels.length) {
+            configuredModels.forEach((model) => {
+                const modelId = String(model?.id || '').trim();
+                const providerId = String(model?.providerId || '').trim();
+                if (!modelId) return;
+                const rule = findRuntimePricingRule({
+                    site,
+                    mode,
+                    billingMode: 'points',
+                    model: modelId,
+                    providerId,
+                    resolution: '1k',
+                    ratio: '1:1',
+                    quantity: 1
+                });
+                const key = [group, providerId.toLowerCase(), modelId.toLowerCase(), '标准'].join(':');
+                if (seen.has(key)) return;
+                seen.add(key);
+                const quantity = 1;
+                rows.push({
+                    id: modelId,
+                    label: model.label || modelId,
+                    providerLabel: model.providerLabel || '',
+                    variant: '标准',
+                    points: rule ? getRuntimePricingRuleEstimate(rule, quantity) : 0.1
+                });
+            });
+        }
+
+        const activeRules = (Array.isArray(runtimePricingRules) ? runtimePricingRules : [])
             .filter((rule) => {
                 const ruleSite = String(rule?.site || 'all').trim().toLowerCase();
                 const billingMode = String(rule?.billing_mode || rule?.billingMode || '').trim().toLowerCase();
-                const mode = String(rule?.mode || '').trim().toLowerCase();
+                const ruleMode = String(rule?.mode || '').trim().toLowerCase();
                 return rule?.is_active !== false
                     && (ruleSite === 'all' || ruleSite === site)
                     && billingMode === 'points'
-                    && allowedModes.has(mode);
-            })
-            .map((rule) => {
-                const modelId = String(rule.model || '*').trim() || '*';
-                const providerId = getPricingRuleProviderId(rule);
-                const model = modelId === '*' ? null : getPricingModelOption(group, modelId, providerId);
-                const metadata = rule?.metadata && typeof rule.metadata === 'object' ? rule.metadata : {};
-                const resolution = String(rule.resolution || '*').trim().toLowerCase();
-                const ratio = String(rule.ratio || '*').trim();
-                const quantity = clampNumber(rule.quantity, 1, 8, 1);
-                const duration = String(metadata.duration || metadata.video_duration || metadata.seconds || '').trim();
-                const variant = [
-                    resolution !== '*' ? resolution.toUpperCase() : '',
-                    ratio !== '*' ? ratio : '',
-                    duration ? `${duration}s` : '',
-                    quantity > 1 ? `${quantity}${group === 'video' ? ' 次' : ' 张'}` : ''
-                ].filter(Boolean).join(' · ') || '标准';
-                const key = [group, providerId, modelId.toLowerCase(), variant, rule.points].join(':');
-                if (seen.has(key)) return null;
-                seen.add(key);
-                return {
-                    id: modelId,
-                    label: model?.label || (modelId === '*' ? '默认价格' : modelId),
-                    providerLabel: model?.providerLabel || '',
-                    variant,
-                    points: getRuntimePricingRuleEstimate(rule, quantity)
-                };
-            })
-            .filter(Boolean);
+                    && allowedModes.has(ruleMode);
+            });
+
+        activeRules.forEach((rule) => {
+            const modelId = String(rule.model || '*').trim() || '*';
+            const providerId = getPricingRuleProviderId(rule);
+            const model = modelId === '*' ? null : getPricingModelOption(group, modelId, providerId);
+
+            if (modelId !== '*' && configuredModels.length && !model) {
+                return;
+            }
+
+            const metadata = rule?.metadata && typeof rule.metadata === 'object' ? rule.metadata : {};
+            const resolution = String(rule.resolution || '*').trim().toLowerCase();
+            const ratio = String(rule.ratio || '*').trim();
+            const quantity = clampNumber(rule.quantity, 1, 8, 1);
+            const duration = String(metadata.duration || metadata.video_duration || metadata.seconds || '').trim();
+            const variant = [
+                resolution !== '*' ? resolution.toUpperCase() : '',
+                ratio !== '*' ? ratio : '',
+                duration ? `${duration}s` : '',
+                quantity > 1 ? `${quantity}${group === 'video' ? ' 次' : ' 张'}` : ''
+            ].filter(Boolean).join(' · ') || '标准';
+
+            const key = [group, providerId.toLowerCase(), modelId.toLowerCase(), variant].join(':');
+            if (seen.has(key)) return;
+            seen.add(key);
+
+            rows.push({
+                id: modelId,
+                label: model?.label || (modelId === '*' ? '默认价格' : modelId),
+                providerLabel: model?.providerLabel || '',
+                variant,
+                points: getRuntimePricingRuleEstimate(rule, quantity)
+            });
+        });
+
+        const defaultIndex = rows.findIndex((r) => r.id === '*');
+        if (defaultIndex > 0) {
+            const [defaultRow] = rows.splice(defaultIndex, 1);
+            rows.unshift(defaultRow);
+        }
+
+        return rows;
     }
 
     function renderAdminModelPricing(group = 'image') {
@@ -11836,6 +12159,7 @@
                             <div class="ai-image-model-price-name" role="cell">
                                 <strong>${escapeHtml(row.label)}</strong>
                                 ${showModelId ? `<span>${escapeHtml(row.id)}</span>` : ''}
+                                ${row.providerLabel ? `<span class="ai-image-model-price-channel">渠道 · ${escapeHtml(row.providerLabel)}</span>` : ''}
                             </div>
                             <span role="cell" data-label="规格">${escapeHtml(row.variant)}</span>
                             <strong class="ai-image-model-price-points" role="cell" data-label="价格">${escapeHtml(formatPoints(row.points))} 积分</strong>
@@ -11889,6 +12213,10 @@
                         <span><i class="fas fa-tags"></i></span>
                         <div><strong>模型价格</strong><em>${escapeHtml(modelPricingView.tab === 'chat' ? '公开参考价' : '积分价格')}</em></div>
                     </div>
+                    <button class="ai-image-model-pricing-refresh ${modelPricingView.loading ? 'is-loading' : ''}" type="button" data-aiw-action="refresh-model-pricing" aria-label="刷新价格" title="刷新价格">
+                        <i class="fas ${modelPricingView.loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'}"></i>
+                        <span>刷新</span>
+                    </button>
                 </header>
                 <div class="ai-image-model-pricing-tabs" role="tablist" aria-label="模型类型">
                     ${tabs.map((tab) => `
@@ -12028,9 +12356,9 @@
                         <span class="ai-image-progress-count" data-aiw-live-status-task-id="${escapeHtml(task.id)}" data-aiw-live-status-kind="generation">${escapeHtml(getTaskGenerationLabel(task))}</span>
                     </div>
                 </div>
-                <div class="ai-image-result-prompt">
-                    <p>${escapeHtml(getTaskPromptText(task))}</p>
-                    <button class="ai-image-result-prompt-copy" type="button" data-aiw-action="copy-task-prompt" data-task-id="${escapeHtml(task.id)}" aria-label="复制提示词" title="复制提示词">
+                <div class="ai-image-result-prompt${expandedPromptTaskIds.has(task.id) ? ' is-expanded' : ''}">
+                    <p data-aiw-action="toggle-prompt-expand" data-task-id="${escapeHtml(task.id)}" role="button" tabindex="0" title="点击展开/折叠完整提示词">${escapeHtml(getTaskPromptText(task))}</p>
+                    <button class="ai-image-result-prompt-copy ai-image-chat-copy ai-image-chat-copy--question" type="button" data-aiw-action="copy-task-prompt" data-task-id="${escapeHtml(task.id)}" aria-label="复制提示词" title="复制提示词">
                         <i class="fas fa-copy"></i>
                     </button>
                 </div>
@@ -12072,7 +12400,7 @@
         `;
     }
 
-    function renderInlineTaskPreview(task, label = '继续生成', { showPrompt = true, forceBusy = false, navigationAnchor = false, imageSlot = null, stepLabel = '' } = {}) {
+    function renderInlineTaskPreview(task, label = '继续生成', { showPrompt = true, forceBusy = false, navigationAnchor = false, imageSlot = null, stepLabel = '', showMeta = false } = {}) {
         const aspect = getRatioAspect(task.ratio, task.mode);
         const isBusy = forceBusy || ['queued', 'processing'].includes(task.status) || task.status === 'streaming';
         const isStopped = ['failed', 'cancelled'].includes(task.status) && !isTaskReloadableBillingRecord(task);
@@ -12087,13 +12415,23 @@
         const navigationAttrs = navigationAnchor && task?.id
             ? ` data-task-id="${escapeHtml(task.id)}" data-aiw-chat-turn-id="${escapeHtml(task.id)}"`
             : '';
+        const topMetaHtml = (showMeta && !showPrompt)
+            ? `
+                <div class="ai-image-thread-meta ai-image-thread-meta--card">
+                    <span>${escapeHtml(getTaskImageMeta(task))}</span>
+                </div>
+            `
+            : '';
         return `
             <article class="ai-image-thread-step ${isBusy ? 'is-pending' : 'is-stopped'}"${navigationAttrs}>
                 ${showPrompt ? `<div class="ai-image-thread-prompt">
                     <span>${escapeHtml(label)}</span>
                     <p>${escapeHtml(getTaskPromptText(task))}</p>
-                    <em>${escapeHtml(getTaskImageMeta(task))}</em>
+                    <em class="ai-image-thread-meta">
+                        <span>${escapeHtml(getTaskImageMeta(task))}</span>
+                    </em>
                 </div>` : ''}
+                ${topMetaHtml}
                 <div class="ai-image-result ${isBusy ? 'ai-image-result--pending' : 'ai-image-result--stopped'}" style="--aiw-result-aspect:${escapeHtml(aspect)}">
                     <div class="ai-image-result-main">
                         <div class="ai-image-result-media">
@@ -12120,29 +12458,71 @@
         `;
     }
 
-    function renderInlineTaskReloadingPreview(task, label = '记录重新加载中', { showPrompt = true, navigationAnchor = false } = {}) {
+    function renderInlineTaskReloadingPreview(task, label = '记录重新加载中', { showPrompt = true, navigationAnchor = false, showMeta = false } = {}) {
         const aspect = getRatioAspect(task.ratio, task.mode);
         const navigationAttrs = navigationAnchor && task?.id
             ? ` data-task-id="${escapeHtml(task.id)}" data-aiw-chat-turn-id="${escapeHtml(task.id)}"`
+            : '';
+        const topMetaHtml = (showMeta && !showPrompt)
+            ? `
+                <div class="ai-image-thread-meta ai-image-thread-meta--card">
+                    <span>${escapeHtml(getTaskImageMeta(task))}</span>
+                </div>
+            `
             : '';
         return `
             <article class="ai-image-thread-step is-reloading"${navigationAttrs}>
                 ${showPrompt ? `<div class="ai-image-thread-prompt">
                     <span>${escapeHtml(label)}</span>
                     <p>${escapeHtml(getTaskPromptText(task))}</p>
-                    <em>${escapeHtml(getTaskImageMeta(task))}</em>
+                    <em class="ai-image-thread-meta">
+                        <span>${escapeHtml(getTaskImageMeta(task))}</span>
+                    </em>
                 </div>` : ''}
+                ${topMetaHtml}
                 <div class="ai-image-result ai-image-result--reloading" style="--aiw-result-aspect:${escapeHtml(aspect)}">
                     <div class="ai-image-result-main">
                         <div class="ai-image-result-media">
                             <div class="ai-image-inline-reloading-visual">
                                 <span>记录重新加载中</span>
                             </div>
-                            <span class="ai-image-result-resolution">${escapeHtml(getTaskResolutionLabel(task))}</span>
                         </div>
                     </div>
                 </div>
             </article>
+        `;
+    }
+
+    function renderImageDownloadAction(entry, { className = '' } = {}) {
+        if (!entry?.image && !entry?.src && !entry?.originalSrc) return '';
+        const isVideo = isVideoMode(entry.task?.mode) || isVideoResultImage(entry.image);
+        const videoAwaitingReady = isVideo && isVideoImageAwaitingReady(entry.image);
+        const originalReady = isVideo
+            ? (!videoAwaitingReady && Boolean(entry.originalSrc || entry.src))
+            : Boolean(entry.image?.originalReady && entry.originalSrc);
+        const originalStatusLabel = isVideo
+            ? (videoAwaitingReady ? '视频转存中' : '视频')
+            : getImageOriginalStatusLabel(entry.image);
+        const imageIdentityKey = getImageIdentityKey({
+            taskId: entry.image?.taskId || entry.task?.id,
+            resultId: entry.image?.resultId || '',
+            resultIndex: entry.image?.index ?? entry.imageIndex,
+            src: entry.src,
+            context: 'result'
+        });
+        const previewSrc = isVideo ? entry.src : getStableImageUrl(imageIdentityKey, entry.src);
+        const downloadAttrs = originalReady
+            ? `href="${escapeHtml(entry.originalSrc || previewSrc)}" download target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(isVideo ? '下载视频' : '下载原图')}" title="${escapeHtml(isVideo ? '下载视频' : '下载原图')}"`
+            : `href="${escapeHtml(previewSrc)}" aria-disabled="true" class="ai-image-result-action is-disabled" aria-label="${escapeHtml(originalStatusLabel)}" title="${escapeHtml(originalStatusLabel)}"`;
+        const downloadClass = originalReady ? 'ai-image-result-action' : '';
+        const downloadIcon = originalReady ? 'fa-download' : 'fa-clock';
+        const wrapperClass = ['ai-image-result-actions', className].filter(Boolean).join(' ');
+        return `
+            <div class="${wrapperClass}">
+                <a ${downloadAttrs} ${downloadClass ? `class="${downloadClass}"` : ''} data-aiw-download="original" data-result-id="${escapeHtml(entry.image?.resultId || '')}" data-task-id="${escapeHtml(entry.image?.taskId || entry.task?.id)}" data-result-index="${escapeHtml(entry.image?.index ?? entry.imageIndex)}">
+                    <i class="fas ${downloadIcon}"></i>
+                </a>
+            </div>
         `;
     }
 
@@ -12151,16 +12531,16 @@
             ? ` data-task-id="${escapeHtml(entry.task.id)}" data-aiw-chat-turn-id="${escapeHtml(entry.task.id)}"`
             : '';
         return `
-                                    <article class="ai-image-thread-step ai-image-thread-step--prompt"${navigationAttrs}>
-                                        <div class="ai-image-thread-prompt">
-                                            <span>${escapeHtml(entry.baseSequence ? `基于序列 ${entry.baseSequence} 续作` : '续作提示词')}</span>
-                                            <p>${escapeHtml(getTaskPromptText(entry.task))}</p>
-                                            <em class="ai-image-thread-meta">
-                                                <span>${escapeHtml(getTaskImageMeta(entry.task))}</span>
-                                            </em>
-                                        </div>
-                                    </article>
-                        `;
+            <article class="ai-image-thread-step ai-image-thread-step--prompt"${navigationAttrs}>
+                <div class="ai-image-thread-prompt${expandedPromptTaskIds.has(entry.task?.id) ? ' is-expanded' : ''}">
+                    <span>${escapeHtml(entry.baseSequence ? `基于序列 ${entry.baseSequence} 续作` : '续作提示词')}</span>
+                    <p data-aiw-action="toggle-prompt-expand" data-task-id="${escapeHtml(entry.task?.id || '')}" role="button" tabindex="0" title="点击展开/折叠完整提示词">${escapeHtml(getTaskPromptText(entry.task))}</p>
+                    <button class="ai-image-result-prompt-copy ai-image-chat-copy ai-image-chat-copy--question" type="button" data-aiw-action="copy-task-prompt" data-task-id="${escapeHtml(entry.task?.id || '')}" aria-label="复制提示词" title="复制提示词">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </div>
+            </article>
+        `;
     }
 
     function renderTaskImageEntry(entry, index = 0, aspect = '1 / 1', { navigationAnchor = false, imageLoading = 'eager', imageFetchPriority = 'high' } = {}) {
@@ -12199,11 +12579,18 @@
             : `href="${escapeHtml(previewSrc)}" aria-disabled="true" class="ai-image-result-action is-disabled" aria-label="${escapeHtml(originalStatusLabel)}" title="${escapeHtml(originalStatusLabel)}"`;
         const downloadClass = originalReady ? 'ai-image-result-action' : '';
         const downloadIcon = originalReady ? 'fa-download' : 'fa-clock';
+        const topMetaHtml = `
+            <div class="ai-image-thread-meta ai-image-thread-meta--card">
+                <span>${escapeHtml(getTaskImageMeta(entry.task))}</span>
+                ${renderImageDownloadAction(entry, { className: 'ai-image-result-actions--thread-meta' })}
+            </div>
+        `;
         const navigationAttrs = navigationAnchor && entry.task?.id
             ? ` data-task-id="${escapeHtml(entry.task.id)}" data-aiw-chat-turn-id="${escapeHtml(entry.task.id)}"`
             : '';
         return `
                                     <article class="ai-image-thread-step"${navigationAttrs}>
+                                        ${topMetaHtml}
                                         <div class="ai-image-result" style="--aiw-result-aspect:${escapeHtml(getRatioAspect(entry.task.ratio, entry.task.mode) || aspect)}">
                                             <div class="ai-image-result-main">
                                                 <div class="ai-image-result-media ${mediaStateClass}" ${isVideo ? 'aria-label="生成视频预览"' : `role="button" tabindex="0" aria-label="打开全分辨率预览" title="${escapeHtml(originalReady ? '打开全分辨率预览' : '打开预览图，原图转存中')}" data-aiw-preview-open`} data-aiw-media-type="${escapeHtml(isVideo ? 'video' : 'image')}" data-aiw-image-key="${escapeHtml(imageIdentityKey)}" data-aiw-preview-src="${escapeHtml(previewSrc)}" data-aiw-preview-thumb="${escapeHtml(previewSrc)}" data-aiw-preview-original-src="${escapeHtml(entry.originalSrc || '')}" data-aiw-preview-bytes="${escapeHtml(getResultImagePreviewBytes(entry.image))}" data-aiw-original-bytes="${escapeHtml(getResultImageOriginalBytes(entry.image))}" data-aiw-original-ready="${originalReady ? 'true' : 'false'}" data-aiw-original-status="${escapeHtml(entry.image?.originalStatus || '')}" data-aiw-preview-title="${escapeHtml(previewTitle)}" data-aiw-preview-meta="${escapeHtml(previewMeta)}" data-result-id="${escapeHtml(entry.image?.resultId || '')}" data-task-id="${escapeHtml(entry.image?.taskId || entry.task.id)}" data-result-index="${escapeHtml(entry.image?.index ?? entry.imageIndex)}" style="${videoProgressStyle}">
@@ -12445,7 +12832,7 @@
         forceBusy = false
     } = {}) {
         const explicitSlotIndexes = Array.isArray(slotIndexes)
-            ? slotIndexes.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value >= 0).slice(0, 4)
+            ? slotIndexes.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value >= 0).slice(0, 10)
             : null;
         const length = explicitSlotIndexes
             ? explicitSlotIndexes.length
@@ -12550,10 +12937,17 @@
         const threadRoot = getTaskThreadRoot(task) || task;
         const threadTasks = getTaskThread(threadRoot).filter((item) => item.mode !== 'chat' && item.mode !== 'reverse');
         const hasThreadChildren = threadTasks.length > 1;
+        const isExpanded = expandedPromptTaskIds.has(threadRoot.id);
+        const expandedPromptClass = isExpanded ? ' is-expanded' : '';
         let sequenceCursor = 0;
         const taskSequenceMap = new Map();
         const imageEntries = threadTasks.flatMap((item, taskIndex) => {
-            const baseSequence = taskSequenceMap.get(item.parentTaskId) || 0;
+            const targetParentId = item.parentTaskId || item.referenceTaskId || '';
+            const matchedParentSequence = (item.referenceResultId && taskSequenceMap.get(`${targetParentId}:${item.referenceResultId}`))
+                || (item.referenceResultIndex !== undefined && item.referenceResultIndex !== '' && taskSequenceMap.get(`${targetParentId}#${item.referenceResultIndex}`))
+                || taskSequenceMap.get(targetParentId)
+                || 0;
+            const baseSequence = matchedParentSequence || taskSequenceMap.get(item.parentTaskId) || 0;
             if (item.status !== 'succeeded') {
                 const isReloadingRecord = isTaskReloadableBillingRecord(item);
                 const imageEntriesForTask = buildTaskImageEntries(item, {
@@ -12567,6 +12961,12 @@
                 if (imageEntriesForTask.length && (pendingEntryCount <= 0 || isReloadingRecord)) {
                     const lastEntry = imageEntriesForTask[imageEntriesForTask.length - 1];
                     taskSequenceMap.set(item.id, lastEntry.sequence);
+                    if (lastEntry.image?.resultId) {
+                        taskSequenceMap.set(`${item.id}:${lastEntry.image.resultId}`, lastEntry.sequence);
+                    }
+                    if (lastEntry.imageIndex !== undefined) {
+                        taskSequenceMap.set(`${item.id}#${lastEntry.imageIndex}`, lastEntry.sequence);
+                    }
                     sequenceCursor = lastEntry.sequence;
                     return imageEntriesForTask;
                 }
@@ -12578,7 +12978,7 @@
                     sequenceStart: sequenceCursor,
                     slotIndexes: pendingEntryCount ? missingSlotIndexes : [imageEntriesForTask.length],
                     count: pendingEntryCount || 1,
-                    baseSequence: pendingBaseSequence
+                    baseSequence: imageEntriesForTask.length ? pendingBaseSequence : (baseSequence || pendingBaseSequence)
                 });
                 const combinedEntries = sortTaskPreviewEntries([
                     ...imageEntriesForTask,
@@ -12644,6 +13044,15 @@
             }
             entries.forEach((entry) => {
                 taskSequenceMap.set(item.id, entry.sequence);
+                if (entry.image?.resultId) {
+                    taskSequenceMap.set(`${item.id}:${entry.image.resultId}`, entry.sequence);
+                }
+                if (entry.imageIndex !== undefined) {
+                    taskSequenceMap.set(`${item.id}#${entry.imageIndex}`, entry.sequence);
+                }
+                if (entry.slotIndex !== undefined) {
+                    taskSequenceMap.set(`${item.id}@${entry.slotIndex}`, entry.sequence);
+                }
             });
             sequenceCursor = entries[entries.length - 1].sequence;
             return entries;
@@ -12661,9 +13070,9 @@
                             <span>${escapeHtml([getTaskSubtitle(task), generatedTime].filter(Boolean).join(' · '))}</span>
                         </div>
                     </div>
-                    <div class="ai-image-result-prompt${promptOverflowClass}">
-                        <p>${escapeHtml(promptText)}</p>
-                        <button class="ai-image-result-prompt-copy" type="button" data-aiw-action="copy-task-prompt" data-task-id="${escapeHtml(threadRoot.id)}" aria-label="复制提示词" title="复制提示词">
+                    <div class="ai-image-result-prompt${promptOverflowClass}${expandedPromptClass}">
+                        <p data-aiw-action="toggle-prompt-expand" data-task-id="${escapeHtml(threadRoot.id)}" role="button" tabindex="0" title="点击展开/折叠完整提示词">${escapeHtml(promptText)}</p>
+                        <button class="ai-image-result-prompt-copy ai-image-chat-copy ai-image-chat-copy--question" type="button" data-aiw-action="copy-task-prompt" data-task-id="${escapeHtml(threadRoot.id)}" aria-label="复制提示词" title="复制提示词">
                             <i class="fas fa-copy"></i>
                         </button>
                     </div>
@@ -12673,16 +13082,44 @@
                             const navigationAnchor = Boolean(taskId && !anchoredTaskIds.has(taskId));
                             if (taskId) anchoredTaskIds.add(taskId);
                             if (entry.type === 'pending') {
+                                if (entry.taskIndex && navigationAnchor) {
+                                    return [
+                                        renderTaskContinuationPrompt(entry, { navigationAnchor }),
+                                        renderInlineTaskPreview(entry.task, '生成中', {
+                                            showPrompt: false,
+                                            forceBusy: Boolean(entry.forceBusy),
+                                            navigationAnchor: false,
+                                            imageSlot: entry.slotSequence,
+                                            stepLabel: entry.forceBusy && entry.task?.status === 'succeeded' ? '结果同步中' : '',
+                                            showMeta: !entry.taskIndex
+                                        })
+                                    ].join('');
+                                }
                                 return renderInlineTaskPreview(entry.task, '生成中', {
                                     showPrompt: false,
                                     forceBusy: Boolean(entry.forceBusy),
                                     navigationAnchor,
                                     imageSlot: entry.slotSequence,
-                                    stepLabel: entry.forceBusy && entry.task?.status === 'succeeded' ? '结果同步中' : ''
+                                    stepLabel: entry.forceBusy && entry.task?.status === 'succeeded' ? '结果同步中' : '',
+                                    showMeta: !entry.taskIndex
                                 });
                             }
                             if (entry.type === 'reloading') {
-                                return renderInlineTaskReloadingPreview(entry.task, '记录重新加载中', { showPrompt: false, navigationAnchor });
+                                if (entry.taskIndex && navigationAnchor) {
+                                    return [
+                                        renderTaskContinuationPrompt(entry, { navigationAnchor }),
+                                        renderInlineTaskReloadingPreview(entry.task, '记录重新加载中', {
+                                            showPrompt: false,
+                                            navigationAnchor: false,
+                                            showMeta: !entry.taskIndex
+                                        })
+                                    ].join('');
+                                }
+                                return renderInlineTaskReloadingPreview(entry.task, '记录重新加载中', {
+                                    showPrompt: false,
+                                    navigationAnchor,
+                                    showMeta: !entry.taskIndex
+                                });
                             }
                             if (entry.taskIndex && navigationAnchor) {
                                 return [
@@ -12746,11 +13183,16 @@
         return `
             <aside class="ai-image-history-sidebar ${sidebarView ? 'is-expanded' : 'is-collapsed'}" aria-label="${isBillingView ? '计费方式' : '生成记录'}">
                 <div class="ai-image-history-rail">
-                    <button class="ai-image-rail-brand ${sidebarView ? 'is-sidebar-open' : ''}" type="button" data-aiw-action="toggle-sidebar" aria-label="${sidebarView ? '收起侧栏' : '展开侧栏'}" data-rail-tooltip="${sidebarView ? '收起侧栏' : '展开侧栏'}" data-rail-label="侧栏">
-                        <svg class="ai-image-rail-icon-panel" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <button class="ai-image-rail-brand ${sidebarView ? 'is-sidebar-open' : ''}" type="button" data-aiw-action="toggle-sidebar" aria-label="${isMobileWorkbenchViewport() ? (sidebarView ? '收起顶栏' : '展开顶栏') : (sidebarView ? '收起侧栏' : '展开侧栏')}" data-rail-tooltip="${sidebarView ? '收起侧栏' : '展开侧栏'}" data-rail-tooltip-narrow="${sidebarView ? '收起顶栏' : '展开顶栏'}" data-rail-label="侧栏" data-rail-label-narrow="顶栏">
+                        <svg class="ai-image-rail-icon-panel ai-image-rail-icon-panel--wide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <rect width="18" height="18" x="3" y="3" rx="2"></rect>
                             <path d="M9 3v18"></path>
                             ${sidebarView ? '<path d="m16 15-3-3 3-3"></path>' : '<path d="m14 9 3 3-3 3"></path>'}
+                        </svg>
+                        <svg class="ai-image-rail-icon-panel ai-image-rail-icon-panel--narrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+                            <path d="M3 9h18"></path>
+                            ${sidebarView ? '<path d="m9 16 3-3 3 3"></path>' : '<path d="m9 14 3 3 3-3"></path>'}
                         </svg>
                         <i class="fas fa-chevron-left ai-image-sidebar-toggle-chevron ai-image-sidebar-toggle-chevron--wide" aria-hidden="true"></i>
                         <i class="fas fa-chevron-up ai-image-sidebar-toggle-chevron ai-image-sidebar-toggle-chevron--narrow" aria-hidden="true"></i>
@@ -12766,20 +13208,31 @@
                         ${badgeValue ? `<span>${escapeHtml(badgeValue)}</span>` : ''}
                     </button>
                     <div class="ai-image-rail-mode-switcher" role="group" aria-label="工作模式">
-                        ${railModeOptions.map((item) => {
-                            const available = item.available !== false;
-                            const active = currentToolMode === item.id;
-                            const tooltip = available ? item.label : ('暂未配置' + item.label + '模型');
-                            return `
-                                <button class="ai-image-rail-btn ai-image-rail-mode-btn ${active ? 'is-active' : ''} ${available ? '' : 'is-disabled'}" type="button" data-aiw-action="set-workbench-tool-mode" data-aiw-tool-mode="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.label)}" aria-pressed="${active ? 'true' : 'false'}" data-rail-tooltip="${escapeHtml(tooltip)}" data-rail-label="${escapeHtml(item.label)}" ${available ? '' : 'disabled'}>
-                                    ${renderWorkbenchRailModeIcon(item.id)}
-                                    <i class="fas ${escapeHtml(item.icon)}" aria-hidden="true" style="display:none;"></i>
-                                </button>
-                            `;
-                        }).join('')}
+                        ${(() => {
+                            const railModeTooltips = {
+                                chat: '文本对话',
+                                image: '图片模式',
+                                video: '视频模式'
+                            };
+                            return railModeOptions.map((item) => {
+                                const available = item.available !== false;
+                                const active = currentToolMode === item.id;
+                                const tipTitle = railModeTooltips[item.id] || item.label;
+                                const tooltip = available ? tipTitle : ('暂未配置' + tipTitle + '模型');
+                                return `
+                                    <button class="ai-image-rail-btn ai-image-rail-mode-btn ${active ? 'is-active' : ''} ${available ? '' : 'is-disabled'}" type="button" data-aiw-action="set-workbench-tool-mode" data-aiw-tool-mode="${escapeHtml(item.id)}" aria-label="${escapeHtml(tipTitle)}" aria-pressed="${active ? 'true' : 'false'}" data-rail-tooltip="${escapeHtml(tooltip)}" data-rail-label="${escapeHtml(tipTitle)}" ${available ? '' : 'disabled'}>
+                                        ${renderWorkbenchRailModeIcon(item.id)}
+                                        <i class="fas ${escapeHtml(item.icon)}" aria-hidden="true" style="display:none;"></i>
+                                    </button>
+                                `;
+                            }).join('');
+                        })()}
                     </div>
                     <div class="ai-image-rail-footer">
-                        <nav class="ai-image-rail-legal ai-image-rail-legal--desktop" aria-label="平台政策">
+                        <nav class="ai-image-rail-legal ai-image-rail-legal--desktop" aria-label="平台政策与规范">
+                            <a class="ai-image-rail-standards-link ai-image-rail-legal-link" href="/model-standards.html" target="_blank" rel="noopener noreferrer" aria-label="查看模型与文件支持规范" data-rail-tooltip="模型与文件规范" data-rail-label="规范">
+                                <i class="fas fa-circle-exclamation ai-image-rail-standards-icon" aria-hidden="true"></i>
+                            </a>
                             <a class="ai-image-rail-legal-link" href="/terms.html" target="_blank" rel="noopener noreferrer" aria-label="查看服务条款" data-rail-tooltip="服务条款" data-rail-label="条款">
                                 <i class="fas fa-file-contract" aria-hidden="true"></i>
                             </a>
@@ -12794,7 +13247,10 @@
                 </div>
 
                 <div class="ai-image-history-expanded">
-                    <nav class="ai-image-rail-legal ai-image-rail-legal--mobile" aria-label="平台政策">
+                    <nav class="ai-image-rail-legal ai-image-rail-legal--mobile" style="display:none !important;" aria-label="平台政策与规范">
+                        <a class="ai-image-rail-standards-link ai-image-rail-legal-link" href="/model-standards.html" target="_blank" rel="noopener noreferrer" aria-label="查看模型与文件支持规范" data-rail-tooltip="模型与文件规范" data-rail-label="规范">
+                            <i class="fas fa-circle-exclamation ai-image-rail-standards-icon" aria-hidden="true"></i>
+                        </a>
                         <a class="ai-image-rail-legal-link" href="/terms.html" target="_blank" rel="noopener noreferrer" aria-label="查看服务条款" data-rail-tooltip="服务条款" data-rail-label="条款">
                             <i class="fas fa-file-contract" aria-hidden="true"></i>
                         </a>

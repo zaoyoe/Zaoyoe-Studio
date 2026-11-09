@@ -1,0 +1,47 @@
+[
+  {
+    "command": [
+      "git",
+      "diff",
+      "--no-index",
+      "--check",
+      "--",
+      "/tmp/kc-round5-owner-locks-20261108-before/services/kc-pay-gpt/mysql-store.js",
+      "services/kc-pay-gpt/mysql-store.js"
+    ],
+    "exit_code_observed": 1,
+    "stdout": "",
+    "stderr": "",
+    "interpretation": "No whitespace diagnostics. --no-index exits 1 because different content exists; not exit 0."
+  },
+  {
+    "command": [
+      "git",
+      "diff",
+      "--no-index",
+      "--check",
+      "--",
+      "/tmp/kc-round5-owner-locks-20261108-before/services/kc-pay-gpt/test/gpt-outsourcing-store.test.js",
+      "services/kc-pay-gpt/test/gpt-outsourcing-store.test.js"
+    ],
+    "exit_code_observed": 1,
+    "stdout": "",
+    "stderr": "",
+    "interpretation": "No whitespace diagnostics. --no-index exits 1 because different content exists; not exit 0."
+  },
+  {
+    "command": [
+      "git",
+      "diff",
+      "--no-index",
+      "--check",
+      "--",
+      "/dev/null",
+      "tests/security-round5-kc-owner-locks.test.js"
+    ],
+    "exit_code_observed": 1,
+    "stdout": "",
+    "stderr": "",
+    "interpretation": "No whitespace diagnostics. --no-index exits 1 because different content exists; not exit 0."
+  }
+]

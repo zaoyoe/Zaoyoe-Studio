@@ -42,16 +42,39 @@ describe('startup task recovery', () => {
         const localTask = { job_key: 'recent', cdk_code: 'local-cdk', execution_mode: 'local_card_pool', payment_state: paymentState };
         const store = {
             listRunningTasksForRecovery: vi.fn(async () => [localTask, { job_key: 'external', execution_mode: 'third_party_api' }]),
-            updateTaskLog: vi.fn(), markCdkUnused: vi.fn(), resetAllAssetLocks: vi.fn()
+            updateTaskLog: vi.fn(), markCdkUnused: vi.fn(), resetAllAssetLocks: vi.fn(),
+            retireSafeActivationTask: vi.fn(async () => ({ released: true }))
         };
         const code = snippet(serverSource, '        const staleTasks = await store.listRunningTasksForRecovery();', '    } catch (error) {\n        console.error(`❌ [任务恢复]');
         await vm.runInNewContext(`(async () => {${code}})()`, {
             store, classifyInterruptedTask, recoverInterruptedCheckoutDiagnostic: async () => false, console: { log() {} }
         });
         expect(store.listRunningTasksForRecovery).toHaveBeenCalledOnce();
-        expect(store.updateTaskLog).toHaveBeenCalledExactlyOnceWith('recent', expect.objectContaining({ status, paymentState, recoveryRequired: retainCdk }));
-        if (retainCdk) expect(store.markCdkUnused).not.toHaveBeenCalled();
-        else expect(store.markCdkUnused).toHaveBeenCalledExactlyOnceWith('local-cdk');
+        if (retainCdk) {
+            expect(store.updateTaskLog).toHaveBeenCalledExactlyOnceWith('recent', expect.objectContaining({ status, paymentState, recoveryRequired: true }));
+            expect(store.retireSafeActivationTask).not.toHaveBeenCalled();
+        } else {
+            expect(store.retireSafeActivationTask).toHaveBeenCalledExactlyOnceWith('recent', expect.objectContaining({ allowDeclined: true }));
+            expect(store.updateTaskLog).not.toHaveBeenCalled();
+        }
+        expect(store.markCdkUnused).not.toHaveBeenCalled();
+        expect(store.resetAllAssetLocks).toHaveBeenCalledOnce();
+    });
+    it('keeps the current task intact when its startup snapshot no longer permits retirement', async () => {
+        const store = {
+            listRunningTasksForRecovery: vi.fn(async () => [{ job_key: 'stale', cdk_code: 'local-cdk', execution_mode: 'local_card_pool', payment_state: 'not_started' }]),
+            retireSafeActivationTask: vi.fn(async () => ({ released: false, reason: 'TASK_REQUIRES_REVIEW' })),
+            updateTaskLog: vi.fn(), markCdkUnused: vi.fn(), resetAllAssetLocks: vi.fn()
+        };
+        const logTask = vi.fn();
+        const code = snippet(serverSource, '        const staleTasks = await store.listRunningTasksForRecovery();', '    } catch (error) {\n        console.error(`❌ [任务恢复]');
+        await vm.runInNewContext(`(async () => {${code}})()`, {
+            store, classifyInterruptedTask, recoverInterruptedCheckoutDiagnostic: async () => false, logTask, console: { log() {} }
+        });
+        expect(store.retireSafeActivationTask).toHaveBeenCalledOnce();
+        expect(store.updateTaskLog).not.toHaveBeenCalled();
+        expect(store.markCdkUnused).not.toHaveBeenCalled();
+        expect(logTask).toHaveBeenCalledWith('stale', expect.stringContaining('保留任务及 CDK'), 'warn');
     });
 });
 
@@ -149,7 +172,9 @@ describe('admin log polling recovery', () => {
     });
 });
 
-function socketHarness() {
+const syntheticTaskAccessToken = 'offline-synthetic-task-access-token';
+
+function socketHarness(taskAccessToken = syntheticTaskAccessToken) {
     const connections = [];
     class FakeWebSocket {
         static OPEN = 1;
@@ -168,12 +193,17 @@ function socketHarness() {
     vm.createContext(context);
     vm.runInContext(snippet(publicSource, '        let socket = null;', '        function resetRedeemFlow('), context);
     vm.runInContext(snippet(publicSource, '        function initWebSocket(', "        startBtn.addEventListener('click'"), context);
-    context.initWebSocket('original-task');
-    const first = connections[0]; first.readyState = 1; first.onopen();
+    context.initWebSocket('original-task', taskAccessToken);
+    const first = connections[0];
+    if (first) { first.readyState = 1; first.onopen(); }
     return { context, connections, first };
 }
 
 describe('recharge task connection recovery', () => {
+    it('does not create a task connection without its access token', () => {
+        const { connections } = socketHarness('');
+        expect(connections).toHaveLength(0);
+    });
     it('warns about a disconnect and subscribes to the same task after reconnecting', () => {
         vi.useFakeTimers();
         const { context, first, connections } = socketHarness();
@@ -181,7 +211,7 @@ describe('recharge task connection recovery', () => {
         expect(context.showStatus).toHaveBeenCalledWith(expect.stringContaining('请勿重复提交'), 'warning');
         vi.advanceTimersByTime(3000);
         const second = connections[1]; second.readyState = 1; second.onopen();
-        expect(JSON.parse(second.send.mock.calls[0][0])).toEqual({ type: 'subscribe', jobKey: 'original-task' });
+        expect(JSON.parse(second.send.mock.calls[0][0])).toEqual({ type: 'subscribe', jobKey: 'original-task', taskAccessToken: syntheticTaskAccessToken });
         second.onmessage({ data: JSON.stringify({ type: 'snapshot', jobKey: 'original-task', status: 'failed' }) });
         expect(context.statusMsg.style.display).toBe('none');
         expect(context.applyTaskState).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));

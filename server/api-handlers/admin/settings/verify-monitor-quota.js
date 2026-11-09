@@ -85,22 +85,24 @@ module.exports = async (req, res) => {
         const url = new URL(req.url || '', 'http://localhost');
         const siteHint = url.searchParams.get('site') || req.adminSite || adminContext?.site || '';
         const site = normalizeVerifyMonitorSite(siteHint);
+        const requestedProvider = url.searchParams.get('provider') || '';
 
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
         const timeoutId = controller
             ? setTimeout(() => controller.abort(), VERIFY_MONITOR_PROXY_TIMEOUT_MS)
             : 0;
 
+        let directState = null;
         try {
             const supabase = typeof getOptionalSupabaseAdmin === 'function'
                 ? getOptionalSupabaseAdmin()
                 : null;
-            let directState = null;
             if (supabase) {
                 directState = await fetchDirectVerifyQuotaState(supabase, {
                     fetchImpl: global.fetch,
                     timeoutMs: VERIFY_MONITOR_PROXY_TIMEOUT_MS,
-                    site
+                    site,
+                    provider: requestedProvider
                 });
 
                 if (directState?.success) {
@@ -129,33 +131,41 @@ module.exports = async (req, res) => {
             const remainingExtractUses = toFiniteNumber(payload?.remaining_extract_uses ?? remainingUses);
             const remainingFullUses = toFiniteNumber(payload?.remaining_full_uses ?? remainingUses);
 
+            const is86ai = payload?.provider === '86ai' || directState?.provider === '86ai';
+            const isSupported = is86ai ? false : (payload?.supported !== false ? (payload?.supported ?? true) : false);
+
             return sendJson(res, upstreamResponse.status, {
                 success: Boolean(payload?.success),
-                provider: String(payload?.provider || '').trim(),
-                provider_label: String(payload?.provider_label || payload?.providerLabel || '').trim(),
-                adapter: String(payload?.adapter || payload?.provider_adapter || '').trim(),
+                provider: String(payload?.provider || directState?.provider || '').trim(),
+                provider_label: String(payload?.provider_label || payload?.providerLabel || directState?.provider_label || '').trim(),
+                adapter: String(payload?.adapter || payload?.provider_adapter || directState?.adapter || '').trim(),
+                supported: isSupported,
                 capabilities: payload?.capabilities && typeof payload.capabilities === 'object'
                     ? payload.capabilities
-                    : {},
-                balance: toFiniteNumber(payload?.balance ?? payload?.credits ?? remainingUses),
-                remaining_uses: remainingUses,
-                remaining_extract_uses: remainingExtractUses,
-                remaining_full_uses: remainingFullUses,
-                remaining_extract_jobs: getRemainingJobCount(payload, 'remaining_extract_jobs', remainingExtractUses, 'extract_cost_per_job'),
-                remaining_full_jobs: getRemainingJobCount(payload, 'remaining_full_jobs', remainingFullUses, 'full_cost_per_job'),
+                    : (directState?.capabilities || {}),
+                balance: isSupported ? toFiniteNumber(payload?.balance ?? payload?.credits ?? remainingUses) : null,
+                remaining_uses: isSupported ? remainingUses : null,
+                remaining_extract_uses: isSupported ? remainingExtractUses : null,
+                remaining_full_uses: isSupported ? remainingFullUses : null,
+                remaining_extract_jobs: isSupported ? getRemainingJobCount(payload, 'remaining_extract_jobs', remainingExtractUses, 'extract_cost_per_job') : 0,
+                remaining_full_jobs: isSupported ? getRemainingJobCount(payload, 'remaining_full_jobs', remainingFullUses, 'full_cost_per_job') : 0,
                 total_used: toFiniteNumber(payload?.total_used),
                 cost_per_job: toFiniteNumber(payload?.cost_per_job),
                 extract_cost_per_job: toFiniteNumber(payload?.extract_cost_per_job),
                 full_cost_per_job: toFiniteNumber(payload?.full_cost_per_job),
                 key_name: String(payload?.key_name || payload?.name || '').trim(),
-                key_count: toFiniteNumber(payload?.key_count),
-                healthy_key_count: toFiniteNumber(payload?.healthy_key_count),
-                key_states: Array.isArray(payload?.key_states) ? payload.key_states : [],
+                key_count: toFiniteNumber(payload?.key_count ?? directState?.key_count),
+                healthy_key_count: toFiniteNumber(payload?.healthy_key_count ?? directState?.key_count),
+                key_states: Array.isArray(payload?.key_states) ? payload.key_states : (directState?.key_states || []),
                 api_base_url: String(payload?.api_base_url || payload?.apiBaseUrl || '').trim(),
                 checked_at: new Date().toISOString(),
-                message: payload?.message || ''
+                message: payload?.message || directState?.message || ''
             });
         } catch (error) {
+            if (directState?.provider === '86ai' || directState?.success) {
+                return sendJson(res, 200, directState);
+            }
+
             if (error?.name === 'AbortError') {
                 return sendJson(res, 504, {
                     success: false,

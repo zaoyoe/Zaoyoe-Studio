@@ -1,0 +1,8 @@
+2026-11-09T02:01:55.770509Z 0 [System] [MY-015017] [Server] MySQL Server Initialization - start.
+2026-11-09T02:01:55.771892Z 0 [System] [MY-013169] [Server] /opt/homebrew/Cellar/mysql@8.4/8.4.11_6/bin/mysqld (mysqld 8.4.11) initializing of server in progress as process 92038
+2026-11-09T02:01:55.774367Z 0 [Warning] [MY-010159] [Server] Setting lower_case_table_names=2 because file system for /private/tmp/kc-hold-7d64646488d639c6/data/ is case insensitive
+2026-11-09T02:01:55.777300Z 1 [System] [MY-013576] [InnoDB] InnoDB initialization has started.
+2026-11-09T02:01:55.926848Z 1 [System] [MY-013577] [InnoDB] InnoDB initialization has ended.
+2026-11-09T02:01:56.468799Z 5 [Warning] [MY-010453] [Server] root@localhost is created with an empty password ! Please consider switching off the --initialize-insecure option.
+2026-11-09T02:01:56.756946Z 0 [System] [MY-013172] [Server] Received SHUTDOWN from user <via user signal>. Shutting down mysqld (Version: 8.4.11).
+2026-11-09T02:01:57.233008Z 0 [System] [MY-015018] [Server] MySQL Server Initialization - end.

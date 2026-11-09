@@ -1,0 +1,732 @@
+TAP version 13
+# Subtest: supplier catalog list requires admin and returns only normalized upstream fields
+ok 1 - supplier catalog list requires admin and returns only normalized upstream fields
+  ---
+  duration_ms: 4.261417
+  type: 'test'
+  ...
+# Subtest: single and bulk supplier imports create only inactive local drafts and disabled mappings
+ok 2 - single and bulk supplier imports create only inactive local drafts and disabled mappings
+  ---
+  duration_ms: 1.023959
+  type: 'test'
+  ...
+# Subtest: disabled supplier accounts fail closed before any upstream request
+ok 3 - disabled supplier accounts fail closed before any upstream request
+  ---
+  duration_ms: 0.204792
+  type: 'test'
+  ...
+# Subtest: supplier catalog import fails closed with a clear migration-not-ready response
+ok 4 - supplier catalog import fails closed with a clear migration-not-ready response
+  ---
+  duration_ms: 0.131583
+  type: 'test'
+  ...
+# Subtest: re-importing an existing source listing returns its mapping without overwriting local product data
+ok 5 - re-importing an existing source listing returns its mapping without overwriting local product data
+  ---
+  duration_ms: 0.16575
+  type: 'test'
+  ...
+# Subtest: failed mapping creation compensates by removing the newly created inactive draft
+ok 6 - failed mapping creation compensates by removing the newly created inactive draft
+  ---
+  duration_ms: 0.251333
+  type: 'test'
+  ...
+# Subtest: supplier catalog route rejects unsupported methods and invalid bulk size
+ok 7 - supplier catalog route rejects unsupported methods and invalid bulk size
+  ---
+  duration_ms: 0.160584
+  type: 'test'
+  ...
+# Subtest: supplier catalog API handler is registered on the admin gateway
+ok 8 - supplier catalog API handler is registered on the admin gateway
+  ---
+  duration_ms: 0.605208
+  type: 'test'
+  ...
+# Subtest: Xiareng catalog snapshots merge duplicate goods across categories and reuse one snapshot for filters and pages
+ok 9 - Xiareng catalog snapshots merge duplicate goods across categories and reuse one snapshot for filters and pages
+  ---
+  duration_ms: 4.471875
+  type: 'test'
+  ...
+# Subtest: Xiareng catalog snapshots survive admin handler recreation between category and page requests
+ok 10 - Xiareng catalog snapshots survive admin handler recreation between category and page requests
+  ---
+  duration_ms: 1.196667
+  type: 'test'
+  ...
+# Subtest: refreshing a Xiareng snapshot in another tab does not invalidate an unexpired snapshot
+ok 11 - refreshing a Xiareng snapshot in another tab does not invalidate an unexpired snapshot
+  ---
+  duration_ms: 1.934917
+  type: 'test'
+  ...
+# Subtest: Xiareng catalog snapshots expire after the cache TTL and cannot cross site scope
+ok 12 - Xiareng catalog snapshots expire after the cache TTL and cannot cross site scope
+  ---
+  duration_ms: 1.782125
+  type: 'test'
+  ...
+# Subtest: Xiareng catalog rejects malformed or unscoped snapshot filters before reading upstream
+ok 13 - Xiareng catalog rejects malformed or unscoped snapshot filters before reading upstream
+  ---
+  duration_ms: 0.141959
+  type: 'test'
+  ...
+# Subtest: account discovery returns safe configuration metadata without adapter construction or upstream calls
+ok 14 - account discovery returns safe configuration metadata without adapter construction or upstream calls
+  ---
+  duration_ms: 0.247625
+  type: 'test'
+  ...
+# Subtest: catalog requests resolve exactly the selected provider/account and carry it to the isolated registry
+ok 15 - catalog requests resolve exactly the selected provider/account and carry it to the isolated registry
+  ---
+  duration_ms: 0.096833
+  type: 'test'
+  ...
+# Subtest: paused nondefault account and unsupported actions never construct an adapter or call upstream
+ok 16 - paused nondefault account and unsupported actions never construct an adapter or call upstream
+  ---
+  duration_ms: 0.126875
+  type: 'test'
+  ...
+# Subtest: Xiareng draft import uses one transactional RPC with a sanitized snapshot and server-validated race
+ok 17 - Xiareng draft import uses one transactional RPC with a sanitized snapshot and server-validated race
+  ---
+  duration_ms: 20.076917
+  type: 'test'
+  ...
+# Subtest: unsupported SKU, unspecified race and unsupported site do not create even an inactive product
+ok 18 - unsupported SKU, unspecified race and unsupported site do not create even an inactive product
+  ---
+  duration_ms: 1.00975
+  type: 'test'
+  ...
+# Subtest: a missing v2 database function fails explicitly without falling back to nontransactional product writes
+ok 19 - a missing v2 database function fails explicitly without falling back to nontransactional product writes
+  ---
+  duration_ms: 0.310666
+  type: 'test'
+  ...
+# Subtest: read-only preview requires stock/quote capabilities and never writes local products or mappings
+ok 20 - read-only preview requires stock/quote capabilities and never writes local products or mappings
+  ---
+  duration_ms: 0.164833
+  type: 'test'
+  ...
+# Subtest: preview returns a specific conflict when a supplier refuses draft-card inventory reads
+ok 21 - preview returns a specific conflict when a supplier refuses draft-card inventory reads
+  ---
+  duration_ms: 0.2335
+  type: 'test'
+  ...
+# Subtest: draft-card GET is admin-only, strictly paged, normalized and never writes local data
+ok 22 - draft-card GET is admin-only, strictly paged, normalized and never writes local data
+  ---
+  duration_ms: 0.239584
+  type: 'test'
+  ...
+# Subtest: draft-card request validation fails before account lookup or supplier calls
+ok 23 - draft-card request validation fails before account lookup or supplier calls
+  ---
+  duration_ms: 0.067
+  type: 'test'
+  ...
+# Subtest: Xiareng preselected-card goods are rejected before any import RPC or write
+ok 24 - Xiareng preselected-card goods are rejected before any import RPC or write
+  ---
+  duration_ms: 0.335208
+  type: 'test'
+  ...
+# Subtest: product source summary excludes credentials and stays readable on the pre-v2 schema
+ok 25 - product source summary excludes credentials and stays readable on the pre-v2 schema
+  ---
+  duration_ms: 0.23475
+  type: 'test'
+  ...
+# Subtest: source summary allowlists stored fields and rejects malformed product IDs before reading the database
+ok 26 - source summary allowlists stored fields and rejects malformed product IDs before reading the database
+  ---
+  duration_ms: 0.167625
+  type: 'test'
+  ...
+# Subtest: procurement history needs shop.manage but no configured adapter, credential, or enabled account
+ok 27 - procurement history needs shop.manage but no configured adapter, credential, or enabled account
+  ---
+  duration_ms: 0.164875
+  type: 'test'
+  ...
+# Subtest: procurement history rejects unauthorized and invalid filters before accessing private data
+ok 28 - procurement history rejects unauthorized and invalid filters before accessing private data
+  ---
+  duration_ms: 0.336125
+  type: 'test'
+  ...
+# Subtest: procurement database failures return a safe retryable response without revealing internals
+ok 29 - procurement database failures return a safe retryable response without revealing internals
+  ---
+  duration_ms: 0.095833
+  type: 'test'
+  ...
+# Subtest: known upstream order reconciliation is read-only and returns only safe status evidence
+ok 30 - known upstream order reconciliation is read-only and returns only safe status evidence
+  ---
+  duration_ms: 0.289666
+  type: 'test'
+  ...
+# Subtest: upstream order reconciliation rejects malformed input before any database or supplier access
+ok 31 - upstream order reconciliation rejects malformed input before any database or supplier access
+  ---
+  duration_ms: 0.218333
+  type: 'test'
+  ...
+# Subtest: upstream order reconciliation fails closed on lookup errors and malformed status evidence
+ok 32 - upstream order reconciliation fails closed on lookup errors and malformed status evidence
+  ---
+  duration_ms: 0.184917
+  type: 'test'
+  ...
+# Subtest: update-mapping-ceiling validates input and updates mapping cost ceiling via RPC
+ok 33 - update-mapping-ceiling validates input and updates mapping cost ceiling via RPC
+  ---
+  duration_ms: 0.087875
+  type: 'test'
+  ...
+# Subtest: Xiareng catalog list returns categoryTree and filters items by groupKey
+ok 34 - Xiareng catalog list returns categoryTree and filters items by groupKey
+  ---
+  duration_ms: 2.251875
+  type: 'test'
+  ...
+# Subtest: Xiareng multi-variant import calls import_shop_supplier_multi_draft_v3 with multiple variants
+ok 35 - Xiareng multi-variant import calls import_shop_supplier_multi_draft_v3 with multiple variants
+  ---
+  duration_ms: 1.3195
+  type: 'test'
+  ...
+# Subtest: Xiareng draft import preserves cover imageUrl in snapshot and updates product icon
+ok 36 - Xiareng draft import preserves cover imageUrl in snapshot and updates product icon
+  ---
+  duration_ms: 4.817709
+  type: 'test'
+  ...
+# Subtest: Xiareng autoAllVariants automatically discovers races and imports multi-variant draft
+ok 37 - Xiareng autoAllVariants automatically discovers races and imports multi-variant draft
+  ---
+  duration_ms: 0.717083
+  type: 'test'
+  ...
+# Subtest: Xiareng batch import respects category payment channels and initialStatus published
+ok 38 - Xiareng batch import respects category payment channels and initialStatus published
+  ---
+  duration_ms: 0.406167
+  type: 'test'
+  ...
+# Subtest: Xiareng category-goods endpoint returns goods grouped by categoryKeys from snapshot
+ok 39 - Xiareng category-goods endpoint returns goods grouped by categoryKeys from snapshot
+  ---
+  duration_ms: 0.860334
+  type: 'test'
+  ...
+# Subtest: Xiareng multi-variant import in fallback mode creates active product with channels when initialStatus is published
+ok 40 - Xiareng multi-variant import in fallback mode creates active product with channels when initialStatus is published
+  ---
+  duration_ms: 0.538083
+  type: 'test'
+  ...
+# Subtest: Xiareng multi-variant import in fallback mode skips already imported goods when duplicatePolicy is skip
+ok 41 - Xiareng multi-variant import in fallback mode skips already imported goods when duplicatePolicy is skip
+  ---
+  duration_ms: 0.257791
+  type: 'test'
+  ...
+# Subtest: Xiareng autoAllVariants falls back to single-variant import for goods without races
+ok 42 - Xiareng autoAllVariants falls back to single-variant import for goods without races
+  ---
+  duration_ms: 0.264917
+  type: 'test'
+  ...
+# Subtest: Xiareng multi-variant import in fallback mode synchronizes stock_count from upstream availableQuantity
+ok 43 - Xiareng multi-variant import in fallback mode synchronizes stock_count from upstream availableQuantity
+  ---
+  duration_ms: 0.232708
+  type: 'test'
+  ...
+# Subtest: Xiareng supplier import automatically detects manual delivery goods and sets manual_delivery: true
+ok 44 - Xiareng supplier import automatically detects manual delivery goods and sets manual_delivery: true
+  ---
+  duration_ms: 1.511
+  type: 'test'
+  ...
+# Subtest: Xiareng supplier import extracts purchase notes to 注意事项 and sets show_purchase_notes: true
+ok 45 - Xiareng supplier import extracts purchase notes to 注意事项 and sets show_purchase_notes: true
+  ---
+  duration_ms: 0.486208
+  type: 'test'
+  ...
+# Subtest: Xiareng supplier import without specific notes still includes exact upstream 购买须知
+ok 46 - Xiareng supplier import without specific notes still includes exact upstream 购买须知
+  ---
+  duration_ms: 0.401666
+  type: 'test'
+  ...
+# Subtest: Xiareng supplier import gracefully falls back when min_purchase_quantity column is missing in database
+ok 47 - Xiareng supplier import gracefully falls back when min_purchase_quantity column is missing in database
+  ---
+  duration_ms: 0.35275
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 127.0.0.1
+ok 48 - media rejects nonpublic address 127.0.0.1
+  ---
+  duration_ms: 1.383375
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 10.1.2.3
+ok 49 - media rejects nonpublic address 10.1.2.3
+  ---
+  duration_ms: 0.511291
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 172.16.1.1
+ok 50 - media rejects nonpublic address 172.16.1.1
+  ---
+  duration_ms: 0.341709
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 192.168.1.1
+ok 51 - media rejects nonpublic address 192.168.1.1
+  ---
+  duration_ms: 0.202375
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 169.254.169.254
+ok 52 - media rejects nonpublic address 169.254.169.254
+  ---
+  duration_ms: 0.19375
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 100.64.1.1
+ok 53 - media rejects nonpublic address 100.64.1.1
+  ---
+  duration_ms: 0.134833
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 0.0.0.0
+ok 54 - media rejects nonpublic address 0.0.0.0
+  ---
+  duration_ms: 0.122083
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 192.88.99.1
+ok 55 - media rejects nonpublic address 192.88.99.1
+  ---
+  duration_ms: 0.156625
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 198.18.0.1
+ok 56 - media rejects nonpublic address 198.18.0.1
+  ---
+  duration_ms: 0.181583
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 224.0.0.1
+ok 57 - media rejects nonpublic address 224.0.0.1
+  ---
+  duration_ms: 0.200041
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address ::1
+ok 58 - media rejects nonpublic address ::1
+  ---
+  duration_ms: 2.460625
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address fc00::1
+ok 59 - media rejects nonpublic address fc00::1
+  ---
+  duration_ms: 2.089875
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address fe80::1
+ok 60 - media rejects nonpublic address fe80::1
+  ---
+  duration_ms: 0.24575
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address ::ffff:8.8.8.8
+ok 61 - media rejects nonpublic address ::ffff:8.8.8.8
+  ---
+  duration_ms: 0.259958
+  type: 'test'
+  ...
+# Subtest: media rejects nonpublic address 2002:0808:0808::1
+ok 62 - media rejects nonpublic address 2002:0808:0808::1
+  ---
+  duration_ms: 0.189375
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://2130706433/image
+ok 63 - media rejects unsafe URL http://2130706433/image
+  ---
+  duration_ms: 0.502
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://0x7f000001/
+ok 64 - media rejects unsafe URL http://0x7f000001/
+  ---
+  duration_ms: 0.386583
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://127.1/
+ok 65 - media rejects unsafe URL http://127.1/
+  ---
+  duration_ms: 0.146959
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://[::1]/
+ok 66 - media rejects unsafe URL http://[::1]/
+  ---
+  duration_ms: 0.100333
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL https://user:pass@example.com/x
+ok 67 - media rejects unsafe URL https://user:pass@example.com/x
+  ---
+  duration_ms: 0.091875
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://example.com:8080/x
+ok 68 - media rejects unsafe URL http://example.com:8080/x
+  ---
+  duration_ms: 0.082166
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL file:///etc/passwd
+ok 69 - media rejects unsafe URL file:///etc/passwd
+  ---
+  duration_ms: 0.077041
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://metadata.internal/x
+ok 70 - media rejects unsafe URL http://metadata.internal/x
+  ---
+  duration_ms: 0.081
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL http://localhost/x
+ok 71 - media rejects unsafe URL http://localhost/x
+  ---
+  duration_ms: 0.094416
+  type: 'test'
+  ...
+# Subtest: media rejects unsafe URL https://example.com./x
+ok 72 - media rejects unsafe URL https://example.com./x
+  ---
+  duration_ms: 0.047292
+  type: 'test'
+  ...
+# Subtest: media pins the validated address and preserves HTTPS hostname
+ok 73 - media pins the validated address and preserves HTTPS hostname
+  ---
+  duration_ms: 3.57825
+  type: 'test'
+  ...
+# Subtest: media refuses mixed public/private DNS answers before connecting
+ok 74 - media refuses mixed public/private DNS answers before connecting
+  ---
+  duration_ms: 0.423792
+  type: 'test'
+  ...
+# Subtest: media revalidates every redirect DNS answer
+ok 75 - media revalidates every redirect DNS answer
+  ---
+  duration_ms: 0.325209
+  type: 'test'
+  ...
+# Subtest: media refuses literal private redirect and HTTPS downgrade
+ok 76 - media refuses literal private redirect and HTTPS downgrade
+  ---
+  duration_ms: 0.424125
+  type: 'test'
+  ...
+# Subtest: media caps redirect chains even with an excessive caller limit
+ok 77 - media caps redirect chains even with an excessive caller limit
+  ---
+  duration_ms: 0.232459
+  type: 'test'
+  ...
+# Subtest: media checks declared and streamed sizes including chunked responses
+ok 78 - media checks declared and streamed sizes including chunked responses
+  ---
+  duration_ms: 0.515834
+  type: 'test'
+  ...
+# Subtest: media refuses compressed responses, active content, and fake MIME
+ok 79 - media refuses compressed responses, active content, and fake MIME
+  ---
+  duration_ms: 1.534666
+  type: 'test'
+  ...
+# Subtest: media supports ordinary JPEG and MP4 assets
+ok 80 - media supports ordinary JPEG and MP4 assets
+  ---
+  duration_ms: 0.630625
+  type: 'test'
+  ...
+# Subtest: media honors abort before and after DNS resolution
+ok 81 - media honors abort before and after DNS resolution
+  ---
+  duration_ms: 0.286084
+  type: 'test'
+  ...
+# Subtest: HTML media sync removes rejected attributes without replacing visible text
+ok 82 - HTML media sync removes rejected attributes without replacing visible text
+  ---
+  duration_ms: 2.026
+  type: 'test'
+  ...
+# Subtest: HTML sync bounds media batch count and escapes attribute quotes
+ok 83 - HTML sync bounds media batch count and escapes attribute quotes
+  ---
+  duration_ms: 2.489959
+  type: 'test'
+  ...
+# Subtest: cover importer rejects private URLs even without storage and never invokes the downloader
+ok 84 - cover importer rejects private URLs even without storage and never invokes the downloader
+  ---
+  duration_ms: 0.480208
+  type: 'test'
+  ...
+# Subtest: cover importer uses DNS and redirect protections without restoring failed source URLs
+ok 85 - cover importer uses DNS and redirect protections without restoring failed source URLs
+  ---
+  duration_ms: 1.284625
+  type: 'test'
+  ...
+# Subtest: cover deadline bounds stalled DNS and uploads, aborts and clears failed cache
+ok 86 - cover deadline bounds stalled DNS and uploads, aborts and clears failed cache
+  ---
+  duration_ms: 418.954875
+  type: 'test'
+  ...
+# Subtest: safe remote cover still uploads all three WebP variants with cancellation signal
+ok 87 - safe remote cover still uploads all three WebP variants with cancellation signal
+  ---
+  duration_ms: 3.683917
+  type: 'test'
+  ...
+# Subtest: backend: link content cannot bypass escaping or retain script/event handlers
+ok 88 - backend: link content cannot bypass escaping or retain script/event handlers
+  ---
+  duration_ms: 8.196833
+  type: 'test'
+  ...
+# Subtest: backend: CSS is allowlisted while legacy formatting and media survive
+ok 89 - backend: CSS is allowlisted while legacy formatting and media survive
+  ---
+  duration_ms: 1.461875
+  type: 'test'
+  ...
+# Subtest: backend: entity quotes remain attribute text and synthetic placeholders cannot be injected
+ok 90 - backend: entity quotes remain attribute text and synthetic placeholders cannot be injected
+  ---
+  duration_ms: 1.299208
+  type: 'test'
+  ...
+# Subtest: backend: unsupported media protocols cannot become active attributes
+ok 91 - backend: unsupported media protocols cannot become active attributes
+  ---
+  duration_ms: 4.186583
+  type: 'test'
+  ...
+# Subtest: admin-preview: link content cannot bypass escaping or retain script/event handlers
+ok 92 - admin-preview: link content cannot bypass escaping or retain script/event handlers
+  ---
+  duration_ms: 6.85375
+  type: 'test'
+  ...
+# Subtest: admin-preview: CSS is allowlisted while legacy formatting and media survive
+ok 93 - admin-preview: CSS is allowlisted while legacy formatting and media survive
+  ---
+  duration_ms: 5.885459
+  type: 'test'
+  ...
+# Subtest: admin-preview: entity quotes remain attribute text and synthetic placeholders cannot be injected
+ok 94 - admin-preview: entity quotes remain attribute text and synthetic placeholders cannot be injected
+  ---
+  duration_ms: 5.293958
+  type: 'test'
+  ...
+# Subtest: admin-preview: unsupported media protocols cannot become active attributes
+ok 95 - admin-preview: unsupported media protocols cannot become active attributes
+  ---
+  duration_ms: 6.601917
+  type: 'test'
+  ...
+# Subtest: supplier import never restores rejected covers or cleared HTML and propagates unexpected sync errors
+ok 96 - supplier import never restores rejected covers or cleared HTML and propagates unexpected sync errors
+  ---
+  duration_ms: 1.8685
+  type: 'test'
+  ...
+# Subtest: sanitized signed-query URLs round-trip once and encoded loopback URLs are removed
+ok 97 - sanitized signed-query URLs round-trip once and encoded loopback URLs are removed
+  ---
+  duration_ms: 8.341917
+  type: 'test'
+  ...
+# Subtest: static image renditions are bounded WebP with deterministic bytes
+ok 98 - static image renditions are bounded WebP with deterministic bytes
+  ---
+  duration_ms: 76.903792
+  type: 'test'
+  ...
+# Subtest: animated GIF and WebP renditions retain distinct frames, per-frame timing, loops and transparency
+ok 99 - animated GIF and WebP renditions retain distinct frames, per-frame timing, loops and transparency
+  ---
+  duration_ms: 20.106
+  type: 'test'
+  ...
+# Subtest: animated supplier imports upload three real WebP renditions with matching content types
+ok 100 - animated supplier imports upload three real WebP renditions with matching content types
+  ---
+  duration_ms: 10.310375
+  type: 'test'
+  ...
+# Subtest: animation decode budgets preserve the source instead of flattening or allocating unbounded frames
+ok 101 - animation decode budgets preserve the source instead of flattening or allocating unbounded frames
+  ---
+  duration_ms: 1.767667
+  type: 'test'
+  ...
+# Subtest: supplier imports coalesce concurrent requests and address identical bytes by content
+ok 102 - supplier imports coalesce concurrent requests and address identical bytes by content
+  ---
+  duration_ms: 49.182166
+  type: 'test'
+  ...
+# Subtest: failed imports reject unsafe fallback and allow a subsequent retry
+ok 103 - failed imports reject unsafe fallback and allow a subsequent retry
+  ---
+  duration_ms: 25.887333
+  type: 'test'
+  ...
+# Subtest: oversized streamed sources fail closed before processing or upload
+ok 104 - oversized streamed sources fail closed before processing or upload
+  ---
+  duration_ms: 0.400042
+  type: 'test'
+  ...
+# Subtest: stock timestamps do not split shared image URLs on shop, homepage or admin
+ok 105 - stock timestamps do not split shared image URLs on shop, homepage or admin
+  ---
+  duration_ms: 7.845917
+  type: 'test'
+  ...
+# Subtest: list thumbnail errors fall back through card to original and then stop
+ok 106 - list thumbnail errors fall back through card to original and then stop
+  ---
+  duration_ms: 3.315458
+  type: 'test'
+  ...
+# Subtest: missing thumbnails select the card even when original uses a CDN alias
+ok 107 - missing thumbnails select the card even when original uses a CDN alias
+  ---
+  duration_ms: 3.166125
+  type: 'test'
+  ...
+# Subtest: catalog CDN aliases resolve to the same bundled thumbnail
+ok 108 - catalog CDN aliases resolve to the same bundled thumbnail
+  ---
+  duration_ms: 2.55025
+  type: 'test'
+  ...
+# Subtest: bundled variants exist, have correct dimensions and share a URL across repeated products
+ok 109 - bundled variants exist, have correct dimensions and share a URL across repeated products
+  ---
+  duration_ms: 23.964791
+  type: 'test'
+  ...
+# (node:99672) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: manual product uploads reuse immutable rendition URLs across different products
+ok 110 - manual product uploads reuse immutable rendition URLs across different products
+  ---
+  duration_ms: 64.208
+  type: 'test'
+  ...
+# Subtest: invalid or oversized thumbnails fall back without losing a valid original and card
+ok 111 - invalid or oversized thumbnails fall back without losing a valid original and card
+  ---
+  duration_ms: 12.401
+  type: 'test'
+  ...
+# Subtest: product image authentication, permissions and rate limit still reject before any upload
+ok 112 - product image authentication, permissions and rate limit still reject before any upload
+  ---
+  duration_ms: 2.524833
+  type: 'test'
+  ...
+# Subtest: resolveFullMediaUrl resolves relative paths and preserves absolute URLs
+ok 113 - resolveFullMediaUrl resolves relative paths and preserves absolute URLs
+  ---
+  duration_ms: 1.332042
+  type: 'test'
+  ...
+# Subtest: getMediaFileExtension detects mime types and url paths with safe fallback
+ok 114 - getMediaFileExtension detects mime types and url paths with safe fallback
+  ---
+  duration_ms: 0.449541
+  type: 'test'
+  ...
+# Subtest: syncHtmlMediaToR2 resolves relative images and video sources gracefully without R2 credentials
+ok 115 - syncHtmlMediaToR2 resolves relative images and video sources gracefully without R2 credentials
+  ---
+  duration_ms: 6.235333
+  type: 'test'
+  ...
+# Subtest: syncSupplierProductStock automatically recalculates price with markupMultiplier and updates database
+ok 116 - syncSupplierProductStock automatically recalculates price with markupMultiplier and updates database
+  ---
+  duration_ms: 5.558917
+  type: 'test'
+  ...
+# Subtest: admin-config.js AdminRichTextEditor preserves img, video, source safely and does not drop images
+ok 117 - admin-config.js AdminRichTextEditor preserves img, video, source safely and does not drop images
+  ---
+  duration_ms: 9.920667
+  type: 'test'
+  ...
+# Subtest: shop-client.js rich text sanitization preserves IMG, VIDEO, SOURCE elements
+ok 118 - shop-client.js rich text sanitization preserves IMG, VIDEO, SOURCE elements
+  ---
+  duration_ms: 6.916375
+  type: 'test'
+  ...
+# Subtest: admin shop mutate handler supports up to 32,000 characters for rich text usage instructions
+ok 119 - admin shop mutate handler supports up to 32,000 characters for rich text usage instructions
+  ---
+  duration_ms: 2.812333
+  type: 'test'
+  ...
+# Subtest: supplier catalog description sanitization converts legacy font tags to styled spans and eliminates raw code
+ok 120 - supplier catalog description sanitization converts legacy font tags to styled spans and eliminates raw code
+  ---
+  duration_ms: 5.200208
+  type: 'test'
+  ...
+1..120
+# tests 120
+# suites 0
+# pass 120
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 824.073333

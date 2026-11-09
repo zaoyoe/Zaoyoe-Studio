@@ -3,6 +3,7 @@
 // TG keeps its own configuration snapshot, order namespace and callback URLs.
 // The merchant account may be shared with the shop; no wallet or shop RPC is used.
 const crypto = require('node:crypto');
+const { readBoundedResponseText } = require('./bounded-response');
 const { buildZpaySign, normalizeZpayDevice } = require('../../api/_lib/payments/zpay');
 const { createTgNowpaymentsGateway, CHANNEL: CRYPTO_CHANNEL } = require('./nowpayments-gateway');
 const { marketMode, getMarketUsdtFx } = require('../../api/_lib/payments/usdt-market-fx');
@@ -66,12 +67,11 @@ function createTgPaymentGateway({ env = process.env, fetchImpl = globalThis.fetc
             if (!response.ok) throw failure('tg_payment_provider_unconfirmed');
             // Provider payloads can contain URLs and error strings. Never log or
             // forward raw responses, and bound them before JSON parsing.
-            const raw = await response.text();
-            if (Buffer.byteLength(raw) > 65536) throw failure('tg_payment_provider_unconfirmed');
+            const raw = await readBoundedResponseText(response, { maxBytes: 65536, signal: controller.signal });
             const data = JSON.parse(raw);
             if (!data || typeof data !== 'object' || Array.isArray(data)) throw failure('tg_payment_provider_unconfirmed');
             return data;
-        } catch (_) { throw failure('tg_payment_provider_unconfirmed'); } finally { clearTimeout(timer); }
+        } catch (_) { throw failure('tg_payment_provider_unconfirmed'); } finally { clearTimeout(timer); controller.abort(); }
     }
     async function queryPayment({ order } = {}) {
         const value = config();
@@ -101,16 +101,18 @@ function createTgPaymentGateway({ env = process.env, fetchImpl = globalThis.fetc
             const callback = new URL(webhookUrl('zpay', env));
             if (callback.origin === 'https://tg.fatherkey.com') return;
             const challenge = crypto.randomBytes(16).toString('hex');
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
             try {
                 const response = await fetchImpl(`${callback.origin}/_tg-payment-health?challenge=${challenge}`, {
-                    redirect: 'error', signal: AbortSignal.timeout(8000)
+                    redirect: 'error', signal: controller.signal
                 });
                 if (!response.ok) throw failure();
-                const raw = await response.text();
-                if (Buffer.byteLength(raw) > 2048) throw failure();
+                const raw = await readBoundedResponseText(response, { maxBytes: 2048, signal: controller.signal });
                 const data = JSON.parse(raw);
                 if (data.service !== 'tg-local-payment-relay' || data.status !== 'ok' || data.challenge !== challenge) throw failure();
             } catch (_) { throw failure('tg_payment_callback_unavailable'); }
+            finally { clearTimeout(timer); controller.abort(); }
         },
         resolveUsdtFx({ supabase } = {}) { return marketMode(env) ? getMarketUsdtFx({ supabase, fetchImpl }) : null; },
         usdtRate(options) { return nowpayments.quoteRate(options); },

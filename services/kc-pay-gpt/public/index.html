@@ -1368,7 +1368,7 @@
             statusMsg.style.display = 'none';
 
             try {
-                const response = await fetch(`/api/cdk/query?cdk=${encodeURIComponent(cdk)}`);
+                const response = await fetch('/api/cdk/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cdk }) });
                 const data = await response.json();
                 if (data.success) {
                     const statusText = String(data.data.status || (data.data.usedAt ? '已使用' : '未使用'));
@@ -1692,7 +1692,7 @@
                     if (hasSessionCookie) {
                         showStatus(email ? `Session 完整有效（已包含 Session Token）：${email}` : 'Session 校验通过（已包含 Session Token）', 'success');
                     } else {
-                        showStatus(email ? `已识别账号：${email}<br><span style="color:#d97706;font-size:12px;">⚠️ 当前内容仅包含 accessToken，缺少关键的 sessionToken Cookie。若启动后卡在 8% 访客界面，请补充 sessionToken 字段。</span>` : 'Session 缺少 sessionToken', 'success');
+                        showStatus(email ? `已识别账号：${email}\n⚠️ 当前内容仅包含 accessToken，缺少关键的 sessionToken Cookie。若启动后卡在 8% 访客界面，请补充 sessionToken 字段。` : 'Session 缺少 sessionToken', 'success');
                     }
                 } else {
                     showStatus(result.message, 'error');
@@ -1719,9 +1719,9 @@
                     const pMap = { chatgpt: 'ChatGPT', claude: 'Claude', grok: 'Grok' };
                     const pName = pMap[platform] || (platform || '').toUpperCase();
                     if (data.name) {
-                        showStatus(`已识别 ${pName} 目标充值账号：<b>${escapeHtml(data.email)}</b>（用户: ${escapeHtml(data.name)}）`, 'success');
+                        showStatus(`已识别 ${pName} 目标充值账号：${data.email}（用户: ${data.name}）`, 'success');
                     } else {
-                        showStatus(`已识别 ${pName} 目标充值账号：<b>${escapeHtml(data.email)}</b>`, 'success');
+                        showStatus(`已识别 ${pName} 目标充值账号：${data.email}`, 'success');
                     }
                 }
             } catch (_) {}
@@ -1825,7 +1825,7 @@
                                     setProgress(3, '正在恢复任务进度...');
                                     updateFlowUI(2, 'running', planLabel);
                                     showStatus('当前卡密正在开通中，正在恢复任务进度…', 'success');
-                                    initWebSocket(data.data.jobKey);
+                                    initWebSocket(data.data.jobKey, data.data.taskAccessToken);
                                 } else {
                                     updateFlowUI(2, 'cdk_ok', planLabel);
                                 }
@@ -1848,7 +1848,12 @@
                                 let infoDiv = document.getElementById('redeemCdkInfo');
                                 if (infoDiv) {
                                     infoDiv.style.display = 'flex';
-                                    infoDiv.innerHTML = `<span>待使用</span><code>${cdk}</code>`;
+                                    infoDiv.replaceChildren();
+                                    const label = document.createElement('span');
+                                    label.textContent = '待使用';
+                                    const code = document.createElement('code');
+                                    code.textContent = cdk;
+                                    infoDiv.append(label, code);
                                 }
                                 statusMsg.style.display = 'none';
                                 if (!mobileViewportQuery.matches) {
@@ -1931,6 +1936,7 @@
         let socketHeartbeatInterval = null;
         let socketHeartbeatTimeout = null;
         let activeJobKey = '';
+        let activeTaskAccessToken = '';
         let taskConnectionWarningVisible = false;
         let taskCompleted = false;
         const WS_HEARTBEAT_INTERVAL_MS = 15000;
@@ -1986,6 +1992,7 @@
             const connection = socket;
             socket = null;
             activeJobKey = '';
+            activeTaskAccessToken = '';
             if (connection) {
                 try { connection.close(); } catch (_) { }
             }
@@ -2720,7 +2727,7 @@
             const payload = {
                 action: 'captcha_drag',
                 type: 'captcha_drag',
-                jobKey: activeJobKey,
+                jobKey: activeJobKey, taskAccessToken: activeTaskAccessToken,
                 fromRatioX,
                 fromRatioY,
                 toRatioX,
@@ -2809,7 +2816,7 @@
             const payload = {
                 type: 'captcha_click',
                 action: 'refresh',
-                jobKey: activeJobKey,
+                jobKey: activeJobKey, taskAccessToken: activeTaskAccessToken,
                 ratioX: Number(ratioX) || 0.31,
                 ratioY: Number(ratioY) || 0.93,
                 frameSeq: currentFrameSeq
@@ -2879,7 +2886,7 @@
                 const payload = {
                     type: 'captcha_click',
                     action: 'submit',
-                    jobKey: activeJobKey,
+                    jobKey: activeJobKey, taskAccessToken: activeTaskAccessToken,
                     ratioX,
                     ratioY,
                     points: captchaSelectedPoints.map(p => ({ ratioX: p.ratioX, ratioY: p.ratioY })),
@@ -3036,15 +3043,16 @@
             // 注意：中间轮次 cleared: false 不关闭弹窗，等待新题帧到达或任务终态关闭
         }
 
-        function initWebSocket(jobKey) {
-            if (!jobKey) {
+        function initWebSocket(jobKey, taskAccessToken = activeTaskAccessToken) {
+            if (!jobKey || !taskAccessToken) {
                 return;
             }
 
             activeJobKey = jobKey;
+            activeTaskAccessToken = taskAccessToken;
 
             if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({ type: 'subscribe', jobKey }));
+                socket.send(JSON.stringify({ type: 'subscribe', jobKey, taskAccessToken: activeTaskAccessToken }));
                 return;
             }
             if (socket && socket.readyState === WebSocket.CONNECTING) return;
@@ -3056,7 +3064,7 @@
             connection.onopen = () => {
                 if (socket !== connection) return;
                 clearTimeout(reconnectTimer);
-                connection.send(JSON.stringify({ type: 'subscribe', jobKey: activeJobKey }));
+                connection.send(JSON.stringify({ type: 'subscribe', jobKey: activeJobKey, taskAccessToken: activeTaskAccessToken }));
                 startSocketHeartbeat();
             };
 
@@ -3119,6 +3127,7 @@
             setActivationLock(true);
             taskCompleted = false;
             activeJobKey = '';
+            activeTaskAccessToken = '';
             clearTimeout(reconnectTimer);
 
             if (!pageShell?.dataset?.topLocked) {
@@ -3150,7 +3159,7 @@
 
                 if (data.success && data.jobKey) {
                     setProgress(8, '', 'running');
-                    initWebSocket(data.jobKey);
+                    initWebSocket(data.jobKey, data.taskAccessToken);
                 } else {
                     hideProgress();
                     updateFlowUI(2, 'failed');
@@ -3311,7 +3320,8 @@
         }
 
         function showStatus(message, type = 'error') {
-            statusMsg.innerHTML = message;
+            statusMsg.textContent = String(message ?? '');
+            statusMsg.style.whiteSpace = 'pre-line';
             let statusClass = 'status-error';
             if (type === 'success') statusClass = 'status-success';
             else if (type === 'warning' || type === 'manual') statusClass = 'status-warning';
@@ -3339,7 +3349,10 @@
                 ? '<svg class="capsule-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"></path></svg>'
                 : '<svg class="capsule-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
 
-            capsuleToast.innerHTML = `${iconSvg}<span>${message}</span>`;
+            capsuleToast.innerHTML = iconSvg;
+            const messageSpan = document.createElement('span');
+            messageSpan.textContent = String(message ?? '');
+            capsuleToast.appendChild(messageSpan);
             capsuleToast.style.display = 'inline-flex';
 
             capsuleToast.classList.remove('shake');

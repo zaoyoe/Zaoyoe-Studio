@@ -24,7 +24,15 @@ function resolveSupplierAccountEnv(account, env = process.env) {
     const secret = String(env[`${prefix}_${secretSuffix}`] || '');
     if (!appId || !secret) throw new SupplierAdapterError('供应商账号尚未配置凭据。', { providerId, operation: 'resolve_account', code: 'supplier_not_configured' });
     if (providerId === 'xiareng') {
-        return { providerId, appId, appKey: secret, currency: String(env[`${prefix}_CURRENCY`] || ''), timeoutMs: env[`${prefix}_TIMEOUT_MS`] };
+        return {
+            providerId,
+            appId,
+            appKey: secret,
+            currency: String(env[`${prefix}_CURRENCY`] || ''),
+            timeoutMs: env[`${prefix}_TIMEOUT_MS`],
+            enableCache: true,
+            cacheTtlMs: 60_000
+        };
     }
     return { providerId, env: {
         SUPPLIER_16688_APP_ID: appId,

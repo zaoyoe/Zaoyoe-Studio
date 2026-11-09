@@ -82,14 +82,18 @@
     function markPublicScrollbarActive(target) {
         if (!(target instanceof HTMLElement)) return;
 
-        target.classList.add(PUBLIC_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS);
+        if (!target.classList.contains(PUBLIC_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS)) {
+            target.classList.add(PUBLIC_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS);
+        }
 
         if (target.__publicScrollbarHideTimer) {
             window.clearTimeout(target.__publicScrollbarHideTimer);
         }
 
         target.__publicScrollbarHideTimer = window.setTimeout(() => {
-            target.classList.remove(PUBLIC_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS);
+            if (target.classList.contains(PUBLIC_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS)) {
+                target.classList.remove(PUBLIC_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS);
+            }
             target.__publicScrollbarHideTimer = null;
         }, 720);
     }

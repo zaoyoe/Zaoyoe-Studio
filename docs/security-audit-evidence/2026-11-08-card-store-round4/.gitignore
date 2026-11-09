@@ -1,0 +1,2 @@
+# Keep the original security test logs visible for a future reviewed release.
+!raw/*.log

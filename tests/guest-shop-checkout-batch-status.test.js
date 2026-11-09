@@ -264,11 +264,14 @@ function webhookRequest({ amount = '0.03', signature = 'valid-signature' } = {})
 
 function batchWebhookAdapter() {
     return {
-        async verifyGuestWebhook({ payload }) { return { valid: payload.sign === 'valid-signature', signature_version: 'MD5' }; },
+        async queryGuestPayment() { return { supported: true, provider: 'zpay', merchant_order_no: BATCH_NO, status: 'paid', amount: '0.03',
+            response_payload: { code: 1, pid: '10001', out_trade_no: BATCH_NO, trade_no: PROVIDER_ORDER_NO, type: 'alipay', money: '0.03', trade_status: 'TRADE_SUCCESS' } }; },
+        async verifyGuestWebhook({ payload }) { return { valid: payload.sign === 'valid-signature', merchant_id: '10001', signature_version: 'MD5' }; },
         async parseGuestWebhook({ payload }) {
             return {
                 merchant_order_no: payload.out_trade_no,
                 provider_order_no: payload.trade_no,
+                transaction_id: payload.trade_no,
                 purpose: 'shop_direct', currency: 'CNY', amount: Number(payload.money),
                 final_status: 'paid'
             };

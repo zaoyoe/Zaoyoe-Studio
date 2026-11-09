@@ -1,5 +1,7 @@
 'use strict';
 
+const { readBoundedResponseText } = require('./bounded-response');
+
 const { providerReason } = require('./gramix-errors');
 
 const DEFAULT_BASE_URL = 'https://api.gramix.io/api/v1';
@@ -110,28 +112,10 @@ async function readProviderReason(response, status, signal) {
     const limit = 8192;
     const type = response.headers?.get?.('content-type');
     if (type && !/^application\/(?:[a-z0-9.+-]+\+)?json(?:;|$)/i.test(type)) return null;
-    if (Number(response.headers?.get?.('content-length') || 0) > limit) {
-        response.body?.cancel?.().catch(() => {});
-        return null;
-    }
-    const reader = response.body?.getReader?.();
-    if (!reader) return null;
-    const abort = () => { reader.cancel().catch(() => {}); };
-    signal.addEventListener('abort', abort, { once: true });
-    if (signal.aborted) abort();
     try {
-        const chunks = [];
-        let size = 0;
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            size += value.byteLength;
-            if (size > limit) { reader.cancel().catch(() => {}); return null; }
-            chunks.push(Buffer.from(value));
-        }
-        return providerReason(status, JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        const raw = await readBoundedResponseText(response, { maxBytes: limit, signal });
+        return providerReason(status, JSON.parse(raw));
     } catch (_) { return null; }
-    finally { signal.removeEventListener('abort', abort); reader.releaseLock(); }
 }
 
 function retryableStatus(status) {
@@ -198,7 +182,10 @@ class GramixClient {
                     });
                 }
                 let payload;
-                try { payload = await response.json(); } catch (_) {
+                try {
+                    payload = JSON.parse(await readBoundedResponseText(response, { maxBytes: 1024 * 1024, signal: controller.signal }));
+                } catch (error) {
+                    if (controller.signal.aborted) throw error;
                     throw new GramixApiError('Gramix response is invalid', { code: 'gramix_invalid_response', retryable: true });
                 }
                 if (status !== expectedStatus || !payload || typeof payload !== 'object' || Array.isArray(payload)
@@ -216,6 +203,7 @@ class GramixClient {
             });
         } finally {
             if (timer) clearTimeout(timer);
+            controller.abort();
         }
 
     }

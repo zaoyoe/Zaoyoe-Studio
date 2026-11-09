@@ -1,0 +1,35 @@
+[
+  {
+    "command": [
+      "node",
+      "--check",
+      "services/kc-pay-gpt/mysql-store.js"
+    ],
+    "exit_code_observed": 0,
+    "stdout": "",
+    "stderr": "",
+    "sha256": "edd981d433ecc3da800a6803c1a201ca822cebd0a5cceb2faa7fc261ccec28df"
+  },
+  {
+    "command": [
+      "node",
+      "--check",
+      "services/kc-pay-gpt/test/gpt-outsourcing-store.test.js"
+    ],
+    "exit_code_observed": 0,
+    "stdout": "",
+    "stderr": "",
+    "sha256": "7ae006a5872cd8feeb20495203efe12b52816f081d4e7fdb4e600b013507e36a"
+  },
+  {
+    "command": [
+      "node",
+      "--check",
+      "tests/security-round5-kc-owner-locks.test.js"
+    ],
+    "exit_code_observed": 0,
+    "stdout": "",
+    "stderr": "",
+    "sha256": "39190f24f952590ca39ca3b8ca05a2e33db312ded95c37d26acbdc9820436e04"
+  }
+]

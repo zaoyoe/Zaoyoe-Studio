@@ -1,0 +1,2 @@
+# Preserve original offline verification logs in this evidence set.
+!raw/*.log

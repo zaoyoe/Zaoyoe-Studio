@@ -1,13 +1,14 @@
 'use strict';
 
 const crypto = require('crypto');
+const { isIP } = require('node:net');
 
 const BASE32_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 const ADMIN_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const ADMIN_REFRESH_AFTER_MS = 60 * 60 * 1000;
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
-const SECONDARY_TOKEN_TTL_MS = 30 * 60 * 1000;
+const SECONDARY_TOKEN_TTL_MS = 5 * 60 * 1000;
 const TG_CODE_TTL_MS = 5 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 5;
 const LOGIN_LOCK_MS = 30 * 60 * 1000;
@@ -16,12 +17,32 @@ const TG_CODE_MAX_ATTEMPTS = 5;
 
 const loginAttempts = new Map();
 const tgLoginCodes = new Map();
+const loginChallenges = new Map();
+const MAX_AUTH_ENTRIES = 4096;
+const TG_SEND_COOLDOWN_MS = 60 * 1000;
+let nextCleanupAt = 0;
+
+function cleanupAuthState() {
+    const now = Date.now();
+    if (now < nextCleanupAt) return;
+    nextCleanupAt = now + 60 * 1000;
+    for (const [key, entry] of loginAttempts) {
+        if (now >= Math.max(entry.firstAt + LOGIN_WINDOW_MS, entry.lockedUntil)) loginAttempts.delete(key);
+    }
+    for (const [key, entry] of loginChallenges) {
+        if (now >= entry.payload.exp) { loginChallenges.delete(key); tgLoginCodes.delete(key); }
+    }
+    for (const [key, entry] of tgLoginCodes) {
+        if (now >= entry.exp) tgLoginCodes.delete(key);
+    }
+}
 
 function resolveAdminTokenSecret() {
-    return process.env.ADMIN_TOKEN_SECRET || crypto
-        .createHash('sha256')
-        .update(`web_redeem:${process.cwd()}:admin-token-secret`)
-        .digest('hex');
+    const secret = process.env.ADMIN_TOKEN_SECRET;
+    if (typeof secret !== 'string' || Buffer.byteLength(secret.trim()) < 32 || Buffer.byteLength(secret) > 512) {
+        throw new Error('ADMIN_TOKEN_SECRET must be explicitly configured with at least 32 bytes');
+    }
+    return secret;
 }
 
 function encodeBase64Url(input) {
@@ -90,7 +111,7 @@ function issueSignedToken(payload, ttlMs, secret = resolveAdminTokenSecret()) {
 }
 
 function verifySignedToken(token, { expectedSub, secret = resolveAdminTokenSecret() } = {}) {
-    if (!token || typeof token !== 'string') {
+    if (typeof token !== 'string' || token.length > 4096 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/.test(token)) {
         return null;
     }
     const [encodedPayload, signature] = token.split('.');
@@ -103,7 +124,10 @@ function verifySignedToken(token, { expectedSub, secret = resolveAdminTokenSecre
     }
     try {
         const payload = JSON.parse(decodeBase64Url(encodedPayload));
-        if (!payload || !payload.exp || Date.now() >= Number(payload.exp)) {
+        const maxTtl = { admin: ADMIN_TOKEN_TTL_MS, admin_login_challenge: CHALLENGE_TTL_MS, admin_secondary: SECONDARY_TOKEN_TTL_MS }[payload?.sub];
+        if (!payload || !maxTtl || !Number.isSafeInteger(payload.iat) || !Number.isSafeInteger(payload.exp)
+            || payload.iat > Date.now() + 30_000 || payload.exp <= payload.iat || payload.exp - payload.iat > maxTtl
+            || Date.now() >= payload.exp || encodeBase64Url(JSON.stringify(payload)) !== encodedPayload) {
             return null;
         }
         if (expectedSub && payload.sub !== expectedSub) {
@@ -126,15 +150,17 @@ function issueAdminToken(passwordVersion, email = '') {
 
 function verifyAdminToken(token) {
     const payload = verifySignedToken(token, { expectedSub: 'admin' });
-    if (!payload || !Array.isArray(payload.permissions) || !payload.permissions.includes('admin')) {
+    if (!payload || !Number.isSafeInteger(payload.pv) || payload.pv < 1 || !Array.isArray(payload.permissions) || !payload.permissions.includes('admin')) {
         return null;
     }
     return payload;
 }
 
 function issueLoginChallenge({ email, passwordVersion, ip, fingerprint }) {
+    cleanupAuthState();
+    if (loginChallenges.size >= MAX_AUTH_ENTRIES) throw new Error('Too many pending login challenges');
     const challengeId = crypto.randomBytes(16).toString('hex');
-    return issueSignedToken({
+    const issued = issueSignedToken({
         sub: 'admin_login_challenge',
         cid: challengeId,
         email: String(email || '').trim().toLowerCase(),
@@ -142,18 +168,90 @@ function issueLoginChallenge({ email, passwordVersion, ip, fingerprint }) {
         ip: String(ip || '').slice(0, 45),
         fp: String(fingerprint || '').slice(0, 128)
     }, CHALLENGE_TTL_MS);
+    loginChallenges.set(challengeId, { payload: issued.payload, attempts: 0, sends: 0, lastSentAt: 0 });
+    return issued;
 }
 
 function verifyLoginChallenge(token) {
-    return verifySignedToken(token, { expectedSub: 'admin_login_challenge' });
+    const payload = verifySignedToken(token, { expectedSub: 'admin_login_challenge' });
+    const entry = payload && loginChallenges.get(payload.cid);
+    return entry && entry.attempts < LOGIN_MAX_ATTEMPTS
+        && safeEqualString(JSON.stringify(entry.payload), JSON.stringify(payload)) ? payload : null;
 }
 
-function issueSecondaryToken(secondaryPasswordVersion, ip = '') {
-    return issueSignedToken({
-        sub: 'admin_secondary',
-        sv: Math.max(1, Number(secondaryPasswordVersion || 1)),
-        ip: String(ip || '').slice(0, 45)
-    }, SECONDARY_TOKEN_TTL_MS);
+function validateLoginChallenge(challenge, authConfig, clientMeta) {
+    const entry = challenge && loginChallenges.get(challenge.cid);
+    return Boolean(entry && Date.now() < entry.payload.exp
+        && safeEqualString(JSON.stringify(entry.payload), JSON.stringify(challenge))
+        && challenge.pv === authConfig.passwordVersion && challenge.email === normalizeEmail(authConfig.email)
+        && challenge.ip === clientMeta.ip && challenge.fp === clientMeta.fingerprint);
+}
+
+function beginLoginChallengeAttempt(challenge, authConfig, clientMeta) {
+    if (!validateLoginChallenge(challenge, authConfig, clientMeta)) return false;
+    const entry = loginChallenges.get(challenge.cid);
+    if (entry.attempts >= LOGIN_MAX_ATTEMPTS) return false;
+    entry.attempts += 1;
+    return true;
+}
+
+function consumeLoginChallenge(challenge, authConfig, clientMeta) {
+    if (!validateLoginChallenge(challenge, authConfig, clientMeta)) return false;
+    loginChallenges.delete(challenge.cid);
+    tgLoginCodes.delete(challenge.cid);
+    return true;
+}
+
+function reserveTelegramCodeSend(challenge) {
+    const entry = challenge && loginChallenges.get(challenge.cid);
+    const now = Date.now();
+    if (!entry || now >= entry.payload.exp || entry.attempts >= LOGIN_MAX_ATTEMPTS || entry.sends >= 3) return false;
+    if (entry.sends > 0 && now - entry.lastSentAt < TG_SEND_COOLDOWN_MS) return false;
+    entry.sends += 1;
+    entry.lastSentAt = now;
+    return true;
+}
+
+function getBearerToken(req) {
+    const header = req.headers?.authorization;
+    if (typeof header !== 'string' || header.length > 4103) return null;
+    const match = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43})$/i.exec(header);
+    return match ? match[1] : null;
+}
+
+function resolveTrustedProxyCidrs(value = process.env.KC_TRUST_PROXY_CIDRS || '') {
+    if (!value.trim()) return false;
+    const entries = value.split(',').map(item => item.trim());
+    if (entries.length > 32 || entries.some(item => {
+        const parts = item.split('/');
+        const version = isIP(parts[0]);
+        return !version || parts.length > 2 || (parts.length === 2
+            && (!/^\d{1,3}$/.test(parts[1]) || Number(parts[1]) < 1 || Number(parts[1]) > (version === 4 ? 32 : 128)));
+    })) throw new Error('KC_TRUST_PROXY_CIDRS must contain explicit IP addresses or restricted CIDRs');
+    return entries;
+}
+
+function resolveInitialAdminPasswordHash(existingHash) {
+    if (existingHash !== undefined) {
+        if (typeof existingHash !== 'string' || !/^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/.test(existingHash)) {
+            throw new Error('Existing admin password hash is invalid; explicit credential recovery is required');
+        }
+        return existingHash;
+    }
+    const password = process.env.ADMIN_PASSWORD;
+    if (typeof password !== 'string' || password.trim().length < 16 || password.length > 1024) {
+        throw new Error('First-time setup requires an explicit ADMIN_PASSWORD of at least 16 characters');
+    }
+    return createPasswordHash(password);
+}
+
+function adminTokenBinding(token) {
+    return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+function issueSecondaryToken(passwordVersion, ip = '', adminToken = '') {
+    return issueSignedToken({ sub: 'admin_secondary', pv: passwordVersion,
+        binding: adminTokenBinding(adminToken), ip: String(ip || '') }, SECONDARY_TOKEN_TTL_MS);
 }
 
 function verifySecondaryToken(token) {
@@ -161,11 +259,8 @@ function verifySecondaryToken(token) {
 }
 
 function getClientMeta(req) {
-    const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-    const ip = forwarded
-        || String(req.headers['x-real-ip'] || '').trim()
-        || req.socket?.remoteAddress
-        || '';
+    // Express resolves req.ip using the explicitly configured trusted proxy list.
+    const ip = String(req.ip || req.socket?.remoteAddress || '');
     return {
         ip: ip.replace(/^::ffff:/, ''),
         userAgent: String(req.headers['user-agent'] || '').slice(0, 512),
@@ -178,34 +273,30 @@ function normalizeEmail(email) {
 }
 
 function checkLoginRateLimit(ip) {
-    const key = String(ip || 'unknown').slice(0, 45);
+    cleanupAuthState();
+    // Keep the phase suffix even for full-length IPv6 addresses.
+    const key = String(ip || 'unknown').slice(0, 160);
     const now = Date.now();
-    const entry = loginAttempts.get(key) || { count: 0, firstAt: now, lockedUntil: 0 };
+    let entry = loginAttempts.get(key);
+    if (!entry && loginAttempts.size >= MAX_AUTH_ENTRIES) return { allowed: false, retryAfterSec: 60, reason: 'capacity' };
+    entry ||= { count: 0, firstAt: now, lockedUntil: 0 };
     if (entry.lockedUntil && now < entry.lockedUntil) {
-        const retryAfterSec = Math.ceil((entry.lockedUntil - now) / 1000);
-        return { allowed: false, retryAfterSec, reason: 'locked' };
+        return { allowed: false, retryAfterSec: Math.ceil((entry.lockedUntil - now) / 1000), reason: 'locked' };
     }
-    if (now - entry.firstAt > LOGIN_WINDOW_MS) {
-        entry.count = 0;
-        entry.firstAt = now;
-        entry.lockedUntil = 0;
-    }
+    if (now - entry.firstAt >= LOGIN_WINDOW_MS || entry.lockedUntil) entry = { count: 0, firstAt: now, lockedUntil: 0 };
     if (entry.count >= LOGIN_MAX_ATTEMPTS) {
-        entry.lockedUntil = now + LOGIN_LOCK_MS;
-        loginAttempts.set(key, entry);
-        return { allowed: false, retryAfterSec: Math.ceil(LOGIN_LOCK_MS / 1000), reason: 'locked' };
+        return { allowed: false, retryAfterSec: Math.max(1, Math.ceil((entry.firstAt + LOGIN_WINDOW_MS - now) / 1000)), reason: 'locked' };
     }
+    // Reserve synchronously before database/password checks, so parallel requests share the budget.
+    entry.count += 1;
+    if (entry.count >= LOGIN_MAX_ATTEMPTS) entry.lockedUntil = now + LOGIN_LOCK_MS;
+    loginAttempts.set(key, entry);
     return { allowed: true, entry, key };
 }
 
 function recordLoginFailure(key, entry) {
-    const now = Date.now();
-    const next = entry || { count: 0, firstAt: now, lockedUntil: 0 };
-    next.count += 1;
-    if (next.count >= LOGIN_MAX_ATTEMPTS) {
-        next.lockedUntil = now + LOGIN_LOCK_MS;
-    }
-    loginAttempts.set(key, next);
+    // Attempts have already been reserved by checkLoginRateLimit.
+    if (entry && entry.count >= LOGIN_MAX_ATTEMPTS) entry.lockedUntil = Math.max(entry.lockedUntil, Date.now() + LOGIN_LOCK_MS);
 }
 
 function clearLoginAttempts(key) {
@@ -267,7 +358,7 @@ function generateTotpSecret() {
 
 function verifyTotpCode(secret, token, window = 1) {
     const normalizedSecret = String(secret || '').replace(/\s+/g, '').toUpperCase();
-    const normalizedToken = String(token || '').trim().padStart(6, '0');
+    const normalizedToken = String(token || '').trim();
     if (!normalizedSecret || !/^\d{6}$/.test(normalizedToken)) {
         return false;
     }
@@ -290,11 +381,11 @@ function getTotpUri(email, secret, issuer = 'PlusPapay') {
 
 function storeTelegramLoginCode(challengeId, code) {
     const key = String(challengeId || '').trim();
-    if (!key) return;
+    if (!key || !loginChallenges.has(key)) return;
     tgLoginCodes.set(key, {
         code: String(code),
-        exp: Date.now() + TG_CODE_TTL_MS,
-        attempts: 0
+        exp: Math.min(Date.now() + TG_CODE_TTL_MS, loginChallenges.get(key).payload.exp),
+        attempts: tgLoginCodes.get(key)?.attempts || 0
     });
 }
 
@@ -322,7 +413,7 @@ function verifyTelegramLoginCode(challengeId, inputCode) {
 }
 
 function generateTelegramLoginCode() {
-    return String(Math.floor(100000 + Math.random() * 900000));
+    return String(crypto.randomInt(100000, 1000000));
 }
 
 function is2faRequired(authConfig = {}, telegramSettings = {}) {
@@ -351,13 +442,14 @@ function getAvailable2faMethods(authConfig = {}, telegramSettings = {}) {
 function resolveLogin2faMethods(authConfig = {}, telegramSettings = {}) {
     const available = getAvailable2faMethods(authConfig, telegramSettings);
     const mode = String(authConfig.login2faMode || 'either').trim().toLowerCase();
-    if (mode === 'totp') {
-        return available.includes('totp') ? ['totp'] : available;
+    if (!['either', 'totp', 'telegram'].includes(mode)
+        || (authConfig.totpEnabled && !String(authConfig.totpSecret || '').trim())
+        || (mode === 'totp' && !available.includes('totp'))
+        || (mode === 'telegram' && !available.includes('telegram'))
+        || (Boolean(telegramSettings.bot_token) !== Boolean(telegramSettings.admin_chat_id))) {
+        throw Object.assign(new Error('管理员验证配置异常'), { code: 'ADMIN_FACTOR_UNAVAILABLE' });
     }
-    if (mode === 'telegram') {
-        return available.includes('telegram') ? ['telegram'] : available;
-    }
-    return available;
+    return mode === 'totp' || mode === 'telegram' ? [mode] : available;
 }
 
 function pickDefaultLogin2faMethod(methods = [], preferred = '') {
@@ -373,10 +465,22 @@ function pickDefaultLogin2faMethod(methods = [], preferred = '') {
 }
 
 function createRequireSecondaryAuth(store, ensureStoreReady) {
-    // 已取消后台二级密码：直接放行，仅保留管理员登录鉴权（authenticateAdmin）
     return async function requireSecondaryAuth(req, res, next) {
-        req.secondaryAuth = { bypassed: true };
-        return next();
+        res.setHeader('Cache-Control', 'no-store');
+        const raw = req.headers?.['x-admin-secondary-token'];
+        const proof = typeof raw === 'string' ? verifySecondaryToken(raw) : null;
+        if (!proof || !req.adminToken || proof.binding !== adminTokenBinding(req.adminToken)
+            || proof.ip !== getClientMeta(req).ip || proof.pv !== req.admin?.pv) {
+            return res.status(403).json({ success: false, code: 'STEP_UP_REQUIRED', message: '请再次验证身份后访问敏感操作' });
+        }
+        try {
+            await ensureStoreReady();
+            const config = await store.getAdminAuthConfig();
+            // The store read may outlive the proof; authorize at the point of use.
+            if (proof.exp <= Date.now() || proof.pv !== config.passwordVersion) return res.status(403).json({ success: false, code: 'STEP_UP_REQUIRED', message: '验证已失效' });
+            req.secondaryAuth = proof;
+            return next();
+        } catch (_) { return res.status(503).json({ success: false, message: '安全验证暂时不可用' }); }
     };
 }
 
@@ -390,6 +494,13 @@ module.exports = {
     verifyAdminToken,
     issueLoginChallenge,
     verifyLoginChallenge,
+    validateLoginChallenge,
+    beginLoginChallengeAttempt,
+    consumeLoginChallenge,
+    reserveTelegramCodeSend,
+    getBearerToken,
+    resolveTrustedProxyCidrs,
+    resolveInitialAdminPasswordHash,
     issueSecondaryToken,
     verifySecondaryToken,
     getClientMeta,

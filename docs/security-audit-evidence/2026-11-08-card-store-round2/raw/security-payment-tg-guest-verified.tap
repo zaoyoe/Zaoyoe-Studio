@@ -1,0 +1,1006 @@
+TAP version 13
+# Subtest: with the credential switch off every new route answers 404 guest_feature_disabled
+ok 1 - with the credential switch off every new route answers 404 guest_feature_disabled
+  ---
+  duration_ms: 5.249333
+  type: 'test'
+  ...
+# Subtest: with the switch off GET /guest/orders keeps today's 405 and never reaches the list handler
+ok 2 - with the switch off GET /guest/orders keeps today's 405 and never reaches the list handler
+  ---
+  duration_ms: 1.344916
+  type: 'test'
+  ...
+# Subtest: the standalone page switch gates its capability endpoint and credential routes
+ok 3 - the standalone page switch gates its capability endpoint and credential routes
+  ---
+  duration_ms: 1.01375
+  type: 'test'
+  ...
+# Subtest: the capability endpoint acknowledges only the enabled standalone page
+ok 4 - the capability endpoint acknowledges only the enabled standalone page
+  ---
+  duration_ms: 0.877416
+  type: 'test'
+  ...
+# Subtest: logout is never switch-gated so a rollback cannot strand a live cookie
+ok 5 - logout is never switch-gated so a rollback cannot strand a live cookie
+  ---
+  duration_ms: 0.334583
+  type: 'test'
+  ...
+# Subtest: credentials in a query string are rejected with 400 and audited, never verified
+ok 6 - credentials in a query string are rejected with 400 and audited, never verified
+  ---
+  duration_ms: 44.722
+  type: 'test'
+  ...
+# Subtest: the session cookie wins over the header and authorizes by buyer_id
+ok 7 - the session cookie wins over the header and authorizes by buyer_id
+  ---
+  duration_ms: 109.405042
+  type: 'test'
+  ...
+# Subtest: a forged or expired session cookie falls through to the unified 403
+ok 8 - a forged or expired session cookie falls through to the unified 403
+  ---
+  duration_ms: 0.812542
+  type: 'test'
+  ...
+# Subtest: unknown email and wrong password are indistinguishable in the response body
+ok 9 - unknown email and wrong password are indistinguishable in the response body
+  ---
+  duration_ms: 148.913458
+  type: 'test'
+  ...
+# Subtest: a locked contact answers 423 before any scrypt work is billed to it
+ok 10 - a locked contact answers 423 before any scrypt work is billed to it
+  ---
+  duration_ms: 4.265375
+  type: 'test'
+  ...
+# Subtest: a merged credential group is retired fail-closed and looks like a wrong password
+ok 11 - a merged credential group is retired fail-closed and looks like a wrong password
+  ---
+  duration_ms: 96.848875
+  type: 'test'
+  ...
+# Subtest: the per-IP budget is evaluated before the group read and answers 429
+ok 12 - the per-IP budget is evaluated before the group read and answers 429
+  ---
+  duration_ms: 2.91375
+  type: 'test'
+  ...
+# Subtest: the coarse rate limiter is applied before authentication on every read route
+ok 13 - the coarse rate limiter is applied before authentication on every read route
+  ---
+  duration_ms: 1.085667
+  type: 'test'
+  ...
+# Subtest: another buyer's order is a 404 on both detail and delivery, not a 403
+ok 14 - another buyer's order is a 404 on both detail and delivery, not a 403
+  ---
+  duration_ms: 256.991834
+  type: 'test'
+  ...
+# Subtest: a session for group 1 cannot read an order owned by group 2 of the same contact
+ok 15 - a session for group 1 cannot read an order owned by group 2 of the same contact
+  ---
+  duration_ms: 82.479708
+  type: 'test'
+  ...
+# Subtest: the list snapshot ships the discount container as null until L1/L2 fill it
+ok 16 - the list snapshot ships the discount container as null until L1/L2 fill it
+  ---
+  duration_ms: 96.986458
+  type: 'test'
+  ...
+# Subtest: pagination and order_no filters are clamped, not trusted
+ok 17 - pagination and order_no filters are clamped, not trusted
+  ---
+  duration_ms: 218.235
+  type: 'test'
+  ...
+# Subtest: the same credential group returns every historical order across pages
+ok 18 - the same credential group returns every historical order across pages
+  ---
+  duration_ms: 207.218041
+  type: 'test'
+  ...
+# Subtest: delivery is gated on confirmed payment AND delivered fulfillment
+ok 19 - delivery is gated on confirmed payment AND delivered fulfillment
+  ---
+  duration_ms: 378.97725
+  type: 'test'
+  ...
+# Subtest: L1: a multi-unit order delivers every card in one payload
+ok 20 - L1: a multi-unit order delivers every card in one payload
+  ---
+  duration_ms: 73.97775
+  type: 'test'
+  ...
+# Subtest: L1: a partially delivered order is a 409, never a truncated payload
+ok 21 - L1: a partially delivered order is a 409, never a truncated payload
+  ---
+  duration_ms: 126.0085
+  type: 'test'
+  ...
+# Subtest: L2: the list snapshot fills coupon_discount and amount_breakdown from committed columns
+ok 22 - L2: the list snapshot fills coupon_discount and amount_breakdown from committed columns
+  ---
+  duration_ms: 198.348916
+  type: 'test'
+  ...
+# Subtest: L2: an inconsistent committed row drops the breakdown instead of lying about it
+ok 23 - L2: an inconsistent committed row drops the breakdown instead of lying about it
+  ---
+  duration_ms: 161.987708
+  type: 'test'
+  ...
+# Subtest: detail and delivery reject non-GET methods with an Allow header
+ok 24 - detail and delivery reject non-GET methods with an Allow header
+  ---
+  duration_ms: 0.55575
+  type: 'test'
+  ...
+# Subtest: the login body is field-whitelisted so a client cannot inject buyer_id or a site override
+ok 25 - the login body is field-whitelisted so a client cannot inject buyer_id or a site override
+  ---
+  duration_ms: 0.274875
+  type: 'test'
+  ...
+# Subtest: the session cookie is __Host- scoped, HttpOnly, Secure, SameSite=Strict and Path=/
+ok 26 - the session cookie is __Host- scoped, HttpOnly, Secure, SameSite=Strict and Path=/
+  ---
+  duration_ms: 95.354625
+  type: 'test'
+  ...
+# Subtest: A3: with the switch off reset answers 404 guest_feature_disabled
+ok 27 - A3: with the switch off reset answers 404 guest_feature_disabled
+  ---
+  duration_ms: 0.527208
+  type: 'test'
+  ...
+# Subtest: A3: reset rejects non-POST methods with an Allow header
+ok 28 - A3: reset rejects non-POST methods with an Allow header
+  ---
+  duration_ms: 0.089791
+  type: 'test'
+  ...
+# Subtest: A3: reset body is field-whitelisted
+ok 29 - A3: reset body is field-whitelisted
+  ---
+  duration_ms: 0.207667
+  type: 'test'
+  ...
+# Subtest: A3: an issued link is 43 base64url chars, only its sha256 is persisted, and issuing bumps password_version
+ok 30 - A3: an issued link is 43 base64url chars, only its sha256 is persisted, and issuing bumps password_version
+  ---
+  duration_ms: 2.218375
+  type: 'test'
+  ...
+# Subtest: A3: invalid, expired, used and revoked links all collapse to ONE identical 403
+ok 31 - A3: invalid, expired, used and revoked links all collapse to ONE identical 403
+  ---
+  duration_ms: 4.154917
+  type: 'test'
+  ...
+# Subtest: A3: a wrong email is rejected WITHOUT burning the link, and the right email then works
+ok 32 - A3: a wrong email is rejected WITHOUT burning the link, and the right email then works
+  ---
+  duration_ms: 82.598375
+  type: 'test'
+  ...
+# Subtest: A3: a weak password is rejected before the link is consumed
+ok 33 - A3: a weak password is rejected before the link is consumed
+  ---
+  duration_ms: 0.8625
+  type: 'test'
+  ...
+# Subtest: A3: a link minted for cn cannot be spent with site=intl
+ok 34 - A3: a link minted for cn cannot be spent with site=intl
+  ---
+  duration_ms: 0.789
+  type: 'test'
+  ...
+# Subtest: A3: a successful reset consumes the link, moves password_version, kills the old cookie and signs the buyer in
+ok 35 - A3: a successful reset consumes the link, moves password_version, kills the old cookie and signs the buyer in
+  ---
+  duration_ms: 316.9475
+  type: 'test'
+  ...
+# Subtest: A3: a merged credential group cannot be reset through the guest link
+ok 36 - A3: a merged credential group cannot be reset through the guest link
+  ---
+  duration_ms: 1.740125
+  type: 'test'
+  ...
+# Subtest: guest BSC (BEP20) creates native USDT checkout and preserves Memo without broadening an exact allowlist
+ok 37 - guest BSC (BEP20) creates native USDT checkout and preserves Memo without broadening an exact allowlist
+  ---
+  duration_ms: 9.628209
+  type: 'test'
+  ...
+# Subtest: guest TON creates native USDT checkout and preserves Memo without broadening an exact allowlist
+ok 38 - guest TON creates native USDT checkout and preserves Memo without broadening an exact allowlist
+  ---
+  duration_ms: 0.666541
+  type: 'test'
+  ...
+# Subtest: guest Polygon creates native USDT checkout and preserves Memo without broadening an exact allowlist
+ok 39 - guest Polygon creates native USDT checkout and preserves Memo without broadening an exact allowlist
+  ---
+  duration_ms: 0.885375
+  type: 'test'
+  ...
+# Subtest: guest TRON (TRC20) creates native USDT checkout and preserves Memo without broadening an exact allowlist
+ok 40 - guest TRON (TRC20) creates native USDT checkout and preserves Memo without broadening an exact allowlist
+  ---
+  duration_ms: 1.823666
+  type: 'test'
+  ...
+# Subtest: guest market checkout uses TG canonical FX and saves the rate with no second conversion or fee
+ok 41 - guest market checkout uses TG canonical FX and saves the rate with no second conversion or fee
+  ---
+  duration_ms: 6.249625
+  type: 'test'
+  ...
+# Subtest: unavailable FX is a definite guest pre-creation failure and sends no provider request
+ok 42 - unavailable FX is a definite guest pre-creation failure and sends no provider request
+  ---
+  duration_ms: 0.4015
+  type: 'test'
+  ...
+# Subtest: guest market checkout rejects a provider amount difference even if JSON.parse rounds it to the same number
+ok 43 - guest market checkout rejects a provider amount difference even if JSON.parse rounds it to the same number
+  ---
+  duration_ms: 0.378334
+  type: 'test'
+  ...
+# Subtest: guest payment channel allowlist matches the database exact-token contract
+ok 44 - guest payment channel allowlist matches the database exact-token contract
+  ---
+  duration_ms: 0.88775
+  type: 'test'
+  ...
+# Subtest: adapter rejects an empty product channel allowlist before touching gateway
+ok 45 - adapter rejects an empty product channel allowlist before touching gateway
+  ---
+  duration_ms: 1.768917
+  type: 'test'
+  ...
+# Subtest: adapter rejects mock/test/fake providers and disabled or placeholder live config
+ok 46 - adapter rejects mock/test/fake providers and disabled or placeholder live config
+  ---
+  duration_ms: 0.41525
+  type: 'test'
+  ...
+# Subtest: ZPay checkout uses immutable server amount and excludes claim/user metadata
+ok 47 - ZPay checkout uses immutable server amount and excludes claim/user metadata
+  ---
+  duration_ms: 24.123
+  type: 'test'
+  ...
+# Subtest: ZPay never treats an image field or gateway origin as the payment QR payload
+ok 48 - ZPay never treats an image field or gateway origin as the payment QR payload
+  ---
+  duration_ms: 1.011416
+  type: 'test'
+  ...
+# Subtest: ZPay keeps an image-looking payurl as the order payment URL for local QR generation
+ok 49 - ZPay keeps an image-looking payurl as the order payment URL for local QR generation
+  ---
+  duration_ms: 0.372
+  type: 'test'
+  ...
+# Subtest: ZPay can display an image-only response without encoding the image URL as a QR
+ok 50 - ZPay can display an image-only response without encoding the image URL as a QR
+  ---
+  duration_ms: 0.342791
+  type: 'test'
+  ...
+# Subtest: ZPay batch checkout rejects an image-only response before it can be rendered as a QR
+ok 51 - ZPay batch checkout rejects an image-only response before it can be rendered as a QR
+  ---
+  duration_ms: 0.304417
+  type: 'test'
+  ...
+# Subtest: ZPay batch checkout rejects generic or local URLs and accepts an opaque cashier payment URL
+ok 52 - ZPay batch checkout rejects generic or local URLs and accepts an opaque cashier payment URL
+  ---
+  duration_ms: 4.994666
+  type: 'test'
+  ...
+# Subtest: trusted guest amount prefers expected_amount over catalog total_amount
+ok 53 - trusted guest amount prefers expected_amount over catalog total_amount
+  ---
+  duration_ms: 0.107125
+  type: 'test'
+  ...
+# Subtest: adapter rejects a client amount that differs from the server snapshot
+ok 54 - adapter rejects a client amount that differs from the server snapshot
+  ---
+  duration_ms: 0.153667
+  type: 'test'
+  ...
+# Subtest: NOWPayments checkout rejects unsupported networks and returns payment details without secrets
+ok 55 - NOWPayments checkout rejects unsupported networks and returns payment details without secrets
+  ---
+  duration_ms: 0.426542
+  type: 'test'
+  ...
+# Subtest: NOWPayments intl checkout still settles CNY and converts the credit price to a USD quote
+ok 56 - NOWPayments intl checkout still settles CNY and converts the credit price to a USD quote
+  ---
+  duration_ms: 0.2255
+  type: 'test'
+  ...
+# Subtest: NOWPayments small-amount checkout quotes in USDTBSC crypto to support micro transactions
+ok 57 - NOWPayments small-amount checkout quotes in USDTBSC crypto to support micro transactions
+  ---
+  duration_ms: 0.212583
+  type: 'test'
+  ...
+# Subtest: NOWPayments checkout with price_currency usd defaults to usdtbsc for USDTBSC payments
+ok 58 - NOWPayments checkout with price_currency usd defaults to usdtbsc for USDTBSC payments
+  ---
+  duration_ms: 0.22075
+  type: 'test'
+  ...
+# Subtest: NOWPayments 4xx amount too small is a definitive create rejection
+ok 59 - NOWPayments 4xx amount too small is a definitive create rejection
+  ---
+  duration_ms: 0.983125
+  type: 'test'
+  ...
+# Subtest: NOWPayments gateway network failure stays non-definitive
+ok 60 - NOWPayments gateway network failure stays non-definitive
+  ---
+  duration_ms: 0.394625
+  type: 'test'
+  ...
+# Subtest: ZPay webhook verification requires official MD5 and exact raw form body
+ok 61 - ZPay webhook verification requires official MD5 and exact raw form body
+  ---
+  duration_ms: 0.63
+  type: 'test'
+  ...
+# Subtest: NOWPayments webhook verification uses x-nowpayments-sig HMAC-SHA512
+ok 62 - NOWPayments webhook verification uses x-nowpayments-sig HMAC-SHA512
+  ---
+  duration_ms: 47.539084
+  type: 'test'
+  ...
+# Subtest: webhook parser normalizes provider references, status and network without trusting client site
+ok 63 - webhook parser normalizes provider references, status and network without trusting client site
+  ---
+  duration_ms: 0.2915
+  type: 'test'
+  ...
+# Subtest: NOWPayments finished callbacks require actual receipt in a supported and consistent incoming currency
+ok 64 - NOWPayments finished callbacks require actual receipt in a supported and consistent incoming currency
+  ---
+  duration_ms: 10.648625
+  type: 'test'
+  ...
+# Subtest: NOWPayments settlement preserves decimal text and rejects malformed amounts
+ok 65 - NOWPayments settlement preserves decimal text and rejects malformed amounts
+  ---
+  duration_ms: 0.28375
+  type: 'test'
+  ...
+# Subtest: NOWPayments status query does not fall back to quote fields for settlement
+ok 66 - NOWPayments status query does not fall back to quote fields for settlement
+  ---
+  duration_ms: 5.200792
+  type: 'test'
+  ...
+# Subtest: ZPay guest refund classifies an insufficient seller balance as manual review
+ok 67 - ZPay guest refund classifies an insufficient seller balance as manual review
+  ---
+  duration_ms: 8.732042
+  type: 'test'
+  ...
+# Subtest: ZPay guest refund classifies an explicit provider rejection as manual review
+ok 68 - ZPay guest refund classifies an explicit provider rejection as manual review
+  ---
+  duration_ms: 5.715042
+  type: 'test'
+  ...
+# Subtest: ZPay guest refund keeps an empty unclassified failure retryable
+ok 69 - ZPay guest refund keeps an empty unclassified failure retryable
+  ---
+  duration_ms: 0.262958
+  type: 'test'
+  ...
+# Subtest: small USDT payment rejection includes the live network minimum without retrying creation
+ok 70 - small USDT payment rejection includes the live network minimum without retrying creation
+  ---
+  duration_ms: 1.062417
+  type: 'test'
+  ...
+# Subtest: NOWPayments keeps a raw numeric payment ID exact across checkout, callback and authenticated query
+ok 71 - NOWPayments keeps a raw numeric payment ID exact across checkout, callback and authenticated query
+  ---
+  duration_ms: 1.444416
+  type: 'test'
+  ...
+# Subtest: NOWPayments query cannot invent a payment ID absent from the provider response
+ok 72 - NOWPayments query cannot invent a payment ID absent from the provider response
+  ---
+  duration_ms: 0.292958
+  type: 'test'
+  ...
+# Subtest: guest site and order input validation is strict and server-bindable
+ok 73 - guest site and order input validation is strict and server-bindable
+  ---
+  duration_ms: 6.010958
+  type: 'test'
+  ...
+# Subtest: integer-cent money parser rejects floating point ambiguity and unsafe values
+ok 74 - integer-cent money parser rejects floating point ambiguity and unsafe values
+  ---
+  duration_ms: 0.629166
+  type: 'test'
+  ...
+# Subtest: idempotency hashes and request fingerprints are stable but scoped
+ok 75 - idempotency hashes and request fingerprints are stable but scoped
+  ---
+  duration_ms: 27.883291
+  type: 'test'
+  ...
+# Subtest: claim secret is high entropy, peppered, versioned and timing-safe
+ok 76 - claim secret is high entropy, peppered, versioned and timing-safe
+  ---
+  duration_ms: 14.724709
+  type: 'test'
+  ...
+# Subtest: claim secret derivation is deterministic, site-scoped, and fail-closed
+ok 77 - claim secret derivation is deterministic, site-scoped, and fail-closed
+  ---
+  duration_ms: 0.40475
+  type: 'test'
+  ...
+# Subtest: webhook HMAC covers version, timestamp, nonce and exact raw body
+ok 78 - webhook HMAC covers version, timestamp, nonce and exact raw body
+  ---
+  duration_ms: 0.486667
+  type: 'test'
+  ...
+# Subtest: payment binding requires purpose, provider, site, currency, amount and final state
+ok 79 - payment binding requires purpose, provider, site, currency, amount and final state
+  ---
+  duration_ms: 0.198
+  type: 'test'
+  ...
+# Subtest: bounded JSON reader rejects oversized, non-JSON and primitive bodies
+ok 80 - bounded JSON reader rejects oversized, non-JSON and primitive bodies
+  ---
+  duration_ms: 12.376459
+  type: 'test'
+  ...
+# Subtest: body readers fail closed for malformed or over-sized explicit limits
+ok 81 - body readers fail closed for malformed or over-sized explicit limits
+  ---
+  duration_ms: 0.596292
+  type: 'test'
+  ...
+# Subtest: payment payload redaction removes secrets and does not mutate source
+ok 82 - payment payload redaction removes secrets and does not mutate source
+  ---
+  duration_ms: 2.696209
+  type: 'test'
+  ...
+# Subtest: guest usdtbsc settlement binds the order network and Memo and refuses atomic underpayment
+ok 83 - guest usdtbsc settlement binds the order network and Memo and refuses atomic underpayment
+  ---
+  duration_ms: 17.813708
+  type: 'test'
+  ...
+# Subtest: guest usdtton settlement binds the order network and Memo and refuses atomic underpayment
+ok 84 - guest usdtton settlement binds the order network and Memo and refuses atomic underpayment
+  ---
+  duration_ms: 30.055666
+  type: 'test'
+  ...
+# Subtest: guest usdtmatic settlement binds the order network and Memo and refuses atomic underpayment
+ok 85 - guest usdtmatic settlement binds the order network and Memo and refuses atomic underpayment
+  ---
+  duration_ms: 35.830167
+  type: 'test'
+  ...
+# Subtest: guest usdttrc20 settlement binds the order network and Memo and refuses atomic underpayment
+ok 86 - guest usdttrc20 settlement binds the order network and Memo and refuses atomic underpayment
+  ---
+  duration_ms: 1.419583
+  type: 'test'
+  ...
+# Subtest: a forged webhook cannot reserve the business event key before the valid callback
+ok 87 - a forged webhook cannot reserve the business event key before the valid callback
+  ---
+  duration_ms: 1.528625
+  type: 'test'
+  ...
+# Subtest: a confirmed webhook kicks fulfillment without making the payment response depend on it
+ok 88 - a confirmed webhook kicks fulfillment without making the payment response depend on it
+  ---
+  duration_ms: 2.563208
+  type: 'test'
+  ...
+# Subtest: repeated forged webhook bodies are deduplicated in the invalid namespace
+ok 89 - repeated forged webhook bodies are deduplicated in the invalid namespace
+  ---
+  duration_ms: 0.701333
+  type: 'test'
+  ...
+# Subtest: different forged bodies from one source share a bounded audit bucket
+ok 90 - different forged bodies from one source share a bounded audit bucket
+  ---
+  duration_ms: 1.23775
+  type: 'test'
+  ...
+# Subtest: webhook rate limiting rejects before reading or persisting a callback
+ok 91 - webhook rate limiting rejects before reading or persisting a callback
+  ---
+  duration_ms: 0.295875
+  type: 'test'
+  ...
+# Subtest: a merchant order callback binds the provider order reference before confirmation
+ok 92 - a merchant order callback binds the provider order reference before confirmation
+  ---
+  duration_ms: 0.314375
+  type: 'test'
+  ...
+# Subtest: NOWPayments payment_id can locate the payment row without allowing merchant binding to be skipped
+ok 93 - NOWPayments payment_id can locate the payment row without allowing merchant binding to be skipped
+  ---
+  duration_ms: 7.767167
+  type: 'test'
+  ...
+# Subtest: ambiguous provider references fail closed before confirmation
+ok 94 - ambiguous provider references fail closed before confirmation
+  ---
+  duration_ms: 0.292708
+  type: 'test'
+  ...
+# Subtest: NOWPayments webhook compares actually_paid as exact decimal text at the quote boundary
+ok 95 - NOWPayments webhook compares actually_paid as exact decimal text at the quote boundary
+  ---
+  duration_ms: 2.948708
+  type: 'test'
+  ...
+# Subtest: NOWPayments parser USD quote still binds against stored CNY settlement
+ok 96 - NOWPayments parser USD quote still binds against stored CNY settlement
+  ---
+  duration_ms: 0.590333
+  type: 'test'
+  ...
+# Subtest: NOWPayments webhook verifies and settles order with price_currency usdtbsc
+ok 97 - NOWPayments webhook verifies and settles order with price_currency usdtbsc
+  ---
+  duration_ms: 1.019459
+  type: 'test'
+  ...
+# Subtest: a NOWPayments callback that hits a ZPay merchant order is rejected unbound
+ok 98 - a NOWPayments callback that hits a ZPay merchant order is rejected unbound
+  ---
+  duration_ms: 1.11025
+  type: 'test'
+  ...
+# Subtest: a ZPay callback that hits a NOWPayments merchant order is rejected unbound
+ok 99 - a ZPay callback that hits a NOWPayments merchant order is rejected unbound
+  ---
+  duration_ms: 0.639833
+  type: 'test'
+  ...
+# Subtest: ZPay guest query binds success code before reserving an event and accepts a corrected retry
+ok 100 - ZPay guest query binds success code before reserving an event and accepts a corrected retry
+  ---
+  duration_ms: 0.577708
+  type: 'test'
+  ...
+# Subtest: ZPay guest query binds merchant before reserving an event and accepts a corrected retry
+ok 101 - ZPay guest query binds merchant before reserving an event and accepts a corrected retry
+  ---
+  duration_ms: 0.215208
+  type: 'test'
+  ...
+# Subtest: ZPay guest query binds order before reserving an event and accepts a corrected retry
+ok 102 - ZPay guest query binds order before reserving an event and accepts a corrected retry
+  ---
+  duration_ms: 0.177625
+  type: 'test'
+  ...
+# Subtest: ZPay guest query binds channel before reserving an event and accepts a corrected retry
+ok 103 - ZPay guest query binds channel before reserving an event and accepts a corrected retry
+  ---
+  duration_ms: 0.52675
+  type: 'test'
+  ...
+# Subtest: ZPay guest query binds trade before reserving an event and accepts a corrected retry
+ok 104 - ZPay guest query binds trade before reserving an event and accepts a corrected retry
+  ---
+  duration_ms: 0.600958
+  type: 'test'
+  ...
+# Subtest: ZPay guest query binds missing trade before reserving an event and accepts a corrected retry
+ok 105 - ZPay guest query binds missing trade before reserving an event and accepts a corrected retry
+  ---
+  duration_ms: 0.206792
+  type: 'test'
+  ...
+# Subtest: ZPay guest query binds total before reserving an event and accepts a corrected retry
+ok 106 - ZPay guest query binds total before reserving an event and accepts a corrected retry
+  ---
+  duration_ms: 0.165708
+  type: 'test'
+  ...
+# Subtest: ZPay guest query binds currency before reserving an event and accepts a corrected retry
+ok 107 - ZPay guest query binds currency before reserving an event and accepts a corrected retry
+  ---
+  duration_ms: 0.2145
+  type: 'test'
+  ...
+# Subtest: ZPay guest query binds pending status before reserving an event and accepts a corrected retry
+ok 108 - ZPay guest query binds pending status before reserving an event and accepts a corrected retry
+  ---
+  duration_ms: 0.168416
+  type: 'test'
+  ...
+# Subtest: guest query outage leaves the business event available for the later legitimate callback
+ok 109 - guest query outage leaves the business event available for the later legitimate callback
+  ---
+  duration_ms: 0.870417
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects payment ID without consuming the callback and accepts a corrected retry
+ok 110 - real NOWPayments guest query rejects payment ID without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 1.740291
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects missing payment ID without consuming the callback and accepts a corrected retry
+ok 111 - real NOWPayments guest query rejects missing payment ID without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 1.934708
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects merchant order without consuming the callback and accepts a corrected retry
+ok 112 - real NOWPayments guest query rejects merchant order without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 4.048375
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects missing merchant order without consuming the callback and accepts a corrected retry
+ok 113 - real NOWPayments guest query rejects missing merchant order without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 1.50675
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects pending payment without consuming the callback and accepts a corrected retry
+ok 114 - real NOWPayments guest query rejects pending payment without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 1.529417
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects missing status without consuming the callback and accepts a corrected retry
+ok 115 - real NOWPayments guest query rejects missing status without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 0.563167
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects requested crypto amount without consuming the callback and accepts a corrected retry
+ok 116 - real NOWPayments guest query rejects requested crypto amount without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 1.312792
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects underpayment by one atomic unit without consuming the callback and accepts a corrected retry
+ok 117 - real NOWPayments guest query rejects underpayment by one atomic unit without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 0.661917
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects missing actual paid amount without consuming the callback and accepts a corrected retry
+ok 118 - real NOWPayments guest query rejects missing actual paid amount without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 1.092583
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects actual paid currency without consuming the callback and accepts a corrected retry
+ok 119 - real NOWPayments guest query rejects actual paid currency without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 2.397333
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects payment network without consuming the callback and accepts a corrected retry
+ok 120 - real NOWPayments guest query rejects payment network without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 1.039375
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects quote amount without consuming the callback and accepts a corrected retry
+ok 121 - real NOWPayments guest query rejects quote amount without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 1.153875
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects quote currency without consuming the callback and accepts a corrected retry
+ok 122 - real NOWPayments guest query rejects quote currency without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 0.510584
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects destination address without consuming the callback and accepts a corrected retry
+ok 123 - real NOWPayments guest query rejects destination address without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 0.482542
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects missing destination address without consuming the callback and accepts a corrected retry
+ok 124 - real NOWPayments guest query rejects missing destination address without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 0.410541
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects Memo without consuming the callback and accepts a corrected retry
+ok 125 - real NOWPayments guest query rejects Memo without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 1.429833
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query rejects missing Memo without consuming the callback and accepts a corrected retry
+ok 126 - real NOWPayments guest query rejects missing Memo without consuming the callback and accepts a corrected retry
+  ---
+  duration_ms: 0.763792
+  type: 'test'
+  ...
+# Subtest: real NOWPayments guest query outage keeps retry possible and hides provider error details
+ok 127 - real NOWPayments guest query outage keeps retry possible and hides provider error details
+  ---
+  duration_ms: 0.850375
+  type: 'test'
+  ...
+# Subtest: public payments handlers expose zpay webhook via shared handler and admin supabase client
+ok 128 - public payments handlers expose zpay webhook via shared handler and admin supabase client
+  ---
+  duration_ms: 1.076209
+  type: 'test'
+  ...
+# Subtest: the candidate tightens only ZPay proof and preserves the latest recovery function in full
+ok 129 - the candidate tightens only ZPay proof and preserves the latest recovery function in full
+  ---
+  duration_ms: 3.3645
+  type: 'test'
+  ...
+# Subtest: the candidate remains transactional and callable only with the exact service-role signature
+ok 130 - the candidate remains transactional and callable only with the exact service-role signature
+  ---
+  duration_ms: 0.256083
+  type: 'test'
+  ...
+# Subtest: TG ZPay checkout uses an exact decimal amount and its isolated callback/return URLs
+ok 131 - TG ZPay checkout uses an exact decimal amount and its isolated callback/return URLs
+  ---
+  duration_ms: 187.8315
+  type: 'test'
+  ...
+# Subtest: ZPay callback signature binds exact order, channel, amount, merchant, status and currency
+ok 132 - ZPay callback signature binds exact order, channel, amount, merchant, status and currency
+  ---
+  duration_ms: 1.95225
+  type: 'test'
+  ...
+# Subtest: amount conversion avoids floating point and rejects ambiguous values
+ok 133 - amount conversion avoids floating point and rejects ambiguous values
+  ---
+  duration_ms: 0.465541
+  type: 'test'
+  ...
+# Subtest: invalid checkout URLs and provider responses fail without exposing provider content
+ok 134 - invalid checkout URLs and provider responses fail without exposing provider content
+  ---
+  duration_ms: 11.972833
+  type: 'test'
+  ...
+# Subtest: TG payment configuration is fail closed and does not reuse application secrets
+ok 135 - TG payment configuration is fail closed and does not reuse application secrets
+  ---
+  duration_ms: 0.454167
+  type: 'test'
+  ...
+# Subtest: ZPay requests the full fee-inclusive amount; a signed lower amount remains subject to SQL binding
+ok 136 - ZPay requests the full fee-inclusive amount; a signed lower amount remains subject to SQL binding
+  ---
+  duration_ms: 2.828333
+  type: 'test'
+  ...
+# Subtest: ZPay uses the order QR payload, falls back to the cashier URL, and rejects generic downloads
+ok 137 - ZPay uses the order QR payload, falls back to the cashier URL, and rejects generic downloads
+  ---
+  duration_ms: 21.517
+  type: 'test'
+  ...
+# Subtest: ZPay cancellation checks the authenticated official order query with exact merchant, trade, order, channel and amount
+ok 138 - ZPay cancellation checks the authenticated official order query with exact merchant, trade, order, channel and amount
+  ---
+  duration_ms: 12.640375
+  type: 'test'
+  ...
+# Subtest: authenticated ZPay reads reconcile checkout aliases while binding every paid-order identity
+ok 139 - authenticated ZPay reads reconcile checkout aliases while binding every paid-order identity
+  ---
+  duration_ms: 8.50375
+  type: 'test'
+  ...
+# Subtest: payment-review completion is an incremental transaction preserving original completion records
+ok 140 - payment-review completion is an incremental transaction preserving original completion records
+  ---
+  duration_ms: 1.829958
+  type: 'test'
+  ...
+# Subtest: unverified payment completion serializes with receipt callbacks and requires no delivery task
+ok 141 - unverified payment completion serializes with receipt callbacks and requires no delivery task
+  ---
+  duration_ms: 0.139833
+  type: 'test'
+  ...
+# Subtest: payment-dependent outcomes are revalidated under both locks before mutations
+ok 142 - payment-dependent outcomes are revalidated under both locks before mutations
+  ---
+  duration_ms: 0.091333
+  type: 'test'
+  ...
+# Subtest: payment-review completion retains payment and upstream facts and audits the actual payment mode
+ok 143 - payment-review completion retains payment and upstream facts and audits the actual payment mode
+  ---
+  duration_ms: 0.211834
+  type: 'test'
+  ...
+# Subtest: response-loss retry keeps identical actor/request ownership and rolls back operation collisions
+ok 144 - response-loss retry keeps identical actor/request ownership and rolls back operation collisions
+  ---
+  duration_ms: 0.113834
+  type: 'test'
+  ...
+# Subtest: incremental readiness requires the installed late-receipt guard and cannot enable automatic delivery after close
+ok 145 - incremental readiness requires the installed late-receipt guard and cannot enable automatic delivery after close
+  ---
+  duration_ms: 0.114666
+  type: 'test'
+  ...
+# Subtest: new capability and extended completion stay service-only, with honest read-only verification
+ok 146 - new capability and extended completion stay service-only, with honest read-only verification
+  ---
+  duration_ms: 0.243667
+  type: 'test'
+  ...
+# Subtest: ZPay query reconciliation preserves the full existing crypto, expiry, cancellation and idempotent fulfillment logic
+ok 147 - ZPay query reconciliation preserves the full existing crypto, expiry, cancellation and idempotent fulfillment logic
+  ---
+  duration_ms: 0.942041
+  type: 'test'
+  ...
+# Subtest: only exact server query proof can replace the original checkout alias; signed callbacks cannot rebind a real trade
+ok 148 - only exact server query proof can replace the original checkout alias; signed callbacks cannot rebind a real trade
+  ---
+  duration_ms: 0.303083
+  type: 'test'
+  ...
+# Subtest: absent or null checkout proof cannot bypass the transaction identity check
+ok 149 - absent or null checkout proof cannot bypass the transaction identity check
+  ---
+  duration_ms: 0.128125
+  type: 'test'
+  ...
+# Subtest: the immutable purchase trigger accepts only the first authenticated alias reconciliation and preserves all quote identity checks
+ok 150 - the immutable purchase trigger accepts only the first authenticated alias reconciliation and preserves all quote identity checks
+  ---
+  duration_ms: 1.686
+  type: 'test'
+  ...
+# Subtest: createPaymentRequest launches ZPAY checkout and precreates the payment order with the real out_trade_no
+ok 151 - createPaymentRequest launches ZPAY checkout and precreates the payment order with the real out_trade_no
+  ---
+  duration_ms: 35.293958
+  type: 'test'
+  ...
+# Subtest: createPaymentRequest rewrites managed ZPAY callback urls for intl site checkouts
+ok 152 - createPaymentRequest rewrites managed ZPAY callback urls for intl site checkouts
+  ---
+  duration_ms: 2.218542
+  type: 'test'
+  ...
+# Subtest: createPaymentRequest reuses a fresh equivalent ZPAY checkout instead of creating another gateway order
+ok 153 - createPaymentRequest reuses a fresh equivalent ZPAY checkout instead of creating another gateway order
+  ---
+  duration_ms: 3.354833
+  type: 'test'
+  ...
+# Subtest: createPaymentRequest creates a new ZPAY order for a different client payment intent even with the same amount
+ok 154 - createPaymentRequest creates a new ZPAY order for a different client payment intent even with the same amount
+  ---
+  duration_ms: 2.533875
+  type: 'test'
+  ...
+# Subtest: normalizeZpayConfig derives official endpoint urls and reports missing fields
+ok 155 - normalizeZpayConfig derives official endpoint urls and reports missing fields
+  ---
+  duration_ms: 19.079584
+  type: 'test'
+  ...
+# Subtest: normalizeZpayConfig rewrites managed notify and return urls onto the intl site origin
+ok 156 - normalizeZpayConfig rewrites managed notify and return urls onto the intl site origin
+  ---
+  duration_ms: 0.513916
+  type: 'test'
+  ...
+# Subtest: buildZpaySign ignores empty fields and the sign/sign_type keys
+ok 157 - buildZpaySign ignores empty fields and the sign/sign_type keys
+  ---
+  duration_ms: 27.2145
+  type: 'test'
+  ...
+# Subtest: buildZpayOutTradeNo stays within the official 32-char limit
+ok 158 - buildZpayOutTradeNo stays within the official 32-char limit
+  ---
+  duration_ms: 1.070625
+  type: 'test'
+  ...
+# Subtest: buildZpayParam round-trips compact attach payloads
+ok 159 - buildZpayParam round-trips compact attach payloads
+  ---
+  duration_ms: 0.886583
+  type: 'test'
+  ...
+# Subtest: buildZpayMapiPayload and follow-up payloads match the documented field names
+ok 160 - buildZpayMapiPayload and follow-up payloads match the documented field names
+  ---
+  duration_ms: 1.483041
+  type: 'test'
+  ...
+# Subtest: buildZpay query and refund payloads prefer out_trade_no when both order ids are present
+ok 161 - buildZpay query and refund payloads prefer out_trade_no when both order ids are present
+  ---
+  duration_ms: 0.5595
+  type: 'test'
+  ...
+# Subtest: normalizeZpayPaymentStatus maps refunded status values
+ok 162 - normalizeZpayPaymentStatus maps refunded status values
+  ---
+  duration_ms: 0.130416
+  type: 'test'
+  ...
+# Subtest: createZpayPayment posts form data to the mapi endpoint
+ok 163 - createZpayPayment posts form data to the mapi endpoint
+  ---
+  duration_ms: 0.721666
+  type: 'test'
+  ...
+# Subtest: refundZpayPayment posts refund fields to the documented act=refund endpoint
+ok 164 - refundZpayPayment posts refund fields to the documented act=refund endpoint
+  ---
+  duration_ms: 0.329792
+  type: 'test'
+  ...
+# Subtest: requestZpayJson wraps upstream fetch failures with a friendly message
+ok 165 - requestZpayJson wraps upstream fetch failures with a friendly message
+  ---
+  duration_ms: 0.369417
+  type: 'test'
+  ...
+# Subtest: refundZpayPayment surfaces empty-body responses as a safe manual-check prompt
+ok 166 - refundZpayPayment surfaces empty-body responses as a safe manual-check prompt
+  ---
+  duration_ms: 0.144667
+  type: 'test'
+  ...
+1..166
+# tests 166
+# suites 0
+# pass 166
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3639.152041

@@ -1,0 +1,21 @@
+{
+  "status": "PASS_WITH_DOCUMENTED_LOCAL_PATCH",
+  "package": "qrcode-generator",
+  "baselineVersion": "1.4.4",
+  "integrity": "sha512-HM7yY8O2ilqhmULxGMpcHSF1EhJJ9yBj8gvDEuZ6M+KGJ0YY2hKpnXvRD+hZPLrDVck3ExIGhmPtSdcjC+guuw==",
+  "tarball": "https://registry.npmjs.org/qrcode-generator/-/qrcode-generator-1.4.4.tgz",
+  "sourceArchivePath": "package/qrcode.js",
+  "sourceSha256": "79ec86f82856005b1c887905cfccfcfbec3821ca61c7fd5a952faa5f778f791c",
+  "baselineSha256": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
+  "licenseSource": "https://raw.githubusercontent.com/kazuhikoarase/qrcode-generator/master/LICENSE",
+  "licenseSha256": "3a850fa5f08101db6f40676c2786e10bd2cd5fff7b12ffdf1e0c434d4e49d90c",
+  "comparison": "Identical to SHA512-integrity-verified npm source except the documented canvas coordinate patch. Runtime source was not changed by provenance verification.",
+  "localPatch": {
+    "location": "renderTo2dContext",
+    "before": "context.fillRect(row * cellSize, col * cellSize, cellSize, cellSize);",
+    "after": "context.fillRect(col * cellSize, row * cellSize, cellSize, cellSize);",
+    "purpose": "Use col for canvas x and row for canvas y."
+  },
+  "verificationDate": "2026-11-08",
+  "scope": "Provenance comparison only; not a vulnerability assessment. The package archive does not contain a standalone LICENSE; upstream license retained separately. No npm lifecycle scripts or downloaded code were executed."
+}

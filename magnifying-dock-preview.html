@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3f5f4" />
+    <title>Magnifying dock · Preview</title>
+    <link rel="stylesheet" href="vendor/glasswork/glass.css" />
+
+      <link rel="stylesheet" href="inline-magnifying-dock-preview-1.css">
+    <link rel="stylesheet" href="css/magnifying-dock-preview-inline.css?v=20261109_INLINE_1">
+</head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <div class="wordmark">
+          <span class="mark" aria-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none"><path d="M2.5 8h11M8 2.5v11M4.2 4.2l7.6 7.6m0-7.6-7.6 7.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" /></svg>
+          </span>
+          <span>Component preview</span>
+        </div>
+        <span class="license">MIT licensed</span>
+      </header>
+
+      <main>
+        <section class="intro" aria-labelledby="page-title">
+          <p class="eyebrow">Navigation · 01</p>
+          <h1 id="page-title">Magnifying dock</h1>
+          <p class="lede">图标随指针放大抬升，玻璃高光与折射会跟随指针移动。</p>
+        </section>
+
+        <section class="stage" aria-label="Dock preview">
+          <canvas class="stage-scene" aria-hidden="true"></canvas>
+          <canvas class="gdock-refract-canvas" aria-hidden="true" hidden></canvas>
+          <div class="stage-head">
+            <p class="stage-title">Your workspace</p>
+            <span class="stage-meta">4 projects · updated just now</span>
+          </div>
+          <div class="projects" aria-hidden="true">
+            <div class="project"><div class="project-art art-moss"></div><p class="project-name">Field notes</p></div>
+            <div class="project"><div class="project-art art-coral"></div><p class="project-name">Forms &amp; type</p></div>
+            <div class="project"><div class="project-art art-yellow"></div><p class="project-name">Small objects</p></div>
+            <div class="project"><div class="project-art art-blue"></div><p class="project-name">Open water</p></div>
+          </div>
+          <div class="dock-cluster" data-fill="light" data-stroke="on">
+            <nav class="gdock inline-style-magnifying-dock-preview-1" aria-label="Dock navigation" data-fill="light" data-stroke="on">
+              <span class="gdock-glass glass" data-kind="light" data-pill aria-hidden="true"></span>
+              <span class="gdock-highlight" aria-hidden="true"></span>
+              <button class="gdock-item" type="button" aria-label="Home" aria-current="page" data-active="true" data-near="0" data-key="home">
+                <span class="gdock-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9M9 20v-7h6v7"/></svg></span><span class="gdock-dot" data-on="true"></span>
+              </button>
+              <button class="gdock-item" type="button" aria-label="Search" data-active="false" data-key="search">
+                <span class="gdock-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg></span><span class="gdock-dot" data-on="false"></span>
+              </button>
+              <button class="gdock-item" type="button" aria-label="Files" data-active="false" data-key="files">
+                <span class="gdock-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><path d="M3.5 9h17"/></svg></span><span class="gdock-dot" data-on="false"></span>
+              </button>
+              <button class="gdock-item" type="button" aria-label="Saved" data-active="false" data-key="saved">
+                <span class="gdock-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21l-6-4-6 4z"/></svg></span><span class="gdock-dot" data-on="false"></span>
+              </button>
+              <button class="gdock-item" type="button" aria-label="You" data-active="false" data-key="you">
+                <span class="gdock-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span class="gdock-dot" data-on="false"></span>
+              </button>
+              <span class="gdock-tip" aria-hidden="true" data-on="false"><span>Home</span></span>
+            </nav>
+          </div>
+        </section>
+
+        <section class="settings" aria-label="Dock settings">
+          <div class="settings-group">
+            <p class="group-label">Appearance</p>
+            <div class="choice-row">
+              <span>Fill</span>
+              <div class="segmented" role="group" aria-label="Fill">
+                <button type="button" aria-pressed="true" data-setting="fill" data-value="light">Light</button>
+                <button type="button" aria-pressed="false" data-setting="fill" data-value="dark">Dark</button>
+              </div>
+            </div>
+            <div class="choice-row">
+              <span>Stroke</span>
+              <div class="segmented" role="group" aria-label="Stroke">
+                <button type="button" aria-pressed="false" data-setting="stroke" data-value="off">Off</button>
+                <button type="button" aria-pressed="true" data-setting="stroke" data-value="on">On</button>
+              </div>
+            </div>
+            <div class="choice-row">
+              <label class="check-control" for="labels-toggle"><input id="labels-toggle" type="checkbox" checked />Labels</label>
+              <span>Pointer tooltip</span>
+            </div>
+            <div class="choice-row">
+              <label class="check-control" for="chimes-toggle"><input id="chimes-toggle" type="checkbox" checked />Hover chimes</label>
+              <span>Per icon</span>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <p class="group-label">Motion</p>
+            <label class="range-row" for="magnify-control">
+              <span>Magnify</span>
+              <input id="magnify-control" type="range" min="1" max="1.5" step="0.01" value="1.18" />
+              <output id="magnify-value" for="magnify-control">1.18×</output>
+            </label>
+            <label class="range-row" for="lift-control">
+              <span>Lift</span>
+              <input id="lift-control" type="range" min="0" max="16" step="1" value="7" />
+              <output id="lift-value" for="lift-control">7px</output>
+            </label>
+            <label class="range-row" for="reach-control">
+              <span>Reach</span>
+              <input id="reach-control" type="range" min="0" max="3" step="1" value="1" />
+              <output id="reach-value" for="reach-control">1</output>
+            </label>
+          </div>
+        </section>
+
+        <div class="footnote">
+          <span class="selected-page">Selected: <span id="selected-label">Home</span></span>
+          <span>Distance-based magnification</span>
+        </div>
+      </main>
+    </div>
+
+    <script src="inline-magnifying-dock-preview-1.js?v=20261109_INLINE_1" type="module"></script>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "cwd": "/Volumes/chao/AI/xianyu_profit_calculator/services/kc-pay-gpt",
+  "launcher": "/tmp/security-test-isolation-20261108/run.py",
+  "command": [
+    "node",
+    "./node_modules/vitest/vitest.mjs",
+    "run",
+    "test/recharge-ui.test.js",
+    "--testNamePattern",
+    "native-height mobile card|intermediate viewport heights",
+    "--no-file-parallelism",
+    "--maxWorkers=1"
+  ],
+  "log": "/tmp/kc-round5-ui-new-failures-rerun.log",
+  "scope": "Only two newly observed browser animation failures; no assertions changed.",
+  "exit_code_observed": 1
+}

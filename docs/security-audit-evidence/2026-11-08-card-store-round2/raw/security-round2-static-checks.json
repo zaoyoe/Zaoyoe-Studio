@@ -1,0 +1,73 @@
+{
+  "syntax": [
+    {
+      "path": "api/_lib/payments/zpay-amount.js",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "path": "api/_lib/payments/provider-adapters.js",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "path": "api/_lib/payments/zpay-webhook.js",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "path": "server/api-handlers/admin/shop/_remote-media-security.js",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "path": "server/api-handlers/admin/shop/_r2-media.js",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "path": "server/api-handlers/admin/shop/_product-image-assets.js",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "path": "server/api-handlers/admin/shop/supplier-catalog.js",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "path": "js/admin-shop.js",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/public-request-security.js",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/credential-security.js",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/server.js",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/mysql-store.js",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "path": "services/kc-pay-gpt/test/recharge-routing.test.js",
+      "exit": 0,
+      "output": ""
+    }
+  ],
+  "diffCheck": {
+    "exit": 0,
+    "output": ""
+  }
+}

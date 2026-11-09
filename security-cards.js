@@ -101,6 +101,14 @@ function switchProfileSecurityPanel(panelKey = 'change-password', event) {
     });
 
     scheduleProfileSecurityIndicatorUpdate();
+    requestAnimationFrame(() => {
+        try {
+            window.LabelInput?.scan?.();
+            document.querySelectorAll('#profileModal .lbi').forEach((root) => {
+                window.LabelInput?.update?.(root);
+            });
+        } catch (_) {}
+    });
 }
 
 function sanitizePhoneDigits(value) {
@@ -216,9 +224,11 @@ function bindPhone() {
         if (!success) return;
         getExistingElements(['desktop_phoneNumberInput', 'mobile_phoneNumberInput']).forEach((input) => {
             input.value = '';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
         });
         getExistingElements(['desktop_phoneCodeInput', 'mobile_phoneCodeInput']).forEach((input) => {
             input.value = '';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
         });
         phoneCooldownSeconds = 0;
         setPhoneButtonsState();
@@ -276,9 +286,11 @@ async function changePassword() {
         alert('密码修改成功，请使用新密码继续登录。');
         getExistingElements(['desktop_oldPassword', 'mobile_oldPassword']).forEach((input) => {
             input.value = '';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
         });
         getExistingElements(['desktop_newPassword', 'mobile_newPassword']).forEach((input) => {
             input.value = '';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
         });
     } catch (error) {
         console.error('❌ Password change failed:', error);
