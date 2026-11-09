@@ -331,8 +331,8 @@ const envOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
 const allOrigins = normalizeAllowedOrigins([...defaultOrigins, ...envOrigins], {
     productionLike: productionLikeRuntime
 });
-const TG_PUBLIC_ORIGINS = Object.freeze(['https://tg.fatherkey.com', 'https://tg.adm.fatherkey.com']);
-const TG_ADMIN_ORIGINS = Object.freeze(['https://tg.adm.fatherkey.com']);
+const TG_PUBLIC_ORIGINS = Object.freeze(['https://tg.fatherkey.com', 'https://tg-adm.fatherkey.com']);
+const TG_ADMIN_ORIGINS = Object.freeze(['https://tg-adm.fatherkey.com']);
 
 function resolveTgCorsOrigins(req = {}) {
     const url = new URL(String(req.originalUrl || req.url || '/'), 'http://verify.local');

@@ -5,7 +5,7 @@
 提供 Telegram Premium **3 / 6 / 12 个月**和 Telegram Stars 的即时支付购买、兑换码兑换、上游履约、订单查询、只读对账与人工复核。用户可直接选商品付款，也可使用已有兑换码，两种入口并存。
 
 - 用户端：`https://tg.fatherkey.com`，页面入口 `tg.html`。
-- 管理端：`https://tg.adm.fatherkey.com`，页面入口 `tg-admin.html`。
+- 管理端：`https://tg-adm.fatherkey.com`，页面入口 `tg-admin.html`。
 - API 与 worker：KVM4 Verify Server；前端通过同源 `/api/tg/*`、`/api/admin/tg/*` 访问。
 - 上游：Gramix。API 密钥只在服务端使用，浏览器不直连上游。
 - 独立 `tg_*` 数据表，不复用商城商品、积分兑换码、余额或游客购买订单。
@@ -62,7 +62,7 @@ Google 使用同标签页 PKCE 跳转，固定返回当前 origin 的 `/tg-admin
 ```text
 http://127.0.0.1:8000/tg-admin.html
 http://localhost:8000/tg-admin.html
-https://tg.adm.fatherkey.com/tg-admin.html
+https://tg-adm.fatherkey.com/tg-admin.html
 ```
 
 本地仅保留实际使用的 host/port；`127.0.0.1` 与 `localhost` 是不同 origin，发起和完成授权必须使用同一个地址、浏览器和标签页。其他预览端口也需要单独登记精确地址，不开放泛域名、任意路径或任意端口通配。现有商城的 **Site URL 保持 `https://www.fatherkey.com`**，不要改成 TG 域名。Google Console 的 OAuth redirect URI 仍为现有 Supabase 项目的 `/auth/v1/callback`，无需将上述 TG 页面登记为 Google provider 回调。
@@ -70,6 +70,8 @@ https://tg.adm.fatherkey.com/tg-admin.html
 2026-10-15 核查：现有项目公开 `/auth/v1/settings` 返回 HTTP 200，`external.google=true`，Google provider 已启用。随后使用已授权的 Google 账号完成浏览器授权往返，已实测成功返回 `http://127.0.0.1:8000/tg-admin.html` 并清除回调 URL 中的授权参数；真实邮箱安全预检正确识别账号临时锁定，未解除锁定或签发管理会话。该结果确认上述 `127.0.0.1:8000` 精确回调当前可用，但不代表后台业务登录或购买验收已完成。
 
 2026-10-15 补充只读核查：使用本机现有 Supabase CLI 管理身份，通过官方 Management API `GET /v1/projects/mmkugdibsaeoevliebzk/config/auth` 成功读取实际配置（HTTP 200）。`https://tg.adm.fatherkey.com/tg-admin.html` 不在 `uri_allow_list` 的精确条目中，现有通配符也不覆盖此地址；`site_url` 仍为 `https://www.fatherkey.com`。生产登录启用前须补充上述精确回调。本次没有修改远程身份配置或执行 SQL，未输出管理凭据或完整认证配置。
+
+2026-11-09 迁移补充：生产管理域名已选用免费的一级子域 `tg-adm.fatherkey.com`；Supabase 精确回调已改为 `https://tg-adm.fatherkey.com/tg-admin.html`，旧精确回调已移除，`site_url` 未改变。上述 2026-10-15 核查保持原样；新生产域名的真实 Google OAuth 往返仍为 **NOT RUN**。
 
 `http://localhost:8000/tg-admin.html` 和生产授权往返尚未实测。若回调回到商城首页，应优先核对精确白名单，不通过改变商城 Site URL、借用商城登录存储或放宽管理员权限绕过。
 
@@ -204,7 +206,7 @@ USDT 新增配置为独立的 `TG_PURCHASE_NOWPAYMENTS_*`，不能因为既有 Z
 
 客户端应在发出兑换前生成足够随机的 `status_token`（32–128 位允许字符）和 `idempotency_key`（16–128 位允许字符），重试时保持四项兑换参数一致。也支持 `Idempotency-Key` header。服务器可以代生成未提供的凭证，但自定义客户端若需在首个响应丢失后恢复，必须预先生成并保存它们。
 
-管理 API 使用既有管理会话 / 授权机制并再次要求 `super_admin`。跨 TG 子域 CORS 只开放对应必要接口，不开放商城钱包或其它后台操作。所有管理写请求（包括 Bearer 客户端）必须携带 `Origin: https://tg.adm.fatherkey.com` 和 `Content-Type: application/json`，不能只依赖 `SameSite` Cookie 或 CORS。非生产本地调试仅接受与请求实际协议、Host 和端口完全相同的 `localhost` / `127.0.0.1` origin。
+管理 API 使用既有管理会话 / 授权机制并再次要求 `super_admin`。跨 TG 子域 CORS 只开放对应必要接口，不开放商城钱包或其它后台操作。所有管理写请求（包括 Bearer 客户端）必须携带 `Origin: https://tg-adm.fatherkey.com` 和 `Content-Type: application/json`，不能只依赖 `SameSite` Cookie 或 CORS。非生产本地调试仅接受与请求实际协议、Host 和端口完全相同的 `localhost` / `127.0.0.1` origin。
 
 `TG_PUBLIC_ORIGINS` 仅扩展公共 handler 的来源校验；新增跨域接入还需要同步配置服务器路由与 CORS，单独增加环境变量不会开放完整跨域访问。
 

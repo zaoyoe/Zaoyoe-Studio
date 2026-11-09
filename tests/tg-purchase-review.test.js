@@ -209,10 +209,10 @@ for (const headers of [{}, { origin: 'https://evil.example', 'content-type': 'ap
 }
 test('production accepts only the TG administrator origin', async () => {
     const f = handlerFixture({ runtime: { NODE_ENV: 'production' } }); assert.equal((await f.call()).statusCode, 403);
-    assert.equal((await f.call({ headers: { origin: 'https://tg.adm.fatherkey.com', 'content-type': 'application/json' } })).statusCode, 200);
+    assert.equal((await f.call({ headers: { origin: 'https://tg-adm.fatherkey.com', 'content-type': 'application/json' } })).statusCode, 200);
 });
 test('non-JSON, malformed JSON and unsupported methods are rejected without checking payment', async () => {
-    const f = handlerFixture(); assert.equal((await f.call({ headers: { origin: 'https://tg.adm.fatherkey.com', 'content-type': 'text/plain' } })).statusCode, 415);
+    const f = handlerFixture(); assert.equal((await f.call({ headers: { origin: 'https://tg-adm.fatherkey.com', 'content-type': 'text/plain' } })).statusCode, 415);
     const method = await f.call({ method: 'DELETE' }); assert.equal(method.statusCode, 405); assert.equal(method.headers.Allow, 'GET, POST');
     assert.equal((await handlerFixture({ parseError: true }).call()).statusCode, 400); assert.equal(f.payments.length, 0);
 });

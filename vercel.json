@@ -41,7 +41,7 @@
             "has": [
                 {
                     "type": "host",
-                    "value": "tg.adm.fatherkey.com"
+                    "value": "tg-adm.fatherkey.com"
                 }
             ],
             "destination": "/tg-admin",
@@ -74,7 +74,7 @@
             "has": [
                 {
                     "type": "host",
-                    "value": "tg.adm.fatherkey.com"
+                    "value": "tg-adm.fatherkey.com"
                 }
             ],
             "destination": "/tg-admin",
@@ -85,7 +85,7 @@
             "has": [
                 {
                     "type": "host",
-                    "value": "tg.adm.fatherkey.com"
+                    "value": "tg-adm.fatherkey.com"
                 }
             ],
             "destination": "/tg-admin",
@@ -653,7 +653,7 @@
             "has": [
                 {
                     "type": "host",
-                    "value": "tg.adm.fatherkey.com"
+                    "value": "tg-adm.fatherkey.com"
                 }
             ],
             "headers": [
@@ -668,7 +668,7 @@
             "has": [
                 {
                     "type": "host",
-                    "value": "tg.adm.fatherkey.com"
+                    "value": "tg-adm.fatherkey.com"
                 }
             ],
             "headers": [
@@ -687,7 +687,7 @@
             "has": [
                 {
                     "type": "host",
-                    "value": "tg.adm.fatherkey.com"
+                    "value": "tg-adm.fatherkey.com"
                 }
             ],
             "headers": [
@@ -706,7 +706,7 @@
             "has": [
                 {
                     "type": "host",
-                    "value": "tg.adm.fatherkey.com"
+                    "value": "tg-adm.fatherkey.com"
                 }
             ],
             "headers": [

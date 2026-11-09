@@ -17,6 +17,7 @@ permissions:
 concurrency:
   group: deploy-kvm4-main
   cancel-in-progress: false
+  queue: max
 
 jobs:
   deploy:
@@ -37,8 +38,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main
-          fetch-depth: 1
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify checkout is latest main
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git fetch origin main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+          git checkout -B main "$GITHUB_SHA"
+          printf 'Verified latest main commit %s\n' "$GITHUB_SHA"
 
       - name: Prepare SSH access
         env:
@@ -67,21 +84,10 @@ jobs:
           } > "$HOME/.ssh/config"
           chmod 600 "$HOME/.ssh/config"
 
-      - name: Verify checkout is latest main
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          git status --short --branch
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          printf 'Checked out main commit %s\n' "$GITHUB_SHA"
-
       - name: Deploy NewAPI
         run: npm run deploy:kvm4:newapi
 
       - name: Verify NewAPI public route
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          curl -fsS --retry 5 --retry-delay 3 https://new.fatherkey.com/health > /tmp/kvm4-newapi-health.json
-          node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-newapi-health.json','utf8')); if (payload.status !== 'ok') throw new Error('NewAPI canonical route health failed'); console.log(JSON.stringify({newapi_canonical_health: payload.status}));"
+        # Public failures remain failures even when the direct API route passes.
+        # Canonical NewAPI route: https://new.fatherkey.com/health
+        run: node scripts/verify-deployment-routes.js newapi

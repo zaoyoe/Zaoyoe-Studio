@@ -20,7 +20,7 @@ const TOKEN = 'a'.repeat(32);
 const KEY = 'test-redemption-key-0001';
 const CODE = 'TG-PREM-12345678-12345678-12345678-12345678';
 const ENV = { TG_REDEMPTION_ENABLED: 'true', TG_REDEMPTION_CODE_PEPPER: 'test-only-independent-code-pepper-12345678', TG_REDEMPTION_CODE_ENCRYPTION_KEY: 'ab'.repeat(32) };
-const ADMIN_WRITE_HEADERS = { origin: 'https://tg.adm.fatherkey.com', 'content-type': 'application/json' };
+const ADMIN_WRITE_HEADERS = { origin: 'https://tg-adm.fatherkey.com', 'content-type': 'application/json' };
 function adminWriteRequest(body, extra = {}) { return { method: 'POST', body, headers: { ...ADMIN_WRITE_HEADERS }, ...extra }; }
 function response() {
     return { headers: {}, status(code) { this.statusCode = code; return this; }, setHeader(name, value) { this.headers[name.toLowerCase()] = value; return this; }, end(value) { this.body = JSON.parse(value); } };
@@ -119,7 +119,7 @@ test('TG admin cookie writes reject missing and sibling origins before parsing o
     const handler = createCodesHandler({ admin: stubAdmin({ rpc: async () => { writes++; } }, {
         parseJsonBody: async (req) => { parses++; return JSON.parse(req.body); }
     }), env: { ...ENV, APP_ENV: 'production' } });
-    for (const origin of [undefined, 'null', 'https://tg.fatherkey.com', 'https://www.fatherkey.com', 'https://tg.adm.fatherkey.com.evil.test', 'https://tg.adm.fatherkey.com/path']) {
+    for (const origin of [undefined, 'null', 'https://tg.fatherkey.com', 'https://www.fatherkey.com', 'https://tg-adm.fatherkey.com.evil.test', 'https://tg-adm.fatherkey.com/path']) {
         // text/plain is a CORS-simple POST and would otherwise reach a JSON
         // parser even though the browser cannot read the response.
         const res = await call(handler, { method: 'POST', headers: { cookie: 'admin_session=test-only', 'content-type': 'text/plain', ...(origin ? { origin } : {}) }, body: JSON.stringify({ action: 'revoke', batch_id: UUID }) });
@@ -165,7 +165,7 @@ test('local TG admin writes require an exact loopback origin and are disabled in
         assert.equal(res.statusCode, 403);
     }
     const handler = createCodesHandler({ admin, env: {} });
-    for (const [origin, host] of [['http://localhost:8001', 'localhost:8000'], ['http://127.0.0.1:8000', 'localhost:8000'], ['https://localhost:8000', 'localhost:8000'], ['http://localhost.evil.test:8000', 'localhost.evil.test:8000'], ['http://localhost:8000', 'tg.adm.fatherkey.com']]) {
+    for (const [origin, host] of [['http://localhost:8001', 'localhost:8000'], ['http://127.0.0.1:8000', 'localhost:8000'], ['https://localhost:8000', 'localhost:8000'], ['http://localhost.evil.test:8000', 'localhost.evil.test:8000'], ['http://localhost:8000', 'tg-adm.fatherkey.com']]) {
         const res = await call(handler, adminWriteRequest(body, { headers: headers(origin, host) }));
         assert.equal(res.statusCode, 403, `${origin} -> ${host}`);
     }
@@ -548,7 +548,7 @@ test('code recovery denies anonymous and ordinary administrators before reading 
 test('code recovery rejects sibling origins and non-JSON requests before reading any code', async () => {
     for (const headers of [
         {}, { ...ADMIN_WRITE_HEADERS, origin: 'https://tg.fatherkey.com' },
-        { ...ADMIN_WRITE_HEADERS, origin: 'https://tg.adm.fatherkey.com.evil.test' },
+        { ...ADMIN_WRITE_HEADERS, origin: 'https://tg-adm.fatherkey.com.evil.test' },
         { ...ADMIN_WRITE_HEADERS, 'content-type': 'text/plain' }
     ]) {
         const backend = codeRecoveryBackend(encryptedCodeFixture());
@@ -646,4 +646,14 @@ test('a lost or mismatched credential-bound closure snapshot cannot acknowledge 
         ? { data: order({ existing: true, status: 'closed' }) } : { data: { success: false, code: 'not_found' } });
     const res = await call(handlers.redeem, { method: 'POST', body: { code: CODE, username: 'recipient_test', status_token: TOKEN, idempotency_key: KEY } });
     assert.ok(res.statusCode >= 500); assert.equal(res.body.success, false);
+});
+
+
+test('TG admin mutation policy rejects retired and lookalike origins before administrator work', () => {
+    const { requireTgAdminWriteRequest } = require('../server/tg/admin-access');
+    const env = { NODE_ENV: 'production' };
+    for (const origin of ['https://tg.adm.fatherkey.com', 'https://tg-adm.fatherkey.com.evil.test', 'http://tg-adm.fatherkey.com', 'null', '']) {
+        assert.throws(() => requireTgAdminWriteRequest({ headers: { origin, 'content-type': 'application/json' } }, env), { code: 'tg_admin_origin_required' });
+    }
+    assert.doesNotThrow(() => requireTgAdminWriteRequest({ headers: { origin: 'https://tg-adm.fatherkey.com', 'content-type': 'application/json' } }, env));
 });

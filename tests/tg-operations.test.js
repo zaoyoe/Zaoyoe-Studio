@@ -18,7 +18,7 @@ const VERSION = '2026-10-17T10:00:00.000Z';
 const CODE = 'TG-PREM-12345678-12345678-12345678-12345678';
 const TOKEN = 'a'.repeat(64);
 const ENV = { NODE_ENV: 'production', TG_REDEMPTION_ENABLED: 'true', TG_PURCHASE_ENABLED: 'false', TG_REDEMPTION_CODE_PEPPER: 'test-only-independent-code-pepper-12345678' };
-const HEADERS = { origin: 'https://tg.adm.fatherkey.com', 'content-type': 'application/json' };
+const HEADERS = { origin: 'https://tg-adm.fatherkey.com', 'content-type': 'application/json' };
 const ENTITLEMENT = { product_family: 'telegram_premium', term_months: 3, stars_quantity: null };
 const ORDER = { id: ID, order_no: 'TG-ABCDEFGHIJKLMNOPQRST', order_source: 'redemption', ...ENTITLEMENT,
     telegram_username: 'telegram_user', status: 'manual_review', provider_order_id: ID, provider_payment_currency: 'usdt',
@@ -120,7 +120,7 @@ test('customer cancellation rejects a token in the body and safely reports paid 
 test('all manual operations require a verified superadmin, exact admin origin and JSON', async () => {
     for (const factory of [createOrdersHandler, createPurchasesHandler]) {
         for (const [role, headers, status] of [[false, HEADERS, 403], [true, { ...HEADERS, origin: 'https://tg.fatherkey.com' }, 403],
-            [true, { ...HEADERS, origin: 'https://tg.adm.fatherkey.com.evil.test' }, 403], [true, { ...HEADERS, 'content-type': 'text/plain' }, 415]]) {
+            [true, { ...HEADERS, origin: 'https://tg-adm.fatherkey.com.evil.test' }, 403], [true, { ...HEADERS, 'content-type': 'text/plain' }, 415]]) {
             const database = db(); const res = await call(factory({ admin: admin(database, role), env: ENV }), write(input(), headers));
             assert.equal(res.statusCode, status); assert.equal(rpcCalls(database).length, 0);
         }

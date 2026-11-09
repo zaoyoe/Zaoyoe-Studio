@@ -11,7 +11,7 @@ Vercel 部署复制。
 | --- | --- | --- |
 | 主站 | `https://www.fatherkey.com/admin-studio.html`、`/admin.html` | `302` 到 Cloudflare Access 登录，并带 `www-authenticate: Cloudflare-Access` |
 | KC | `https://adm.fatherkey.com/`、`/admin-login` | `302` 到 Cloudflare Access 登录，并带 `www-authenticate: Cloudflare-Access` |
-| TG | `https://tg.adm.fatherkey.com/`、`/tg-admin` | `302` 到 Cloudflare Access 登录，并带 `www-authenticate: Cloudflare-Access` |
+| TG | `https://tg-adm.fatherkey.com/`、`/tg-admin` | `302` 到 Cloudflare Access 登录，并带 `www-authenticate: Cloudflare-Access` |
 
 只返回 HTTP 200、Vercel `server` 标识或静态登录页不算通过。应用自己的登录
 页能正常显示，也不能替代这条外层证据。
@@ -26,8 +26,8 @@ for url in \
   https://www.fatherkey.com/admin.html \
   https://adm.fatherkey.com/ \
   https://adm.fatherkey.com/admin-login \
-  https://tg.adm.fatherkey.com/ \
-  https://tg.adm.fatherkey.com/tg-admin; do
+  https://tg-adm.fatherkey.com/ \
+  https://tg-adm.fatherkey.com/tg-admin; do
   curl --silent --show-error --head --max-redirs 0 "$url" \
     | grep -Eiq '^(HTTP/|location:|www-authenticate:|server:)' \
     || exit 1
@@ -38,7 +38,7 @@ done
 `www-authenticate: Cloudflare-Access`；不要记录完整的 `location`，因为其中
 可能含有一次性登录参数。
 
-## 当前核查（2026-11-09）
+## 历史核查（2026-11-09，迁移前）
 
 - 主站两个入口：**PASS**，均由 Cloudflare Access 返回 302。
 - KC 两个入口：**PASS**，均由 Cloudflare Access 返回 302。
@@ -60,3 +60,24 @@ TG 的 DNS 当前直接指向 Vercel DNS，说明这不是本次静态文件部�
 
 如果没有 Cloudflare 账户/API 权限，发布记录必须写成 `PENDING 外部配置`，
 不能报告三个后台都已通过。
+
+
+## 一级子域迁移（2026-11-09）
+
+用户选择免费方案，TG 管理入口统一为 `https://tg-adm.fatherkey.com`。
+Cloudflare Universal SSL 已覆盖该一级子域，无需购买 ACM 或多级域名证书。
+上述迁移前的 FAIL 记录保留，不能用新域名的结果覆盖历史证据。
+
+- 外部只读预检：Vercel 已验证新域名绑定；Cloudflare DNS 为 Proxied。
+- 新入口 `/` 与 `/tg-admin`：均观察到 302、Access 登录主机
+  `zaoyoe.cloudflareaccess.com` 及 `www-authenticate: Cloudflare-Access`，外层门禁 PASS。
+- 代码候选将 TG 写操作 Origin、限定的 CORS、管理员会话 Origin 与根入口切换到新域名。
+- 旧域名及其他生产别名的 TG 管理路径跳转至固定的新入口；不跨域转发
+  OAuth `code`、`state`、订单查询参数。新域名内部的 OAuth 跳转仍保留参数。
+- Supabase Auth 已于 `2026-11-09T13:28:23.014066Z` 配置精确回调
+  `https://tg-adm.fatherkey.com/tg-admin.html` 并移除旧域名精确回调；
+  `site_url` 保持 `https://www.fatherkey.com`。未执行 SQL。
+- 保留旧域名的 DNS 和 Vercel 绑定，通过固定跳转退役管理入口，避免悬空 CNAME。
+  旧域名不再是管理员写请求的可信 Origin；发布后仍须核验实际跳转。
+- 在外部门禁、OAuth allow list 和生产版本均复核前，不把完整迁移写成 PASS；
+  浏览器真实 Google OAuth 登录仍需独立验收。

@@ -13,7 +13,7 @@ test('admin Cloudflare Access runbook covers all three production entrypoints', 
     for (const host of [
         'www.fatherkey.com',
         'adm.fatherkey.com',
-        'tg.adm.fatherkey.com'
+        'tg-adm.fatherkey.com'
     ]) {
         assert.match(runbook, new RegExp(host.replaceAll('.', '\\.'), 'u'));
     }

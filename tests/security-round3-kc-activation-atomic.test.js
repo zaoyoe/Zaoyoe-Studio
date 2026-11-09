@@ -110,12 +110,22 @@ function harness({ cdk = {}, tasks = [], fail = '', commit = '', encryptionError
         }
     };
     const module = { exports: {} };
-    const sessions = runtimeRequire('./session-security');
+    // Load the real AES-GCM implementation with an isolated synthetic key. The
+    // offline suite must not depend on, or modify, the operator's environment.
+    const sessionModule = { exports: {} };
+    vm.runInNewContext(fs.readFileSync(path.join(serviceRoot, 'session-security.js'), 'utf8'), {
+        module: sessionModule, exports: sessionModule.exports, Buffer,
+        process: { env: { KC_SESSION_ENCRYPTION_KEY: 'offline-atomic-fixture-key-32-bytes-minimum' } },
+        require: runtimeRequire
+    }, { filename: path.join(serviceRoot, 'session-security.js') });
+    const sessions = sessionModule.exports;
     const context = { module, exports: module.exports, __dirname: serviceRoot, Buffer, process,
         console: { log() {}, warn() {}, error() {} }, setTimeout, clearTimeout,
         require(name) {
             if (name === 'mysql2/promise') return { createPool: () => pool };
-            if (name === './session-security' && encryptionError) return { ...sessions, encryptSessionPayload() { throw new Error('offline encryption unavailable'); } };
+            if (name === './session-security') return encryptionError
+                ? { ...sessions, encryptSessionPayload() { throw new Error('offline encryption unavailable'); } }
+                : sessions;
             return runtimeRequire(name);
         }
     };

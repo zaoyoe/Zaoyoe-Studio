@@ -85,7 +85,7 @@
 - 唯一合法发布路径：专用分支 → PR → 最新 `main` → Vercel Git 集成创建 Production
 - **禁止**从 `codex/*`、`bot` 或其他功能分支执行 `npx vercel deploy --prod`
 - **禁止**把 Preview、功能分支部署、或 “Promote Preview to Production” 当成游客购买的生产发布
-- **发布不等于改变游客商品状态**。当前已批准并已开启的 SKU 必须保持原状态；部署不得新增 SKU、擅自关闭现有 SKU、打开 `shop_products.allow_guest_purchase` / `shop_product_skus.allow_guest_purchase`，也不得执行 SQL
+- **发布不等于改变游客商品状态**。当前已批准并已开启的 SKU 必须保持原状态；部署不得新增 SKU、擅自关闭现有 SKU、打开 `shop_products.allow_guest_purchase` / `shop_product_skus.allow_guest_purchase`；部署 SQL 遵循 `AGENTS.md` 的目标核验、授权范围、备份和清理要求
 - 生产拓扑：Vercel 只托管前端；`/api/shop/:path*` 反代到 `https://verify-api.fatherkey.com/api/shop/:path*`。游客 API、webhook、worker 跑在 KVM4 Verify Server
 - 游客购买相关发布必须同时验证四条链路：Vercel production、KVM4 Verify Server、KVM4 NewAPI service-slot、KVM4 guest-shop worker。worker 只能在 verify 的 `.current-release` 已经等于最新 `main` 之后安装或启动
 - 改 KVM4 `/opt/zaoyoe-verify-server/.env` 的 `GUEST_SHOP_*` 后，必须 `docker compose up -d --no-deps --force-recreate --no-build verify-server` 重载 compose `env_file`。`docker restart` 不会重读 `.env`。禁止打印 secret，禁止复用 `CRON_SECRET`
@@ -172,8 +172,9 @@ Production chains: <per-chain PASS / FAIL / PENDING / NOT RUN, SHA and evidence>
    A5–G3 操作手册与两个 promo 文件中的 18 项历史归档契约分别记录，不能相互替代。
 4. 如果改动触及支付 / 风控 / 生产配置，再执行
    `npm run check:prod-env -- --allow-non-production`，并记录结果。
-5. 新 SQL migration 逐个列出文件路径、依赖关系和用户执行证据。需要先落库的代码在用户完成前
-   暂停发布；默认关闭且不依赖该迁移的能力写明边界。Codex 不执行 SQL。
+5. 新 SQL migration 逐个列出文件路径、依赖关系和用户执行证据。需要先落库的代码在落库并验证前
+   暂停发布；默认关闭且不依赖该迁移的能力写明边界。2026-11-09 用户已废止部署 SQL 的一刀切禁令，
+   允许创建、更新和删除专用验收用户与令牌；其它迁移仍须核验目标、授权范围与备份。
 6. 合并前重新 fetch 已声明远端并检查 PR head。若 `main` 或候选 HEAD 改变，先重新整理、更新清单、
    重跑受影响检查，再合并。不能用未经核对的旧候选覆盖最新 `main`。
 
@@ -297,7 +298,7 @@ reset、force-push、删除备份、切旧快照、打开游客开关或修改�
 - [20260914_guest_shop_admin_ops.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260914_guest_shop_admin_ops.sql)
 - [20260914_verify_guest_shop_admin_ops.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260914_verify_guest_shop_admin_ops.sql)
   - 未执行时，后台退款/补发/解锁必须 503 fail-closed，不得当成可运营
-  - 部署过程不得代执行这两条 SQL，也不得重跑已通过的 20260913 迁移
+  - 本轮域名发布不包含这两条迁移，也不得重跑已通过的 20260913 迁移；其它发布如确需执行，须按 `AGENTS.md` 单独审查目标、授权范围和备份
 
 ## 5. 配额控制建议
 

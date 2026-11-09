@@ -42,7 +42,7 @@ To prevent developing or previewing against stale worktree snapshots or split Gi
 4. **Worktree Hygiene**:
    - Periodically prune clean, already-merged detached worktrees (`git worktree remove` / `git worktree prune`) and never leave `refs/heads/main` locked to an old worktree checkout.
 5. **Isolated Subsystems (`tg.fatherkey.com` & `/opt/kc-pay-gpt`)**:
-   - **Telegram Standalone Store (`tg.fatherkey.com` / `tg.adm.fatherkey.com`)**: Static pages are served by Vercel and `/api/tg/:path*` routes to KVM4 Verify Server (`/opt/zaoyoe-verify-server`). After Verify Server is on the matching `main` commit, install the TG fulfillment worker via `scripts/install-kvm4-tg-worker.sh` (canonical root `/opt/zaoyoe-verify-server`).
+   - **Telegram Standalone Store (`tg.fatherkey.com` / `tg-adm.fatherkey.com`)**: Static pages are served by Vercel and `/api/tg/:path*` routes to KVM4 Verify Server (`/opt/zaoyoe-verify-server`). After Verify Server is on the matching `main` commit, install the TG fulfillment worker via `scripts/install-kvm4-tg-worker.sh` (canonical root `/opt/zaoyoe-verify-server`).
    - **KC Auto-Recharge Service (`redeem.fatherkey.com` / `adm.fatherkey.com`)**: Source lives in `services/kc-pay-gpt/` and deploys to KVM4 `/opt/kc-pay-gpt` (`kc-pay-gpt-app` on `127.0.0.1:3100`, `kc-pay-gpt-mysql` on `127.0.0.1:3311`). Never overwrite `/opt/kc-pay-gpt/.env`, host-level `/opt/kc-pay-gpt/docker-compose.yml`, `data/`, `debug_screenshots/`, `product_files/`, or the `mysql_data` volume.
 
 6. **Cloudflare Access for administrator entrypoints**:
@@ -52,7 +52,7 @@ To prevent developing or previewing against stale worktree snapshots or split Gi
      `www-authenticate: Cloudflare-Access` header before its HTML is served.
    - The protected entrypoints are `www.fatherkey.com/admin-studio.html` and
      `admin.html`, `adm.fatherkey.com/` and `/admin-login`, and
-     `tg.adm.fatherkey.com/` and `/tg-admin`.
+     `tg-adm.fatherkey.com/` and `/tg-admin`.
    - A Vercel deployment cannot create or restore the Cloudflare Access
      application, policy, or DNS proxy. If the TG host returns Vercel HTML
      directly, stop the release at the external-configuration gate and restore
@@ -295,18 +295,19 @@ Hard prohibitions:
 - Do not enable new guest products, new guest SKUs, or change the guest purchase
   switch as part of a deploy. Existing approved and enabled SKUs must retain
   their current state.
-- Do not execute SQL during deploy. Outside a deployment, Codex may execute SQL
-  through the authorized Supabase browser, CLI, API, or local database after the
-  user has explicitly authorized execution in the current conversation. Prefer
-  an isolated local/test target. Before running SQL, verify the target project
-  and environment, review the statement scope and expected effects, and preserve
-  the SQL in a file with an absolute path. For destructive or production changes,
-  verify a recoverable backup and obtain explicit confirmation for that specific
-  operation. Never print secrets or irreversible credentials. If execution fails,
-  diagnose the error and make a safe correction or retry when possible; ask the
-  administrator to assist only when permissions, platform limitations, or
-  unresolved risk prevent safe progress. Do not claim success without verifying
-  the result.
+- The blanket prohibition on SQL during deployment was revoked by the user on
+  2026-11-09. SQL may run through the authorized database CLI, API, browser, or
+  local database after verifying the target project/environment and reviewing
+  its scope and expected effects. Preserve statements in a file with an
+  absolute path; an audited deployment script containing the SQL satisfies
+  this requirement. The user explicitly authorizes creating, updating and
+  deleting deployment acceptance users and tokens, with exact ownership
+  predicates, cleanup verification and no secret output. This authorization
+  does not permit changes to real customer orders, balances, card inventory,
+  guest product/SKU switches, or unrelated migrations. Production destructive
+  operations still require a verified recoverable backup and specific explicit
+  authorization. Diagnose failures safely and verify results before claiming
+  success. Historical records of the earlier prohibition remain historical.
 - Do not run the guest-shop worker installer before the matching `main` commit
   is live on KVM4 Verify Server.
 - Do not pass a custom `--root` / `KVM4_ROOT` to the worker installer.
@@ -330,7 +331,7 @@ Hard prohibitions:
 
 Canonical guest-shop deploy prompt:
 
-> 推送并完整部署游客购买相关改动。请严格按 AGENTS.md：先核验可恢复备份、干净候选提交和完整发布清单；从专用游客购买分支创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须验证 Vercel production Ready、Deploy KVM4 Verify Server、Deploy KVM4 NewAPI，并 SSH 确认 verify/newapi service-slot 的 .current-release 等于 main 最新 commit。verify 发布成功后才能安装或启动 KVM4 guest-shop worker。部署过程不得执行 SQL，不得新增或擅自关闭已批准的游客商品/SKU。最后用中文汇报四条链路结果。
+> 推送并完整部署游客购买相关改动。请严格按 AGENTS.md：先核验可恢复备份、干净候选提交和完整发布清单；从专用游客购买分支创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须验证 Vercel production Ready、Deploy KVM4 Verify Server、Deploy KVM4 NewAPI，并 SSH 确认 verify/newapi service-slot 的 .current-release 等于 main 最新 commit。verify 发布成功后才能安装或启动 KVM4 guest-shop worker。部署 SQL 按已授权范围执行并验证清理，不得新增或擅自关闭已批准的游客商品/SKU。最后用中文汇报四条链路结果。
 
 Canonical guest-shop enablement is a separate later step in
 `docs/guest-purchase-task-2.0.md` (the file currently carries the Task 2.1
@@ -346,5 +347,5 @@ Deployment success alone never changes a guest product switch.
 See also:
 
 - `docs/vercel-release-checklist.md` §1.1：游客购买必须走专用分支；禁止功能分支 prod deploy
-- `docs/kvm4-verify-server-deploy.md` Guest Shop Worker：worker 只能在 verify 发布对应 commit 后安装；改 `.env` 后必须 `--force-recreate` 重建容器以重载 `env_file`；禁止自定义 root；部署不执行 SQL
+- `docs/kvm4-verify-server-deploy.md` Guest Shop Worker：worker 只能在 verify 发布对应 commit 后安装；改 `.env` 后必须 `--force-recreate` 重建容器以重载 `env_file`；禁止自定义 root；部署 SQL 必须核验目标、授权范围与恢复备份
 - `docs/guest-shop-payment-fulfillment-runbook.md`：发布不等于改变状态，密钥重建步骤，以及后台退款/补发/解锁操作

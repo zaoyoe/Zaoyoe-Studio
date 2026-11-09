@@ -10,7 +10,7 @@ const ADMIN_ORIGINS = new Set([
     'https://fatherkey.com', 'https://www.fatherkey.com',
     'https://zaoyoe.xyz', 'https://www.zaoyoe.xyz',
     'https://zaoyoe.com', 'https://www.zaoyoe.com',
-    'https://tg.adm.fatherkey.com'
+    'https://tg-adm.fatherkey.com'
 ]);
 function requestPolicy(req, env = process.env) {
     const origin = String(req.headers?.origin || '').trim();
