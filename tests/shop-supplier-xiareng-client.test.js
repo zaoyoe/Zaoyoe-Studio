@@ -448,11 +448,11 @@ test('protocol, HTTP and network failures never expose raw upstream error text o
 });
 
 test('catalog responses above the old limit remain readable while oversized responses still fail closed', async () => {
-    const largePayload = JSON.stringify({ code: 200, data: [], padding: 'x'.repeat(3 * 1024 * 1024) });
+    const largePayload = JSON.stringify({ code: 200, data: [], padding: 'x'.repeat(12 * 1024 * 1024) });
     const { adapter: largeAdapter } = setup([new Response(largePayload)]);
     assert.deepEqual(await largeAdapter.listGoods(), { total: 0, items: [], categories: [] });
 
-    const oversized = setup([new Response(' '.repeat(8 * 1024 * 1024 + 1))]);
+    const oversized = setup([new Response(' '.repeat(32 * 1024 * 1024 + 1))]);
     await assert.rejects(oversized.adapter.listGoods(), (error) => error.code === 'supplier_response_too_large');
 
     const { adapter } = setup([fixture({ code: 'OTHER' })]);
