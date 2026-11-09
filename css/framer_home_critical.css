@@ -16,7 +16,6 @@ body::-webkit-scrollbar-corner{width:0 !important;height:0 !important;background
 
 body.home-page{position:relative;}
 
-/* Keep the current page position while the shared modal scroll lock is active. */
 html.no-scroll,
 body.home-page.no-scroll {
     overflow: hidden !important;
@@ -90,7 +89,6 @@ body.mobile-menu-open {
     z-index: 1;
 }
 
-/* Preserve title geometry until the configured text is available. */
 [data-home-hero-text-pending] {
     visibility: hidden;
 }

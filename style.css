@@ -358,6 +358,7 @@ header p {
 
 /* Form focus states - UNIFIED PURPLE GLOW */
 textarea:focus,
+input[type="text"]:not(.prompt-spotlight-input):focus,
 input[type="text"]:not(.prompt-spotlight-input):not(.rct-edit-input):focus,
 input[type="email"]:focus,
 input[type="tel"]:focus {

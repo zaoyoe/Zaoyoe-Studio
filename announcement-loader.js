@@ -824,9 +824,9 @@
                 left: 0;
                 right: 0;
                 bottom: 0;
-                background: rgba(0, 0, 0, 0.20);
-                backdrop-filter: blur(8px);
-                -webkit-backdrop-filter: blur(8px);
+                background: var(--app-modal-backdrop, rgba(34, 41, 52, 0.48));
+                backdrop-filter: var(--app-modal-backdrop-filter, blur(6px) saturate(106%));
+                -webkit-backdrop-filter: var(--app-modal-backdrop-filter, blur(6px) saturate(106%));
                 z-index: 99999;
                 display: flex;
                 align-items: center;
@@ -1188,9 +1188,9 @@
 
             /* ===== Light theme override for announcement modal/banner/toast ===== */
             .zaoyoe-announcement-overlay[data-announcement-theme="light"] {
-                background: rgba(0, 0, 0, 0.20);
-                backdrop-filter: blur(8px);
-                -webkit-backdrop-filter: blur(8px);
+                background: var(--app-modal-backdrop, rgba(31, 76, 118, 0.20));
+                backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
+                -webkit-backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
             }
             .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-modal {
                 background: rgba(255, 255, 255, 0.92);

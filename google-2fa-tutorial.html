@@ -27,7 +27,7 @@
     <link rel="stylesheet" href="css/framer_home.css?v=75e23ac2a6e7">
     <link rel="stylesheet" href="css/prompt-shell-page.css?v=75e23ac2a6e7">
     <link rel="stylesheet" href="css/tutorial-page.css?v=75e23ac2a6e7&modalRim=20261108_2&modalBackdrop=20261108_1">
-    <link rel="stylesheet" href="./css/desktop-nav-glass.css?v=75e23ac2a6e7">
+    <link rel="stylesheet" href="./css/desktop-nav-glass.css?v=20261108_14">
     <script type="module" src="./js/desktop-nav-glass.mjs?v=20261109_NAV_MOTION_1"></script>
 </head>
 
@@ -307,30 +307,7 @@
     <!-- Scripts -->
     <script src="./starry-sky.js?v=75e23ac2a6e7" defer></script>
     <script src="./inject-auth.js?v=75e23ac2a6e7" defer></script>
-    <script>
-        // Lightbox click-to-zoom logic
-        document.addEventListener('DOMContentLoaded', () => {
-            const lightbox = document.getElementById('tutorialLightbox');
-            const lightboxImg = document.getElementById('tutorialLightboxImg');
-            
-            document.querySelectorAll('.tutorial-img').forEach(img => {
-                img.addEventListener('click', () => {
-                    lightboxImg.src = img.src;
-                    lightbox.classList.add('active');
-                });
-            });
-
-            lightbox.addEventListener('click', () => {
-                lightbox.classList.remove('active');
-            });
-
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && lightbox.classList.contains('active')) {
-                    lightbox.classList.remove('active');
-                }
-            });
-        });
-    </script>
+    <script src="inline-google-2fa-tutorial-6.js?v=20261109_INLINE_1"></script>
 </body>
 
 </html>

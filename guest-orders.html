@@ -10,22 +10,7 @@
     <script src="./js/theme-preload.js?v=20260503_MODAL_CHROME_CLOSE_1"></script>
     <script src="./js/auth-popup-handoff.js?v=20260501_IOS_GOOGLE_REDIRECT_1"></script>
     <script src="./js/nav-auth-fast-paint.js?v=20260528_AVATAR_CANONICAL_CDN_1" defer></script>
-    <script>
-        (function () {
-            try {
-                for (var i = 0; i < localStorage.length; i++) {
-                    var k = localStorage.key(i);
-                    if (k && k.indexOf('sb-') === 0 && k.indexOf('-auth-token') > 0) {
-                        var raw = localStorage.getItem(k);
-                        if (raw && (raw.indexOf('access_token') > 0 || raw.indexOf('currentSession') > 0)) {
-                            document.documentElement.classList.add('guest-orders-member-mode');
-                            break;
-                        }
-                    }
-                }
-            } catch (_) {}
-        })();
-    </script>
+    <script src="inline-guest-orders-5.js?v=20261109_INLINE_1"></script>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -49,6 +34,7 @@
     <link rel="stylesheet" href="./css/magnifying-dock.css?v=20261108_RIM_3&overlayNav=20261108_1">
     <link rel="stylesheet" href="./css/desktop-nav-glass.css?v=20261108_14">
     <script type="module" src="./js/desktop-nav-glass.mjs?v=20261109_NAV_MOTION_1"></script>
+    <link rel="stylesheet" href="css/guest-orders-inline.css?v=20261109_INLINE_1">
 </head>
 
 <body class="guest-orders-page guestbook-page">
@@ -195,7 +181,7 @@
                         <article class="guest-orders-item is-skeleton">
                             <div class="guest-orders-item-top">
                                 <div class="guest-orders-item-left">
-                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--order-no" style="width: 140px;"></div>
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--order-no inline-style-guest-orders-1"></div>
                                 </div>
                                 <div class="guest-orders-item-badges">
                                     <div class="guest-orders-skel-badge"></div>
@@ -205,18 +191,18 @@
                             <div class="guest-orders-item-body">
                                 <div class="guest-orders-skel-thumb"></div>
                                 <div class="guest-orders-item-content">
-                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-title" style="width: 58%;"></div>
-                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-meta" style="width: 38%;"></div>
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-title inline-style-guest-orders-2"></div>
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-meta inline-style-guest-orders-3"></div>
                                 </div>
                                 <div class="guest-orders-item-amount">
-                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-price" style="width: 56px;"></div>
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-price inline-style-guest-orders-4"></div>
                                 </div>
                             </div>
                         </article>
                         <article class="guest-orders-item is-skeleton">
                             <div class="guest-orders-item-top">
                                 <div class="guest-orders-item-left">
-                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--order-no" style="width: 175px;"></div>
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--order-no inline-style-guest-orders-5"></div>
                                 </div>
                                 <div class="guest-orders-item-badges">
                                     <div class="guest-orders-skel-badge"></div>
@@ -226,11 +212,11 @@
                             <div class="guest-orders-item-body">
                                 <div class="guest-orders-skel-thumb"></div>
                                 <div class="guest-orders-item-content">
-                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-title" style="width: 72%;"></div>
-                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-meta" style="width: 44%;"></div>
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-title inline-style-guest-orders-6"></div>
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-meta inline-style-guest-orders-7"></div>
                                 </div>
                                 <div class="guest-orders-item-amount">
-                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-price" style="width: 70px;"></div>
+                                    <div class="guest-orders-skel-bar guest-orders-skel-bar--item-price inline-style-guest-orders-8"></div>
                                 </div>
                             </div>
                         </article>
@@ -405,19 +391,19 @@
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                         <div class="custom-dropdown-item" role="option" data-value="completed" aria-selected="false">
-                            <span class="dropdown-item-left"><i class="fas fa-circle-check" style="color: #10b981;" aria-hidden="true"></i> 已完成 / 已发货</span>
+                            <span class="dropdown-item-left"><i class="fas fa-circle-check inline-style-guest-orders-9" aria-hidden="true"></i> 已完成 / 已发货</span>
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                         <div class="custom-dropdown-item" role="option" data-value="fulfilling" aria-selected="false">
-                            <span class="dropdown-item-left"><i class="fas fa-spinner fa-spin" style="color: #f59e0b;" aria-hidden="true"></i> 发货中 / 待发货</span>
+                            <span class="dropdown-item-left"><i class="fas fa-spinner fa-spin inline-style-guest-orders-10" aria-hidden="true"></i> 发货中 / 待发货</span>
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                         <div class="custom-dropdown-item" role="option" data-value="pending" aria-selected="false">
-                            <span class="dropdown-item-left"><i class="fas fa-clock" style="color: #fbbf24;" aria-hidden="true"></i> 待支付</span>
+                            <span class="dropdown-item-left"><i class="fas fa-clock inline-style-guest-orders-11" aria-hidden="true"></i> 待支付</span>
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                         <div class="custom-dropdown-item" role="option" data-value="refunded" aria-selected="false">
-                            <span class="dropdown-item-left"><i class="fas fa-rotate-left" style="color: #94a3b8;" aria-hidden="true"></i> 已退款</span>
+                            <span class="dropdown-item-left"><i class="fas fa-rotate-left inline-style-guest-orders-12" aria-hidden="true"></i> 已退款</span>
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                     </div>
@@ -436,11 +422,11 @@
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                         <div class="custom-dropdown-item" role="option" data-value="auto" aria-selected="false">
-                            <span class="dropdown-item-left"><i class="fas fa-bolt" style="color: #38bdf8;" aria-hidden="true"></i> 自动交付 (卡密)</span>
+                            <span class="dropdown-item-left"><i class="fas fa-bolt inline-style-guest-orders-13" aria-hidden="true"></i> 自动交付 (卡密)</span>
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                         <div class="custom-dropdown-item" role="option" data-value="manual" aria-selected="false">
-                            <span class="dropdown-item-left"><i class="fas fa-headset" style="color: #a855f7;" aria-hidden="true"></i> 人工交付 (联系客服)</span>
+                            <span class="dropdown-item-left"><i class="fas fa-headset inline-style-guest-orders-14" aria-hidden="true"></i> 人工交付 (联系客服)</span>
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                     </div>
@@ -459,23 +445,23 @@
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                         <div class="custom-dropdown-item" role="option" data-value="today" aria-selected="false">
-                            <span class="dropdown-item-left"><i class="fas fa-sun" style="color: #fbbf24;" aria-hidden="true"></i> 今天</span>
+                            <span class="dropdown-item-left"><i class="fas fa-sun inline-style-guest-orders-11" aria-hidden="true"></i> 今天</span>
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                         <div class="custom-dropdown-item" role="option" data-value="7days" aria-selected="false">
-                            <span class="dropdown-item-left"><i class="fas fa-calendar-week" style="color: #38bdf8;" aria-hidden="true"></i> 近 7 天</span>
+                            <span class="dropdown-item-left"><i class="fas fa-calendar-week inline-style-guest-orders-13" aria-hidden="true"></i> 近 7 天</span>
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                         <div class="custom-dropdown-item" role="option" data-value="30days" aria-selected="false">
-                            <span class="dropdown-item-left"><i class="fas fa-calendar" style="color: #818cf8;" aria-hidden="true"></i> 近 30 天</span>
+                            <span class="dropdown-item-left"><i class="fas fa-calendar inline-style-guest-orders-15" aria-hidden="true"></i> 近 30 天</span>
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                         <div class="custom-dropdown-item" role="option" data-value="90days" aria-selected="false">
-                            <span class="dropdown-item-left"><i class="fas fa-calendar-days" style="color: #c084fc;" aria-hidden="true"></i> 近 3 个月</span>
+                            <span class="dropdown-item-left"><i class="fas fa-calendar-days inline-style-guest-orders-16" aria-hidden="true"></i> 近 3 个月</span>
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                         <div class="custom-dropdown-item" role="option" data-value="year" aria-selected="false">
-                            <span class="dropdown-item-left"><i class="fas fa-calendar-check" style="color: #34d399;" aria-hidden="true"></i> 今年内</span>
+                            <span class="dropdown-item-left"><i class="fas fa-calendar-check inline-style-guest-orders-17" aria-hidden="true"></i> 今年内</span>
                             <i class="fas fa-check check-icon" aria-hidden="true"></i>
                         </div>
                     </div>
@@ -557,7 +543,7 @@
                         <div class="guest-orders-delivery-title">
                             <i class="fas fa-gift" aria-hidden="true"></i> 发货内容
                         </div>
-                        <div id="guestOrdersDetailActions" class="guest-orders-detail-actions" style="margin:0;padding:0;border:none;">
+                        <div id="guestOrdersDetailActions" class="guest-orders-detail-actions">
                             <div id="guestOrdersDeliveryActionsBar" class="guest-orders-delivery-actions-bar">
                                 <button id="guestOrdersOpenTicketBtn" type="button" class="guest-orders-ticket-btn">
                                     <i class="fas fa-headset" aria-hidden="true"></i>
@@ -777,23 +763,23 @@
                             </button>
                             <div class="custom-dropdown-menu" role="listbox" id="ticketIssueMenu" hidden>
                                 <div class="custom-dropdown-item is-active" role="option" data-value="INVALID_KEY" aria-selected="true">
-                                    <span class="dropdown-item-left"><i class="fas fa-key" style="color: #f59e0b;" aria-hidden="true"></i> 卡密无效 / 无法使用</span>
+                                    <span class="dropdown-item-left"><i class="fas fa-key inline-style-guest-orders-10" aria-hidden="true"></i> 卡密无效 / 无法使用</span>
                                     <i class="fas fa-check check-icon" aria-hidden="true"></i>
                                 </div>
                                 <div class="custom-dropdown-item" role="option" data-value="NOT_DELIVERED" aria-selected="false">
-                                    <span class="dropdown-item-left"><i class="fas fa-truck-ramp-box" style="color: #38bdf8;" aria-hidden="true"></i> 未收到卡密 / 发货异常</span>
+                                    <span class="dropdown-item-left"><i class="fas fa-truck-ramp-box inline-style-guest-orders-13" aria-hidden="true"></i> 未收到卡密 / 发货异常</span>
                                     <i class="fas fa-check check-icon" aria-hidden="true"></i>
                                 </div>
                                 <div class="custom-dropdown-item" role="option" data-value="ACCOUNT_ISSUE" aria-selected="false">
-                                    <span class="dropdown-item-left"><i class="fas fa-user-xmark" style="color: #ec4899;" aria-hidden="true"></i> 账号异常 / 无法登录</span>
+                                    <span class="dropdown-item-left"><i class="fas fa-user-xmark inline-style-guest-orders-19" aria-hidden="true"></i> 账号异常 / 无法登录</span>
                                     <i class="fas fa-check check-icon" aria-hidden="true"></i>
                                 </div>
                                 <div class="custom-dropdown-item" role="option" data-value="REFUND" aria-selected="false">
-                                    <span class="dropdown-item-left"><i class="fas fa-rotate-left" style="color: #a855f7;" aria-hidden="true"></i> 申请退款 / 协商处理</span>
+                                    <span class="dropdown-item-left"><i class="fas fa-rotate-left inline-style-guest-orders-14" aria-hidden="true"></i> 申请退款 / 协商处理</span>
                                     <i class="fas fa-check check-icon" aria-hidden="true"></i>
                                 </div>
                                 <div class="custom-dropdown-item" role="option" data-value="OTHER" aria-selected="false">
-                                    <span class="dropdown-item-left"><i class="fas fa-comment-dots" style="color: #94a3b8;" aria-hidden="true"></i> 其他问题 / 咨询客服</span>
+                                    <span class="dropdown-item-left"><i class="fas fa-comment-dots inline-style-guest-orders-12" aria-hidden="true"></i> 其他问题 / 咨询客服</span>
                                     <i class="fas fa-check check-icon" aria-hidden="true"></i>
                                 </div>
                             </div>

@@ -338,11 +338,10 @@ function calculateProductDisplaySales(product, realSalesCount, options = {}) {
         const min = Math.max(0, Number.parseInt(String(config.daily_random_min || 0), 10) || 0);
         const max = Math.max(min, Number.parseInt(String(config.daily_random_max || min), 10) || min);
         const seedStr = String(config.random_seed || product?.id || 'seed').trim();
+        const currentDateStr = options.currentDateStr || getCstDateString();
         const startDateStr = (typeof config.start_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(config.start_date.trim()))
             ? config.start_date.trim()
-            : getCstDateString();
-
-        const currentDateStr = options.currentDateStr || getCstDateString();
+            : currentDateStr;
         const daysElapsed = getDaysBetweenCstDates(startDateStr, currentDateStr);
         if (daysElapsed < 0) {
             return baseSales;
@@ -5142,11 +5141,11 @@ function createShopHandlers({
                         recordServerTimingPhase(timingTracker, 'shop-purchase-globallimit', globalBreakerStartedAt);
                     }
                 })();
-                const [userRateLimit, idempotencyResult, globalBreakerResult] = await Promise.all([
+                const [userRateLimit, idempotencyResult] = await Promise.all([
                     userRateLimitPromise,
-                    idempotencyPromise,
-                    globalBreakerPromise
+                    idempotencyPromise
                 ]);
+                const globalBreakerResult = await globalBreakerPromise;
                 applyRateLimitHeaders(res, userRateLimit);
                 if (globalBreakerResult && !globalBreakerResult.allowed) {
                     if (adminSupabase && typeof enqueueOpsAlertJob === 'function') {

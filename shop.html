@@ -60,6 +60,7 @@
 
     <link rel="stylesheet" href="./css/desktop-nav-glass.css?v=20261108_14">
     <script type="module" src="./js/desktop-nav-glass.mjs?v=20261109_NAV_MOTION_1"></script>
+    <link rel="stylesheet" href="css/shop-inline.css?v=20261109_INLINE_1">
 </head>
 
 <body class="shop-page guestbook-page">
@@ -670,7 +671,7 @@
                         <!-- Quantity Selector -->
                         <div class="shop-quantity-wrapper shop-purchase-stage shop-purchase-stage-quantity" data-purchase-step="configure">
                             <div class="rct-wrapper">
-                                <div class="rct" id="shopRollingCounter" style="--rct-cell: 46px; --rct-h: 46px; --rct-r: 20px; --rct-in: 15px;">
+                                <div class="rct inline-style-shop-1" id="shopRollingCounter">
                                     <button class="rct-btn shop-qty-btn" type="button" data-dir="-1" data-shop-qty-delta="-1" aria-label="减少数量">
                                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h8" /></svg>
                                     </button>
@@ -681,7 +682,7 @@
                                         <span class="rct-col" data-place="2"><span class="rct-strip"></span></span>
                                         <span class="rct-col" data-place="1"><span class="rct-strip"></span></span>
                                         <span class="rct-col" data-place="0"><span class="rct-strip"></span></span>
-                                        <input type="text" inputmode="numeric" pattern="[0-9]*" class="rct-edit-input" aria-label="直接输入购买数量" style="display: none;">
+                                        <input type="text" inputmode="numeric" pattern="[0-9]*" class="rct-edit-input inline-style-shop-2" aria-label="直接输入购买数量">
                                     </div>
                                     <button class="rct-btn shop-qty-btn" type="button" data-dir="1" data-shop-qty-delta="1" aria-label="增加数量">
                                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h8M8 4v8" /></svg>

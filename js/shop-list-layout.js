@@ -809,7 +809,7 @@
     function createCategoryIconHtml(entry) {
         const iconUrl = getCategoryIcon(entry.name) || entry.iconUrl;
         if (iconUrl) {
-            return `<img class="category-icon" src="${escapeAttribute(iconUrl)}" alt="" decoding="async" loading="lazy" onerror="this.style.display='none'">`;
+            return `<img class="category-icon" src="${escapeAttribute(iconUrl)}" alt="" decoding="async" loading="lazy" data-hide-on-error="1">`;
         }
         const folderColor = entry.color || '#6b9ece';
         return `<i class="fas fa-folder category-folder-icon" style="color: ${escapeAttribute(folderColor)}"></i>`;
@@ -1686,6 +1686,13 @@
     function init() {
         const shopMain = $('.shop-main');
         if (!shopMain || state.ready) return;
+        if (!window.__shopCategoryMediaErrorHandlerBound) {
+            document.addEventListener('error', (event) => {
+                const image = event.target instanceof HTMLImageElement ? event.target : null;
+                if (image?.dataset.hideOnError === '1') image.hidden = true;
+            }, true);
+            window.__shopCategoryMediaErrorHandlerBound = true;
+        }
         state.view = readStoredView();
         syncStaticCopy();
         hookShopClient();

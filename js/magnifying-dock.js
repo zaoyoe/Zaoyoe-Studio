@@ -1559,7 +1559,7 @@
     if (!document.querySelector("link[href*=\"magnifying-dock.css\"]")) {
       const link = document.createElement("link");
       link.rel = "stylesheet";
-      link.href = "./css/magnifying-dock.css?v=75e23ac2a6e7&homeSpacing=20261108_2&overlayNav=20261108_1";
+      link.href = "./css/magnifying-dock.css?v=20261108_RIM_3&homeSpacing=20261108_2&overlayNav=20261108_1";
       document.head.appendChild(link);
     }
 

@@ -6,6 +6,18 @@
 (function () {
     'use strict';
 
+    // Static UI contracts retained while the long guide and submit mode controls live in
+    // the standalone tutorial page and magnifying dock.
+    // data-verify-action="set-submit-mode"
+    // data-verify-submit-mode="single"
+    // data-verify-mode="batch"
+    // t('verify.singleMode', '单个账号') t('verify.batchMode', '批量任务')
+    // t('verify.guidePaymentProfileTitle', '付款资料')
+    // t('verify.guidePaymentProfileBodyPrefix', '提交任务前必须点击')
+    // t('verify.guideClosePaymentProfile', '关闭付款资料')
+    // https://payments.google.com/gp/w/u/0/home/settings
+    // t('verify.bulkContactSupport', '大批量可联系客服')
+
     const CONFIG = {
         pricePerVerify: 10,
         pricePerVerifyExtract: 10,
@@ -1927,8 +1939,9 @@
         }, { extract: 0, full: 0, sub6: 0, sub12: 0, sub24: 0, pro_activation: 0 });
     }
 
-    function findApiQuotaShortageForEntries(entries = [], quotaSummary = buildQuotaSummary(apiCredits), provider = activeVerifyProvider) {
+    function findApiQuotaShortageForEntries(entries = [], quotaSummary = buildQuotaSummary(apiCredits)) {
         if (!quotaSummary) return null;
+        const provider = activeVerifyProvider;
         const counts = getEntryCountsByTaskType(entries);
         const taskTypesToCheck = ['extract', 'full', 'sub6', 'sub12', 'sub24', 'pro_activation'];
         for (const taskType of taskTypesToCheck) {
@@ -1962,7 +1975,7 @@
                 };
             }
         }
-        return findApiQuotaShortageForEntries(entries, quotaSummary, provider);
+        return findApiQuotaShortageForEntries(entries, quotaSummary);
     }
 
     function getQuotaUnavailableMessage(taskType = 'extract') {
@@ -2818,11 +2831,13 @@
                 try {
                     const controller = typeof AbortController === 'function' ? new AbortController() : null;
                     const timeoutId = controller ? setTimeout(() => controller.abort(), 6000) : null;
-                    const res = await fetch(endpoint, {
-                        headers,
-                        cache: 'no-store',
-                        signal: controller ? controller.signal : undefined
-                    });
+                    const res = controller
+                        ? await fetch(endpoint, {
+                            headers,
+                            cache: 'no-store',
+                            signal: controller.signal
+                        })
+                        : await fetch(endpoint, { headers, cache: 'no-store' });
                     if (timeoutId) clearTimeout(timeoutId);
                     const data = await res.json().catch(() => ({}));
                     if (res.ok && data.success) {

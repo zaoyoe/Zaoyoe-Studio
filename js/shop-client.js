@@ -1488,12 +1488,12 @@ const ShopClient = {
     },
 
     filterShopCategoriesWithVisibleProducts: function (categories = [], products = []) {
-        const catList = this.sortShopCategoriesByAdminOrder(this.filterPublicShopCategories(categories));
         const visibleCategoryNames = new Set(
             (Array.isArray(products) ? products : [])
                 .map((product) => String(product?.category || '').trim())
                 .filter(Boolean)
         );
+        const catList = this.sortShopCategoriesByAdminOrder(this.filterPublicShopCategories(categories));
 
         const categoryMap = new Map();
         catList.forEach((c) => {
@@ -12104,7 +12104,7 @@ const ShopClient = {
         const safeUrl = iconUrl ? String(iconUrl).replace(/"/g, '&quot;') : '';
         const safeLabel = String(entry.label || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         const iconHtml = safeUrl
-            ? `<img class="category-icon" src="${safeUrl}" alt="" loading="lazy" onerror="this.style.display='none'">`
+            ? `<img class="category-icon" src="${safeUrl}" alt="" loading="lazy" data-hide-on-error="1">`
             : '';
         button.innerHTML = `${iconHtml}<span class="category-text">${safeLabel}</span>`;
 

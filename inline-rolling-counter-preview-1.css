@@ -1,0 +1,396 @@
+
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #222827;
+        background: #f3f5f4;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-width: 320px;
+        min-height: 100vh;
+        margin: 0;
+      }
+
+      button, input { font: inherit; }
+
+      .page {
+        width: min(100% - 64px, 1040px);
+        min-height: 100vh;
+        margin-inline: auto;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .topbar {
+        min-height: 76px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #dce2df;
+      }
+
+      .wordmark {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #3b4542;
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .mark {
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        border-radius: 7px;
+        background: #dcebe3;
+        color: #2e6a4c;
+      }
+
+      .mark svg { width: 13px; height: 13px; }
+
+      .license {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #717b77;
+        font-size: 12px;
+      }
+
+      .license::before {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #55916e;
+        content: "";
+      }
+
+      main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding-block: 72px 88px;
+      }
+
+      .intro { margin-bottom: 54px; }
+
+      .eyebrow {
+        margin: 0 0 14px;
+        color: #648071;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        color: #222827;
+        font-size: 42px;
+        font-weight: 570;
+        line-height: 1.12;
+        letter-spacing: 0;
+      }
+
+      .lede {
+        max-width: 520px;
+        margin: 14px 0 0;
+        color: #737d79;
+        font-size: 15px;
+        line-height: 1.55;
+      }
+
+      .stage {
+        min-height: 210px;
+        display: grid;
+        place-items: center;
+        padding: 34px 24px;
+        border: 1px solid #dce2df;
+        border-radius: 10px;
+        background: #edf1ef;
+      }
+
+      .stage-note {
+        margin: 18px 0 0;
+        color: #8a9490;
+        font-size: 11px;
+        text-align: center;
+      }
+
+      /* ══ Rolling counter ══════════════════════════════════
+         A number between a minus and a plus. Every digit is a strip
+         of 0–9 behind a window, and changing the number rolls the
+         strips to their new digits like an odometer.
+
+         ── EACH COLUMN COUNTS, IT DOES NOT SHOW ────────────
+         A column's target is the number of whole tens, hundreds…
+         in the value. This lets 9 → 10 move the ones forward one
+         more step while the tens moves forward one, instead of a
+         strip running backward through eight digits.
+
+         ── ONE SPRING PER COLUMN, AND THEY GO IN TURN ─────
+         The ones move first and each column to the left follows a
+         little later, so a carry reads as a carry through the number. */
+      .rct {
+        --card: #ffffff;
+        --fill-on: #222827;
+        --fill-slab: #ffffff;
+        --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --ink: #222827;
+        --pane-edge: #d4dcda;
+        --signal: #57916d;
+
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 0;
+        padding: 5px;
+        border-radius: var(--rct-r);
+        background: var(--fill-slab, var(--card));
+        color: var(--fill-on, var(--ink));
+        font-family: var(--font-ui);
+        box-shadow: 0 12px 28px rgba(40, 60, 50, 0.08), 0 0 0 1px rgba(40, 60, 50, 0.03);
+      }
+
+      /* The slab's inset keeps the button and the digit window
+         concentric as the corner radius changes. */
+      .rct-btn {
+        width: 46px;
+        height: var(--rct-cell);
+        display: grid;
+        flex: none;
+        place-items: center;
+        padding: 0;
+        border: 0;
+        border-radius: var(--rct-in);
+        background: color-mix(in srgb, var(--fill-on) 6%, var(--fill-slab));
+        color: inherit;
+        cursor: pointer;
+        transition: scale 200ms cubic-bezier(0.3, 0.9, 0.4, 1), background-color 160ms ease;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .rct-btn:hover { background: color-mix(in srgb, var(--fill-on) 10%, var(--fill-slab)); }
+      .rct-btn:active { scale: 0.9; transition-duration: 110ms; }
+      .rct-btn svg { width: 16px; height: 16px; }
+
+      .rct-btn:focus-visible,
+      .rct-num:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px var(--fill-slab), 0 0 0 4px var(--signal);
+      }
+
+      /* The number hugs its digits and the buttons hug the number.
+         A column arriving or leaving animates its own width, so the
+         slab grows and shrinks with the count. */
+      .rct-num {
+        min-width: 74px;
+        height: var(--rct-cell);
+        display: flex;
+        justify-content: center;
+        padding: 0 14px;
+        border-radius: 8px;
+        font-size: 30px;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.02em;
+        line-height: var(--rct-cell);
+        cursor: ns-resize;
+        touch-action: none;
+        user-select: none;
+        mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent);
+      }
+
+      .rct-pair { display: flex; }
+
+      .rct-col {
+        width: 0;
+        height: var(--rct-cell);
+        overflow: hidden;
+        opacity: 0;
+        transition: width 320ms cubic-bezier(0.3, 1.2, 0.4, 1), opacity 220ms ease;
+      }
+
+      .rct-col[data-on] { width: 0.64em; opacity: 1; }
+
+      .rct-strip {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        will-change: transform, filter;
+      }
+
+      .rct-strip > span { height: var(--rct-cell); }
+
+      .rct-sep {
+        width: 0;
+        overflow: hidden;
+        opacity: 0;
+        transition: width 320ms cubic-bezier(0.3, 1.2, 0.4, 1), opacity 220ms ease;
+      }
+
+      .rct-sep[data-on] { width: 0.26em; opacity: 1; }
+
+      .control-panel {
+        margin-top: 54px;
+        padding-top: 20px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 26px;
+        border-top: 1px solid #dce2df;
+      }
+
+      .control { min-width: 0; }
+
+      .control-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .control label {
+        color: #6f7975;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .control output {
+        color: #87918d;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      input[type="range"] {
+        width: 100%;
+        height: 18px;
+        margin: 0;
+        appearance: none;
+        background: transparent;
+        cursor: ew-resize;
+      }
+
+      input[type="range"]::-webkit-slider-runnable-track {
+        height: 3px;
+        border-radius: 99px;
+        background: #d1d9d5;
+      }
+
+      input[type="range"]::-webkit-slider-thumb {
+        width: 14px;
+        height: 14px;
+        margin-top: -5px;
+        appearance: none;
+        border: 2px solid #f3f5f4;
+        border-radius: 50%;
+        background: #57916d;
+        box-shadow: 0 0 0 1px #57916d;
+      }
+
+      input[type="range"]::-moz-range-track {
+        height: 3px;
+        border-radius: 99px;
+        background: #d1d9d5;
+      }
+
+      input[type="range"]::-moz-range-thumb {
+        width: 10px;
+        height: 10px;
+        border: 2px solid #f3f5f4;
+        border-radius: 50%;
+        background: #57916d;
+        box-shadow: 0 0 0 1px #57916d;
+      }
+
+      input[type="range"]:focus-visible {
+        outline: 2px solid #57916d;
+        outline-offset: 3px;
+      }
+
+      .shape-control {
+        margin-top: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+
+      .shape-label {
+        color: #6f7975;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .segmented {
+        display: inline-grid;
+        grid-template-columns: repeat(3, minmax(74px, 1fr));
+        gap: 3px;
+        padding: 3px;
+        border: 1px solid #dce2df;
+        border-radius: 8px;
+        background: #eaeeec;
+      }
+
+      .segmented button {
+        min-height: 31px;
+        padding: 0 12px;
+        border: 0;
+        border-radius: 5px;
+        background: transparent;
+        color: #707a76;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .segmented button[aria-pressed="true"] {
+        background: #fff;
+        color: #2b3430;
+        box-shadow: 0 1px 2px #202a2414;
+      }
+
+      .segmented button:focus-visible {
+        outline: 2px solid #57916d;
+        outline-offset: 2px;
+      }
+
+      footer {
+        min-height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid #dce2df;
+        color: #8b9490;
+        font-size: 11px;
+      }
+
+      footer span:last-child { color: #6e7974; }
+
+      @media (max-width: 700px) {
+        .page { width: min(100% - 40px, 520px); }
+        main { padding-block: 54px 64px; }
+        h1 { font-size: 36px; }
+        .intro { margin-bottom: 44px; }
+        .stage { min-height: 190px; padding-inline: 10px; }
+        .control-panel { grid-template-columns: 1fr; gap: 18px; }
+        .shape-control { margin-top: 40px; }
+      }
+
+      @media (max-width: 380px) {
+        .page { width: calc(100% - 32px); }
+        .shape-control { align-items: flex-start; flex-direction: column; gap: 12px; }
+        .segmented { width: 100%; }
+        .stage { transform: scale(0.92); transform-origin: center; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .rct-btn, .rct-col, .rct-sep { transition-duration: 160ms; }
+      }

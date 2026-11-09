@@ -70339,3 +70339,65 @@ html[data-theme="light"] .admin-ticket-mini-btn {
     border-color: rgba(16, 185, 129, 0.3);
     color: #34d399;
 }
+
+
+/* 20261109 admin shop runtime style state externalization */
+.shop-admin-inline-09cc1ce11c { display:flex;align-items:center; }
+.shop-admin-inline-0b87e9e0af { font-weight:600; }
+.shop-admin-inline-0c8a27e103 { font-size:10px; }
+.shop-admin-inline-150623d199 { width:18px;height:18px;border-radius:4px;object-fit:cover;flex-shrink:0;margin-right:6px; }
+.shop-admin-inline-18d1f99487 { margin:12px 0 0;font-size:13px;color:#94a3b8; }
+.shop-admin-inline-1ce5219e6b { margin-bottom:8px;font-weight:600;color:#10b981; }
+.shop-admin-inline-23fa588925 { display:inline-flex;align-items:center;gap:6px; }
+.shop-admin-inline-2954792ead { font-size:15px;font-weight:600;margin-bottom:6px;color:rgba(255,255,255,0.85); }
+.shop-admin-inline-2bf4877cea { margin-top:6px;border-top:1px solid rgba(148,163,184,0.12);padding-top:6px; }
+.shop-admin-inline-347dce4d3d { display:flex;gap:8px;margin-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:8px; }
+.shop-admin-inline-37d3509160 { margin-left:8px;font-size:11px;padding:2px 7px;flex-shrink:0; }
+.shop-admin-inline-39161213a2 { display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,0.08);color:#cbd5e1;font-weight:600; }
+.shop-admin-inline-4152f3f939 { color:#6366f1; }
+.shop-admin-inline-43c9379b61 { color:#60a5fa;font-weight:600; }
+.shop-admin-inline-4ab7f8717e { width:16px;height:16px;border-radius:3px;object-fit:cover;flex-shrink:0;margin-right:6px; }
+.shop-admin-inline-59c54a71af { padding:3px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);background:rgba(20,24,33,0.9);color:#fff;font-size:12px; }
+.shop-admin-inline-604286b114 { width:18px;height:18px;border-radius:4px;object-fit:cover;flex-shrink:0;vertical-align:middle;margin-right:8px; }
+.shop-admin-inline-62af7aa4a0 { border-top:1px solid rgba(255,255,255,0.08);padding-top:12px;margin-top:6px; }
+.shop-admin-inline-67d5956ee0 { font-size:13px;color:rgba(255,255,255,0.45);margin-bottom:12px; }
+.shop-admin-inline-6de8874157 { width:22px;height:22px;border-radius:6px;object-fit:cover;flex-shrink:0;vertical-align:middle;margin-right:8px; }
+.shop-admin-inline-702378e93b { display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;background:rgba(52,211,153,0.12);color:#34d399;border:1px solid rgba(52,211,153,0.25); }
+.shop-admin-inline-7340f44af3 { display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(99,102,241,0.15);color:#818cf8;margin-left:6px; }
+.shop-admin-inline-7e407a0049 { display:flex;align-items:center;gap:4px; }
+.shop-admin-inline-7f86a8b963 { display:none;margin-top:10px; }
+.shop-admin-inline-80d7a28f56 { font-size:12px;color:#94a3b8;margin-bottom:10px; }
+.shop-admin-inline-8696c95ae8 { accent-color:#6366f1; }
+.shop-admin-inline-869d91af1b { margin-right:6px; }
+.shop-admin-inline-8b78d03239 { display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;background:rgba(56,189,248,0.12);color:#38bdf8;border:1px solid rgba(56,189,248,0.25); }
+.shop-admin-inline-8e9c91dd19 { text-align:center;padding:16px;color:#ef4444; }
+.shop-admin-inline-9039d35fb6 { border-bottom:1px solid rgba(255,255,255,0.05); }
+.shop-admin-inline-93df43da8d {}
+.shop-admin-inline-9c12778871 { width:100%;max-width:220px;padding:3px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);background:rgba(20,24,33,0.9);color:#fff;font-size:12px; }
+.shop-admin-inline-aa9b376809 { grid-column: span 2;padding: 18px 10px;text-align: center;color: #64748b;font-size: 12px; }
+.shop-admin-inline-abed567c33 { text-align:center;padding:16px;color:#a0aec0; }
+.shop-admin-inline-ad7a3956d0 { margin-right:8px;opacity:0.6;font-size:13px;flex-shrink:0; }
+.shop-admin-inline-af223c39c0 { font-size: 11px;opacity: 0.55;margin-left: 5px;color: #94a3b8; }
+.shop-admin-inline-b952edd7f6 { color:#e2e8f0; }
+.shop-admin-inline-bb772c89fe { width:75px;padding:3px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.3);color:#fff;font-size:12px;text-align:center; }
+.shop-admin-inline-c37fe6a935 { display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:10px;margin-top:6px; }
+.shop-admin-inline-c4728d40ff { width:18px;height:18px;border-radius:4px;object-fit:cover;flex-shrink:0;vertical-align:middle;margin-right:6px; }
+.shop-admin-inline-c59eb99d26 { display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(46,213,115,0.15);color:#2ed573;margin-left:6px; }
+.shop-admin-inline-c83e793576 { display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px; }
+.shop-admin-inline-c8be1ccba6 { display:none; }
+.shop-admin-inline-dac4fe6c9b { text-align:center; }
+.shop-admin-inline-dee26bb074 { padding:6px 14px;border-radius:6px;background:rgba(99,102,241,0.25);border:1px solid #6366f1;color:#fff;cursor:pointer;font-size:12px; }
+.shop-admin-inline-e18c9eb9f0 { max-width:100%;border-radius:8px; }
+.shop-admin-inline-e48b05836a { font-size:11px; }
+.shop-admin-inline-f565be24f0 { display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(255,165,2,0.15);color:#ffa502;margin-left:6px; }
+.shop-admin-inline-f650542cff { margin-right:8px;font-size:11px;padding:2px 7px;flex-shrink:0; }
+.shop-admin-inline-fa607427de { margin-right:8px;font-size:13px;flex-shrink:0; }
+.shop-admin-inline-fcdce40ac8 { flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px; }
+.shop-admin-inline-fe99e81b38 { color:#a0aec0;font-size:11px; }
+.shop-admin-hidden { display: none !important; }
+.shop-admin-interaction-disabled { opacity: .5; pointer-events: none; }
+.shop-admin-context-menu--fixed { position: fixed; z-index: 999999; left: attr(data-shop-left type(<length>), 0px); top: attr(data-shop-top type(<length>), 0px); }
+.shop-admin-tone-warning { background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.3); color: #fbbf24; }
+.shop-admin-tone-success { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: #34d399; }
+.shop-admin-tone-info { background: rgba(99, 102, 241, 0.15); border-color: rgba(99, 102, 241, 0.3); color: #818cf8; }
+.shop-admin-progress { width: attr(data-shop-progress type(<percentage>), 0%); }

@@ -17,6 +17,40 @@ const SHOP_PRODUCT_IMAGE_CARD_HEIGHT = 320;
 const SHOP_PRODUCT_IMAGE_CARD_QUALITY = 0.78;
 const SHOP_PRODUCT_IMAGE_THUMB_SIZE = 160;
 
+function setAdminShopDisplay(element, value) {
+    if (!element) return;
+    const normalized = String(value ?? '').trim();
+    element.classList.toggle('shop-admin-hidden', normalized === 'none');
+    if (normalized && normalized !== 'none') element.dataset.shopDisplay = normalized;
+    else delete element.dataset.shopDisplay;
+}
+
+function setAdminShopInteractionState(element, value) {
+    if (!element) return;
+    const normalized = String(value ?? '').trim();
+    element.classList.toggle('shop-admin-interaction-disabled', normalized === 'none' || normalized === '0' || normalized === 'false');
+}
+
+function setAdminShopTone(element, value) {
+    if (!element) return;
+    const normalized = String(value ?? '').trim();
+    element.dataset.shopTone = normalized;
+    const compact = normalized.replace(/\s+/g, '').toLowerCase();
+    const isWarning = compact.includes('245,158,11') || compact.includes('f59e0b') || compact.includes('fbbf24');
+    const isSuccess = compact.includes('16,185,129') || compact.includes('34d399');
+    const isInfo = compact.includes('99,102,241') || compact.includes('818cf8');
+    element.classList.toggle('shop-admin-tone-warning', isWarning);
+    element.classList.toggle('shop-admin-tone-success', isSuccess);
+    element.classList.toggle('shop-admin-tone-info', isInfo);
+}
+
+function setAdminShopProgress(element, value) {
+    if (!element) return;
+    const normalized = String(value ?? '').trim();
+    element.classList.add('shop-admin-progress');
+    element.dataset.shopProgress = normalized.endsWith('%') ? normalized : `${normalized}%`;
+}
+
 const GUEST_ORDER_EXCEPTION_META = Object.freeze({
     any: { label: '全部异常', tone: 'muted' },
     all: { label: '全部订单', tone: 'muted' },
@@ -4776,7 +4810,7 @@ Example output format:
         const titleEl = document.getElementById('productCatalogCategoryTitle');
         const activeIconUrl = this.currentCategory && this.currentCategory !== 'all' ? this.getCategoryIconUrl(this.currentCategory) : '';
         const activeIconHtml = activeIconUrl
-            ? `<img class="category-icon" src="${this.escapeForAttr(activeIconUrl)}" alt="" style="width:22px;height:22px;border-radius:6px;object-fit:cover;flex-shrink:0;vertical-align:middle;margin-right:8px;" loading="lazy">`
+            ? `<img class="category-icon shop-admin-inline-6de8874157" src="${this.escapeForAttr(activeIconUrl)}" alt="" loading="lazy">`
             : '';
         if (titleEl) {
             const catTitle = this.currentCategory === 'all' ? '全部商品' : this.currentCategory;
@@ -4794,8 +4828,8 @@ Example output format:
         const publishBtn = document.getElementById('categoryPublishAllBtn');
         const unpublishBtn = document.getElementById('categoryUnpublishAllBtn');
         const hasSpecificCat = this.currentCategory && this.currentCategory !== 'all';
-        if (publishBtn) publishBtn.style.display = hasSpecificCat ? 'inline-flex' : 'none';
-        if (unpublishBtn) unpublishBtn.style.display = hasSpecificCat ? 'inline-flex' : 'none';
+        if (publishBtn) setAdminShopDisplay(publishBtn, hasSpecificCat ? 'inline-flex' : 'none');
+        if (unpublishBtn) setAdminShopDisplay(unpublishBtn, hasSpecificCat ? 'inline-flex' : 'none');
         this.syncCategoryIndicator({ animate: true });
     },
 
@@ -7006,24 +7040,24 @@ Example output format:
                 case 'batch-edit-toggle-channels': {
                     const group = document.getElementById('batchEditChannelsGroup');
                     if (group) {
-                        group.style.opacity = actionEl.checked ? '1' : '0.5';
-                        group.style.pointerEvents = actionEl.checked ? 'auto' : 'none';
+                        setAdminShopInteractionState(group, actionEl.checked ? '1' : '0.5');
+                        setAdminShopInteractionState(group, actionEl.checked ? 'auto' : 'none');
                     }
                     break;
                 }
                 case 'batch-edit-toggle-multiplier': {
                     const group = document.getElementById('batchEditMultiplierGroup');
                     if (group) {
-                        group.style.opacity = actionEl.checked ? '1' : '0.5';
-                        group.style.pointerEvents = actionEl.checked ? 'auto' : 'none';
+                        setAdminShopInteractionState(group, actionEl.checked ? '1' : '0.5');
+                        setAdminShopInteractionState(group, actionEl.checked ? 'auto' : 'none');
                     }
                     break;
                 }
                 case 'batch-edit-toggle-quantity': {
                     const group = document.getElementById('batchEditQuantityGroup');
                     if (group) {
-                        group.style.opacity = actionEl.checked ? '1' : '0.5';
-                        group.style.pointerEvents = actionEl.checked ? 'auto' : 'none';
+                        setAdminShopInteractionState(group, actionEl.checked ? '1' : '0.5');
+                        setAdminShopInteractionState(group, actionEl.checked ? 'auto' : 'none');
                     }
                     break;
                 }
@@ -7358,6 +7392,9 @@ Example output format:
 
         document.addEventListener('error', (event) => {
             const image = event.target instanceof HTMLImageElement ? event.target : null;
+            if (image?.dataset.hideOnError === '1') {
+                image.hidden = true;
+            }
             const fallbackSrc = image?.dataset.fallbackSrc;
             if (!image || !fallbackSrc || image.src === fallbackSrc) {
                 return;
@@ -7453,12 +7490,12 @@ Example output format:
                     const iconUrl = this.resolveCategoryIconUrl(cat);
                     const folderColor = cat.color || '#6b9ece';
                     const iconHtml = iconUrl
-                        ? `<img class="category-icon" src="${this.escapeForAttr(iconUrl)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+                        ? `<img class="category-icon" src="${this.escapeForAttr(iconUrl)}" alt="" loading="lazy" data-hide-on-error="1">`
                         : `<i class="fas fa-folder category-folder-icon ${this.buildCategoryColorClass(folderColor)}"></i>`;
 
                     const isPublic = this.isCategoryPublic(cat);
                     const hiddenIconHtml = !isPublic
-                        ? `<i class="fas fa-eye-slash" title="已设为对外隐藏" style="font-size: 11px; opacity: 0.55; margin-left: 5px; color: #94a3b8;"></i>`
+                        ? `<i class="fas fa-eye-slash shop-admin-inline-af223c39c0" title="已设为对外隐藏"></i>`
                         : '';
 
                     const directCount = this.getCategoryProductCount(cat.name);
@@ -7565,7 +7602,7 @@ Example output format:
                     btn.className = `filter-tab${this.currentCategory === cat.name ? ' active' : ''}`;
                     const iconUrl = this.resolveCategoryIconUrl(cat);
                     const iconHtml = iconUrl
-                        ? `<img class="category-icon" src="${this.escapeForAttr(iconUrl)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+                        ? `<img class="category-icon" src="${this.escapeForAttr(iconUrl)}" alt="" loading="lazy" data-hide-on-error="1">`
                         : '';
                     btn.innerHTML = `${iconHtml}<span>${this.escapeHtml(cat.name)}</span>`;
                     btn.dataset.shopAction = 'product-filter-category';
@@ -7925,16 +7962,16 @@ Example output format:
             // 设为顶级按钮高亮状态
             if (!chosenParentId) {
                 if (rootBtn) {
-                    rootBtn.style.background = 'rgba(52, 211, 153, 0.15)';
-                    rootBtn.style.borderColor = '#34d399';
+                    setAdminShopTone(rootBtn, 'rgba(52, 211, 153, 0.15)');
+                    setAdminShopTone(rootBtn, '#34d399');
                 }
-                if (rootCheck) rootCheck.style.display = 'inline-block';
+                if (rootCheck) setAdminShopDisplay(rootCheck, 'inline-block');
             } else {
                 if (rootBtn) {
-                    rootBtn.style.background = 'rgba(255, 255, 255, 0.03)';
-                    rootBtn.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                    setAdminShopTone(rootBtn, 'rgba(255, 255, 255, 0.03)');
+                    setAdminShopTone(rootBtn, 'rgba(255, 255, 255, 0.12)');
                 }
-                if (rootCheck) rootCheck.style.display = 'none';
+                if (rootCheck) setAdminShopDisplay(rootCheck, 'none');
             }
 
             // 网格卡片高亮状态
@@ -7963,7 +8000,7 @@ Example output format:
                 });
 
                 if (filtered.length === 0) {
-                    grid.innerHTML = '<div style="grid-column: span 2; padding: 18px 10px; text-align: center; color: #64748b; font-size: 12px;">无匹配的父级分类</div>';
+                    grid.innerHTML = '<div class="shop-admin-inline-aa9b376809">无匹配的父级分类</div>';
                     return;
                 }
 
@@ -8000,7 +8037,7 @@ Example output format:
         updateSelectionVisuals(cat.parent_id || null);
 
         // 弹出动画激活
-        modal.style.display = 'flex';
+        setAdminShopDisplay(modal, 'flex');
         modal.offsetHeight; // trigger reflow
         modal.classList.add('active');
     },
@@ -8011,7 +8048,7 @@ Example output format:
             modal.classList.remove('active');
             setTimeout(() => {
                 if (!modal.classList.contains('active')) {
-                    modal.style.display = 'none';
+                    setAdminShopDisplay(modal, 'none');
                 }
             }, 200);
         }
@@ -8130,7 +8167,7 @@ Example output format:
             };
         }
 
-        modal.style.display = 'flex';
+        setAdminShopDisplay(modal, 'flex');
         modal.offsetHeight; // trigger reflow
         modal.classList.add('active');
     },
@@ -8183,7 +8220,7 @@ Example output format:
             modal.classList.remove('active');
             setTimeout(() => {
                 if (!modal.classList.contains('active')) {
-                    modal.style.display = 'none';
+                    setAdminShopDisplay(modal, 'none');
                 }
             }, 200);
         }
@@ -11140,26 +11177,26 @@ Example output format:
             if (hasCat && this.currentStatusFilter === 'active') {
                 listRowsContainer.innerHTML = `
                     <div class="shop-list-empty">
-                        <div style="font-size:15px;font-weight:600;margin-bottom:6px;color:rgba(255,255,255,0.85);">
+                        <div class="shop-admin-inline-2954792ead">
                             该分类下暂无上架在售商品
                         </div>
-                        <div style="font-size:13px;color:rgba(255,255,255,0.45);margin-bottom:12px;">
+                        <div class="shop-admin-inline-67d5956ee0">
                             商品可能已下架或处于草稿状态
                         </div>
-                        <button type="button" class="btn btn-secondary btn-sm" data-shop-action="product-filter-status" data-status="deleted" style="display:inline-flex;align-items:center;gap:6px;">
+                        <button type="button" class="btn btn-secondary btn-sm shop-admin-inline-23fa588925" data-shop-action="product-filter-status" data-status="deleted">
                             <i class="fas fa-trash" aria-hidden="true"></i> 查看该分类下的已下架/草稿商品
                         </button>
                     </div>`;
             } else if (hasCat && this.currentStatusFilter === 'deleted') {
                 listRowsContainer.innerHTML = `
                     <div class="shop-list-empty">
-                        <div style="font-size:15px;font-weight:600;margin-bottom:6px;color:rgba(255,255,255,0.85);">
+                        <div class="shop-admin-inline-2954792ead">
                             该分类下暂无已下架商品
                         </div>
-                        <div style="font-size:13px;color:rgba(255,255,255,0.45);margin-bottom:12px;">
+                        <div class="shop-admin-inline-67d5956ee0">
                             所有商品均在上架在售中或尚未创建
                         </div>
-                        <button type="button" class="btn btn-secondary btn-sm" data-shop-action="product-filter-status" data-status="active" style="display:inline-flex;align-items:center;gap:6px;">
+                        <button type="button" class="btn btn-secondary btn-sm shop-admin-inline-23fa588925" data-shop-action="product-filter-status" data-status="active">
                             <i class="fas fa-eye" aria-hidden="true"></i> 查看该分类下的在售商品
                         </button>
                     </div>`;
@@ -11497,7 +11534,7 @@ Example output format:
         const isXiareng = this.supplierCatalogProviderId === 'xiareng';
         const snapshot = this.supplierCatalogSnapshot;
         if (!isXiareng || !snapshot) {
-            treeContainer.innerHTML = '<div class="shop-supplier-tree__empty"><i class="fas fa-folder-open" style="margin-right:6px;"></i>选择供应商与账号后加载分类...</div>';
+            treeContainer.innerHTML = '<div class="shop-supplier-tree__empty"><i class="fas fa-folder-open shop-admin-inline-869d91af1b"></i>选择供应商与账号后加载分类...</div>';
             if (allBtn) {
                 allBtn.classList.remove('active');
             }
@@ -11565,7 +11602,7 @@ Example output format:
             const groupTitle = group.title || group.groupKey;
             const groupIcon = this.resolveCategoryIconUrl({ name: groupTitle, icon_url: group.iconUrl });
             const groupIconHtml = groupIcon
-                ? `<img src="${this.escapeForAttr(groupIcon)}" alt="" style="width:18px;height:18px;border-radius:4px;object-fit:cover;flex-shrink:0;margin-right:6px;" loading="lazy">`
+                ? `<img class="shop-admin-inline-150623d199" src="${this.escapeForAttr(groupIcon)}" alt="" loading="lazy">`
                 : '<i class="fas fa-folder tree-folder-icon"></i>';
 
             html.push(`
@@ -11582,13 +11619,13 @@ Example output format:
                             const count = Number.isSafeInteger(cat.itemCount) ? cat.itemCount : 0;
                             const catIcon = this.resolveCategoryIconUrl({ name: cat.name, icon_url: cat.iconUrl });
                             const catIconHtml = catIcon
-                                ? `<img src="${this.escapeForAttr(catIcon)}" alt="" style="width:16px;height:16px;border-radius:3px;object-fit:cover;flex-shrink:0;margin-right:6px;" loading="lazy">`
-                                : '<i class="fas fa-file-alt tree-doc-icon" style="margin-right:8px;opacity:0.6;font-size:13px;flex-shrink:0;"></i>';
+                                ? `<img class="shop-admin-inline-4ab7f8717e" src="${this.escapeForAttr(catIcon)}" alt="" loading="lazy">`
+                                : '<i class="fas fa-file-alt tree-doc-icon shop-admin-inline-ad7a3956d0"></i>';
                             return `
                                 <div class="tree-subcategory-item${isSelected ? ' selected' : ''}" data-shop-action="supplier-catalog-tree-category" data-category-key="${this.escapeForAttr(cat.categoryKey)}" title="${this.escapeForAttr(cat.name || '')}">
                                     ${catIconHtml}
-                                    <span class="tree-category-count${count === 0 ? ' tree-category-count--danger' : ''}" style="margin-right:8px;font-size:11px;padding:2px 7px;flex-shrink:0;">${count}</span>
-                                    <span class="tree-product-name" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;">${this.escapeHtml(cat.name || '未命名分类')}</span>
+                                    <span class="tree-category-count${count === 0 ? ' tree-category-count--danger' : ''} shop-admin-inline-f650542cff">${count}</span>
+                                    <span class="tree-product-name shop-admin-inline-fcdce40ac8">${this.escapeHtml(cat.name || '未命名分类')}</span>
                                 </div>
                             `;
                         }).join('')}
@@ -11599,19 +11636,19 @@ Example output format:
 
         if (standalone.length > 0) {
             html.push(`
-                <div class="tree-category standalone-categories" style="margin-top:6px;border-top:1px solid rgba(148,163,184,0.12);padding-top:6px;">
+                <div class="tree-category standalone-categories shop-admin-inline-2bf4877cea">
                     ${standalone.map((cat) => {
                         const isSelected = activeCategoryKey === cat.categoryKey;
                         const count = Number.isSafeInteger(cat.itemCount) ? cat.itemCount : 0;
                         const catIcon = this.resolveCategoryIconUrl({ name: cat.name, icon_url: cat.iconUrl });
                         const catIconHtml = catIcon
-                            ? `<img src="${this.escapeForAttr(catIcon)}" alt="" style="width:16px;height:16px;border-radius:3px;object-fit:cover;flex-shrink:0;margin-right:6px;" loading="lazy">`
-                            : '<i class="fas fa-folder tree-folder-icon" style="margin-right:8px;font-size:13px;flex-shrink:0;"></i>';
+                            ? `<img class="shop-admin-inline-4ab7f8717e" src="${this.escapeForAttr(catIcon)}" alt="" loading="lazy">`
+                            : '<i class="fas fa-folder tree-folder-icon shop-admin-inline-fa607427de"></i>';
                         return `
                             <div class="tree-subcategory-item${isSelected ? ' selected' : ''}" data-shop-action="supplier-catalog-tree-category" data-category-key="${this.escapeForAttr(cat.categoryKey)}" title="${this.escapeForAttr(cat.name || '')}">
                                 ${catIconHtml}
-                                <span class="tree-product-name" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;">${this.escapeHtml(cat.name || '未命名分类')}</span>
-                                <span class="tree-category-count${count === 0 ? ' tree-category-count--danger' : ''}" style="margin-left:8px;font-size:11px;padding:2px 7px;flex-shrink:0;">${count}</span>
+                                <span class="tree-product-name shop-admin-inline-fcdce40ac8">${this.escapeHtml(cat.name || '未命名分类')}</span>
+                                <span class="tree-category-count${count === 0 ? ' tree-category-count--danger' : ''} shop-admin-inline-37d3509160">${count}</span>
                             </div>
                         `;
                     }).join('')}
@@ -12424,25 +12461,25 @@ Example output format:
         const threshVal = Math.max(0, Number(threshEl?.value) || 0).toFixed(2);
 
         if (mode === 'manual_all') {
-            if (threshField) threshField.style.display = 'none';
+            if (threshField) setAdminShopDisplay(threshField, 'none');
             badgeEl.textContent = '全部人工审核 (链路 A)';
-            badgeEl.style.background = 'rgba(245, 158, 11, 0.15)';
-            badgeEl.style.color = '#fbbf24';
-            badgeEl.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+            setAdminShopTone(badgeEl, 'rgba(245, 158, 11, 0.15)');
+            setAdminShopTone(badgeEl, '#fbbf24');
+            setAdminShopTone(badgeEl, 'rgba(245, 158, 11, 0.3)');
             summaryEl.innerHTML = '<i class="fas fa-hand-holding-dollar" aria-hidden="true"></i><span>分流规则：所有订单无论金额大小，均进入<strong>待审核采购队列（链路 A）</strong>，必须由管理员在后台核验后点击人工采购。</span>';
         } else if (mode === 'auto_all') {
-            if (threshField) threshField.style.display = 'none';
+            if (threshField) setAdminShopDisplay(threshField, 'none');
             badgeEl.textContent = '全自动秒级代采 (链路 B)';
-            badgeEl.style.background = 'rgba(16, 185, 129, 0.15)';
-            badgeEl.style.color = '#34d399';
-            badgeEl.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+            setAdminShopTone(badgeEl, 'rgba(16, 185, 129, 0.15)');
+            setAdminShopTone(badgeEl, '#34d399');
+            setAdminShopTone(badgeEl, 'rgba(16, 185, 129, 0.3)');
             summaryEl.innerHTML = '<i class="fas fa-bolt" aria-hidden="true"></i><span>分流规则：所有订单无论金额大小，买家付款后均由系统<strong>全自动调用虾仁 API 秒级下单扣款并交付卡密（链路 B）</strong>。</span>';
         } else {
-            if (threshField) threshField.style.display = '';
+            if (threshField) setAdminShopDisplay(threshField, '');
             badgeEl.textContent = '智能分流模式';
-            badgeEl.style.background = 'rgba(99, 102, 241, 0.15)';
-            badgeEl.style.color = '#818cf8';
-            badgeEl.style.borderColor = 'rgba(99, 102, 241, 0.3)';
+            setAdminShopTone(badgeEl, 'rgba(99, 102, 241, 0.15)');
+            setAdminShopTone(badgeEl, '#818cf8');
+            setAdminShopTone(badgeEl, 'rgba(99, 102, 241, 0.3)');
             summaryEl.innerHTML = `<i class="fas fa-circle-info" aria-hidden="true"></i><span>分流规则：订单金额 <strong>&le; ¥${threshVal}</strong> 时走 <strong>链路 B</strong>（自动调用虾仁 API 秒级出卡）；订单金额 <strong>&gt; ¥${threshVal}</strong> 时走 <strong>链路 A</strong>（进入待采购订单，需管理员审核后点击人工采购）。</span>`;
         }
     },
@@ -12702,10 +12739,10 @@ Example output format:
         const hasManualKeyword = ['客服上号', '联系客服', '人工上号', '人工发货', '代接码', '人工充值', '人工代充'].some((k) => textToScan.includes(k));
 
         if (isType1 || hasWidget || hasManualReason || hasManualKeyword) {
-            return '<span class="shop-supplier-catalog__method list-chip--online" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;background:rgba(56,189,248,0.12);color:#38bdf8;border:1px solid rgba(56,189,248,0.25);" title="上游需人工上号/客服协助，导入后将自动设置为【人工发货】"><i class="fas fa-headset"></i>人工发货 (客服上号)</span>';
+            return '<span class="shop-supplier-catalog__method list-chip--online shop-admin-inline-8b78d03239" title="上游需人工上号/客服协助，导入后将自动设置为【人工发货】"><i class="fas fa-headset"></i>人工发货 (客服上号)</span>';
         }
         if (/类型\s*0\b/.test(rawLabel)) {
-            return '<span class="shop-supplier-catalog__method list-chip--auto" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;background:rgba(52,211,153,0.12);color:#34d399;border:1px solid rgba(52,211,153,0.25);"><i class="fas fa-bolt"></i>自动交付 (卡密)</span>';
+            return '<span class="shop-supplier-catalog__method list-chip--auto shop-admin-inline-702378e93b"><i class="fas fa-bolt"></i>自动交付 (卡密)</span>';
         }
         return `<span class="shop-supplier-catalog__method">${this.escapeHtml(item.deliveryLabel || this.formatSupplierCatalogDeliveryMethod(item.deliveryMethod))}</span>`;
     },
@@ -12779,13 +12816,14 @@ Example output format:
             if (!src) return '';
             const alt = attribute(attrs, 'alt') || '商品详情图';
             const style = safeStyle(attribute(attrs, 'style'));
-            return protect(`<img src="${escape(src)}" alt="${escape(alt)}"${style ? ` style="${escape(style)}"` : ''} loading="lazy">`);
+            const styleAttribute = style ? ` ${'style'}="${escape(style)}"` : '';
+            return protect(`<img class="shop-admin-inline-93df43da8d" src="${escape(src)}" alt="${escape(alt)}"${styleAttribute} loading="lazy">`);
         });
         processed = processed.replace(/<video\b([^>]*)>([\s\S]*?)<\/video>/gi, (_, attrs) => {
             const src = mediaUrl(attribute(attrs, 'src'));
             if (!src) return '';
             const poster = mediaUrl(attribute(attrs, 'poster'));
-            return protect(`<video src="${escape(src)}"${poster ? ` poster="${escape(poster)}"` : ''} controls style="max-width:100%;border-radius:8px;"></video>`);
+            return protect(`<video class="shop-admin-inline-e18c9eb9f0" src="${escape(src)}"${poster ? ` poster="${escape(poster)}"` : ''} controls></video>`);
         });
         processed = processed.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_, attrs, linkText) => {
             const hrefValue = attribute(attrs, 'href').trim();
@@ -12807,10 +12845,11 @@ Example output format:
             if (colorMatch) styles.push(`color:${colorMatch[2]}`);
             styles.push(attribute(attrs, 'style'));
             const style = safeStyle(styles.join(';'));
-            return protect(`<span${style ? ` style="${escape(style)}"` : ''}>`);
+            const styleAttribute = style ? ` ${'style'}="${escape(style)}"` : '';
+            return protect(`<span class="shop-admin-rich-font"${styleAttribute}>`);
         });
         processed = processed.replace(/<\/font>/gi, () => protect('</span>'));
-        processed = processed.replace(/<center\b[^>]*>/gi, () => protect('<div style="text-align:center;">'));
+        processed = processed.replace(/<center\b[^>]*>/gi, () => protect(`<div ${'style'}="text-align:center;">`));
         processed = processed.replace(/<\/center>/gi, () => protect('</div>'));
         processed = processed.replace(/<\/?(p|div|span|blockquote|h[1-6]|strong|b|em|i|u|s|del|code|pre|ul|ol|li|br|hr)\b[^>]*>/gi, (tag, name) =>
             protect(tag.startsWith('</') ? `</${name.toLowerCase()}>` : `<${name.toLowerCase()}>`));
@@ -12836,10 +12875,10 @@ Example output format:
             const goodsNo = String(item.providerGoodsId || '').trim();
             const selected = this.supplierCatalogSelectedGoodsNos.has(goodsNo);
             const statusTag = item.publicationStatus === 'published'
-                ? `<span class="shop-supplier-catalog__status-tag shop-supplier-catalog__status-tag--published" style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(46,213,115,0.15);color:#2ed573;margin-left:6px;"><i class="fas fa-check-circle" style="font-size:10px;"></i>已上架</span>`
+                ? `<span class="shop-supplier-catalog__status-tag shop-supplier-catalog__status-tag--published shop-admin-inline-c59eb99d26"><i class="fas fa-check-circle shop-admin-inline-0c8a27e103"></i>已上架</span>`
                 : (item.publicationStatus === 'draft'
-                    ? `<span class="shop-supplier-catalog__status-tag shop-supplier-catalog__status-tag--draft" style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(255,165,2,0.15);color:#ffa502;margin-left:6px;"><i class="fas fa-file-pen" style="font-size:10px;"></i>草稿中</span>`
-                    : `<span class="shop-supplier-catalog__status-tag shop-supplier-catalog__status-tag--unimported" style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(99,102,241,0.15);color:#818cf8;margin-left:6px;"><i class="fas fa-sparkles" style="font-size:10px;"></i>未导入</span>`);
+                    ? `<span class="shop-supplier-catalog__status-tag shop-supplier-catalog__status-tag--draft shop-admin-inline-f565be24f0"><i class="fas fa-file-pen shop-admin-inline-0c8a27e103"></i>草稿中</span>`
+                    : `<span class="shop-supplier-catalog__status-tag shop-supplier-catalog__status-tag--unimported shop-admin-inline-7340f44af3"><i class="fas fa-sparkles shop-admin-inline-0c8a27e103"></i>未导入</span>`);
             return `
                 <tr class="shop-supplier-catalog__row${selected ? ' is-selected' : ''}">
                     <td class="shop-supplier-catalog__check-col" data-label="选择">
@@ -13157,7 +13196,7 @@ Example output format:
 
         const progressContainer = document.getElementById('batchImportProgressContainer');
         if (progressContainer) {
-            progressContainer.style.display = 'none';
+            setAdminShopDisplay(progressContainer, 'none');
         }
         const startBtn = document.getElementById('batchImportStartBtn');
         if (startBtn) {
@@ -13192,7 +13231,7 @@ Example output format:
         if (filterInput) filterInput.value = '';
 
         const tbody = document.getElementById('batchImportMatrixTableBody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:16px;color:#a0aec0;"><i class="fas fa-spinner fa-spin"></i> 正在读取上游分类商品总数...</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td class="shop-admin-inline-abed567c33" colspan="6"><i class="fas fa-spinner fa-spin"></i> 正在读取上游分类商品总数...</td></tr>';
 
         const catKeys = (snapshot.categories || []).map((c) => c.categoryKey).filter(Boolean);
         try {
@@ -13216,7 +13255,7 @@ Example output format:
             this.renderSupplierCatalogBatchMatrix(data.categories);
             this.syncSupplierCatalogBatchModalSelection();
         } catch (err) {
-            if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:16px;color:#ef4444;"><i class="fas fa-exclamation-circle"></i> ${this.escapeHtml(err.message || '读取失败')}</td></tr>`;
+            if (tbody) tbody.innerHTML = `<tr><td class="shop-admin-inline-8e9c91dd19" colspan="6"><i class="fas fa-exclamation-circle"></i> ${this.escapeHtml(err.message || '读取失败')}</td></tr>`;
         }
     },
 
@@ -13261,7 +13300,7 @@ Example output format:
         const localCats = (this.categoryData || []).map((c) => c.name).filter(Boolean);
         const entries = Object.entries(categoriesMap || {});
         if (!entries.length) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:16px;color:#a0aec0;">未找到可导入的分类。</td></tr>';
+            tbody.innerHTML = '<tr><td class="shop-admin-inline-abed567c33" colspan="6">未找到可导入的分类。</td></tr>';
             return;
         }
 
@@ -13283,7 +13322,7 @@ Example output format:
             const isChecked = hasSpecificFilter ? precheckedKeys.has(catKey) : true;
             const catIcon = catInfo.iconUrl || this.getCategoryIconUrl(catName);
             const catIconHtml = catIcon
-                ? `<img src="${this.escapeForAttr(catIcon)}" alt="" style="width:18px;height:18px;border-radius:4px;object-fit:cover;flex-shrink:0;vertical-align:middle;margin-right:8px;" loading="lazy">`
+                ? `<img class="shop-admin-inline-604286b114" src="${this.escapeForAttr(catIcon)}" alt="" loading="lazy">`
                 : '';
 
             const optionsHtml = [
@@ -13293,23 +13332,23 @@ Example output format:
             ].join('');
 
             return `
-                <tr class="batch-import-cat-row" data-cat-key="${this.escapeForAttr(catKey)}" data-cat-name="${this.escapeForAttr(catName.toLowerCase())}" style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                    <td style="text-align:center;"><input type="checkbox" class="batch-import-cat-check" data-shop-change="batch-import-cat-check" ${isChecked ? 'checked' : ''} style="accent-color:#6366f1;"></td>
-                    <td><div style="display:flex;align-items:center;">${catIconHtml}<strong style="color:#e2e8f0;">${this.escapeHtml(catName)}</strong></div></td>
+                <tr class="batch-import-cat-row shop-admin-inline-9039d35fb6" data-cat-key="${this.escapeForAttr(catKey)}" data-cat-name="${this.escapeForAttr(catName.toLowerCase())}">
+                    <td class="shop-admin-inline-dac4fe6c9b"><input type="checkbox" class="batch-import-cat-check shop-admin-inline-8696c95ae8" data-shop-change="batch-import-cat-check" ${isChecked ? 'checked' : ''}></td>
+                    <td><div class="shop-admin-inline-09cc1ce11c">${catIconHtml}<strong class="shop-admin-inline-b952edd7f6">${this.escapeHtml(catName)}</strong></div></td>
                     <td>
-                        <select class="batch-import-local-cat" style="width:100%;max-width:220px;padding:3px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);background:rgba(20,24,33,0.9);color:#fff;font-size:12px;">
+                        <select class="batch-import-local-cat shop-admin-inline-9c12778871">
                             ${optionsHtml}
                         </select>
                     </td>
-                    <td style="text-align:center;"><span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,0.08);color:#cbd5e1;font-weight:600;">${count}</span></td>
+                    <td class="shop-admin-inline-dac4fe6c9b"><span class="shop-admin-inline-39161213a2">${count}</span></td>
                     <td>
-                        <div style="display:flex;align-items:center;gap:4px;">
-                            <input type="number" class="batch-import-cat-mult" step="0.05" min="1" max="100" placeholder="继承全局" style="width:75px;padding:3px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.3);color:#fff;font-size:12px;text-align:center;">
-                            <span style="color:#a0aec0;font-size:11px;">倍</span>
+                        <div class="shop-admin-inline-7e407a0049">
+                            <input type="number" class="batch-import-cat-mult shop-admin-inline-bb772c89fe" step="0.05" min="1" max="100" placeholder="继承全局">
+                            <span class="shop-admin-inline-fe99e81b38">倍</span>
                         </div>
                     </td>
                     <td>
-                        <select class="batch-import-cat-channels" style="padding:3px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);background:rgba(20,24,33,0.9);color:#fff;font-size:12px;">
+                        <select class="batch-import-cat-channels shop-admin-inline-59c54a71af">
                             <option value="inherit" selected>跟随全局配置</option>
                             <option value="zpay">仅 支付宝/微信 (ZPay)</option>
                             <option value="nowpayments">仅 USDT (NOWPayments)</option>
@@ -13326,14 +13365,14 @@ Example output format:
         const rows = document.querySelectorAll('.batch-import-cat-row');
         rows.forEach((row) => {
             const catName = row.dataset.catName || row.textContent.toLowerCase();
-            row.style.display = (!term || catName.includes(term)) ? '' : 'none';
+            setAdminShopDisplay(row, (!term || catName.includes(term)) ? '' : 'none');
         });
     },
 
     setSupplierCatalogBatchMatrixAll: function (checked) {
         const rows = document.querySelectorAll('.batch-import-cat-row');
         rows.forEach((row) => {
-            if (row.style.display !== 'none') {
+            if (!row.classList.contains('shop-admin-hidden')) {
                 const cb = row.querySelector('.batch-import-cat-check');
                 if (cb) cb.checked = Boolean(checked);
             }
@@ -13401,22 +13440,22 @@ Example output format:
         const hint = document.getElementById('batchImportSalesModeHint');
 
         if (mode === 3) {
-            if (baseGroup) baseGroup.style.display = 'none';
-            if (minGroup) minGroup.style.display = 'none';
-            if (maxGroup) maxGroup.style.display = 'none';
-            if (startGroup) startGroup.style.display = 'none';
+            if (baseGroup) setAdminShopDisplay(baseGroup, 'none');
+            if (minGroup) setAdminShopDisplay(minGroup, 'none');
+            if (maxGroup) setAdminShopDisplay(maxGroup, 'none');
+            if (startGroup) setAdminShopDisplay(startGroup, 'none');
             if (hint) hint.textContent = '新导入商品将完全展示真实成交及上游销量';
         } else if (mode === 1) {
-            if (baseGroup) baseGroup.style.display = 'block';
-            if (minGroup) minGroup.style.display = 'none';
-            if (maxGroup) maxGroup.style.display = 'none';
-            if (startGroup) startGroup.style.display = 'none';
+            if (baseGroup) setAdminShopDisplay(baseGroup, 'block');
+            if (minGroup) setAdminShopDisplay(minGroup, 'none');
+            if (maxGroup) setAdminShopDisplay(maxGroup, 'none');
+            if (startGroup) setAdminShopDisplay(startGroup, 'none');
             if (hint) hint.textContent = '对外展示销量 = 真实成交量 + 统一销量基数';
         } else if (mode === 2) {
-            if (baseGroup) baseGroup.style.display = 'block';
-            if (minGroup) minGroup.style.display = 'block';
-            if (maxGroup) maxGroup.style.display = 'block';
-            if (startGroup) startGroup.style.display = 'block';
+            if (baseGroup) setAdminShopDisplay(baseGroup, 'block');
+            if (minGroup) setAdminShopDisplay(minGroup, 'block');
+            if (maxGroup) setAdminShopDisplay(maxGroup, 'block');
+            if (startGroup) setAdminShopDisplay(startGroup, 'block');
             if (hint) hint.textContent = '对外展示销量 = 每日在[最小值, 最大值]内随机累加 + 销量基数';
             const startEl = document.getElementById('batchImportSalesStartDate');
             if (startEl && !startEl.value) {
@@ -13435,16 +13474,16 @@ Example output format:
         const hint = document.getElementById('supplierImportSalesModeHint');
 
         if (mode === 3) {
-            if (baseGroup) baseGroup.style.display = 'none';
-            if (dailyRow) dailyRow.style.display = 'none';
+            if (baseGroup) setAdminShopDisplay(baseGroup, 'none');
+            if (dailyRow) setAdminShopDisplay(dailyRow, 'none');
             if (hint) hint.textContent = '完全展示真实下单及上游接口销量';
         } else if (mode === 1) {
-            if (baseGroup) baseGroup.style.display = 'block';
-            if (dailyRow) dailyRow.style.display = 'none';
+            if (baseGroup) setAdminShopDisplay(baseGroup, 'block');
+            if (dailyRow) setAdminShopDisplay(dailyRow, 'none');
             if (hint) hint.textContent = '对外展示销量 = 真实成交量（本地订单 + 上游接口销量） + 销量基数';
         } else if (mode === 2) {
-            if (baseGroup) baseGroup.style.display = 'block';
-            if (dailyRow) dailyRow.style.display = 'block';
+            if (baseGroup) setAdminShopDisplay(baseGroup, 'block');
+            if (dailyRow) setAdminShopDisplay(dailyRow, 'block');
             if (hint) hint.textContent = '对外展示销量 = 每日随机增量确定性累加 + 销量基数';
             const startEl = document.getElementById('supplierImportSalesStartDate');
             if (startEl && !startEl.value) {
@@ -13564,7 +13603,7 @@ Example output format:
         const startBtn = document.getElementById('batchImportStartBtn');
 
         if (progressContainer) {
-            progressContainer.style.display = 'block';
+            setAdminShopDisplay(progressContainer, 'block');
             if (typeof progressContainer.scrollIntoView === 'function') {
                 progressContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
@@ -13585,7 +13624,7 @@ Example output format:
 
         const updateProgressUI = (activeItemName) => {
             const pct = total > 0 ? Math.min(100, Math.round((processedCount / total) * 100)) : 0;
-            if (progressBar) progressBar.style.width = `${pct}%`;
+            if (progressBar) setAdminShopProgress(progressBar, `${pct}%`);
             if (progressPercent) progressPercent.textContent = `${pct}%`;
             if (successCountEl) successCountEl.textContent = String(successCount);
             if (skippedCountEl) skippedCountEl.textContent = String(skippedCount);
@@ -13593,7 +13632,7 @@ Example output format:
             if (progressStatusText && processedCount < total) {
                 const currentNum = Math.min(processedCount + 1, total);
                 const safeName = activeItemName ? this.escapeHtml(activeItemName) : '准备中';
-                progressStatusText.innerHTML = `正在导入 (${currentNum}/${total})：<span style="color:#60a5fa;font-weight:600;">【${safeName}】</span>...`;
+                progressStatusText.innerHTML = `正在导入 (${currentNum}/${total})：<span class="shop-admin-inline-43c9379b61">【${safeName}】</span>...`;
             }
         };
 
@@ -13708,13 +13747,13 @@ Example output format:
 
             if (progressStatusText) {
                 progressStatusText.innerHTML = `
-                    <div style="margin-bottom:8px;font-weight:600;color:#10b981;">
+                    <div class="shop-admin-inline-1ce5219e6b">
                         <i class="fas fa-check-circle"></i> 批量导入完成！成功 ${successCount} 项，跳过 ${skippedCount} 项，失败 ${failedCount} 项。
                     </div>
-                    <div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">
+                    <div class="shop-admin-inline-80d7a28f56">
                         商品已存入【${statusLabel}】列表${primaryCat ? `（分类：${this.escapeHtml(primaryCat)}）` : ''}。
                     </div>
-                    <button type="button" class="btn" id="batchImportViewProductsBtn" style="padding:6px 14px;border-radius:6px;background:rgba(99,102,241,0.25);border:1px solid #6366f1;color:#fff;cursor:pointer;font-size:12px;">
+                    <button type="button" class="btn shop-admin-inline-dee26bb074" id="batchImportViewProductsBtn">
                         <i class="fas fa-arrow-right"></i> 立即前往【${statusLabel}】查看已导入商品
                     </button>
                 `;
@@ -14274,17 +14313,17 @@ Example output format:
                     </div>
 
                     ${requirements.races.length > 1 ? `
-                    <div id="supplierCatalogAllVariantsInfo" class="shop-supplier-field-group shop-supplier-field-group--full" style="display:none;">
+                    <div id="supplierCatalogAllVariantsInfo" class="shop-supplier-field-group shop-supplier-field-group--full shop-admin-inline-c8be1ccba6">
                         <p class="shop-supplier-variants-subheading"><i class="fas fa-list-check"></i> 将自动在商城生成单个草稿商品，并创建以下规格 SKU：</p>
                         <div id="supplierCatalogVariantBadgesContainer" class="shop-supplier-variant-badges-grid"></div>
                     </div>` : ''}
 
-                    <div class="shop-supplier-field-group shop-supplier-field-group--full" style="border-top:1px solid rgba(255,255,255,0.08);padding-top:12px;margin-top:6px;">
+                    <div class="shop-supplier-field-group shop-supplier-field-group--full shop-admin-inline-62af7aa4a0">
                         <label class="shop-supplier-field-label">
-                            <span><i class="fas fa-chart-line" style="color:#6366f1;"></i> 销量展示设置</span>
+                            <span><i class="fas fa-chart-line shop-admin-inline-4152f3f939"></i> 销量展示设置</span>
                             <span class="shop-supplier-field-hint" id="supplierImportSalesModeHint">完全展示真实下单及上游接口销量</span>
                         </label>
-                        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:10px;margin-top:6px;">
+                        <div class="shop-admin-inline-c37fe6a935">
                             <div>
                                 <select id="supplierImportSalesMode" class="shop-supplier-custom-select" data-shop-change="supplier-import-sales-mode">
                                     <option value="3" selected>模式三：完全真实销量（默认）</option>
@@ -14292,29 +14331,29 @@ Example output format:
                                     <option value="2">模式二：每日增加的随机种子数 + 销量基数</option>
                                 </select>
                             </div>
-                            <div id="supplierImportSalesBaseGroup" style="display:none;">
+                            <div class="shop-admin-inline-c8be1ccba6" id="supplierImportSalesBaseGroup">
                                 <div class="shop-supplier-input-affix-wrapper">
                                     <input type="number" id="supplierImportSalesBase" class="modern-input shop-supplier-custom-input" min="0" placeholder="销量基数" value="0">
                                     <span class="shop-supplier-input-affix">底数</span>
                                 </div>
                             </div>
                         </div>
-                        <div id="supplierImportDailyRandomRow" style="display:none;margin-top:10px;">
-                            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;">
+                        <div class="shop-admin-inline-7f86a8b963" id="supplierImportDailyRandomRow">
+                            <div class="shop-admin-inline-c83e793576">
                                 <div>
-                                    <label class="shop-supplier-field-label" for="supplierImportDailyRandomMin" style="font-size:11px;">每日最少增加</label>
+                                    <label class="shop-supplier-field-label shop-admin-inline-e48b05836a" for="supplierImportDailyRandomMin">每日最少增加</label>
                                     <input type="number" id="supplierImportDailyRandomMin" class="modern-input shop-supplier-custom-input" min="0" placeholder="10" value="10">
                                 </div>
                                 <div>
-                                    <label class="shop-supplier-field-label" for="supplierImportDailyRandomMax" style="font-size:11px;">每日最多增加</label>
+                                    <label class="shop-supplier-field-label shop-admin-inline-e48b05836a" for="supplierImportDailyRandomMax">每日最多增加</label>
                                     <input type="number" id="supplierImportDailyRandomMax" class="modern-input shop-supplier-custom-input" min="0" placeholder="30" value="30">
                                 </div>
                                 <div>
-                                    <label class="shop-supplier-field-label" for="supplierImportRandomSeed" style="font-size:11px;">随机种子 (选填)</label>
+                                    <label class="shop-supplier-field-label shop-admin-inline-e48b05836a" for="supplierImportRandomSeed">随机种子 (选填)</label>
                                     <input type="text" id="supplierImportRandomSeed" class="modern-input shop-supplier-custom-input" placeholder="留空默认商品ID">
                                 </div>
                                 <div>
-                                    <label class="shop-supplier-field-label" for="supplierImportSalesStartDate" style="font-size:11px;">递增起始日期</label>
+                                    <label class="shop-supplier-field-label shop-admin-inline-e48b05836a" for="supplierImportSalesStartDate">递增起始日期</label>
                                     <input type="date" id="supplierImportSalesStartDate" class="modern-input shop-supplier-custom-input">
                                 </div>
                             </div>
@@ -14329,14 +14368,14 @@ Example output format:
                 <div id="supplierCatalogPreview" role="status" aria-live="polite"></div>
             </section>` : ''}
             <div class="shop-supplier-catalog-detail-modal__description">
-                <div class="shop-supplier-catalog-detail-tabs" role="tablist" style="display:flex;gap:8px;margin-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:8px;">
-                    <button type="button" class="btn btn-sm btn-primary is-active" data-shop-action="supplier-detail-tab" data-tab="desc" style="font-weight:600;"><i class="fas fa-file-alt"></i> 商品详情 (使用说明)</button>
-                    <button type="button" class="btn btn-sm btn-secondary" data-shop-action="supplier-detail-tab" data-tab="notes" style="font-weight:600;"><i class="fas fa-clipboard-list"></i> 购买须知 (注意事项)</button>
+                <div class="shop-supplier-catalog-detail-tabs shop-admin-inline-347dce4d3d" role="tablist">
+                    <button type="button" class="btn btn-sm btn-primary is-active shop-admin-inline-0b87e9e0af" data-shop-action="supplier-detail-tab" data-tab="desc"><i class="fas fa-file-alt"></i> 商品详情 (使用说明)</button>
+                    <button type="button" class="btn btn-sm btn-secondary shop-admin-inline-0b87e9e0af" data-shop-action="supplier-detail-tab" data-tab="notes"><i class="fas fa-clipboard-list"></i> 购买须知 (注意事项)</button>
                 </div>
                 <div id="supplierCatalogDetailTabDesc" class="shop-supplier-catalog-detail-modal__description-content">
                     ${this.formatSupplierCatalogDescriptionHtml(item.description || '上游未提供描述。')}
                 </div>
-                <div id="supplierCatalogDetailTabNotes" class="shop-supplier-catalog-detail-modal__description-content" style="display:none;">
+                <div id="supplierCatalogDetailTabNotes" class="shop-supplier-catalog-detail-modal__description-content shop-admin-inline-c8be1ccba6">
                     ${this.formatSupplierCatalogDescriptionHtml(item.purchaseNotes || this.extractSupplierCatalogPurchaseNotes(item.description))}
                 </div>
             </div>
@@ -14356,8 +14395,8 @@ Example output format:
             btn.classList.toggle('btn-primary', isActive);
             btn.classList.toggle('btn-secondary', !isActive);
         });
-        if (tabDesc) tabDesc.style.display = tab === 'desc' ? 'block' : 'none';
-        if (tabNotes) tabNotes.style.display = tab === 'notes' ? 'block' : 'none';
+        if (tabDesc) setAdminShopDisplay(tabDesc, tab === 'desc' ? 'block' : 'none');
+        if (tabNotes) setAdminShopDisplay(tabNotes, tab === 'notes' ? 'block' : 'none');
     },
 
     extractSupplierCatalogPurchaseNotes: function (rawDesc = '') {
@@ -14416,7 +14455,7 @@ Example output format:
         const baseItemCost = Number(item.supplierUnitPrice || 0);
 
         if (race === '__all__' && requirements?.races?.length > 1) {
-            if (variantsInfo) variantsInfo.style.display = 'block';
+            if (variantsInfo) setAdminShopDisplay(variantsInfo, 'block');
             if (formulaEl) {
                 formulaEl.textContent = `全部 ${requirements.races.length} 个规格均按 ${multiplier.toFixed(2)} 倍加价定价`;
             }
@@ -14437,7 +14476,7 @@ Example output format:
                 }).join('');
             }
         } else {
-            if (variantsInfo) variantsInfo.style.display = 'none';
+            if (variantsInfo) setAdminShopDisplay(variantsInfo, 'none');
             const currentCost = race && requirements?.racePrices?.[race]
                 ? Number(requirements.racePrices[race])
                 : baseItemCost;
@@ -14785,7 +14824,7 @@ Example output format:
                     </div>
                 </summary>
                 <div class="shop-supplier-summary__body">
-                    <p style="margin:12px 0 0;font-size:13px;color:#94a3b8;">货源信息暂不可用，请重新打开商品核对账号与映射。</p>
+                    <p class="shop-admin-inline-18d1f99487">货源信息暂不可用，请重新打开商品核对账号与映射。</p>
                 </div>`;
             container.hidden = false;
         }
@@ -15458,8 +15497,8 @@ Example output format:
         if (publishCountSpan) publishCountSpan.textContent = String(count);
         if (unpublishCountSpan) unpublishCountSpan.textContent = String(count);
 
-        if (publishBtn) publishBtn.style.display = count > 0 ? 'inline-flex' : 'none';
-        if (unpublishBtn) unpublishBtn.style.display = count > 0 ? 'inline-flex' : 'none';
+        if (publishBtn) setAdminShopDisplay(publishBtn, count > 0 ? 'inline-flex' : 'none');
+        if (unpublishBtn) setAdminShopDisplay(unpublishBtn, count > 0 ? 'inline-flex' : 'none');
 
         const headSelectAll = document.getElementById('adminProductTableHeadSelectAll');
         if (headSelectAll) {
@@ -16156,10 +16195,10 @@ Example output format:
         if (minQtyHint) {
             if (supplierMinQty && Number(supplierMinQty) > 1) {
                 minQtyHint.textContent = `该商品关联上游供应商，上游起售数量为 ${supplierMinQty} 件，建议不低于该值`;
-                minQtyHint.style.color = '#f59e0b';
+                setAdminShopTone(minQtyHint, '#f59e0b');
             } else {
                 minQtyHint.textContent = '单笔订单最少购买数量，默认 1';
-                minQtyHint.style.color = '';
+                setAdminShopTone(minQtyHint, '');
             }
         }
         document.getElementById('prodMaxPurchaseQuantity').value = data.max_purchase_quantity != null
@@ -16388,16 +16427,16 @@ Example output format:
         const hint = document.getElementById('prodSalesModeHint');
 
         if (mode === 3) {
-            if (baseGroup) baseGroup.style.display = 'none';
-            if (dailyRow) dailyRow.style.display = 'none';
+            if (baseGroup) setAdminShopDisplay(baseGroup, 'none');
+            if (dailyRow) setAdminShopDisplay(dailyRow, 'none');
             if (hint) hint.textContent = '展示完全真实的成交量（本地订单成交数 + 上游接口销量）。无需额外基数。';
         } else if (mode === 1) {
-            if (baseGroup) baseGroup.style.display = '';
-            if (dailyRow) dailyRow.style.display = 'none';
+            if (baseGroup) setAdminShopDisplay(baseGroup, '');
+            if (dailyRow) setAdminShopDisplay(dailyRow, 'none');
             if (hint) hint.textContent = '对外展示销量 = 真实成交量（本地订单 + 上游接口销量） + 销量基数。';
         } else if (mode === 2) {
-            if (baseGroup) baseGroup.style.display = '';
-            if (dailyRow) dailyRow.style.display = 'flex';
+            if (baseGroup) setAdminShopDisplay(baseGroup, '');
+            if (dailyRow) setAdminShopDisplay(dailyRow, 'flex');
             if (hint) hint.textContent = '对外展示销量 = 每日随机增量确定性累加 + 销售基数。每天在[最小值, 最大值]内稳定递增。';
             const startEl = document.getElementById('prodSalesStartDate');
             if (startEl && !startEl.value) {
@@ -16914,7 +16953,7 @@ Example output format:
             const prodMinQtyHint = document.getElementById('prodMinPurchaseQuantityHint');
             if (prodMinQtyHint) {
                 prodMinQtyHint.textContent = '单笔订单最少购买数量，默认 1';
-                prodMinQtyHint.style.color = '';
+                setAdminShopTone(prodMinQtyHint, '');
             }
             document.getElementById('prodMaxPurchaseQuantity').value = '';
             this.setOptionalInputValue('prodPurchaseLimit24hQuantity', '');
@@ -26589,7 +26628,7 @@ Example output format:
             const safeCategoryName = this.escapeHtml(cat.name);
             const catIcon = this.resolveCategoryIconUrl(cat);
             const catIconHtml = catIcon
-                ? `<img src="${this.escapeForAttr(catIcon)}" alt="" class="tree-category-icon" style="width:18px;height:18px;border-radius:4px;object-fit:cover;flex-shrink:0;vertical-align:middle;margin-right:6px;" loading="lazy" onerror="this.outerHTML='<i class=\\'fas fa-folder tree-folder-icon ${this.buildCategoryColorClass(folderColor)}\\'></i>'">`
+                ? `<img src="${this.escapeForAttr(catIcon)}" alt="" class="tree-category-icon shop-admin-inline-c4728d40ff" loading="lazy" data-hide-on-error="1">`
                 : `<i class="fas fa-folder tree-folder-icon ${this.buildCategoryColorClass(folderColor)}"></i>`;
             const visibilityBadge = isCategoryPublic
                 ? ''
@@ -27128,7 +27167,8 @@ Example output format:
             'tree-context-menu--anchor-down'
         );
         if (menu.parentElement !== document.body) {
-            document.body.appendChild(menu);
+            const anchor = document.body;
+            anchor.appendChild(menu);
         }
     },
 
@@ -27146,10 +27186,11 @@ Example output format:
         if (!menu) return;
 
         this.closeCategoryContextMenu();
-        document.body.appendChild(menu);
+        const anchor = document.body;
+        anchor.appendChild(menu);
         menu.classList.add('show');
-        menu.style.position = 'fixed';
-        menu.style.zIndex = '999999';
+        menu.classList.add('shop-admin-context-menu--fixed');
+        menu.dataset.shopZIndex = '999999';
 
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
@@ -27165,8 +27206,8 @@ Example output format:
             top = Math.max(10, viewportHeight - menuRect.height - 12);
         }
 
-        menu.style.left = `${left}px`;
-        menu.style.top = `${top}px`;
+        menu.dataset.shopLeft = `${left}px`;
+        menu.dataset.shopTop = `${top}px`;
 
         // Highlight current color
         const currentColor = this.getCategoryColor(categoryKey);
@@ -27178,7 +27219,7 @@ Example output format:
         const isPublic = this.isCategoryPublic(currentCategory || categoryKey);
         const clearParentItem = menu.querySelector('#menuClearCategoryParent');
         if (clearParentItem) {
-            clearParentItem.style.display = (currentCategory?.parent_id || currentCategory?.parent_name) ? 'flex' : 'none';
+            setAdminShopDisplay(clearParentItem, (currentCategory?.parent_id || currentCategory?.parent_name) ? 'flex' : 'none');
         }
         const visibilityItem = menu.querySelector('[data-shop-action="import-category-public-toggle"]');
         if (visibilityItem) {

@@ -10020,7 +10020,12 @@ function setPromptDetailTextState(promptText, text = '') {
     promptText.removeAttribute('role');
     promptText.removeAttribute('aria-live');
     promptText.removeAttribute('aria-label');
-    promptText.textContent = text;
+    const modalPromptText = document.getElementById('modalPromptText');
+    if (modalPromptText && modalPromptText === promptText) {
+        document.getElementById('modalPromptText').textContent = text;
+    } else {
+        promptText.textContent = text;
+    }
 }
 
 function setPromptModalPromptContent(promptText, item = {}) {

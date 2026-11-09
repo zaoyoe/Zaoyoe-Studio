@@ -204,13 +204,18 @@ async function parseJsonBody(req) {
     return raw ? JSON.parse(raw) : {};
 }
 
-async function getAuthenticatedUser(req, options = {}) {
+async function getAuthenticatedUser(req, options) {
+    options = options || {};
     let cookiePayload = null;
     let cookieLookupError = null;
     let cookieAuthError = null;
 
     try {
-        cookiePayload = options.bearerOnly || getBearerToken(req) ? null : await getAdminStudioCookiePayload(req);
+        if (options.bearerOnly || getBearerToken(req)) {
+            cookiePayload = null;
+        } else {
+            cookiePayload = await getAdminStudioCookiePayload(req);
+        }
     } catch (error) {
         cookieLookupError = createAuthServiceUnavailableError(error, 'Admin studio session unavailable');
     }

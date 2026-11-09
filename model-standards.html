@@ -32,7 +32,7 @@
     <link rel="stylesheet" href="css/framer_home.css?v=75e23ac2a6e7">
     <link rel="stylesheet" href="css/prompt-shell-page.css?v=75e23ac2a6e7">
     <link rel="stylesheet" href="css/privacy-page.css?v=75e23ac2a6e7">
-    <link rel="stylesheet" href="./css/desktop-nav-glass.css?v=75e23ac2a6e7">
+    <link rel="stylesheet" href="./css/desktop-nav-glass.css?v=20261108_14">
     <script type="module" src="./js/desktop-nav-glass.mjs?v=20261109_NAV_MOTION_1"></script>
 </head>
 
@@ -1742,71 +1742,10 @@
     <script src="js/theme-toggle.js?v=75e23ac2a6e7"></script>
     <script src="js/framer_home.js?v=75e23ac2a6e7&navModalResume=20261107_1"></script>
 
-    <script src="js/ai-media-model-capabilities.js?v=75e23ac2a6e7"></script>
+    <script src="js/ai-media-model-capabilities.js?v=20261108_IMAGE26_ALL_PROVIDERS_2"></script>
     <script src="js/model-standards-media.js?v=75e23ac2a6e7"></script>
     <!-- Interactive Search & ScrollSpy for Model Standards -->
-    <script>
-        (function() {
-            const filterInput = document.getElementById('modelFilterInput');
-            const navTree = document.getElementById('standardsNavTree');
-            const navItems = Array.from(document.querySelectorAll('.standards-nav-item'));
-            const modelCards = Array.from(document.querySelectorAll('.model-card'));
-            const navGroups = Array.from(document.querySelectorAll('.standards-nav-group'));
-            const sidebarCount = document.getElementById('sidebarModelCount');
-
-            // 1. Real-time Search Filter
-            if (filterInput) {
-                filterInput.addEventListener('input', function(e) {
-                    const query = String(e.target.value || '').trim().toLowerCase();
-                    let matchCount = 0;
-
-                    modelCards.forEach(card => {
-                        const text = (card.textContent || '').toLowerCase();
-                        const isMatch = !query || text.includes(query);
-                        card.style.display = isMatch ? '' : 'none';
-                        if (isMatch) matchCount++;
-                    });
-
-                    navItems.forEach(item => {
-                        const href = item.getAttribute('href') || '';
-                        const cardId = href.replace(/^#/, '');
-                        const card = document.getElementById(cardId);
-                        const isMatch = !query || (card && card.style.display !== 'none') || (item.textContent || '').toLowerCase().includes(query);
-                        item.classList.toggle('is-hidden', !isMatch);
-                    });
-
-                    navGroups.forEach(group => {
-                        const visibleChildren = group.querySelectorAll('.standards-nav-item:not(.is-hidden)');
-                        group.style.display = visibleChildren.length > 0 ? '' : 'none';
-                    });
-
-                    if (sidebarCount) {
-                        sidebarCount.textContent = query ? `${matchCount} 个匹配` : `${modelCards.length} 款模型`;
-                    }
-                });
-            }
-
-            // 2. ScrollSpy for Active Sidebar Item
-            if ('IntersectionObserver' in window && navItems.length) {
-                const observer = new IntersectionObserver((entries) => {
-                    entries.forEach(entry => {
-                        if (entry.isIntersecting) {
-                            const id = entry.target.id;
-                            navItems.forEach(item => {
-                                const active = item.getAttribute('href') === `#${id}`;
-                                item.classList.toggle('active', active);
-                            });
-                        }
-                    });
-                }, {
-                    rootMargin: '-100px 0px -60% 0px',
-                    threshold: 0
-                });
-
-                modelCards.forEach(card => observer.observe(card));
-            }
-        })();
-    </script>
+    <script src="inline-model-standards-10.js?v=20261109_INLINE_1"></script>
 </body>
 
 </html>
