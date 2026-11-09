@@ -18,7 +18,7 @@ test('TG public and admin entry pages stay independent from the existing shop', 
 
 test('TG domains route their roots to separate pages', () => {
     const vercel = JSON.parse(read('vercel.json'));
-    for (const [host, destination] of [['tg.fatherkey.com', '/tg'], ['tg.adm.fatherkey.com', '/tg-admin']]) {
+    for (const [host, destination] of [['tg.fatherkey.com', '/tg'], ['tg-adm.fatherkey.com', '/tg-admin']]) {
         const route = vercel.redirects.find((route) => route.source === '/' && route.has?.some((condition) => condition.type === 'host' && condition.value === host));
         assert.equal(route?.destination, destination);
         assert.equal(route.permanent, false);

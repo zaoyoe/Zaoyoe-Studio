@@ -56,7 +56,7 @@ function database(options = {}) {
         } };
 }
 function request(body = { kind: 'purchase', search_by: 'email', query: EMAIL }, overrides = {}) {
-    return { method: 'POST', url: '/api/admin/tg/order-query', headers: { origin: 'https://tg.adm.fatherkey.com', 'content-type': 'application/json' }, body, ...overrides };
+    return { method: 'POST', url: '/api/admin/tg/order-query', headers: { origin: 'https://tg-adm.fatherkey.com', 'content-type': 'application/json' }, body, ...overrides };
 }
 function setup(options = {}) {
     const db = database(options); const activity = [];
@@ -92,13 +92,13 @@ test('admin order query requires verified super administrator before reading or 
 });
 
 test('admin order query rejects foreign, missing and malformed origins and requires JSON', async () => {
-    for (const origin of [undefined, 'null', 'https://tg.fatherkey.com', 'https://www.fatherkey.com', 'https://tg.adm.fatherkey.com.evil.test', 'https://tg.adm.fatherkey.com/path']) {
+    for (const origin of [undefined, 'null', 'https://tg.fatherkey.com', 'https://www.fatherkey.com', 'https://tg-adm.fatherkey.com.evil.test', 'https://tg-adm.fatherkey.com/path']) {
         const { handler, db, activity } = setup();
         const res = await call(handler, request(undefined, { headers: { origin, 'content-type': 'application/json' } }));
         assert.equal(res.statusCode, 403); assert.deepEqual(activity, ['authenticate']); assert.equal(db.calls.length, 0);
     }
     const { handler, db, activity } = setup();
-    const res = await call(handler, request(undefined, { headers: { origin: 'https://tg.adm.fatherkey.com', 'content-type': 'text/plain' } }));
+    const res = await call(handler, request(undefined, { headers: { origin: 'https://tg-adm.fatherkey.com', 'content-type': 'text/plain' } }));
     assert.equal(res.statusCode, 415); assert.deepEqual(activity, ['authenticate']); assert.equal(db.calls.length, 0);
 });
 

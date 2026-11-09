@@ -177,7 +177,7 @@ function endpoint(options = {}) {
     return { activity, db, handler: createPurchasesHandler({ admin, env: { NODE_ENV: 'production' }, completion }) };
 }
 async function call(handler, overrides = {}) {
-    const req = { method: 'POST', url: '/api/admin/tg/purchases', headers: { origin: 'https://tg.adm.fatherkey.com', 'content-type': 'application/json' }, body: INPUT, ...overrides };
+    const req = { method: 'POST', url: '/api/admin/tg/purchases', headers: { origin: 'https://tg-adm.fatherkey.com', 'content-type': 'application/json' }, body: INPUT, ...overrides };
     const res = { headers: {}, setHeader(key, value) { this.headers[key.toLowerCase()] = value; } }; await handler(req, res); return res;
 }
 test('completion endpoint authenticates the superadmin, checks origin and forwards only the authenticated actor', async () => {

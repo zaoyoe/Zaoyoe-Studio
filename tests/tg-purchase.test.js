@@ -132,12 +132,12 @@ test('admin price update binds optimistic version to actual RPC contract and han
     let result = { data: { success: true, price: { ...PRODUCT, enabled: true, price_version: 4, unit_price_micros: 12000 } } };
     const supabase = { rpc: async (name, args) => { calls.push({ name, args }); return result; } };
     const handler = createProductsHandler({ admin: stubAdmin(supabase), env: ENV });
-    const accepted = await call(handler, { method: 'POST', body: { product_id: 'stars', enabled: true, unit_price_micros: 12000, expected_price_version: 3 }, headers: { origin: 'https://tg.adm.fatherkey.com', 'content-type': 'application/json' } });
+    const accepted = await call(handler, { method: 'POST', body: { product_id: 'stars', enabled: true, unit_price_micros: 12000, expected_price_version: 3 }, headers: { origin: 'https://tg-adm.fatherkey.com', 'content-type': 'application/json' } });
     assert.equal(accepted.statusCode, 200);
     assert.equal(calls[0].name, 'fn_tg_update_price');
     assert.deepEqual(calls[0].args, { p_product_key: 'stars', p_price_minor: null, p_unit_price_micros: 12000, p_sale_enabled: true, p_actor_id: UUID, p_expected_version: 3 });
     result = { data: { success: false, code: 'version_conflict' } };
-    const conflict = await call(handler, { method: 'POST', body: { product_id: 'stars', enabled: false, expected_price_version: 3 }, headers: { origin: 'https://tg.adm.fatherkey.com', 'content-type': 'application/json' } });
+    const conflict = await call(handler, { method: 'POST', body: { product_id: 'stars', enabled: false, expected_price_version: 3 }, headers: { origin: 'https://tg-adm.fatherkey.com', 'content-type': 'application/json' } });
     assert.equal(conflict.statusCode, 409);
     assert.equal(conflict.body.code, 'price_version_conflict');
     assert.equal(calls.length, 2);

@@ -512,7 +512,7 @@ test('direct purchase orders keep payment and fulfillment states separate and pa
 });
 
 test('Google login requires no typed email or password and uses a fixed same-origin PKCE callback', async () => {
-    for (const origin of ['http://127.0.0.1:8000', 'http://localhost:8000', 'https://tg.adm.fatherkey.com']) {
+    for (const origin of ['http://127.0.0.1:8000', 'http://localhost:8000', 'https://tg-adm.fatherkey.com']) {
         const ui = page({ signedIn: false, url: `${origin}/tg-admin.html?next=https://untrusted.example/` }); await ui.ready();
         ui.get('tgLoginForm').elements.email.value = '';
         ui.get('tgLoginForm').elements.password.value = '';
@@ -625,7 +625,7 @@ test('Google success without super-admin permissions cannot issue a host session
 });
 
 test('Google callback survives Vercel cleanUrls without changing the allowlisted redirect or PKCE marker', async () => {
-    const origin = 'https://tg.adm.fatherkey.com';
+    const origin = 'https://tg-adm.fatherkey.com';
     const redirectTo = `${origin}/tg-admin.html`;
     const url = `${origin}/tg-admin?code=clean_url_code`;
     const ui = page({ signedIn: false, url, pending: pendingMarker({ redirectTo }) });

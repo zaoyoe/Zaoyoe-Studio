@@ -42,7 +42,7 @@ async function withClearedSiteLayoutEnv(run) {
 test('site layout middleware registers root routes alongside admin studio protection', async () => {
     const middlewareModule = await loadFreshMiddlewareModule();
 
-    assert.deepEqual(middlewareModule.config.matcher, ['/', '/index.html', '/admin-studio', '/admin-studio.html']);
+    assert.deepEqual(middlewareModule.config.matcher, ['/', '/index', '/index.html', '/admin-studio', '/admin-studio.html', '/tg-admin', '/tg-admin/:path*', '/tg-admin.html']);
     assert.equal(middlewareModule.config.runtime, 'nodejs');
 });
 
@@ -94,7 +94,7 @@ test('TG roots never load or apply the existing cn/intl site layout and redirect
     const pages = [{ key: 'home', path: '/' }, { key: 'shop', path: '/shop.html' }];
     const expectedTargets = [
         ['tg.fatherkey.com', '/tg'],
-        ['tg.adm.fatherkey.com', '/tg-admin']
+        ['tg-adm.fatherkey.com', '/tg-admin']
     ];
     for (const [host, targetPath] of expectedTargets) {
         for (const pathname of ['/', '/index', '/index.html']) {
@@ -130,12 +130,12 @@ test('TG root middleware redirect preserves order lookup and OAuth callback quer
     assert.equal(storeOrdersResponse.headers.get('referrer-policy'), 'no-referrer');
 
     const adminCallbackResponse = await middlewareModule.default(
-        new Request('https://tg.adm.fatherkey.com/?code=pkce_code_123&state=state_abc')
+        new Request('https://tg-adm.fatherkey.com/?code=pkce_code_123&state=state_abc')
     );
     assert.equal(adminCallbackResponse.status, 307);
     assert.equal(
         adminCallbackResponse.headers.get('location'),
-        'https://tg.adm.fatherkey.com/tg-admin?code=pkce_code_123&state=state_abc'
+        'https://tg-adm.fatherkey.com/tg-admin?code=pkce_code_123&state=state_abc'
     );
     assert.equal(adminCallbackResponse.headers.get('cache-control'), 'no-store, max-age=0');
     assert.equal(adminCallbackResponse.headers.get('referrer-policy'), 'no-referrer');
@@ -144,9 +144,26 @@ test('TG root middleware redirect preserves order lookup and OAuth callback quer
 test('TG admin serves its login shell while protected APIs enforce administrator access', async () => {
     const middlewareModule = await loadFreshMiddlewareModule();
     for (const pathname of ['/tg-admin', '/tg-admin.html']) {
-        const response = await middlewareModule.default(new Request(`https://tg.adm.fatherkey.com${pathname}`));
+        const response = await middlewareModule.default(new Request(`https://tg-adm.fatherkey.com${pathname}`));
         assert.equal(response.status, 200);
         assert.equal(response.headers.get('x-middleware-next'), '1');
         assert.equal(response.headers.get('location'), null);
+    }
+});
+
+
+test('TG administrator aliases redirect to the canonical Access host without OAuth or lookup parameters', async () => {
+    const middlewareModule = await loadFreshMiddlewareModule();
+    for (const host of ['tg.adm.fatherkey.com', 'www.fatherkey.com', 'fatherkey.com', 'tg.fatherkey.com', 'www.zaoyoe.xyz', 'preview.vercel.app']) {
+        const paths = host === 'tg.adm.fatherkey.com'
+            ? ['/', '/index', '/index.html', '/tg-admin', '/tg-admin.html', '/tg-admin/settings']
+            : ['/tg-admin', '/tg-admin.html', '/tg-admin/settings'];
+        for (const pathname of paths) {
+            const response = await middlewareModule.default(new Request(`https://${host}${pathname}?code=sensitive&state=old&next=https://evil.test#access_token=secret`));
+            assert.equal(response.status, 307, `${host}${pathname}`);
+            assert.equal(response.headers.get('location'), 'https://tg-adm.fatherkey.com/tg-admin#');
+            assert.equal(response.headers.get('cache-control'), 'no-store, max-age=0');
+            assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+        }
     }
 });

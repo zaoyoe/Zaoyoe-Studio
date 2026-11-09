@@ -34,7 +34,7 @@ function getWithHost(url, host) {
 
 test('TG host redirects precede static index serving and private cache headers do not alter the existing site entry', () => {
     const config = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../vercel.json'), 'utf8'));
-    for (const [host, destination] of [['tg.fatherkey.com', '/tg'], ['tg.adm.fatherkey.com', '/tg-admin']]) {
+    for (const [host, destination] of [['tg.fatherkey.com', '/tg'], ['tg-adm.fatherkey.com', '/tg-admin']]) {
         for (const source of ['/', '/index', '/index.html']) {
             const rule = config.redirects.find((entry) => entry.source === source && entry.has?.some((item) => item.type === 'host' && item.value === host));
             assert.equal(rule?.destination, destination);
@@ -100,13 +100,24 @@ test('local preview serves TG pages by host and dispatches TG/auth APIs without 
     try {
         const { app } = createLocalPreviewApp({ repoRoot, envFiles: [], baseEnv: {} });
         await serve(app, async (base) => {
-            for (const [host, expected] of [['www.fatherkey.com', 'MAIN'], ['tg.fatherkey.com', 'TG_REDEEM'], ['tg.adm.fatherkey.com', 'TG_ADMIN']]) {
+            for (const [host, expected] of [['www.fatherkey.com', 'MAIN'], ['tg.fatherkey.com', 'TG_REDEEM'], ['tg-adm.fatherkey.com', 'TG_ADMIN']]) {
                 for (const pathname of ['/', '/index.html']) {
                     const response = await getWithHost(`${base}${pathname}`, host);
                     assert.equal(response.status, 200);
                     assert.equal(response.body, expected);
                     assert.equal(response.headers['cache-control'], 'no-store');
                 }
+            }
+            for (const [host, pathname] of [
+                ['tg.adm.fatherkey.com', '/'],
+                ['tg.adm.fatherkey.com', '/tg-admin.html'],
+                ['www.fatherkey.com', '/tg-admin'],
+                ['preview.vercel.app', '/tg-admin.html']
+            ]) {
+                const response = await getWithHost(`${base}${pathname}?code=sensitive&state=old`, host);
+                assert.equal(response.status, 307);
+                assert.equal(response.headers.location, 'https://tg-adm.fatherkey.com/tg-admin#');
+                assert.equal(response.headers['referrer-policy'], 'no-referrer');
             }
             const catalog = await fetch(`${base}/api/tg/catalog`);
             assert.equal((await catalog.json()).url, '/api/public?scope=tg&route=catalog');
@@ -151,21 +162,26 @@ test('verify CORS grants TG hosts only TG and required admin login endpoints', a
                 ['/api/tg/purchase/status', 'https://tg.fatherkey.com', true],
                 ['/api/tg/purchase/cancel', 'https://tg.fatherkey.com', true],
                 ['/api/tg/preview', 'https://tg.fatherkey.com', true],
-                ['/api/admin/tg/orders', 'https://tg.adm.fatherkey.com', true],
-                ['/api/admin/tg/products', 'https://tg.adm.fatherkey.com', true],
-                ['/api/admin/tg/purchases', 'https://tg.adm.fatherkey.com', true],
-                ['/api/admin?route=tg/codes', 'https://tg.adm.fatherkey.com', true],
-                ['/api/admin/access/session', 'https://tg.adm.fatherkey.com', true],
-                ['/api/auth/login-security', 'https://tg.adm.fatherkey.com', true],
-                ['/api/public?scope=auth&route=login-security', 'https://tg.adm.fatherkey.com', true],
+                ['/api/admin/tg/orders', 'https://tg-adm.fatherkey.com', true],
+                ['/api/admin/tg/products', 'https://tg-adm.fatherkey.com', true],
+                ['/api/admin/tg/purchases', 'https://tg-adm.fatherkey.com', true],
+                ['/api/admin?route=tg/codes', 'https://tg-adm.fatherkey.com', true],
+                ['/api/admin/access/session', 'https://tg-adm.fatherkey.com', true],
+                ['/api/auth/login-security', 'https://tg-adm.fatherkey.com', true],
+                ['/api/public?scope=auth&route=login-security', 'https://tg-adm.fatherkey.com', true],
                 ['/api/admin/tg/orders', 'https://tg.fatherkey.com', false],
                 ['/api/auth/login-security', 'https://tg.fatherkey.com', false],
                 ['/api/shop/purchase', 'https://tg.fatherkey.com', false],
-                ['/api/wallet/overview', 'https://tg.adm.fatherkey.com', false],
-                ['/api/admin/shop/orders', 'https://tg.adm.fatherkey.com', false],
+                ['/api/wallet/overview', 'https://tg-adm.fatherkey.com', false],
+                ['/api/admin/shop/orders', 'https://tg-adm.fatherkey.com', false],
                 ['/api/tg/catalog?scope=wallet&route=overview', 'https://tg.fatherkey.com', false],
-                ['/api/admin/tg/orders?route=shop/orders', 'https://tg.adm.fatherkey.com', false],
-                ['/api/public?scope=payments&route=create', 'https://tg.adm.fatherkey.com', false],
+                ['/api/admin/tg/orders?route=shop/orders', 'https://tg-adm.fatherkey.com', false],
+                ['/api/public?scope=payments&route=create', 'https://tg-adm.fatherkey.com', false],
+                ['/api/admin/tg/orders', 'https://tg.adm.fatherkey.com', false],
+                ['/api/admin/access/session', 'https://tg.adm.fatherkey.com', false],
+                ['/api/auth/login-security', 'https://tg.adm.fatherkey.com', false],
+                ['/api/tg/catalog', 'https://tg.adm.fatherkey.com', false],
+                ['/api/admin/tg/orders', 'https://tg-adm.fatherkey.com.evil.test', false],
                 ['/api/shop/purchase', 'https://www.fatherkey.com', true]
             ];
             for (const [pathname, origin, allowed] of cases) {

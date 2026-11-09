@@ -237,14 +237,14 @@ function endpoint(options = {}) {
     return { activity, db, handler: createOrdersHandler({ admin, env: { NODE_ENV: 'production' }, resolution }) };
 }
 async function invoke(handler, patch = {}) {
-    const req = { method: 'POST', url: '/api/admin/tg/orders', headers: { origin: 'https://tg.adm.fatherkey.com', 'content-type': 'application/json' }, body: complete, ...patch };
+    const req = { method: 'POST', url: '/api/admin/tg/orders', headers: { origin: 'https://tg-adm.fatherkey.com', 'content-type': 'application/json' }, body: complete, ...patch };
     const res = { headers: {}, setHeader(k, v) { this.headers[k.toLowerCase()] = v; } }; await handler(req, res); return res;
 }
 test('redemption actions require authenticated superadmin, dedicated origin and JSON before dispatch', async () => {
     const f = endpoint(); const res = await invoke(f.handler); assert.equal(res.statusCode, 200); assert.equal(res.headers['cache-control'], 'no-store');
     assert.deepEqual(f.activity, ['authenticate', { supabase: f.db, actorId: ACTOR, input: complete }]);
     for (const options of [{ authError: true }, { superAdmin: false }]) { const denied = endpoint(options); assert.ok([401, 403].includes((await invoke(denied.handler)).statusCode)); assert.equal(denied.activity.length, 1); }
-    for (const headers of [{ origin: 'https://untrusted.invalid', 'content-type': 'application/json' }, { origin: 'https://tg.adm.fatherkey.com', 'content-type': 'text/plain' }]) {
+    for (const headers of [{ origin: 'https://untrusted.invalid', 'content-type': 'application/json' }, { origin: 'https://tg-adm.fatherkey.com', 'content-type': 'text/plain' }]) {
         const denied = endpoint(); assert.ok([403, 415].includes((await invoke(denied.handler, { headers })).statusCode)); assert.equal(denied.activity.length, 1);
     }
     const denied = endpoint({ error: Object.assign(new Error('版本已变化'), { code: 'redemption_resolution_stale', statusCode: 409 }) });

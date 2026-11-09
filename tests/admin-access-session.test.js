@@ -130,6 +130,28 @@ test('session mutations reject absent, malformed and untrusted origins',async()=
         });
     }
 });
+test('TG canonical admin origin can issue and revoke sessions',async()=>{
+    await run({env:{NODE_ENV:'production'}},async(handler)=>{
+        for(const method of ['POST','DELETE']) {
+            const res=response();
+            await handler(request(method,{origin:'https://tg-adm.fatherkey.com',host:'tg-adm.fatherkey.com'}),res);
+            assert.equal(res.statusCode,200);
+            assert.match(res.headers['set-cookie'],/Secure/);
+        }
+    });
+});
+test('retired and lookalike TG admin origins cannot mutate sessions',async()=>{
+    for(const origin of ['https://tg.adm.fatherkey.com','https://tg-adm.fatherkey.com.evil.test','https://tg-adm.fatherkey.com/','http://tg-adm.fatherkey.com']) {
+        await run({env:{NODE_ENV:'production'}},async(handler,state)=>{
+            for(const method of ['POST','DELETE']) {
+                const res=response();
+                await handler(request(method,{origin,host:'tg-adm.fatherkey.com'}),res);
+                assert.equal(res.statusCode,403);
+            }
+            assert.equal(state.calls.length,0);
+        });
+    }
+});
 test('only exact same-origin local preview HTTP gets a nonsecure cookie',async()=>{
     await run({},async(handler)=>{
         for(const method of ['POST','DELETE']) {

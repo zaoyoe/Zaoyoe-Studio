@@ -237,7 +237,7 @@ function resolveLocalPreviewTgPage(rawUrl = '/', hostname = '') {
     if (!['/', '/index', '/index.html'].includes(pathname)) return '';
     const normalizedHost = String(hostname || '').trim().toLowerCase().replace(/:\d+$/, '');
     if (normalizedHost === 'tg.fatherkey.com') return 'tg.html';
-    if (normalizedHost === 'tg.adm.fatherkey.com') return 'tg-admin.html';
+    if (normalizedHost === 'tg-adm.fatherkey.com') return 'tg-admin.html';
     return '';
 }
 
@@ -605,6 +605,20 @@ function createLocalPreviewApp(options = {}) {
     app.use((_req, res, next) => {
         res.setHeader('X-Local-Preview-Source-Commit', sourceCommit);
         next();
+    });
+
+    app.use((req, res, next) => {
+        const host = String(req.hostname || '').toLowerCase();
+        const pathname = new URL(req.originalUrl || req.url, 'http://preview.local').pathname;
+        const adminPath = ['/tg-admin', '/tg-admin.html'].includes(pathname)
+            || pathname.startsWith('/tg-admin/');
+        if (host === 'tg.adm.fatherkey.com'
+            || (adminPath && !['tg-adm.fatherkey.com', 'localhost', '127.0.0.1'].includes(host))) {
+            res.setHeader('Cache-Control', 'no-store, max-age=0');
+            res.setHeader('Referrer-Policy', 'no-referrer');
+            return res.redirect(307, 'https://tg-adm.fatherkey.com/tg-admin#');
+        }
+        return next();
     });
 
     const defaultJsonBodyParser = express.json({

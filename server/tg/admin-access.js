@@ -3,7 +3,7 @@
 const sharedAdmin = require('../../api/_lib/admin');
 const { _private: { isProductionLikeRuntime } } = require('../../api/_lib/request-security');
 
-const TG_ADMIN_ORIGIN = 'https://tg.adm.fatherkey.com';
+const TG_ADMIN_ORIGIN = 'https://tg-adm.fatherkey.com';
 
 function requireTgAdminWriteRequest(req, env = process.env) {
     const headers = req?.headers || {};

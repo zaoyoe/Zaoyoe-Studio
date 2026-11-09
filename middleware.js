@@ -2,10 +2,13 @@ import { createClient } from '@supabase/supabase-js';
 import { next } from '@vercel/functions';
 
 const ADMIN_STUDIO_PATHS = new Set(['/admin-studio', '/admin-studio.html']);
+const TG_ADMIN_ORIGIN = 'https://tg-adm.fatherkey.com';
+const RETIRED_TG_ADMIN_HOST = 'tg.adm.fatherkey.com';
+const TG_ADMIN_PATHS = new Set(['/tg-admin', '/tg-admin.html']);
 const ROOT_ENTRY_PATHS = new Set(['/', '/index', '/index.html']);
 const INDEPENDENT_TG_ROOT_TARGETS = Object.freeze({
     'tg.fatherkey.com': '/tg',
-    'tg.adm.fatherkey.com': '/tg-admin'
+    'tg-adm.fatherkey.com': '/tg-admin'
 });
 const INDEPENDENT_TG_HOSTS = new Set(Object.keys(INDEPENDENT_TG_ROOT_TARGETS));
 const INDEPENDENT_TG_ROOT_HEADERS = Object.freeze({
@@ -136,6 +139,26 @@ export function buildIndependentTgRootRedirectUrl(requestUrl) {
     const targetUrl = new URL(targetPath, url);
     targetUrl.search = url.search;
     return targetUrl;
+}
+
+// Only the canonical host may serve the TG administrator shell. Old hosts
+// and deployment aliases must not forward OAuth codes or URL fragments across
+// origins. An explicit empty fragment prevents browser fragment inheritance.
+// PKCE state belongs to the browser session on its original origin.
+function maybeHandleTgAdminCanonicalRedirect(requestUrl) {
+    const isRetiredHost = requestUrl.hostname === RETIRED_TG_ADMIN_HOST;
+    const isAdminPath = TG_ADMIN_PATHS.has(requestUrl.pathname)
+        || requestUrl.pathname.startsWith('/tg-admin/');
+    if (!isRetiredHost && !isAdminPath) return null;
+    if (requestUrl.origin === TG_ADMIN_ORIGIN) return null;
+    const localPreview = process.env.VERCEL !== '1'
+        && process.env.NODE_ENV !== 'production'
+        && ['localhost', '127.0.0.1'].includes(requestUrl.hostname);
+    if (!isRetiredHost && localPreview) return null;
+    return new Response(null, {
+        status: 307,
+        headers: { ...INDEPENDENT_TG_ROOT_HEADERS, Location: `${TG_ADMIN_ORIGIN}/tg-admin#` }
+    });
 }
 
 function maybeHandleIndependentTgRootRedirect(requestUrl) {
@@ -309,6 +332,9 @@ async function handleAdminStudioAccess(request, requestUrl) {
 export default async function middleware(request) {
     const requestUrl = new URL(request.url);
 
+    const tgAdminRedirect = maybeHandleTgAdminCanonicalRedirect(requestUrl);
+    if (tgAdminRedirect) return tgAdminRedirect;
+
     const tgRootRedirect = maybeHandleIndependentTgRootRedirect(requestUrl);
     if (tgRootRedirect) {
         return tgRootRedirect;
@@ -327,6 +353,6 @@ export default async function middleware(request) {
 }
 
 export const config = {
-    matcher: ['/', '/index.html', '/admin-studio', '/admin-studio.html'],
+    matcher: ['/', '/index', '/index.html', '/admin-studio', '/admin-studio.html', '/tg-admin', '/tg-admin/:path*', '/tg-admin.html'],
     runtime: 'nodejs'
 };
