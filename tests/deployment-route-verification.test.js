@@ -15,6 +15,7 @@ test('verify checks both public proxy and direct API routes independently', asyn
         seen.push(url);
         assert.equal(init.redirect, 'manual');
         assert.equal(init.headers.authorization, undefined);
+        assert.match(init.headers['user-agent'], /Mozilla\/5\.0/);
         return json(url.endsWith('/healthz') ? { status: 'ok' } : { success: true });
     }));
     assert.equal(result.ok, true);

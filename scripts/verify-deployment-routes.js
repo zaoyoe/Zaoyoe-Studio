@@ -17,6 +17,8 @@ const ROUTES = Object.freeze({
 });
 const SAFE_HEADERS = ['server', 'cf-ray', 'cf-mitigated', 'content-type'];
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const USER_AGENT = process.env.VERIFY_USER_AGENT || DEFAULT_USER_AGENT;
 
 function diagnosticHeaders(response) {
     const headers = {};
@@ -63,7 +65,7 @@ async function checkAttempt(route, fetchImpl, timeoutMs) {
         const response = await fetchImpl(route.url, {
             redirect: 'manual',
             signal: controller.signal,
-            headers: { accept: 'application/json', 'user-agent': 'Zaoyoe-Deployment-Verification/1.0' }
+            headers: { accept: 'application/json', 'user-agent': USER_AGENT }
         });
         diagnostics = { status: response.status, headers: diagnosticHeaders(response) };
         if (response.status !== 200) {
