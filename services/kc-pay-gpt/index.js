@@ -773,7 +773,9 @@ async function run() {
                     skipOnlineProbe: true,
                     cookieVerified: true,
                     deviceId: loginInfo?.deviceId,
-                    cookieHeader: loginInfo?.cookieHeader
+                    cookieHeader: loginInfo?.cookieHeader,
+                    accessToken: loginInfo?.accessToken,
+                    sessionData: loginInfo?.session
                 });
                 chatgptBrowserSessionInstalled = true;
             }

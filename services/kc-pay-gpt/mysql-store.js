@@ -291,7 +291,8 @@ async function ensureGptApiConfigDefaults() {
         ['gpt_api_key', ''],
         ['gpt_api_plan_key', 'plus'],
         ['gpt_api_country', 'PH'],
-        ['gpt_api_currency', 'PHP']
+        ['gpt_api_currency', 'PHP'],
+        ['card_max_usage_limit', '0']
     ];
     for (const [key, value] of defaults) {
         await runExecute(
@@ -447,6 +448,7 @@ async function ensureLegacyColumns() {
     await ensureColumn('card_assets', 'payment_address_state', "VARCHAR(100) NOT NULL DEFAULT '' COMMENT '支付绑定地址-州'");
     await ensureColumn('card_assets', 'payment_address_postal', "VARCHAR(20) NOT NULL DEFAULT '' COMMENT '支付绑定地址-邮编'");
     await ensureColumn('card_assets', 'payment_address_id', 'BIGINT UNSIGNED NULL DEFAULT NULL COMMENT \'关联免税地址模板ID\'');
+    await ensureColumn('card_assets', 'max_usage_limit', "INT NULL DEFAULT NULL COMMENT '单卡最大成功扣款次数限制，NULL表示遵循全局设置'");
     await ensureColumn('card_assets', 'created_at', 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
     await ensureColumn('card_assets', 'updated_at', 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
 
@@ -1234,7 +1236,39 @@ async function listCdks() {
                       AND l.token_preview != ''
                     ORDER BY l.created_at DESC, l.id DESC
                     LIMIT 1
-                ) AS session_job_key
+                ) AS session_job_key,
+                (
+                    SELECT COALESCE(b.card_last4, l.card_last4)
+                    FROM task_logs l
+                    LEFT JOIN billing_records b ON b.cdk_code = c.cdk_code AND b.status = 'success'
+                    WHERE l.cdk_code = c.cdk_code
+                      AND (l.card_last4 IS NOT NULL OR b.card_last4 IS NOT NULL)
+                    ORDER BY l.id DESC
+                    LIMIT 1
+                ) AS card_last4,
+                (
+                    SELECT b.card_number
+                    FROM billing_records b
+                    WHERE b.cdk_code = c.cdk_code AND b.status = 'success'
+                    ORDER BY b.id DESC
+                    LIMIT 1
+                ) AS card_number,
+                (
+                    SELECT l.auto_renew_status
+                    FROM task_logs l
+                    WHERE l.cdk_code = c.cdk_code
+                      AND l.auto_renew_status IS NOT NULL
+                    ORDER BY l.id DESC
+                    LIMIT 1
+                ) AS auto_renew_status,
+                (
+                    SELECT l.auto_renew_message
+                    FROM task_logs l
+                    WHERE l.cdk_code = c.cdk_code
+                      AND l.auto_renew_status IS NOT NULL
+                    ORDER BY l.id DESC
+                    LIMIT 1
+                ) AS auto_renew_message
          FROM cdk_codes c
          WHERE c.is_active = 1
            AND (c.type = '自助' OR c.type IS NULL OR c.type = '')
@@ -1270,7 +1304,11 @@ async function listCdks() {
             ? new Date(row.created_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
             : null,
         session_preview: row.session_preview || null,
-        session_job_key: row.session_job_key || null
+        session_job_key: row.session_job_key || null,
+        card_last4: row.card_last4 || (row.card_number ? String(row.card_number).slice(-4) : null),
+        card_number: row.card_number || null,
+        auto_renew_status: row.auto_renew_status || null,
+        auto_renew_message: row.auto_renew_message || null
     }));
 }
 
@@ -1599,7 +1637,7 @@ async function deleteCardAsset(cardNumber) {
 async function listAdminCardSummaries() {
     return runQuery(
         `SELECT id, RIGHT(card_number, 4) AS last4,
-                is_active, usage_count, last_used_at, status, cooldown_until
+                is_active, usage_count, max_usage_limit, last_used_at, status, cooldown_until
          FROM card_assets
          WHERE 1 = 1${LEGACY_CARD_FENCE_SQL}
          ORDER BY sort_order ASC, id ASC`
@@ -3857,21 +3895,22 @@ async function setCardFrozen(cardId, freeze = true) {
 }
 
 /**
- * 记录卡片使用，管理 24h 内使用计数和冷却机制。
+ * 记录卡片使用，管理 24h 内使用计数、冷却机制及最大扣款成功次数限制。
  * - 如果 daily_usage_reset_at 为 NULL 或早于 24h 前，重置计数为 1 并设 reset_at = NOW()
  * - 否则递增 daily_usage_count
- * - 如果递增后 daily_usage_count >= 3，设置 cooldown_until = NOW() + 24h
- * 同时更新 usage_count（总使用次数）和 last_used_at。
+ * - 累计 usage_count = usage_count + 1
+ * - 如果达到单卡或全局最大扣款成功次数限制 (max_usage_limit > 0)，自动将卡片冻结 (is_active = 0, status = '已冻结')
+ * - 否则如果递增后 daily_usage_count >= 3，设置 cooldown_until = NOW() + 24h
  * @param {number} cardId - 卡片 ID
- * @returns {{ dailyUsageCount: number, cooledDown: boolean }} 更新后的日使用次数及是否触发冷却
+ * @returns {{ dailyUsageCount: number, cooledDown: boolean, autoFrozen: boolean, usageCount: number, maxUsageLimit: number }}
  */
 async function recordCardUsage(cardId, ownerKey) {
     const id = requireOwnedAssetId(cardId, ownerKey);
 
     return withTransaction(async (connection) => {
-        // 获取当前卡片状态
+        // 获取当前卡片状态与限制
         const [rows] = await connection.query(
-            `SELECT daily_usage_count, daily_usage_reset_at
+            `SELECT daily_usage_count, daily_usage_reset_at, usage_count, max_usage_limit, card_number
              FROM card_assets
              WHERE ${OWNED_PAYMENT_CARD_SQL}
              FOR UPDATE`,
@@ -3888,9 +3927,11 @@ async function recordCardUsage(cardId, ownerKey) {
         const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
         let newDailyCount;
+        const currentUsageCount = Number(row.usage_count || 0);
+        const newUsageCount = currentUsageCount + 1;
 
         if (!resetAt || resetAt < twentyFourHoursAgo) {
-            // 24h 窗口过期或未设置，重置计数
+            // 24h 窗口过期或未设置，重置日计数
             newDailyCount = 1;
             const [result] = await connection.query(
                 `UPDATE card_assets
@@ -3903,7 +3944,7 @@ async function recordCardUsage(cardId, ownerKey) {
             );
             requireOwnedCardChange(result);
         } else {
-            // 在 24h 窗口内，递增
+            // 在 24h 窗口内，递增日计数
             newDailyCount = Number(row.daily_usage_count || 0) + 1;
             const [result] = await connection.query(
                 `UPDATE card_assets
@@ -3916,9 +3957,42 @@ async function recordCardUsage(cardId, ownerKey) {
             requireOwnedCardChange(result);
         }
 
-        // 检查是否需要冷却
+        // 检查全局/单卡最大使用次数限制（达到后自动冻结）
+        let globalLimit = 0;
+        try {
+            const [cfgRows] = await connection.query(
+                `SELECT config_value FROM app_config WHERE config_key = 'card_max_usage_limit' LIMIT 1`
+            );
+            if (cfgRows && cfgRows.length) {
+                globalLimit = Math.max(0, parseInt(cfgRows[0].config_value, 10) || 0);
+            }
+        } catch (_) {}
+
+        const cardLimit = row.max_usage_limit !== null && row.max_usage_limit !== undefined
+            ? Number(row.max_usage_limit)
+            : null;
+        const effectiveLimit = cardLimit !== null && cardLimit > 0 ? cardLimit : globalLimit;
+
+        let autoFrozen = false;
+        if (effectiveLimit > 0 && newUsageCount >= effectiveLimit) {
+            const [freezeResult] = await connection.query(
+                `UPDATE card_assets
+                 SET is_active = 0,
+                     status = '已冻结',
+                     locked_at = NULL,
+                     locked_by = NULL
+                 WHERE ${OWNED_PAYMENT_CARD_SQL}`,
+                [id, ownerKey]
+            );
+            requireOwnedCardChange(freezeResult);
+            autoFrozen = true;
+            const last4 = String(row.card_number || '').slice(-4) || cardId;
+            console.log(`[CardPool] 银行卡 ...${last4} 扣款成功次数达到上限 (${newUsageCount}/${effectiveLimit})，已自动冻结`);
+        }
+
+        // 检查是否需要每日使用冷却 (未被自动冻结时才进入日常24h冷却)
         let cooledDown = false;
-        if (newDailyCount >= 3) {
+        if (!autoFrozen && newDailyCount >= 3) {
             const [result] = await connection.query(
                 `UPDATE card_assets
                  SET cooldown_until = DATE_ADD(NOW(), INTERVAL 24 HOUR)
@@ -3929,8 +4003,89 @@ async function recordCardUsage(cardId, ownerKey) {
             cooledDown = true;
         }
 
-        return { dailyUsageCount: newDailyCount, cooledDown };
+        return {
+            dailyUsageCount: newDailyCount,
+            cooledDown,
+            autoFrozen,
+            usageCount: newUsageCount,
+            maxUsageLimit: effectiveLimit
+        };
     });
+}
+
+/**
+ * 获取全局银行卡最大成功扣款次数限制（0 表示无限制）
+ */
+async function getCardMaxUsageLimit() {
+    const rows = await runQuery(
+        `SELECT config_value FROM app_config WHERE config_key = 'card_max_usage_limit' LIMIT 1`
+    );
+    if (!rows.length) return 0;
+    return Math.max(0, parseInt(rows[0].config_value, 10) || 0);
+}
+
+/**
+ * 设置全局银行卡最大成功扣款次数限制（0 表示无限制）
+ */
+async function setCardMaxUsageLimit(limit) {
+    const num = Math.max(0, parseInt(limit, 10) || 0);
+    await runExecute(
+        `INSERT INTO app_config (config_key, config_value)
+         VALUES ('card_max_usage_limit', ?)
+         ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
+        [String(num)]
+    );
+    return num;
+}
+
+/**
+ * 查询充值已成功扣款，但未确认关闭自动续费的任务列表
+ */
+async function getUnconfirmedAutoRenewTasks(options = {}) {
+    const limit = Math.max(1, Math.min(Number(options.limit) || 100, 500));
+    const rows = await runQuery(
+        `SELECT l.id, l.job_key, l.cdk_code, l.token_preview AS email,
+                COALESCE(l.card_last4, RIGHT(b.card_number, 4)) AS card_last4,
+                b.card_number,
+                l.platform, l.plan_type,
+                l.auto_renew_status, l.auto_renew_message,
+                l.status, l.created_at, l.finished_at,
+                b.amount, b.currency
+         FROM task_logs l
+         LEFT JOIN (
+             SELECT cdk_code, card_number, amount, currency, status
+             FROM billing_records
+             WHERE status = 'success'
+             GROUP BY cdk_code, card_number, amount, currency, status
+         ) b ON b.cdk_code = l.cdk_code
+         WHERE l.auto_renew_status IN ('verification_unknown', 'failed')
+           AND (
+               l.payment_state = 'succeeded'
+               OR b.cdk_code IS NOT NULL
+           )
+         ORDER BY l.id DESC
+         LIMIT ?`,
+        [limit]
+    );
+
+    return rows.map((row) => ({
+        id: row.id,
+        job_key: row.job_key,
+        cdk_code: row.cdk_code || '',
+        email: row.email || '',
+        card_last4: row.card_last4 || (row.card_number ? String(row.card_number).slice(-4) : ''),
+        card_number: row.card_number || '',
+        platform: row.platform || 'chatgpt',
+        plan_type: row.plan_type || 'plus',
+        auto_renew_status: row.auto_renew_status,
+        auto_renew_message: row.auto_renew_message || '',
+        status: row.status,
+        amount: row.amount,
+        currency: row.currency,
+        created_at: row.created_at
+            ? new Date(row.created_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+            : ''
+    }));
 }
 
 /**
@@ -4750,6 +4905,9 @@ module.exports = {
     markCardExhausted,
     setCardFrozen,
     recordCardUsage,
+    getCardMaxUsageLimit,
+    setCardMaxUsageLimit,
+    getUnconfirmedAutoRenewTasks,
     bindCardPaymentProfile,
     importCards,
     getPaymentRegion,

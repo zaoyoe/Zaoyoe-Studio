@@ -696,7 +696,14 @@ async function executePaymentWithRetry(page, options) {
                     }
                 }
             } catch (error) {
-                paymentResult = { success: false, error: error.message, code: error.code,
+                const isAuthOrSessionExpired = error?.code === 'CHATGPT_SESSION_EXPIRED'
+                    || /CHATGPT_SESSION_EXPIRED|Your session has expired|会话已过期|登录状态已/i.test(error?.message || '');
+                if (isAuthOrSessionExpired) {
+                    attemptStarted = false;
+                    lastPersistedPaymentState = 'not_started';
+                }
+                paymentResult = { success: false, error: error.message,
+                    code: error.code || (isAuthOrSessionExpired ? 'CHATGPT_SESSION_EXPIRED' : null),
                     submitted: attemptStarted, submissionAttempted: attemptStarted };
             }
             if (paymentResult.dueAmount > 0) {

@@ -111,13 +111,13 @@ function inspectSubscriptionState(subData) {
  * @returns {Promise<{ ok: boolean, cancelled?: boolean, alreadyCancelled?: boolean, autoRenewRaw?: boolean, accountId?: string, effectiveAt?: string|null, message?: string, error?: string, challenge?: boolean, data?: any }>}
  */
 async function cancelChatGptAutoRenewProtocol(options = {}) {
-    const accessToken = String(options.accessToken || '').trim();
-    if (!accessToken) {
-        return { ok: false, error: '缺少 ChatGPT accessToken' };
+    let activeToken = String(options.accessToken || '').trim();
+    if (!activeToken && !options.cookieHeader) {
+        return { ok: false, error: '缺少 ChatGPT accessToken 或 Cookie' };
     }
 
     const timeoutMs = options.timeoutMs ?? 20000;
-    const maxPollAttempts = Math.max(1, Number(options.maxPollAttempts ?? 6));
+    const maxPollAttempts = Math.max(1, Number(options.maxPollAttempts ?? 8));
     const pollIntervalMs = Math.max(50, Number(options.pollIntervalMs ?? 1500));
     const proxyStr = String(options.proxy || '').trim();
 
@@ -153,7 +153,7 @@ async function cancelChatGptAutoRenewProtocol(options = {}) {
     };
 
     const headers = {
-        'Authorization': `Bearer ${accessToken}`,
+        'Authorization': `Bearer ${activeToken}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Origin': 'https://chatgpt.com',
@@ -163,9 +163,43 @@ async function cancelChatGptAutoRenewProtocol(options = {}) {
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"Windows"',
         'oai-language': 'en-US',
-        ...(options.cookieHeader ? { 'Cookie': options.cookieHeader } : {}),
         ...(options.deviceId ? { 'oai-device-id': options.deviceId } : {})
     };
+
+    const refreshTokenIfExpired = async () => {
+        if (!options.cookieHeader) return null;
+        try {
+            console.log('[ChatGPT/cancel-protocol] 正在通过 Cookie 刷新最新 AccessToken...');
+            const sessionResp = await doFetch('https://chatgpt.com/api/auth/session', {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'User-Agent': headers['User-Agent'],
+                    'Referer': 'https://chatgpt.com/',
+                    'Cookie': options.cookieHeader
+                }
+            });
+            if (sessionResp.ok) {
+                const sessionData = await sessionResp.json().catch(() => ({}));
+                if (sessionData?.accessToken) {
+                    activeToken = sessionData.accessToken;
+                    headers['Authorization'] = `Bearer ${activeToken}`;
+                    console.log('[ChatGPT/cancel-protocol] AccessToken 刷新成功');
+                    return activeToken;
+                }
+            }
+        } catch (err) {
+            console.warn(`[ChatGPT/cancel-protocol] AccessToken 刷新异常: ${err.message}`);
+        }
+        return null;
+    };
+
+    if (!activeToken && options.cookieHeader) {
+        await refreshTokenIfExpired();
+    }
+    if (!activeToken) {
+        return { ok: false, error: '缺少 ChatGPT accessToken' };
+    }
 
     try {
         let candidateAccountIds = [];
@@ -177,10 +211,19 @@ async function cancelChatGptAutoRenewProtocol(options = {}) {
         }
 
         const fetchCandidateAccounts = async () => {
-            const checkResp = await doFetch('https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0', {
+            let checkResp = await doFetch('https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0', {
                 method: 'GET',
                 headers
             });
+            if (checkResp.status === 401 && options.cookieHeader) {
+                const refreshed = await refreshTokenIfExpired();
+                if (refreshed) {
+                    checkResp = await doFetch('https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0', {
+                        method: 'GET',
+                        headers
+                    });
+                }
+            }
             if (checkResp.status === 403) {
                 const txt = await checkResp.text().catch(() => '');
                 if (/just a moment|cloudflare|challenge/i.test(txt)) {
@@ -222,7 +265,14 @@ async function cancelChatGptAutoRenewProtocol(options = {}) {
                     ? `https://chatgpt.com/backend-api/subscriptions?account_id=${encodeURIComponent(accId)}`
                     : 'https://chatgpt.com/backend-api/subscriptions';
 
-                const subResp = await doFetch(subUrl, { method: 'GET', headers });
+                console.log(`[ChatGPT/cancel-protocol] 正在核验订阅状态 (attempt ${attempt}/${maxPollAttempts}, account_id: ${accId || 'auto'})...`);
+                let subResp = await doFetch(subUrl, { method: 'GET', headers });
+                if (subResp.status === 401 && options.cookieHeader) {
+                    const refreshed = await refreshTokenIfExpired();
+                    if (refreshed) {
+                        subResp = await doFetch(subUrl, { method: 'GET', headers });
+                    }
+                }
                 if (subResp.status === 403) {
                     const txt = await subResp.text().catch(() => '');
                     if (/just a moment|cloudflare|challenge/i.test(txt)) {
@@ -243,6 +293,7 @@ async function cancelChatGptAutoRenewProtocol(options = {}) {
                 if (subResp.ok) {
                     subData = await subResp.json().catch(() => ({}));
                     const state = inspectSubscriptionState(subData);
+                    console.log(`[ChatGPT/cancel-protocol] 订阅状态: isActive=${state.isActive}, willRenew=${state.willRenew}, cancelled=${state.isAlreadyCancelled}`);
                     if (state.isAlreadyCancelled) {
                         return {
                             ok: true,
@@ -282,11 +333,24 @@ async function cancelChatGptAutoRenewProtocol(options = {}) {
                 }
 
                 // 调用 OpenAI 官方原生取消接口 POST /backend-api/subscriptions/cancel
-                const cancelResp = await doFetch('https://chatgpt.com/backend-api/subscriptions/cancel', {
+                console.log(`[ChatGPT/cancel-protocol] 正在调用官方原生取消接口 (account_id: ${activeAccountId})...`);
+                let cancelResp = await doFetch('https://chatgpt.com/backend-api/subscriptions/cancel', {
                     method: 'POST',
                     headers,
                     body: JSON.stringify({ account_id: activeAccountId })
                 });
+
+                if (cancelResp.status === 401 && options.cookieHeader) {
+                    const refreshed = await refreshTokenIfExpired();
+                    if (refreshed) {
+                        cancelResp = await doFetch('https://chatgpt.com/backend-api/subscriptions/cancel', {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify({ account_id: activeAccountId })
+                        });
+                    }
+                }
+                console.log(`[ChatGPT/cancel-protocol] 官方原生取消接口响应: HTTP ${cancelResp.status}`);
 
                 if (cancelResp.ok) {
                     const cancelData = await cancelResp.json().catch(() => ({}));
@@ -514,8 +578,8 @@ async function cancelInsideStripeCustomerPortal(page, portalUrl = null, timeoutM
 async function cancelChatGptAutoRenew(page, options = {}) {
     const timeoutMs = options.timeoutMs ?? 20000;
 
-    // 1. 只要提供了 accessToken，无论是否有 page，均优先通过 0 浏览器纯协议（官方原生接口）完成取消
-    if (options.accessToken) {
+    // 1. 只要提供了 accessToken 或 cookieHeader，无论是否有 page，均优先通过 0 浏览器纯协议（官方原生接口）完成取消
+    if (options.accessToken || options.cookieHeader) {
         const protocolResult = await cancelChatGptAutoRenewProtocol({
             ...options,
             timeoutMs
@@ -539,132 +603,171 @@ async function cancelChatGptAutoRenew(page, options = {}) {
 
     try {
         // --- 阶段一：在已有的浏览器页面上下文中调用官方原生 /backend-api/subscriptions/cancel ---
-        const apiResult = await page.evaluate(async ({ timeout, initialAccountId, planType }) => {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), Math.min(timeout, 12000));
+        let apiResult = null;
+        const maxEvalAttempts = 3;
 
+        for (let attempt = 1; attempt <= maxEvalAttempts; attempt++) {
             try {
-                let accessToken = '';
-                try {
-                    const sessionResp = await fetch('/api/auth/session', {
-                        credentials: 'include',
-                        headers: { accept: 'application/json' },
-                        signal: controller.signal
-                    });
-                    if (sessionResp.ok) {
-                        const sessionData = await sessionResp.json();
-                        accessToken = sessionData?.accessToken || '';
-                    }
-                } catch (_) {}
-
-                const headers = {
-                    'content-type': 'application/json',
-                    accept: 'application/json'
-                };
-                if (accessToken) {
-                    headers['authorization'] = `Bearer ${accessToken}`;
+                if (typeof page.isClosed === 'function' && page.isClosed()) {
+                    break;
+                }
+                if (typeof page.waitForLoadState === 'function') {
+                    await page.waitForLoadState('domcontentloaded', { timeout: 6000 }).catch(() => {});
+                }
+                if (typeof page.waitForTimeout === 'function') {
+                    await page.waitForTimeout(800).catch(() => {});
                 }
 
-                // 1. 获取 account_id
-                let accountId = initialAccountId || '';
-                if (!accountId || /team/i.test(String(planType || ''))) {
-                    try {
-                        const accResp = await fetch('/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0', {
-                            credentials: 'include',
-                            headers,
-                            signal: controller.signal
-                        });
-                        if (accResp.ok) {
-                            const accData = await accResp.json().catch(() => ({}));
-                            const accounts = accData?.accounts || {};
-                            const ordering = Array.isArray(accData?.account_ordering) ? accData.account_ordering : [];
-                            const activeKey = Object.keys(accounts).find(
-                                (k) => k !== 'default' && accounts[k]?.entitlement?.has_active_subscription
-                            );
-                            accountId = activeKey
-                                || ordering[0]
-                                || accounts?.default?.account?.account_id
-                                || Object.keys(accounts).find((k) => k !== 'default')
-                                || accountId;
-                        }
-                    } catch (_) {}
-                }
+                apiResult = await page.evaluate(async ({ timeout, initialAccountId, planType, injectedAccessToken }) => {
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), Math.min(timeout, 12000));
 
-                // 2. 查询 /backend-api/subscriptions?account_id=...
-                const subUrl = accountId
-                    ? `/backend-api/subscriptions?account_id=${encodeURIComponent(accountId)}`
-                    : '/backend-api/subscriptions';
-                try {
-                    const subResp = await fetch(subUrl, {
-                        credentials: 'include',
-                        headers,
-                        signal: controller.signal
-                    });
-                    if (subResp.ok) {
-                        const subData = await subResp.json().catch(() => ({}));
-                        const entitlement = subData?.entitlement || {};
-                        const plan = subData?.account_plan || subData?.plan || subData?.subscription || {};
-                        const isActive = Boolean(
-                            subData?.is_active === true
-                            || entitlement.has_active_subscription === true
-                            || plan.is_paid_subscription_active === true
-                        );
-                        if (isActive && (subData?.will_renew === false || Boolean(entitlement.cancels_at) || plan.canceled_at_period_end === true || plan.will_renew === false)) {
-                            return {
-                                ok: true,
-                                alreadyCancelled: true,
-                                message: '订阅状态显示次月续费已关闭，本期权益继续有效',
-                                data: subData
-                            };
-                        }
-                    }
-                } catch (_) {}
-
-                // 3. 调用官方原生取消接口 POST /backend-api/subscriptions/cancel
-                if (accountId) {
                     try {
-                        const cancelResp = await fetch('/backend-api/subscriptions/cancel', {
-                            method: 'POST',
-                            credentials: 'include',
-                            headers,
-                            body: JSON.stringify({ account_id: accountId }),
-                            signal: controller.signal
-                        });
-                        if (cancelResp.ok) {
-                            const cancelData = await cancelResp.json().catch(() => ({}));
-                            return {
-                                ok: true,
-                                cancelled: true,
-                                message: '已通过官方原生接口成功关闭次月自动续订，本周期内权益继续有效',
-                                data: cancelData
-                            };
-                        }
-                        if (cancelResp.status === 400 || cancelResp.status === 409 || cancelResp.status === 422) {
-                            const errData = await cancelResp.json().catch(() => ({}));
-                            const errStr = JSON.stringify(errData).toLowerCase();
-                            if (errStr.includes('already_cancel') || errStr.includes('already cancel') || errStr.includes('will_renew')) {
-                                return {
-                                    ok: true,
-                                    alreadyCancelled: true,
-                                    message: '自动续费先前已关闭，下月不会自动扣款',
-                                    data: errData
-                                };
+                        let accessToken = '';
+                        try {
+                            const sessionResp = await fetch('/api/auth/session', {
+                                credentials: 'include',
+                                headers: { accept: 'application/json' },
+                                signal: controller.signal
+                            });
+                            if (sessionResp.ok) {
+                                const sessionData = await sessionResp.json();
+                                const cand = String(sessionData?.accessToken || '').trim();
+                                if (cand.split('.').length === 3) {
+                                    accessToken = cand;
+                                }
                             }
-                        }
-                    } catch (_) {}
-                }
+                        } catch (_) {}
 
-                return { ok: false, canFallbackUi: true, error: '未能直接通过页面原生 API 完成自动续订关闭' };
-            } catch (err) {
-                return { ok: false, canFallbackUi: true, error: err.message };
-            } finally {
-                clearTimeout(timer);
+                        if (!accessToken && injectedAccessToken && injectedAccessToken.split('.').length === 3) {
+                            accessToken = injectedAccessToken;
+                        }
+
+                        const headers = {
+                            'content-type': 'application/json',
+                            accept: 'application/json'
+                        };
+                        if (accessToken) {
+                            headers['authorization'] = `Bearer ${accessToken}`;
+                        }
+
+                        // 1. 获取 account_id
+                        let accountId = initialAccountId || '';
+                        if (!accountId || /team/i.test(String(planType || ''))) {
+                            try {
+                                const accResp = await fetch('/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0', {
+                                    credentials: 'include',
+                                    headers,
+                                    signal: controller.signal
+                                });
+                                if (accResp.ok) {
+                                    const accData = await accResp.json().catch(() => ({}));
+                                    const accounts = accData?.accounts || {};
+                                    const ordering = Array.isArray(accData?.account_ordering) ? accData.account_ordering : [];
+                                    const activeKey = Object.keys(accounts).find(
+                                        (k) => k !== 'default' && accounts[k]?.entitlement?.has_active_subscription
+                                    );
+                                    accountId = activeKey
+                                        || ordering[0]
+                                        || accounts?.default?.account?.account_id
+                                        || Object.keys(accounts).find((k) => k !== 'default')
+                                        || accountId;
+                                }
+                            } catch (_) {}
+                        }
+
+                        // 2. 查询 /backend-api/subscriptions?account_id=...
+                        const subUrl = accountId
+                            ? `/backend-api/subscriptions?account_id=${encodeURIComponent(accountId)}`
+                            : '/backend-api/subscriptions';
+                        try {
+                            const subResp = await fetch(subUrl, {
+                                credentials: 'include',
+                                headers,
+                                signal: controller.signal
+                            });
+                            if (subResp.ok) {
+                                const subData = await subResp.json().catch(() => ({}));
+                                const entitlement = subData?.entitlement || {};
+                                const plan = subData?.account_plan || subData?.plan || subData?.subscription || {};
+                                const isActive = Boolean(
+                                    subData?.is_active === true
+                                    || entitlement.has_active_subscription === true
+                                    || plan.is_paid_subscription_active === true
+                                );
+                                if (isActive && (subData?.will_renew === false || Boolean(entitlement.cancels_at) || plan.canceled_at_period_end === true || plan.will_renew === false)) {
+                                    return {
+                                        ok: true,
+                                        alreadyCancelled: true,
+                                        message: '订阅状态显示次月续费已关闭，本期权益继续有效',
+                                        data: subData
+                                    };
+                                }
+                            }
+                        } catch (_) {}
+
+                        // 3. 调用官方原生取消接口 POST /backend-api/subscriptions/cancel
+                        if (accountId) {
+                            try {
+                                const cancelResp = await fetch('/backend-api/subscriptions/cancel', {
+                                    method: 'POST',
+                                    credentials: 'include',
+                                    headers,
+                                    body: JSON.stringify({ account_id: accountId }),
+                                    signal: controller.signal
+                                });
+                                if (cancelResp.ok) {
+                                    const cancelData = await cancelResp.json().catch(() => ({}));
+                                    return {
+                                        ok: true,
+                                        cancelled: true,
+                                        message: '已通过官方原生接口成功关闭次月自动续订，本周期内权益继续有效',
+                                        data: cancelData
+                                    };
+                                }
+                                if (cancelResp.status === 400 || cancelResp.status === 409 || cancelResp.status === 422) {
+                                    const errData = await cancelResp.json().catch(() => ({}));
+                                    const errStr = JSON.stringify(errData).toLowerCase();
+                                    if (errStr.includes('already_cancel') || errStr.includes('already cancel') || errStr.includes('will_renew')) {
+                                        return {
+                                            ok: true,
+                                            alreadyCancelled: true,
+                                            message: '自动续费先前已关闭，下月不会自动扣款',
+                                            data: errData
+                                        };
+                                    }
+                                }
+                            } catch (_) {}
+                        }
+
+                        return { ok: false, canFallbackUi: true, error: '未能直接通过页面原生 API 完成自动续订关闭' };
+                    } catch (err) {
+                        return { ok: false, canFallbackUi: true, error: err.message };
+                    } finally {
+                        clearTimeout(timer);
+                    }
+                }, {
+                    timeout: timeoutMs,
+                    initialAccountId: options.accountId || '',
+                    planType: options.planType || '',
+                    injectedAccessToken: options.accessToken || ''
+                });
+
+                if (apiResult?.ok) {
+                    break;
+                }
+            } catch (evalErr) {
+                const isNavError = /execution context was destroyed|navigation|navigating|target closed/i.test(evalErr?.message || '');
+                if (isNavError && attempt < maxEvalAttempts) {
+                    console.log(`[ChatGPT/cancel] 页面跳转流转中 (尝试 ${attempt}/${maxEvalAttempts})，等待 2 秒页面稳定后重试...`);
+                    if (typeof page.waitForTimeout === 'function') {
+                        await page.waitForTimeout(2000).catch(() => {});
+                    }
+                    continue;
+                }
+                throw evalErr;
             }
-        }, {
-            timeout: timeoutMs,
-            initialAccountId: options.accountId || '',
-            planType: options.planType || ''
-        });
+        }
 
         if (apiResult?.ok) {
             if (apiResult.cancelled || apiResult.alreadyCancelled) {
@@ -764,12 +867,36 @@ async function cancelChatGptAutoRenew(page, options = {}) {
             console.warn(`[ChatGPT/cancel] 页面 UI 兜底处理异常: ${uiErr.message}`);
         }
 
+        if (!apiResult?.ok && (options.accessToken || options.cookieHeader)) {
+            console.log('[ChatGPT/cancel] 页面 UI 未能确认，尝试使用协议接口进行最终确认...');
+            const finalProto = await cancelChatGptAutoRenewProtocol({
+                ...options,
+                maxPollAttempts: 4,
+                pollIntervalMs: 1200
+            }).catch(() => null);
+            if (finalProto?.ok) {
+                return finalProto;
+            }
+        }
+
         return {
             ok: false,
             verificationUnknown: true,
             error: apiResult?.error || '未能自动确认 ChatGPT 次月续订关闭状态，可稍后在后台按需核对'
         };
     } catch (err) {
+        if (options.accessToken || options.cookieHeader) {
+            console.log(`[ChatGPT/cancel] 页面上下文执行受阻 (${err.message})，转入最新 Session 协议进行最终核验兜底...`);
+            const fallbackProto = await cancelChatGptAutoRenewProtocol({
+                ...options,
+                maxPollAttempts: 4,
+                pollIntervalMs: 1200
+            }).catch(() => null);
+            if (fallbackProto?.ok) {
+                return fallbackProto;
+            }
+        }
+
         return {
             ok: false,
             verificationUnknown: true,

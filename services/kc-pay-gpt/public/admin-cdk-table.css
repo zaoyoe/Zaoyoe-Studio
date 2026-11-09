@@ -1,11 +1,11 @@
 /* Give the CDK list room without changing the other admin pages. */
 .main-content:has(> #cdks.active) {
-    max-width: 1720px;
+    max-width: 1780px;
 }
 
 #cdks .cdk-table {
     width: 100%;
-    min-width: 1260px;
+    min-width: 1420px;
     table-layout: fixed;
 }
 
@@ -19,6 +19,31 @@
 #cdks .cdk-table .select-header,
 #cdks .cdk-table .select-cell {
     text-align: center;
+}
+
+#cdks .cdk-table .cdk-card-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: var(--surface-soft, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+    font-size: 12px;
+    color: var(--text-main);
+}
+
+#cdks .cdk-table .cdk-card-chip code {
+    font-weight: 600;
+    color: #60a5fa;
+}
+
+#cdks .cdk-table .cdk-renew-cell .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 500;
 }
 
 #cdks .cdk-table .cdk-code-cell .cdk-copy,
