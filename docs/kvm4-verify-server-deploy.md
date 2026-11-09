@@ -24,10 +24,10 @@ After merge, record the resulting latest `main` SHA separately from the candidat
 SHA. A release is complete only when all of these agree:
 
 - Vercel production alias `https://www.fatherkey.com` is Ready with that SHA.
-- `Deploy KVM4 Verify Server` and `Deploy KVM4 Sub2API` workflow runs for that
+- `Deploy KVM4 Verify Server` and `Deploy KVM4 NewAPI` workflow runs for that
   SHA have succeeded.
-- SSH readback of `/opt/zaoyoe-verify-server/.current-release` and
-  `/opt/sub2api/.current-release` equals that SHA; the verify container's
+- SSH readback of `/opt/zaoyoe-verify-server/.current-release` and the NewAPI
+  service-slot `/opt/sub2api/.current-release` equals that SHA; the verify container's
   `/app/server/.release-commit` also matches.
 - Verify `/healthz` and NewAPI `https://new.fatherkey.com/health` are healthy;
   NewAPI, PostgreSQL and Redis are healthy, and `sub2api-legacy` is not running.
@@ -209,8 +209,10 @@ not on Vercel. The canonical guest-shop hostnames are:
 - `https://verify-api.fatherkey.com`
 - public `/api/shop/:path*` rewrite from Vercel production to that host
 
-Deploying verify is **not** permission to open guest checkout, and it is **not**
-an instruction to execute SQL.
+Deploying verify is **not** permission to add or change guest products/SKUs, and
+it is **not** an instruction to execute SQL. Existing approved guest SKU states
+must remain unchanged; a new SKU or state change follows the separate Task 2.1
+operator gate.
 
 ### Hard rules
 

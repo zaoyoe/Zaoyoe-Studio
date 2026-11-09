@@ -1,7 +1,9 @@
-name: Deploy KVM4 Sub2API
+name: Deploy KVM4 NewAPI
 
 # The `/opt/sub2api` service slot remains a stable deployment identifier. The
-# public service is NewAPI and no legacy bridge is started.
+# public service is NewAPI and no legacy bridge is started. The workflow file
+# and old environment variable names remain for compatibility with existing
+# repository settings and release history.
 
 on:
   push:
@@ -26,9 +28,10 @@ jobs:
       KVM4_HOST: ${{ vars.KVM4_HOST || '76.13.188.218' }}
       KVM4_PORT: ${{ vars.KVM4_PORT || '2222' }}
       KVM4_USER: ${{ vars.KVM4_USER || 'root' }}
-      KVM4_SUB2API_ROOT: ${{ vars.KVM4_SUB2API_ROOT || '/opt/sub2api' }}
-      KVM4_KEY: /tmp/kvm4_sub2api_deploy_key_${{ github.run_id }}
-      KEEP_RELEASES: ${{ vars.KVM4_SUB2API_KEEP_RELEASES || '5' }}
+      KVM4_NEWAPI_ROOT: ${{ vars.KVM4_NEWAPI_ROOT || vars.KVM4_SUB2API_ROOT || '/opt/sub2api' }}
+      KVM4_SUB2API_ROOT: ${{ vars.KVM4_SUB2API_ROOT || vars.KVM4_NEWAPI_ROOT || '/opt/sub2api' }}
+      KVM4_KEY: /tmp/kvm4_newapi_deploy_key_${{ github.run_id }}
+      KEEP_RELEASES: ${{ vars.KVM4_NEWAPI_KEEP_RELEASES || vars.KVM4_SUB2API_KEEP_RELEASES || '5' }}
 
     steps:
       - name: Checkout repository
@@ -73,9 +76,9 @@ jobs:
           printf 'Checked out main commit %s\n' "$GITHUB_SHA"
 
       - name: Deploy NewAPI
-        run: npm run deploy:kvm4:sub2api
+        run: npm run deploy:kvm4:newapi
 
-      - name: Verify NewAPI public route in Sub2API slot
+      - name: Verify NewAPI public route
         shell: bash
         run: |
           set -Eeuo pipefail
