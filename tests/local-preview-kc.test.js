@@ -89,3 +89,18 @@ test('local preview app serves KC public and admin pages', async (t) => {
     assert.equal(cdksData.cdks[0].card_last4, '1234');
     assert.equal(cdksData.cdks[0].auto_renew_status, 'cancelled');
 });
+
+test('frontend and backend contracts for payment success feedback', () => {
+    const fs = require('node:fs');
+    const indexHtml = fs.readFileSync(path.join(repoRoot, 'services/kc-pay-gpt/public/index.html'), 'utf8');
+    const serverJs = fs.readFileSync(path.join(repoRoot, 'services/kc-pay-gpt/server.js'), 'utf8');
+
+    // Frontend: ensures paymentState === 'succeeded' yields success prompt and completes user recharge flow
+    assert.match(indexHtml, /isRechargeSucceeded = status === 'success' \|\| paymentState === 'succeeded'/);
+    assert.match(indexHtml, /cdkLabel\.textContent = '已使用'/);
+    assert.match(indexHtml, /🎉 恭喜！当前账号已成功开通/);
+
+    // Backend: ensures autoRenewPending broadcasts progress/success instead of manual error to connected client
+    assert.match(serverJs, /if \(autoRenewPending\) \{\s*broadcastToTask\(task\.jobKey, \{\s*type: 'progress'/);
+    assert.match(serverJs, /paymentState: 'succeeded'/);
+});

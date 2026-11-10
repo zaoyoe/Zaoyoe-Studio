@@ -2107,19 +2107,30 @@
         function applyTaskState(data) {
             const progress = Number(data.progress);
             const status = String(data.status || 'running');
+            const paymentState = String(data.paymentState || '');
             const message = String(data.message || '');
             // 运行态严格保持单调递增，避免快照由于异步时序将已前进的进度拉回；仅终态或显式换卡才允许强制覆盖
             const forceProgress = (status === 'success' || status === 'failed' || status === 'maintenance' || status === 'manual' || Boolean(data.attemptChanged));
 
-            if (status === 'success') {
+            // 只要扣款支付成功（官方扣款成功、权益已开通），用户侧直接完成充值流程并反馈成功提示
+            // 后续取消自动续费等动作由后台在后台异步完成与记录，用户侧无需感知
+            const isRechargeSucceeded = status === 'success' || paymentState === 'succeeded';
+
+            if (isRechargeSucceeded) {
                 taskCompleted = true;
                 closeTaskSocket();
                 closeCaptchaInteractiveModal(true);
                 setActivationLock(false);
+                if (statusMsg) statusMsg.style.display = 'none';
                 updateFlowUI(2, 'success');
                 const defaultLabel = currentPlatform === 'claude' ? 'Claude Pro' : (currentPlatform === 'grok' ? 'Grok 订阅' : 'ChatGPT Plus');
                 const successMsg = `🎉 恭喜！当前账号已成功开通 <strong>${escapeHtml(currentPlanLabel || defaultLabel)}</strong> 权益！`;
                 setProgress(100, '', 'success', { force: true, successMessage: successMsg });
+                setButtonText(startBtn, START_SUCCESS_TEXT);
+                const cdkLabel = document.querySelector('#redeemCdkInfo span');
+                if (cdkLabel) {
+                    cdkLabel.textContent = '已使用';
+                }
                 return;
             }
 
@@ -2144,10 +2155,10 @@
                 if (data.email) {
                     window.__taskCurrentEmail = data.email;
                 }
-                const progressLabel = window.__taskCurrentEmail
-                    ? `正在为账号 ${window.__taskCurrentEmail} 办理开通...`
-                    : '';
-                setProgress(progress, progressLabel, 'running', { force: forceProgress });
+                const progressLabel = paymentState === 'succeeded'
+                    ? '支付已成功，正在确认开通权益...'
+                    : (window.__taskCurrentEmail ? `正在为账号 ${window.__taskCurrentEmail} 办理开通...` : '');
+                setProgress(Math.max(progress, paymentState === 'succeeded' ? 95 : 0), progressLabel, 'running', { force: forceProgress || paymentState === 'succeeded' });
             }
 
             // 若当前人机验证弹窗处于提交后等待官方核验中 (pending)，仅当支付明确成功推进时关闭
