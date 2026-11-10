@@ -9,6 +9,7 @@ const {
     logStartup,
     normalizeWorkerError,
     parseArgs,
+    resolveWorkerSleepMs,
     runBatchWithRetry,
     serializeBatchResult
 } = require('../scripts/ai-image-worker');
@@ -193,4 +194,20 @@ test('ai image worker startup log omits secrets', () => {
     assert.equal(payload.limit, 2);
     assert.equal(payload.concurrency, 3);
     assert.equal(JSON.stringify(payload).includes('sk-secret'), false);
+});
+
+test('resolveWorkerSleepMs applies stepped idle backoff to reduce Supabase polling', () => {
+    // When tasks are processed, run at active interval
+    assert.equal(resolveWorkerSleepMs({ processedCount: 2, consecutiveIdleBatches: 0, intervalMs: 1000, idleIntervalMs: 15000 }), 1000);
+
+    // Initial idle tick: wait normal idle interval (15s)
+    assert.equal(resolveWorkerSleepMs({ processedCount: 0, consecutiveIdleBatches: 1, intervalMs: 1000, idleIntervalMs: 15000 }), 15000);
+
+    // Continuous idle 2~3 ticks: back off to 30s
+    assert.equal(resolveWorkerSleepMs({ processedCount: 0, consecutiveIdleBatches: 2, intervalMs: 1000, idleIntervalMs: 15000 }), 30000);
+    assert.equal(resolveWorkerSleepMs({ processedCount: 0, consecutiveIdleBatches: 3, intervalMs: 1000, idleIntervalMs: 15000 }), 30000);
+
+    // Continuous idle 4+ ticks: back off to 60s
+    assert.equal(resolveWorkerSleepMs({ processedCount: 0, consecutiveIdleBatches: 4, intervalMs: 1000, idleIntervalMs: 15000 }), 60000);
+    assert.equal(resolveWorkerSleepMs({ processedCount: 0, consecutiveIdleBatches: 10, intervalMs: 1000, idleIntervalMs: 15000 }), 60000);
 });

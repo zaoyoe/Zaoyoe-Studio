@@ -190,8 +190,42 @@ const VERIFY_PROVIDER_LABELS = Object.freeze({
     [VERIFY_PROVIDER_86AI]: '通道 3 · 86AI Pro 开通'
 });
 const PENDING_JOB_SWEEP_INTERVAL_MS = Math.max(2000, Number(process.env.VERIFY_PENDING_SWEEP_INTERVAL_MS || 5000));
+const PENDING_JOB_SWEEP_IDLE_INTERVAL_MS = Math.max(5000, Number(process.env.VERIFY_PENDING_SWEEP_IDLE_INTERVAL_MS || 60000));
 const PENDING_JOB_SWEEP_BATCH_SIZE = Math.max(1, Number(process.env.VERIFY_PENDING_SWEEP_BATCH_SIZE || 20));
 const SHOP_DELIVERY_STRATEGY_CACHE_TTL_MS = Math.max(2000, Number(process.env.SHOP_DELIVERY_STRATEGY_CACHE_TTL_MS || 5000));
+const VERIFY_CONFIG_CACHE_TTL_MS = Math.max(5000, Number(process.env.VERIFY_CONFIG_CACHE_TTL_MS || 5 * 60 * 1000));
+const OPS_ALERTS_RUNTIME_CACHE_TTL_MS = Math.max(5000, Number(process.env.OPS_ALERTS_RUNTIME_CACHE_TTL_MS || 5 * 60 * 1000));
+
+const verifyConfigCache = new Map();
+const opsAlertsRuntimeCache = new Map();
+
+function clearVerifyConfigCache() {
+    verifyConfigCache.clear();
+}
+
+function clearOpsAlertsRuntimeCache() {
+    opsAlertsRuntimeCache.clear();
+}
+
+async function getCachedOpsAlertsRuntimeConfig(client = supabase, env = process.env, options = {}) {
+    const site = String(options?.site || 'all').trim().toLowerCase();
+    const bypassCache = options?.bypassCache === true || options?.forceRefresh === true;
+    const now = Date.now();
+
+    if (!bypassCache) {
+        const cached = opsAlertsRuntimeCache.get(site);
+        if (cached && (now - cached.cachedAt < OPS_ALERTS_RUNTIME_CACHE_TTL_MS)) {
+            return cached.data;
+        }
+    }
+
+    const runtime = await loadOpsAlertsRuntimeConfig(client, env, options);
+    opsAlertsRuntimeCache.set(site, {
+        cachedAt: now,
+        data: runtime
+    });
+    return runtime;
+}
 
 async function safeSyncPaymentUserTags(options = {}) {
     try {
@@ -500,7 +534,18 @@ app.get('/health', (req, res) => {
 // =============================================
 // Helpers
 // =============================================
-async function getVerifyConfig(site = 'cn') {
+async function getVerifyConfig(site = 'cn', options = {}) {
+    const normalizedSite = sanitizeSite(site || 'cn');
+    const bypassCache = options?.bypassCache === true || options?.forceRefresh === true;
+    const now = Date.now();
+
+    if (!bypassCache) {
+        const cached = verifyConfigCache.get(normalizedSite);
+        if (cached && (now - cached.cachedAt < VERIFY_CONFIG_CACHE_TTL_MS)) {
+            return cached.data;
+        }
+    }
+
     const { data: configData } = await supabase
         .from('system_config')
         .select('config_value')
@@ -508,12 +553,12 @@ async function getVerifyConfig(site = 'cn') {
         .single();
 
     const storedConfig = configData?.config_value || {};
-    const resolvedConfig = resolveSiteScopedSystemConfigValue(storedConfig, site);
+    const resolvedConfig = resolveSiteScopedSystemConfigValue(storedConfig, normalizedSite);
     const config = resolvedConfig && typeof resolvedConfig === 'object' && !Array.isArray(resolvedConfig)
         ? resolvedConfig
         : {};
     const prices = getVerifyPriceMap(config);
-    const activationRuntime = await loadActivationRuntimeConfig(supabase, process.env, { site });
+    const activationRuntime = await loadActivationRuntimeConfig(supabase, process.env, { site: normalizedSite });
     const activeProvider = normalizeVerifyProvider(
         config.active_provider
         || config.activeProvider
@@ -526,19 +571,19 @@ async function getVerifyConfig(site = 'cn') {
             config,
             provider: VERIFY_PROVIDER_AIDONE,
             prices,
-            site
+            site: normalizedSite
         }),
         [VERIFY_PROVIDER_CATCARD]: buildRuntimeVerifyProviderConfig({
             config,
             provider: VERIFY_PROVIDER_CATCARD,
             prices,
-            site
+            site: normalizedSite
         })
     };
     providers['86ai'] = activationRuntime.providers['86ai'];
     const activeConfig = providers[activeProvider] || providers[VERIFY_PROVIDER_AIDONE];
 
-    return {
+    const result = {
         ...activeConfig,
         pricePerVerify: prices.extract,
         pricePerVerifyExtract: prices.extract,
@@ -562,6 +607,13 @@ async function getVerifyConfig(site = 'cn') {
             ? config.verify_incident_monitor
             : {}
     };
+
+    verifyConfigCache.set(normalizedSite, {
+        cachedAt: now,
+        data: result
+    });
+
+    return result;
 }
 
 function getCurrentSite(req, explicitSite) {
@@ -3410,7 +3462,7 @@ async function loadPendingTrackedJobs(limit = PENDING_JOB_SWEEP_BATCH_SIZE) {
     try {
         const { data, error } = await supabase
             .from('verification_logs')
-            .select('*')
+            .select('verification_id, user_id, site, status, message, created_at')
             .in('status', ACTIVE_TRACKED_JOB_STATUSES)
             .order('created_at', { ascending: true })
             .limit(limit);
@@ -3454,7 +3506,7 @@ async function loadPendingTrackedJobs(limit = PENDING_JOB_SWEEP_BATCH_SIZE) {
 }
 
 async function sweepPendingJobs() {
-    if (pendingJobSweepRunning) return;
+    if (pendingJobSweepRunning) return 0;
     pendingJobSweepRunning = true;
 
     try {
@@ -3493,27 +3545,71 @@ async function sweepPendingJobs() {
                 config
             });
         }
+        return pendingJobs.length;
     } catch (error) {
         console.error('[VerifyWorker] Pending job sweep failed:', error);
+        return 0;
     } finally {
         pendingJobSweepRunning = false;
     }
 }
 
-function startPendingJobSweep() {
-    if (pendingJobSweepTimer) return;
+let pendingJobSweepActive = false;
 
-    pendingJobSweepTimer = setInterval(() => {
-        sweepPendingJobs().catch((error) => {
+async function queueNextPendingJobSweep(delayMs = null) {
+    if (pendingJobSweepTimer || !pendingJobSweepActive) return;
+
+    const initialDelay = Math.max(100, Number(delayMs ?? PENDING_JOB_SWEEP_IDLE_INTERVAL_MS));
+    pendingJobSweepTimer = setTimeout(async () => {
+        pendingJobSweepTimer = null;
+        if (!pendingJobSweepActive) return;
+
+        let processedJobs = 0;
+        try {
+            processedJobs = await sweepPendingJobs();
+        } catch (error) {
             console.error('[VerifyWorker] Sweep tick failed:', error);
-        });
-    }, PENDING_JOB_SWEEP_INTERVAL_MS);
+        } finally {
+            if (!pendingJobSweepActive) return;
+            const nextDelay = processedJobs > 0
+                ? PENDING_JOB_SWEEP_INTERVAL_MS
+                : PENDING_JOB_SWEEP_IDLE_INTERVAL_MS;
+            queueNextPendingJobSweep(nextDelay).catch((error) => {
+                console.error('[VerifyWorker] Failed to schedule next sweep:', error);
+            });
+        }
+    }, initialDelay);
 
-    setTimeout(() => {
-        sweepPendingJobs().catch((error) => {
-            console.error('[VerifyWorker] Initial sweep failed:', error);
-        });
-    }, 1200);
+    if (typeof pendingJobSweepTimer?.unref === 'function') {
+        pendingJobSweepTimer.unref();
+    }
+}
+
+function startPendingJobSweep() {
+    pendingJobSweepActive = true;
+    if (pendingJobSweepTimer) return;
+    queueNextPendingJobSweep(1200).catch((error) => {
+        console.error('[VerifyWorker] Failed to start sweep:', error);
+    });
+}
+
+function stopPendingJobSweep() {
+    pendingJobSweepActive = false;
+    if (pendingJobSweepTimer) {
+        clearTimeout(pendingJobSweepTimer);
+        pendingJobSweepTimer = null;
+    }
+}
+
+function triggerImmediatePendingJobSweep() {
+    if (!pendingJobSweepActive) return;
+    if (pendingJobSweepTimer) {
+        clearTimeout(pendingJobSweepTimer);
+        pendingJobSweepTimer = null;
+    }
+    queueNextPendingJobSweep(100).catch((error) => {
+        console.error('[VerifyWorker] Failed to trigger immediate sweep:', error);
+    });
 }
 
 function getShopDeliveryWorkerName() {
@@ -4215,12 +4311,12 @@ async function sweepExternalOpsAlerts() {
 async function queueNextOpsAlertSweep(delayMs = null) {
     if (opsAlertSweepTimer) return;
 
-    let nextDelay = 15000;
+    let nextDelay = 3 * 60 * 1000;
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
-        nextDelay = Math.max(1000, Number(delayMs ?? runtime?.config?.sweep_interval_ms ?? 15000));
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
+        nextDelay = Math.max(1000, Number(delayMs ?? runtime?.config?.sweep_interval_ms ?? 3 * 60 * 1000));
     } catch (error) {
-        nextDelay = Math.max(1000, Number(delayMs ?? 15000));
+        nextDelay = Math.max(1000, Number(delayMs ?? 3 * 60 * 1000));
         console.warn('[OpsAlertWorker] Failed to load runtime config for next sweep:', error.message);
     }
 
@@ -4336,7 +4432,7 @@ async function queueNextPaymentGatewaySweep(delayMs = null) {
 
     let monitorConfig = normalizePaymentGatewayMonitorConfig({}, process.env);
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         monitorConfig = normalizePaymentGatewayMonitorConfig(
             runtime?.config?.payment_gateway && typeof runtime.config.payment_gateway === 'object'
                 ? runtime.config.payment_gateway
@@ -4346,7 +4442,7 @@ async function queueNextPaymentGatewaySweep(delayMs = null) {
     } catch (error) {
         console.warn('[PaymentGatewayMonitor] Failed to load runtime config for scheduling, falling back to default config:', error.message || error);
     }
-    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 5 * 60 * 1000));
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
 
     paymentGatewaySweepTimer = setTimeout(() => {
         paymentGatewaySweepTimer = null;
@@ -4397,7 +4493,7 @@ async function queueNextVerifyQuotaSweep(delayMs = null) {
     const verifyConfig = await getVerifyConfig();
     let monitorConfig = normalizeVerifyQuotaMonitorConfig(verifyConfig?.monitorConfig, process.env);
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         monitorConfig = normalizeVerifyQuotaMonitorConfig({
             ...(verifyConfig?.monitorConfig && typeof verifyConfig.monitorConfig === 'object' ? verifyConfig.monitorConfig : {}),
             ...(runtime?.config?.verify_quota && typeof runtime.config.verify_quota === 'object' ? runtime.config.verify_quota : {})
@@ -4506,7 +4602,7 @@ async function queueNextVerifyQueueSweep(delayMs = null) {
     const verifyConfig = await getVerifyConfig();
     let monitorConfig = normalizeVerifyQueueMonitorConfig(verifyConfig?.queueMonitorConfig, process.env);
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         monitorConfig = normalizeVerifyQueueMonitorConfig({
             ...(verifyConfig?.queueMonitorConfig && typeof verifyConfig.queueMonitorConfig === 'object' ? verifyConfig.queueMonitorConfig : {}),
             ...(runtime?.config?.verify_queue && typeof runtime.config.verify_queue === 'object' ? runtime.config.verify_queue : {})
@@ -4565,7 +4661,7 @@ async function queueNextVerifyFailureSweep(delayMs = null) {
     const verifyConfig = await getVerifyConfig();
     let monitorConfig = normalizeVerifyFailureMonitorConfig(verifyConfig?.failureMonitorConfig, process.env);
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         monitorConfig = normalizeVerifyFailureMonitorConfig({
             ...(verifyConfig?.failureMonitorConfig && typeof verifyConfig.failureMonitorConfig === 'object' ? verifyConfig.failureMonitorConfig : {}),
             ...(runtime?.config?.verify_failure && typeof runtime.config.verify_failure === 'object' ? runtime.config.verify_failure : {})
@@ -4683,7 +4779,7 @@ async function queueNextTicketSlaSweep(delayMs = null) {
 
     let monitorConfig = normalizeTicketSlaMonitorConfig({}, process.env);
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         monitorConfig = normalizeTicketSlaMonitorConfig(runtime?.config?.tickets || {}, process.env);
     } catch (error) {
         console.error('[TicketSlaMonitor] Failed to load runtime config for scheduling, falling back to env defaults:', error);
@@ -4717,7 +4813,7 @@ async function sweepShopInventoryHealth() {
     shopInventorySweepRunning = true;
 
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         const result = await runShopInventoryLowSweep(supabase, {
             runtime,
             config: runtime?.config?.shop_inventory,
@@ -4746,7 +4842,7 @@ async function queueNextShopInventorySweep(delayMs = null) {
 
     let monitorConfig = normalizeShopInventoryMonitorConfig({}, process.env);
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         monitorConfig = normalizeShopInventoryMonitorConfig(runtime?.config?.shop_inventory || {}, process.env);
     } catch (error) {
         console.warn('[ShopInventoryMonitor] Failed to load runtime config for next sweep delay:', error.message || error);
@@ -4806,7 +4902,7 @@ async function queueNextShopOrderDeliverySweep(delayMs = null) {
 
     let monitorConfig = normalizeShopOrderDeliveryMonitorConfig({}, process.env);
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         monitorConfig = normalizeShopOrderDeliveryMonitorConfig(runtime?.config?.shop_order_delivery || {}, process.env);
     } catch (error) {
         console.warn('[ShopOrderDeliveryMonitor] Failed to load runtime config for scheduling, falling back to env defaults:', error.message || error);
@@ -4870,7 +4966,7 @@ async function queueNextGuestShopAlertSweep(delayMs = null) {
     // Thresholds stay in env + module defaults. Do not read ops-alerts runtime.guest_shop.
     const monitorConfig = normalizeGuestShopMonitorConfig({}, process.env);
     const nextDelay = delayMs == null
-        ? Math.max(10000, Number(monitorConfig.sweep_interval_ms || 60 * 1000))
+        ? Math.max(10000, Number(monitorConfig.sweep_interval_ms || 5 * 60 * 1000))
         : Math.max(1000, Number(delayMs));
 
     guestShopAlertSweepTimer = setTimeout(() => {
@@ -4900,7 +4996,7 @@ async function sweepShopOrderRiskHealth() {
     shopOrderRiskSweepRunning = true;
 
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         const result = await runShopOrderRiskSweep(supabase, {
             runtime,
             config: runtime?.config?.shop_order_risk || {},
@@ -4928,12 +5024,12 @@ async function queueNextShopOrderRiskSweep(delayMs = null) {
 
     let monitorConfig = normalizeShopOrderRiskMonitorConfig({}, process.env);
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         monitorConfig = normalizeShopOrderRiskMonitorConfig(runtime?.config?.shop_order_risk || {}, process.env);
     } catch (error) {
         console.warn('[ShopOrderRiskMonitor] Failed to load stored runtime config, falling back to env defaults:', error?.message || error);
     }
-    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 5 * 60 * 1000));
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
 
     shopOrderRiskSweepTimer = setTimeout(() => {
         shopOrderRiskSweepTimer = null;
@@ -5009,7 +5105,7 @@ async function sweepCustomerChatMessageAlerts() {
     customerChatMessageSweepRunning = true;
 
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         const result = await runCustomerChatMessageSweep(supabase, {
             runtime,
             config: runtime?.config?.customer_chat_message || {},
@@ -5031,12 +5127,12 @@ async function queueNextCustomerChatMessageSweep(delayMs = null) {
 
     let monitorConfig = normalizeChatMessageMonitorConfig({}, process.env);
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         monitorConfig = normalizeChatMessageMonitorConfig(runtime?.config?.customer_chat_message || {}, process.env);
     } catch (error) {
         console.warn('[CustomerChatMessageMonitor] Failed to load runtime config for next sweep delay:', error.message || error);
     }
-    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 60 * 1000));
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 5 * 60 * 1000));
 
     customerChatMessageSweepTimer = setTimeout(() => {
         customerChatMessageSweepTimer = null;
@@ -5065,7 +5161,7 @@ async function sweepShopPurchaseSuccessAlerts() {
     shopPurchaseSuccessSweepRunning = true;
 
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         const result = await runCommerceSuccessSweep(supabase, {
             runtime,
             purchaseConfig: runtime?.config?.shop_purchase_success || {},
@@ -5088,12 +5184,12 @@ async function queueNextShopPurchaseSuccessSweep(delayMs = null) {
 
     let monitorConfig = normalizeCommerceSuccessMonitorConfig({}, process.env);
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         monitorConfig = normalizeCommerceSuccessMonitorConfig(runtime?.config?.shop_purchase_success || {}, process.env);
     } catch (error) {
         console.warn('[ShopPurchaseSuccessMonitor] Failed to load runtime config for next sweep delay:', error.message || error);
     }
-    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 2 * 60 * 1000));
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
 
     shopPurchaseSuccessSweepTimer = setTimeout(() => {
         shopPurchaseSuccessSweepTimer = null;
@@ -5122,7 +5218,7 @@ async function sweepWalletRechargeSuccessAlerts() {
     walletRechargeSuccessSweepRunning = true;
 
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         const result = await runCommerceSuccessSweep(supabase, {
             runtime,
             purchaseConfig: { enabled: false },
@@ -5145,12 +5241,12 @@ async function queueNextWalletRechargeSuccessSweep(delayMs = null) {
 
     let monitorConfig = normalizeCommerceSuccessMonitorConfig({}, process.env);
     try {
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const runtime = await getCachedOpsAlertsRuntimeConfig(supabase, process.env);
         monitorConfig = normalizeCommerceSuccessMonitorConfig(runtime?.config?.wallet_recharge_success || {}, process.env);
     } catch (error) {
         console.warn('[WalletRechargeSuccessMonitor] Failed to load runtime config for next sweep delay:', error.message || error);
     }
-    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 2 * 60 * 1000));
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
 
     walletRechargeSuccessSweepTimer = setTimeout(() => {
         walletRechargeSuccessSweepTimer = null;
@@ -5470,6 +5566,7 @@ app.post('/api/verify', async (req, res) => {
                 apiData,
                 config
             });
+            triggerImmediatePendingJobSweep();
         }
 
         return res.json({
@@ -6951,7 +7048,17 @@ if (require.main === module) {
 
 module.exports = {
     app,
+    clearOpsAlertsRuntimeCache,
+    clearVerifyConfigCache,
+    getCachedOpsAlertsRuntimeConfig,
+    getVerifyConfig,
     isAiImageReferenceUploadRequest,
     resolveTgCorsOrigins,
-    startServer
+    startPendingJobSweep,
+    startServer,
+    stopPendingJobSweep,
+    triggerImmediatePendingJobSweep,
+    PENDING_JOB_SWEEP_IDLE_INTERVAL_MS,
+    VERIFY_CONFIG_CACHE_TTL_MS,
+    OPS_ALERTS_RUNTIME_CACHE_TTL_MS
 };

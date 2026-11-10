@@ -210,6 +210,25 @@ function logStartup(options = {}) {
     console.log(`[${new Date().toISOString()}] ai-image-worker start envFile=${options.envFile} site=${options.site || 'all'} limit=${options.limit} concurrency=${options.concurrency} intervalMs=${options.intervalMs} idleIntervalMs=${options.idleIntervalMs} once=${options.once === true}`);
 }
 
+function resolveWorkerSleepMs({
+    processedCount = 0,
+    consecutiveIdleBatches = 0,
+    intervalMs = DEFAULT_INTERVAL_MS,
+    idleIntervalMs = DEFAULT_IDLE_INTERVAL_MS,
+    maxIdleIntervalMs = 60000
+} = {}) {
+    if (processedCount > 0) {
+        return intervalMs;
+    }
+    if (consecutiveIdleBatches <= 1) {
+        return idleIntervalMs;
+    }
+    if (consecutiveIdleBatches <= 3) {
+        return Math.min(maxIdleIntervalMs, Math.max(idleIntervalMs, 30000));
+    }
+    return Math.min(maxIdleIntervalMs * 2, Math.max(idleIntervalMs, 60000));
+}
+
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -295,6 +314,7 @@ async function runWorkerLoop(options = {}) {
         }
     });
     let stopping = false;
+    let consecutiveIdleBatches = 0;
 
     const stop = () => {
         stopping = true;
@@ -368,7 +388,18 @@ async function runWorkerLoop(options = {}) {
             break;
         }
 
-        const sleepMs = processedCount > 0 ? workerOptions.intervalMs : workerOptions.idleIntervalMs;
+        if (processedCount > 0) {
+            consecutiveIdleBatches = 0;
+        } else {
+            consecutiveIdleBatches += 1;
+        }
+
+        const sleepMs = resolveWorkerSleepMs({
+            processedCount,
+            consecutiveIdleBatches,
+            intervalMs: workerOptions.intervalMs,
+            idleIntervalMs: workerOptions.idleIntervalMs
+        });
         await sleep(sleepMs);
     } while (!stopping);
 }
@@ -390,6 +421,7 @@ module.exports = {
     logStartup,
     normalizeWorkerError,
     parseArgs,
+    resolveWorkerSleepMs,
     runBatchWithRetry,
     runWorkerLoop,
     serializeBatchResult
