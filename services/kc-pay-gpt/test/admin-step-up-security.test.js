@@ -38,7 +38,7 @@ function harness() {
     const ensureStoreReady = vi.fn(async () => {}), send = vi.fn(async () => ({ ok: true }));
     const securityModule = { exports: {} };
     vm.runInNewContext(securitySource, { module: securityModule, Date: Clock,
-        require: name => { if (name === 'node:crypto') return crypto; if (name === './admin-auth') return auth; if (name === './lib/qrcode-generator') return require('../lib/qrcode-generator'); throw new Error(`Unexpected dependency: ${name}`); } });
+        require: name => { if (name === 'node:crypto') return crypto; if (name === './admin-auth') return auth; if (name === './lib/qrcode-generator') return require('../lib/qrcode-generator'); if (name === './webauthn-security') return require('../webauthn-security'); throw new Error(`Unexpected dependency: ${name}`); } });
     const handlers = securityModule.exports.createAdminSecurity({ store, ensureStoreReady, sendTelegramLoginCode: send });
     const request = (body = {}, extra = {}) => ({ body, headers: {}, ip: '192.0.2.10', admin: { pv: 2, email: config.email }, adminToken: 'offline-login-token', ...extra });
     const invoke = async (method, body = {}, extra = {}) => { const res = response(); await handlers[method](request(body, extra), res); return res; };

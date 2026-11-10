@@ -2882,6 +2882,48 @@ async function saveAdmin2faLoginMode(mode, expectedVersion) {
     });
 }
 
+async function getAdminPasskeys() {
+    const rows = await runQuery("SELECT config_value FROM app_config WHERE config_key = 'admin_passkeys' LIMIT 1");
+    if (!rows[0]?.config_value) return [];
+    try {
+        const parsed = JSON.parse(rows[0].config_value);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+async function saveAdminPasskey(passkey) {
+    if (!passkey?.id || !passkey?.publicKey) throw new Error('无效的 Passkey 凭据数据');
+    const list = await getAdminPasskeys();
+    const filtered = list.filter((item) => item.id !== passkey.id);
+    filtered.push({
+        id: String(passkey.id),
+        publicKey: String(passkey.publicKey),
+        name: String(passkey.name || 'Mac Touch ID').slice(0, 64),
+        createdAt: Number(passkey.createdAt || Date.now())
+    });
+    await runExecute(
+        `INSERT INTO app_config (config_key, config_value)
+         VALUES ('admin_passkeys', ?)
+         ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
+        [JSON.stringify(filtered)]
+    );
+    return filtered;
+}
+
+async function deleteAdminPasskey(id) {
+    const list = await getAdminPasskeys();
+    const filtered = list.filter((item) => item.id !== id);
+    await runExecute(
+        `INSERT INTO app_config (config_key, config_value)
+         VALUES ('admin_passkeys', ?)
+         ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
+        [JSON.stringify(filtered)]
+    );
+    return filtered;
+}
+
 async function getAdminPaths() {
     const rows = await runQuery(
         `SELECT config_key, config_value
@@ -4797,6 +4839,9 @@ module.exports = {
     saveAdminTotpConfig,
     savePendingAdminTotp, getPendingAdminTotp, commitPendingAdminTotp, disableAdminTotp,
     saveAdmin2faLoginMode,
+    getAdminPasskeys,
+    saveAdminPasskey,
+    deleteAdminPasskey,
     getAdminPaths,
     saveAdminPaths,
     insertAdminLoginLog,

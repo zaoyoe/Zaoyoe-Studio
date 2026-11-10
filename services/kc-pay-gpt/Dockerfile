@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 \
     libxss1 libasound2 libpangocairo-1.0-0 libpango-1.0-0 \
     libxshmfence1 xdg-utils procps \
-    libgl1 libglib2.0-0 \
+    libgl1 libglib2.0-0 libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

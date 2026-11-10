@@ -3198,6 +3198,34 @@
                         <button class="btn btn-primary" style="margin-top: 10px;" onclick="confirmAdmin2fa()">确认启用</button>
                     </div>
                 </div>
+
+                <!-- Mac Touch ID / Passkey 原生指纹 -->
+                <div style="margin-top: 20px; padding: 16px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 12px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <div style="font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+                                <i data-lucide="fingerprint" style="color: #60a5fa;"></i>
+                                Mac Touch ID / Passkey（生物识别免密验证）
+                            </div>
+                            <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 4px; line-height: 1.5;">
+                                绑定后，查看卡密凭证、激活码管理或敏感数据时，直接轻触 Mac 键盘指纹即可秒速解锁，无需手动输入密码。
+                            </div>
+                            <div id="webauthn_status_badge" style="margin-top: 8px;">
+                                <span class="status-badge" style="background: rgba(148, 163, 184, 0.15); color: var(--text-dim);">检测中...</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button id="btn_bind_webauthn" type="button" class="btn btn-primary" onclick="bindWebAuthnPasskey()">
+                                <i data-lucide="fingerprint"></i>
+                                <span id="btn_bind_webauthn_text">绑定当前 Mac 指纹</span>
+                            </button>
+                            <button id="btn_delete_webauthn" type="button" class="btn btn-danger" style="display: none;" onclick="removeWebAuthnPasskey()">
+                                <i data-lucide="trash-2"></i>
+                                解绑指纹
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- 全局默认兜底地区设置 -->
@@ -4942,7 +4970,66 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     }[data.login2faMode] || '登录时可切换';
                     statusEl.textContent = `当前账号 ${data.email || '-'} · 2FA: ${data.totpEnabled ? '已启用' : '未启用'} · 已配置: ${available} · 策略: ${modeLabel}`;
                 }
+                await loadWebAuthnStatus();
             } catch (_) { }
+        }
+
+        async function loadWebAuthnStatus() {
+            const badgeEl = document.getElementById('webauthn_status_badge');
+            const btnBindText = document.getElementById('btn_bind_webauthn_text');
+            const btnDelete = document.getElementById('btn_delete_webauthn');
+            if (!badgeEl) return;
+            try {
+                const res = await authFetch('/api/admin/webauthn/status');
+                const data = await res.json();
+                if (data.success && data.enrolled && data.passkeys && data.passkeys.length > 0) {
+                    const pkName = data.passkeys[0].name || 'Mac Touch ID';
+                    badgeEl.innerHTML = `<span class="status-badge status-success" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3);">✅ 已绑定：${escapeHtml(pkName)}（轻触指纹即可通过验证）</span>`;
+                    if (btnBindText) btnBindText.textContent = '重新录入指纹';
+                    if (btnDelete) {
+                        btnDelete.style.display = 'inline-flex';
+                        btnDelete.dataset.id = data.passkeys[0].id;
+                    }
+                } else {
+                    badgeEl.innerHTML = '<span class="status-badge" style="background: rgba(148, 163, 184, 0.15); color: var(--text-dim);">未绑定（推荐开启 Mac 键盘指纹免密）</span>';
+                    if (btnBindText) btnBindText.textContent = '绑定当前 Mac 指纹';
+                    if (btnDelete) btnDelete.style.display = 'none';
+                }
+            } catch (_) {
+                badgeEl.innerHTML = '<span class="status-badge status-warning">检测状态失败</span>';
+            }
+            if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        }
+
+        async function bindWebAuthnPasskey() {
+            try {
+                if (!window.PublicKeyCredential || !navigator.credentials) {
+                    alert('当前浏览器环境不支持 WebAuthn，请使用 Safari 或 Chrome/Edge 浏览器');
+                    return;
+                }
+                showMessage('请在 Mac 上轻触键盘右上角的指纹键 (Touch ID)...', 'info');
+                const res = await window.KcAdminSecurity.registerWebAuthn('Mac Touch ID');
+                showMessage(res.message || '🎉 Mac Touch ID 指纹绑定成功！', 'success');
+                await loadWebAuthnStatus();
+            } catch (err) {
+                showMessage(err.message || '指纹绑定失败', 'error');
+            }
+        }
+
+        async function removeWebAuthnPasskey() {
+            const btnDelete = document.getElementById('btn_delete_webauthn');
+            const id = btnDelete?.dataset?.id;
+            if (!id) return;
+            const ok = await showAdminConfirm('确定解绑当前 Mac Touch ID 指纹吗？解绑后敏感操作将恢复为手动输入密码。', '解绑指纹');
+            if (!ok) return;
+            try {
+                const res = await authFetch('/api/admin/webauthn/' + encodeURIComponent(id), { method: 'DELETE' });
+                const data = await res.json();
+                showMessage(data.message || (data.success ? '已成功解绑指纹' : '解绑失败'), data.success ? 'success' : 'error');
+                await loadWebAuthnStatus();
+            } catch (err) {
+                showMessage(err.message || '解绑失败', 'error');
+            }
         }
 
         async function saveAdminPaths() {
