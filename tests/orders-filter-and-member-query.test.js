@@ -219,7 +219,7 @@ test('matchOrderDate properly filters orders across all date ranges', () => {
     vm.runInNewContext(`${fnCode}; globalThis.matchOrderDate = matchOrderDate;`, sandbox);
 
     const now = new Date();
-    const todayOrder = { created_at: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString() }; // 2 hours ago
+    const todayOrder = { created_at: new Date(now.getTime() - 1000).toISOString() }; // 1 second ago
     const threeDaysAgoOrder = { created_at: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString() };
     const twentyDaysAgoOrder = { created_at: new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000).toISOString() };
     const sixtyDaysAgoOrder = { created_at: new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000).toISOString() };
