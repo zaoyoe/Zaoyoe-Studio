@@ -4077,11 +4077,22 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                         observedPaymentState = mergePaymentState(observedPaymentState, state);
                         await persistLocal({
                             status: state === 'unknown' ? 'manual' : 'running',
-                            message: message || (state === 'started' ? '正在提交银行卡支付' : '支付状态已更新'),
+                            message: message || (state === 'started' ? '正在提交银行卡支付' : (state === 'succeeded' ? '支付成功，正在确认开通状态' : '支付状态已更新')),
                             cdkCode: cdk,
                             paymentState: state,
                             recoveryRequired: ['started', 'unknown'].includes(normalizePaymentState(state))
                         });
+                        if (state === 'succeeded') {
+                            broadcastToTask(task.jobKey, {
+                                type: 'progress',
+                                jobKey: task.jobKey,
+                                status: 'running',
+                                progress: 100,
+                                paymentState: 'succeeded',
+                                message: '充值成功',
+                                cdkCode: cdk
+                            });
+                        }
                     })
                 });
 
@@ -4213,18 +4224,30 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
             finalPaymentState = settlement.paymentState;
             finalMessage = settlement.message || finalMessage;
 
-            broadcastToTask(task.jobKey, {
-                type: 'status',
-                jobKey: task.jobKey,
-                status: finalStatus,
-                message: finalMessage,
-                paymentState: finalPaymentState,
-                recoveryRequired: settlement.recoveryRequired,
-                cdkCode: cdk,
-                progress: finalProgress,
-                screenshots: taskMedia.screenshots,
-                videos: taskMedia.videos
-            });
+            if (autoRenewPending) {
+                broadcastToTask(task.jobKey, {
+                    type: 'progress',
+                    jobKey: task.jobKey,
+                    status: 'running',
+                    progress: 100,
+                    paymentState: 'succeeded',
+                    message: '充值成功',
+                    cdkCode: cdk
+                });
+            } else {
+                broadcastToTask(task.jobKey, {
+                    type: 'status',
+                    jobKey: task.jobKey,
+                    status: finalStatus,
+                    message: finalMessage,
+                    paymentState: finalPaymentState,
+                    recoveryRequired: settlement.recoveryRequired,
+                    cdkCode: cdk,
+                    progress: finalProgress,
+                    screenshots: taskMedia.screenshots,
+                    videos: taskMedia.videos
+                });
+            }
 
             logTask(
                 task.jobKey,
