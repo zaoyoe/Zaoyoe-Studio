@@ -51,7 +51,122 @@
     function assertCurrent(epoch, token) {
         if (epoch !== generation || token !== activeToken || document.hidden) throw new Error('身份验证已取消，请重试');
     }
+    function bufferToBase64Url(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let str = '';
+        for (let i = 0; i < bytes.byteLength; i++) str += String.fromCharCode(bytes[i]);
+        return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    function base64UrlToBuffer(str) {
+        const padding = '='.repeat((4 - (str.length % 4)) % 4);
+        const base64 = (str + padding).replace(/-/g, '+').replace(/_/g, '/');
+        const raw = atob(base64);
+        const output = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i);
+        return output.buffer;
+    }
+    async function verifyWithWebAuthn(token, epoch) {
+        if (typeof window === 'undefined' || !window.PublicKeyCredential || !navigator.credentials) return false;
+        let challengeRes;
+        try {
+            challengeRes = await requestJson('/api/admin/webauthn/challenge', {}, token);
+        } catch (_) {
+            return false;
+        }
+        if (!challengeRes.success || !challengeRes.options || !challengeRes.options.allowCredentials?.length) {
+            return false;
+        }
+        assertCurrent(epoch, token);
+        const opts = challengeRes.options;
+        const publicKey = {
+            challenge: base64UrlToBuffer(opts.challenge),
+            rpId: opts.rpId,
+            allowCredentials: opts.allowCredentials.map(c => ({
+                id: base64UrlToBuffer(c.id),
+                type: 'public-key',
+                transports: c.transports
+            })),
+            userVerification: 'required',
+            timeout: opts.timeout || 60000
+        };
+        let assertion;
+        try {
+            assertion = await navigator.credentials.get({ publicKey });
+        } catch (_) {
+            return false;
+        }
+        assertCurrent(epoch, token);
+        if (!assertion || !assertion.response) return false;
+
+        const payload = {
+            challenge: opts.challenge,
+            id: assertion.id,
+            clientDataJSON: bufferToBase64Url(assertion.response.clientDataJSON),
+            authenticatorData: bufferToBase64Url(assertion.response.authenticatorData),
+            signature: bufferToBase64Url(assertion.response.signature)
+        };
+        const data = await requestJson('/api/admin/webauthn/verify', payload, token);
+        assertCurrent(epoch, token);
+        if (typeof data.secondaryToken !== 'string' || !Number.isFinite(data.expiresAt)
+            || data.expiresAt <= Date.now() || data.expiresAt > Date.now() + 300_000) throw new Error('无效验证响应');
+        proof = { token: data.secondaryToken, expiresAt: data.expiresAt, adminToken: token };
+        clearTimeout(proofTimer);
+        proofTimer = setTimeout(() => { proof = null; }, Math.max(0, data.expiresAt - Date.now()));
+        return true;
+    }
+    async function registerWebAuthn(name = 'Mac Touch ID') {
+        const token = activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('admin_token') : null);
+        if (!token) throw new Error('未登录');
+        if (typeof window === 'undefined' || !window.PublicKeyCredential || !navigator.credentials) {
+            throw new Error('当前浏览器不支持 WebAuthn / Passkey 指纹认证');
+        }
+
+        const optRes = await requestJson('/api/admin/webauthn/register-options', {}, token);
+        if (!optRes.success || !optRes.options) throw new Error('获取注册选项失败');
+        const opts = optRes.options;
+
+        const publicKey = {
+            challenge: base64UrlToBuffer(opts.challenge),
+            rp: opts.rp,
+            user: {
+                id: base64UrlToBuffer(opts.user.id),
+                name: opts.user.name,
+                displayName: opts.user.displayName
+            },
+            pubKeyCredParams: opts.pubKeyCredParams,
+            authenticatorSelection: opts.authenticatorSelection,
+            timeout: opts.timeout || 60000,
+            attestation: opts.attestation || 'none'
+        };
+
+        const credential = await navigator.credentials.create({ publicKey });
+        if (!credential) throw new Error('指纹注册已取消');
+
+        let publicKeySpki = '';
+        if (typeof credential.response.getPublicKey === 'function') {
+            const keyBuf = credential.response.getPublicKey();
+            if (keyBuf) publicKeySpki = bufferToBase64Url(keyBuf);
+        }
+
+        const confirmPayload = {
+            challenge: opts.challenge,
+            id: credential.id,
+            name,
+            clientDataJSON: bufferToBase64Url(credential.response.clientDataJSON),
+            attestationObject: bufferToBase64Url(credential.response.attestationObject),
+            publicKeySpki
+        };
+
+        return await requestJson('/api/admin/webauthn/register-confirm', confirmPayload, token);
+    }
     async function verify(token, epoch) {
+        try {
+            const ok = await verifyWithWebAuthn(token, epoch);
+            if (ok) return;
+        } catch (e) {
+            if (e.message && e.message.includes('已取消')) throw e;
+        }
+        assertCurrent(epoch, token);
         const password = await ask('敏感操作：请输入当前登录密码', { password: true });
         assertCurrent(epoch, token);
         const challenge = await requestJson('/api/admin/secondary/challenge', { password }, token);
@@ -127,5 +242,11 @@
     }
     window.addEventListener('pagehide', clear);
     document.addEventListener('visibilitychange', () => { if (document.hidden) clear(); });
-    window.KcAdminSecurity = { fetch: securedFetch, clear, showSecret: text => document.hidden ? Promise.reject(new Error('页面已隐藏')) : ask('敏感凭证（30 秒后自动清除）', { reveal: true, value: text }) };
+    window.KcAdminSecurity = {
+        fetch: securedFetch,
+        clear,
+        showSecret: text => document.hidden ? Promise.reject(new Error('页面已隐藏')) : ask('敏感凭证（30 秒后自动清除）', { reveal: true, value: text }),
+        registerWebAuthn,
+        verifyWithWebAuthn
+    };
 })();
