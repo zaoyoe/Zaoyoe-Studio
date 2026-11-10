@@ -3168,11 +3168,58 @@ app.get('/api/admin/cards', async (req, res) => {
             last4: String(row.last4 || ''),
             is_active: Number(row.is_active || 0),
             usage_count: Number(row.usage_count || 0),
+            max_usage_limit: row.max_usage_limit !== null && row.max_usage_limit !== undefined ? Number(row.max_usage_limit) : null,
             last_used_at: row.last_used_at || null,
             status: row.status || '正常',
             cooldown_until: row.cooldown_until || null
         }));
-        res.json({ success: true, cards });
+
+        const maxUsageLimit = await store.getCardMaxUsageLimit();
+        const unconfirmedTasks = await store.getUnconfirmedAutoRenewTasks({ limit: 100 });
+
+        res.json({
+            success: true,
+            cards,
+            config: {
+                max_usage_limit: maxUsageLimit
+            },
+            unconfirmed_auto_renew: {
+                count: unconfirmedTasks.length,
+                tasks: unconfirmedTasks
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.post('/api/admin/cards/max-usage-limit', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const raw = req.body?.max_usage_limit;
+        const limit = Math.max(0, parseInt(raw, 10) || 0);
+        await store.setCardMaxUsageLimit(limit);
+        res.json({
+            success: true,
+            max_usage_limit: limit,
+            message: limit > 0
+                ? `银行卡最大成功扣款次数限制已更新为 ${limit} 次（达到后自动冻结）`
+                : '已解除银行卡扣款成功次数限制（无限制）'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/admin/cards/unconfirmed-auto-renew', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const tasks = await store.getUnconfirmedAutoRenewTasks({ limit: 200 });
+        res.json({
+            success: true,
+            count: tasks.length,
+            tasks
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

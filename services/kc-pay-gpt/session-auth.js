@@ -567,50 +567,75 @@ async function installChatGptSession(context, sessionRaw, options = {}) {
         }
     }
 
+    if (options.accessToken && typeof options.accessToken === 'string' && options.accessToken.split('.').length === 3) {
+        accessToken = options.accessToken;
+        sessionData = {
+            ...sessionData,
+            accessToken
+        };
+    }
+    if (options.sessionData && typeof options.sessionData === 'object') {
+        sessionData = {
+            ...sessionData,
+            ...options.sessionData
+        };
+        if (sessionData.accessToken) {
+            accessToken = sessionData.accessToken;
+        }
+    }
+
     assertLocalSessionFresh(accessToken, cookieVerified ? { expires: sessionData.expires } : sessionJson);
     const sessionBody = JSON.stringify(sessionData);
 
-    await context.addInitScript((payload) => {
-        const sessionStr = JSON.stringify(payload);
-        try {
-            window.__CHATGPT_BOOTSTRAP_SESSION__ = payload;
-            localStorage.setItem('oai/apps/chat/bootstrap-session', sessionStr);
-        } catch (_) { /* ignore */ }
+    if (!injectResult.hasSessionToken) {
+        await context.addInitScript((payload) => {
+            const sessionStr = JSON.stringify(payload);
+            try {
+                window.__CHATGPT_BOOTSTRAP_SESSION__ = payload;
+                localStorage.setItem('oai/apps/chat/bootstrap-session', sessionStr);
+            } catch (_) { /* ignore */ }
 
-        const originalFetch = window.fetch.bind(window);
-        window.fetch = async function patchedFetch(input, init) {
-            const url = typeof input === 'string' ? input : (input && input.url) || '';
-            if (url.includes('/api/auth/session')) {
-                return new Response(sessionStr, {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' }
-                });
-            }
-            if (url.includes('/api/auth/csrf')) {
-                return new Response(JSON.stringify({ csrfToken: 'bootstrap-csrf-token' }), {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' }
-                });
-            }
-            return originalFetch(input, init);
-        };
-    }, sessionData);
+            const originalFetch = window.fetch.bind(window);
+            window.fetch = async function patchedFetch(input, init) {
+                const url = typeof input === 'string' ? input : (input && input.url) || '';
+                if (url.includes('/api/auth/session')) {
+                    return new Response(sessionStr, {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                }
+                if (url.includes('/api/auth/csrf')) {
+                    return new Response(JSON.stringify({ csrfToken: 'bootstrap-csrf-token' }), {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                }
+                return originalFetch(input, init);
+            };
+        }, sessionData);
 
-    await context.route(/\/api\/auth\/session(\?.*)?$/, async (route) => {
-        await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: sessionBody
+        await context.route(/\/api\/auth\/session(\?.*)?$/, async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: sessionBody
+            });
         });
-    });
 
-    await context.route(/\/api\/auth\/csrf(\?.*)?$/, async (route) => {
-        await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({ csrfToken: 'bootstrap-csrf-token' })
+        await context.route(/\/api\/auth\/csrf(\?.*)?$/, async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ csrfToken: 'bootstrap-csrf-token' })
+            });
         });
-    });
+    } else {
+        await context.addInitScript((payload) => {
+            try {
+                window.__CHATGPT_BOOTSTRAP_SESSION__ = payload;
+            } catch (_) { /* ignore */ }
+        }, sessionData);
+    }
 
     await context.route('**/*', async (route) => {
         const url = route.request().url();

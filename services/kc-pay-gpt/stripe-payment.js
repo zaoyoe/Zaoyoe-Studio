@@ -4639,10 +4639,28 @@ async function clickCheckoutSubmitButton(page, accountEmail = '', onBeforeSubmit
 
             await safeScrollIntoView(target);
             await page.waitForTimeout(randomBetween(150, 350));
+
+            const { hasVisibleExpiredSession } = require('./auth-page-detect');
+            if (await hasVisibleExpiredSession(page).catch(() => false)) {
+                console.warn('[Stripe] ⚠️ 点击提交前检测到 ChatGPT 会话已过期 (Your session has expired)');
+                const { buildChatGptAuthError } = require('./chatgpt-auth-state');
+                throw buildChatGptAuthError('CHATGPT_SESSION_EXPIRED');
+            }
+
             // Validate after scroll/button waits, immediately before each submit action.
             actionStarted = true;
             if (onBeforeSubmit) await onBeforeSubmit();
-            await target.click({ timeout: 8000, delay: randomBetween(40, 120) });
+            try {
+                await target.click({ timeout: 8000, delay: randomBetween(40, 120) });
+            } catch (clickErr) {
+                if (await hasVisibleExpiredSession(page).catch(() => false)) {
+                    console.warn('[Stripe] ⚠️ 提交按钮点击被会话过期遮罩拦截，未实际提交扣款 (Your session has expired)');
+                    actionStarted = false;
+                    const { buildChatGptAuthError } = require('./chatgpt-auth-state');
+                    throw buildChatGptAuthError('CHATGPT_SESSION_EXPIRED');
+                }
+                throw clickErr;
+            }
             console.log(`[Stripe] ✅ 已点击提交按钮 (${label})`);
 
             // 点击后等待 800ms 检查是否有表单校验阻止了提交

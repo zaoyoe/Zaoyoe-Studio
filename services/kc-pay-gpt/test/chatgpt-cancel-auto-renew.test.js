@@ -319,4 +319,104 @@ describe('ChatGPT Cancel Auto-Renew Module', () => {
         expect(result.ok).toBe(true);
         expect(result.cancelled).toBe(true);
     });
+
+    it('retries page.evaluate when execution context was destroyed and succeeds on next attempt', async () => {
+        let evalCount = 0;
+        const mockPage = {
+            isClosed: () => false,
+            waitForLoadState: vi.fn().mockResolvedValue(null),
+            waitForTimeout: vi.fn().mockResolvedValue(null),
+            evaluate: vi.fn().mockImplementation(async () => {
+                evalCount++;
+                if (evalCount === 1) {
+                    throw new Error('page.evaluate: Execution context was destroyed, most likely because of a navigation');
+                }
+                return {
+                    ok: true,
+                    cancelled: true,
+                    message: '已通过官方原生接口成功关闭次月自动续订，本周期内权益继续有效'
+                };
+            })
+        };
+
+        const result = await cancelChatGptAutoRenew(mockPage);
+        expect(evalCount).toBe(2);
+        expect(result.ok).toBe(true);
+        expect(result.cancelled).toBe(true);
+        expect(mockPage.waitForTimeout).toHaveBeenCalled();
+    });
+
+    it('refreshes accessToken via cookieHeader in protocol mode when encountering 401', async () => {
+        let sessionRefreshed = false;
+        const calls = [];
+
+        const mockFetch = vi.fn(async (url, init = {}) => {
+            const authHeader = init.headers?.Authorization || '';
+            calls.push({ url, authHeader });
+
+            if (url.includes('/api/auth/session')) {
+                sessionRefreshed = true;
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        accessToken: 'eyJhbGciOiJSUzI1NiJ9.refreshed_new_token'
+                    })
+                };
+            }
+
+            if (url.includes('/backend-api/accounts/check/')) {
+                if (authHeader === 'Bearer old_stale_token') {
+                    return { ok: false, status: 401, json: async () => ({ detail: 'token_expired' }) };
+                }
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        accounts: {
+                            'acc-refreshed-1': {
+                                account: { account_id: 'acc-refreshed-1', plan_type: 'plus' },
+                                entitlement: { has_active_subscription: true }
+                            }
+                        }
+                    })
+                };
+            }
+
+            if (url.includes('/backend-api/subscriptions?account_id=acc-refreshed-1')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        id: 'sub-refreshed',
+                        is_active: true,
+                        will_renew: true,
+                        entitlement: { has_active_subscription: true }
+                    })
+                };
+            }
+
+            if (url.includes('/backend-api/subscriptions/cancel')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ status: 'canceled' })
+                };
+            }
+
+            return { ok: false, status: 404 };
+        });
+
+        const result = await cancelChatGptAutoRenewProtocol({
+            accessToken: 'old_stale_token',
+            cookieHeader: '__Secure-next-auth.session-token=sess_token_val',
+            fetchImpl: mockFetch,
+            pollIntervalMs: 20,
+            maxPollAttempts: 3
+        });
+
+        expect(sessionRefreshed).toBe(true);
+        expect(result.ok).toBe(true);
+        expect(result.cancelled).toBe(true);
+    });
 });

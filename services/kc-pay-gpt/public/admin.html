@@ -2461,6 +2461,23 @@
         </div>
     </div>
 
+    <div id="unconfirmed_auto_renew_modal_overlay" class="screenshot-modal-overlay" role="presentation"
+        onclick="if (event.target === this) closeUnconfirmedAutoRenewModal()">
+        <div class="screenshot-modal" style="width: min(1080px, 95vw); max-height: 88vh;" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+            <div class="screenshot-modal-header">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="alert-triangle" style="color: #f59e0b; width: 20px; height: 20px;"></i>
+                    <h3 style="margin:0; font-size:16px; font-weight:600; color: #fbbf24;">未关闭自动续费任务预警</h3>
+                </div>
+                <button type="button" class="btn btn-secondary" onclick="closeUnconfirmedAutoRenewModal()">关闭</button>
+            </div>
+            <p style="color:var(--text-dim); font-size:12.5px; margin:0 0 14px; line-height: 1.5;">
+                以下任务充值扣款已成功，但官方接口未确认关闭次月自动续订（接口未返回或操作异常）。为避免银行卡下月被再次扣款，建议核实对应账号或提示用户手动在设置中取消订阅。
+            </p>
+            <div id="unconfirmed_auto_renew_table_container" style="overflow-y: auto; max-height: 60vh;"></div>
+        </div>
+    </div>
+
     <div class="app-layout">
         <div id="sidebar_backdrop" class="sidebar-backdrop" onclick="closeMobileSidebar()"></div>
 
@@ -3500,6 +3517,18 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 <p>管理 Stripe 支付使用的银行卡资源（通过 API 导入与维护）</p>
             </div>
 
+            <!-- 未确认关闭自动续费预警 Banner -->
+            <div id="card_auto_renew_alert" style="display:none; margin-bottom: 20px; padding: 12px 18px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 12px; align-items: center; justify-content: space-between; gap: 16px;">
+                <div style="display: flex; align-items: center; gap: 12px; font-size: 13.5px; color: #fbbf24;">
+                    <i data-lucide="alert-triangle" style="width: 22px; height: 22px; color: #f59e0b; flex-shrink: 0;"></i>
+                    <span>检测到有 <strong id="card_auto_renew_alert_count" style="color: #f59e0b; font-size: 15px; font-weight: bold;">0</strong> 笔充值成功后<b>未确认关闭自动续费</b>的任务。为防止卡片在下月被再次扣款，请尽快核实处理！</span>
+                </div>
+                <button type="button" class="btn btn-warning" onclick="openUnconfirmedAutoRenewModal()" style="font-size: 12px; padding: 6px 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;">
+                    <i data-lucide="external-link"></i>
+                    查看任务详情
+                </button>
+            </div>
+
             <div class="stat-grid" style="margin-bottom: 20px;">
                 <div class="stat-card">
                     <div class="stat-header">
@@ -3536,10 +3565,25 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             <div class="panel">
                 <div class="panel-header">
                     <h2 class="panel-title">银行卡列表</h2>
-                    <button class="btn btn-success" onclick="toggleCardPoolImportBox()">
-                        <i data-lucide="upload"></i>
-                        批量导入
-                    </button>
+                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end;">
+                        <div style="display: inline-flex; align-items: center; gap: 6px; background: var(--surface-soft, rgba(255, 255, 255, 0.04)); border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1)); border-radius: 8px; padding: 4px 10px; font-size: 13px;">
+                            <span style="color: var(--text-secondary); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">
+                                <i data-lucide="shield-alert" style="width: 14px; height: 14px; color: #60a5fa;"></i>
+                                最大成功扣款限制:
+                            </span>
+                            <input type="number" id="card_max_usage_input" min="0" max="999" step="1" placeholder="0为不限"
+                                style="width: 75px; text-align: center; border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15)); border-radius: 4px; background: var(--bg-hover, rgba(255, 255, 255, 0.06)); color: var(--text-main); font-size: 13px; padding: 3px 6px;">
+                            <span style="color: var(--text-dim); font-size: 12px;">次</span>
+                            <button type="button" class="btn btn-primary" onclick="saveCardMaxUsageLimit()" style="padding: 4px 10px; font-size: 12px; height: 28px;">
+                                保存
+                            </button>
+                            <span style="font-size: 11px; color: var(--text-dim); margin-left: 2px;">(达到后自动冻结)</span>
+                        </div>
+                        <button class="btn btn-success" onclick="toggleCardPoolImportBox()">
+                            <i data-lucide="upload"></i>
+                            批量导入
+                        </button>
+                    </div>
                 </div>
 
                 <div id="card_pool_import_box" class="import-box">
@@ -3579,7 +3623,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                                 <th width="110px">支付姓名</th>
                                 <th>绑定地址</th>
                                 <th width="90px" style="text-align:center">状态</th>
-                                <th width="80px" style="text-align:center">次数</th>
+                                <th width="95px" style="text-align:center">扣款次数</th>
                                 <th width="140px" style="text-align:center">最近使用</th>
                                 <th width="120px" style="text-align:center">操作</th>
                             </tr>
@@ -3934,15 +3978,17 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <table class="cdk-table">
                         <colgroup>
                             <col style="width:4%">
-                            <col style="width:16%">
-                            <col style="width:9%">
-                            <col style="width:16%">
-                            <col style="width:8%">
-                            <col style="width:13%">
-                            <col style="width:6%">
+                            <col style="width:14%">
                             <col style="width:7%">
-                            <col style="width:13%">
+                            <col style="width:12%">
+                            <col style="width:7%">
+                            <col style="width:9%">
                             <col style="width:8%">
+                            <col style="width:11%">
+                            <col style="width:6%">
+                            <col style="width:6%">
+                            <col style="width:10%">
+                            <col style="width:6%">
                         </colgroup>
                         <thead>
                             <tr>
@@ -3951,6 +3997,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                                 <th style="text-align:center;">平台</th>
                                 <th style="text-align:center;">套餐</th>
                                 <th style="text-align:center;">支付地区</th>
+                                <th style="text-align:center;">关联卡号</th>
+                                <th style="text-align:center;">自动续费</th>
                                 <th>Session 记录</th>
                                 <th style="text-align:center;">是否出库</th>
                                 <th style="text-align:center;">状态</th>
@@ -7568,6 +7616,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 return;
             }
             const pageData = getPageItems(getFilteredItems('cdk'), 'cdk');
+            if (!pageData.items.length) {
+                tbody.innerHTML = '<tr><td colspan="12" style="text-align:center; color: var(--text-dim); padding: 40px 0;">暂无匹配的激活码数据</td></tr>';
+                renderPagination('cdk_pagination', 'cdk', 0);
+                lucide.createIcons();
+                return;
+            }
             tbody.innerHTML = pageData.items.map((cdk) => {
                 const code = typeof cdk === 'string' ? cdk : (cdk.code || '');
                 const status = typeof cdk === 'string' ? 'unused' : (cdk.status || 'unused');
@@ -7675,6 +7729,32 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     grok: '<span class="status-badge" style="background:rgba(99,102,241,0.12); color:#6366f1;">🚀 Grok</span>'
                 }[platform] || '<span class="status-badge">ChatGPT</span>';
 
+                const cardNumRaw = cdk && typeof cdk !== 'string' ? (cdk.card_number || '') : '';
+                const cardLast4 = cdk && typeof cdk !== 'string' ? (cdk.card_last4 || (cardNumRaw ? String(cardNumRaw).slice(-4) : '')) : '';
+                const cardCell = cardLast4
+                    ? `<span class="cdk-card-chip" title="${cardNumRaw ? '银行卡号: ' + escapeHtml(cardNumRaw) : '尾号: ' + escapeHtml(cardLast4)}">💳 <code>...${escapeHtml(cardLast4)}</code></span>`
+                    : '<span style="color:var(--text-dim);">-</span>';
+
+                const renewStatus = cdk && typeof cdk !== 'string' ? (cdk.auto_renew_status || null) : null;
+                const renewMsg = cdk && typeof cdk !== 'string' ? (cdk.auto_renew_message || '') : '';
+                let renewBadge = '<span style="color:var(--text-dim);">-</span>';
+                if (status === 'processing') {
+                    renewBadge = '<span style="color:var(--text-dim); font-size:11px;">处理中</span>';
+                } else if (status === 'used' || renewStatus) {
+                    if (renewStatus === 'disabled') {
+                        renewBadge = `<span class="status-badge" style="background:rgba(16,185,129,0.12); color:#10b981; border:1px solid rgba(16,185,129,0.25);" title="${escapeHtml(renewMsg || '已成功关闭次月自动续订')}">已关闭</span>`;
+                    } else if (renewStatus === 'verification_unknown') {
+                        renewBadge = `<span class="status-badge" style="background:rgba(245,158,11,0.15); color:#f59e0b; border:1px solid rgba(245,158,11,0.3);" title="${escapeHtml(renewMsg || '接口未明确返回关闭结果，需核实')}">未确认</span>`;
+                    } else if (renewStatus === 'failed') {
+                        renewBadge = `<span class="status-badge" style="background:rgba(239,68,68,0.15); color:#ef4444; border:1px solid rgba(239,68,68,0.3);" title="${escapeHtml(renewMsg || '自动关闭续费失败')}">未关闭</span>`;
+                    } else if (renewStatus === 'not_applicable') {
+                        renewBadge = '<span class="status-badge" style="background:rgba(148,163,184,0.12); color:var(--text-dim);" title="非按月自动续订套餐或无需关闭">无需关闭</span>';
+                    } else {
+                        renewBadge = '<span style="color:var(--text-dim);" title="无续费记录或历史任务">-</span>';
+                    }
+                }
+                const renewCell = `<span class="cdk-renew-cell">${renewBadge}</span>`;
+
                 const sessionRaw = typeof cdk === 'string' ? '' : (cdk.session_preview || cdk.session || '');
                 const sessionCell = sessionRaw
                     ? `<span class="cdk-copy" onclick="copySessionRecord(decodeURIComponent('${encodeURIComponent(sessionRaw)}'))" title="${escapeHtml(sessionRaw)} · 点击复制"><code>${escapeHtml(sessionRaw)}</code></span>`
@@ -7682,7 +7762,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
 
                 const regionCode = cdk && cdk.payment_region ? String(cdk.payment_region).toUpperCase() : null;
                 const regionBadge = regionCode ? ({
-                    PH: '<span class="status-badge region-badge" style="background:rgba(14,165,233,0.12); color:#0ea5e9;">🇵🇭 菲律宾</span>',
+                    PH: '<span class="status-badge region-badge" style="background:rgba(148,163,184,0.12); color:#0ea5e9;">🇵🇭 菲律宾</span>',
                     US: '<span class="status-badge region-badge" style="background:rgba(99,102,241,0.12); color:#6366f1;">🇺🇸 美国</span>',
                     EG: '<span class="status-badge region-badge" style="background:rgba(217,119,6,0.12); color:#d97706;">🇪🇬 埃及</span>',
                     CL: '<span class="status-badge region-badge" style="background:rgba(239,68,68,0.12); color:#ef4444;">🇨🇱 智利</span>',
@@ -7698,6 +7778,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <td style="text-align:center; white-space:nowrap;">${platformBadge}</td>
                     <td class="cdk-plan-cell" style="text-align:center;"><span class="status-badge" title="${escapeHtml(planTypeLabel)}" style="background: ${planTypeBg}; color: ${planTypeColor}">${escapeHtml(planTypeLabel)}</span></td>
                     <td style="text-align:center; white-space:nowrap;">${regionBadge}</td>
+                    <td style="text-align:center; white-space:nowrap;">${cardCell}</td>
+                    <td style="text-align:center; white-space:nowrap;">${renewCell}</td>
                     <td class="cdk-session-cell">${sessionCell}</td>
                     <td style="text-align:center; white-space:nowrap;"><span class="readonly-switch ${shipped ? 'active' : ''}" role="img" aria-label="${shipped ? '已出库' : '未出库'}" title="${shipped ? '已出库' : '未出库'}"></span></td>
                     <td style="text-align:center; white-space:nowrap;">${status === 'processing'
@@ -7709,7 +7791,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <td class="cdk-actions-cell">
                         <div class="table-action-group">
                             ${status === 'used' ? `<button type="button" class="btn btn-secondary btn-icon cdk-reset-action" aria-label="重置为未使用" title="重置为未使用" onclick="resetCDK('${code}')"><i data-lucide="rotate-ccw"></i></button>` : ''}
-                            <button type="button" class="btn-delete cdk-delete-action" aria-label="删除激活码" title="删除" onclick="deleteCDK('${code}')">
+                            <button type="button" class="btn btn-delete cdk-delete-action" aria-label="删除激活码" title="删除" onclick="deleteCDK('${code}')">
                                 <i data-lucide="trash-2"></i>
                             </button>
                         </div>
@@ -7820,6 +7902,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         // ============ Stripe Card Pool Management ============
 
         let cardPoolList = [];
+        let globalCardMaxUsageLimit = 0;
+        let unconfirmedAutoRenewTasks = [];
 
         function toggleCardPoolImportBox() {
             const box = document.getElementById('card_pool_import_box');
@@ -7841,11 +7925,106 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const res = await authFetch('/api/admin/cards');
                 const data = await res.json();
                 cardPoolList = Array.isArray(data.cards) ? data.cards : (Array.isArray(data) ? data : []);
+                if (data.config && typeof data.config.max_usage_limit !== 'undefined') {
+                    globalCardMaxUsageLimit = Number(data.config.max_usage_limit) || 0;
+                    const inputEl = document.getElementById('card_max_usage_input');
+                    if (inputEl && document.activeElement !== inputEl) {
+                        inputEl.value = globalCardMaxUsageLimit > 0 ? globalCardMaxUsageLimit : '';
+                    }
+                }
+                if (data.unconfirmed_auto_renew) {
+                    unconfirmedAutoRenewTasks = data.unconfirmed_auto_renew.tasks || [];
+                    const alertEl = document.getElementById('card_auto_renew_alert');
+                    const alertCountEl = document.getElementById('card_auto_renew_alert_count');
+                    const count = data.unconfirmed_auto_renew.count || 0;
+                    if (alertCountEl) alertCountEl.textContent = count;
+                    if (alertEl) alertEl.style.display = count > 0 ? 'flex' : 'none';
+                }
                 renderCardPoolStats();
                 renderCardPoolTable();
             } catch (e) {
                 console.error('loadCardPoolList failed', e);
                 showMessage('加载卡池列表失败', 'error');
+            }
+        }
+
+        async function saveCardMaxUsageLimit() {
+            const inputEl = document.getElementById('card_max_usage_input');
+            const limit = Math.max(0, parseInt(inputEl?.value || '0', 10) || 0);
+            try {
+                const res = await authFetch('/api/admin/cards/max-usage-limit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ max_usage_limit: limit })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    globalCardMaxUsageLimit = limit;
+                    showMessage(data.message || '银行卡扣款限制已更新', 'success');
+                    renderCardPoolTable();
+                } else {
+                    showMessage(data.message || '更新失败', 'error');
+                }
+            } catch (e) {
+                showMessage('网络请求失败', 'error');
+            }
+        }
+
+        function openUnconfirmedAutoRenewModal() {
+            const overlay = document.getElementById('unconfirmed_auto_renew_modal_overlay');
+            const container = document.getElementById('unconfirmed_auto_renew_table_container');
+            if (!overlay || !container) return;
+
+            if (!unconfirmedAutoRenewTasks || unconfirmedAutoRenewTasks.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding: 40px; color: var(--text-dim);">当前暂无未确认关闭续费的任务</div>';
+            } else {
+                container.innerHTML = `
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.1)); color: var(--text-secondary); text-align: left;">
+                                <th style="padding: 10px 12px;">任务 ID</th>
+                                <th style="padding: 10px 12px;">CDK 卡密</th>
+                                <th style="padding: 10px 12px;">用户邮箱</th>
+                                <th style="padding: 10px 12px;">扣款卡号</th>
+                                <th style="padding: 10px 12px;">状态原因</th>
+                                <th style="padding: 10px 12px;">充值时间</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${unconfirmedAutoRenewTasks.map(t => {
+                                const cardText = t.card_last4 ? `...${t.card_last4}` : (t.card_number ? `...${String(t.card_number).slice(-4)}` : '-');
+                                const fullCard = t.card_number || (t.card_last4 ? `尾号 ${t.card_last4}` : '-');
+                                const timeStr = t.created_at ? formatTimeShort(t.created_at) : '-';
+                                const statusColor = t.auto_renew_status === 'failed' ? '#ef4444' : '#f59e0b';
+                                const statusLabel = t.auto_renew_status === 'failed' ? '❌ 关闭失败' : '⚠️ 状态未确认';
+                                return `
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">
+                                    <td style="padding: 10px 12px;"><code>${escapeHtml(t.job_key || '-')}</code></td>
+                                    <td style="padding: 10px 12px;"><code style="cursor: pointer; color: #60a5fa;" onclick="copyText('${escapeHtml(t.cdk_code || '')}'); showMessage('已复制卡密', 'success');" title="点击复制卡密">${escapeHtml(t.cdk_code || '-')}</code></td>
+                                    <td style="padding: 10px 12px;">${t.email ? `<span style="cursor: pointer; color: var(--text-main);" onclick="copyText('${escapeHtml(t.email)}'); showMessage('已复制邮箱', 'success');" title="点击复制邮箱">${escapeHtml(t.email)}</span>` : '<span style="color:var(--text-dim);">-</span>'}</td>
+                                    <td style="padding: 10px 12px;"><code title="${escapeHtml(fullCard)}">${escapeHtml(cardText)}</code></td>
+                                    <td style="padding: 10px 12px;">
+                                        <span class="status-badge" style="background: rgba(245, 158, 11, 0.12); color: ${statusColor}; font-size: 11.5px;" title="${escapeHtml(t.auto_renew_message || '')}">
+                                            ${statusLabel}
+                                        </span>
+                                        ${t.auto_renew_message ? `<div style="font-size: 11px; color: var(--text-dim); margin-top: 3px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(t.auto_renew_message)}">${escapeHtml(t.auto_renew_message)}</div>` : ''}
+                                    </td>
+                                    <td style="padding: 10px 12px; color: var(--text-dim); font-size: 12px;">${escapeHtml(timeStr)}</td>
+                                </tr>`;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                `;
+            }
+
+            overlay.classList.add('open', 'is-open');
+            lucide.createIcons();
+        }
+
+        function closeUnconfirmedAutoRenewModal() {
+            const overlay = document.getElementById('unconfirmed_auto_renew_modal_overlay');
+            if (overlay) {
+                overlay.classList.remove('open', 'is-open');
             }
         }
 
@@ -7898,6 +8077,14 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const paymentHolder = escapeHtml(card.payment_holder_name || '-');
                 const boundAddress = escapeHtml(formatBoundAddress(card));
                 const usageCount = Number(card.usage_count || 0);
+                const limit = card.max_usage_limit !== null && card.max_usage_limit !== undefined && card.max_usage_limit > 0
+                    ? Number(card.max_usage_limit)
+                    : globalCardMaxUsageLimit;
+                let usageDisplay = `${usageCount}`;
+                if (limit > 0) {
+                    const isLimitReached = usageCount >= limit;
+                    usageDisplay = `<span style="${isLimitReached ? 'color: #f87171; font-weight: 700;' : ''}" title="上限 ${limit} 次，已成功扣款 ${usageCount} 次">${usageCount} / ${limit}</span>`;
+                }
                 const lastUsed = card.last_used_at ? formatTimeShort(card.last_used_at) : '-';
                 const statusBadge = getCardStatusBadge(card);
 
@@ -7928,7 +8115,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <td>${paymentHolder}</td>
                     <td style="font-size:12px; color:var(--text-secondary); max-width:280px; word-break:break-word;">${boundAddress}</td>
                     <td style="text-align:center">${statusBadge}</td>
-                    <td style="text-align:center">${usageCount}</td>
+                    <td style="text-align:center">${usageDisplay}</td>
                     <td style="text-align:center">${lastUsed}</td>
                     <td style="text-align:center">
                         <div style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">
