@@ -40,6 +40,7 @@
     "migrate:prompt-images": "node scripts/migrate-prompt-images-to-r2.js",
     "normalize:r2-urls": "node scripts/normalize-r2-public-urls.js",
     "optimize-images": "node scripts/optimize-images.js",
+    "preview:kc": "node scripts/local-preview-kc.js",
     "preview:local": "node scripts/local-preview-launcher.js",
     "preflight:payment-rollout": "node scripts/payment-rollout-preflight.js",
     "readiness:auth-branding": "node scripts/auth-branding-readiness.js --fail-on-missing",
