@@ -15,6 +15,9 @@ const ROUTES = Object.freeze({
     ]),
     newapi: Object.freeze([
         { name: 'newapi_health', url: 'https://new.fatherkey.com/health', field: 'status', expected: 'ok' }
+    ]),
+    kc: Object.freeze([
+        { name: 'kc_public_runtime', url: 'https://redeem.fatherkey.com/api/public/runtime', field: 'success', expected: true }
     ])
 });
 const SAFE_HEADERS = ['server', 'cf-ray', 'cf-mitigated', 'content-type'];
@@ -161,7 +164,7 @@ async function verifyDeploymentRoutes(chain, {
     delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     log = console.log
 } = {}) {
-    if (!Object.hasOwn(ROUTES, chain)) throw new Error('Expected chain: verify or newapi');
+    if (!Object.hasOwn(ROUTES, chain)) throw new Error('Expected chain: verify, newapi, or kc');
     if (!Number.isInteger(attempts) || attempts < 1 || attempts > 5
         || !Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 60000
         || !Number.isFinite(retryDelayMs) || retryDelayMs < 0 || retryDelayMs > 10000) {
@@ -187,7 +190,7 @@ if (require.main === module) {
     verifyDeploymentRoutes(process.argv[2]).then(({ ok }) => {
         process.exitCode = ok ? 0 : 1;
     }).catch(() => {
-        console.error('Deployment route verification failed: use verify or newapi with bounded settings.');
+        console.error('Deployment route verification failed: use verify, newapi, or kc with bounded settings.');
         process.exitCode = 1;
     });
 }

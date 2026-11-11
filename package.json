@@ -20,6 +20,7 @@
     "cleanup:homepage-inline-images": "node scripts/cleanup-homepage-inline-images.js",
     "cleanup:payment-fixtures": "node scripts/payment-cleanup-fixtures.js",
     "check:prod-env": "node scripts/check-prod-env.js",
+    "deploy:kvm4:kc": "bash scripts/deploy-kvm4-kc-pay.sh",
     "deploy:kvm4:newapi": "bash scripts/deploy-kvm4-newapi.sh",
     "deploy:kvm4:sub2api": "npm run deploy:kvm4:newapi",
     "deploy:kvm4:verify": "bash scripts/deploy-kvm4-verify-server.sh",
