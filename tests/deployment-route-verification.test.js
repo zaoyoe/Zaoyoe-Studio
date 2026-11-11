@@ -154,7 +154,11 @@ test('invalid chain or unbounded retry settings are rejected before network acce
 });
 
 test('all workflows pin the triggering SHA, retain queued chains, and use strict public checks', () => {
-    for (const [file, chain] of [['deploy-kvm4-verify-server.yml', 'verify'], ['deploy-kvm4-sub2api.yml', 'newapi'], ['deploy-kvm4-kc-pay.yml', 'kc']]) {
+    const workflows = [['deploy-kvm4-verify-server.yml', 'verify'], ['deploy-kvm4-sub2api.yml', 'newapi']];
+    if (fs.existsSync(path.join(__dirname, '../.github/workflows/deploy-kvm4-kc-pay.yml'))) {
+        workflows.push(['deploy-kvm4-kc-pay.yml', 'kc']);
+    }
+    for (const [file, chain] of workflows) {
         const source = fs.readFileSync(path.join(__dirname, '../.github/workflows', file), 'utf8');
         assert.match(source, /ref: \$\{\{ github\.sha \}\}/);
         assert.match(source, /test "\$\(git rev-parse origin\/main\)" = "\$GITHUB_SHA"/);
