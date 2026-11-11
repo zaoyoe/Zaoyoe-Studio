@@ -220,7 +220,8 @@ rollback() {
       --exclude='./product_files' \
       -C "$KVM4_KC_ROOT" || true
     cd "$KVM4_KC_ROOT"
-    docker compose up -d --build --no-deps --force-recreate app || true
+    docker compose build --no-cache app || true
+    docker compose up -d --no-deps --force-recreate app || true
   fi
 }
 
@@ -238,10 +239,16 @@ tar -xzf "$REMOTE_TMP/app.tar.gz" docker-compose.yml -O > "$KVM4_KC_ROOT/docker-
 printf '%s\n' "$RELEASE_COMMIT" > "$KVM4_KC_ROOT/.current-release"
 
 cd "$KVM4_KC_ROOT"
-echo "Rebuilding and recreating kc-gpt-pay2-app container..."
-if ! docker compose up -d --build --no-deps --force-recreate app; then
+echo "Rebuilding app container image without cache..."
+if ! docker compose build --no-cache app; then
   rollback
-  die "docker compose build/up failed"
+  die "docker compose build --no-cache failed"
+fi
+
+echo "Recreating app container..."
+if ! docker compose up -d --no-deps --force-recreate app; then
+  rollback
+  die "docker compose up failed"
 fi
 
 echo "Verifying local service health on 127.0.0.1:3100..."
@@ -257,7 +264,32 @@ find "$KVM4_KC_ROOT/backups" -mindepth 1 -maxdepth 1 -name "kc-pay-backup-*.tar.
   awk "NR > ${KEEP_RELEASES:-5} {print \$1}" |
   xargs -r rm -f
 
-docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|kc-gpt-pay2'
+app_container="$(docker ps --filter "name=kc.*app" --format "{{.Names}}" | head -n 1)"
+app_container="${app_container:-kc-pay-gpt-app}"
+
+echo "Checking host public/admin.html for Touch ID..."
+if ! grep -q "Mac Touch ID" "$KVM4_KC_ROOT/public/admin.html"; then
+  echo "WARNING: Mac Touch ID not found in $KVM4_KC_ROOT/public/admin.html" >&2
+else
+  echo "PASS: Mac Touch ID found in host public/admin.html"
+fi
+
+echo "Checking container $app_container for Touch ID..."
+if docker exec "$app_container" grep -q "Mac Touch ID" /app/public/admin.html 2>/dev/null; then
+  echo "PASS: Mac Touch ID found in container /app/public/admin.html"
+else
+  echo "WARNING: Mac Touch ID not found in container /app/public/admin.html" >&2
+fi
+
+echo "Checking local HTTP response from http://127.0.0.1:3100/admin for Touch ID..."
+if curl -fsS -H "Host: adm.fatherkey.com" http://127.0.0.1:3100/admin | grep -q "Mac Touch ID"; then
+  echo "PASS: Local curl on 3100 returned Mac Touch ID in admin HTML"
+else
+  echo "WARNING: Local curl on 3100 did not return Mac Touch ID in admin HTML" >&2
+fi
+
+echo "Active container status:"
+docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|kc'
 curl -fsS http://127.0.0.1:3100/api/public/runtime
 REMOTE
 
