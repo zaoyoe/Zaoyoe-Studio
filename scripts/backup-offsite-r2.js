@@ -9,11 +9,15 @@ const ENVELOPE_PREFIX = 'zaoyoe-r2-backup:v1:';
 const CORE_BACKUP_TABLES = Object.freeze([
     'system_config',
     'shop_products',
+    'shop_product_skus',
     'shop_inventory',
+    'shop_cdk_secrets',
     'shop_orders',
+    'shop_order_items',
     'guest_shop_orders',
-    'guest_shop_order_items',
     'guest_shop_checkout_batches',
+    'guest_shop_checkout_items',
+    'guest_shop_inventory_reservations',
     'payment_orders',
     'points_balance',
     'points_ledger',
@@ -162,6 +166,9 @@ async function fetchTableRowsPaged(supabase, table, pageSize = 1000, maxPages = 
         const to = from + pageSize - 1;
         const { data, error } = await supabase.from(table).select('*').range(from, to);
         if (error) {
+            if (error.code === 'PGRST205' || /schema cache|relation.*does not exist|Could not find the table/i.test(error.message)) {
+                return [];
+            }
             throw new Error(`Failed to export table ${table}: ${error.message}`);
         }
         const batch = Array.isArray(data) ? data : [];
