@@ -13,16 +13,17 @@ When the user asks Codex to deploy:
 7. Verify Vercel production is `Ready`.
 8. Verify the GitHub Actions workflow `Deploy KVM4 Verify Server` succeeds.
 9. Verify the GitHub Actions workflow `Deploy KVM4 NewAPI` succeeds.
-10. SSH to KVM4 and confirm both verify and the NewAPI service-slot
-    `.current-release` files equal the latest `main` commit, `/health` is
-    healthy, and the NewAPI, PostgreSQL, and Redis containers are healthy. The
-    removed `sub2api-legacy` bridge container must not be running.
-11. Report the final result in Chinese with three deployment chains: Vercel
-    production, KVM4 Verify Server, and KVM4 NewAPI.
+10. Verify the GitHub Actions workflow `Deploy KVM4 KC-PAY-GPT` succeeds (whenever changes to `services/kc-pay-gpt/**` or deployment scripts are included).
+11. SSH to KVM4 and confirm verify, NewAPI, and KC-PAY-GPT service-slot
+    `.current-release` files equal the latest `main` commit, `/health` and
+    `/healthz` endpoints are healthy, and the application, PostgreSQL, Redis,
+    and MySQL containers are healthy. NewAPI runs directly without a legacy bridge.
+12. Report the final result in Chinese across all active deployment chains: Vercel
+    production, KVM4 Verify Server, KVM4 NewAPI, and KVM4 KC-PAY-GPT.
 
 Canonical full deploy prompt:
 
-> 推送并完整部署。请严格按 AGENTS.md：先核验可恢复备份、干净候选提交和完整发布清单；创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须同时验证 Vercel production Ready、GitHub Actions 的 Deploy KVM4 Verify Server 成功、Deploy KVM4 NewAPI 成功，并 SSH 到 KVM4 确认 verify/newapi service-slot 的 .current-release 都等于 main 最新 commit，/health 正常，docker ps healthy。最后用中文汇报三条链路结果。
+> 推送并完整部署。请严格按 AGENTS.md：先核验可恢复备份、干净候选提交和完整发布清单；创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须同时验证 Vercel production Ready、GitHub Actions 的 Deploy KVM4 Verify Server 成功、Deploy KVM4 NewAPI 成功、Deploy KVM4 KC-PAY-GPT 成功，并 SSH 到 KVM4 确认各 service-slot 的 .current-release 都等于 main 最新 commit，/health 正常，docker ps healthy。最后用中文汇报各链路结果。
 
 Emergency rollback is allowed with `npx vercel rollback <deployment-url-or-id> --yes`.
 
@@ -58,6 +59,17 @@ To prevent developing or previewing against stale worktree snapshots or split Gi
      directly, stop the release at the external-configuration gate and restore
      the Cloudflare application/policy and proxied DNS before treating TG admin
      login as protected. See `docs/admin-cloudflare-access-runbook.md`.
+
+7. **KVM4 Cloudflare Kernel Ingress Firewall (`scripts/install-kvm4-cloudflare-firewall.sh`)**:
+   - TCP ports 80 and 443 on KVM4 are strictly firewalled by iptables (`CF-WEB-ALLOW` and `CF-WEB-ALLOW6`) to allow only Cloudflare edge IP CIDRs and local loopback. Direct origin scans from Censys/Shodan or non-Cloudflare HTTP/HTTPS traffic are dropped at kernel level.
+   - Never touch or block the management SSH port (default 2222) when modifying firewall rules.
+   - Any change to edge ingress must be verified via both origin loopback curls and external Cloudflare HTTPS domain checks.
+
+8. **Off-site Disaster Recovery & Cloudflare R2 Backups (`scripts/backup-offsite-r2.js`)**:
+   - Automated disaster backups run periodically (every 6 hours) on KVM4, backing up NewAPI Postgres, KC-PAY-GPT MySQL, Supabase financial & inventory snapshots, and environment secrets.
+   - Backups must be strongly encrypted locally with AES-256-GCM using `OFFSITE_BACKUP_ENCRYPTION_KEY` before upload to the private Cloudflare R2 bucket (`zaoyoe-disaster-backups`).
+   - Never log, commit, or print the encryption key `OFFSITE_BACKUP_ENCRYPTION_KEY` or R2 credentials.
+   - Disaster recovery drills must verify decryption in isolated sandbox environments without overwriting live production database volumes.
 
 ## Release Integrity and Recovery Rules
 
@@ -168,16 +180,14 @@ deploy.
 The NewAPI service-slot topology is:
 
 - The public `sub2api` container and canonical `https://new.fatherkey.com` route
-  run NewAPI from `services/newapi` with the local image
-  `zaoyoe/newapi:local`. The public application no longer starts or routes to a
-  legacy Sub2API bridge.
+  run NewAPI directly from `services/newapi` with the local image
+  `zaoyoe/newapi:local`.
 - NewAPI uses its own `NEWAPI_DB_NAME` database and `newapi_data` directory. All
   deploys and rollbacks must preserve the existing `postgres_data`,
   `redis_data`, and NewAPI `newapi_data` directories. The old `data` directory
   may remain on disk as inert historical data but is not mounted by NewAPI.
 - Production must keep using the repository-level
-  `deploy/kvm4/docker-compose.sub2api.yml`. Do not switch the public service to
-  a legacy Sub2API image or re-enable the removed bridge.
+  `deploy/kvm4/docker-compose.sub2api.yml`.
 
 NewAPI upstream updates must preserve the local regional-restriction security
 customization. When updating `services/newapi` from upstream, do not blindly
@@ -255,21 +265,22 @@ dependencies. The sidebar brand/logo and public home logo must still link to
 
 When the user asks Codex to deploy guest-shop related changes:
 
-1. Work only on `codex/guest-shop-cash-purchase` or a later dedicated guest-shop
-   branch. Do not stack this work onto an already-merged layout/UI branch.
+1. Work only on dedicated feature/fix branches (e.g., `codex/guest-shop-*` or `fix/*`).
+   Do not stack this work onto an already-merged layout/UI branch.
 2. Do not run `npx vercel deploy --prod` from a feature branch, `codex/*`
    branch, or any branch other than latest `main`.
 3. Push the current branch, create or update a PR into `main`, and merge only
    after checks are acceptable.
 4. Let the Vercel Git integration deploy `main`. Never treat a preview or
    feature-branch deployment as production.
-5. Verify the three existing production chains:
+5. Verify the active production chains:
    - Vercel production alias `https://www.fatherkey.com` is `Ready`
    - GitHub Actions `Deploy KVM4 Verify Server` succeeds
    - GitHub Actions `Deploy KVM4 NewAPI` succeeds
-6. SSH to KVM4 and confirm verify and NewAPI `.current-release` equal the
-   latest `main` commit, `/health` is healthy, and required containers are
-   healthy.
+   - GitHub Actions `Deploy KVM4 KC-PAY-GPT` succeeds (when applicable)
+6. SSH to KVM4 and confirm verify, NewAPI, and KC-PAY-GPT service-slot
+   `.current-release` files equal the latest `main` commit, `/health` and
+   `/healthz` endpoints are healthy, and required containers are healthy.
 7. Guest-shop extra chain, only after verify is on that commit:
    - `npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-invalid`
    - Worker installer uses canonical root `/opt/zaoyoe-verify-server`
@@ -287,8 +298,8 @@ When the user asks Codex to deploy guest-shop related changes:
    - Confirm `systemctl status zaoyoe-guest-shop-worker.timer` and recent
      `journalctl` evidence when the launch checklist actually requires the
      worker to run
-8. Report in Chinese with four chains when guest-shop code is in the release:
-   Vercel production, KVM4 Verify Server, KVM4 NewAPI service-slot, KVM4 guest-shop worker.
+8. Report in Chinese across all active chains when guest-shop code is in the release:
+   Vercel production, KVM4 Verify Server, KVM4 NewAPI service-slot, KVM4 KC-PAY-GPT, and KVM4 guest-shop worker.
 
 Hard prohibitions:
 
@@ -331,18 +342,22 @@ Hard prohibitions:
 
 Canonical guest-shop deploy prompt:
 
-> 推送并完整部署游客购买相关改动。请严格按 AGENTS.md：先核验可恢复备份、干净候选提交和完整发布清单；从专用游客购买分支创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须验证 Vercel production Ready、Deploy KVM4 Verify Server、Deploy KVM4 NewAPI，并 SSH 确认 verify/newapi service-slot 的 .current-release 等于 main 最新 commit。verify 发布成功后才能安装或启动 KVM4 guest-shop worker。部署 SQL 按已授权范围执行并验证清理，不得新增或擅自关闭已批准的游客商品/SKU。最后用中文汇报四条链路结果。
+> 推送并完整部署游客购买相关改动。请严格按 AGENTS.md：先核验可恢复备份、干净候选提交和完整发布清单；从专用特性/修复分支创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须验证 Vercel production Ready、Deploy KVM4 Verify Server、Deploy KVM4 NewAPI、Deploy KVM4 KC-PAY-GPT，并 SSH 确认各 service-slot 的 .current-release 等于 main 最新 commit。verify 发布成功后才能安装或启动 KVM4 guest-shop worker。部署 SQL 按已授权范围执行并验证清理，不得新增或擅自关闭已批准的游客商品/SKU。最后用中文汇报各链路结果。
 
 Canonical guest-shop enablement is a separate later step in
 `docs/guest-purchase-task-2.0.md` (the file currently carries the Task 2.1
 content version for compatibility). Its old Task 2.0 percentage, A-J matrix,
 and default-off statements are frozen historical evidence; they do not describe
-the current approved production SKU state. The current record says the `测试`
-SKU is enabled and `测试 2` remains closed. A deploy preserves those states.
-Enabling a new SKU or changing an existing SKU still requires the direct,
-feature-scoped safety gate in Task 2.1 §61.9, an operator review of that exact
-product/SKU, a successful production deploy, and the user's explicit approval.
-Deployment success alone never changes a guest product switch.
+current approved production SKU states.
+
+**Production Product & SKU State Protection Principle**:
+Code deployments must strictly preserve the operational state of all products and SKUs.
+Every currently approved and active SKU must remain enabled; any closed, unapproved,
+or draft product/SKU must remain closed. A code release never automatically enables
+or disables products. Enabling a new product/SKU or modifying existing purchase
+switches requires passing the feature-scoped safety gates (Task 2.1 §61.9), operator
+review of that exact item, a verified production release, and explicit user
+authorization. Deployment success alone never changes a guest product or SKU switch.
 
 See also:
 
