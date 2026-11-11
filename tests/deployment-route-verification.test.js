@@ -47,6 +47,18 @@ test('NewAPI checks the canonical hostname and exact healthy status', async () =
     }
 });
 
+test('kc checks the redeem public runtime route and exact success status', async () => {
+    let seen;
+    assert.equal((await verifyDeploymentRoutes('kc', options(async (url) => {
+        seen = url;
+        return json({ success: true, runtime: { active_foreground_jobs: 0, max_foreground_jobs: 6 } });
+    }))).ok, true);
+    assert.equal(seen, 'https://redeem.fatherkey.com/api/public/runtime');
+    for (const payload of [{ success: false }, { status: 'ok' }, [], null]) {
+        assert.equal((await verifyDeploymentRoutes('kc', options(async () => json(payload)))).ok, false);
+    }
+});
+
 test('redirects, including Access login, are rejected without following or logging Location', async () => {
     const logs = [];
     const result = await verifyDeploymentRoutes('newapi', options(async () => new Response(null, {
@@ -141,8 +153,12 @@ test('invalid chain or unbounded retry settings are rejected before network acce
     assert.equal(called, false);
 });
 
-test('both workflows pin the triggering SHA, retain queued chains, and use strict public checks', () => {
-    for (const [file, chain] of [['deploy-kvm4-verify-server.yml', 'verify'], ['deploy-kvm4-sub2api.yml', 'newapi']]) {
+test('all workflows pin the triggering SHA, retain queued chains, and use strict public checks', () => {
+    const workflows = [['deploy-kvm4-verify-server.yml', 'verify'], ['deploy-kvm4-sub2api.yml', 'newapi']];
+    if (fs.existsSync(path.join(__dirname, '../.github/workflows/deploy-kvm4-kc-pay.yml'))) {
+        workflows.push(['deploy-kvm4-kc-pay.yml', 'kc']);
+    }
+    for (const [file, chain] of workflows) {
         const source = fs.readFileSync(path.join(__dirname, '../.github/workflows', file), 'utf8');
         assert.match(source, /ref: \$\{\{ github\.sha \}\}/);
         assert.match(source, /test "\$\(git rev-parse origin\/main\)" = "\$GITHUB_SHA"/);
