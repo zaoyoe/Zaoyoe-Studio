@@ -176,6 +176,12 @@ export function getModuleAccess(module: HeaderNavModule): ModuleAccess {
   return getModuleAccessFromStatus(readCachedStatus(), module)
 }
 
+export async function getFreshModuleAccess(
+  module: HeaderNavModule
+): Promise<ModuleAccess> {
+  return getModuleAccess(module)
+}
+
 /**
  * Resolve module access for a router `beforeLoad` guard.
  *
