@@ -483,7 +483,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		return nil, nil, &OAuthRegistrationDisabledError{}
 	}
 	if err := ensureRegionalRestrictionAllows(c, regionalRestrictionScopeOAuthSignup); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Set up new user
