@@ -161,7 +161,6 @@ func requireAdminUserProof(c *gin.Context, scope string, context any) *model.Aut
 		return nil
 	}
 	return middleware.RequireSecurityProof(c, service.VerificationOperation{Scope: scope, Context: payload})
->>>>>>> v1.0.0-rc.49
 }
 
 func UniversalVerify(c *gin.Context) {
