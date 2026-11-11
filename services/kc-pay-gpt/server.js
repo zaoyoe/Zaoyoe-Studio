@@ -51,8 +51,10 @@ const app = express();
 app.disable('x-powered-by');
 app.use(securityHeaders);
 app.use((req, res, next) => {
-    if (['/api/cdk', '/api/run-process', '/api/admin/trigger-activation', '/api/public/task/']
-        .some(prefix => req.path.startsWith(prefix))) res.setHeader('Cache-Control', 'no-store');
+    if (['/api/cdk', '/api/run-process', '/api/admin', '/api/public/task/']
+        .some(prefix => req.path.startsWith(prefix))) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    }
     next();
 });
 app.set('trust proxy', adminAuth.resolveTrustedProxyCidrs());
@@ -612,9 +614,11 @@ app.use(async (req, res, next) => {
             }
         }
         if (current === loginUrl) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
             return res.sendFile(path.join(__dirname, 'public', 'admin-login.html'));
         }
         if (current === panelUrl) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
             return res.sendFile(path.join(__dirname, 'public', 'admin.html'));
         }
     } catch (_) {
