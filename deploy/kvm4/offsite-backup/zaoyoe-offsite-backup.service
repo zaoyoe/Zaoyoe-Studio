@@ -1,0 +1,16 @@
+[Unit]
+Description=Zaoyoe Off-Site Encrypted Cloud Backup to Cloudflare R2
+After=network-online.target docker.service
+Wants=network-online.target
+ConditionPathExists=/opt/zaoyoe-verify-server/.env
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/zaoyoe-verify-server/current
+EnvironmentFile=/opt/zaoyoe-verify-server/.env
+ExecStart=/usr/bin/node /opt/zaoyoe-verify-server/current/scripts/backup-offsite-r2.js
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+TimeoutStartSec=300

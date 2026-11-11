@@ -156,6 +156,226 @@
             "permanent": false
         },
         {
+            "source": "/admin-studio",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/admin-studio.html",
+            "permanent": false
+        },
+        {
+            "source": "/admin-studio.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/admin-studio.html",
+            "permanent": false
+        },
+        {
+            "source": "/admin.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/admin-studio.html",
+            "permanent": false
+        },
+        {
+            "source": "/admin-studio",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg-adm.fatherkey.com"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/admin-studio.html",
+            "permanent": false
+        },
+        {
+            "source": "/admin-studio.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg-adm.fatherkey.com"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/admin-studio.html",
+            "permanent": false
+        },
+        {
+            "source": "/admin.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg-adm.fatherkey.com"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/admin-studio.html",
+            "permanent": false
+        },
+        {
+            "source": "/admin-studio",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/admin-studio.html",
+            "permanent": false
+        },
+        {
+            "source": "/admin-studio.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/admin-studio.html",
+            "permanent": false
+        },
+        {
+            "source": "/admin.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/admin-studio.html",
+            "permanent": false
+        },
+        {
+            "source": "/admin-studio",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "www.zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/admin-studio.html",
+            "permanent": false
+        },
+        {
+            "source": "/admin-studio.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "www.zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/admin-studio.html",
+            "permanent": false
+        },
+        {
+            "source": "/admin.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "www.zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/admin-studio.html",
+            "permanent": false
+        },
+        {
+            "source": "/tg-admin",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "www.fatherkey.com"
+                }
+            ],
+            "destination": "https://tg-adm.fatherkey.com/tg-admin",
+            "permanent": false
+        },
+        {
+            "source": "/tg-admin.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "www.fatherkey.com"
+                }
+            ],
+            "destination": "https://tg-adm.fatherkey.com/tg-admin",
+            "permanent": false
+        },
+        {
+            "source": "/tg-admin",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "destination": "https://tg-adm.fatherkey.com/tg-admin",
+            "permanent": false
+        },
+        {
+            "source": "/tg-admin.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "tg.fatherkey.com"
+                }
+            ],
+            "destination": "https://tg-adm.fatherkey.com/tg-admin",
+            "permanent": false
+        },
+        {
+            "source": "/tg-admin",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://tg-adm.fatherkey.com/tg-admin",
+            "permanent": false
+        },
+        {
+            "source": "/tg-admin.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://tg-adm.fatherkey.com/tg-admin",
+            "permanent": false
+        },
+        {
+            "source": "/tg-admin",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "www.zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://tg-adm.fatherkey.com/tg-admin",
+            "permanent": false
+        },
+        {
+            "source": "/tg-admin.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "www.zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://tg-adm.fatherkey.com/tg-admin",
+            "permanent": false
+        },
+        {
             "source": "/:path*",
             "has": [
                 {

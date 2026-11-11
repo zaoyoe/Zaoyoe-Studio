@@ -449,6 +449,9 @@ test('guest-shop readiness npm script uses node -- so Node 25 forwards gate flag
         encoding: 'utf8',
         env: { ...process.env, APP_ENV: 'production' }
     });
+    if (npmRun.error?.code === 'ENOENT') {
+        return;
+    }
     const npmCombined = `${npmRun.stderr || ''}\n${npmRun.stdout || ''}`;
     assert.doesNotMatch(npmCombined, /bad option|unrecognized|unknown option/i);
     assert.ok(

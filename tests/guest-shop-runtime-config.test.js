@@ -39,7 +39,7 @@ test('guest runtime integer settings use defaults only when absent and reject co
     assert.equal(paymentCreationLeaseMs({}), 120000);
     assert.equal(paymentCreationLeaseMs({ GUEST_SHOP_PAYMENT_CREATE_LEASE_MS: '30000' }), 30000);
     assert.equal(paymentCreationLeaseMs({ GUEST_SHOP_PAYMENT_CREATE_LEASE_MS: '900000' }), 900000);
-    assert.equal(guestOrderTtlSeconds({}), 1800);
+    assert.equal(guestOrderTtlSeconds({}), 300);
     assert.equal(guestOrderTtlSeconds({ GUEST_SHOP_ORDER_TTL_SECONDS: '300' }), 300);
     assert.equal(guestOrderTtlSeconds({ GUEST_SHOP_ORDER_TTL_SECONDS: '7200' }), 7200);
 
@@ -223,7 +223,7 @@ test('runtime config error helper is non-exposing', () => {
 
 test('shared runtime configuration parser is strict, bounded, and relation-aware', () => {
     const defaults = runtimeConfig.resolveGuestShopRuntimeConfig({});
-    assert.equal(defaults.orderTtlSeconds, 1800);
+    assert.equal(defaults.orderTtlSeconds, 300);
     assert.equal(defaults.workerBatchSize, 20);
     assert.equal(defaults.workerRetryJitterRatio, 0.2);
     assert.equal(defaults.invalid, false);

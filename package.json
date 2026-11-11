@@ -6,7 +6,6 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "afdian:readiness": "node scripts/afdian-readiness-gate.js",
     "audit:env-drift": "node scripts/check-env-drift.js",
     "audit:deploy-health": "node scripts/check-prod-env.js --runtime-only --check-app-runtime --base-url https://www.fatherkey.com --expect-current-git-version",
     "audit:image-delivery": "node scripts/audit-image-delivery.js",

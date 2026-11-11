@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-KVM4_HOST="${KVM4_HOST:-76.13.188.218}"
-KVM4_PORT="${KVM4_PORT:-2222}"
+KVM4_HOST="${KVM4_HOST:-kvm4-origin.internal}"
+KVM4_PORT="${KVM4_PORT:-22}"
 KVM4_USER="${KVM4_USER:-root}"
 KVM4_KEY="${KVM4_KEY:-$HOME/.ssh/hostinger_sub2api}"
 KVM4_ROOT="${KVM4_ROOT:-/opt/zaoyoe-verify-server}"

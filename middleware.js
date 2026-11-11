@@ -303,7 +303,26 @@ async function maybeHandleSiteLayoutRootRedirect(requestUrl) {
     }
 }
 
+const NON_CANONICAL_ADMIN_STUDIO_HOSTS = new Set([
+    'tg.fatherkey.com',
+    'tg-adm.fatherkey.com',
+    'tg.adm.fatherkey.com',
+    'zaoyoe.xyz',
+    'www.zaoyoe.xyz'
+]);
+
 async function handleAdminStudioAccess(request, requestUrl) {
+    const hostname = String(requestUrl?.hostname || '').trim().toLowerCase();
+    if (NON_CANONICAL_ADMIN_STUDIO_HOSTS.has(hostname)) {
+        return new Response(null, {
+            status: 307,
+            headers: {
+                ...INDEPENDENT_TG_ROOT_HEADERS,
+                Location: 'https://www.fatherkey.com/admin-studio.html#'
+            }
+        });
+    }
+
     const redirectUrl = new URL('/admin-entry', request.url);
     redirectUrl.searchParams.set('next', `${requestUrl.pathname}${requestUrl.search}`);
 

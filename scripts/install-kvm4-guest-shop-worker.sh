@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KVM4_HOST="${KVM4_HOST:-76.13.188.218}"
-KVM4_PORT="${KVM4_PORT:-2222}"
+KVM4_HOST="${KVM4_HOST:-kvm4-origin.internal}"
+KVM4_PORT="${KVM4_PORT:-22}"
 KVM4_USER="${KVM4_USER:-root}"
 KVM4_KEY="${KVM4_KEY:-${HOME:-}/.ssh/hostinger_sub2api}"
 # The verify-server deployment contract uses one canonical root.  The unit
@@ -28,8 +28,8 @@ stopped unless --start is supplied.
 
 Options:
   --start         Enable and start the timer after installation.
-  --host HOST     SSH host (KVM4_HOST or 76.13.188.218).
-  --port PORT     SSH port (KVM4_PORT or 2222).
+  --host HOST     SSH host (KVM4_HOST).
+  --port PORT     SSH port (KVM4_PORT or 22).
   --user USER     SSH user (KVM4_USER or root).
   --key PATH      SSH private key (KVM4_KEY or ~/.ssh/hostinger_sub2api).
   The remote app root is fixed at /opt/zaoyoe-verify-server to match the

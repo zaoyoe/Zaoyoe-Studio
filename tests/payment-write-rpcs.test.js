@@ -352,24 +352,12 @@ test('createPaymentRequest falls back to admin writes when request-scoped paymen
             {
                 config_key: 'payment_channels',
                 config_value: {
-                    active_provider: 'afdian',
+                    active_provider: 'mock',
                     providers: {
-                        afdian: {
-                            enabled: true,
-                            display_name: '爱发电',
-                            checkout_url: 'https://afdian.com/a/zaoyoe',
-                            package_hint: '支付后回到钱包输入订单号',
-                            custom_amount_hint: '自定义充值请按报价支付'
-                        },
                         mock: {
-                            enabled: false,
+                            enabled: true,
                             display_name: '模拟支付',
                             description: ''
-                        },
-                        hupijiao: {
-                            enabled: false,
-                            display_name: '虎皮椒',
-                            checkout_url: ''
                         }
                     }
                 }
@@ -378,7 +366,7 @@ test('createPaymentRequest falls back to admin writes when request-scoped paymen
                 config_key: 'recharge_options',
                 config_value: {
                     custom_amount_enabled: true,
-                    mock_payment_enabled: false
+                    mock_payment_enabled: true
                 }
             }
         ]
@@ -414,6 +402,14 @@ test('createPaymentRequest falls back to admin writes when request-scoped paymen
     const adminSupabase = {
         from(table) {
             return createQueryBuilder(async (query) => {
+                if (table === 'points_packages' && query.mode === 'select') {
+                    const rows = applyFilters(state.pointsPackages, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
                 if (table === 'system_config' && query.mode === 'select') {
                     const rows = applyFilters(state.systemConfigRows, query);
                     return {
@@ -457,7 +453,7 @@ test('createPaymentRequest falls back to admin writes when request-scoped paymen
                     };
                 }
 
-                if (table === 'payment_orders' && query.mode === 'insert') {
+                if (table === 'payment_orders' && (query.mode === 'insert' || query.mode === 'upsert')) {
                     const nextRow = {
                         id: `payment-order-${state.paymentOrders.length + 1}`,
                         ...query.payload
@@ -467,8 +463,42 @@ test('createPaymentRequest falls back to admin writes when request-scoped paymen
                     return { data: nextRow, error: null };
                 }
 
+                if (table === 'payment_orders' && query.mode === 'update') {
+                    const rows = applyFilters(state.paymentOrders, query);
+                    rows.forEach((row) => Object.assign(row, query.payload || {}));
+                    state.adminWrites.push({ table, mode: query.mode, payload: query.payload });
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'points_ledger') {
+                    return { data: [], error: null };
+                }
+
+                if (table === 'user_tags') {
+                    return { data: [], error: null };
+                }
+
+                if (table === 'payment_events') {
+                    return { data: null, error: null };
+                }
+
                 throw new Error(`Unexpected admin table access in test: ${table}/${query.mode}`);
             });
+        },
+        async rpc(name, args) {
+            if (name === 'fn_recharge_points') {
+                return {
+                    data: {
+                        paid: Number(args.p_paid) || 0,
+                        bonus: Number(args.p_bonus) || 0
+                    },
+                    error: null
+                };
+            }
+            return { data: null, error: { code: '42883', message: `function ${name} does not exist` } };
         }
     };
 
@@ -480,12 +510,11 @@ test('createPaymentRequest falls back to admin writes when request-scoped paymen
         },
         body: {
             site: 'cn',
-            provider_key: 'afdian',
+            provider_key: 'mock',
             package_id: 'pkg-request-fallback-1'
         },
         env: {
             APP_BASE_URL: 'https://www.fatherkey.com',
-            PAYMENT_AFDIAN_URL: 'https://afdian.com/a/zaoyoe',
             SUPABASE_SERVICE_ROLE_KEY: 'service-role-secret',
             PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-secret'
         },
@@ -493,16 +522,15 @@ test('createPaymentRequest falls back to admin writes when request-scoped paymen
     });
 
     assert.equal(result.success, true);
-    assert.equal(result.provider, 'afdian');
-    assert.equal(result.mode, 'redirect');
-    assert.equal(result.checkout_url, 'https://afdian.com/a/zaoyoe');
+    assert.equal(result.provider, 'mock');
+    assert.equal(result.mode, 'completed');
     assert.equal(state.requestWrites.length, 1);
     assert.equal(state.requestWrites[0].table, 'payment_checkout_sessions');
     assert.equal(state.checkoutSessions.length, 1);
     assert.equal(state.checkoutSessions[0].user_id, 'user-request-fallback-1');
-    assert.equal(state.checkoutSessions[0].status, 'redirect_ready');
+    assert.equal(state.checkoutSessions[0].status, 'completed');
     assert.equal(state.paymentOrders.length, 1);
-    assert.equal(state.paymentOrders[0].checkout_session_id, state.checkoutSessions[0].id);
+    assert.equal(state.paymentOrders[0].provider, 'mock');
 });
 
 test('completeMockPayment rejects unsupported site values before touching Supabase', async () => {
@@ -671,6 +699,14 @@ test('completeMockPayment issues linked discount assets after recharge succeeds'
                 if (table === 'payment_checkout_sessions' && query.mode === 'update') {
                     const rows = applyFilters(state.paymentCheckoutSessions, query);
                     rows.forEach((row) => Object.assign(row, query.payload || {}));
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'points_packages' && query.mode === 'select') {
+                    const rows = applyFilters(state.pointsPackages, query);
                     return {
                         data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
                         error: null

@@ -107,7 +107,7 @@ kick 内部失败不会抛回 webhook / status 请求，只会记结构化错误
 
 ```bash
 cd /Volumes/chao/AI/xianyu_profit_calculator
-SSH_KVM4=(ssh -i ~/.ssh/hostinger_sub2api -o ConnectTimeout=20 -p 2222 root@76.13.188.218)
+SSH_KVM4=(ssh -i ~/.ssh/hostinger_sub2api -o ConnectTimeout=20 -p 2222 root@<KVM4_ORIGIN_IP>)
 MAIN_SHA=$(gh api repos/zaoyoe/Zaoyoe-Studio/commits/main --jq .sha)
 echo "$MAIN_SHA"
 ```
@@ -197,8 +197,8 @@ serverless 环境而关闭。
 
 ### 步骤 5/6 的 CI 替代路径（本机 SSH 走不通时）
 
-只要工作站到 `76.13.188.218:2222` 的 SSH 走不通（收不到 banner，或立刻
-`Connection closed by 76.13.188.218 port 2222`），步骤 5、6 就无法在本地执行。
+只要工作站到 `<KVM4_ORIGIN_IP>:2222` 的 SSH 走不通（收不到 banner，或立刻
+`Connection closed by <KVM4_ORIGIN_IP> port 2222`），步骤 5、6 就无法在本地执行。
 **先停止重试**，改走 dispatch 工作流；根因判定见 §6 的 SSH 两行与 §9 第 6、7 条
 （2026-09-17 已用服务器侧证据排除 fail2ban 封禁，不要再照抄那个结论）：
 
@@ -247,7 +247,7 @@ npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-inva
 ### 步骤 8 — 安装 worker（默认只 enable，不 start）
 
 ```bash
-npm run install:kvm4:guest-shop-worker -- --host 76.13.188.218 --port 2222 --key ~/.ssh/hostinger_sub2api
+npm run install:kvm4:guest-shop-worker -- --host <KVM4_ORIGIN_IP> --port 2222 --key ~/.ssh/hostinger_sub2api
 ```
 
 安装器会校验 `.env` 存在、unit 的 `ConditionPathExists` 与 `EnvironmentFile` 都指向
@@ -256,7 +256,7 @@ npm run install:kvm4:guest-shop-worker -- --host 76.13.188.218 --port 2222 --key
 ### 步骤 9 — 只有步骤 4-8 全绿后才启动
 
 ```bash
-npm run install:kvm4:guest-shop-worker -- --start --host 76.13.188.218 --port 2222 --key ~/.ssh/hostinger_sub2api
+npm run install:kvm4:guest-shop-worker -- --start --host <KVM4_ORIGIN_IP> --port 2222 --key ~/.ssh/hostinger_sub2api
 "${SSH_KVM4[@]}" 'systemctl is-enabled zaoyoe-guest-shop-worker.timer; systemctl is-active zaoyoe-guest-shop-worker.timer'
 "${SSH_KVM4[@]}" 'systemctl list-timers --all --no-pager | grep zaoyoe-guest-shop-worker'
 "${SSH_KVM4[@]}" 'journalctl -u zaoyoe-guest-shop-worker.service -n 20 --no-pager'
@@ -267,7 +267,7 @@ npm run install:kvm4:guest-shop-worker -- --start --host 76.13.188.218 --port 22
 
 ### 步骤 8/9 的 CI 替代路径（本机 SSH 不可用时）
 
-沙箱/代理环境常常只放行 HTTP(S)：TCP 能连上 `76.13.188.218:2222`，却收不到 SSH banner
+沙箱/代理环境常常只放行 HTTP(S)：TCP 能连上 `<KVM4_ORIGIN_IP>:2222`，却收不到 SSH banner
 （表现为 `Connection timed out during banner exchange`），本机 `ssh`/`scp` 全部不可用，
 步骤 8、9 无法在工作站上执行。GitHub Actions runner 可以正常 SSH（部署工作流一直在用
 `secrets.KVM4_SSH_PRIVATE_KEY`），因此改走 dispatch 工作流：
@@ -403,8 +403,8 @@ npm run reconcile:guest-shop
 | worker 返回 503 / 超时 | `journalctl -u zaoyoe-guest-shop-worker.service -n 50`；`curl -fsS http://127.0.0.1:3001/healthz` | 先 `systemctl stop zaoyoe-guest-shop-worker.timer`，修好 verify 再启动；不要放宽 SKU |
 | 容器不健康 | `docker compose -f /opt/zaoyoe-verify-server/docker-compose.yml ps`；`docker logs --tail 200 zaoyoe-verify-server`；`docker inspect --format '{{json .State.Health}}' zaoyoe-verify-server` | 按日志定位；不要在宿主机 `node server/index.js` 手工起服务 |
 | 端口 3001 | `ss -ltnp \| grep 3001` | 预期只有 `127.0.0.1:3001`（compose 绑定），公网入口是 Caddy → `verify-api.fatherkey.com`。禁止 `kill -9 $(lsof -ti:3001)` |
-| 在 **Codex 里** SSH KVM4：TCP「连上了」，但 `Connection timed out during banner exchange` | Codex 沙箱只真正放行 HTTP(S)，却会把**所有** TCP connect 报成成功。自证：`nc -vz 76.13.188.218 9999`（无服务端口）与 `nc -vz 10.255.255.1 22`（不可路由地址）都返回 `succeeded`，而真实 `ssh` 拿不到 banner。所以沙箱里的 `nc` 成功**不代表网络通** | 结构上不可能在 Codex 里 SSH KVM4，别重试也别用沙箱 `nc` 结果下网络结论。一律改走 §3 两条 CI 替代路径，由 Actions runner 用 `secrets.KVM4_SSH_PRIVATE_KEY` 执行 |
-| 在**自己终端**里 SSH KVM4：立刻 `Connection closed by 76.13.188.218 port 2222` | **先别认定 fail2ban。** 2026-09-17 服务器侧实测：`fail2ban-client status sshd` 封禁列表为空、`iptables -S` 与 `nft list ruleset` 中命中该 IP 的规则数均为 0、`sshd maxstartups 100:30:200`，同一时间 CI 从 Azure IP SSH 正常 | 排查顺序：① 换网络（手机热点）再试，能通即说明当前出口 IP/网段在上游或 Hostinger 侧被拒；② 到 Hostinger 面板 VNC 里全量看 `iptables -S \| grep 2222`——`recent`/`connlimit`/`hashlimit` 一类限速规则和 CIDR 网段规则**不含 IP 字面量**，`grep -F <IP>` 查不到；③ 无论根因如何，改动本身走 §3 CI 替代路径完成，不要反复重试 |
+| 在 **Codex 里** SSH KVM4：TCP「连上了」，但 `Connection timed out during banner exchange` | Codex 沙箱只真正放行 HTTP(S)，却会把**所有** TCP connect 报成成功。自证：`nc -vz <KVM4_ORIGIN_IP> 9999`（无服务端口）与 `nc -vz 10.255.255.1 22`（不可路由地址）都返回 `succeeded`，而真实 `ssh` 拿不到 banner。所以沙箱里的 `nc` 成功**不代表网络通** | 结构上不可能在 Codex 里 SSH KVM4，别重试也别用沙箱 `nc` 结果下网络结论。一律改走 §3 两条 CI 替代路径，由 Actions runner 用 `secrets.KVM4_SSH_PRIVATE_KEY` 执行 |
+| 在**自己终端**里 SSH KVM4：立刻 `Connection closed by <KVM4_ORIGIN_IP> port 2222` | **先别认定 fail2ban。** 2026-09-17 服务器侧实测：`fail2ban-client status sshd` 封禁列表为空、`iptables -S` 与 `nft list ruleset` 中命中该 IP 的规则数均为 0、`sshd maxstartups 100:30:200`，同一时间 CI 从 Azure IP SSH 正常 | 排查顺序：① 换网络（手机热点）再试，能通即说明当前出口 IP/网段在上游或 Hostinger 侧被拒；② 到 Hostinger 面板 VNC 里全量看 `iptables -S \| grep 2222`——`recent`/`connlimit`/`hashlimit` 一类限速规则和 CIDR 网段规则**不含 IP 字面量**，`grep -F <IP>` 查不到；③ 无论根因如何，改动本身走 §3 CI 替代路径完成，不要反复重试 |
 | SSH 偶发 `kex_exchange_identification: Connection closed by remote host` | 远端并发限速 / `MaxStartups` | 按 15-25 秒间隔重试最多 4-8 次（`scripts/deploy-kvm4-verify-server.sh` 内置同样重试） |
 
 ---
@@ -474,7 +474,7 @@ npm run reconcile:guest-shop
 5. **本机未跟踪草稿**：`kvm4-deployment-guide.md`、`DEPLOYMENT_STEPS.md`、`kvm4-env-template.txt`、
    `deploy-guest-shop-worker.sh` 已按本规范修正或降级为指针，不要再按旧版本执行。
 6. **Codex 沙箱侧 SSH 结构性不可用（已定性，勿再尝试）**：沙箱只真正放行 HTTP(S)，
-   并把所有 TCP connect 报成成功。自证：`nc -vz 76.13.188.218 9999`（该端口无服务）与
+   并把所有 TCP connect 报成成功。自证：`nc -vz <KVM4_ORIGIN_IP> 9999`（该端口无服务）与
    `nc -vz 10.255.255.1 22`（不可路由地址）都返回 `succeeded`，而真实 `ssh` 报
    `Connection timed out during banner exchange`。早期记录的「`github.com:22` 同样挂起」
    是同一假象，不能当作网络结论。此环境下一律改用 §3「步骤 8/9 的 CI 替代路径」和
@@ -483,7 +483,7 @@ npm run reconcile:guest-shop
    `35231858943` 与 `35236546027` 闭环，结论见 §0 表。
 7. **操作员终端 SSH 被拒（2026-09-17 晚）——根因结论已修正**：用户在自己的 Mac 终端
    连续两次粘贴执行 §3 步骤 5/6 的六条命令，每次都立刻
-   `Connection closed by 76.13.188.218 port 2222`。
+   `Connection closed by <KVM4_ORIGIN_IP> port 2222`。
    **这两次执行对服务器没有任何影响**：六条命令一条都没跑到远端。事后 CI 预检显示
    host `.env` 里 `GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED` 的行数为 **0**（键原本不存在），
    verify 容器 uptime 也未被重置。
@@ -532,4 +532,4 @@ npm run reconcile:guest-shop
 
 ---
 
-**文档版本：** 2.0 ｜ **最后更新：** 2026-09-17 ｜ **适用环境：** KVM4 `76.13.188.218:2222`，root `/opt/zaoyoe-verify-server`
+**文档版本：** 2.0 ｜ **最后更新：** 2026-09-17 ｜ **适用环境：** KVM4 `<KVM4_ORIGIN_IP>:2222`，root `/opt/zaoyoe-verify-server`

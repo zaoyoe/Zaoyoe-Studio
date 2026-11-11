@@ -66,9 +66,9 @@ const REFUND_CANDIDATE_STATUSES = Object.freeze([
 // committed by fn_guest_shop_create_order and is not recomputed here.
 const CANDIDATE_SELECT = 'id,order_no,site,currency,total_amount,quantity,fulfillment_source,payment_status,reservation_status,fulfillment_status,refund_status,expires_at,paid_at,fulfilled_at,updated_at,metadata';
 const CHECKOUT_BATCH_CANDIDATE_SELECT = 'id,batch_no,payment_status,fulfillment_status,updated_at,paid_at,fulfilled_at';
-// Mirror of guest_shop_orders_quantity_check. Raising it is a migration, not an
-// env change, so the loop bound can never be widened at runtime.
-const GUEST_ORDER_QUANTITY_CEILING = 5;
+// Mirror of guest_shop_orders_quantity_check (20261004_guest_shop_quantity_ceiling_99.sql).
+// Raising it is a migration, not an env change, so the loop bound can never be widened at runtime.
+const GUEST_ORDER_QUANTITY_CEILING = 99;
 
 const PRODUCTION_MARKER_NAMES = Object.freeze([
     'VERCEL_ENV',

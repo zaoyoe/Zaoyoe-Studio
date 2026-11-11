@@ -113,7 +113,7 @@ test('watchdog alert handler enqueues incident into ops alerts', async () => {
             content: 'dockerd CPU 连续过高，watchdog 已触发重建。',
             service_name: 'xianyu-auto-reply-fix',
             container_name: 'xianyu-auto-reply-fix',
-            host: '76.13.188.218',
+            host: '203.0.113.10',
             children: 488,
             zombies: 473,
             cpu_percent: 52,
@@ -145,7 +145,7 @@ test('watchdog alert text includes site badge for admins', () => {
             site: 'intl',
             service_name: 'xianyu-auto-reply-fix',
             container_name: 'xianyu-auto-reply-fix',
-            host: '76.13.188.218'
+            host: '203.0.113.10'
         }
     };
     const cnJob = {

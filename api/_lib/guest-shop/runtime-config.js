@@ -16,7 +16,7 @@ const GUEST_SHOP_RUNTIME_SETTINGS = Object.freeze({
     GUEST_SHOP_ORDER_TTL_SECONDS: Object.freeze({
         key: 'orderTtlSeconds',
         type: 'integer',
-        defaultValue: 1800,
+        defaultValue: 300,
         min: 300,
         max: 7200,
         label: '游客订单 TTL'

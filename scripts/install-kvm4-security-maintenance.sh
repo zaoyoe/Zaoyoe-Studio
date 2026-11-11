@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KVM4_HOST="${KVM4_HOST:-76.13.188.218}"
-KVM4_PORT="${KVM4_PORT:-2222}"
+KVM4_HOST="${KVM4_HOST:-kvm4-origin.internal}"
+KVM4_PORT="${KVM4_PORT:-22}"
 KVM4_USER="${KVM4_USER:-root}"
 KVM4_KEY="${KVM4_KEY:-${HOME:-}/.ssh/hostinger_sub2api}"
 EXPECTED_COMMIT=""
@@ -19,8 +19,8 @@ Install the security maintenance wrappers and units on KVM4 without enabling tim
 
 Options:
   --expected-commit SHA  Full 40-character commit matching verified main.
-  --host HOST            SSH host (default: KVM4_HOST or 76.13.188.218).
-  --port PORT            SSH port (default: KVM4_PORT or 2222).
+  --host HOST            SSH host (default: KVM4_HOST).
+  --port PORT            SSH port (default: KVM4_PORT or 22).
   --user USER            SSH user (default: KVM4_USER or root).
   --key PATH             SSH private key (default: KVM4_KEY or ~/.ssh/hostinger_sub2api).
   --dry-run              Check artifact presence and shell syntax only, without networking.

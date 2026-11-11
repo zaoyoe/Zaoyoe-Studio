@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KVM4_HOST="${KVM4_HOST:-76.13.188.218}"
-KVM4_PORT="${KVM4_PORT:-2222}"
+KVM4_HOST="${KVM4_HOST:-kvm4-origin.internal}"
+KVM4_PORT="${KVM4_PORT:-22}"
 KVM4_USER="${KVM4_USER:-root}"
 KVM4_KEY="${KVM4_KEY:-$HOME/.ssh/hostinger_sub2api}"
 KVM4_ROOT="${KVM4_ROOT:-/opt/zaoyoe-verify-server}"
@@ -20,8 +20,8 @@ production secrets.
 
 Options:
   --start         Enable and start the service after installation.
-  --host HOST     SSH host. Default: KVM4_HOST or 76.13.188.218
-  --port PORT     SSH port. Default: KVM4_PORT or 2222
+  --host HOST     SSH host. Default: KVM4_HOST
+  --port PORT     SSH port. Default: KVM4_PORT or 22
   --user USER     SSH user. Default: KVM4_USER or root
   --key PATH      SSH private key. Default: KVM4_KEY or ~/.ssh/hostinger_sub2api
   --root PATH     Remote app root. Default: KVM4_ROOT or /opt/zaoyoe-verify-server

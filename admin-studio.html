@@ -1350,10 +1350,8 @@
                                         <div class="config-input-wrapper">
                                             <select class="config-input" id="paymentChannelActiveSelect" data-admin-change-action="payments-change-active-provider">
                                                 <option value="mock">模拟支付</option>
-                                                <option value="afdian">爱发电</option>
                                                 <option value="nowpayments">USDT-BEP20</option>
                                                 <option value="zpay">易支付</option>
-                                                <option value="hupijiao">虎皮椒</option>
                                             </select>
                                         </div>
                                     </div>
@@ -1396,58 +1394,6 @@
                                             </div>
                                         </div>
 
-                                        <div class="payment-provider-accordion" id="paymentProviderAccordionAfdian">
-                                            <div class="payment-provider-accordion-header" data-admin-action="payments-toggle-provider-panel" data-provider="afdian">
-                                                <div class="payment-provider-accordion-copy">
-                                                    <div class="payment-provider-accordion-title-line">
-                                                        <span class="payment-provider-accordion-title" id="paymentProviderHeaderNameAfdian">爱发电</span>
-                                                        <span class="payment-provider-accordion-status" id="paymentProviderHeaderStatusAfdian">已启用</span>
-                                                    </div>
-                                                    <div class="payment-provider-accordion-desc" id="paymentProviderHeaderDescAfdian">历史手工认领通道，支付后可按订单号认领结果。</div>
-                                                </div>
-                                                <div class="payment-provider-accordion-actions">
-                                                    <div class="status-toggle" id="paymentProviderAfdianToggle" data-admin-action="payments-toggle-provider-enabled" data-provider="afdian"></div>
-                                                    <button type="button" class="payment-provider-expand-btn" data-admin-action="payments-toggle-provider-panel" data-provider="afdian">
-                                                        <i class="fas fa-chevron-down" id="paymentProviderChevronAfdian"></i>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            <div class="payment-provider-accordion-body" id="paymentProviderPanelAfdian">
-                                                <div class="config-row">
-                                                    <label>显示名称</label>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="text" class="config-input" id="paymentProviderAfdianDisplayName" placeholder="爱发电">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <label>支付链接</label>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="url" class="config-input" id="paymentProviderAfdianCheckoutUrl" placeholder="https://afdian.com/a/zaoyoe">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <label>套餐购买提示</label>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="text" class="config-input" id="paymentProviderAfdianPackageHint" placeholder="支付后输入订单号领取兑换码">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <label>自定义充值提示</label>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="text" class="config-input" id="paymentProviderAfdianCustomHint" placeholder="建议在备注中填写要充值的积分数量">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <div class="config-info">
-                                                        <div class="config-label">爱发电 Token</div>
-                                                        <div class="config-desc" id="paymentProviderAfdianTokenStatus">未配置后台安全密钥</div>
-                                                    </div>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="password" class="config-input" id="paymentProviderAfdianToken" placeholder="留空表示保持现有密钥不变">
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
 
                                         <div class="payment-provider-accordion" id="paymentProviderAccordionNowpayments">
                                             <div class="payment-provider-accordion-header" data-admin-action="payments-toggle-provider-panel" data-provider="nowpayments">
@@ -1675,91 +1621,6 @@
                                             </div>
                                         </div>
 
-                                        <div class="payment-provider-accordion" id="paymentProviderAccordionHupijiao">
-                                            <div class="payment-provider-accordion-header" data-admin-action="payments-toggle-provider-panel" data-provider="hupijiao">
-                                                <div class="payment-provider-accordion-copy">
-                                                    <div class="payment-provider-accordion-title-line">
-                                                        <span class="payment-provider-accordion-title" id="paymentProviderHeaderNameHupijiao">虎皮椒</span>
-                                                        <span class="payment-provider-accordion-status" id="paymentProviderHeaderStatusHupijiao">已停用</span>
-                                                    </div>
-                                                    <div class="payment-provider-accordion-desc" id="paymentProviderHeaderDescHupijiao">网关参数和密钥配置完成后即可切换上线。</div>
-                                                </div>
-                                                <div class="payment-provider-accordion-actions">
-                                                    <div class="status-toggle" id="paymentProviderHupijiaoToggle" data-admin-action="payments-toggle-provider-enabled" data-provider="hupijiao"></div>
-                                                    <button type="button" class="payment-provider-expand-btn" data-admin-action="payments-toggle-provider-panel" data-provider="hupijiao">
-                                                        <i class="fas fa-chevron-down" id="paymentProviderChevronHupijiao"></i>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            <div class="payment-provider-accordion-body" id="paymentProviderPanelHupijiao">
-                                                <div class="config-row">
-                                                    <label>显示名称</label>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="text" class="config-input" id="paymentProviderHupijiaoDisplayName" placeholder="虎皮椒">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <label>支付链接</label>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="url" class="config-input" id="paymentProviderHupijiaoCheckoutUrl" placeholder="https://...">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <label>网关地址</label>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="url" class="config-input" id="paymentProviderHupijiaoGatewayUrl" placeholder="https://api.xunhupay.com/payment/do.html">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <label>商户号</label>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="text" class="config-input" id="paymentProviderHupijiaoMerchantId" placeholder="请输入商户号">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <label>回跳地址</label>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="url" class="config-input" id="paymentProviderHupijiaoReturnUrl" placeholder="https://www.fatherkey.com">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <label>通知地址</label>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="url" class="config-input" id="paymentProviderHupijiaoNotifyUrl" placeholder="https://your-server.example.com/api/payments/hupijiao/webhook">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <label>套餐购买提示</label>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="text" class="config-input" id="paymentProviderHupijiaoPackageHint" placeholder="完成支付后请按页面提示处理">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <label>自定义充值提示</label>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="text" class="config-input" id="paymentProviderHupijiaoCustomHint" placeholder="自定义金额订单能力接入后会直接拉起真实支付">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <div class="config-info">
-                                                        <div class="config-label">虎皮椒 API Key</div>
-                                                        <div class="config-desc" id="paymentProviderHupijiaoApiKeyStatus">未配置后台安全密钥</div>
-                                                    </div>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="password" class="config-input" id="paymentProviderHupijiaoApiKey" placeholder="留空表示保持现有密钥不变">
-                                                    </div>
-                                                </div>
-                                                <div class="config-row">
-                                                    <div class="config-info">
-                                                        <div class="config-label">虎皮椒 Secret Key</div>
-                                                        <div class="config-desc" id="paymentProviderHupijiaoSecretKeyStatus">未配置后台安全密钥</div>
-                                                    </div>
-                                                    <div class="config-input-wrapper">
-                                                        <input type="password" class="config-input" id="paymentProviderHupijiaoSecretKey" placeholder="留空表示保持现有密钥不变">
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
                                     </div>
 
                                     <div class="config-row payment-channel-save-row">

@@ -62,8 +62,13 @@ function constantTimeEquals(left, right) {
 }
 
 export function getAdminStudioAccessSecret() {
-    const fromEnv = process.env.ADMIN_STUDIO_ACCESS_SECRET || process.env.ADMIN_CONFIG_ENCRYPTION_KEY || '';
-    if (fromEnv) return fromEnv;
+    const dedicatedSecret = String(process.env.ADMIN_STUDIO_ACCESS_SECRET || '').trim();
+    if (dedicatedSecret) return dedicatedSecret;
+
+    const encryptionKeyFallback = String(process.env.ADMIN_CONFIG_ENCRYPTION_KEY || '').trim();
+    if (encryptionKeyFallback) {
+        return `admin-studio-cookie-v1:${encryptionKeyFallback}`;
+    }
 
     if (shouldAllowLocalDevAdminStudioSecret()) {
         return 'local-dev-admin-studio-access-secret';
