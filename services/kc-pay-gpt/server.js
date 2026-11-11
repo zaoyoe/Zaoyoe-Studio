@@ -4197,18 +4197,21 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     finalMessage = cooldownMessage;
                 }
             }
-            // Payment completion and auto-renew confirmation are separate
-            // decisions. Persist a recoverable pending result before making
-            // the external cancellation request; a crash or failed annotation
-            // must not leave an unverified task advertised as successful.
-            const autoRenewPending = finalStatus === 'success' && finalPaymentState === 'succeeded'
-                && task.executionMode === 'local_card_pool' && !persistenceUncertain;
-            if (autoRenewPending) {
-                finalStatus = 'manual';
-                finalMessage = '充值已完成，正在核实自动续费状态，请勿重复充值';
+            // 扣款成功即代表官方收银台已完成扣款且权益已开通，整单终态直接锁定为 success，
+            // 严禁将任务降级为 manual，也不得将 CDK 滞留在未核销状态。
+            // 自动续费取消操作完全作为后台静默处理，其成败仅记录到数据库供管理后台核查。
+            const isPaymentSucceeded = finalStatus === 'success' && finalPaymentState === 'succeeded' && !persistenceUncertain;
+            const autoRenewPending = isPaymentSucceeded && task.executionMode === 'local_card_pool';
+
+            if (isPaymentSucceeded) {
+                finalStatus = 'success';
+                finalPaymentState = 'succeeded';
+                finalMessage = '充值成功';
             } else if (['started', 'unknown'].includes(finalPaymentState)) {
+                finalStatus = 'manual';
                 finalMessage = '支付结果未确认，已保留 CDK 与银行卡，需人工复核，请勿重复充值';
             }
+
             const settlement = await persistLocal({
                 status: finalStatus,
                 message: finalMessage,
@@ -4217,37 +4220,25 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 progress: finalProgress,
                 failureScreenshots,
                 paymentState: finalPaymentState || 'not_started',
-                recoveryRequired: autoRenewPending || ['started', 'unknown'].includes(normalizePaymentState(finalPaymentState)),
-                ...(autoRenewPending ? { autoRenewStatus: 'pending', autoRenewMessage: finalMessage } : {})
+                recoveryRequired: !isPaymentSucceeded && ['started', 'unknown'].includes(normalizePaymentState(finalPaymentState)),
+                ...(autoRenewPending ? { autoRenewStatus: 'pending', autoRenewMessage: '充值成功，正在核实自动续费状态' } : {})
             }, { finalize: true });
             finalStatus = settlement.status;
             finalPaymentState = settlement.paymentState;
             finalMessage = settlement.message || finalMessage;
 
-            if (autoRenewPending) {
-                broadcastToTask(task.jobKey, {
-                    type: 'progress',
-                    jobKey: task.jobKey,
-                    status: 'running',
-                    progress: 100,
-                    paymentState: 'succeeded',
-                    message: '充值成功',
-                    cdkCode: cdk
-                });
-            } else {
-                broadcastToTask(task.jobKey, {
-                    type: 'status',
-                    jobKey: task.jobKey,
-                    status: finalStatus,
-                    message: finalMessage,
-                    paymentState: finalPaymentState,
-                    recoveryRequired: settlement.recoveryRequired,
-                    cdkCode: cdk,
-                    progress: finalProgress,
-                    screenshots: taskMedia.screenshots,
-                    videos: taskMedia.videos
-                });
-            }
+            broadcastToTask(task.jobKey, {
+                type: 'status',
+                jobKey: task.jobKey,
+                status: finalStatus,
+                message: finalMessage,
+                paymentState: finalPaymentState,
+                recoveryRequired: settlement.recoveryRequired,
+                cdkCode: cdk,
+                progress: finalProgress,
+                screenshots: taskMedia.screenshots,
+                videos: taskMedia.videos
+            });
 
             logTask(
                 task.jobKey,
@@ -4287,21 +4278,18 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 const autoRenewConfirmed = autoRenewStatus === 'disabled';
                 const autoRenewMessage = autoRenewConfirmed
                     ? '充值完成，自动续费已确认关闭'
-                    : (autoRenewData.message || autoRenewResult.error || '充值成功，但自动续费关闭状态未确认，请人工复核');
-                const renewal = await persistLocal({
-                    status: autoRenewConfirmed ? 'success' : 'manual',
-                    message: autoRenewConfirmed ? '激活成功' : '充值已完成，但自动续费关闭状态未确认，请联系客服人工复核',
+                    : (autoRenewData.message || autoRenewResult.error || '充值完成，自动续订关闭状态未确认（后台待核查）');
+                // 扣款成功即已完成开通，取消自动续费仅作为后台批注记录，绝不反转订单成功状态与已消耗的 CDK
+                await persistLocal({
+                    status: 'success',
+                    message: '充值成功',
                     autoRenewStatus,
                     autoRenewMessage,
                     paymentState: 'succeeded',
-                    recoveryRequired: !autoRenewConfirmed
-                }, { annotate: true });
-                finalStatus = renewal.status;
-                finalPaymentState = renewal.paymentState;
-                finalMessage = renewal.message;
-                broadcastToTask(task.jobKey, { type: 'status', jobKey: task.jobKey, cdkCode: cdk,
-                    status: finalStatus, message: finalMessage, paymentState: finalPaymentState,
-                    recoveryRequired: renewal.recoveryRequired, progress: finalProgress });
+                    recoveryRequired: false
+                }, { annotate: true }).catch((err) => {
+                    logTask(task.jobKey, `自动续费状态批注失败: ${err.message}`, 'warn');
+                });
                 logTask(task.jobKey, `自动续费处理结果=${autoRenewStatus}`, autoRenewConfirmed ? 'info' : 'warn');
             }
             if (finalStatus === 'success') {

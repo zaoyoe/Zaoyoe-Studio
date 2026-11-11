@@ -100,7 +100,8 @@ test('frontend and backend contracts for payment success feedback', () => {
     assert.match(indexHtml, /cdkLabel\.textContent = '已使用'/);
     assert.match(indexHtml, /🎉 恭喜！当前账号已成功开通/);
 
-    // Backend: ensures autoRenewPending broadcasts progress/success instead of manual error to connected client
-    assert.match(serverJs, /if \(autoRenewPending\) \{\s*broadcastToTask\(task\.jobKey, \{\s*type: 'progress'/);
+    // Backend: ensures payment success affirmatively locks finalStatus = 'success' and broadcasts success to client
+    assert.match(serverJs, /isPaymentSucceeded/);
+    assert.match(serverJs, /finalStatus = 'success'/);
     assert.match(serverJs, /paymentState: 'succeeded'/);
 });
