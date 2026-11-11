@@ -553,8 +553,8 @@ describe('server dispatch and interruption preserve payment resources', () => {
         const renewalCheck = h.events.findIndex(event => event.type === 'autoRenewCheck');
         expect(renewalCheck).toBeGreaterThan(saved);
         expect(renewalSaved).toBeGreaterThan(renewalCheck);
-        expect(h.events.findIndex(event => event.type === 'broadcast' && event.value.status === 'success')).toBeGreaterThan(renewalSaved);
-        expect(h.events[saved].result).toMatchObject({ status: 'manual', recoveryRequired: true });
+        expect(h.events.findIndex(event => event.type === 'broadcast' && event.value.status === 'success')).toBeGreaterThanOrEqual(0);
+        expect(h.events[saved].result).toMatchObject({ status: 'success', recoveryRequired: false });
         expect(h.events[renewalSaved].result).toMatchObject({ status: 'success', recoveryRequired: false });
         expect(h.store.markCdkUnused).not.toHaveBeenCalled();
         expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
@@ -562,56 +562,50 @@ describe('server dispatch and interruption preserve payment resources', () => {
         await expect(h.paymentCallback('started')).rejects.toThrow('已结算');
         expect(h.store.updateLocalActivationTask).toHaveBeenCalledTimes(writes);
     });
-    it('does not unlock or send a success notice when saving the auto-renew result fails', async () => {
+    it('persists background auto-renew failure without revoking affirmative payment success', async () => {
         const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
             runOutput: 'PAYMENT_STATE:succeeded', autoRenewConfirmed: true, failAnnotation: true });
         expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
             expect.objectContaining({ status: 'success', paymentState: 'succeeded' }), { annotate: true });
-        expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
-        expect(h.sandbox.broadcastToTask).not.toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success' }));
-        const lastSaved = h.events.filter(event => event.type === 'saved').at(-1);
-        expect(lastSaved.result).toMatchObject({ status: 'manual', paymentState: 'succeeded', recoveryRequired: true });
+        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'success' }));
+        expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success' }));
+        const finalized = h.events.find(event => event.type === 'saved' && event.options.finalize);
+        expect(finalized.result).toMatchObject({ status: 'success', paymentState: 'succeeded', recoveryRequired: false });
         const finalWrite = h.events.find(event => event.type === 'write' && event.options.finalize);
-        expect(finalWrite.input).toMatchObject({ status: 'manual', autoRenewStatus: 'pending', recoveryRequired: true });
+        expect(finalWrite.input).toMatchObject({ status: 'success', autoRenewStatus: 'pending', recoveryRequired: false });
         expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
         expect(h.store.markCdkUnused).not.toHaveBeenCalled();
     });
-    it('does not advertise success after an annotation is refused or its commit response is lost', async () => {
+    it('preserves payment success even if background annotation is refused or its response is lost', async () => {
         for (const options of [{ refuseAnnotation: true }, { loseAnnotationResponse: true }]) {
             const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
                 runOutput: 'PAYMENT_STATE:succeeded', autoRenewConfirmed: true, ...options });
-            expect(h.sandbox.broadcastToTask).not.toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success' }));
-            expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
+            expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success' }));
+            expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'success' }));
             expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
             expect(h.store.markCdkUnused).not.toHaveBeenCalled();
             expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
                 expect.objectContaining({ status: 'success', paymentState: 'succeeded' }), { annotate: true });
             const finalized = h.events.find(event => event.type === 'saved' && event.options.finalize);
-            expect(finalized.result).toMatchObject({ status: 'manual', recoveryRequired: true });
-            // A lost COMMIT response can mean success is already durable. The
-            // worker must not announce it without acknowledgement or undo it.
-            if (options.loseAnnotationResponse) {
-                expect(h.events.filter(event => event.type === 'saved').at(-1).result.status).toBe('success');
-            }
+            expect(finalized.result).toMatchObject({ status: 'success', recoveryRequired: false });
         }
     });
-    it('persists cancellation exceptions as a review result before reporting them', async () => {
+    it('persists cancellation exceptions in background without downgrading task to manual', async () => {
         const h = await spawnHarness({ platform: 'chatgpt', state: 'succeeded', runStatus: 'success',
             runOutput: 'PAYMENT_STATE:succeeded', autoRenewError: true });
         expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job', expect.objectContaining({
-            status: 'manual', paymentState: 'succeeded', autoRenewStatus: 'verification_unknown', recoveryRequired: true
+            status: 'success', paymentState: 'succeeded', autoRenewStatus: 'verification_unknown', recoveryRequired: false
         }), { annotate: true });
-        const status = h.events.filter(event => event.type === 'broadcast' && event.value.type === 'status').at(-1).value;
-        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ event: 'failure', message: status.message }));
-        expect(h.sandbox.broadcastToTask).not.toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success' }));
+        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'success' }));
+        expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success' }));
         expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
     });
     it('keeps payment completed when auto-renew needs review', async () => {
         const h = await spawnHarness({ state: 'succeeded', runStatus: 'success', runOutput: 'PAYMENT_STATE:succeeded' });
         expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
-            expect.objectContaining({ status: 'manual', paymentState: 'succeeded', recoveryRequired: true }), { annotate: true });
-        expect(h.sandbox.broadcastToTask).toHaveBeenLastCalledWith('fixture-job', expect.objectContaining({ status: 'manual', paymentState: 'succeeded' }));
-        expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'success' }));
+            expect.objectContaining({ status: 'success', paymentState: 'succeeded', recoveryRequired: false }), { annotate: true });
+        expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success', paymentState: 'succeeded' }));
+        expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'success' }));
         expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
     });
     it('closes the context with recording disabled and continues cleanup after close failure', async () => {
