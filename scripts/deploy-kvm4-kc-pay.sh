@@ -322,7 +322,19 @@ if printf '%s' "$admin_html_body" | grep -q "Mac Touch ID"; then
   echo "PASS: Local curl on 3100 returned Mac Touch ID in admin HTML"
 else
   echo "WARNING: Local curl on 3100 did not return Mac Touch ID in admin HTML (body length: ${#admin_html_body})" >&2
+  echo "Checking inside container on port 3000 directly:"
+  docker exec "$app_container" curl -sS -H "Host: adm.fatherkey.com" http://127.0.0.1:3000/admin | grep -q "Mac Touch ID" && echo "PASS: Container port 3000 returns Mac Touch ID!" || echo "FAIL: Container port 3000 also missing Mac Touch ID"
 fi
+
+echo "=== PORT 3100 & PROCESS DIAGNOSTICS ==="
+ss -tulpn | grep 3100 || lsof -i :3100 || true
+ps aux | grep -iE 'node|server.js|pm2' | grep -v grep || true
+command -v pm2 >/dev/null && pm2 list || true
+systemctl list-units --type=service 2>/dev/null | grep -iE 'kc|gpt|pay' || true
+
+echo "=== CADDY INGRESS FOR adm.fatherkey.com & redeem.fatherkey.com ==="
+grep -rnE 'adm\.fatherkey\.com|redeem\.fatherkey\.com' /etc/caddy/ /etc/nginx/ /etc/systemd/ 2>/dev/null || true
+cat /etc/caddy/Caddyfile 2>/dev/null || true
 
 echo "Active container status:"
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|kc'
