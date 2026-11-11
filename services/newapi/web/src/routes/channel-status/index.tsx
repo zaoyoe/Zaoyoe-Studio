@@ -20,7 +20,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import z from 'zod'
 
 import { ChannelStatusPage } from '@/features/channel-status'
-import { getFreshModuleAccess } from '@/lib/nav-modules'
+import { getModuleAccessForGuard } from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
 
 const channelStatusSearchSchema = z.object({
@@ -32,8 +32,8 @@ const channelStatusSearchSchema = z.object({
 
 export const Route = createFileRoute('/channel-status/')({
   validateSearch: channelStatusSearchSchema,
-  beforeLoad: async ({ location }) => {
-    const access = await getFreshModuleAccess('status')
+  beforeLoad: async ({ context, location }) => {
+    const access = await getModuleAccessForGuard(context.queryClient, 'status')
     if (!access.enabled) {
       throw redirect({ to: '/' })
     }
