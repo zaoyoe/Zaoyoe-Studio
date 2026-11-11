@@ -557,12 +557,18 @@ async function attachAdminPaths(payload) {
 }
 
 function isPublicRedeemHost(req) {
-    const rawHost = String(req?.headers?.host || req?.hostname || '')
+    const forwardedHost = String(req?.headers?.['x-forwarded-host'] || '')
+        .split(',')[0]
         .trim()
         .toLowerCase()
         .replace(/:\d+$/, '');
+    const directHost = String(req?.headers?.host || req?.hostname || '')
+        .trim()
+        .toLowerCase()
+        .replace(/:\d+$/, '');
+    const rawHost = forwardedHost || directHost;
     if (!rawHost) return false;
-    if (rawHost === 'redeem.fatherkey.com') return true;
+    if (rawHost === 'redeem.fatherkey.com' || forwardedHost === 'redeem.fatherkey.com') return true;
     const configuredAdminHosts = String(process.env.KC_ADMIN_ALLOWED_HOSTS || '')
         .split(',')
         .map((item) => item.trim().toLowerCase())
