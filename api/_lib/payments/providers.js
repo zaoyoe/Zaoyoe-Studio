@@ -4,9 +4,6 @@ const {
     normalizePaymentSecretSite
 } = require('../secrets');
 const {
-    normalizeHupijiaoConfig
-} = require('./hupijiao');
-const {
     normalizeZpayConfig
 } = require('./zpay');
 const {
@@ -284,17 +281,12 @@ function buildPaymentProviderActivationCheck(
     }
 
     if (normalizedProviderKey === 'hupijiao') {
-        const normalizedConfig = normalizeHupijiaoConfig({
-            channelConfig: provider,
-            secretValues: {
-                hupijiao_secret_key: isSecretConfigured(secretStatus.hupijiao_secret_key)
-                    ? '__configured__'
-                    : ''
-            },
-            requestOrigin: provider.return_url || DEFAULT_SITE_ORIGIN
-        });
+        const missingFields = [];
+        if (!provider.merchant_id && !provider.appid && !provider.app_id) missingFields.push('appid');
+        if (!isSecretConfigured(secretStatus.hupijiao_secret_key)) missingFields.push('appsecret');
+        if (!provider.notify_url) missingFields.push('notify_url');
 
-        normalizedConfig.missingFields.forEach((fieldName) => {
+        missingFields.forEach((fieldName) => {
             issues.push(mapProviderMissingFieldLabel(normalizedProviderKey, fieldName));
         });
 
@@ -302,10 +294,10 @@ function buildPaymentProviderActivationCheck(
             if (!String(env?.HUPIJIAO_WEBHOOK_ALLOWED_IPS || '').trim()) {
                 issues.push('生产环境缺少 HUPIJIAO_WEBHOOK_ALLOWED_IPS');
             }
-            if (normalizedConfig.notifyUrl && !isHttpsUrl(normalizedConfig.notifyUrl)) {
+            if (provider.notify_url && !isHttpsUrl(provider.notify_url)) {
                 issues.push('notify_url 必须使用 HTTPS');
             }
-            if (normalizedConfig.returnUrl && !isHttpsUrl(normalizedConfig.returnUrl)) {
+            if (provider.return_url && !isHttpsUrl(provider.return_url)) {
                 issues.push('return_url 必须使用 HTTPS');
             }
         }

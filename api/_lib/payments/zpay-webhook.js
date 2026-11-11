@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const {
     getPaymentProviderAdapter,
     roundCurrencyAmount
@@ -190,7 +191,13 @@ async function recordPaymentEvent(supabase, eventPayload) {
         }
 
         if (Array.isArray(existingEvent) && existingEvent.length > 0) {
-            return { duplicate: true, id: existingEvent[0]?.id || null };
+            const firstExisting = existingEvent[0];
+            if (firstExisting?.signature_valid === false
+                && firstExisting?.processing_result === 'signature_mismatch') {
+                await deletePaymentEvent(supabase, normalizedEventKey);
+            } else {
+                return { duplicate: true, id: firstExisting?.id || null };
+            }
         }
     }
 
@@ -631,7 +638,7 @@ async function handleZpayWebhook({
 
             const orderPatch = {
                 status: nextStatus,
-                sign_verified: signatureValid,
+                sign_verified: signatureValid ? true : (paymentOrder.sign_verified === true),
                 amount_verified: paymentState === 'paid'
                     ? (processingResult === 'processed_paid'
                         ? true
@@ -737,7 +744,11 @@ async function handleZpayWebhook({
             }
         }
 
+        const invalidEventKey = !signatureValid
+            ? `invalid:${eventKey}:${crypto.createHash('sha256').update(JSON.stringify(payload || {})).digest('hex').slice(0, 16)}`
+            : null;
         await finalizePaymentEvent(supabase, eventKey, {
+            ...(invalidEventKey ? { event_key: invalidEventKey } : {}),
             payment_order_id: paymentOrder?.id || null,
             signature_valid: signatureValid,
             amount_valid: paymentState === 'paid'

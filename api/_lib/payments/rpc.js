@@ -111,41 +111,6 @@ async function rechargePointsForPayment({
     return supabase.rpc('fn_recharge_points', rpcParams);
 }
 
-async function processAfdianPayment({
-    supabase,
-    orderNo,
-    afdianUserId = '',
-    planId = null,
-    paidAmount,
-    expectedAmount,
-    points,
-    packageId = null,
-    packageName = null,
-    site = 'cn',
-    signatureValid = false,
-    amountValid = false,
-    payload = {},
-    processError = '',
-    paymentOrderId = null
-}) {
-    return supabase.rpc('fn_process_afdian_payment', {
-        p_order_no: orderNo,
-        p_afdian_user_id: String(afdianUserId || ''),
-        p_plan_id: planId || null,
-        p_paid_amount: paidAmount,
-        p_expected_amount: expectedAmount,
-        p_points: points,
-        p_package_id: packageId || null,
-        p_package_name: packageName || null,
-        p_site: normalizeSite(site),
-        p_signature_valid: signatureValid,
-        p_amount_valid: amountValid,
-        p_payload: payload,
-        p_error: processError,
-        p_payment_order_id: paymentOrderId || null
-    });
-}
-
 async function applyPaymentOrderReview({
     supabase,
     paymentOrderId,
@@ -161,34 +126,11 @@ async function applyPaymentOrderReview({
     });
 }
 
-async function finalizeAfdianCustomPayment({
-    supabase,
-    orderNo,
-    userId,
-    site = 'cn',
-    points,
-    expectedAmount,
-    quoteId,
-    packageName = '自定义充值'
-}) {
-    return supabase.rpc('fn_finalize_afdian_custom_payment', {
-        p_order_no: orderNo,
-        p_user_id: userId,
-        p_site: normalizeSite(site),
-        p_points: points,
-        p_expected_amount: expectedAmount,
-        p_quote_id: quoteId,
-        p_package_name: packageName
-    });
-}
-
 module.exports = {
     applyPaymentOrderReview,
     deductPointsForRefundReclaim,
     deductPointsForService,
-    finalizeAfdianCustomPayment,
     getUserBalance,
     isMissingDeductWithBreakdownRpc,
-    processAfdianPayment,
     rechargePointsForPayment
 };

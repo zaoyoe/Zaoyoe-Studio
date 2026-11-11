@@ -19,6 +19,7 @@ const defaultGuestPricing = require('../../../api/_lib/guest-shop/pricing');
 // from the SQL functions (see its header comment).
 const defaultGuestPromo = require('../../../api/_lib/guest-shop/promo');
 const defaultRequestSecurity = require('../../../api/_lib/request-security');
+const { verifyTurnstileToken } = require('../../../api/_lib/turnstile');
 const { isOrderScopedZpayCheckoutUrl } = require('../../../api/_lib/payments/guest-shop-adapter');
 const { loadProductGuidanceRow, buildProductGuidancePayload } = require('./shop');
 
@@ -141,7 +142,7 @@ function paymentCreationLeaseMs(env = process.env) {
 
 function guestOrderTtlSeconds(env = process.env) {
     return parseGuestRuntimeInteger(env, 'GUEST_SHOP_ORDER_TTL_SECONDS', {
-        defaultValue: 1800,
+        defaultValue: 300,
         min: MIN_GUEST_ORDER_TTL_SECONDS,
         max: MAX_GUEST_ORDER_TTL_SECONDS
     });
@@ -979,7 +980,8 @@ const ALLOWED_ORDER_FIELDS = new Set([
     'checkoutAction', 'intentId',
     // Promo L2. The value is re-normalized (and rejected while the switch is
     // off) by security.normalizeGuestOrderInput, never trusted as an amount.
-    'discountCode', 'discount_code'
+    'discountCode', 'discount_code',
+    'turnstileToken', 'turnstile_token', 'cfTurnstileResponse', 'cf_turnstile_response'
 ]);
 
 function createGuestShopHandlers({
@@ -1922,15 +1924,42 @@ function createGuestShopHandlers({
         } catch (_) { /* durable worker/admin reconciliation handles leftovers */ }
     }
 
+    async function verifyGuestTurnstileIfRequired(req, body) {
+        const turnstileFlag = String(env?.GUEST_SHOP_TURNSTILE_ENABLED ?? '').trim().toLowerCase();
+        if (!['1', 'true', 'yes', 'on', 'enabled'].includes(turnstileFlag)) return;
+        const token = String(
+            body?.turnstileToken
+            ?? body?.turnstile_token
+            ?? body?.cfTurnstileResponse
+            ?? body?.cf_turnstile_response
+            ?? req?.headers?.['cf-turnstile-response']
+            ?? ''
+        ).trim();
+        const verification = await verifyTurnstileToken(token, {
+            clientIp: clientIpForRateLimit(req),
+            secretKey: env?.CLOUDFLARE_TURNSTILE_SECRET_KEY,
+            isProduction: isProductionLikeRuntime(env)
+        });
+        if (!verification?.success) {
+            throw new security.GuestShopSecurityError('请先完成人机安全验证后再下单', {
+                statusCode: 403,
+                code: 'guest_turnstile_required'
+            });
+        }
+    }
+
     async function checkoutBatches(req, res) {
         setGuestSensitiveHeaders(res);
         if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
         if (!(await limit(req, res, 'checkout-batches', { limit: 12 }))) return;
         try {
+            const orderTtlSeconds = guestOrderTtlSeconds(env);
+            paymentCreationLeaseMs(env);
             const body = await parseJson(req);
             const allowed = new Set([
                 'site', 'provider', 'channel', 'items', 'idempotencyKey', 'idempotency_key',
-                'email', 'orderPassword', 'order_password'
+                'email', 'orderPassword', 'order_password',
+                'turnstileToken', 'turnstile_token', 'cfTurnstileResponse', 'cf_turnstile_response'
             ]);
             const discountKeys = new Set([
                 'discountCode', 'discount_code', 'discountAmount', 'discount_amount',
@@ -1940,6 +1969,7 @@ function createGuestShopHandlers({
                 throw batchError('游客现金批量结算暂不支持未验证优惠，请清除优惠后重试', 'guest_checkout_discount_unsupported', 409);
             }
             for (const key of Object.keys(body || {})) if (!allowed.has(key)) throw batchError('批量结算字段不允许');
+            await verifyGuestTurnstileIfRequired(req, body);
             const siteName = normalizeSiteValue(body.site);
             const provider = String(body.provider || '').trim().toLowerCase();
             const channel = String(body.channel || provider).trim().toLowerCase();
@@ -1947,7 +1977,12 @@ function createGuestShopHandlers({
                 throw batchError('支付通道不可用', 'guest_invalid_payment_provider');
             }
             const rawItems = Array.isArray(body.items) ? body.items : [];
-            if (!rawItems.length || rawItems.length > 50) throw batchError('购物车商品无效');
+            if (!rawItems.length || rawItems.length > 10) throw batchError('购物车商品无效');
+            const explicitQuantityCap = env?.GUEST_SHOP_MAX_QUANTITY !== undefined
+                && String(env.GUEST_SHOP_MAX_QUANTITY).trim() !== ''
+                ? guestMaxQuantity(env)
+                : 10;
+            const seenItemKeys = new Set();
             const items = rawItems.map((item) => {
                 if (!item || typeof item !== 'object' || Array.isArray(item)) throw batchError('购物车商品无效');
                 const keys = Object.keys(item);
@@ -1957,16 +1992,30 @@ function createGuestShopHandlers({
                 if (keys.some((key) => !['productId', 'skuId', 'quantity'].includes(key))) throw batchError('购物车商品字段不允许');
                 const productId = security.normalizeUuid(item.productId, 'productId');
                 const skuId = security.normalizeUuid(item.skuId, 'skuId');
+                const itemKey = `${productId}:${skuId}`;
+                if (seenItemKeys.has(itemKey)) {
+                    throw batchError('购物车包含重复规格商品，请合并后再试', 'guest_checkout_batch_duplicate_item', 400);
+                }
+                seenItemKeys.add(itemKey);
                 const quantity = Number(item.quantity ?? 1);
                 if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 99) throw batchError('购买数量无效');
+                if (quantity > explicitQuantityCap) {
+                    throw batchError('购买数量超出该商品的可购上限', 'guest_quantity_not_allowed', 409);
+                }
                 return { productId, skuId, quantity };
             });
+            const totalBatchQuantity = items.reduce((sum, entry) => sum + entry.quantity, 0);
+            if (totalBatchQuantity > Math.max(10, explicitQuantityCap * 3)) {
+                throw batchError('购买数量超出该商品的可购上限', 'guest_quantity_not_allowed', 409);
+            }
             const idempotencyKey = security.normalizeGuestIdempotencyKey(body.idempotencyKey || body.idempotency_key);
             const credentialEnabled = defaultBuyerCredentials.isBuyerCredentialEnabled(env);
             const rawEmail = typeof body.email === 'string' ? body.email.trim() : '';
             const rawOrderPassword = typeof body.orderPassword === 'string'
                 ? body.orderPassword
                 : (typeof body.order_password === 'string' ? body.order_password : '');
+            const ipHash = hashRequestAttribute(resolveClientIp(req, { env }));
+            const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
             let buyerContactHash = null;
             let buyerId = null;
             let normalizedEmail = '';
@@ -1986,8 +2035,6 @@ function createGuestShopHandlers({
                     security, env, email: normalizedEmail, field: 'orderPassword'
                 });
                 buyerContactHash = security.hashGuestContact(normalizedEmail, { env, strict: true });
-                const ipHash = hashRequestAttribute(resolveClientIp(req, { env }));
-                const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
                 const resolved = await defaultBuyerCredentials.resolveBuyerGroupForOrder({
                     supabase: getSupabase(),
                     security,
@@ -2017,7 +2064,7 @@ function createGuestShopHandlers({
             const created = await db.rpc('fn_guest_shop_create_checkout_batch', {
                 p_site: siteName, p_items: items, p_idempotency_key: idempotencyKey,
                 p_request_fingerprint: fingerprint, p_claim_secret_hash: claimHash,
-                p_provider: provider, p_channel: channel, p_ttl_seconds: guestOrderTtlSeconds(env)
+                p_provider: provider, p_channel: channel, p_ttl_seconds: orderTtlSeconds
             });
             if (created?.error) {
                 const raw = String(created.error.message || '').trim();
@@ -2034,9 +2081,13 @@ function createGuestShopHandlers({
                     guest_credit_price_unavailable: ['商品价格暂不可用，请刷新购物车后重试', 409],
                     guest_idempotency_conflict: ['购物车结算内容已变化，请重新打开结算', 409],
                     guest_invalid_payment_provider: ['支付方式不可用，请重新选择', 400],
-                    guest_invalid_order_ttl: ['游客订单配置暂不可用，请稍后重试', 503]
+                    guest_invalid_order_ttl: ['游客订单配置暂不可用，请稍后重试', 503],
+                    guest_checkout_batch_duplicate_item: ['购物车包含重复规格商品，请合并后再试', 400],
+                    guest_quantity_not_allowed: ['购买数量超出该商品的可购上限', 409],
+                    guest_open_orders_limit: ['暂时不能创建订单。这个商品当前可售数量较少，或你还有未支付的游客订单。请稍后再试。', 409, 'guest_promo_safety_limit'],
+                    guest_stock_hold_limit: ['暂时不能创建订单。这个商品当前可售数量较少，或你还有未支付的游客订单。请稍后再试。', 409, 'guest_promo_safety_limit']
                 }[raw];
-                if (known) throw batchError(known[0], raw, known[1]);
+                if (known) throw batchError(known[0], known[2] || raw, known[1]);
                 throw Object.assign(new Error('购物车结算失败'), { statusCode: 500, code: 'guest_shop_request_failed', expose: false });
             }
             const row = batchRows(created.data)[0];
@@ -2048,11 +2099,13 @@ function createGuestShopHandlers({
                     code: 'guest_idempotency_conflict'
                 });
             }
-            if (buyerId || normalizedEmail) {
+            if (buyerId || normalizedEmail || ipHash || buyerContactHash) {
                 const currentMeta = batch.metadata && typeof batch.metadata === 'object' ? batch.metadata : {};
                 const nextMetadata = {
                     ...currentMeta,
-                    ...(buyerId ? { buyer_id: buyerId, buyer_contact_hash: buyerContactHash } : {}),
+                    ...(buyerId ? { buyer_id: buyerId } : {}),
+                    ...(buyerContactHash ? { buyer_contact_hash: buyerContactHash } : {}),
+                    ...(ipHash ? { request_ip_hash: ipHash } : {}),
                     ...(normalizedEmail ? { email: normalizedEmail } : {})
                 };
                 try {
@@ -3793,8 +3846,14 @@ function responseOrder(order, extras = {}) {
                 throw new security.GuestShopSecurityError('支付通道不可用', { statusCode: 400, code: 'guest_invalid_payment_provider' });
             }
             const orderBody = { ...body };
-            for (const field of ['provider', 'providerKey', 'provider_key', 'channel', 'paymentChannel', 'payment_channel']) delete orderBody[field];
+            for (const field of [
+                'provider', 'providerKey', 'provider_key', 'channel', 'paymentChannel', 'payment_channel',
+                'turnstileToken', 'turnstile_token', 'cfTurnstileResponse', 'cf_turnstile_response'
+            ]) delete orderBody[field];
             delete orderBody.resumeUnknown;
+            if (!resumeUnknown && !intentCreateDeadlineAt) {
+                await verifyGuestTurnstileIfRequired(req, body);
+            }
             // Order Access 2.0 (§6.1.4 / §12): the query password is collected on
             // the order form ONLY while the credential switch is on. It is never
             // an order input field, so lift it out before normalization and drop

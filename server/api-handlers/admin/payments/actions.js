@@ -30,9 +30,6 @@ const {
     maybeIssueRechargeDiscountAssets
 } = require('../../../../api/_lib/discount-trigger-linkage');
 const {
-    deriveHupijiaoPointBreakdown
-} = require('../../../../api/_lib/payments/hupijiao-points');
-const {
     deriveZpayPointBreakdown
 } = require('../../../../api/_lib/payments/zpay-points');
 
@@ -47,9 +44,6 @@ const VALID_ACTIONS = new Set([
     'reject_review',
     'approve_amount_mismatch',
     'reject_amount_mismatch',
-    'refund_hupijiao',
-    'query_hupijiao_order',
-    'reconcile_hupijiao_order',
     'refund_zpay',
     'query_zpay_order',
     'reconcile_zpay_order',
@@ -62,16 +56,11 @@ const NOTE_REQUIRED_ACTIONS = new Set([
     'reject_review',
     'approve_amount_mismatch',
     'reject_amount_mismatch',
-    'refund_hupijiao',
-    'reconcile_hupijiao_order',
     'refund_zpay',
     'reconcile_zpay_order',
     'refund_nowpayments'
 ]);
 const ORDER_ONLY_ACTIONS = new Set([
-    'query_hupijiao_order',
-    'reconcile_hupijiao_order',
-    'refund_hupijiao',
     'query_zpay_order',
     'reconcile_zpay_order',
     'refund_zpay',
@@ -112,16 +101,6 @@ const ARCHIVABLE_ANOMALY_STATUSES = new Set([
     'approved'
 ]);
 const GATEWAY_PROVIDER_META = Object.freeze({
-    hupijiao: Object.freeze({
-        key: 'hupijiao',
-        label: '虎皮椒',
-        queryAction: 'query_hupijiao_order',
-        reconcileAction: 'reconcile_hupijiao_order',
-        refundAction: 'refund_hupijiao',
-        paidStatusRaw: 'OD',
-        refundStatusRaw: 'CD',
-        pointBreakdown: deriveHupijiaoPointBreakdown
-    }),
     zpay: Object.freeze({
         key: 'zpay',
         label: '易支付',
@@ -149,9 +128,6 @@ function isUuid(value = '') {
         .test(String(value || '').trim());
 }
 const GATEWAY_ACTION_PROVIDER_MAP = Object.freeze({
-    query_hupijiao_order: 'hupijiao',
-    reconcile_hupijiao_order: 'hupijiao',
-    refund_hupijiao: 'hupijiao',
     query_zpay_order: 'zpay',
     reconcile_zpay_order: 'zpay',
     refund_zpay: 'zpay',
@@ -1441,22 +1417,6 @@ async function applyCheckoutSessionReconcileDecision(supabase, target, note, act
     };
 }
 
-function buildHupijiaoLiveOrderMessage(liveOrder = {}) {
-    return buildGatewayLiveOrderMessage('hupijiao', liveOrder);
-}
-
-async function queryHupijiaoGatewayOrder(supabase, target, env = process.env) {
-    return queryGatewayOrder(supabase, target, 'hupijiao', env);
-}
-
-async function applyHupijiaoOrderQuery(supabase, target, actorId, env = process.env) {
-    return applyGatewayOrderQuery(supabase, target, actorId, env, 'hupijiao');
-}
-
-async function applyHupijiaoReconcileDecision(supabase, target, note, actorId, env = process.env) {
-    return applyGatewayReconcileDecision(supabase, target, note, actorId, env, 'hupijiao');
-}
-
 async function applyZpayOrderQuery(supabase, target, actorId, env = process.env) {
     return applyGatewayOrderQuery(supabase, target, actorId, env, 'zpay');
 }
@@ -1465,7 +1425,7 @@ async function applyZpayReconcileDecision(supabase, target, note, actorId, env =
     return applyGatewayReconcileDecision(supabase, target, note, actorId, env, 'zpay');
 }
 
-function buildAdminRefundEventKey(targetId, providerOrderNo, actorId, providerKey = 'hupijiao') {
+function buildAdminRefundEventKey(targetId, providerOrderNo, actorId, providerKey = 'zpay') {
     const meta = getGatewayProviderMeta(providerKey);
     const digest = crypto
         .createHash('sha256')
@@ -1481,7 +1441,7 @@ function buildAdminRefundEventKey(targetId, providerOrderNo, actorId, providerKe
     return `admin-refund:${meta?.key || 'payment'}:${digest}`;
 }
 
-function buildAdminRefundAttemptId(targetId, providerOrderNo, actorId, providerKey = 'hupijiao') {
+function buildAdminRefundAttemptId(targetId, providerOrderNo, actorId, providerKey = 'zpay') {
     const meta = getGatewayProviderMeta(providerKey);
     return crypto
         .createHash('sha256')
@@ -1496,12 +1456,12 @@ function buildAdminRefundAttemptId(targetId, providerOrderNo, actorId, providerK
         .slice(0, 20);
 }
 
-function buildRefundReclaimReference(attemptId, providerKey = 'hupijiao') {
+function buildRefundReclaimReference(attemptId, providerKey = 'zpay') {
     const meta = getGatewayProviderMeta(providerKey);
     return `admin-refund-reclaim:${meta?.key || 'payment'}:${String(attemptId || '').trim()}`;
 }
 
-function buildRefundCompensationReference(attemptId, providerKey = 'hupijiao') {
+function buildRefundCompensationReference(attemptId, providerKey = 'zpay') {
     const meta = getGatewayProviderMeta(providerKey);
     return `admin-refund-compensate:${meta?.key || 'payment'}:${String(attemptId || '').trim()}`;
 }
@@ -2416,10 +2376,6 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
     };
 }
 
-async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env = process.env) {
-    return applyGatewayRefundDecision(supabase, target, note, actorId, env, 'hupijiao');
-}
-
 async function applyZpayRefundDecision(supabase, target, note, actorId, env = process.env) {
     return applyGatewayRefundDecision(supabase, target, note, actorId, env, 'zpay');
 }
@@ -2569,15 +2525,12 @@ async function executePaymentAction(context = {}, input = {}) {
     }
 
     if (targetType === 'order' && (
-        action === 'query_hupijiao_order'
-        || action === 'query_zpay_order'
+        action === 'query_zpay_order'
         || action === 'query_nowpayments_order'
     )) {
         const queryDecision = action === 'query_zpay_order'
             ? await applyZpayOrderQuery(supabase, target, user.id, env)
-            : (action === 'query_nowpayments_order'
-                ? await applyNowpaymentsOrderQuery(supabase, target, user.id, env)
-                : await applyHupijiaoOrderQuery(supabase, target, user.id, env));
+            : await applyNowpaymentsOrderQuery(supabase, target, user.id, env);
 
         await writeAdminAuditLog({
             supabase: requestSupabase || supabase,
@@ -2604,15 +2557,12 @@ async function executePaymentAction(context = {}, input = {}) {
     }
 
     if (targetType === 'order' && (
-        action === 'refund_hupijiao'
-        || action === 'refund_zpay'
+        action === 'refund_zpay'
         || action === 'refund_nowpayments'
     )) {
         const refundDecision = action === 'refund_zpay'
             ? await applyZpayRefundDecision(supabase, target, note, user.id, env)
-            : (action === 'refund_nowpayments'
-                ? await applyNowpaymentsRefundDecision(supabase, target, note, user.id, env)
-                : await applyHupijiaoRefundDecision(supabase, target, note, user.id, env));
+            : await applyNowpaymentsRefundDecision(supabase, target, note, user.id, env);
         resolvedTarget = refundDecision.order || target;
         resolvedStatus = refundDecision.anomalyStatus || resolvedStatus;
         resolvedResolution = refundDecision.resolution || resolvedResolution;
@@ -2620,10 +2570,8 @@ async function executePaymentAction(context = {}, input = {}) {
         responseMessage = normalizeText(refundDecision.message);
     }
 
-    if (targetType === 'order' && (action === 'reconcile_hupijiao_order' || action === 'reconcile_zpay_order')) {
-        const reconcileDecision = action === 'reconcile_zpay_order'
-            ? await applyZpayReconcileDecision(supabase, target, note, user.id, env)
-            : await applyHupijiaoReconcileDecision(supabase, target, note, user.id, env);
+    if (targetType === 'order' && action === 'reconcile_zpay_order') {
+        const reconcileDecision = await applyZpayReconcileDecision(supabase, target, note, user.id, env);
         resolvedTarget = reconcileDecision.order || target;
         resolvedStatus = reconcileDecision.anomalyStatus || resolvedStatus;
         resolvedResolution = reconcileDecision.resolution || resolvedResolution;

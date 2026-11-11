@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KVM4_HOST="${KVM4_HOST:-76.13.188.218}"
-KVM4_PORT="${KVM4_PORT:-2222}"
+KVM4_HOST="${KVM4_HOST:-kvm4-origin.internal}"
+KVM4_PORT="${KVM4_PORT:-22}"
 KVM4_USER="${KVM4_USER:-root}"
 KVM4_KEY="${KVM4_KEY:-${HOME:-}/.ssh/hostinger_sub2api}"
 CANONICAL_KVM4_ROOT="/opt/zaoyoe-verify-server"
@@ -21,8 +21,8 @@ does not deploy app code, execute SQL, buy from GRAMIX, or edit secrets.
 
 Options:
   --expected-commit SHA  Full 40-character commit, matching clean local main.
-  --host HOST            SSH host (KVM4_HOST or 76.13.188.218).
-  --port PORT            SSH port (KVM4_PORT or 2222).
+  --host HOST            SSH host (KVM4_HOST).
+  --port PORT            SSH port (KVM4_PORT or 22).
   --user USER            SSH user (KVM4_USER or root).
   --key PATH             SSH private key (KVM4_KEY or ~/.ssh/hostinger_sub2api).
 

@@ -3,7 +3,8 @@ const crypto = require('node:crypto');
 
 const PROTECTED_PATHS = new Set([
     '/api/public/subscription/check', '/api/public/probe-account',
-    '/api/verify-cdk', '/api/cdk/query', '/api/run-process'
+    '/api/verify-cdk', '/api/cdk/query', '/api/run-process',
+    '/api/external/cards/push'
 ]);
 
 // This budget is shared by all public expensive routes in this process. Deployment

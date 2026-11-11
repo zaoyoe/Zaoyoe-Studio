@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Zaoyoe Off-Site Encrypted Cloud Backup every 6 hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:15:00
+RandomizedDelaySec=5m
+Persistent=true
+Unit=zaoyoe-offsite-backup.service
+
+[Install]
+WantedBy=timers.target

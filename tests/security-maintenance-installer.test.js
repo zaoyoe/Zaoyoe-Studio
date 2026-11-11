@@ -11,7 +11,7 @@ const sha = '75e23ac2a6e7a5d1dfbc5117c5216915e0d415f8';
 const otherSha = 'a'.repeat(40);
 
 function mockExecutable(directory, name, source) {
-    fs.writeFileSync(path.join(directory, name), `#!${process.execPath}\n${source}`, { mode: 0o755 });
+    fs.writeFileSync(path.join(directory, name), `#!/usr/bin/env node\n${source}`, { mode: 0o755 });
 }
 
 function fixture(t) {

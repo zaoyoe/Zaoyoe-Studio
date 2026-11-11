@@ -556,6 +556,34 @@ async function attachAdminPaths(payload) {
     };
 }
 
+function isPublicRedeemHost(req) {
+    const rawHost = String(req?.headers?.host || req?.hostname || '')
+        .trim()
+        .toLowerCase()
+        .replace(/:\d+$/, '');
+    if (!rawHost) return false;
+    if (rawHost === 'redeem.fatherkey.com') return true;
+    const configuredAdminHosts = String(process.env.KC_ADMIN_ALLOWED_HOSTS || '')
+        .split(',')
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+    if (configuredAdminHosts.length > 0 && !['localhost', '127.0.0.1', '[::1]'].includes(rawHost)) {
+        return !configuredAdminHosts.includes(rawHost);
+    }
+    return false;
+}
+
+function constantTimeApiKeyEquals(left, right) {
+    const leftText = String(left || '');
+    const rightText = String(right || '');
+    if (!leftText || !rightText) return false;
+    const leftDigest = crypto.createHash('sha256').update(leftText, 'utf8').digest();
+    const rightDigest = crypto.createHash('sha256').update(rightText, 'utf8').digest();
+    return leftDigest.length === rightDigest.length
+        && crypto.timingSafeEqual(leftDigest, rightDigest)
+        && leftText.length === rightText.length;
+}
+
 app.use((req, res, next) => {
     if (req.method === 'GET' && ['/admin.html', '/admin-login.html'].includes(req.path)) {
         return res.status(404).type('text/plain').send('Not Found');
@@ -572,6 +600,11 @@ app.use(async (req, res, next) => {
         const current = normalizeRequestPathname(req.path);
         const loginUrl = normalizeRequestPathname(buildAdminLoginUrl(paths));
         const panelUrl = normalizeRequestPathname(buildAdminPanelUrl(paths));
+        if (current === loginUrl || current === panelUrl) {
+            if (isPublicRedeemHost(req)) {
+                return res.status(404).type('text/plain').send('Not Found');
+            }
+        }
         if (current === loginUrl) {
             return res.sendFile(path.join(__dirname, 'public', 'admin-login.html'));
         }
@@ -729,6 +762,9 @@ function getBearerToken(req) {
 }
 
 async function authenticateAdmin(req, res, next) {
+    if (isPublicRedeemHost(req)) {
+        return res.status(404).json({ success: false, message: 'Not Found' });
+    }
     const token = getBearerToken(req);
     const payload = verifyAdminToken(token);
     if (!payload) {
@@ -1568,6 +1604,13 @@ app.get(['/admin-login', '/admin-login/', '/admin-login.html'], (req, res) => {
     res.status(404).type('text/plain').send('Not Found');
 });
 
+app.use(['/api/admin/login', '/api/admin/login/verify', '/api/admin/login/resend'], (req, res, next) => {
+    if (isPublicRedeemHost(req)) {
+        return res.status(404).json({ success: false, message: 'Not Found' });
+    }
+    return next();
+});
+
 app.post('/api/admin/login', async (req, res) => {
     const email = adminAuth.normalizeEmail(req.body?.email);
     const password = String(req.body?.password || '');
@@ -1901,7 +1944,7 @@ app.post('/api/external/cards/push', async (req, res) => {
             return res.status(401).json({ success: false, error: 'API Key 无效或缺失' });
         }
         const expectedKey = await store.getAppConfigValue('external_card_api_key', '');
-        if (!expectedKey || apiKey !== expectedKey) {
+        if (!expectedKey || !constantTimeApiKeyEquals(apiKey, expectedKey)) {
             return res.status(401).json({ success: false, error: 'API Key 无效或缺失' });
         }
 
@@ -1925,6 +1968,9 @@ app.post('/api/external/cards/push', async (req, res) => {
 
 /** 公开 API：必须挂在 app.use('/api/admin', authenticateAdmin) 之前，否则部分环境下会 404 */
 app.get('/api/public/admin-paths', async (req, res) => {
+    if (isPublicRedeemHost(req)) {
+        return res.status(404).json({ success: false, message: 'Not Found' });
+    }
     try {
         await ensureStoreReady();
         const paths = await store.getAdminPaths();
@@ -2349,7 +2395,7 @@ app.get('/api/admin/browser-pool', async (req, res) => {
     }
 });
 
-app.post('/api/admin/browser-pool/mode', async (req, res) => {
+app.post('/api/admin/browser-pool/mode', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const enabled = req.body?.enabled === true
@@ -2374,7 +2420,7 @@ app.post('/api/admin/browser-pool/mode', async (req, res) => {
     }
 });
 
-app.post('/api/admin/browser-pool/reload', async (req, res) => {
+app.post('/api/admin/browser-pool/reload', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const requestedSize = req.body?.size;
@@ -2404,7 +2450,7 @@ app.get('/api/admin/record-video', async (req, res) => {
     }
 });
 
-app.post('/api/admin/record-video', async (req, res) => {
+app.post('/api/admin/record-video', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const enabled = req.body?.enabled === true
@@ -3418,7 +3464,7 @@ app.get('/api/admin/addresses', async (req, res) => {
     }
 });
 
-app.post('/api/admin/addresses', async (req, res) => {
+app.post('/api/admin/addresses', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const result = await taxFreeAddress.createAddress(req.body);
@@ -3431,7 +3477,7 @@ app.post('/api/admin/addresses', async (req, res) => {
     }
 });
 
-app.post('/api/admin/addresses/generate-random-us', async (req, res) => {
+app.post('/api/admin/addresses/generate-random-us', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const count = Number(req.body?.count) || 10;
@@ -3442,7 +3488,7 @@ app.post('/api/admin/addresses/generate-random-us', async (req, res) => {
     }
 });
 
-app.delete('/api/admin/addresses/unbound', async (req, res) => {
+app.delete('/api/admin/addresses/unbound', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const region = String(req.query?.region || 'US').toUpperCase();
@@ -3453,7 +3499,7 @@ app.delete('/api/admin/addresses/unbound', async (req, res) => {
     }
 });
 
-app.put('/api/admin/addresses/:id', async (req, res) => {
+app.put('/api/admin/addresses/:id', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const id = req.params.id;
@@ -3468,7 +3514,7 @@ app.put('/api/admin/addresses/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/admin/addresses/:id', async (req, res) => {
+app.delete('/api/admin/addresses/:id', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const id = req.params.id;

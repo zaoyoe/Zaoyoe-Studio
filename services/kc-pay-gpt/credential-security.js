@@ -1,7 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
 const PREFIX = 'kc-secret:v1:';
-const PURPOSES = new Set(['admin_totp_secret', 'admin_totp_pending']);
+const PURPOSES = new Set(['admin_totp_secret', 'admin_totp_pending', 'card_cvc', 'card_number', 'asset_secret']);
 const KEY_ID = /^[a-zA-Z0-9_-]{1,32}$/;
 
 function keyring(env) {

@@ -1878,7 +1878,7 @@ function inspectLimits(env, production) {
             name: 'GUEST_SHOP_ORDER_TTL_SECONDS',
             key: 'order-ttl',
             label: '游客订单 TTL',
-            defaultValue: 1800,
+            defaultValue: 300,
             min: 300,
             max: 7200,
             production

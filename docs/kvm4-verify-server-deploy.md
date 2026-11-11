@@ -95,8 +95,8 @@ The script:
 Default SSH settings:
 
 ```bash
-KVM4_HOST=76.13.188.218
-KVM4_PORT=2222
+KVM4_HOST=<KVM4_ORIGIN_IP>
+KVM4_PORT=<KVM4_SSH_PORT>
 KVM4_USER=root
 KVM4_KEY=~/.ssh/hostinger_sub2api
 KVM4_ROOT=/opt/zaoyoe-verify-server
@@ -122,8 +122,8 @@ KVM4_SSH_PRIVATE_KEY
 Optional repository variables can override the defaults:
 
 ```text
-KVM4_HOST=76.13.188.218
-KVM4_PORT=2222
+KVM4_HOST=<KVM4_ORIGIN_IP>
+KVM4_PORT=<KVM4_SSH_PORT>
 KVM4_USER=root
 KVM4_ROOT=/opt/zaoyoe-verify-server
 KVM4_KEEP_RELEASES=8
