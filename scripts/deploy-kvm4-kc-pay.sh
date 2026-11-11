@@ -267,6 +267,12 @@ find "$KVM4_KC_ROOT/backups" -mindepth 1 -maxdepth 1 -name "kc-pay-backup-*.tar.
 app_container="$(docker ps --filter "name=kc.*app" --format "{{.Names}}" | head -n 1)"
 app_container="${app_container:-kc-pay-gpt-app}"
 
+echo "=== Container Diagnostics & Host Compose Inspection ==="
+echo "Host compose volumes:"
+grep -A 35 "volumes:" "$KVM4_KC_ROOT/docker-compose.yml" 2>/dev/null || true
+echo "Container mounts:"
+docker inspect "$app_container" --format 'Mounts: {{json .Mounts}}' 2>/dev/null || true
+
 echo "Checking host public/admin.html for Touch ID..."
 if ! grep -q "Mac Touch ID" "$KVM4_KC_ROOT/public/admin.html"; then
   echo "WARNING: Mac Touch ID not found in $KVM4_KC_ROOT/public/admin.html" >&2
@@ -278,10 +284,21 @@ echo "Checking container $app_container for Touch ID..."
 if docker exec "$app_container" grep -q "Mac Touch ID" /app/public/admin.html 2>/dev/null; then
   echo "PASS: Mac Touch ID found in container /app/public/admin.html"
 else
-  echo "WARNING: Mac Touch ID not found in container /app/public/admin.html" >&2
+  echo "WARNING: Mac Touch ID not found in container /app/public/admin.html; syncing files into container..." >&2
+  docker cp "$KVM4_KC_ROOT/public/." "$app_container:/app/public/" || true
+  docker cp "$KVM4_KC_ROOT/admin-security.js" "$app_container:/app/admin-security.js" 2>/dev/null || true
+  docker cp "$KVM4_KC_ROOT/webauthn-security.js" "$app_container:/app/webauthn-security.js" 2>/dev/null || true
+  docker cp "$KVM4_KC_ROOT/server.js" "$app_container:/app/server.js" 2>/dev/null || true
+  if docker exec "$app_container" grep -q "Mac Touch ID" /app/public/admin.html 2>/dev/null; then
+    echo "PASS: Mac Touch ID confirmed in container after file sync"
+  else
+    echo "ERROR: Mac Touch ID still missing in container after sync" >&2
+  fi
 fi
 
 echo "Checking local HTTP response from http://127.0.0.1:3100/admin for Touch ID..."
+admin_html_sample="$(curl -s -H "Host: adm.fatherkey.com" http://127.0.0.1:3100/admin | head -n 40 || true)"
+echo "Sample admin response: $(printf '%s' "$admin_html_sample" | head -n 5)"
 if curl -fsS -H "Host: adm.fatherkey.com" http://127.0.0.1:3100/admin | grep -q "Mac Touch ID"; then
   echo "PASS: Local curl on 3100 returned Mac Touch ID in admin HTML"
 else
