@@ -2244,14 +2244,18 @@ app.get('/api/admin/login-logs', async (req, res) => {
 
 const adminSecurity = require('./admin-security').createAdminSecurity({ store, ensureStoreReady, sendTelegramLoginCode });
 app.get('/api/admin/secondary/session', requireSecondaryAuth, (req, res) => res.json({ success: true, verified: true, expiresAt: req.secondaryAuth.exp }));
-app.post('/api/admin/secondary/challenge', adminSecurity.challenge);
-app.post('/api/admin/verify-secondary', adminSecurity.verify);
-app.get('/api/admin/webauthn/status', adminSecurity.webauthnStatus);
-app.post('/api/admin/webauthn/register-options', adminSecurity.webauthnRegisterOptions);
-app.post('/api/admin/webauthn/register-confirm', adminSecurity.webauthnRegisterConfirm);
-app.post('/api/admin/webauthn/challenge', adminSecurity.webauthnChallenge);
-app.post('/api/admin/webauthn/verify', adminSecurity.webauthnVerify);
-app.delete('/api/admin/webauthn/:id', requireSecondaryAuth, adminSecurity.webauthnDelete);
+if (typeof adminSecurity?.challenge === 'function') app.post('/api/admin/secondary/challenge', adminSecurity.challenge);
+if (typeof adminSecurity?.verify === 'function') app.post('/api/admin/verify-secondary', adminSecurity.verify);
+if (typeof adminSecurity?.webauthnStatus === 'function') {
+    app.get('/api/admin/webauthn/status', adminSecurity.webauthnStatus);
+    app.post('/api/admin/webauthn/register-options', adminSecurity.webauthnRegisterOptions);
+    app.post('/api/admin/webauthn/register-confirm', adminSecurity.webauthnRegisterConfirm);
+    app.post('/api/admin/webauthn/challenge', adminSecurity.webauthnChallenge);
+    app.post('/api/admin/webauthn/verify', adminSecurity.webauthnVerify);
+    if (typeof adminSecurity?.webauthnDelete === 'function') {
+        app.delete('/api/admin/webauthn/:id', requireSecondaryAuth, adminSecurity.webauthnDelete);
+    }
+}
 
 app.post('/api/admin/security/2fa-mode', requireSecondaryAuth, async (req, res) => {
     const mode = String(req.body?.mode || '').trim().toLowerCase();
