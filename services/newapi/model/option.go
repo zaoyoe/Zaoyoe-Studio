@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -55,12 +58,20 @@ func InitOptionMap() {
 	common.OptionMap["DisplayTokenStatEnabled"] = strconv.FormatBool(common.DisplayTokenStatEnabled)
 	common.OptionMap["DrawingEnabled"] = strconv.FormatBool(common.DrawingEnabled)
 	common.OptionMap["TaskEnabled"] = strconv.FormatBool(common.TaskEnabled)
+	common.OptionMap["TaskPluginEnabled"] = strconv.FormatBool(constant.TaskPluginEnabled)
+	jsplugin.DefaultRegistry.SetEnabled(constant.TaskPluginEnabled)
+	common.OptionMap[setting.TaskPluginMarketplaceSourcesKey] = setting.TaskPluginMarketplaceSources2JsonString()
+	common.OptionMap[setting.TaskPluginDisabledFactoryKeysKey] = "[]"
+	jsplugin.DefaultRegistry.SetDisabledFactoryKeys(nil)
 	common.OptionMap["DataExportEnabled"] = strconv.FormatBool(common.DataExportEnabled)
 	common.OptionMap["ChannelDisableThreshold"] = strconv.FormatFloat(common.ChannelDisableThreshold, 'f', -1, 64)
 	common.OptionMap["EmailDomainRestrictionEnabled"] = strconv.FormatBool(common.EmailDomainRestrictionEnabled)
 	common.OptionMap["EmailAliasRestrictionEnabled"] = strconv.FormatBool(common.EmailAliasRestrictionEnabled)
 	common.OptionMap["EmailDomainWhitelist"] = strings.Join(common.EmailDomainWhitelist, ",")
 	common.OptionMap["SMTPServer"] = ""
+	common.OptionMap["EmailProvider"] = "smtp"
+	common.OptionMap["ResendApiKey"] = ""
+	common.OptionMap["ResendFrom"] = ""
 	common.OptionMap["SMTPFrom"] = ""
 	common.OptionMap["SMTPPort"] = strconv.Itoa(common.SMTPPort)
 	common.OptionMap["SMTPAccount"] = ""
@@ -76,6 +87,7 @@ func InitOptionMap() {
 	common.OptionMap["SystemName"] = common.SystemName
 	common.OptionMap["Logo"] = common.Logo
 	common.OptionMap["ServerAddress"] = ""
+	common.OptionMap["TaskPublicAddress"] = system_setting.TaskPublicAddress
 	common.OptionMap["WorkerUrl"] = system_setting.WorkerUrl
 	common.OptionMap["WorkerValidKey"] = system_setting.WorkerValidKey
 	common.OptionMap["WorkerAllowHttpImageRequestEnabled"] = strconv.FormatBool(system_setting.WorkerAllowHttpImageRequestEnabled)
@@ -137,6 +149,7 @@ func InitOptionMap() {
 	common.OptionMap["QuotaForNewUser"] = strconv.Itoa(common.QuotaForNewUser)
 	common.OptionMap["QuotaForInviter"] = strconv.Itoa(common.QuotaForInviter)
 	common.OptionMap["QuotaForInvitee"] = strconv.Itoa(common.QuotaForInvitee)
+	common.OptionMap["QuotaRemindEnabled"] = strconv.FormatBool(common.QuotaRemindEnabled)
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
@@ -182,38 +195,84 @@ func InitOptionMap() {
 
 	// 自动添加所有注册的模型配置
 	modelConfigs := config.GlobalConfig.ExportAllConfigs()
-	for k, v := range modelConfigs {
-		common.OptionMap[k] = v
-	}
+	maps.Copy(common.OptionMap, modelConfigs)
 
 	common.OptionMapRWMutex.Unlock()
 	loadOptionsFromDatabase()
 }
 
 func loadOptionsFromDatabase() {
+	requestPolicyOptionMutex.Lock()
+	defer requestPolicyOptionMutex.Unlock()
+	defer func() {
+		if err := refreshRequestPolicySnapshot(); err != nil {
+			common.SysError(common.LogText("invalid request policy: %s", err.Error()))
+		}
+	}()
+	passkeyOptionMutex.Lock()
+	defer passkeyOptionMutex.Unlock()
 	options, _ := AllOption()
+	passkeyOptions := make(map[string]string)
 	for _, option := range options {
+		if IsPasskeyDomainOption(option.Key) {
+			passkeyOptions[option.Key] = option.Value
+			continue
+		}
 		err := updateOptionMap(option.Key, option.Value)
 		if err != nil {
-			common.SysLog("failed to update option map: " + err.Error())
+			common.SysLog(common.LogText("failed to update option map: %s", err.Error()))
 		}
 	}
+	applyPasskeyDomainOptions(passkeyOptions)
 }
 
 func SyncOptions(frequency int) {
 	for {
 		time.Sleep(time.Duration(frequency) * time.Second)
-		common.SysLog("syncing options from database")
+		common.SysLog(common.LogText("syncing options from database"))
 		loadOptionsFromDatabase()
 	}
 }
 
 func normalizeOptionValue(key string, value string) (string, error) {
+	if key == legacyAccessTokenRetireAtKey {
+		return "", errLegacyRetireAtReadOnly
+	}
+	if err := operation_setting.ValidateQuotaOption(key, value); err != nil {
+		return "", err
+	}
+	if key == "EmailProvider" || key == "ResendApiKey" || key == "ResendFrom" {
+		if key == "EmailProvider" && value != "smtp" && value != "resend" {
+			return "", common.NewMessage("Email sending method must be SMTP or Resend")
+		}
+		common.OptionMapRWMutex.RLock()
+		settings := map[string]string{
+			"EmailProvider": common.OptionMap["EmailProvider"],
+			"ResendApiKey":  common.OptionMap["ResendApiKey"],
+			"ResendFrom":    common.OptionMap["ResendFrom"],
+		}
+		common.OptionMapRWMutex.RUnlock()
+		settings[key] = value
+		if settings["EmailProvider"] == "resend" {
+			if err := common.ValidateResendConfiguration(settings["ResendApiKey"], settings["ResendFrom"]); err != nil {
+				return "", err
+			}
+		}
+	}
+	if key == "ResendKeyConfigured" {
+		return "", common.NewMessage("Resend key configuration status is read-only")
+	}
 	if key == "TopUpLink" {
 		return common.NormalizeTopUpLink(value), nil
 	}
 	if key == operation_setting.ToolPriceOptionKey {
 		return value, operation_setting.ValidateToolPricesJSON(value)
+	}
+	if key == operation_setting.ChannelTestConcurrencyOptionKey {
+		return value, operation_setting.ValidateChannelTestConcurrency(value)
+	}
+	if key == operation_setting.LogMaxRangeDaysOptionKey {
+		return value, operation_setting.ValidateLogMaxRangeDays(value)
 	}
 	if key == "MaxTokenAutoGroups" {
 		return value, setting.ValidateMaxTokenAutoGroups(value)
@@ -318,6 +377,16 @@ func validateOptionValue(key string, value string) error {
 }
 
 func UpdateOption(key string, value string) error {
+	if IsRequestPolicyOption(key) {
+		return UpdateRequestPolicyOptions(map[string]string{key: value})
+	}
+	if IsPasskeyDomainOption(key) {
+		_, err := UpdatePasskeyDomainOptions(map[string]string{key: value}, false, "")
+		return err
+	}
+	if IsModelPricingOption(key) {
+		return UpdateModelPricingOptions(map[string]string{key: value})
+	}
 	value, err := normalizeOptionValue(key, value)
 	if err != nil {
 		return err
@@ -350,6 +419,12 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
 	}
+	for key := range values {
+		if IsPasskeyDomainOption(key) {
+			_, err := UpdatePasskeyDomainOptions(values, false, "")
+			return err
+		}
+	}
 	normalizedValues := make(map[string]string, len(values))
 	for key, value := range values {
 		normalized, err := normalizeOptionValue(key, value)
@@ -358,6 +433,26 @@ func UpdateOptionsBulk(values map[string]string) error {
 		}
 		normalizedValues[key] = normalized
 	}
+	var policySnapshot *RequestPolicySnapshot
+	for key := range values {
+		if IsRequestPolicyOption(key) {
+			requestPolicyOptionMutex.Lock()
+			defer requestPolicyOptionMutex.Unlock()
+			options := maps.Clone(CurrentRequestPolicy().Options)
+			for key, value := range values {
+				if IsRequestPolicyOption(key) {
+					options[key] = value
+				}
+			}
+			var err error
+			policySnapshot, err = BuildRequestPolicy(options)
+			if err != nil {
+				return err
+			}
+			break
+		}
+	}
+
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		for k, v := range normalizedValues {
 			option := Option{Key: k}
@@ -379,11 +474,14 @@ func UpdateOptionsBulk(values map[string]string) error {
 			return err
 		}
 	}
+	if policySnapshot != nil {
+		requestPolicySnapshot.Store(policySnapshot)
+	}
 	return nil
 }
 
 func updateOptionMap(key string, value string) (err error) {
-	if key == retiredThemeOptionKey {
+	if key == retiredThemeOptionKey || key == legacyAccessTokenRetireAtKey {
 		common.OptionMapRWMutex.Lock()
 		delete(common.OptionMap, key)
 		common.OptionMapRWMutex.Unlock()
@@ -444,6 +542,8 @@ func updateOptionMap(key string, value string) (err error) {
 			common.AutomaticDisableChannelEnabled = boolValue
 		case "AutomaticEnableChannelEnabled":
 			common.AutomaticEnableChannelEnabled = boolValue
+		case "QuotaRemindEnabled":
+			common.QuotaRemindEnabled = boolValue
 		case "LogConsumeEnabled":
 			common.LogConsumeEnabled = boolValue
 		case "DisplayInCurrencyEnabled":
@@ -462,6 +562,9 @@ func updateOptionMap(key string, value string) (err error) {
 			common.DrawingEnabled = boolValue
 		case "TaskEnabled":
 			common.TaskEnabled = boolValue
+		case "TaskPluginEnabled":
+			constant.TaskPluginEnabled = boolValue
+			jsplugin.DefaultRegistry.SetEnabled(boolValue)
 		case "DataExportEnabled":
 			common.DataExportEnabled = boolValue
 		case "DefaultCollapseSidebar":
@@ -504,6 +607,9 @@ func updateOptionMap(key string, value string) (err error) {
 			ratio_setting.SetExposeRatioEnabled(boolValue)
 		}
 	}
+	if key == setting.TaskPluginDisabledFactoryKeysKey {
+		jsplugin.DefaultRegistry.SetDisabledFactoryKeys(setting.ParseTaskPluginDisabledFactoryKeys(value))
+	}
 	switch key {
 	case "EmailDomainWhitelist":
 		common.EmailDomainWhitelist = strings.Split(value, ",")
@@ -520,6 +626,8 @@ func updateOptionMap(key string, value string) (err error) {
 		common.SMTPToken = value
 	case "ServerAddress":
 		system_setting.ServerAddress = value
+	case "TaskPublicAddress":
+		system_setting.TaskPublicAddress = value
 	case "WorkerUrl":
 		system_setting.WorkerUrl = value
 	case "WorkerValidKey":
