@@ -52,8 +52,7 @@ relay.retry_get_channel_failed: "Failed to get available channel for model {{.Mo
 relay.retry_no_available_channel: "No available channel for model {{.Model}} under group {{.Group}} (retry)"
 relay.access_token_unsupported: "Access tokens are not supported here"
 
-# Emails and the name of the token created at registration
-user.default_token_name: "{{.Username}}'s initial token"
+# Emails
 email.verification.subject: "{{.SystemName}} email verification"
 email.verification.greeting: "Hello, you are verifying your email address for {{.SystemName}}."
 email.verification.code: "Your verification code is: <strong>{{.Code}}</strong>"
