@@ -219,6 +219,15 @@ rollback() {
       --exclude='./debug_screenshots' \
       --exclude='./product_files' \
       -C "$KVM4_KC_ROOT" || true
+    if [[ -d "$KVM4_KC_ROOT/source" ]]; then
+      tar -xzf "$backup_archive" \
+        --exclude='./.env' \
+        --exclude='./docker-compose.yml' \
+        --exclude='./data' \
+        --exclude='./debug_screenshots' \
+        --exclude='./product_files' \
+        -C "$KVM4_KC_ROOT/source" || true
+    fi
     cd "$KVM4_KC_ROOT"
     docker compose build --no-cache app || true
     docker compose up -d --no-deps --force-recreate app || true
@@ -234,6 +243,17 @@ tar -xzf "$REMOTE_TMP/app.tar.gz" \
   --exclude='./debug_screenshots' \
   --exclude='./product_files' \
   -C "$KVM4_KC_ROOT"
+
+if [[ -d "$KVM4_KC_ROOT/source" ]]; then
+  echo "Extracting release files into $KVM4_KC_ROOT/source (used by build: ./source)"
+  tar -xzf "$REMOTE_TMP/app.tar.gz" \
+    --exclude='./.env' \
+    --exclude='./docker-compose.yml' \
+    --exclude='./data' \
+    --exclude='./debug_screenshots' \
+    --exclude='./product_files' \
+    -C "$KVM4_KC_ROOT/source"
+fi
 
 tar -xzf "$REMOTE_TMP/app.tar.gz" docker-compose.yml -O > "$KVM4_KC_ROOT/docker-compose.repo.yml" 2>/dev/null || true
 printf '%s\n' "$RELEASE_COMMIT" > "$KVM4_KC_ROOT/.current-release"
@@ -297,12 +317,11 @@ else
 fi
 
 echo "Checking local HTTP response from http://127.0.0.1:3100/admin for Touch ID..."
-admin_html_sample="$(curl -s -H "Host: adm.fatherkey.com" http://127.0.0.1:3100/admin | head -n 40 || true)"
-echo "Sample admin response: $(printf '%s' "$admin_html_sample" | head -n 5)"
-if curl -fsS -H "Host: adm.fatherkey.com" http://127.0.0.1:3100/admin | grep -q "Mac Touch ID"; then
+admin_html_body="$(curl -sS -H "Host: adm.fatherkey.com" http://127.0.0.1:3100/admin || true)"
+if printf '%s' "$admin_html_body" | grep -q "Mac Touch ID"; then
   echo "PASS: Local curl on 3100 returned Mac Touch ID in admin HTML"
 else
-  echo "WARNING: Local curl on 3100 did not return Mac Touch ID in admin HTML" >&2
+  echo "WARNING: Local curl on 3100 did not return Mac Touch ID in admin HTML (body length: ${#admin_html_body})" >&2
 fi
 
 echo "Active container status:"
