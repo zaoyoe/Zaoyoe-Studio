@@ -3806,17 +3806,32 @@ async function completeCardPayment(cardId, ownerKey) {
     const id = requireOwnedAssetId(cardId, ownerKey);
     const result = await runExecute(
         `UPDATE card_assets
-         SET status = IF(is_active = 0 OR status = '已冻结', '已冻结', '正常'),
+         SET status = '正常',
              in_use = 0,
              locked_at = NULL,
              locked_by = NULL
+         WHERE ${OWNED_PAYMENT_CARD_SQL.replace("status IN ('正常', '支付处理中')", "status = '支付处理中'")}`,
+        [id, ownerKey]
+    );
+    if (Number(result?.affectedRows || 0) === 1) {
+        return 1;
+    }
+    // If recordCardUsage() auto-froze this card upon reaching max_usage_limit
+    // while the worker still owned its lock, release the lock without
+    // unfreezing the card.
+    const frozenResult = await runExecute(
+        `UPDATE card_assets
+         SET in_use = 0,
+             locked_at = NULL,
+             locked_by = NULL
          WHERE id = ?
-           AND ((is_active = 1 AND status = '支付处理中') OR (is_active = 0 AND status = '已冻结'))
+           AND is_active = 0
+           AND status = '已冻结'
            AND in_use = 1
            AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)${LEGACY_CARD_FENCE_SQL}`,
         [id, ownerKey]
     );
-    return requireOwnedCardChange(result);
+    return requireOwnedCardChange(frozenResult);
 }
 
 /** Move an unresolved payment's own card to manual review. */

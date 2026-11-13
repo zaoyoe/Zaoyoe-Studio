@@ -126,10 +126,11 @@ describe('Card Freeze & Unfreeze Contract', () => {
         const freezeCallSql = query.mock.calls.find(([sql]) => sql.includes("status = '已冻结'"))?.[0] || '';
         expect(freezeCallSql).not.toContain('locked_by = NULL');
 
+        execute.mockResolvedValueOnce([{ affectedRows: 0 }]);
         execute.mockResolvedValueOnce([{ affectedRows: 1 }]);
         await expect(store.completeCardPayment(42, 'owner_test_1')).resolves.toBe(1);
         expect(execute).toHaveBeenLastCalledWith(
-            expect.stringContaining("IF(is_active = 0 OR status = '已冻结', '已冻结', '正常')"),
+            expect.stringContaining("status = '已冻结'"),
             [42, 'owner_test_1']
         );
     });
