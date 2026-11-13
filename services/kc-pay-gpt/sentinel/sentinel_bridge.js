@@ -68,9 +68,9 @@ function uuidv4() {
 }
 
 const SEP = "\u2212"; // U+2212 MINUS SIGN
-const ANS_SDK_URL = "https://sentinel.openai.com/backend-api/sentinel/sdk.js";
+const { createChatGptImpitClient, createInMemoryCookieJar } = require("../protocol-http");
 
-function makeGenerator(ua, cores, language, timezone, screenW, screenH) {
+function makeGenerator(ua, cores, language, timezone, screenW, screenH, sdkUrl) {
   const initialPerformance = 350.0 + Math.random() * 2200.0;
   const sw = Number(screenW) || 1920;
   const sh = Number(screenH) || 1080;
@@ -81,7 +81,8 @@ function makeGenerator(ua, cores, language, timezone, screenW, screenH) {
     languages: [language || "en-US", "en-US", "en"],
     timezone: timezone || "America/Chicago",
     sid: uuidv4(),
-    heapLimit: 4395630592,
+    heapLimit: 4294705152,
+    sdkUrl: sdkUrl || "https://chatgpt.com/sentinel/20260810913b/sdk.js",
     // 与真实浏览器一致：screen.width + screen.height（指纹数组 [0]）
     screenNum: sw + sh,
     nine: 0,
@@ -130,7 +131,7 @@ function configArray(g) {
     g.heapLimit, // 2
     0, // 3 PoW 计数器
     g.ua, // 4
-    ANS_SDK_URL, // 5
+    g.sdkUrl, // 5
     null, // 6
     g.language, // 7
     g.languages.join(","), // 8
@@ -444,19 +445,17 @@ async function handleRequest(raw) {
   const maxTouch = args.maxTouchPoints ? 1 : 0;
   const frameUrl = `${sentinelOrigin}/backend-api/sentinel/frame.html?sv=${version}`;
 
-  // 优先使用 impit (Chrome TLS 指纹)，与 session-auth / payments/checkout 保持同一条传输指纹；
+  // 优先使用 impit (Chrome TLS 指纹 + CORS 头清理 + 共享 CookieJar)，与 session-auth / payments/checkout 保持同一条传输指纹；
   // 无 impit 时退回 npm undici；SOCKS 代理走 Python curl_cffi。
+  const cookieJar = createInMemoryCookieJar(cookieHeader);
   let impitClient = null;
   if (!proxy || /^https?:/i.test(proxy)) {
-    try {
-      const { Impit } = require("impit");
-      impitClient = new Impit({
-        browser: "chrome",
-        proxyUrl: proxy || undefined,
-        ignoreTlsErrors: true,
-        timeout: 25000,
-      });
-    } catch (_) {}
+    impitClient = createChatGptImpitClient({
+      userAgent: ua,
+      proxyUrl: proxy || "",
+      timeoutMs: 25000,
+      cookieJar,
+    });
   }
 
   let undici = null;
@@ -528,12 +527,14 @@ async function handleRequest(raw) {
     __SEED_DID_KEY__: "oai-did",
     __SEED_DID_VAL__: deviceId,
     __PAGE_URL__: pageUrl,
+    __FLOW__: flow,
     __LANGUAGE__: language,
     __LANGUAGES__: [...new Set([language, baseLang, "en-US", "en"].filter(Boolean))],
     __TIMEZONE__: timezone,
     __COOKIE_HEADER__: cookieHeader,
     __PLATFORM__: platform,
     __PLATFORM_LABEL__: platformLabel,
+    __SEC_CH_UA__: secChUa,
     __SCREEN_W__: screenW,
     __SCREEN_H__: screenH,
     __AVAIL_H__: availH,
@@ -576,14 +577,16 @@ async function handleRequest(raw) {
     return JSON.stringify({ error: "driver 无 c", soErr: rd.soErr || "", raw: String(rawDriver).slice(0, 300) });
   }
 
-  const g = makeGenerator(ua, cores, language, timezone, screenW, screenH);
-  let p;
-  if (rd.powReq && rd.seed) {
-    p = solvePoW(g, rd.seed, rd.diff);
-  } else {
-    const data0 = configArray(g);
-    data0[3] = 1;
-    p = "gAAAAAB" + b64Compact(data0) + "~S";
+  let p = (typeof rd.p === "string" && rd.p.startsWith("gAAAAAB")) ? rd.p : "";
+  if (!p) {
+    const g = makeGenerator(ua, cores, language, timezone, screenW, screenH, `${sentinelOrigin}/sentinel/${version}/sdk.js`);
+    if (rd.powReq && rd.seed) {
+      p = solvePoW(g, rd.seed, rd.diff);
+    } else {
+      const data0 = configArray(g);
+      data0[3] = 1;
+      p = "gAAAAAB" + b64Compact(data0) + "~S";
+    }
   }
 
   const mainTok = JSON.stringify({ p, t: rd.t || "", c: rd.c, id: deviceId, flow });

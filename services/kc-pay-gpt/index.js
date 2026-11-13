@@ -2,7 +2,7 @@ const { executePaymentWithRetry } = require('./payment-retry');
 const { openPricingCheckout } = require('./pricing-checkout');
 const { openApiCheckout, isBillingCountryMismatchError, shouldFallbackToPricingCheckout } = require('./chatgpt');
 const store = require('./mysql-store');
-const { getRegionConfig, getRegionBrowserProfile } = require('./region-config');
+const { getRegionConfig, getRegionBrowserProfile, DEFAULT_CHATGPT_USER_AGENT } = require('./region-config');
 const { installChatGptSession, bootstrapChatGptSession, extractEmailFromSession, verifyChatGptSessionProtocol } = require('./session-auth');
 const { connectTaskBrowser, applyCdpEnv, closeTaskBrowser } = require('./browser-runtime');
 const { preparePlaywrightProxy } = require('./playwright-proxy');
@@ -330,7 +330,7 @@ async function run() {
     const billingCountry = paymentRegion;
     const billingCurrency = regionCfg ? regionCfg.currency : 'USD';
 
-    let realUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36';
+    let realUserAgent = DEFAULT_CHATGPT_USER_AGENT;
     const protocolProfile = typeof getChatGptProtocolProfile === 'function'
         ? getChatGptProtocolProfile(paymentRegion, { userAgent: realUserAgent })
         : null;

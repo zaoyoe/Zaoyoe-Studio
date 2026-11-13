@@ -168,13 +168,13 @@ async function registerStripeDeviceFingerprint(options = {}) {
         }
 
         try {
-            const { Impit } = require('impit');
-            const client = new Impit({
-                browser: 'chrome',
-                proxyUrl: proxyStr || undefined,
-                ignoreTlsErrors: true,
-                timeout: timeoutMs
+            const { createChatGptImpitClient } = require('./protocol-http');
+            const client = createChatGptImpitClient({
+                userAgent: config?.headers?.['User-Agent'] || config?.headers?.['user-agent'] || '',
+                proxyUrl: proxyStr,
+                timeoutMs
             });
+            if (!client) throw new Error('impit unavailable');
             const resp = await client.fetch(FINGERPRINT_URL, {
                 method: 'POST',
                 headers: config.headers,

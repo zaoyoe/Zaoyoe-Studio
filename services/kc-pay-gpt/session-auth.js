@@ -20,6 +20,7 @@ const {
 const { assertLocalSessionFresh, verifyChatGptAccessToken, assertChatGptAccountEligible, buildChatGptAuthError } = require('./chatgpt-auth-state');
 const { handleStaticAssetCache } = require('./static-asset-cache');
 const { getChatGptProtocolProfile, buildChatGptBrowserHeaders } = require('./region-config');
+const { createChatGptImpitClient, createInMemoryCookieJar } = require('./protocol-http');
 
 function decodeJwtPayload(token) {
     const parts = String(token || '').split('.');
@@ -1022,17 +1023,14 @@ async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
         timezone: options.timezone
     });
     const userAgent = protocolProfile.userAgent;
+    const cookieJar = createInMemoryCookieJar(cookieHeader);
 
-    let impitClient = null;
-    try {
-        const { Impit } = require('impit');
-        impitClient = new Impit({
-            browser: 'chrome',
-            proxyUrl: proxyStr || undefined,
-            ignoreTlsErrors: true,
-            timeout: timeoutMs
-        });
-    } catch (_) {}
+    const impitClient = createChatGptImpitClient({
+        userAgent,
+        proxyUrl: proxyStr,
+        timeoutMs,
+        cookieJar
+    });
 
     let undiciFetch = null;
     let dispatcher = undefined;
@@ -1047,7 +1045,7 @@ async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
         'Accept': 'application/json',
         'Referer': 'https://chatgpt.com/',
         'Origin': 'https://chatgpt.com',
-        ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
+        ...(cookieJar.toHeaderString() ? { 'Cookie': cookieJar.toHeaderString() } : {}),
         ...(deviceId ? { 'oai-device-id': deviceId } : {})
     });
 
@@ -1065,6 +1063,9 @@ async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
                         dispatcher,
                         signal: controller.signal
                     });
+                if (!impitClient && resp?.headers) {
+                    cookieJar.ingestSetCookieHeaders(resp.headers);
+                }
                 const text = await resp.text();
                 let data = null;
                 try {
@@ -1086,7 +1087,7 @@ async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
     const buildSessionRefreshHeaders = () => buildChatGptBrowserHeaders(protocolProfile, {
         'Accept': 'application/json',
         'Referer': 'https://chatgpt.com/',
-        ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
+        ...(cookieJar.toHeaderString() ? { 'Cookie': cookieJar.toHeaderString() } : {}),
         ...(deviceId ? { 'oai-device-id': deviceId } : {})
     });
 
@@ -1176,6 +1177,7 @@ async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
             }
         }
 
+        const mergedCookieHeader = cookieJar.toHeaderString() || cookieHeader;
         if (meRes.status === 200 && meRes.data?.id && (options.skipSubscriptionCheck || (accRes.status === 200 && accRes.data?.accounts))) {
             const resolvedEmail = (typeof meRes.data.email === 'string' && meRes.data.email) || email;
             console.log(`✅ [步骤] Session 协议鉴权成功（官方接口已确认账号有效且未订阅）: ${resolvedEmail}`);
@@ -1185,7 +1187,7 @@ async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
                 accountId: resolvedAccountId,
                 accessToken: activeToken,
                 session: activeSessionData,
-                cookieHeader,
+                cookieHeader: mergedCookieHeader,
                 deviceId,
                 userAgent,
                 hasSessionCookie
@@ -1202,7 +1204,7 @@ async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
             email,
             accessToken: activeToken,
             session: activeSessionData,
-            cookieHeader,
+            cookieHeader: mergedCookieHeader,
             deviceId,
             userAgent,
             hasSessionCookie
