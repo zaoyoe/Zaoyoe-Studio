@@ -570,14 +570,52 @@ async function issueMatchedRulesForUser({
         return output;
     }
 
+    function isUniqueViolationError(error) {
+        const code = String(error?.code || '').trim();
+        const message = String(error?.message || '').toLowerCase();
+        return code === '23505' || message.includes('duplicate key value violates unique constraint');
+    }
+
     const { data, error } = await supabase
         .from('discount_user_assets')
         .insert(insertPayload)
         .select('id, discount_id');
 
-    if (error) throw error;
+    let insertedRows = [];
+    if (error) {
+        if (!isUniqueViolationError(error)) {
+            throw error;
+        }
+        if (insertPayload.length === 1) {
+            output.skipped.push({
+                discount_id: insertPayload[0].discount_id,
+                reason: getDuplicateEventGrantReason(eventType)
+            });
+        } else {
+            for (const rowPayload of insertPayload) {
+                const { data: singleData, error: singleError } = await supabase
+                    .from('discount_user_assets')
+                    .insert(rowPayload)
+                    .select('id, discount_id');
+                if (singleError) {
+                    if (isUniqueViolationError(singleError)) {
+                        output.skipped.push({
+                            discount_id: rowPayload.discount_id,
+                            reason: getDuplicateEventGrantReason(eventType)
+                        });
+                        continue;
+                    }
+                    throw singleError;
+                }
+                if (Array.isArray(singleData)) {
+                    insertedRows.push(...singleData);
+                }
+            }
+        }
+    } else {
+        insertedRows = Array.isArray(data) ? data : [];
+    }
 
-    const insertedRows = Array.isArray(data) ? data : [];
     output.issued_count += insertedRows.length;
     output.assigned_discount_ids = [
         ...output.assigned_discount_ids,

@@ -116,8 +116,21 @@ function classifyAutoRenewCancellation(result = {}) {
 function classifyCheckoutFailure(message, paymentState) {
     // Checkout readiness and billing guards run before submission. Preserve any pending payment.
     if (paymentState != null && !['not_started', 'declined'].includes(normalizePaymentState(paymentState))) return null;
-    const code = String(message || '').match(/\[(CHECKOUT_(?:HTTP_ERROR|UNUSUAL_ACTIVITY|NETWORK_ERROR|NO_REQUEST|REQUEST_PENDING|NAVIGATION_TIMEOUT|NAVIGATION_FAILED|AUTH_REQUIRED|PAGE_ERROR|PAGE_CLOSED|PAGE_UNAVAILABLE|RENDER_TIMEOUT|RESOURCE_TIMEOUT|SESSION_FAILED|CURRENCY_UNCONFIRMED|AMOUNT_UNCONFIRMED|AMOUNT_MISMATCH)|PAYMENT_(?:REGION_NETWORK_MISMATCH|REGION_UNCONFIRMED|CURRENCY_MISMATCH)|NETWORK_REGION_UNCONFIRMED|CDK_PAYMENT_REGION_MISMATCH|BILLING_TAX_NOT_REMOVED|PRICING_REGION_UNCONFIRMED)\]\s*$/);
+    const code = String(message || '').match(/\[(CHECKOUT_(?:HTTP_ERROR|UNUSUAL_ACTIVITY|NETWORK_ERROR|NO_REQUEST|REQUEST_PENDING|NAVIGATION_TIMEOUT|NAVIGATION_FAILED|AUTH_REQUIRED|PAGE_ERROR|PAGE_CLOSED|PAGE_UNAVAILABLE|RENDER_TIMEOUT|RESOURCE_TIMEOUT|SESSION_FAILED|CURRENCY_UNCONFIRMED|AMOUNT_UNCONFIRMED|AMOUNT_MISMATCH)|PAYMENT_(?:REGION_NETWORK_MISMATCH|REGION_UNCONFIRMED|CURRENCY_MISMATCH)|NETWORK_REGION_UNCONFIRMED|CDK_PAYMENT_REGION_MISMATCH|BILLING_TAX_NOT_REMOVED|PRICING_REGION_UNCONFIRMED)\]\s*$/)?.[1];
     if (!code) return null;
+    const normalizedState = paymentState == null ? 'not_started' : normalizePaymentState(paymentState);
+    if (code === 'CHECKOUT_UNUSUAL_ACTIVITY' && normalizedState === 'not_started') {
+        return {
+            status: 'retry',
+            message: 'OpenAI 接口风控拦截 (unusual activity)，正在切换代理重试',
+            exhaustedMessage: message,
+            reachedPayment: false,
+            shouldRetry: true,
+            deletePhone: false,
+            deleteCard: false,
+            paymentState: 'not_started'
+        };
+    }
     return {
         status: 'failed',
         message,

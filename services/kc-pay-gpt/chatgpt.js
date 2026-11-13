@@ -2,7 +2,7 @@
 
 const axios = require('axios');
 const store = require('./mysql-store');
-const { getRegionConfig } = require('./region-config');
+const { getRegionConfig, getChatGptProtocolProfile, buildChatGptBrowserHeaders } = require('./region-config');
 const { executePaymentWithRetry } = require('./payment-retry');
 const { summarizeCheckoutErrorBody, buildCheckoutHttpFailure, isCheckoutUnusualActivityError } = require('./checkout-diagnostics');
 const { isChatGptAuthFailure } = require('./chatgpt-auth-state');
@@ -267,6 +267,12 @@ class ChatGPTService {
             const payload = buildCheckoutPayload(planName, country, currency, { ...options, planType });
             console.log(`[ChatGPT] 创建 Checkout Session: plan_name=${planName}, country=${country}, currency=${currency}, checkout_ui_mode=${payload.checkout_ui_mode}`);
 
+            const protocolProfile = getChatGptProtocolProfile(country, {
+                userAgent: options.userAgent,
+                language: options.language,
+                acceptLanguage: options.acceptLanguage,
+                timezone: options.timezone
+            });
             const requestHeaders = {
                 ...this.headers,
                 'Referer': 'https://chatgpt.com/',
@@ -275,9 +281,6 @@ class ChatGPTService {
                 'x-openai-target-route': '/backend-api/payments/checkout',
                 ...(options.headers || {})
             };
-            if (options.userAgent) {
-                requestHeaders['User-Agent'] = options.userAgent;
-            }
 
             let status = 0;
             let bodyText = "";
@@ -291,13 +294,7 @@ class ChatGPTService {
             } else {
                 const proxyStr = String(options.proxy || '').trim();
                 const timeoutMs = Number(options.timeoutMs || 25000);
-                const fullHeaders = {
-                    'User-Agent': options.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
-                    'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="147", "Google Chrome";v="147"',
-                    'sec-ch-ua-mobile': '?0',
-                    'sec-ch-ua-platform': '"Windows"',
-                    ...requestHeaders
-                };
+                const fullHeaders = buildChatGptBrowserHeaders(protocolProfile, requestHeaders);
                 const bodyStr = JSON.stringify(payload);
                 let impitClient = null;
                 try {
@@ -558,7 +555,7 @@ async function assertCheckoutPageReady(page) {
 /**
  * 通过 API 注入 billing_details 创建 Checkout，并打开 chatgpt.com/checkout
  */
-async function openApiCheckout(page, { accessToken, planType, country, currency, planNameOverride, verifyPage = true, proxy, sentinelPromise = null, cookieHeader = '', deviceId = '', userAgent: initialUserAgent = '' } = {}) {
+async function openApiCheckout(page, { accessToken, planType, country, currency, planNameOverride, verifyPage = true, proxy, sentinelPromise = null, cookieHeader = '', deviceId = '', userAgent: initialUserAgent = '', region: regionOverride = '', language = '', acceptLanguage = '', timezone = '' } = {}) {
     const { assertChatGptLoggedIn } = require('./session-auth');
     const token = String(accessToken || '').trim();
     if (!token) {
@@ -571,7 +568,7 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
 
     // 1. 尝试从浏览器上下文或传入参数中提取 UA 和 oai-did
     let userAgent = initialUserAgent || '';
-    let didCookie = deviceId || '';
+    let didCookie = deviceId || String(cookieHeader || '').match(/(?:^|;\s*)oai-did=([^;]+)/)?.[1] || '';
     try {
         if (page && typeof page.evaluate === 'function') {
             userAgent = (await page.evaluate(() => navigator.userAgent).catch(() => '')) || userAgent;
@@ -579,6 +576,14 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
             didCookie = cookies.find((c) => c.name === 'oai-did')?.value || didCookie;
         }
     } catch (_) {}
+
+    const protocolProfile = getChatGptProtocolProfile(regionOverride || region, {
+        userAgent,
+        language,
+        acceptLanguage,
+        timezone
+    });
+    userAgent = protocolProfile.userAgent;
 
     // 2. 铸造 OpenAI-Sentinel 风控挑战令牌 (PoW + SO 传感器指纹)
     const extraHeaders = {};
@@ -599,7 +604,16 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
             sentinel = await mintSentinelToken({
                 flow: 'chatgpt_checkout',
                 deviceId: didCookie,
-                userAgent: userAgent || undefined,
+                cookieHeader,
+                userAgent: protocolProfile.userAgent,
+                region: regionOverride || region,
+                language: protocolProfile.language,
+                acceptLanguage: protocolProfile.acceptLanguage,
+                timezone: protocolProfile.timezone,
+                platform: protocolProfile.platform,
+                platformLabel: protocolProfile.platformLabel,
+                secChUa: protocolProfile.secChUa,
+                secChUaPlatform: protocolProfile.secChUaPlatform,
                 proxy: proxy || '',
                 pageUrl: (page && typeof page.url === 'function' && /^https?:/i.test(page.url()) ? page.url() : '') || 'https://chatgpt.com/',
                 timeoutMs: 4000
@@ -625,7 +639,10 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
     const gpt = new ChatGPTService(requestCtx, token);
     const checkout = await gpt.createCheckoutSession(planType, region, billingCurrency, planNameOverride, {
         headers: extraHeaders,
-        userAgent,
+        userAgent: protocolProfile.userAgent,
+        language: protocolProfile.language,
+        acceptLanguage: protocolProfile.acceptLanguage,
+        timezone: protocolProfile.timezone,
         proxy
     });
     if (!checkout.checkoutUrl) {

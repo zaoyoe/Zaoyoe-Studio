@@ -222,6 +222,23 @@ function createSupabaseStub(state = {}) {
                         };
                     }
 
+                    for (const row of rows) {
+                        const prevRefundStatus = String(row?.provider_metadata?.refund_status || '').toLowerCase();
+                        const nextRefundStatus = String(query.payload?.provider_metadata?.refund_status || '').toLowerCase();
+                        const prevAttemptId = String(row?.provider_metadata?.refund_attempt_id || '');
+                        const nextAttemptId = String(query.payload?.provider_metadata?.refund_attempt_id || '');
+                        if (
+                            prevRefundStatus === 'refund_pending'
+                            && nextRefundStatus === 'refund_pending'
+                            && prevAttemptId !== nextAttemptId
+                        ) {
+                            return {
+                                data: null,
+                                error: { message: 'payment_refund_already_pending', code: '55000' }
+                            };
+                        }
+                    }
+
                     rows.forEach((row) => {
                         Object.assign(row, query.payload || {});
                     });
@@ -377,6 +394,23 @@ function createSupabaseStub(state = {}) {
                             data: query.single ? null : [],
                             error: { message: 'Ops alert job not found' }
                         };
+                    }
+
+                    for (const row of rows) {
+                        const prevRefundStatus = String(row?.provider_metadata?.refund_status || '').toLowerCase();
+                        const nextRefundStatus = String(query.payload?.provider_metadata?.refund_status || '').toLowerCase();
+                        const prevAttemptId = String(row?.provider_metadata?.refund_attempt_id || '');
+                        const nextAttemptId = String(query.payload?.provider_metadata?.refund_attempt_id || '');
+                        if (
+                            prevRefundStatus === 'refund_pending'
+                            && nextRefundStatus === 'refund_pending'
+                            && prevAttemptId !== nextAttemptId
+                        ) {
+                            return {
+                                data: null,
+                                error: { message: 'payment_refund_already_pending', code: '55000' }
+                            };
+                        }
                     }
 
                     rows.forEach((row) => {
@@ -2090,5 +2124,241 @@ test('payments batch actions return per-target failures without dropping success
         assert.equal(state.opsAlertJobs[1].status, 'handled');
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.metrics.requireAdminCalls, 1);
+    });
+});
+
+test('refund_zpay handles already-refunded live status cleanly without ReferenceError and reclaims credited points', async () => {
+    const state = {
+        defaultUserBalance: 50,
+        orders: [
+            {
+                id: 'order-zp-already-refunded-1',
+                user_id: 'user-zp-already-refunded-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_ALREADY_REFUNDED_1',
+                checkout_session_id: 'session-zp-already-refunded-1',
+                site: 'cn',
+                expected_amount: 10,
+                paid_amount: 10,
+                points_amount: 10,
+                status: 'redeemed',
+                claimed_at: '2026-04-16T10:05:00.000Z',
+                paid_at: '2026-04-16T10:02:00.000Z',
+                verified_at: '2026-04-16T10:03:00.000Z',
+                provider_metadata: {
+                    trade_no: 'ZPAY_TRADE_ALREADY_1'
+                },
+                raw_payload: {}
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter() {
+                return {
+                    async resolveRuntimeContext() { return { provider: 'zpay' }; },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'ZPAY_ALREADY_REFUNDED_1',
+                            tradeNo: 'ZPAY_TRADE_ALREADY_1',
+                            status: 'refunded',
+                            statusRaw: '2',
+                            transactionId: 'ZPAY_TRADE_ALREADY_1',
+                            message: 'already refunded'
+                        };
+                    },
+                    async refundOrder() {
+                        throw new Error('refundOrder must not be called when live query is already refunded');
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const res = createMockResponse();
+        await handler({
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-zp-already-refunded-1',
+                action: 'refund_zpay',
+                note: '同步网关已退款状态'
+            }
+        }, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.orders[0].status, 'refunded');
+        assert.equal(state.orders[0].provider_metadata.refund_status, 'refunded');
+        assert.equal(state.metrics.refundReclaimRpcCalls.length, 1);
+    });
+});
+
+test('refund_zpay claims refund_pending atomically, rejects concurrent attempts with 409, and unlocks on gateway failure', async () => {
+    let queryResolveGate = null;
+    const queryEntered = new Promise((resolve) => { queryResolveGate = resolve; });
+    let releaseQuery = null;
+    const queryPause = new Promise((resolve) => { releaseQuery = resolve; });
+    let refundCallCount = 0;
+
+    const state = {
+        defaultUserBalance: 100,
+        orders: [
+            {
+                id: 'order-zp-concurrent-1',
+                user_id: 'user-zp-concurrent-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_CONCURRENT_1',
+                site: 'cn',
+                expected_amount: 10,
+                paid_amount: 10,
+                points_amount: 10,
+                status: 'redeemed',
+                claimed_at: '2026-04-16T10:05:00.000Z',
+                provider_metadata: {
+                    trade_no: 'ZPAY_TRADE_CONCURRENT_1'
+                },
+                raw_payload: {}
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter() {
+                return {
+                    async resolveRuntimeContext() { return { provider: 'zpay' }; },
+                    async queryOrder() {
+                        queryResolveGate();
+                        await queryPause;
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'ZPAY_CONCURRENT_1',
+                            tradeNo: 'ZPAY_TRADE_CONCURRENT_1',
+                            status: 'paid',
+                            statusRaw: '1',
+                            transactionId: 'ZPAY_TRADE_CONCURRENT_1'
+                        };
+                    },
+                    async refundOrder() {
+                        refundCallCount += 1;
+                        return {
+                            supported: true,
+                            success: false,
+                            message: 'gateway temporary failure'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const res1 = createMockResponse();
+        const firstPromise = handler({
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-zp-concurrent-1',
+                action: 'refund_zpay',
+                note: '并发测试退款1'
+            }
+        }, res1);
+
+        await queryEntered;
+        assert.equal(state.orders[0].provider_metadata.refund_status, 'refund_pending');
+
+        const res2 = createMockResponse();
+        await handler({
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-zp-concurrent-1',
+                action: 'refund_zpay',
+                note: '并发测试退款2'
+            }
+        }, res2);
+
+        assert.equal(res2.statusCode, 409);
+        assert.match(res2.json().message, /处理中/);
+
+        releaseQuery();
+        await firstPromise;
+
+        assert.equal(res1.statusCode, 409, JSON.stringify(res1.json()));
+        assert.match(res1.json().message, /gateway temporary failure/);
+        assert.equal(refundCallCount, 1);
+        assert.equal(state.orders[0].provider_metadata.refund_status, 'refund_failed');
+        assert.equal(state.metrics.refundReclaimRpcCalls.length, 1);
+        assert.equal(state.metrics.rechargeRpcCalls.length, 1);
+        assert.match(state.metrics.rechargeRpcCalls[0].p_reference_id, /^admin-refund-compensate:zpay:/);
+    });
+});
+
+test('partial refund reclaim passes provider key to compensation recharge reference', async () => {
+    const state = {
+        defaultUserBalance: 100,
+        refundReclaimRpcData: {
+            deducted: 5,
+            deducted_paid: 5,
+            deducted_bonus: 0
+        },
+        orders: [
+            {
+                id: 'order-zp-partial-1',
+                user_id: 'user-zp-partial-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_PARTIAL_1',
+                site: 'cn',
+                expected_amount: 10,
+                paid_amount: 10,
+                points_amount: 10,
+                status: 'redeemed',
+                claimed_at: '2026-04-16T10:05:00.000Z',
+                provider_metadata: {
+                    trade_no: 'ZPAY_TRADE_PARTIAL_1'
+                },
+                raw_payload: {}
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter() {
+                return {
+                    async resolveRuntimeContext() { return { provider: 'zpay' }; },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'ZPAY_PARTIAL_1',
+                            tradeNo: 'ZPAY_TRADE_PARTIAL_1',
+                            status: 'paid',
+                            statusRaw: '1',
+                            transactionId: 'ZPAY_TRADE_PARTIAL_1'
+                        };
+                    },
+                    async refundOrder() {
+                        throw new Error('refundOrder must not run on partial reclaim');
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const res = createMockResponse();
+        await handler({
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-zp-partial-1',
+                action: 'refund_zpay',
+                note: '部分扣回补偿测试'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(state.orders[0].provider_metadata.refund_status, 'refund_failed');
+        assert.equal(state.metrics.rechargeRpcCalls.length, 1);
+        assert.match(state.metrics.rechargeRpcCalls[0].p_reference_id, /^admin-refund-compensate:zpay:/);
     });
 });

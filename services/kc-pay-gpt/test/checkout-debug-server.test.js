@@ -93,6 +93,7 @@ function harness({ pool = false, queued = false, overrides = {} } = {}) {
         path, crypto, __dirname: root, process: { env: { CHATGPT_TOKEN: 'inherited-gpt', CHATGPT_SESSION_JSON: 'inherited-gpt-json',
             CLAUDE_SESSION_KEY: 'inherited-claude', GROK_TOKEN: 'inherited-grok', RECORD_VIDEO: '0' } },
         store, browserPool, requireSecondaryAuth, ensureStoreReady: async () => {},
+        verifyTaskAccessToken: vi.fn(() => true), internalCaptchaToken: 'offline-internal-captcha-token', PORT: 3100,
         activeForegroundJobs: new Set(), activeProcesses: new Set(), interactiveCaptchaMap: new Map(),
         notifyCaptchaClick: vi.fn(() => true), notifyCaptchaDrag: vi.fn(() => true), broadcastToTask: vi.fn(),
         buildHcaptchaEnvFromConfig: () => ({ env: {} }), buildWorkerRuntimeEnv: env => env,
@@ -114,8 +115,8 @@ function harness({ pool = false, queued = false, overrides = {} } = {}) {
     vm.runInNewContext(snippet('function runCheckoutScript(', "app.get('/admin'"), context);
     vm.runInNewContext(snippet('function checkoutDiagnosticResponse(', '// ─── Card Pool Management API'), context);
     vm.runInNewContext(snippet('async function spawnWorkerWithBrowser(', 'async function runGptApiWorker('), context);
+    vm.runInNewContext(snippet('function publicCaptchaHandler(', "app.post('/api/public/probe-account'"), context);
     vm.runInNewContext(snippet("app.post('/api/public/task/:jobKey/captcha-click'", "app.use('/api/admin', authenticateAdmin)"), context);
-    vm.runInNewContext(snippet("app.post('/api/public/task/:jobKey/captcha-drag'", "app.post('/api/public/probe-account'"), context);
     async function request(method, route, { body = {}, params = {}, query = {} } = {}) {
         const handlers = routes.get(`${method} ${route}`);
         if (!handlers) throw new Error(`Missing route ${method} ${route}`);
@@ -366,10 +367,11 @@ describe('authenticated checkout diagnostics routes with isolated storage and ch
 
     it('blocks public WebSocket diagnostic subscription before snapshots or challenge delivery', async () => {
         const h = harness(); await h.generate();
-        h.context.data = { type: 'subscribe', jobKey: 'offline-1' };
+        h.context.data = { type: 'subscribe', jobKey: 'offline-1', taskAccessToken: 'offline-task-token' };
         h.context.WebSocket = { OPEN: 1 }; h.context.ws = { readyState: 1, send: vi.fn() };
         h.context.sendTaskSnapshot = vi.fn(); h.context.taskClients = new Map();
-        const subscription = snippet("                if (data.type === 'subscribe' && data.jobKey)", "                if (data.type === 'captcha_click' && data.jobKey)");
+        h.context.subscriptionVersion = 0; h.context.currentJobKey = null; h.context.unsubscribeTaskClient = vi.fn();
+        const subscription = snippet("                if (data.type === 'subscribe') {", "                if (data.type === 'captcha_click' && data.jobKey)");
         vm.runInNewContext('async function inspectWsSubscription() { ' + subscription + ' }', h.context);
         await h.context.inspectWsSubscription();
         expect(h.context.ws.send).toHaveBeenCalledWith(expect.stringContaining('管理员二级验证'));

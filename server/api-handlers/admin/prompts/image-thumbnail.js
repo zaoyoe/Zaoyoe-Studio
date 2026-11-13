@@ -9,7 +9,7 @@ const DEFAULT_MAX_BYTES = 20 * 1024 * 1024;
 const DEFAULT_WIDTH = 440;
 const MAX_WIDTH = 800;
 
-const { normalizeImageUrl } = imageBase64Handler._private;
+const { fetchRemoteImageBuffer } = imageBase64Handler._private;
 let sharpRuntime = null;
 
 function getSharpRuntime() {
@@ -27,55 +27,17 @@ function normalizePositiveInteger(value, fallback, maxValue) {
 
 async function fetchImageBuffer(url, {
     timeoutMs = DEFAULT_TIMEOUT_MS,
-    maxBytes = DEFAULT_MAX_BYTES
+    maxBytes = DEFAULT_MAX_BYTES,
+    fetcher
 } = {}) {
-    const imageUrl = normalizeImageUrl(url);
-    if (!imageUrl) {
-        const error = new Error('图片地址不可用');
-        error.statusCode = 400;
-        throw error;
-    }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        const response = await fetch(imageUrl, {
-            signal: controller.signal,
-            headers: {
-                Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8',
-                'User-Agent': 'ZaoyoeAdminImageThumbnail/1.0'
-            }
-        });
-        if (!response.ok) {
-            const error = new Error(`图片读取失败 (${response.status})`);
-            error.statusCode = response.status;
-            throw error;
-        }
-
-        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-        if (contentType && !contentType.startsWith('image/')) {
-            const error = new Error('读取到的内容不是图片');
-            error.statusCode = 415;
-            throw error;
-        }
-
-        const contentLength = Number.parseInt(response.headers.get('content-length') || '', 10);
-        if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-            const error = new Error('图片超过大小限制');
-            error.statusCode = 413;
-            throw error;
-        }
-
-        const buffer = Buffer.from(await response.arrayBuffer());
-        if (!buffer.length || buffer.length > maxBytes) {
-            const error = new Error(buffer.length ? '图片超过大小限制' : '图片为空');
-            error.statusCode = buffer.length ? 413 : 422;
-            throw error;
-        }
-        return buffer;
-    } finally {
-        clearTimeout(timer);
-    }
+    const { buffer } = await fetchRemoteImageBuffer(url, {
+        timeoutMs,
+        maxBytes,
+        ...(fetcher ? { fetcher } : {}),
+        acceptHeader: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8',
+        userAgent: 'ZaoyoeAdminImageThumbnail/1.0'
+    });
+    return buffer;
 }
 
 async function createThumbnailBuffer(buffer, width = DEFAULT_WIDTH) {

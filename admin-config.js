@@ -869,6 +869,21 @@ function maskVerifyCredential(value) {
     return `${normalized.slice(0, 4)}...${normalized.slice(-4)}`;
 }
 
+async function buildVerifyKeyFingerprintClient(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized || !globalThis.crypto?.subtle?.digest) return '';
+    try {
+        const bytes = new TextEncoder().encode(normalized);
+        const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+        const hex = Array.from(new Uint8Array(digest))
+            .map((byte) => byte.toString(16).padStart(2, '0'))
+            .join('');
+        return `sha256:${hex.slice(0, 24)}`;
+    } catch (_) {
+        return '';
+    }
+}
+
 function normalizeVerifyQuotaKeyStates(value) {
     return (Array.isArray(value) ? value : [])
         .map((item) => {
@@ -880,6 +895,7 @@ function normalizeVerifyQuotaKeyStates(value) {
                 api_key: String(item?.api_key || '').trim(),
                 masked_key: String(item?.masked_key || '').trim(),
                 key_name: String(item?.key_name || '').trim(),
+                key_fingerprint: String(item?.key_fingerprint || '').trim(),
                 key_type: String(item?.key_type || item?.keyType || '').trim(),
                 ok: item?.ok === true,
                 status: Number.isFinite(Number(item?.status)) ? Number(item.status) : null,
@@ -899,7 +915,7 @@ function normalizeVerifyQuotaKeyStates(value) {
                     : null
             };
         })
-        .filter((item) => item.api_key || item.masked_key || item.key_name);
+        .filter((item) => item.api_key || item.masked_key || item.key_name || item.key_fingerprint);
 }
 
 function getZeroBalanceVerifyQuotaKeyStates(quotaState = verifyMonitorState.quota || {}) {
@@ -30306,9 +30322,13 @@ async function saveVerifyConfig(options = {}) {
     // Update cache
     systemConfigCache['verify_settings'] = config;
     const activeKeys = getActiveVerifyProviderKeys(config);
+    const activeMaskedSet = new Set(activeKeys.map(maskVerifyCredential).filter(Boolean));
     verifyMonitorState.quota = {
         ...(verifyMonitorState.quota || getDefaultVerifyMonitorState().quota),
-        key_states: normalizeVerifyQuotaKeyStates(verifyMonitorState.quota?.key_states).filter((item) => activeKeys.includes(item.api_key))
+        key_states: normalizeVerifyQuotaKeyStates(verifyMonitorState.quota?.key_states).filter((item) => (
+            (item.api_key && activeKeys.includes(item.api_key))
+            || (item.masked_key && activeMaskedSet.has(item.masked_key))
+        ))
     };
     renderVerifyMonitorPanel();
     refreshVerifyMonitor(true).catch((error) => {
@@ -30347,8 +30367,27 @@ async function cleanZeroBalanceVerifyKeys() {
             return false;
         }
 
-        const removableKeys = new Set(removableStates.map((item) => item.api_key).filter(Boolean));
-        const nextKeys = previousKeys.filter((key) => !removableKeys.has(key));
+        const removableRawKeys = new Set(removableStates.map((item) => item.api_key).filter(Boolean));
+        const removableFingerprints = new Set(removableStates.map((item) => item.key_fingerprint).filter(Boolean));
+        const removableMasks = new Set(
+            removableStates
+                .filter((item) => !item.key_fingerprint && !item.api_key)
+                .map((item) => item.masked_key)
+                .filter(Boolean)
+        );
+        const fingerprintByKey = new Map();
+        for (const key of previousKeys) {
+            const fingerprint = await buildVerifyKeyFingerprintClient(key);
+            if (fingerprint) {
+                fingerprintByKey.set(key, fingerprint);
+            }
+        }
+        const isRemovableKey = (key) => (
+            removableRawKeys.has(key)
+            || (fingerprintByKey.has(key) && removableFingerprints.has(fingerprintByKey.get(key)))
+            || removableMasks.has(maskVerifyCredential(key))
+        );
+        const nextKeys = previousKeys.filter((key) => !isRemovableKey(key));
         const removedCount = previousKeys.length - nextKeys.length;
 
         if (removedCount <= 0) {
@@ -30359,11 +30398,11 @@ async function cleanZeroBalanceVerifyKeys() {
         if (activeProvider === VERIFY_PROVIDER_CATCARD) {
             applyVerifyCredentialTextarea(
                 'cfgVerifyCatcardSubscribeKeys',
-                previousCatcardSubscribeKeys.filter((key) => !removableKeys.has(key))
+                previousCatcardSubscribeKeys.filter((key) => !isRemovableKey(key))
             );
             applyVerifyCredentialTextarea(
                 'cfgVerifyCatcardExtractKeys',
-                previousCatcardExtractKeys.filter((key) => !removableKeys.has(key))
+                previousCatcardExtractKeys.filter((key) => !isRemovableKey(key))
             );
         } else {
             applyVerifyCredentialInputs(nextKeys);

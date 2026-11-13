@@ -7,6 +7,8 @@
   },
   "scripts": {
     "audit:env-drift": "node scripts/check-env-drift.js",
+    "audit:db-security": "node scripts/ci-audit-supabase-sync.js --live",
+    "audit:migrations": "node scripts/ci-audit-supabase-sync.js",
     "audit:deploy-health": "node scripts/check-prod-env.js --runtime-only --check-app-runtime --base-url https://www.fatherkey.com --expect-current-git-version",
     "audit:image-delivery": "node scripts/audit-image-delivery.js",
     "audit:ai-workbench-billing": "node scripts/audit-ai-workbench-billing.js",

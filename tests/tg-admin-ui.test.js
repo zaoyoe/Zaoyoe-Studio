@@ -63,6 +63,7 @@ function page(options = {}) {
     get('tgCopyToast').hidden = true;
     const client = { auth: {
         async getSession() { return options.getSession ? options.getSession() : { data: { session: signedIn ? { user: USER } : null } }; },
+        async setSession(input) { authCalls.push({ action: 'setSession', ...input }); signedIn = true; return { data: { session: { ...input, user: USER }, user: USER }, error: null }; },
         async signInWithPassword(input) { authCalls.push({ action: 'login', ...input }); if (options.signInThrows) throw new Error('network_unavailable'); if (options.signInError) return { error: Object.assign(new Error('private provider error'), { code: options.signInError === true ? 'invalid_credentials' : options.signInError }) }; signedIn = true; return { data: { user: USER } }; },
         async signInWithOAuth(input) { authCalls.push({ action: 'oauth', ...input }); timeline.push('oauth'); if (options.oauth) return options.oauth(input); return { data: { url: options.authorizeUrl || validAuthorizeUrl(input.options.redirectTo) } }; },
         async exchangeCodeForSession(code) { authCalls.push({ action: 'exchange', code }); timeline.push('exchange'); if (options.exchange) { const result = await options.exchange(code); if (!result.error) signedIn = true; return result; } signedIn = true; return { data: { user: USER } }; },
@@ -94,6 +95,23 @@ function page(options = {}) {
             if (url.endsWith('/tg/products')) return response({ success: true, products: options.products || [] });
             if (url.includes('/tg/purchases?')) return response({ success: true, purchases: options.purchases || [], total: options.purchaseTotal || 0 });
             if (url.endsWith('/tg/provider')) return response({ success: true, healthy: true, payment_currency: 'usdt', balances: { gram: '4.50', usdt: '10.00' } });
+            if (url.includes('/api/auth/login-security')) {
+                const payload = JSON.parse(request.body || '{}');
+                if (payload.action === 'password_login') {
+                    if (options.signInThrows) throw new Error('network_unavailable');
+                    if (options.signInError) {
+                        const code = options.signInError === true ? 'invalid_credentials' : options.signInError;
+                        return response({ success: false, code, security: { ip_blocked: false, account_locked: false } }, code === 'invalid_credentials' ? 401 : 400);
+                    }
+                    return response({
+                        success: true,
+                        action: 'password_login',
+                        session: { access_token: 'tg-access-token', refresh_token: 'tg-refresh-token' },
+                        user: USER,
+                        security: { ip_blocked: false, account_locked: false }
+                    });
+                }
+            }
             return response({ success: true, security: { ip_blocked: false, account_locked: false } });
         }
     };
@@ -320,14 +338,20 @@ test('provider summary distinguishes the configured debit currency from independ
     }
 });
 
-test('login runs security preflight, records failed passwords and always clears the password field', async () => {
+test('login runs security preflight, verifies passwords through password_login and always clears the password field', async () => {
     const failed = page({ signedIn: false, signInError: true }); await failed.ready();
     await failed.get('tgLoginForm').trigger('submit');
-    assert.deepEqual(failed.calls.map((call) => JSON.parse(call.request.body).action), ['preflight', 'record_failure']);
+    assert.deepEqual(failed.calls.map((call) => JSON.parse(call.request.body).action), ['preflight', 'password_login']);
     assert.equal(JSON.parse(failed.calls[0].request.body).email, 'admin@example.test');
-    assert.equal(failed.authCalls.length, 1);
+    assert.equal(JSON.parse(failed.calls[1].request.body).email, 'admin@example.test');
+    assert.equal(failed.authCalls.length, 0);
     assert.equal(failed.get('tgLoginForm').elements.password.value, '');
     assert.match(failed.get('tgLoginMessage').textContent, /邮箱或密码错误/);
+    const succeeded = page({ signedIn: false }); await succeeded.ready();
+    await succeeded.get('tgLoginForm').trigger('submit');
+    assert.equal(succeeded.authCalls[0].action, 'setSession');
+    assert.equal(succeeded.authCalls[0].access_token, 'tg-access-token');
+    assert.equal(succeeded.get('tgLoginForm').elements.password.value, '');
     const blocked = page({ signedIn: false, fetch: async () => response({ success: true, security: { ip_blocked: false, account_locked: true } }) }); await blocked.ready();
     await blocked.get('tgLoginForm').trigger('submit');
     assert.equal(blocked.authCalls.length, 0);
@@ -724,18 +748,24 @@ test('password fallback still works and checks actual identity after authenticat
     const ui = page({ signedIn: false }); await ui.ready();
     await ui.get('tgLoginForm').trigger('submit');
     assert.equal(ui.get('tgAdminApp').hidden, false);
-    assert.deepEqual(ui.authCalls.map((call) => call.action), ['login']);
-    assert.deepEqual(ui.calls.filter((call) => call.url.includes('/auth/')).map((call) => JSON.parse(call.request.body)), [
-        { action: 'preflight', email: 'admin@example.test' }, { action: 'preflight', email: USER.email }
+    assert.deepEqual(ui.authCalls.map((call) => call.action), ['setSession']);
+    assert.deepEqual(ui.calls.filter((call) => call.url.includes('/auth/')).map((call) => ({
+        action: JSON.parse(call.request.body).action,
+        email: JSON.parse(call.request.body).email
+    })), [
+        { action: 'preflight', email: 'admin@example.test' },
+        { action: 'password_login', email: 'admin@example.test' },
+        { action: 'preflight', email: USER.email }
     ]);
     assert.equal(ui.get('tgLoginForm').elements.password.value, '');
     assert.equal(ui.storage.size, 0);
 });
 
-test('password provider outages and network failures do not increment invalid-password counters', async () => {
+test('password provider outages and network failures do not sign in or leave credentials in form state', async () => {
     for (const options of [{ signInThrows: true }, { signInError: 'request_timeout' }]) {
         const ui = page({ signedIn: false, ...options }); await ui.ready(); await ui.get('tgLoginForm').trigger('submit');
-        assert.deepEqual(ui.calls.map((call) => JSON.parse(call.request.body).action), ['preflight']);
+        assert.deepEqual(ui.calls.map((call) => JSON.parse(call.request.body).action), ['preflight', 'password_login']);
+        assert.equal(ui.authCalls.length, 0);
         assert.equal(ui.get('tgAdminApp').hidden, true);
         assert.equal(ui.get('tgLoginForm').elements.password.value, '');
         assert.equal(ui.get('tgGoogleLogin').disabled, false);

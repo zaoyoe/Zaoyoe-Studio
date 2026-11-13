@@ -1395,7 +1395,7 @@ async function clickPlanUpgrade(page, planType, options = {}) {
                 // 检查该目标卡片是否为官方限时免费试用（如 "✦ Claim free offer"、"Try Plus free for 1 month"、"0 / month"）
                 const hasFreeTrialOffer = await card.evaluate((node) => {
                     const text = (node.textContent || '').replace(/\s+/g, ' ');
-                    return /(?:Claim free offer|Try(?: [A-Za-z]+)? free|0\s*\/\s*month|免费试用|领取免费优惠)/i.test(text);
+                    return /(?:Claim free offer|Try(?: [A-Za-z]+)? free|(?<![\d.,])0(?:\.0+)?\s*\/\s*(?:month|mo)|免费试用|领取免费优惠)/i.test(text);
                 }).catch(() => false);
 
                 if (hasFreeTrialOffer && target.toLowerCase() === 'plus') {

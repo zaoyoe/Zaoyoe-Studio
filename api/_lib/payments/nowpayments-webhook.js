@@ -9,6 +9,9 @@ const {
     sanitizeSite
 } = require('./orders');
 const {
+    isTerminalRefundPaymentOrder
+} = require('./order-state');
+const {
     normalizeNowpaymentsPaymentStatus
 } = require('./nowpayments');
 const {
@@ -668,11 +671,16 @@ async function handleNowpaymentsWebhook({
         let errorMessage = null;
         let responseStatus = 200;
         let rechargeBreakdown = null;
+        let alreadySettledBeforeWebhook = false;
+        let rechargeDeduped = false;
+        const terminalRefundOrder = isTerminalRefundPaymentOrder(paymentOrder);
 
         if (!signatureValid) {
             processingResult = 'signature_mismatch';
             errorMessage = 'signature_mismatch';
             responseStatus = 401;
+        } else if (terminalRefundOrder) {
+            processingResult = 'ignored_terminal_refund';
         } else if (paymentState !== 'paid') {
             if (paymentState === 'partially_paid') {
                 processingResult = 'pending_review';
@@ -699,8 +707,9 @@ async function handleNowpaymentsWebhook({
         } else {
             rechargeBreakdown = deriveNowpaymentsPointBreakdown(paymentOrder);
             const currentOrderStatus = String(paymentOrder.status || '').trim().toLowerCase();
-            if (!['paid', 'redeemed'].includes(currentOrderStatus)) {
-                const { error: rechargeError } = await rechargePointsForPayment({
+            alreadySettledBeforeWebhook = ['paid', 'redeemed'].includes(currentOrderStatus);
+            if (!alreadySettledBeforeWebhook) {
+                const { data: rechargeData, error: rechargeError } = await rechargePointsForPayment({
                     supabase,
                     userId: paymentOrder.user_id,
                     paidPoints: rechargeBreakdown.paidPoints,
@@ -715,12 +724,13 @@ async function handleNowpaymentsWebhook({
                 if (rechargeError) {
                     throw new Error(rechargeError.message || 'Failed to credit NOWPayments payment points');
                 }
+                rechargeDeduped = rechargeData?.deduped === true;
             }
 
             processingResult = 'processed_paid';
         }
 
-        if (paymentOrder?.id && signatureValid) {
+        if (paymentOrder?.id && signatureValid && !terminalRefundOrder) {
             const nowIso = new Date().toISOString();
             const existingMetadata = paymentOrder.provider_metadata && typeof paymentOrder.provider_metadata === 'object'
                 ? paymentOrder.provider_metadata
@@ -821,22 +831,24 @@ async function handleNowpaymentsWebhook({
                     console.warn('[NOWPayments] Failed to link checkout session from webhook:', linkError.message);
                 }
 
-                await maybeIssueRechargeDiscountAssets({
-                    supabase,
-                    userId: paymentOrder.user_id,
-                    site: paymentOrder.site || currentSite,
-                    paidPoints: rechargeBreakdown?.paidPoints || 0,
-                    bonusPoints: rechargeBreakdown?.bonusPoints || 0,
-                    paidAmount: localPaidAmount,
-                    paymentOrderId: paymentOrder.id,
-                    paymentProvider: 'nowpayments',
-                    paymentOrderNo: orderNo
-                });
-                await maybeIssueAffiliateDiscountAssetsForRecharge({
-                    supabase,
-                    site: paymentOrder.site || currentSite,
-                    rechargeReferenceId: `nowpayments_${orderNo}`
-                });
+                if (!alreadySettledBeforeWebhook && !rechargeDeduped) {
+                    await maybeIssueRechargeDiscountAssets({
+                        supabase,
+                        userId: paymentOrder.user_id,
+                        site: paymentOrder.site || currentSite,
+                        paidPoints: rechargeBreakdown?.paidPoints || 0,
+                        bonusPoints: rechargeBreakdown?.bonusPoints || 0,
+                        paidAmount: localPaidAmount,
+                        paymentOrderId: paymentOrder.id,
+                        paymentProvider: 'nowpayments',
+                        paymentOrderNo: orderNo
+                    });
+                    await maybeIssueAffiliateDiscountAssetsForRecharge({
+                        supabase,
+                        site: paymentOrder.site || currentSite,
+                        rechargeReferenceId: `nowpayments_${orderNo}`
+                    });
+                }
             }
         }
 

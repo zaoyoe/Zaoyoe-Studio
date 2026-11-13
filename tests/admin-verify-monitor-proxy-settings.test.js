@@ -177,7 +177,9 @@ test('verify monitor quota proxy forwards upstream quota data with internal auth
                 assert.equal(payload.key_count, 2);
                 assert.equal(payload.healthy_key_count, 1);
                 assert.equal(Array.isArray(payload.key_states), true);
-                assert.equal(payload.key_states[0].api_key, 'SYS-AAA');
+                assert.equal(payload.key_states[0].api_key, undefined);
+                assert.equal(payload.key_states[0].masked_key, 'SYS-...-AAA');
+                assert.equal(String(payload.key_states[0].key_fingerprint || '').startsWith('sha256:'), true);
             });
         });
     } finally {
@@ -250,7 +252,9 @@ test('verify monitor quota proxy falls back to forwarding admin authorization wh
                 assert.equal(payload.remaining_extract_jobs, 1);
                 assert.equal(payload.remaining_full_jobs, 0);
                 assert.equal(Array.isArray(payload.key_states), true);
-                assert.equal(payload.key_states[0].api_key, 'SYS-ZERO');
+                assert.equal(payload.key_states[0].api_key, undefined);
+                assert.equal(payload.key_states[0].masked_key, 'SYS-...ZERO');
+                assert.equal(String(payload.key_states[0].key_fingerprint || '').startsWith('sha256:'), true);
             });
         });
     } finally {

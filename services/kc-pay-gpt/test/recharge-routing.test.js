@@ -9,7 +9,7 @@ import { validateOutsourceConfig, canonicalizeOutsourcePlan } from '../gpt-outso
 import { validateCdkPlan } from '../cdk-plan-catalog.js';
 import * as sessions from '../session-auth.js';
 import * as safety from '../task-safety.js';
-import { getPlatformForPlan, getRegionConfig, getRegionBrowserProfile } from '../region-config.js';
+import { getPlatformForPlan, getRegionConfig, getRegionBrowserProfile, getChatGptProtocolProfile } from '../region-config.js';
 import { formatTaskErrorMessage } from '../public/task-messages.js';
 import { reportTaskFailure } from '../task-diagnostics.js';
 import { fingerprintSessionPayload } from '../session-security.js';
@@ -182,7 +182,7 @@ describe('actual activation request platform routing with a mock store', () => {
             await h.request(); expect(h.response.statusCode).toBe(400); expect(h.store.markCdkUsed).not.toHaveBeenCalled();
         }
     });
-    it('rejects a cooled-down local ChatGPT Session before locking its CDK', async () => {
+    it('does not block local ChatGPT Sessions with a Session checkout cooldown', async () => {
         const h = handlerHarness(fixtures[2]);
         h.store.getGptApiConfig.mockResolvedValue({ enabled: false });
         h.store.getActivationAttemptLimit.mockResolvedValue({ cooldown_until: 'future-cooldown' });
@@ -190,15 +190,10 @@ describe('actual activation request platform routing with a mock store', () => {
 
         await h.request();
 
-        expect(h.response.statusCode).toBe(403);
-        expect(h.response.value.message).toContain('冷却 7 分钟');
-        expect(h.store.getActivationAttemptLimit).toHaveBeenCalledWith('chatgpt_ua', fingerprintSessionPayload(jwt));
-        expect(JSON.stringify(h.store.getActivationAttemptLimit.mock.calls)).not.toContain(jwt);
-        expect(h.store.hasAvailableCard).not.toHaveBeenCalled();
-        expect(h.store.markCdkUsed).not.toHaveBeenCalled();
-        expect(h.store.createTaskLog).not.toHaveBeenCalled();
-        expect(h.store.createActivationTask).not.toHaveBeenCalled();
-        expect(h.spawnActivationWorker).not.toHaveBeenCalled();
+        expect(h.response.statusCode).toBe(200);
+        expect(h.response.value.success).toBe(true);
+        expect(h.store.getActivationAttemptLimit).not.toHaveBeenCalledWith('chatgpt_ua', expect.anything());
+        expect(h.spawnActivationWorker).toHaveBeenCalledOnce();
     });
     it('does not apply the local Session cooldown to third-party ChatGPT checkout', async () => {
         const h = handlerHarness(fixtures[2]);
@@ -230,7 +225,7 @@ async function workerHarness(fixture, { mismatch = false, apiError = null, boots
     if (bootstrapError) methods[`bootstrap${fixture.platform === 'grok' ? 'Grok' : fixture.platform === 'claude' ? 'Claude' : 'ChatGpt'}Session`].mockRejectedValue(bootstrapError);
     const dependencies = {
         './payment-retry': methods, './pricing-checkout': methods, './chatgpt': { ...methods, ...require('../chatgpt') },
-        './region-config': { getRegionConfig, getRegionBrowserProfile }, './session-auth': methods, './chatgpt-cancel-auto-renew': methods, './claude-auth': methods,
+        './region-config': { getRegionConfig, getRegionBrowserProfile, getChatGptProtocolProfile }, './session-auth': methods, './chatgpt-cancel-auto-renew': methods, './claude-auth': methods,
         './pricing-checkout-claude': methods, './claude-cancel-auto-renew': methods,
         './grok-auth': methods, './pricing-checkout-grok': methods, './grok-cancel-auto-renew': methods,
         './public/grok-plan-catalog': require('../public/grok-plan-catalog'), './grok-commerce': methods, './cdk-plan-catalog': { validateCdkPlan },
@@ -348,12 +343,17 @@ function spawnHarness({ state = 'not_started', failPersist = false, failAt = 0, 
     workerError = 'fixture worker interruption',
     latestState = null, paymentSequence = null, unawaitedPayments = false, emitProgress = false,
     platform = 'grok', executionMode = 'local_card_pool', runOutput = null, runStatus = 'failed',
+    runSequence = null, proxies = [], useRealFinalize = false,
     autoRenewConfirmed = false, sessionCooldownScopeKey = 'fixture-session-fingerprint' } = {}) {
     let done; const finished = new Promise(resolve => { done = resolve; });
     let savedState = latestState || 'not_started', settled = false, writes = 0, paymentCallback, finalFailed = false;
     const events = [];
+    const runtimeEnvs = [];
+    const proxyQueue = [...proxies];
     const store = {
-        getPaymentRegion: async () => 'US', getActiveProxy: async () => '', getHcaptchaConfig: async () => ({}),
+        getPaymentRegion: async () => 'US',
+        getActiveProxy: async () => (proxyQueue.length ? proxyQueue.shift() : ''),
+        getHcaptchaConfig: async () => ({}),
         updateTaskLog: vi.fn(), markCdkUnused: vi.fn(), getTaskStatus: vi.fn(),
         updateLocalActivationTask: vi.fn(async (_key, input, options = {}) => {
             events.push({ type: 'write', input, options });
@@ -391,11 +391,12 @@ function spawnHarness({ state = 'not_started', failPersist = false, failAt = 0, 
     };
     let runtimeEnv;
     const sandbox = { ...safety, ...sessions, path, __dirname: root, process: { env: { CHATGPT_TOKEN: 'unrelated-token' } },
+        require: id => (id === './playwright-proxy' ? { alignProxyRegion: p => p } : require(id)),
         store, buildActivationCredentialEnv, getPlatformForPlan, reportTaskFailure, redactSensitiveText: s => s,
         MAX_PROCESS_ATTEMPTS: 2, normalizeTaskProgress: p => p, logTask() {},
         broadcastToTask: vi.fn((_key, value) => { events.push({ type: 'broadcast', value }); }),
         notifyTaskOutcome: vi.fn(value => { events.push({ type: 'notify', value }); }),
-        finalizeRetryAnalysis: analysis => analysis, isNoActivationEligibilityMessage: () => false,
+        finalizeRetryAnalysis: useRealFinalize ? safety.finalizeRetryAnalysis : (analysis => analysis), isNoActivationEligibilityMessage: () => false,
         isCardPoolExhaustedIssue: () => cardPoolEmpty, extractAutoRenewResultFromOutput: () => null,
         cancelAutoRenew: vi.fn(async () => {
             events.push({ type: 'autoRenewCheck' });
@@ -405,17 +406,20 @@ function spawnHarness({ state = 'not_started', failPersist = false, failAt = 0, 
         buildHcaptchaEnvFromConfig: () => ({ env: {} }), extractCardLast4FromOutput: () => null,
         extractTaskMediaFromOutput: () => ({ screenshots: [], videos: [] }), getCheckoutProgress: () => 10,
         getTotalActiveJobs: () => 1, releaseForegroundSlot: () => done(),
-        runCheckoutScript: async (_key, _script, env, _attempt, progressCb, payment) => {
-            runtimeEnv = env; paymentCallback = payment;
+        runCheckoutScript: async (_key, _script, env, attempt, progressCb, payment) => {
+            runtimeEnv = env; runtimeEnvs.push(env); paymentCallback = payment;
             if (emitProgress && paymentSequence) {
                 for (const value of paymentSequence) {
                     await payment(value);
                     if (value === 'started') await progressCb(80, '[Stripe] Step 9.5: 等待 hCaptcha 弹层或拒付结果');
                 }
             } else {
-                const pending = (paymentSequence || (runOutput === null ? [state] : [])).map(value => payment(value));
+                const pending = (paymentSequence || (runOutput === null && !runSequence ? [state] : [])).map(value => payment(value));
                 if (!unawaitedPayments) await Promise.all(pending);
                 else pending.forEach(operation => operation.catch(() => {}));
+            }
+            if (Array.isArray(runSequence)) {
+                return runSequence[attempt - 1];
             }
             if (runOutput !== null) {
                 return { output: runOutput, analysis: { status: runStatus, message: 'offline fixture', paymentState: state, shouldRetry: false } };
@@ -430,7 +434,7 @@ function spawnHarness({ state = 'not_started', failPersist = false, failAt = 0, 
     const token = platform === 'chatgpt' ? jwt : 'offline-token';
     sandbox.spawnActivationWorker({ task: { jobKey: 'fixture-job', executionMode }, token,
         sessionRaw: fixture?.credential || '', cdk: 'OFFLINE-CDK', cdkDetails: { platform, plan_type: planType }, clientIp: '', sessionCooldownScopeKey });
-    return finished.then(() => ({ store, runtimeEnv, sandbox, events, paymentCallback }));
+    return finished.then(() => ({ store, runtimeEnv, runtimeEnvs, sandbox, events, paymentCallback }));
 }
 
 describe('server dispatch and interruption preserve payment resources', () => {
@@ -452,18 +456,35 @@ describe('server dispatch and interruption preserve payment resources', () => {
         expect(h.sandbox.notifyTaskOutcome).not.toHaveBeenCalled();
         expect(h.sandbox.broadcastToTask.mock.calls.some(([, event]) => event.type === 'status')).toBe(false);
     });
-    it('cools a ChatGPT Session after unusual activity only before payment starts', async () => {
+    it('never cools a ChatGPT Session after unusual activity', async () => {
         const h = await spawnHarness({ platform: 'chatgpt', runOutput: '[CHECKOUT_UNUSUAL_ACTIVITY]', sessionCooldownScopeKey: 'a'.repeat(64) });
-        expect(h.store.setActivationAttemptCooldown).toHaveBeenCalledOnce();
-        expect(h.store.setActivationAttemptCooldown).toHaveBeenCalledWith('chatgpt_ua', 'a'.repeat(64), 10);
+        expect(h.store.setActivationAttemptCooldown).not.toHaveBeenCalled();
     });
-    it.each([
-        ['another platform', { platform: 'grok' }],
-        ['third-party API mode', { platform: 'chatgpt', executionMode: 'third_party_api' }],
-        ['payment already started', { platform: 'chatgpt', state: 'started' }],
-        ['ordinary checkout failure', { platform: 'chatgpt', runOutput: 'ordinary checkout failure' }]
-    ])('does not set Session cooldown for %s', async (_label, options) => {
-        const h = await spawnHarness({ runOutput: '[CHECKOUT_UNUSUAL_ACTIVITY]', ...options });
+    it('retries once with a fresh proxy after CHECKOUT_UNUSUAL_ACTIVITY before payment starts, then settles failed without cooldown', async () => {
+        const retryResult = () => ({
+            output: '[CHECKOUT_UNUSUAL_ACTIVITY]',
+            analysis: safety.classifyCheckoutFailure(
+                'Checkout 创建接口返回 HTTP 400：Our systems have detected unusual activity. Please try again later. [CHECKOUT_UNUSUAL_ACTIVITY]',
+                'not_started'
+            )
+        });
+        const h = await spawnHarness({
+            platform: 'chatgpt',
+            proxies: ['http://p1:8000', 'http://p2:8000'],
+            runSequence: [retryResult(), retryResult()],
+            useRealFinalize: true,
+            sessionCooldownScopeKey: 'b'.repeat(64)
+        });
+        expect(h.runtimeEnvs.map(env => env.PROXY)).toEqual(['http://p1:8000', 'http://p2:8000']);
+        expect(h.store.releaseCardsByOwner).toHaveBeenCalledTimes(2);
+        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith(
+            'fixture-job',
+            expect.objectContaining({ status: 'failed', paymentState: 'not_started' }),
+            { finalize: true }
+        );
+        const savedFinal = h.events.find(event => event.type === 'saved' && event.options.finalize);
+        expect(savedFinal?.result).toMatchObject({ applied: true, status: 'failed', released: true, recoveryRequired: false });
+        expect(h.store.markCdkUnused).not.toHaveBeenCalled();
         expect(h.store.setActivationAttemptCooldown).not.toHaveBeenCalled();
     });
     it('keeps worker exception details out of the saved and reported public message', async () => {

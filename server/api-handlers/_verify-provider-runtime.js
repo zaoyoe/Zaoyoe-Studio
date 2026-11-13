@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const {
     fetchVerifyQuotaSnapshot
 } = require('../../api/_lib/verify-quota-alerts');
@@ -22,6 +23,12 @@ const VERIFY_PROVIDER_LABELS = Object.freeze({
 
 function normalizeText(value) {
     return String(value || '').trim();
+}
+
+function buildVerifyKeyFingerprint(value) {
+    const normalized = normalizeText(value);
+    if (!normalized) return '';
+    return `sha256:${crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 24)}`;
 }
 
 function isPlainVerifyRuntimeConfig(value) {
@@ -256,9 +263,9 @@ function buildVerifyQuotaKeyState(snapshot = {}) {
     const supportsFull = snapshotSupportsTaskType({ key_type: keyType }, 'full');
 
     return {
-        api_key: normalizeText(snapshot.apiKey),
         masked_key: normalizeText(snapshot.masked_key || snapshot.key_name || maskVerifyCredential(snapshot.apiKey)),
         key_name: normalizeText(snapshot.key_name || snapshot.keyName || snapshot.label || maskVerifyCredential(snapshot.apiKey)),
+        key_fingerprint: normalizeText(snapshot.key_fingerprint) || buildVerifyKeyFingerprint(snapshot.apiKey),
         provider: normalizeVerifyProvider(snapshot.provider),
         adapter: normalizeVerifyAdapter(snapshot.adapter, snapshot.provider),
         key_type: keyType,
@@ -812,8 +819,9 @@ async function fetchDirectVerifyQuotaState(supabase, options = {}) {
             service_status: queueStatus?.service_status || 'running',
             key_count: keyCount,
             key_states: (cards.length ? cards : (config.apiKeys || [])).map((key, index) => ({
-                api_key: key,
+                masked_key: maskVerifyCredential(key),
                 key_name: `86AI 卡密 #${index + 1}`,
+                key_fingerprint: buildVerifyKeyFingerprint(key),
                 balance: null,
                 status: 'configured',
                 supported: false
@@ -1134,6 +1142,7 @@ module.exports = {
     activateVerifyProviderConfig,
     buildRuntimeProviderConfig,
     buildLocalVerifyQueueSnapshot,
+    buildVerifyKeyFingerprint,
     buildVerifyTypedUsageSummary,
     buildVerifyUsageSummary,
     buildVerifyQuotaKeyState,

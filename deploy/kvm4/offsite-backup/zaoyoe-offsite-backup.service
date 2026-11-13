@@ -6,11 +6,13 @@ ConditionPathExists=/opt/zaoyoe-verify-server/.env
 
 [Service]
 Type=oneshot
-WorkingDirectory=/opt/zaoyoe-verify-server/current
+WorkingDirectory=/opt/zaoyoe-verify-server/app
 EnvironmentFile=/opt/zaoyoe-verify-server/.env
-ExecStart=/usr/bin/node /opt/zaoyoe-verify-server/current/scripts/backup-offsite-r2.js
+ExecStart=/usr/bin/node /opt/zaoyoe-verify-server/app/scripts/backup-offsite-r2.js --include-stack
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
+ReadOnlyPaths=/opt/zaoyoe-verify-server /opt/sub2api /opt/kc-pay-gpt
+ReadWritePaths=/run/docker.sock
 ProtectHome=true
 TimeoutStartSec=300

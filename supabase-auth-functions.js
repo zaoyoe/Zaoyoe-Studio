@@ -665,7 +665,7 @@ function triggerLoginRiskEngagement(securityState = {}, source = 'login_security
     }
 }
 
-async function requestLoginSecurityAction(action, email) {
+async function requestLoginSecurityAction(action, email, extraPayload = {}) {
     const normalizedEmail = String(email || '').trim();
     if (!normalizedEmail) return null;
 
@@ -677,7 +677,8 @@ async function requestLoginSecurityAction(action, email) {
             },
             body: JSON.stringify({
                 action,
-                email: normalizedEmail
+                email: normalizedEmail,
+                ...extraPayload
             })
         });
 
@@ -685,17 +686,38 @@ async function requestLoginSecurityAction(action, email) {
         if (response.status === 429) {
             return {
                 ...normalizeLoginSecurityState(payload),
-                rateLimited: true
+                rateLimited: payload?.code !== 'account_locked',
+                ok: false,
+                status: 429,
+                code: payload?.code || 'rate_limited',
+                message: payload?.message || 'Too many login security requests',
+                payload
             };
         }
 
         if (!response.ok) {
+            if (action === 'password_login') {
+                return {
+                    ...normalizeLoginSecurityState(payload),
+                    rateLimited: false,
+                    ok: false,
+                    status: response.status,
+                    code: payload?.code || 'auth_failed',
+                    message: payload?.message || `HTTP ${response.status}`,
+                    payload
+                };
+            }
             throw new Error(payload?.message || `HTTP ${response.status}`);
         }
 
         return {
             ...normalizeLoginSecurityState(payload),
-            rateLimited: false
+            rateLimited: false,
+            ok: true,
+            status: response.status,
+            session: payload?.session || null,
+            user: payload?.user || null,
+            payload
         };
     } catch (err) {
         console.warn(`Login security action failed (${action}):`, err?.message || err);
@@ -1075,25 +1097,46 @@ async function handleLogin(event) {
             return;
         }
 
-        // Step 1: 尝试登录
+        // Step 1: 通过后端安全入口验证密码并同步登录风控计数
         const captchaToken = window.ZaoyoeSecurity?.getTurnstileToken?.() || undefined;
-        const signInOptions = captchaToken ? { captchaToken } : undefined;
-        const { data, error } = await window.supabaseClient.auth.signInWithPassword({
-            email: email,
-            password: password,
-            ...(signInOptions ? { options: signInOptions } : {})
+        const loginSecurityResult = await requestLoginSecurityAction('password_login', email, {
+            password,
+            ...(captchaToken ? { captchaToken } : {})
         });
 
-        if (error) {
-            if (isInvalidCredentialsError(error)) {
-                error.loginSecurity = await requestLoginSecurityAction('record_failure', email);
-            }
-            throw error;
+        if (!loginSecurityResult) {
+            throw new Error(authT('auth.loginServiceUnavailable', '登录服务暂不可用，请稍后重试'));
         }
+
+        if (!loginSecurityResult.ok) {
+            const authError = new Error(loginSecurityResult.message || 'Invalid login credentials');
+            authError.code = loginSecurityResult.code;
+            authError.loginSecurity = loginSecurityResult;
+            throw authError;
+        }
+
+        const accessToken = loginSecurityResult.session?.access_token;
+        const refreshToken = loginSecurityResult.session?.refresh_token;
+        if (!accessToken || !refreshToken) {
+            throw new Error('登录凭证无效，请稍后重试');
+        }
+
+        const { data: sessionData, error: sessionError } = await window.supabaseClient.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+        });
+        if (sessionError) {
+            throw sessionError;
+        }
+
+        const data = {
+            user: sessionData?.user || loginSecurityResult.user,
+            session: sessionData?.session || loginSecurityResult.session
+        };
 
         console.log('✅ 登录成功:', data.user);
 
-        // 🔒 Step 2: 登录成功 - 重置失败计数
+        // 🔒 Step 2: 登录成功 - 重置失败计数（兼容旧端清理）
         await resetLoginFailures(email);
 
         // 获取用户 profile

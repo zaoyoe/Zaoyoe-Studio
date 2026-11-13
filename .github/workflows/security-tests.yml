@@ -8,6 +8,10 @@ on:
       - '.github/workflows/security-tests.yml'
       - 'package.json'
       - 'package-lock.json'
+      - 'supabase/migrations/**'
+      - 'scripts/**'
+      - 'deploy/**'
+      - 'services/kc-pay-gpt/**'
       - 'scripts/check-prod-env.js'
       - 'middleware.js'
       - 'server/**'
@@ -64,6 +68,16 @@ jobs:
 
       - name: Run guarded rollout planner smoke check
         run: npm run rollout:payment -- --env-file server/.env.example --set incremental --project-ref ci-demo-ref --db-url postgresql://example.invalid/postgres
+
+      - name: Audit Supabase migrations for missing RLS or exposed RPCs
+        run: npm run audit:migrations
+
+      - name: Run KC-PAY-GPT store & safety vitest checks
+        env:
+          KC_SESSION_ENCRYPTION_KEY: ci-kc-session-encryption-key-material-0123456789abcdef
+        run: |
+          npm ci --prefix services/kc-pay-gpt
+          (cd services/kc-pay-gpt && ./node_modules/.bin/vitest run test/gpt-outsourcing-store.test.js)
 
   security_test_shards:
     runs-on: ubuntu-latest

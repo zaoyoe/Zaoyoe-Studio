@@ -159,100 +159,125 @@ test('login security preflight reports locked accounts without exposing extra da
     });
 });
 
-test('login security record_failure surfaces automatic IP blacklisting after repeated abuse', async () => {
+test('login security rejects unauthenticated record_failure requests to prevent lockout DoS and allows internal secret calls', async () => {
     let ipCheckCalls = 0;
-    await withLoginSecurityHandler({
-        adminModule: {
-            getSupabaseAdmin() {
-                return {
-                    from(table) {
-                        assert.equal(table, 'system_config');
-                        return {
-                            select() { return this; },
-                            eq() { return this; },
-                            maybeSingle() {
+    let recordFailureCalls = 0;
+    const prevSecret = process.env.INTERNAL_AUTH_SECURITY_SECRET;
+    process.env.INTERNAL_AUTH_SECURITY_SECRET = 'test-internal-auth-secret';
+    try {
+        await withLoginSecurityHandler({
+            adminModule: {
+                getSupabaseAdmin() {
+                    return {
+                        from(table) {
+                            assert.equal(table, 'system_config');
+                            return {
+                                select() { return this; },
+                                eq() { return this; },
+                                maybeSingle() {
+                                    return Promise.resolve({
+                                        data: {
+                                            config_value: {
+                                                login_lockout_attempts: 4,
+                                                lockout_duration: 600000
+                                            }
+                                        },
+                                        error: null
+                                    });
+                                }
+                            };
+                        },
+                        rpc(name) {
+                            if (name === 'check_ip_blacklisted') {
+                                ipCheckCalls += 1;
                                 return Promise.resolve({
                                     data: {
-                                        config_value: {
-                                            login_lockout_attempts: 4,
-                                            lockout_duration: 600000
-                                        }
+                                        blocked: ipCheckCalls > 1,
+                                        reason: ipCheckCalls > 1 ? 'auto blacklist' : null,
+                                        expires_at: ipCheckCalls > 1 ? '2026-03-24T00:00:00.000Z' : null
                                     },
                                     error: null
                                 });
                             }
-                        };
-                    },
-                    rpc(name) {
-                        if (name === 'check_ip_blacklisted') {
-                            ipCheckCalls += 1;
+
+                            if (name === 'record_login_failure') {
+                                recordFailureCalls += 1;
+                                return createRpcResult({
+                                    is_now_locked: true,
+                                    locked_until: '2026-03-23T12:00:00.000Z',
+                                    ip_auto_blocked: true
+                                });
+                            }
+
                             return Promise.resolve({
-                                data: {
-                                    blocked: ipCheckCalls > 1,
-                                    reason: ipCheckCalls > 1 ? 'auto blacklist' : null,
-                                    expires_at: ipCheckCalls > 1 ? '2026-03-24T00:00:00.000Z' : null
-                                },
+                                data: { blocked: false },
                                 error: null
                             });
                         }
-
-                        if (name === 'record_login_failure') {
-                            return createRpcResult({
-                                is_now_locked: true,
-                                locked_until: '2026-03-23T12:00:00.000Z',
-                                ip_auto_blocked: true
-                            });
-                        }
-
-                        return Promise.resolve({
-                            data: { blocked: false },
-                            error: null
-                        });
-                    }
-                };
+                    };
+                },
+                async parseJsonBody(req) {
+                    return req.body || {};
+                },
+                sendJson(res, status, payload) {
+                    res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                    res.end(JSON.stringify(payload));
+                }
             },
-            async parseJsonBody(req) {
-                return req.body || {};
-            },
-            sendJson(res, status, payload) {
-                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
-                res.end(JSON.stringify(payload));
+            requestSecurityModule: {
+                resolveClientIp() {
+                    return '198.51.100.18';
+                },
+                takeRateLimitToken() {
+                    return {
+                        allowed: true,
+                        limit: 20,
+                        remaining: 19,
+                        resetAt: Date.now() + 60_000
+                    };
+                },
+                applyRateLimitHeaders() {}
             }
-        },
-        requestSecurityModule: {
-            resolveClientIp() {
-                return '198.51.100.18';
-            },
-            takeRateLimitToken() {
-                return {
-                    allowed: true,
-                    limit: 20,
-                    remaining: 19,
-                    resetAt: Date.now() + 60_000
-                };
-            },
-            applyRateLimitHeaders() {}
-        }
-    }, async (handler) => {
-        const req = {
-            method: 'POST',
-            body: {
-                action: 'record_failure',
-                email: 'member@example.com'
-            },
-            headers: {}
-        };
-        const res = createMockResponse();
+        }, async (handler) => {
+            const unauthRes = createMockResponse();
+            await handler({
+                method: 'POST',
+                body: {
+                    action: 'record_failure',
+                    email: 'member@example.com'
+                },
+                headers: {}
+            }, unauthRes);
 
-        await handler(req, res);
-        const payload = res.json();
+            assert.equal(unauthRes.statusCode, 403);
+            assert.equal(unauthRes.json().success, false);
+            assert.equal(unauthRes.json().code, 'record_failure_forbidden');
+            assert.equal(recordFailureCalls, 0);
 
-        assert.equal(res.statusCode, 200);
-        assert.equal(payload.success, true);
-        assert.equal(payload.security.account_locked, true);
-        assert.equal(payload.security.ip_blocked, true);
-        assert.equal(payload.security.ip_block_reason, 'auto blacklist');
-    });
+            const internalRes = createMockResponse();
+            await handler({
+                method: 'POST',
+                body: {
+                    action: 'record_failure',
+                    email: 'member@example.com'
+                },
+                headers: {
+                    'x-internal-auth-secret': 'test-internal-auth-secret'
+                }
+            }, internalRes);
+            const payload = internalRes.json();
+
+            assert.equal(internalRes.statusCode, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.security.account_locked, true);
+            assert.equal(payload.security.ip_blocked, true);
+            assert.equal(payload.security.ip_block_reason, 'auto blacklist');
+            assert.equal(recordFailureCalls, 1);
+        });
+    } finally {
+        if (prevSecret === undefined) delete process.env.INTERNAL_AUTH_SECURITY_SECRET;
+        else process.env.INTERNAL_AUTH_SECURITY_SECRET = prevSecret;
+    }
 });
 
 test('login security endpoint returns 429 when rate limited before touching Supabase', async () => {
@@ -410,4 +435,121 @@ test('IP preflight requires an explicit boolean decision from the security looku
             assert.equal(res.json().security, undefined);
         });
     }
+});
+
+test('password_login verifies credentials server-side, records real failures, and returns session on success', async () => {
+    const rpcCalls = [];
+    const signInCalls = [];
+    let accountLocked = false;
+    let authOutcome = { error: Object.assign(new Error('Invalid login credentials'), { code: 'invalid_credentials', status: 400 }) };
+
+    await withLoginSecurityHandler({
+        adminModule: {
+            getSupabaseAdmin() {
+                return {
+                    from(table) {
+                        assert.equal(table, 'system_config');
+                        return {
+                            select() { return this; },
+                            eq() { return this; },
+                            maybeSingle() {
+                                return Promise.resolve({
+                                    data: { config_value: { login_lockout_attempts: 2, lockout_duration: 600000 } },
+                                    error: null
+                                });
+                            }
+                        };
+                    },
+                    rpc(name, args) {
+                        rpcCalls.push({ name, args });
+                        if (name === 'check_ip_blacklisted') {
+                            return Promise.resolve({ data: { blocked: false }, error: null });
+                        }
+                        if (name === 'check_user_locked') {
+                            return createRpcResult({ is_locked: accountLocked, remaining_seconds: accountLocked ? 300 : 0 });
+                        }
+                        if (name === 'record_login_failure') {
+                            return createRpcResult({ is_now_locked: true, locked_until: '2026-11-13T15:00:00.000Z', ip_auto_blocked: false });
+                        }
+                        if (name === 'reset_login_failures') {
+                            return Promise.resolve({ data: null, error: null });
+                        }
+                        throw new Error(`Unexpected RPC ${name}`);
+                    }
+                };
+            },
+            createSupabasePasswordVerificationClient() {
+                return {
+                    auth: {
+                        async signInWithPassword(input) {
+                            signInCalls.push(input);
+                            return authOutcome;
+                        }
+                    }
+                };
+            },
+            async parseJsonBody(req) {
+                return req.body || {};
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+            }
+        },
+        requestSecurityModule: {
+            resolveClientIp() { return '203.0.113.55'; },
+            takeRateLimitToken() { return { allowed: true, limit: 20, remaining: 19, resetAt: Date.now() + 60_000 }; },
+            applyRateLimitHeaders() {}
+        }
+    }, async (handler) => {
+        const missingPasswordRes = createMockResponse();
+        await handler({ method: 'POST', body: { action: 'password_login', email: 'user@example.com' }, headers: {} }, missingPasswordRes);
+        assert.equal(missingPasswordRes.statusCode, 400);
+
+        const badCredsRes = createMockResponse();
+        await handler({
+            method: 'POST',
+            body: { action: 'password_login', email: 'User@Example.com ', password: 'wrong-password', captchaToken: 'cf-turnstile-tok' },
+            headers: {}
+        }, badCredsRes);
+        assert.equal(badCredsRes.statusCode, 401);
+        assert.equal(badCredsRes.json().code, 'invalid_credentials');
+        assert.equal(badCredsRes.json().security.account_locked, true);
+        assert.deepEqual(signInCalls[0], {
+            email: 'user@example.com',
+            password: 'wrong-password',
+            options: { captchaToken: 'cf-turnstile-tok' }
+        });
+        assert.ok(rpcCalls.some((c) => c.name === 'record_login_failure'));
+
+        const priorFailures = rpcCalls.filter((c) => c.name === 'record_login_failure').length;
+        authOutcome = { error: Object.assign(new Error('Email not confirmed'), { code: 'email_not_confirmed', status: 400 }) };
+        const unconfirmedRes = createMockResponse();
+        await handler({ method: 'POST', body: { action: 'password_login', email: 'user@example.com', password: 'good-password' }, headers: {} }, unconfirmedRes);
+        assert.equal(unconfirmedRes.statusCode, 400);
+        assert.equal(unconfirmedRes.json().code, 'email_not_confirmed');
+        assert.equal(rpcCalls.filter((c) => c.name === 'record_login_failure').length, priorFailures);
+
+        authOutcome = {
+            data: {
+                session: { access_token: 'acc-1', refresh_token: 'ref-1', expires_in: 3600, token_type: 'bearer' },
+                user: { id: 'user-1', email: 'user@example.com' }
+            },
+            error: null
+        };
+        const successRes = createMockResponse();
+        await handler({ method: 'POST', body: { action: 'password_login', email: 'user@example.com', password: 'good-password' }, headers: {} }, successRes);
+        assert.equal(successRes.statusCode, 200);
+        assert.equal(successRes.json().success, true);
+        assert.equal(successRes.json().session.access_token, 'acc-1');
+        assert.ok(rpcCalls.some((c) => c.name === 'reset_login_failures' && c.args.user_email === 'user@example.com'));
+
+        accountLocked = true;
+        const lockedSignInsBefore = signInCalls.length;
+        const lockedRes = createMockResponse();
+        await handler({ method: 'POST', body: { action: 'password_login', email: 'user@example.com', password: 'good-password' }, headers: {} }, lockedRes);
+        assert.equal(lockedRes.statusCode, 429);
+        assert.equal(lockedRes.json().code, 'account_locked');
+        assert.equal(signInCalls.length, lockedSignInsBefore);
+    });
 });

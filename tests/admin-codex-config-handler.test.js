@@ -334,3 +334,126 @@ test('codex config handler redacts upstream secrets from failed connectivity pro
         assert.equal(payload.error.apiKey, '[redacted]');
     });
 });
+
+test('codex config handler refuses to send stored apiKey to a modified testOnly baseUrl', async () => {
+    await withCodexConfigHandler({
+        runtimeConfig: {
+            source: 'stored',
+            apiKey: 'sk-existing-codex-key-1234567890',
+            baseUrl: 'https://api.cisct.xyz',
+            model: 'gpt-5.4',
+            apiFormat: 'responses'
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                testOnly: true,
+                baseUrl: 'https://evil-collector.example.com',
+                model: 'gpt-5.4',
+                apiFormat: 'responses'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 400);
+        assert.equal(state.fetchCalls.length, 0);
+    });
+});
+
+test('codex config handler blocks private, metadata, and DNS-rebound probe targets', async () => {
+    const dns = require('node:dns');
+    const originalLookup = dns.promises.lookup;
+
+    try {
+        dns.promises.lookup = async (hostname) => {
+            if (hostname === 'rebind.example.com') {
+                return [{ address: '10.0.0.5', family: 4 }];
+            }
+            return [{ address: '93.184.216.34', family: 4 }];
+        };
+
+        for (const blockedBaseUrl of [
+            'http://127.0.0.1:8080',
+            'http://169.254.169.254',
+            'http://[::ffff:127.0.0.1]:8080',
+            'https://rebind.example.com'
+        ]) {
+            await withCodexConfigHandler({
+                runtimeConfig: {
+                    source: 'stored',
+                    apiKey: 'sk-existing-codex-key-1234567890',
+                    baseUrl: blockedBaseUrl,
+                    model: 'gpt-5.4',
+                    apiFormat: 'responses'
+                }
+            }, async ({ handler, state }) => {
+                const res = createMockResponse();
+
+                await handler({
+                    method: 'POST',
+                    headers: {},
+                    body: {
+                        testOnly: true,
+                        apiKey: 'sk-probe-explicit-key-1234567890',
+                        baseUrl: blockedBaseUrl,
+                        model: 'gpt-5.4',
+                        apiFormat: 'responses'
+                    }
+                }, res);
+
+                assert.equal(res.statusCode, 400);
+                assert.equal(state.fetchCalls.length, 0);
+            });
+        }
+    } finally {
+        dns.promises.lookup = originalLookup;
+    }
+});
+
+test('codex config handler rejects 3xx redirect responses during connectivity probes', async () => {
+    const dns = require('node:dns');
+    const originalLookup = dns.promises.lookup;
+    dns.promises.lookup = async () => [{ address: '93.184.216.34', family: 4 }];
+
+    try {
+        await withCodexConfigHandler({
+            runtimeConfig: {
+                source: 'stored',
+                apiKey: 'sk-existing-codex-key-1234567890',
+                baseUrl: 'https://api.cisct.xyz',
+                model: 'gpt-5.4',
+                apiFormat: 'responses'
+            },
+            fetchImpl: async () => ({
+                ok: false,
+                status: 302,
+                headers: new Headers({ location: 'http://127.0.0.1/latest/meta-data/' }),
+                async json() {
+                    return {};
+                }
+            })
+        }, async ({ handler, state }) => {
+            const res = createMockResponse();
+
+            await handler({
+                method: 'POST',
+                headers: {},
+                body: {
+                    testOnly: true,
+                    baseUrl: 'https://api.cisct.xyz',
+                    model: 'gpt-5.4',
+                    apiFormat: 'responses'
+                }
+            }, res);
+
+            assert.equal(res.statusCode, 400);
+            assert.equal(state.fetchCalls.length, 1);
+            assert.equal(state.fetchCalls[0].init.redirect, 'manual');
+        });
+    } finally {
+        dns.promises.lookup = originalLookup;
+    }
+});

@@ -10,6 +10,23 @@ const {
 const {
     issuePaymentIntentClaimToken
 } = require('../api/_lib/payments/orders');
+const {
+    issueAdminStudioToken
+} = require('../api/_lib/admin-studio-access.mjs');
+
+const TEST_MEMBER_ID = '33333333-3333-4333-8333-333333333333';
+const TEST_ADMIN_ID = '11111111-1111-4111-8111-111111111111';
+const TEST_SESSION_ID = '22222222-2222-4222-8222-222222222222';
+const TEST_STUDIO_GRANT_ID = '44444444-4444-4444-8444-444444444444';
+
+function buildTestBearerJwt(userId, sessionId = TEST_SESSION_ID) {
+    const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+    return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({
+        sub: userId,
+        session_id: sessionId,
+        exp: Math.floor(Date.now() / 1000) + 3600
+    })}.test-signature`;
+}
 
 function createQueryBuilder(executor) {
     const state = {
@@ -197,10 +214,35 @@ function createSupabaseStub(state = {}) {
                     return { data: { user }, error: null };
                 }
                 return { data: { user: null }, error: { message: 'Unauthorized' } };
+            },
+            admin: {
+                async getUserById(userId) {
+                    const user = state.usersById?.[userId]
+                        || Object.values(tokens).find((entry) => entry?.id === userId)
+                        || null;
+                    if (user) {
+                        return { data: { user }, error: null };
+                    }
+                    return { data: { user: null }, error: { message: 'User not found' } };
+                }
             }
         },
         rpc(name, args = {}) {
             rpcCalls.push({ name, args });
+            if (name === 'admin_auth_session_active') {
+                return createRpcResult(
+                    state.activeBearerSession === undefined ? true : state.activeBearerSession,
+                    state.activeBearerSessionError || null
+                );
+            }
+
+            if (name === 'admin_studio_session_active') {
+                return createRpcResult(
+                    state.activeStudioSession === undefined ? true : state.activeStudioSession,
+                    state.activeStudioSessionError || null
+                );
+            }
+
             if (name === 'get_user_permissions') {
                 return createRpcResult(
                     permissions[args.p_user_id] || {
@@ -853,15 +895,16 @@ test('quota endpoint rejects unauthenticated external access', async () => {
 });
 
 test('quota endpoint requires admin privileges for authenticated external users', async () => {
+    const memberJwt = buildTestBearerJwt(TEST_MEMBER_ID);
     await withTestServer({
         tokens: {
-            'member-token': { id: 'user-1', email: 'member@example.com' }
+            [memberJwt]: { id: TEST_MEMBER_ID, email: 'member@example.com' }
         }
     }, async ({ app }) => {
         const response = await dispatchRoute(app, {
             url: '/api/quota',
             headers: {
-                Authorization: 'Bearer member-token',
+                Authorization: `Bearer ${memberJwt}`,
                 Host: 'verify-api.fatherkey.com'
             }
         });
@@ -873,12 +916,13 @@ test('quota endpoint requires admin privileges for authenticated external users'
 });
 
 test('quota endpoint allows admins and proxies upstream data', async () => {
+    const adminJwt = buildTestBearerJwt(TEST_ADMIN_ID);
     await withTestServer({
         tokens: {
-            'admin-token': { id: 'admin-1', email: 'admin@example.com' }
+            [adminJwt]: { id: TEST_ADMIN_ID, email: 'admin@example.com' }
         },
         permissions: {
-            'admin-1': { is_admin: true, is_super_admin: false }
+            [TEST_ADMIN_ID]: { is_admin: true, is_super_admin: false, permissions: ['settings.manage'] }
         }
     }, async ({ app }) => {
         const originalFetch = global.fetch;
@@ -907,7 +951,7 @@ test('quota endpoint allows admins and proxies upstream data', async () => {
             const response = await dispatchRoute(app, {
                 url: '/api/quota',
                 headers: {
-                    Authorization: 'Bearer admin-token',
+                    Authorization: `Bearer ${adminJwt}`,
                     Host: 'verify-api.fatherkey.com'
                 }
             });
@@ -924,7 +968,9 @@ test('quota endpoint allows admins and proxies upstream data', async () => {
             assert.equal(payload.full_cost_per_job, 1);
             assert.match(payload.key_name, /^veri\.\.\..+/);
             assert.equal(Array.isArray(payload.key_states), true);
-            assert.equal(payload.key_states[0].api_key, 'verify-api-key');
+            assert.equal(payload.key_states[0].api_key, undefined);
+            assert.match(payload.key_states[0].masked_key, /^veri\.\.\..+/);
+            assert.match(payload.key_states[0].key_fingerprint, /^sha256:[0-9a-f]{24}$/);
             assert.equal(payload.key_states[0].remaining_uses, 11);
         } finally {
             global.fetch = originalFetch;
@@ -974,7 +1020,9 @@ test('quota endpoint allows requests signed with verify monitor internal key', a
                 assert.equal(payload.remaining_full_jobs, 9);
                 assert.match(payload.key_name, /^veri\.\.\..+/);
                 assert.equal(Array.isArray(payload.key_states), true);
-                assert.equal(payload.key_states[0].api_key, 'verify-api-key');
+                assert.equal(payload.key_states[0].api_key, undefined);
+                assert.match(payload.key_states[0].masked_key, /^veri\.\.\..+/);
+                assert.match(payload.key_states[0].key_fingerprint, /^sha256:[0-9a-f]{24}$/);
             } finally {
                 global.fetch = originalFetch;
             }
@@ -998,15 +1046,16 @@ test('quota endpoint rejects localhost access without admin auth', async () => {
 });
 
 test('queue endpoint requires admin privileges', async () => {
+    const memberJwt = buildTestBearerJwt(TEST_MEMBER_ID);
     await withTestServer({
         tokens: {
-            'member-token': { id: 'user-1', email: 'member@example.com' }
+            [memberJwt]: { id: TEST_MEMBER_ID, email: 'member@example.com' }
         }
     }, async ({ app }) => {
         const response = await dispatchRoute(app, {
             url: '/api/queue',
             headers: {
-                Authorization: 'Bearer member-token'
+                Authorization: `Bearer ${memberJwt}`
             }
         });
         const payload = response.json();
@@ -1032,12 +1081,13 @@ test('queue endpoint rejects localhost access without admin auth', async () => {
 });
 
 test('queue endpoint allows admins and proxies upstream data', async () => {
+    const adminJwt = buildTestBearerJwt(TEST_ADMIN_ID);
     await withTestServer({
         tokens: {
-            'admin-token': { id: 'admin-1', email: 'admin@example.com' }
+            [adminJwt]: { id: TEST_ADMIN_ID, email: 'admin@example.com' }
         },
         permissions: {
-            'admin-1': { is_admin: true, is_super_admin: false }
+            [TEST_ADMIN_ID]: { is_admin: true, is_super_admin: false, permissions: ['settings.manage'] }
         },
         verificationLogs: [
             {
@@ -1072,7 +1122,7 @@ test('queue endpoint allows admins and proxies upstream data', async () => {
         const response = await dispatchRoute(app, {
             url: '/api/queue',
             headers: {
-                Authorization: 'Bearer admin-token'
+                Authorization: `Bearer ${adminJwt}`
             }
         });
         const payload = response.json();
@@ -1144,15 +1194,16 @@ test('network request-context endpoint does not accept verify monitor internal k
 });
 
 test('network request-context endpoint requires admin privileges', async () => {
+    const memberJwt = buildTestBearerJwt(TEST_MEMBER_ID);
     await withTestServer({
         tokens: {
-            'member-token': { id: 'user-1', email: 'member@example.com' }
+            [memberJwt]: { id: TEST_MEMBER_ID, email: 'member@example.com' }
         }
     }, async ({ app }) => {
         const response = await dispatchRoute(app, {
             url: '/api/admin/network/request-context',
             headers: {
-                Authorization: 'Bearer member-token'
+                Authorization: `Bearer ${memberJwt}`
             },
             remoteAddress: '10.0.0.2'
         });
@@ -1164,12 +1215,13 @@ test('network request-context endpoint requires admin privileges', async () => {
 });
 
 test('network request-context endpoint returns proxy diagnostics for admins', async () => {
+    const adminJwt = buildTestBearerJwt(TEST_ADMIN_ID);
     await withTestServer({
         tokens: {
-            'admin-token': { id: 'admin-1', email: 'admin@example.com' }
+            [adminJwt]: { id: TEST_ADMIN_ID, email: 'admin@example.com' }
         },
         permissions: {
-            'admin-1': { is_admin: true, is_super_admin: false }
+            [TEST_ADMIN_ID]: { is_admin: true, is_super_admin: false, permissions: ['settings.manage'] }
         }
     }, async ({ app }) => {
         const response = await withEnv({
@@ -1180,7 +1232,7 @@ test('network request-context endpoint returns proxy diagnostics for admins', as
         }, async () => dispatchRoute(app, {
             url: '/api/admin/network/request-context',
             headers: {
-                Authorization: 'Bearer admin-token',
+                Authorization: `Bearer ${adminJwt}`,
                 Host: 'verify-api.fatherkey.com',
                 'x-forwarded-for': '198.51.100.23, 10.0.0.2',
                 forwarded: 'for=198.51.100.23;proto=https'
@@ -1203,12 +1255,13 @@ test('network request-context endpoint returns proxy diagnostics for admins', as
 });
 
 test('network request-context endpoint flags mismatched trusted proxy rules', async () => {
+    const adminJwt = buildTestBearerJwt(TEST_ADMIN_ID);
     await withTestServer({
         tokens: {
-            'admin-token': { id: 'admin-1', email: 'admin@example.com' }
+            [adminJwt]: { id: TEST_ADMIN_ID, email: 'admin@example.com' }
         },
         permissions: {
-            'admin-1': { is_admin: true, is_super_admin: false }
+            [TEST_ADMIN_ID]: { is_admin: true, is_super_admin: false, permissions: ['settings.manage'] }
         }
     }, async ({ app }) => {
         const response = await withEnv({
@@ -1219,7 +1272,7 @@ test('network request-context endpoint flags mismatched trusted proxy rules', as
         }, async () => dispatchRoute(app, {
             url: '/api/admin/network/request-context',
             headers: {
-                Authorization: 'Bearer admin-token',
+                Authorization: `Bearer ${adminJwt}`,
                 Host: 'verify-api.fatherkey.com',
                 'x-forwarded-for': '198.51.100.23',
                 'x-real-ip': '198.51.100.23'
@@ -1235,6 +1288,101 @@ test('network request-context endpoint flags mismatched trusted proxy rules', as
         assert.equal(payload.request_context.app_proxy.resolved_client_ip, '100.64.0.4');
         assert.equal(findingCodes.includes('proxy_trust_chain_mismatch'), true);
         assert.equal(findingCodes.includes('afdian_webhook_proxy_trust_mismatch'), true);
+    });
+});
+
+test('verify admin endpoints reject revoked bearer sessions and missing RBAC permissions', async () => {
+    const adminJwt = buildTestBearerJwt(TEST_ADMIN_ID);
+
+    await withTestServer({
+        activeBearerSession: false,
+        tokens: {
+            [adminJwt]: { id: TEST_ADMIN_ID, email: 'admin@example.com' }
+        },
+        permissions: {
+            [TEST_ADMIN_ID]: { is_admin: true, is_super_admin: false, permissions: ['settings.manage'] }
+        }
+    }, async ({ app }) => {
+        const response = await dispatchRoute(app, {
+            url: '/api/quota',
+            headers: {
+                Authorization: `Bearer ${adminJwt}`,
+                Host: 'verify-api.fatherkey.com'
+            }
+        });
+        assert.equal(response.status, 401);
+    });
+
+    await withTestServer({
+        tokens: {
+            [adminJwt]: { id: TEST_ADMIN_ID, email: 'admin@example.com' }
+        },
+        permissions: {
+            [TEST_ADMIN_ID]: { is_admin: true, is_super_admin: false, permissions: ['analytics.view'] }
+        }
+    }, async ({ app }) => {
+        for (const url of ['/api/quota', '/api/queue', '/api/admin/network/request-context']) {
+            const response = await dispatchRoute(app, {
+                url,
+                headers: {
+                    Authorization: `Bearer ${adminJwt}`,
+                    Host: 'verify-api.fatherkey.com'
+                },
+                remoteAddress: '10.0.0.2'
+            });
+            const payload = response.json();
+            assert.equal(response.status, 403);
+            assert.equal(payload.code, 'admin_permission_required');
+        }
+    });
+});
+
+test('verify admin endpoints honor active zaoyoe_admin_studio cookies and reject revoked studio grants', async () => {
+    await withEnv({ ADMIN_STUDIO_ACCESS_SECRET: 'verify-route-studio-secret' }, async () => {
+        const studioCookieToken = await issueAdminStudioToken({
+            sub: TEST_ADMIN_ID,
+            sid: TEST_STUDIO_GRANT_ID
+        });
+
+        await withTestServer({
+            activeStudioSession: true,
+            usersById: {
+                [TEST_ADMIN_ID]: { id: TEST_ADMIN_ID, email: 'admin@example.com' }
+            },
+            permissions: {
+                [TEST_ADMIN_ID]: { is_admin: true, is_super_admin: false, permissions: ['settings.manage'] }
+            }
+        }, async ({ app }) => {
+            const response = await dispatchRoute(app, {
+                url: '/api/queue',
+                headers: {
+                    Cookie: `zaoyoe_admin_studio=${studioCookieToken}`,
+                    Host: 'verify-api.fatherkey.com'
+                }
+            });
+            const payload = response.json();
+            assert.equal(response.status, 200);
+            assert.equal(payload.success, true);
+        });
+
+        await withTestServer({
+            activeStudioSession: false,
+            usersById: {
+                [TEST_ADMIN_ID]: { id: TEST_ADMIN_ID, email: 'admin@example.com' }
+            },
+            permissions: {
+                [TEST_ADMIN_ID]: { is_admin: true, is_super_admin: false, permissions: ['settings.manage'] }
+            }
+        }, async ({ app }) => {
+            const response = await dispatchRoute(app, {
+                url: '/api/queue',
+                headers: {
+                    Cookie: `zaoyoe_admin_studio=${studioCookieToken}`,
+                    Host: 'verify-api.fatherkey.com'
+                }
+            });
+            assert.equal(response.status, 401);
+        });
     });
 });
 

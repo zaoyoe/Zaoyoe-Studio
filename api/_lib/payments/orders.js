@@ -21,6 +21,9 @@ const {
     rechargePointsForPayment
 } = require('./rpc');
 const {
+    isTerminalRefundPaymentOrder
+} = require('./order-state');
+const {
     maybeIssueAffiliateDiscountAssetsForRecharge,
     maybeIssueRechargeDiscountAssets
 } = require('../discount-trigger-linkage');
@@ -2093,14 +2096,20 @@ async function attemptZpayPaymentStatusRefresh({
     }
 
     const normalizedOrderStatus = sanitizeText(paymentOrder?.status, '', 40).toLowerCase();
-    if (['paid', 'redeemed', 'pending_review', 'amount_mismatch', 'rejected'].includes(normalizedOrderStatus)) {
+    if (
+        ['paid', 'redeemed', 'pending_review', 'amount_mismatch', 'rejected', 'refunded'].includes(normalizedOrderStatus)
+        || isTerminalRefundPaymentOrder(paymentOrder)
+    ) {
         return { refreshed: false, reason: 'already_resolved' };
     }
 
     return runWithPaymentOrderLock(`zpay:${normalizedOrderNo}`, async () => {
         const lockedOrder = (await loadPaymentOrderForLinking(supabase, normalizedOrderId)) || paymentOrder;
         const lockedOrderStatus = sanitizeText(lockedOrder?.status, '', 40).toLowerCase();
-        if (['paid', 'redeemed', 'pending_review', 'amount_mismatch', 'rejected'].includes(lockedOrderStatus)) {
+        if (
+            ['paid', 'redeemed', 'pending_review', 'amount_mismatch', 'rejected', 'refunded'].includes(lockedOrderStatus)
+            || isTerminalRefundPaymentOrder(lockedOrder)
+        ) {
             return { refreshed: false, reason: 'already_resolved' };
         }
 

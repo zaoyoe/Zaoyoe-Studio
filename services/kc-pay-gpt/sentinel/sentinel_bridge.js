@@ -170,10 +170,11 @@ function solvePoW(g, seed, difficulty) {
   return "gAAAAAB" + ERR_PREFIX + b64Compact(null) + "~S";
 }
 
-function makeFetch(ua, language, cookieHeader, dispatcher, fetchImpl, sentinelOrigin, frameUrl) {
+function makeFetch(ua, language, acceptLanguage, secChUa, secChUaPlatform, deviceId, cookieHeader, dispatcher, fetchImpl, sentinelOrigin, frameUrl) {
   // sdk 里的 fetch 桥到 fetchImpl：改写 URL 到 sentinel.openai.com、补头、走代理。
   // 关键：dispatcher 与 fetchImpl 必须来自同一个 undici 版本，否则 Node 内置 fetch
   // 校验外部 dispatcher 的 Request handler 会报 "invalid onRequestStart method"。
+  const baseLang = String(language || "en-US").split("-")[0] || "en";
   return function (url, opts) {
     opts = opts || {};
     let u = String(url);
@@ -189,7 +190,14 @@ function makeFetch(ua, language, cookieHeader, dispatcher, fetchImpl, sentinelOr
         referer: frameUrl,
         "user-agent": ua,
         accept: "*/*",
-        "accept-language": `${language},${language.split("-")[0]};q=0.9,en;q=0.8`,
+        "accept-language": acceptLanguage || `${language},${baseLang};q=0.9,en;q=0.8`,
+        ...(secChUa ? { "sec-ch-ua": secChUa } : {}),
+        "sec-ch-ua-mobile": "?0",
+        ...(secChUaPlatform ? { "sec-ch-ua-platform": secChUaPlatform } : {}),
+        "sec-fetch-site": "same-origin",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-dest": "empty",
+        ...(deviceId ? { "oai-device-id": deviceId } : {}),
         ...(cookieHeader ? { cookie: cookieHeader } : {}),
       },
       opts.headers || {}
@@ -421,30 +429,46 @@ async function handleRequest(raw) {
   const version = args.version || "20260219f9f6";
   const pageUrl = args.pageUrl || "https://auth.openai.com/about-you";
   const language = args.language || "en-US";
+  const acceptLanguage = args.acceptLanguage || "";
   const timezone = args.timezone || "America/Chicago";
   const cookieHeader = args.cookieHeader || "";
   const sentinelOrigin = args.sentinelOrigin || "https://chatgpt.com";
   // 指纹档案驱动（与请求 UA/平台/屏幕一致，避免哨兵身份与请求身份打架）
   const platform = args.platform || "Win32";
   const platformLabel = args.platformLabel || "Windows";
+  const secChUa = args.secChUa || "";
+  const secChUaPlatform = args.secChUaPlatform || `"${platformLabel}"`;
   const screenW = Number(args.screenW) || 1920;
   const screenH = Number(args.screenH) || 1080;
   const availH = Number(args.availH) || (screenH - 48);
   const maxTouch = args.maxTouchPoints ? 1 : 0;
   const frameUrl = `${sentinelOrigin}/backend-api/sentinel/frame.html?sv=${version}`;
 
-  // fetch + ProxyAgent 必须同源（同一 undici 版本）。优先用 npm undici；
-  // 无代理且 undici 缺失时退回 Node 内置全局 fetch。
+  // 优先使用 impit (Chrome TLS 指纹)，与 session-auth / payments/checkout 保持同一条传输指纹；
+  // 无 impit 时退回 npm undici；SOCKS 代理走 Python curl_cffi。
+  let impitClient = null;
+  if (!proxy || /^https?:/i.test(proxy)) {
+    try {
+      const { Impit } = require("impit");
+      impitClient = new Impit({
+        browser: "chrome",
+        proxyUrl: proxy || undefined,
+        ignoreTlsErrors: true,
+        timeout: 25000,
+      });
+    } catch (_) {}
+  }
+
   let undici = null;
   try {
     undici = require("undici");
   } catch (_) {}
 
-  // 代理（undici ProxyAgent）——与注册同 IP 命中 /sentinel/req。
-  // 注意：undici 不会自动解析 URL 里的 user:pass@，必须显式给 Proxy-Authorization token。
   let dispatcher = null;
-  let fetchImpl = undici && undici.fetch ? undici.fetch : fetch;
-  if (proxy) {
+  let fetchImpl = impitClient
+    ? (u, fopts) => impitClient.fetch(u, fopts)
+    : (undici && undici.fetch ? undici.fetch : fetch);
+  if (proxy && !impitClient) {
     if (undici && /^https?:/i.test(proxy)) {
       try {
         const pu = new URL(proxy);
@@ -470,6 +494,7 @@ async function handleRequest(raw) {
 
   // Node 的 crypto/navigator/performance/self 是只读全局，会和 bootstrap 的赋值冲突。
   // 用独立 vm 沙箱（全新 global），只注入 sdk 实际需要的 host 能力。
+  const baseLang = String(language).split("-")[0] || "en";
   const sandbox = {
     console,
     setTimeout,
@@ -480,6 +505,10 @@ async function handleRequest(raw) {
     fetch: makeFetch(
       ua,
       language,
+      acceptLanguage,
+      secChUa,
+      secChUaPlatform,
+      deviceId,
       cookieHeader,
       dispatcher,
       fetchImpl,
@@ -500,7 +529,7 @@ async function handleRequest(raw) {
     __SEED_DID_VAL__: deviceId,
     __PAGE_URL__: pageUrl,
     __LANGUAGE__: language,
-    __LANGUAGES__: [language, "en-US", "en"],
+    __LANGUAGES__: [...new Set([language, baseLang, "en-US", "en"].filter(Boolean))],
     __TIMEZONE__: timezone,
     __COOKIE_HEADER__: cookieHeader,
     __PLATFORM__: platform,

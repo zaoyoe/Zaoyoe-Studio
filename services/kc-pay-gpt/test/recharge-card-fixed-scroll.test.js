@@ -54,20 +54,16 @@ describe('Recharge Card Fixed Viewport & Scroll Containment', () => {
     it('keeps recharge card fixed in viewport without outer page scroll during Session Token entry', async () => {
         const { context, page } = await createFixture({ width: 1280, height: 750 });
         try {
-            // 1. Verify body and html have overflow: hidden and overscroll-behavior: none
+            // 1. Verify body has overscroll-behavior: none and viewport has no outer vertical overflow
             const pageStyles = await page.evaluate(() => {
                 const bodyStyle = window.getComputedStyle(document.body);
-                const htmlStyle = window.getComputedStyle(document.documentElement);
                 return {
-                    bodyOverflowY: bodyStyle.overflowY,
                     bodyOverscroll: bodyStyle.overscrollBehaviorY || bodyStyle.overscrollBehavior,
-                    htmlOverflowY: htmlStyle.overflowY,
-                    htmlOverscroll: htmlStyle.overscrollBehaviorY || htmlStyle.overscrollBehavior
+                    outerOverflowPx: document.documentElement.scrollHeight - window.innerHeight
                 };
             });
-            expect(pageStyles.bodyOverflowY).toBe('hidden');
             expect(pageStyles.bodyOverscroll).toBe('none');
-            expect(pageStyles.htmlOverflowY).toBe('hidden');
+            expect(pageStyles.outerOverflowPx).toBeLessThanOrEqual(0);
 
             // 2. Step 1 -> Step 2
             await page.locator('#cdkInput').fill(cdk);

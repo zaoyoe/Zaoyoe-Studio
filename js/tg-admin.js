@@ -1827,18 +1827,21 @@
         updateAdminNavigation();
         return true;
     }
+    function assertSecurityState(security) {
+        if (typeof security?.ip_blocked !== 'boolean' || typeof security?.account_locked !== 'boolean') throw sessionRetryError('登录安全检查暂不可用，请稍后重试');
+        if (security.ip_blocked) throw new Error('当前网络受到安全限制，请稍后再试或联系管理员');
+        if (security.account_locked) {
+            const seconds = Number(security.remaining_seconds);
+            const wait = Number.isFinite(seconds) && seconds > 0 ? `，请约 ${Math.ceil(seconds / 60)} 分钟后重试` : '，请稍后再试或联系管理员';
+            throw new Error(`该账号登录受到安全限制${wait}`);
+        }
+    }
     async function securityCheck(action, email) {
         if (action !== 'preflight_ip' && !text(email)) throw new Error('无法确认账号信息，请重新登录');
         let data;
         try { data = await post('/api/auth/login-security', { action, ...(email ? { email } : {}) }); }
         catch (error) { if ([401, 403].includes(error.status)) throw error; throw sessionRetryError('登录安全检查暂不可用，请稍后重试'); }
-        if (typeof data.security?.ip_blocked !== 'boolean' || typeof data.security?.account_locked !== 'boolean') throw sessionRetryError('登录安全检查暂不可用，请稍后重试');
-        if (data.security.ip_blocked) throw new Error('当前网络受到安全限制，请稍后再试或联系管理员');
-        if (data.security.account_locked) {
-            const seconds = Number(data.security.remaining_seconds);
-            const wait = Number.isFinite(seconds) && seconds > 0 ? `，请约 ${Math.ceil(seconds / 60)} 分钟后重试` : '，请稍后再试或联系管理员';
-            throw new Error(`该账号登录受到安全限制${wait}`);
-        }
+        assertSecurityState(data.security);
     }
     async function clearTgSession() {
         state.authenticated = false; closePurchaseReview(); closeDetail(); $('tgAdminApp').hidden = true;
@@ -1879,11 +1882,25 @@
         notice('tgLoginMessage', '正在安全验证并登录…');
         try {
             await securityCheck('preflight', email);
-            const result = await client.auth.signInWithPassword({ email, password });
-            if (result.error) {
-                if (result.error.code === 'invalid_credentials') { await securityCheck('record_failure', email); throw new Error('邮箱或密码错误，或当前账号暂不可登录'); }
+            let response;
+            try {
+                response = await globalScope.fetch('/api/auth/login-security', {
+                    method: 'POST', credentials: 'same-origin', cache: 'no-store',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'password_login', email, password })
+                });
+            } catch (_) { throw new Error('邮箱登录暂不可用，请稍后重试'); }
+            const data = await response.json().catch(() => ({}));
+            if (response.status === 429 && data.code !== 'account_locked') throw sessionRetryError('登录安全检查暂不可用，请稍后重试');
+            if (data.security) assertSecurityState(data.security);
+            if (!response.ok || data.success === false) {
+                if (response.status === 401 || data.code === 'invalid_credentials') throw new Error('邮箱或密码错误，或当前账号暂不可登录');
                 throw new Error('邮箱登录暂不可用，请稍后重试');
             }
+            const accessToken = data.session?.access_token; const refreshToken = data.session?.refresh_token;
+            if (!accessToken || !refreshToken) throw new Error('邮箱登录暂不可用，请稍后重试');
+            const sessionResult = await client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+            if (sessionResult?.error) throw new Error('邮箱登录暂不可用，请稍后重试');
             form.elements.password.value = ''; globalScope.AdminAccess.clearAccessCache(); await verifyAccess();
         } catch (error) { notice('tgLoginMessage', error.message || '登录失败，请稍后重试', 'error'); }
         finally { form.elements.password.value = ''; state.loggingIn = false; updateLoginControls(); }
