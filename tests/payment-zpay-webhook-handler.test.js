@@ -40,7 +40,8 @@ function createSupabaseMock(state) {
         from(table) {
             if (table === 'payment_events') {
                 return {
-                    select() {
+                    select(selection) {
+                        state.paymentEventSelect = selection;
                         return {
                             eq(column, value) {
                                 state.eventLookupWhere = { column, value };
@@ -216,6 +217,9 @@ function buildDependencyMocks(state) {
                     },
                     async queryOrder({ runtimeContext, providerOrderNo, tradeNo }) {
                         state.queryOrderRequest = { runtimeContext, providerOrderNo, tradeNo };
+                        if (typeof state.onQueryOrder === 'function') {
+                            await state.onQueryOrder({ runtimeContext, providerOrderNo, tradeNo });
+                        }
                         if (state.queryOrderError) {
                             throw state.queryOrderError;
                         }
@@ -271,7 +275,7 @@ function buildDependencyMocks(state) {
         './rpc': {
             async rechargePointsForPayment(payload) {
                 state.rechargePayload = payload;
-                return {
+                return state.rechargeResult || {
                     error: null
                 };
             }
@@ -872,5 +876,238 @@ for (const [expected, notification, queryAmount, shouldCredit] of [
             assert.equal(state.rechargePayload, undefined);
             assert.notEqual(state.paymentOrderPatch?.amount_verified, true);
         }
+    });
+});
+
+test('zpay webhook re-reads payment_orders after active query and skips duplicate credit when already settled', async () => {
+    const state = {
+        existingPaymentOrder: {
+            id: 'order-race-1',
+            user_id: 'user-race-1',
+            provider: 'zpay',
+            provider_order_no: 'ZP789',
+            checkout_session_id: 'checkout-race-1',
+            site: 'cn',
+            package_id: 'pkg-1',
+            package_name: '测试套餐',
+            expected_amount: 18.18,
+            points_amount: 18,
+            status: 'pending',
+            raw_payload: {
+                request: { out_trade_no: 'ZP789' }
+            },
+            provider_metadata: {
+                payment_type: 'alipay'
+            }
+        },
+        queryOrderResult: {
+            supported: true,
+            success: true,
+            providerOrderNo: 'ZP789',
+            tradeNo: 'TRADE-789',
+            paidAmount: 18.18,
+            status: 'paid',
+            statusRaw: 'TRADE_SUCCESS',
+            responsePayload: { code: '1', status: 1 }
+        },
+        async onQueryOrder() {
+            // Simulate concurrent zpay_status_poll settling the order while queryOrder HTTP call is in flight.
+            state.existingPaymentOrder = {
+                ...state.existingPaymentOrder,
+                status: 'redeemed',
+                paid_amount: 18.18,
+                paid_at: '2026-11-12T05:17:54.000Z',
+                verified_at: '2026-11-12T05:17:54.000Z',
+                claimed_at: '2026-11-12T05:17:54.000Z',
+                raw_payload: {
+                    request: { out_trade_no: 'ZP789' },
+                    zpay_status_poll: { code: '1', status: 1 }
+                },
+                provider_metadata: {
+                    payment_type: 'alipay',
+                    auto_reconciled_by: 'zpay_status_poll',
+                    status_poll_query_at: '2026-11-12T05:17:54.000Z'
+                }
+            };
+        }
+    };
+
+    await withZpayWebhookModule(buildDependencyMocks(state), async ({ createZpayWebhookHandler }) => {
+        const handler = createZpayWebhookHandler({
+            supabase: createSupabaseMock(state),
+            env: {
+                APP_ENV: 'production',
+                APP_BASE_URL: 'https://www.fatherkey.com',
+                TRUSTED_PROXY_IPS: '10.0.0.0/8'
+            }
+        });
+        const attachData = JSON.stringify({
+            user_id: 'user-race-1',
+            site: 'cn',
+            expected_amount: 18.18,
+            charge_type: 'package',
+            checkout_session_id: 'checkout-race-1'
+        });
+        const res = createMockResponse();
+        await handler({
+            method: 'GET',
+            url: `/api/payments/zpay/webhook?out_trade_no=ZP789&trade_no=TRADE-789&trade_status=TRADE_SUCCESS&money=18.18&pid=2026041807323142&type=alipay&param=${encodeURIComponent(attachData)}`,
+            headers: {
+                host: 'www.fatherkey.com',
+                'x-forwarded-for': '203.0.113.10'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.body, 'success');
+        assert.equal(state.rechargePayload, undefined);
+        assert.equal(state.discountPayload, undefined);
+        assert.equal(state.affiliatePayload, undefined);
+        assert.equal(state.paymentOrderPatch.status, 'redeemed');
+        assert.equal(state.paymentOrderPatch.paid_at, '2026-11-12T05:17:54.000Z');
+        assert.deepEqual(state.paymentOrderPatch.raw_payload.zpay_status_poll, { code: '1', status: 1 });
+        assert.equal(state.paymentOrderPatch.raw_payload.zpay_webhook.out_trade_no, 'ZP789');
+        assert.equal(state.paymentOrderPatch.provider_metadata.auto_reconciled_by, 'zpay_status_poll');
+    });
+});
+
+test('zpay webhook skips duplicate discount and affiliate triggers when fn_recharge_points returns deduped=true', async () => {
+    const state = {
+        existingPaymentOrder: {
+            id: 'order-dedup-1',
+            user_id: 'user-dedup-1',
+            provider: 'zpay',
+            provider_order_no: 'ZP900',
+            checkout_session_id: 'checkout-dedup-1',
+            site: 'cn',
+            package_id: 'pkg-1',
+            package_name: '测试套餐',
+            expected_amount: 12.34,
+            points_amount: 100,
+            status: 'pending',
+            raw_payload: {},
+            provider_metadata: {}
+        },
+        queryOrderResult: {
+            supported: true,
+            success: true,
+            providerOrderNo: 'ZP900',
+            tradeNo: 'TRADE-900',
+            paidAmount: 12.34,
+            status: 'paid',
+            statusRaw: 'TRADE_SUCCESS',
+            responsePayload: { code: '1' }
+        },
+        rechargeResult: {
+            data: { deduped: true, ledger_id: 'existing-ledger-1' },
+            error: null
+        }
+    };
+
+    await withZpayWebhookModule(buildDependencyMocks(state), async ({ createZpayWebhookHandler }) => {
+        const handler = createZpayWebhookHandler({
+            supabase: createSupabaseMock(state),
+            env: {
+                APP_ENV: 'production',
+                APP_BASE_URL: 'https://www.fatherkey.com',
+                TRUSTED_PROXY_IPS: '10.0.0.0/8'
+            }
+        });
+        const attachData = JSON.stringify({
+            user_id: 'user-dedup-1',
+            site: 'cn',
+            expected_amount: 12.34,
+            charge_type: 'package',
+            checkout_session_id: 'checkout-dedup-1'
+        });
+        const res = createMockResponse();
+        await handler({
+            method: 'GET',
+            url: `/api/payments/zpay/webhook?out_trade_no=ZP900&trade_no=TRADE-900&trade_status=TRADE_SUCCESS&money=12.34&pid=2026041807323142&type=alipay&param=${encodeURIComponent(attachData)}`,
+            headers: {
+                host: 'www.fatherkey.com',
+                'x-forwarded-for': '203.0.113.10'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.body, 'success');
+        assert.equal(state.rechargePayload.referenceId, 'zpay_ZP900');
+        assert.equal(state.discountPayload, undefined);
+        assert.equal(state.affiliatePayload, undefined);
+        assert.equal(state.paymentOrderPatch.status, 'redeemed');
+    });
+});
+
+test('zpay webhook selects signature fields and deletes prior signature_mismatch event before retry', async () => {
+    const state = {
+        existingPaymentEvents: [
+            {
+                id: 'evt-sig-mismatch-1',
+                signature_valid: false,
+                processing_result: 'signature_mismatch'
+            }
+        ],
+        existingPaymentOrder: {
+            id: 'order-retry-1',
+            user_id: 'user-retry-1',
+            provider: 'zpay',
+            provider_order_no: 'ZP901',
+            checkout_session_id: 'checkout-retry-1',
+            site: 'cn',
+            package_id: 'pkg-1',
+            package_name: '测试套餐',
+            expected_amount: 12.34,
+            points_amount: 100,
+            status: 'pending',
+            raw_payload: {},
+            provider_metadata: {}
+        },
+        queryOrderResult: {
+            supported: true,
+            success: true,
+            providerOrderNo: 'ZP901',
+            tradeNo: 'TRADE-901',
+            paidAmount: 12.34,
+            status: 'paid',
+            statusRaw: 'TRADE_SUCCESS',
+            responsePayload: { code: '1' }
+        }
+    };
+
+    await withZpayWebhookModule(buildDependencyMocks(state), async ({ createZpayWebhookHandler }) => {
+        const handler = createZpayWebhookHandler({
+            supabase: createSupabaseMock(state),
+            env: {
+                APP_ENV: 'production',
+                APP_BASE_URL: 'https://www.fatherkey.com',
+                TRUSTED_PROXY_IPS: '10.0.0.0/8'
+            }
+        });
+        const attachData = JSON.stringify({
+            user_id: 'user-retry-1',
+            site: 'cn',
+            expected_amount: 12.34,
+            charge_type: 'package',
+            checkout_session_id: 'checkout-retry-1'
+        });
+        const res = createMockResponse();
+        await handler({
+            method: 'GET',
+            url: `/api/payments/zpay/webhook?out_trade_no=ZP901&trade_no=TRADE-901&trade_status=TRADE_SUCCESS&money=12.34&pid=2026041807323142&type=alipay&param=${encodeURIComponent(attachData)}`,
+            headers: {
+                host: 'www.fatherkey.com',
+                'x-forwarded-for': '203.0.113.10'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.match(state.paymentEventSelect, /signature_valid/);
+        assert.match(state.paymentEventSelect, /processing_result/);
+        assert.deepEqual(state.deletedEventWhere, {
+            column: 'event_key',
+            value: 'zpay:ZP901:TRADE-901:TRADE_SUCCESS'
+        });
+        assert.equal(state.rechargePayload.referenceId, 'zpay_ZP901');
     });
 });

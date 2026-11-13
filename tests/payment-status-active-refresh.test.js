@@ -15,7 +15,10 @@ function createQueryBuilder(state, table, mode, patch = null) {
     };
 
     const builder = {
-        select() {
+        select(columns = '') {
+            if (Array.isArray(state.selectLog)) {
+                state.selectLog.push({ table, columns });
+            }
             return builder;
         },
         update(nextPatch) {
@@ -476,5 +479,313 @@ test('getPaymentRequestStatus lets mobile return requests bypass the long zpay s
         assert.equal(forcedPayload.payment_order_status, 'redeemed');
         assert.equal(state.payment_orders[0].status, 'redeemed');
         assert.equal(calls.recharge.referenceId, 'zpay_ZPAY_FORCE_REFRESH_ORDER_1');
+    });
+});
+
+test('getPaymentRequestStatus serializes concurrent zpay status refreshes on the same order and credits once', async () => {
+    const nowIso = new Date().toISOString();
+    const state = {
+        selectLog: [],
+        payment_checkout_sessions: [
+            {
+                id: 'pcs-zpay-concurrent-1',
+                user_id: 'user-zpay-concurrent-1',
+                provider: 'zpay',
+                site: 'cn',
+                package_id: null,
+                package_name: '自定义充值',
+                requested_points: 18,
+                granted_points: 18,
+                expected_amount: 18.18,
+                payment_order_id: 'po-zpay-concurrent-1',
+                status: 'redirect_ready',
+                error_message: null,
+                created_at: nowIso,
+                updated_at: nowIso,
+                completed_at: null,
+                session_key: 'PCS_ZPAY_CONCURRENT_1',
+                provider_metadata: {
+                    provider_order_no: 'ZPAY_CONCURRENT_ORDER_1'
+                }
+            }
+        ],
+        payment_orders: [
+            {
+                id: 'po-zpay-concurrent-1',
+                user_id: 'user-zpay-concurrent-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_CONCURRENT_ORDER_1',
+                checkout_session_id: 'pcs-zpay-concurrent-1',
+                site: 'cn',
+                package_id: null,
+                package_name: '自定义充值',
+                expected_amount: 18.18,
+                paid_amount: null,
+                points_amount: 18,
+                status: 'pending',
+                last_error: null,
+                created_at: nowIso,
+                updated_at: nowIso,
+                paid_at: null,
+                claimed_at: null,
+                verified_at: null,
+                raw_payload: {
+                    request: { out_trade_no: 'ZPAY_CONCURRENT_ORDER_1' }
+                },
+                provider_metadata: {
+                    checkout_session_id: 'pcs-zpay-concurrent-1',
+                    payment_type: 'alipay'
+                }
+            }
+        ]
+    };
+
+    const calls = {
+        query: 0,
+        rechargeCount: 0,
+        discountCount: 0,
+        affiliateCount: 0
+    };
+
+    const mocks = {
+        './provider-adapters': {
+            getPaymentProviderAdapter(provider) {
+                if (provider === 'zpay') {
+                    return {
+                        async resolveRuntimeContext() {
+                            return { provider: 'zpay', integration: { pid: 'pid-1', pkey: 'pkey-1' } };
+                        },
+                        async queryOrder({ providerOrderNo }) {
+                            calls.query += 1;
+                            await new Promise((resolve) => setTimeout(resolve, 25));
+                            return {
+                                supported: true,
+                                success: true,
+                                providerOrderNo,
+                                tradeNo: 'TRADE_CONCURRENT_1',
+                                paidAmount: 18.18,
+                                status: 'paid',
+                                statusRaw: 'TRADE_SUCCESS',
+                                responsePayload: { code: '1', status: 1 }
+                            };
+                        }
+                    };
+                }
+                return {};
+            },
+            normalizePointValue(value) {
+                const parsed = Number(value);
+                return Number.isFinite(parsed) ? parsed : 0;
+            },
+            amountsMatch(expected, actual) {
+                return Math.abs(Number(expected || 0) - Number(actual || 0)) < 0.0001;
+            }
+        },
+        './providers': {
+            async loadStoredPaymentConfigs() {
+                return { paymentChannels: {}, rechargeOptions: {} };
+            }
+        },
+        './rpc': {
+            async rechargePointsForPayment() {
+                calls.rechargeCount += 1;
+                return { data: { deduped: false, ledger_id: 'ledger-concurrent-1' }, error: null };
+            }
+        },
+        '../discount-trigger-linkage': {
+            async maybeIssueAffiliateDiscountAssetsForRecharge() {
+                calls.affiliateCount += 1;
+            },
+            async maybeIssueRechargeDiscountAssets() {
+                calls.discountCount += 1;
+            }
+        },
+        './zpay-points': {
+            deriveZpayPointBreakdown() {
+                return { paidPoints: 18, bonusPoints: 0 };
+            }
+        }
+    };
+
+    await withOrdersModule(mocks, async ({ getPaymentRequestStatus }) => {
+        const supabase = createSupabaseStub(state);
+        const [first, second] = await Promise.all([
+            getPaymentRequestStatus({
+                supabase,
+                user: { id: 'user-zpay-concurrent-1' },
+                body: { checkout_session_id: 'pcs-zpay-concurrent-1', site: 'cn' }
+            }),
+            getPaymentRequestStatus({
+                supabase,
+                user: { id: 'user-zpay-concurrent-1' },
+                body: { checkout_session_id: 'pcs-zpay-concurrent-1', site: 'cn' }
+            })
+        ]);
+
+        assert.equal(calls.query, 1);
+        assert.equal(calls.rechargeCount, 1);
+        assert.equal(calls.discountCount, 1);
+        assert.equal(calls.affiliateCount, 1);
+        assert.equal(first.status, 'completed');
+        assert.equal(second.status, 'completed');
+        assert.deepEqual(state.payment_orders[0].raw_payload.request, { out_trade_no: 'ZPAY_CONCURRENT_ORDER_1' });
+        assert.equal(state.payment_orders[0].provider_metadata.payment_type, 'alipay');
+        assert.ok(state.selectLog.some((entry) => entry.table === 'payment_orders'
+            && entry.columns.includes('raw_payload')
+            && entry.columns.includes('provider_metadata')
+            && entry.columns.includes('user_id')));
+    });
+});
+
+test('attemptZpayPaymentStatusRefresh skips credit and preserves webhook metadata if order resolves during queryOrder', async () => {
+    const nowIso = new Date().toISOString();
+    const state = {
+        payment_checkout_sessions: [
+            {
+                id: 'pcs-zpay-crossproc-1',
+                user_id: 'user-zpay-crossproc-1',
+                provider: 'zpay',
+                site: 'cn',
+                package_id: null,
+                package_name: '自定义充值',
+                requested_points: 18,
+                granted_points: 18,
+                expected_amount: 18.18,
+                payment_order_id: 'po-zpay-crossproc-1',
+                status: 'redirect_ready',
+                error_message: null,
+                created_at: nowIso,
+                updated_at: nowIso,
+                completed_at: null,
+                session_key: 'PCS_ZPAY_CROSSPROC_1',
+                provider_metadata: {
+                    provider_order_no: 'ZPAY_CROSSPROC_ORDER_1'
+                }
+            }
+        ],
+        payment_orders: [
+            {
+                id: 'po-zpay-crossproc-1',
+                user_id: 'user-zpay-crossproc-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_CROSSPROC_ORDER_1',
+                checkout_session_id: 'pcs-zpay-crossproc-1',
+                site: 'cn',
+                package_id: null,
+                package_name: '自定义充值',
+                expected_amount: 18.18,
+                paid_amount: null,
+                points_amount: 18,
+                status: 'pending',
+                last_error: null,
+                created_at: nowIso,
+                updated_at: nowIso,
+                paid_at: null,
+                claimed_at: null,
+                verified_at: null,
+                raw_payload: {
+                    request: { out_trade_no: 'ZPAY_CROSSPROC_ORDER_1' }
+                },
+                provider_metadata: {
+                    checkout_session_id: 'pcs-zpay-crossproc-1'
+                }
+            }
+        ]
+    };
+
+    const calls = {
+        rechargeCount: 0,
+        discountCount: 0
+    };
+
+    const mocks = {
+        './provider-adapters': {
+            getPaymentProviderAdapter(provider) {
+                if (provider === 'zpay') {
+                    return {
+                        async resolveRuntimeContext() {
+                            return { provider: 'zpay', integration: { pid: 'pid-1', pkey: 'pkey-1' } };
+                        },
+                        async queryOrder({ providerOrderNo }) {
+                            // Simulate webhook settling payment_orders in another worker while queryOrder was in flight.
+                            state.payment_orders[0] = {
+                                ...state.payment_orders[0],
+                                status: 'redeemed',
+                                paid_amount: 18.18,
+                                paid_at: '2026-11-12T05:17:53.948Z',
+                                raw_payload: {
+                                    ...state.payment_orders[0].raw_payload,
+                                    zpay_webhook: { out_trade_no: providerOrderNo, trade_no: 'TRADE_WEBHOOK_1' }
+                                },
+                                provider_metadata: {
+                                    ...state.payment_orders[0].provider_metadata,
+                                    webhook_received_at: '2026-11-12T05:17:53.948Z'
+                                }
+                            };
+                            return {
+                                supported: true,
+                                success: true,
+                                providerOrderNo,
+                                tradeNo: 'TRADE_WEBHOOK_1',
+                                paidAmount: 18.18,
+                                status: 'paid',
+                                statusRaw: 'TRADE_SUCCESS',
+                                responsePayload: { code: '1', status: 1 }
+                            };
+                        }
+                    };
+                }
+                return {};
+            },
+            normalizePointValue(value) {
+                const parsed = Number(value);
+                return Number.isFinite(parsed) ? parsed : 0;
+            },
+            amountsMatch(expected, actual) {
+                return Math.abs(Number(expected || 0) - Number(actual || 0)) < 0.0001;
+            }
+        },
+        './providers': {
+            async loadStoredPaymentConfigs() {
+                return { paymentChannels: {}, rechargeOptions: {} };
+            }
+        },
+        './rpc': {
+            async rechargePointsForPayment() {
+                calls.rechargeCount += 1;
+                return { error: null };
+            }
+        },
+        '../discount-trigger-linkage': {
+            async maybeIssueAffiliateDiscountAssetsForRecharge() {
+                calls.discountCount += 1;
+            },
+            async maybeIssueRechargeDiscountAssets() {
+                calls.discountCount += 1;
+            }
+        },
+        './zpay-points': {
+            deriveZpayPointBreakdown() {
+                return { paidPoints: 18, bonusPoints: 0 };
+            }
+        }
+    };
+
+    await withOrdersModule(mocks, async ({ getPaymentRequestStatus }) => {
+        const payload = await getPaymentRequestStatus({
+            supabase: createSupabaseStub(state),
+            user: { id: 'user-zpay-crossproc-1' },
+            body: { checkout_session_id: 'pcs-zpay-crossproc-1', site: 'cn' }
+        });
+
+        assert.equal(calls.rechargeCount, 0);
+        assert.equal(calls.discountCount, 0);
+        assert.equal(payload.status, 'completed');
+        assert.equal(payload.payment_order_status, 'redeemed');
+        assert.deepEqual(state.payment_orders[0].raw_payload.zpay_webhook, {
+            out_trade_no: 'ZPAY_CROSSPROC_ORDER_1',
+            trade_no: 'TRADE_WEBHOOK_1'
+        });
+        assert.equal(state.payment_orders[0].provider_metadata.webhook_received_at, '2026-11-12T05:17:53.948Z');
     });
 });
