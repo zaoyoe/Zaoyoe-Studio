@@ -346,7 +346,7 @@ function spawnHarness({ state = 'not_started', failPersist = false, failAt = 0, 
     refuseFinal = false, failFinal = false, loseFinalResponse = false, failAnnotation = false,
     refuseAnnotation = false, loseAnnotationResponse = false, autoRenewError = false, cardPoolEmpty = false,
     workerError = 'fixture worker interruption',
-    latestState = null, paymentSequence = null, unawaitedPayments = false,
+    latestState = null, paymentSequence = null, unawaitedPayments = false, emitProgress = false,
     platform = 'grok', executionMode = 'local_card_pool', runOutput = null, runStatus = 'failed',
     autoRenewConfirmed = false, sessionCooldownScopeKey = 'fixture-session-fingerprint' } = {}) {
     let done; const finished = new Promise(resolve => { done = resolve; });
@@ -372,11 +372,13 @@ function spawnHarness({ state = 'not_started', failPersist = false, failAt = 0, 
             savedState = safety.mergePaymentState(savedState, input.paymentState);
             const confirmed = (options.finalize || options.annotate) && input.status === 'success' && savedState === 'succeeded';
             const recoveryRequired = !confirmed && (safety.shouldRetainCdk({ paymentState: savedState }) || !!input.recoveryRequired);
-            const status = options.annotate ? input.status : recoveryRequired ? 'manual' : input.status;
+            const status = options.finalize
+                ? (recoveryRequired ? 'manual' : input.status)
+                : input.status;
             if (options.finalize) settled = true;
             const result = { applied: true, status, paymentState: savedState, recoveryRequired,
                 released: !!options.finalize && status === 'failed' && !recoveryRequired,
-                message: status === 'manual' && input.status !== 'manual'
+                message: options.finalize && status === 'manual' && input.status !== 'manual'
                     ? '支付结果或任务状态需人工复核，已保留 CDK 与银行卡' : input.message };
             events.push({ type: 'saved', result, options });
             if ((loseFinalResponse && options.finalize) || (loseAnnotationResponse && options.annotate)) throw new Error('fixture commit response lost');
@@ -403,11 +405,18 @@ function spawnHarness({ state = 'not_started', failPersist = false, failAt = 0, 
         buildHcaptchaEnvFromConfig: () => ({ env: {} }), extractCardLast4FromOutput: () => null,
         extractTaskMediaFromOutput: () => ({ screenshots: [], videos: [] }), getCheckoutProgress: () => 10,
         getTotalActiveJobs: () => 1, releaseForegroundSlot: () => done(),
-        runCheckoutScript: async (_key, _script, env, _attempt, _progress, payment) => {
+        runCheckoutScript: async (_key, _script, env, _attempt, progressCb, payment) => {
             runtimeEnv = env; paymentCallback = payment;
-            const pending = (paymentSequence || (runOutput === null ? [state] : [])).map(value => payment(value));
-            if (!unawaitedPayments) await Promise.all(pending);
-            else pending.forEach(operation => operation.catch(() => {}));
+            if (emitProgress && paymentSequence) {
+                for (const value of paymentSequence) {
+                    await payment(value);
+                    if (value === 'started') await progressCb(80, '[Stripe] Step 9.5: 等待 hCaptcha 弹层或拒付结果');
+                }
+            } else {
+                const pending = (paymentSequence || (runOutput === null ? [state] : [])).map(value => payment(value));
+                if (!unawaitedPayments) await Promise.all(pending);
+                else pending.forEach(operation => operation.catch(() => {}));
+            }
             if (runOutput !== null) {
                 return { output: runOutput, analysis: { status: runStatus, message: 'offline fixture', paymentState: state, shouldRetry: false } };
             }
@@ -607,6 +616,28 @@ describe('server dispatch and interruption preserve payment resources', () => {
         expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success', paymentState: 'succeeded' }));
         expect(h.sandbox.notifyTaskOutcome).toHaveBeenCalledWith(expect.objectContaining({ event: 'success' }));
         expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+    });
+    it('keeps mid-charge progress running instead of broadcasting manual before settlement', async () => {
+        const h = await spawnHarness({
+            platform: 'chatgpt',
+            state: 'succeeded',
+            paymentSequence: ['started', 'succeeded'],
+            emitProgress: true,
+            runStatus: 'success',
+            runOutput: 'PAYMENT_STATE:succeeded',
+            autoRenewConfirmed: true
+        });
+        const progressBroadcasts = h.events
+            .filter(event => event.type === 'broadcast' && event.value.type === 'progress')
+            .map(event => event.value);
+        expect(progressBroadcasts.some(item => item.status === 'manual')).toBe(false);
+        expect(progressBroadcasts).toEqual(expect.arrayContaining([
+            expect.objectContaining({ status: 'running', paymentState: 'started', progress: 80 }),
+            expect.objectContaining({ status: 'running', paymentState: 'succeeded', progress: 100 })
+        ]));
+        expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ status: 'success', paymentState: 'succeeded' }));
+        expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
+            expect.objectContaining({ status: 'success', paymentState: 'succeeded', autoRenewStatus: 'disabled' }), { annotate: true });
     });
     it('closes the context with recording disabled and continues cleanup after close failure', async () => {
         const h = await workerHarness(fixtures[0], { contextCloseError: new Error('fixture context close failure') });
