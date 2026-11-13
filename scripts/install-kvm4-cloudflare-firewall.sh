@@ -71,6 +71,8 @@ apply_v6_chain() {
   local chain="CF-WEB-ALLOW6"
   ip6tables -N "$chain" 2>/dev/null || ip6tables -F "$chain"
   ip6tables -A "$chain" -s ::1/128 -j RETURN
+  ip6tables -A "$chain" -s fe80::/10 -j RETURN
+  ip6tables -A "$chain" -s fc00::/7 -j RETURN
   for cidr in "${CF_IPV6_CIDRS[@]}"; do
     ip6tables -A "$chain" -s "$cidr" -j RETURN
   done
@@ -78,8 +80,42 @@ apply_v6_chain() {
 
   ip6tables -C INPUT -p tcp -m multiport --dports 80,443 -j "$chain" 2>/dev/null \
     || ip6tables -I INPUT 1 -p tcp -m multiport --dports 80,443 -j "$chain"
+
+  if ip6tables -L DOCKER-USER >/dev/null 2>&1; then
+    ip6tables -C DOCKER-USER -p tcp -m multiport --dports 80,443 -j "$chain" 2>/dev/null \
+      || ip6tables -I DOCKER-USER 1 -p tcp -m multiport --dports 80,443 -j "$chain"
+  fi
+}
+
+persist_firewall_rules() {
+  local script_self
+  script_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  local target_bin="/usr/local/sbin/zaoyoe-apply-cloudflare-firewall.sh"
+  local unit_src=""
+  if [[ -f "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/deploy/kvm4/firewall/zaoyoe-cloudflare-firewall.service" ]]; then
+    unit_src="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/deploy/kvm4/firewall/zaoyoe-cloudflare-firewall.service"
+  fi
+
+  if [[ "$script_self" != "$target_bin" ]] && [[ -w /usr/local/sbin || "$(id -u)" == "0" ]]; then
+    install -d /usr/local/sbin
+    install -m 0755 "$script_self" "$target_bin"
+  fi
+
+  if [[ -n "$unit_src" && -d /etc/systemd/system ]] && command -v systemctl >/dev/null 2>&1; then
+    install -m 0644 "$unit_src" /etc/systemd/system/zaoyoe-cloudflare-firewall.service
+    systemctl daemon-reload
+    systemctl enable zaoyoe-cloudflare-firewall.service >/dev/null 2>&1 || true
+  fi
+
+  if command -v netfilter-persistent >/dev/null 2>&1; then
+    netfilter-persistent save >/dev/null 2>&1 || true
+  elif [[ -d /etc/iptables ]]; then
+    command -v iptables-save >/dev/null 2>&1 && iptables-save > /etc/iptables/rules.v4 || true
+    command -v ip6tables-save >/dev/null 2>&1 && ip6tables-save > /etc/iptables/rules.v6 || true
+  fi
 }
 
 apply_v4_chain
 apply_v6_chain
-echo "Cloudflare-only ingress firewall applied for TCP ports 80 and 443."
+persist_firewall_rules
+echo "Cloudflare-only ingress firewall applied (IPv4 + IPv6 INPUT & DOCKER-USER) for TCP ports 80 and 443."

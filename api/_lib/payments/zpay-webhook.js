@@ -8,6 +8,9 @@ const {
     sanitizeSite
 } = require('./orders');
 const {
+    isTerminalRefundPaymentOrder
+} = require('./order-state');
+const {
     runWithPaymentOrderLock
 } = require('./settlement-lock');
 const {
@@ -537,11 +540,14 @@ async function handleZpayWebhook({
                 let verifiedPaidAmount = amount;
                 let alreadySettledBeforeWebhook = false;
                 let rechargeDeduped = false;
+                let terminalRefundOrder = isTerminalRefundPaymentOrder(paymentOrder);
 
                 if (!signatureValid) {
                     processingResult = 'signature_mismatch';
                     errorMessage = 'signature_mismatch';
                     responseStatus = 401;
+                } else if (terminalRefundOrder) {
+                    processingResult = 'ignored_terminal_refund';
                 } else if (paymentState !== 'paid') {
                     processingResult = `ignored_${paymentState}`;
                 } else if (!paymentOrder?.id) {
@@ -644,7 +650,7 @@ async function handleZpayWebhook({
                     }
                 }
 
-                if (paymentOrder?.id) {
+                if (paymentOrder?.id && !terminalRefundOrder) {
                     const nowIso = new Date().toISOString();
                     const existingMetadata = paymentOrder.provider_metadata && typeof paymentOrder.provider_metadata === 'object'
                         ? paymentOrder.provider_metadata

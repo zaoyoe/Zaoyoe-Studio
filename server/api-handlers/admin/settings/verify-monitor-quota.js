@@ -7,8 +7,23 @@ const {
     buildVerifyMonitorProxyHeaders
 } = require('../../../../api/_lib/verify-monitor-internal-access');
 const {
-    fetchDirectVerifyQuotaState
+    buildVerifyKeyFingerprint,
+    fetchDirectVerifyQuotaState,
+    maskVerifyCredential
 } = require('../../_verify-provider-runtime');
+
+function sanitizeVerifyMonitorKeyStates(keyStates = []) {
+    return (Array.isArray(keyStates) ? keyStates : []).map((entry) => {
+        if (!entry || typeof entry !== 'object') return entry;
+        const { api_key: rawApiKey, apiKey: camelApiKey, ...safeEntry } = entry;
+        const credential = String(rawApiKey || camelApiKey || '').trim();
+        return {
+            ...safeEntry,
+            masked_key: String(safeEntry.masked_key || (credential ? maskVerifyCredential(credential) : '') || safeEntry.key_name || '').trim(),
+            key_fingerprint: String(safeEntry.key_fingerprint || (credential ? buildVerifyKeyFingerprint(credential) : '')).trim()
+        };
+    });
+}
 
 const DEFAULT_VERIFY_SERVER_URL = 'https://verify-api.fatherkey.com';
 const VERIFY_MONITOR_PROXY_TIMEOUT_MS = 15000;
@@ -156,14 +171,19 @@ module.exports = async (req, res) => {
                 key_name: String(payload?.key_name || payload?.name || '').trim(),
                 key_count: toFiniteNumber(payload?.key_count ?? directState?.key_count),
                 healthy_key_count: toFiniteNumber(payload?.healthy_key_count ?? directState?.key_count),
-                key_states: Array.isArray(payload?.key_states) ? payload.key_states : (directState?.key_states || []),
+                key_states: sanitizeVerifyMonitorKeyStates(
+                    Array.isArray(payload?.key_states) ? payload.key_states : (directState?.key_states || [])
+                ),
                 api_base_url: String(payload?.api_base_url || payload?.apiBaseUrl || '').trim(),
                 checked_at: new Date().toISOString(),
                 message: payload?.message || directState?.message || ''
             });
         } catch (error) {
             if (directState?.provider === '86ai' || directState?.success) {
-                return sendJson(res, 200, directState);
+                return sendJson(res, 200, {
+                    ...directState,
+                    key_states: sanitizeVerifyMonitorKeyStates(directState?.key_states || [])
+                });
             }
 
             if (error?.name === 'AbortError') {

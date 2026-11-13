@@ -1450,7 +1450,8 @@ function buildAdminRefundAttemptId(targetId, providerOrderNo, actorId, providerK
             String(providerOrderNo || '').trim(),
             String(actorId || '').trim(),
             String(meta?.key || '').trim(),
-            new Date().toISOString()
+            new Date().toISOString(),
+            crypto.randomUUID()
         ].join(':'))
         .digest('hex')
         .slice(0, 20);
@@ -1831,7 +1832,7 @@ async function reclaimCreditedGatewayPoints(supabase, target, attemptId, provide
 
     const reclaimSummary = extractRefundReclaimSummary(reclaimResult?.data);
     if (reclaimSummary.reclaimedPoints !== pointsToReclaim) {
-        const compensation = await compensateRefundReclaim(supabase, target, reclaimSummary, attemptId);
+        const compensation = await compensateRefundReclaim(supabase, target, reclaimSummary, attemptId, meta.key);
         const error = new Error(
             compensation.success
                 ? `积分扣回未完整执行，系统已自动补回；预期扣回 ${pointsToReclaim} 点，实际仅扣回 ${reclaimSummary.reclaimedPoints} 点`
@@ -1930,6 +1931,14 @@ async function failGatewayRefundAfterReclaim({
             response
         }
     );
+
+    await releaseGatewayRefundPending(supabase, target, {
+        actorId,
+        note,
+        attemptId,
+        nextRefundStatus: compensation.success ? 'refund_failed' : 'refund_compensation_failed',
+        errorMessage: compensation.success ? message : `${message}（积分补回失败）`
+    });
 
     const error = new Error(
         compensation.success
@@ -2035,6 +2044,100 @@ async function syncRefundedPaymentOrder(supabase, target, {
     return data;
 }
 
+async function claimGatewayRefundPending(supabase, target, {
+    actorId,
+    note,
+    attemptId
+}) {
+    const existingMetadata = normalizeJsonObject(target?.provider_metadata);
+    const nowIso = new Date().toISOString();
+    const pendingMetadata = mergeJsonObjects(existingMetadata, {
+        refund_status: 'refund_pending',
+        refund_attempt_id: attemptId,
+        refund_requested_at: nowIso,
+        refund_requested_by: actorId || null,
+        refund_note: note || null
+    });
+
+    const { data, error } = await supabase
+        .from('payment_orders')
+        .update({
+            provider_metadata: pendingMetadata
+        })
+        .eq('id', target.id)
+        .select('*')
+        .single();
+
+    if (error) {
+        const message = String(error.message || '').toLowerCase();
+        if (message.includes('payment_refund_already_pending')) {
+            const conflictError = new Error('该订单已有退款请求在处理中，请稍后再查单确认');
+            conflictError.statusCode = 409;
+            throw conflictError;
+        }
+        if (message.includes('payment_order_already_refunded')) {
+            const conflictError = new Error('该订单已完成退款，无需重复操作');
+            conflictError.statusCode = 409;
+            throw conflictError;
+        }
+        throw error;
+    }
+
+    const claimed = data || {
+        ...target,
+        provider_metadata: pendingMetadata
+    };
+    const claimedAttemptId = normalizeText(normalizeJsonObject(claimed.provider_metadata).refund_attempt_id);
+    if (claimedAttemptId && claimedAttemptId !== normalizeText(attemptId)) {
+        const conflictError = new Error('该订单已有退款请求在处理中，请稍后再查单确认');
+        conflictError.statusCode = 409;
+        throw conflictError;
+    }
+
+    return claimed;
+}
+
+async function releaseGatewayRefundPending(supabase, target, {
+    actorId,
+    note,
+    attemptId,
+    nextRefundStatus = 'refund_failed',
+    errorMessage = ''
+} = {}) {
+    if (!supabase || !target?.id) return null;
+
+    const existingMetadata = normalizeJsonObject(target.provider_metadata);
+    const nowIso = new Date().toISOString();
+    const releasedMetadata = mergeJsonObjects(existingMetadata, {
+        refund_status: nextRefundStatus,
+        refund_attempt_id: attemptId || existingMetadata.refund_attempt_id || null,
+        refund_failed_at: nowIso,
+        refund_failed_by: actorId || null,
+        refund_note: note || existingMetadata.refund_note || null,
+        refund_last_error: normalizeText(errorMessage) || null
+    });
+
+    try {
+        const { data, error } = await supabase
+            .from('payment_orders')
+            .update({
+                provider_metadata: releasedMetadata
+            })
+            .eq('id', target.id)
+            .select('*')
+            .single();
+
+        if (error) {
+            console.warn('[admin/payments/actions] failed to release refund pending state:', error.message);
+            return null;
+        }
+        return data;
+    } catch (error) {
+        console.warn('[admin/payments/actions] failed to release refund pending state:', error?.message || error);
+        return null;
+    }
+}
+
 async function applyGatewayRefundDecision(supabase, target, note, actorId, env = process.env, providerKey = '') {
     const meta = getGatewayProviderMeta(providerKey);
     const provider = normalizeText(target?.provider).toLowerCase();
@@ -2089,25 +2192,55 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
     const attemptId = buildAdminRefundAttemptId(target.id, resolvedProviderOrderNo, actorId, meta.key);
     const refundAmount = roundCurrencyAmount(target?.paid_amount ?? target?.expected_amount);
 
+    const claimedTarget = await claimGatewayRefundPending(supabase, refundTarget, {
+        actorId,
+        note,
+        attemptId
+    });
+
     let liveOrder = null;
     if (typeof adapter.queryOrder === 'function') {
-        liveOrder = await adapter.queryOrder({
-            runtimeContext,
-            providerOrderNo: snapshot.providerOrderNo,
-            openOrderId: snapshot.openOrderId,
-            tradeNo: snapshot.tradeNo,
-            paymentId: snapshot.paymentId,
-            metadata: snapshot.metadata
-        });
+        try {
+            liveOrder = await adapter.queryOrder({
+                runtimeContext,
+                providerOrderNo: snapshot.providerOrderNo,
+                openOrderId: snapshot.openOrderId,
+                tradeNo: snapshot.tradeNo,
+                paymentId: snapshot.paymentId,
+                metadata: snapshot.metadata
+            });
+        } catch (queryError) {
+            await releaseGatewayRefundPending(supabase, claimedTarget, {
+                actorId,
+                note,
+                attemptId,
+                errorMessage: queryError?.message || `${meta.label}退款前查单异常`
+            });
+            throw queryError;
+        }
 
         if (liveOrder?.supported === false) {
-            const error = new Error(liveOrder.message || `${meta.label}查单能力不可用，已停止退款`);
+            const message = liveOrder.message || `${meta.label}查单能力不可用，已停止退款`;
+            await releaseGatewayRefundPending(supabase, claimedTarget, {
+                actorId,
+                note,
+                attemptId,
+                errorMessage: message
+            });
+            const error = new Error(message);
             error.statusCode = 503;
             throw error;
         }
 
         if (liveOrder?.success === false) {
-            const error = new Error(liveOrder.message || `${meta.label}退款前查单失败`);
+            const message = liveOrder.message || `${meta.label}退款前查单失败`;
+            await releaseGatewayRefundPending(supabase, claimedTarget, {
+                actorId,
+                note,
+                attemptId,
+                errorMessage: message
+            });
+            const error = new Error(message);
             error.statusCode = 502;
             throw error;
         }
@@ -2123,8 +2256,14 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
             let reclaimSummary = null;
             if (snapshot.credited) {
                 try {
-                    reclaimSummary = await reclaimCreditedGatewayPoints(supabase, target, attemptId, meta.key);
+                    reclaimSummary = await reclaimCreditedGatewayPoints(supabase, claimedTarget, attemptId, meta.key);
                 } catch (reclaimError) {
+                    await releaseGatewayRefundPending(supabase, claimedTarget, {
+                        actorId,
+                        note,
+                        attemptId,
+                        errorMessage: reclaimError.message || `${meta.label}退款积分扣回失败`
+                    });
                     await tryRecordPaymentEvent(supabase, {
                         payment_order_id: target.id,
                         provider: meta.key,
@@ -2157,7 +2296,7 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
             }
 
             const transactionId = getGatewayTransactionId(snapshot, liveOrder);
-            const syncedOrder = await syncRefundedPaymentOrder(supabase, queryTarget, {
+            const syncedOrder = await syncRefundedPaymentOrder(supabase, claimedTarget, {
                 actorId,
                 note,
                 providerOrderNo: liveOrder.providerOrderNo || snapshot.providerOrderNo,
@@ -2215,8 +2354,14 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
     let reclaimSummary = null;
     if (snapshot.credited) {
         try {
-            reclaimSummary = await reclaimCreditedGatewayPoints(supabase, target, attemptId, meta.key);
+            reclaimSummary = await reclaimCreditedGatewayPoints(supabase, claimedTarget, attemptId, meta.key);
         } catch (reclaimError) {
+            await releaseGatewayRefundPending(supabase, claimedTarget, {
+                actorId,
+                note,
+                attemptId,
+                errorMessage: reclaimError.message || `${meta.label}退款积分扣回失败`
+            });
             await tryRecordPaymentEvent(supabase, {
                 payment_order_id: target.id,
                 provider: meta.key,
@@ -2263,7 +2408,7 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
     } catch (refundError) {
         await failGatewayRefundAfterReclaim({
             supabase,
-            target,
+            target: claimedTarget,
             snapshot,
             actorId,
             note,
@@ -2282,7 +2427,7 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
     if (refundResult?.supported === false) {
         await failGatewayRefundAfterReclaim({
             supabase,
-            target,
+            target: claimedTarget,
             snapshot,
             actorId,
             note,
@@ -2299,7 +2444,7 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
     if (!refundResult?.success) {
         await failGatewayRefundAfterReclaim({
             supabase,
-            target,
+            target: claimedTarget,
             snapshot,
             actorId,
             note,
@@ -2320,7 +2465,7 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
         || liveOrder?.transactionId
         || snapshot.tradeNo
     ) || null;
-    const refundedOrder = await syncRefundedPaymentOrder(supabase, target, {
+    const refundedOrder = await syncRefundedPaymentOrder(supabase, claimedTarget, {
         actorId,
         note,
         providerOrderNo: refundResult.providerOrderNo || snapshot.providerOrderNo,

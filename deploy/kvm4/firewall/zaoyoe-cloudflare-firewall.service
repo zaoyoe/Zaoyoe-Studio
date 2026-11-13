@@ -1,0 +1,14 @@
+[Unit]
+Description=Restore Zaoyoe Cloudflare-only Ingress Firewall Rules (IPv4 + IPv6 INPUT & DOCKER-USER)
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+ConditionFileIsExecutable=/usr/local/sbin/zaoyoe-apply-cloudflare-firewall.sh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/zaoyoe-apply-cloudflare-firewall.sh
+RemainAfterExit=yes
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

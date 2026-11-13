@@ -789,3 +789,101 @@ test('attemptZpayPaymentStatusRefresh skips credit and preserves webhook metadat
         assert.equal(state.payment_orders[0].provider_metadata.webhook_received_at, '2026-11-12T05:17:53.948Z');
     });
 });
+
+test('attemptZpayPaymentStatusRefresh ignores refunded and refund_pending orders without re-crediting', async () => {
+    for (const variant of [
+        { status: 'refunded', refund_status: 'refunded' },
+        { status: 'pending', refund_status: 'refund_pending' }
+    ]) {
+        const nowIso = new Date().toISOString();
+        const calls = { queryCount: 0, rechargeCount: 0, discountCount: 0 };
+        const state = {
+            payment_checkout_sessions: [
+                {
+                    id: 'pcs-zpay-refund-1',
+                    user_id: 'user-zpay-refund-1',
+                    provider: 'zpay',
+                    site: 'cn',
+                    package_id: null,
+                    package_name: '自定义充值',
+                    requested_points: 18,
+                    granted_points: 18,
+                    expected_amount: 18.18,
+                    payment_order_id: 'po-zpay-refund-1',
+                    status: 'redirect_ready',
+                    created_at: nowIso,
+                    updated_at: nowIso,
+                    completed_at: null,
+                    session_key: 'PCS_ZPAY_REFUND_1',
+                    provider_metadata: { provider_order_no: 'ZPAY_REFUND_ORDER_1' }
+                }
+            ],
+            payment_orders: [
+                {
+                    id: 'po-zpay-refund-1',
+                    user_id: 'user-zpay-refund-1',
+                    provider: 'zpay',
+                    provider_order_no: 'ZPAY_REFUND_ORDER_1',
+                    checkout_session_id: 'pcs-zpay-refund-1',
+                    site: 'cn',
+                    package_id: null,
+                    package_name: '自定义充值',
+                    expected_amount: 18.18,
+                    paid_amount: 18.18,
+                    points_amount: 18,
+                    status: variant.status,
+                    created_at: nowIso,
+                    provider_metadata: {
+                        provider_order_no: 'ZPAY_REFUND_ORDER_1',
+                        refund_status: variant.refund_status
+                    },
+                    raw_payload: {}
+                }
+            ]
+        };
+        const mocks = {
+            './provider-adapters': {
+                getPaymentProviderAdapter() {
+                    return {
+                        async resolveRuntimeContext() { return {}; },
+                        async queryOrder() {
+                            calls.queryCount += 1;
+                            return { supported: true, success: true, status: 'paid', paidAmount: 18.18 };
+                        }
+                    };
+                },
+                normalizePointValue(value) { return Number(value) || 0; },
+                amountsMatch(expected, actual) { return Math.abs(Number(expected || 0) - Number(actual || 0)) < 0.0001; }
+            },
+            './providers': {
+                async loadStoredPaymentConfigs() { return { paymentChannels: {}, rechargeOptions: {} }; }
+            },
+            './rpc': {
+                async rechargePointsForPayment() {
+                    calls.rechargeCount += 1;
+                    return { error: null };
+                }
+            },
+            '../discount-trigger-linkage': {
+                async maybeIssueAffiliateDiscountAssetsForRecharge() { calls.discountCount += 1; },
+                async maybeIssueRechargeDiscountAssets() { calls.discountCount += 1; }
+            },
+            './zpay-points': {
+                deriveZpayPointBreakdown() { return { paidPoints: 18, bonusPoints: 0 }; }
+            }
+        };
+
+        await withOrdersModule(mocks, async ({ getPaymentRequestStatus }) => {
+            await getPaymentRequestStatus({
+                supabase: createSupabaseStub(state),
+                user: { id: 'user-zpay-refund-1' },
+                body: { checkout_session_id: 'pcs-zpay-refund-1', site: 'cn' }
+            });
+            assert.equal(calls.queryCount, 0);
+            assert.equal(calls.rechargeCount, 0);
+            assert.equal(calls.discountCount, 0);
+            assert.equal(state.payment_orders[0].status, variant.status);
+            assert.equal(state.payment_orders[0].provider_metadata.refund_status, variant.refund_status);
+        });
+    }
+});

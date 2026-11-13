@@ -3,9 +3,21 @@ const {
     requireAdmin,
     sendJson
 } = require('../../../../api/_lib/admin');
+const {
+    detectImageMimeFromMagic,
+    fetchWithPinnedSsrfGuard,
+    validatePublicHttpUrl
+} = require('../../../../api/_lib/remote-http-security');
 
 const DEFAULT_TIMEOUT_MS = 20000;
 const DEFAULT_MAX_BYTES = 20 * 1024 * 1024;
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/avif'
+]);
 
 function normalizeText(value = '', maxLength = 2000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -17,50 +29,39 @@ function normalizePositiveInteger(value, fallback, maxValue = Number.MAX_SAFE_IN
     return Math.min(parsed, maxValue);
 }
 
-function isBlockedImageHostname(hostname = '') {
-    const normalized = String(hostname || '').toLowerCase();
-    return normalized === 'localhost'
-        || normalized === '127.0.0.1'
-        || normalized === '0.0.0.0'
-        || normalized === '::1'
-        || normalized.endsWith('.localhost')
-        || /^10\./.test(normalized)
-        || /^192\.168\./.test(normalized)
-        || /^172\.(1[6-9]|2\d|3[0-1])\./.test(normalized)
-        || /^169\.254\./.test(normalized);
-}
-
 function normalizeImageUrl(value = '') {
     const raw = normalizeText(value);
     if (!raw) return '';
     try {
-        const url = new URL(raw);
-        if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
-        if (isBlockedImageHostname(url.hostname)) return '';
-        return url.toString();
+        return validatePublicHttpUrl(raw, { allowCustomPorts: false }).toString();
     } catch (_) {
         return '';
     }
 }
 
-function getImageMimeType(response, url = '') {
-    const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    if (contentType.startsWith('image/')) return contentType;
-    try {
-        const pathname = new URL(url).pathname.toLowerCase();
-        if (pathname.endsWith('.png')) return 'image/png';
-        if (pathname.endsWith('.webp')) return 'image/webp';
-        if (pathname.endsWith('.gif')) return 'image/gif';
-        if (pathname.endsWith('.avif')) return 'image/avif';
-    } catch (_) {
-        // Fall back below.
+function resolveValidatedImageMimeType(response, buffer = Buffer.alloc(0)) {
+    const headerType = String(response?.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+    const detectedMime = detectImageMimeFromMagic(buffer);
+
+    if (!detectedMime) {
+        return '';
     }
-    return 'image/jpeg';
+
+    if (headerType && headerType !== 'application/octet-stream' && headerType !== 'binary/octet-stream') {
+        if (!ALLOWED_IMAGE_MIME_TYPES.has(headerType)) {
+            return '';
+        }
+    }
+
+    return ALLOWED_IMAGE_MIME_TYPES.has(detectedMime) ? detectedMime : '';
 }
 
-async function fetchImageAsBase64(url, {
+async function fetchRemoteImageBuffer(url, {
     timeoutMs = DEFAULT_TIMEOUT_MS,
-    maxBytes = DEFAULT_MAX_BYTES
+    maxBytes = DEFAULT_MAX_BYTES,
+    fetcher = fetchWithPinnedSsrfGuard,
+    acceptHeader = 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8',
+    userAgent = 'ZaoyoeAdminImageAnalysis/1.0'
 } = {}) {
     const imageUrl = normalizeImageUrl(url);
     if (!imageUrl) {
@@ -69,56 +70,58 @@ async function fetchImageAsBase64(url, {
         throw error;
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        const response = await fetch(imageUrl, {
-            signal: controller.signal,
-            headers: {
-                Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5',
-                'User-Agent': 'ZaoyoeAdminImageAnalysis/1.0'
-            }
-        });
-        if (!response.ok) {
-            const error = new Error(`图片读取失败 (${response.status})`);
-            error.statusCode = response.status;
-            throw error;
+    const response = await fetcher(imageUrl, {
+        method: 'GET',
+        timeoutMs,
+        maxBytes,
+        maxRedirects: 3,
+        allowCustomPorts: false,
+        headers: {
+            Accept: acceptHeader,
+            'User-Agent': userAgent
         }
+    });
 
-        const mimeType = getImageMimeType(response, imageUrl);
-        if (!mimeType.startsWith('image/')) {
-            const error = new Error('读取到的内容不是图片');
-            error.statusCode = 415;
-            throw error;
-        }
-
-        const contentLength = Number.parseInt(response.headers.get('content-length') || '', 10);
-        if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-            const error = new Error('图片超过大小限制');
-            error.statusCode = 413;
-            throw error;
-        }
-
-        const buffer = Buffer.from(await response.arrayBuffer());
-        if (!buffer.length) {
-            const error = new Error('图片为空');
-            error.statusCode = 422;
-            throw error;
-        }
-        if (buffer.length > maxBytes) {
-            const error = new Error('图片超过大小限制');
-            error.statusCode = 413;
-            throw error;
-        }
-
-        return {
-            mime_type: mimeType,
-            base64: buffer.toString('base64'),
-            byte_size: buffer.length
-        };
-    } finally {
-        clearTimeout(timer);
+    if (!response.ok) {
+        const error = new Error(`图片读取失败 (${response.status})`);
+        error.statusCode = response.status || 502;
+        throw error;
     }
+
+    const buffer = Buffer.isBuffer(response.buffer) ? response.buffer : Buffer.from(response.buffer || '');
+    if (!buffer.length) {
+        const error = new Error('图片为空');
+        error.statusCode = 422;
+        throw error;
+    }
+
+    if (buffer.length > maxBytes) {
+        const error = new Error('图片超过大小限制');
+        error.statusCode = 413;
+        throw error;
+    }
+
+    const mimeType = resolveValidatedImageMimeType(response, buffer);
+    if (!mimeType) {
+        const error = new Error('读取到的内容不是图片');
+        error.statusCode = 415;
+        throw error;
+    }
+
+    return {
+        buffer,
+        mimeType,
+        byteSize: buffer.length
+    };
+}
+
+async function fetchImageAsBase64(url, options = {}) {
+    const { buffer, mimeType, byteSize } = await fetchRemoteImageBuffer(url, options);
+    return {
+        mime_type: mimeType,
+        base64: buffer.toString('base64'),
+        byte_size: byteSize
+    };
 }
 
 module.exports = async (req, res) => {
@@ -147,5 +150,7 @@ module.exports = async (req, res) => {
 
 module.exports._private = {
     normalizeImageUrl,
+    resolveValidatedImageMimeType,
+    fetchRemoteImageBuffer,
     fetchImageAsBase64
 };

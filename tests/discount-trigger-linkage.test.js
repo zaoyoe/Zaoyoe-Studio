@@ -116,6 +116,24 @@ function createSupabaseDouble(state) {
 
                 if (table === 'discount_user_assets' && query.mode === 'insert') {
                     const rows = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    if (typeof state.onDiscountUserAssetInsert === 'function') {
+                        const override = await state.onDiscountUserAssetInsert(rows, state);
+                        if (override) return override;
+                    }
+                    for (const row of rows) {
+                        const conflict = state.discountUserAssets.find((existing) => (
+                            existing.user_id === row.user_id
+                            && existing.discount_id === row.discount_id
+                            && row.source_batch_id
+                            && existing.source_batch_id === row.source_batch_id
+                        ));
+                        if (conflict) {
+                            return {
+                                data: null,
+                                error: { code: '23505', message: 'duplicate key value violates unique constraint' }
+                            };
+                        }
+                    }
                     const inserted = rows.map((row, index) => {
                         const nextRow = {
                             id: row.id || `asset-${state.discountUserAssets.length + index + 1}`,
@@ -540,4 +558,74 @@ test('affiliate linkage can issue activation coupon after a recharge reward row 
     assert.deepEqual(result.assigned_discount_ids, ['discount-aff-recharge']);
     assert.equal(state.discountUserAssets[0].user_id, 'inviter-2');
     assert.equal(state.discountUserAssets[0].source_batch_id, 'discount-trigger-affiliate:REG_REWARD_UNLOCK_RECHARGE_ledger-recharge-1');
+});
+
+test('concurrent trigger grant hitting Postgres 23505 skips conflicting coupon and preserves remaining inserts', async () => {
+    let sawBulk = false;
+    const state = {
+        systemConfigRows: [
+            createAffiliateConfig([
+                {
+                    discount_id: 'discount-conflict',
+                    reward_type: 'activation_reward',
+                    min_reward_points: 10,
+                    source_channel: 'affiliate_reward'
+                },
+                {
+                    discount_id: 'discount-fresh',
+                    reward_type: 'activation_reward',
+                    min_reward_points: 10,
+                    source_channel: 'affiliate_reward'
+                }
+            ])
+        ],
+        discountCodes: [
+            createActiveDiscount('discount-conflict'),
+            createActiveDiscount('discount-fresh')
+        ],
+        pointsLedger: [
+            {
+                id: 'ledger-recharge-race',
+                user_id: 'invitee-race',
+                amount: 100,
+                reason: '模拟充值: 标准充值',
+                reference_id: 'mock_race',
+                site: 'cn'
+            },
+            {
+                id: 'ledger-aff-race-1',
+                user_id: 'inviter-race',
+                amount: 30,
+                reason: '拉新固定奖励',
+                reference_id: 'REG_REWARD_UNLOCK_RECHARGE_ledger-recharge-race',
+                site: 'cn'
+            }
+        ],
+        onDiscountUserAssetInsert(rows, store) {
+            if (!sawBulk && rows.length === 2) {
+                sawBulk = true;
+                store.discountUserAssets.push({
+                    id: 'asset-winner',
+                    ...clone(rows[0])
+                });
+                return {
+                    data: null,
+                    error: { code: '23505', message: 'duplicate key value violates unique constraint' }
+                };
+            }
+            return null;
+        }
+    };
+    const supabase = createSupabaseDouble(state);
+
+    const result = await maybeIssueAffiliateDiscountAssetsForRecharge({
+        supabase,
+        site: 'cn',
+        rechargeReferenceId: 'mock_race'
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.issued_count, 1);
+    assert.deepEqual(result.assigned_discount_ids, ['discount-fresh']);
+    assert.equal(state.discountUserAssets.length, 2);
 });

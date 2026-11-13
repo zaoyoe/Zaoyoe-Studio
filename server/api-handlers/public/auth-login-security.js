@@ -1,7 +1,60 @@
+const crypto = require('crypto');
+
 const DEFAULT_SECURITY_CONFIG = Object.freeze({
     login_lockout_attempts: 5,
     lockout_duration: 15 * 60 * 1000
 });
+
+function hasValidInternalAuthSecret(req, env = process.env) {
+    const expectedSecret = String(env.INTERNAL_AUTH_SECURITY_SECRET || env.CRON_SECRET || '').trim();
+    const providedSecret = String(req?.headers?.['x-internal-auth-secret'] || '').trim();
+    if (!expectedSecret || !providedSecret) {
+        return false;
+    }
+
+    const expectedDigest = crypto.createHash('sha256').update(expectedSecret).digest();
+    const providedDigest = crypto.createHash('sha256').update(providedSecret).digest();
+    return crypto.timingSafeEqual(expectedDigest, providedDigest);
+}
+
+function isInvalidCredentialsAuthError(error) {
+    const code = String(error?.code || '').trim().toLowerCase();
+    if (code === 'invalid_credentials') {
+        return true;
+    }
+    const message = String(error?.message || '');
+    return message.includes('Invalid login credentials')
+        || message.includes('invalid_credentials')
+        || message.includes('Invalid credentials');
+}
+
+function resolvePasswordVerificationClient(admin, env = process.env) {
+    if (typeof admin?.createSupabasePasswordVerificationClient === 'function') {
+        return admin.createSupabasePasswordVerificationClient();
+    }
+
+    const supabaseUrl = String(env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+    const publishableKey = String(
+        env.SUPABASE_PUBLISHABLE_KEY
+        || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        || env.SUPABASE_ANON_KEY
+        || env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+        || ''
+    ).trim();
+
+    if (!supabaseUrl || !publishableKey) {
+        throw Object.assign(new Error('Password verification client is unavailable'), { statusCode: 503 });
+    }
+
+    const { createClient } = require('@supabase/supabase-js');
+    return createClient(supabaseUrl, publishableKey, {
+        auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
+        }
+    });
+}
 
 function sanitizeEmail(value) {
     return String(value || '').trim().toLowerCase();
@@ -182,6 +235,125 @@ async function runSecurityAction({ supabase, action, email, clientIp }) {
     return recordFailureState(supabase, email, clientIp, securityConfig);
 }
 
+async function performPasswordLogin({
+    supabase,
+    admin,
+    env,
+    email,
+    password,
+    captchaToken,
+    clientIp
+}) {
+    const preflightSecurity = await runSecurityAction({
+        supabase,
+        action: 'preflight',
+        email,
+        clientIp
+    });
+
+    if (preflightSecurity.ip_blocked) {
+        return {
+            statusCode: 403,
+            body: {
+                success: false,
+                action: 'password_login',
+                code: 'ip_blocked',
+                message: 'IP is temporarily blocked',
+                security: preflightSecurity
+            }
+        };
+    }
+
+    if (preflightSecurity.account_locked) {
+        return {
+            statusCode: 429,
+            body: {
+                success: false,
+                action: 'password_login',
+                code: 'account_locked',
+                message: 'Account is temporarily locked',
+                security: preflightSecurity
+            }
+        };
+    }
+
+    const authClient = resolvePasswordVerificationClient(admin, env);
+    const signInPayload = {
+        email,
+        password
+    };
+    if (captchaToken) {
+        signInPayload.options = { captchaToken };
+    }
+
+    const { data: authData, error: authError } = await authClient.auth.signInWithPassword(signInPayload);
+    if (authError) {
+        if (isInvalidCredentialsAuthError(authError)) {
+            const securityConfig = await loadSecurityConfig(supabase);
+            const failureSecurity = await recordFailureState(supabase, email, clientIp, securityConfig);
+            return {
+                statusCode: 401,
+                body: {
+                    success: false,
+                    action: 'password_login',
+                    code: 'invalid_credentials',
+                    message: authError.message || 'Invalid login credentials',
+                    security: failureSecurity
+                }
+            };
+        }
+
+        const rawStatus = Number(authError.status);
+        const statusCode = rawStatus >= 400 && rawStatus < 500 ? rawStatus : 400;
+        return {
+            statusCode,
+            body: {
+                success: false,
+                action: 'password_login',
+                code: authError.code || 'auth_failed',
+                message: authError.message || 'Authentication failed',
+                security: preflightSecurity
+            }
+        };
+    }
+
+    if (!authData?.session?.access_token) {
+        return {
+            statusCode: 401,
+            body: {
+                success: false,
+                action: 'password_login',
+                code: 'auth_failed',
+                message: 'Authentication failed',
+                security: preflightSecurity
+            }
+        };
+    }
+
+    try {
+        await supabase.rpc('reset_login_failures', { user_email: email });
+    } catch (resetError) {
+        console.warn('[AuthSecurity] Failed to reset login failures after login:', resetError?.message || resetError);
+    }
+
+    return {
+        statusCode: 200,
+        body: {
+            success: true,
+            action: 'password_login',
+            security: preflightSecurity,
+            session: {
+                access_token: authData.session.access_token,
+                refresh_token: authData.session.refresh_token,
+                expires_in: authData.session.expires_in,
+                expires_at: authData.session.expires_at,
+                token_type: authData.session.token_type || 'bearer'
+            },
+            user: authData.user || authData.session.user || null
+        }
+    };
+}
+
 function createLoginSecurityHandler({
     admin,
     requestSecurity,
@@ -252,15 +424,50 @@ function createLoginSecurityHandler({
                 });
             }
 
-            if (action !== 'preflight' && action !== 'preflight_ip' && action !== 'record_failure') {
+            if (
+                action !== 'preflight'
+                && action !== 'preflight_ip'
+                && action !== 'record_failure'
+                && action !== 'password_login'
+            ) {
                 return sendJson(res, 400, {
                     success: false,
                     message: 'Unsupported action'
                 });
             }
 
+            if (action === 'record_failure' && !hasValidInternalAuthSecret(req, env)) {
+                return sendJson(res, 403, {
+                    success: false,
+                    code: 'record_failure_forbidden',
+                    message: 'Direct failure recording is not permitted'
+                });
+            }
+
             const supabase = getSupabaseAdmin();
             const clientIp = resolveClientIp(req, { env });
+
+            if (action === 'password_login') {
+                const password = typeof body?.password === 'string' ? body.password : '';
+                if (!password) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        message: 'Email and password are required'
+                    });
+                }
+                const captchaToken = String(body?.captchaToken || '').trim() || undefined;
+                const loginResult = await performPasswordLogin({
+                    supabase,
+                    admin,
+                    env,
+                    email,
+                    password,
+                    captchaToken,
+                    clientIp
+                });
+                return sendJson(res, loginResult.statusCode, loginResult.body);
+            }
+
             const security = await runSecurityAction({
                 supabase,
                 action,
@@ -287,8 +494,12 @@ module.exports = {
     DEFAULT_SECURITY_CONFIG,
     buildSecurityPayload,
     createLoginSecurityHandler,
+    hasValidInternalAuthSecret,
+    isInvalidCredentialsAuthError,
     loadSecurityConfig,
+    performPasswordLogin,
     recordFailureState,
+    resolvePasswordVerificationClient,
     runSecurityAction,
     sanitizeEmail,
     unwrapSingleResult

@@ -15,6 +15,13 @@ const {
     extractPromptImagePalette
 } = require('../../../prompt-image-palette');
 const { extractVideoPosterFrame } = require('../../../prompt-video-poster');
+const {
+    detectImageMimeFromMagic,
+    detectVideoMimeFromMagic,
+    fetchWithPinnedSsrfGuard,
+    isPublicAddress,
+    validatePublicHttpUrl
+} = require('../../../../api/_lib/remote-http-security');
 
 const IMPORT_BATCH_SELECT = 'id, source, mode, site, status, settings, stats, created_by, created_at, updated_at, completed_at, cleanup_after';
 const IMPORT_ITEM_SELECT = [
@@ -685,51 +692,39 @@ function getImportPageQuery(searchParams) {
 
 function isBlockedImportHostname(hostname = '') {
     const host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
-    return !host
-        || host === 'localhost'
-        || host.endsWith('.localhost')
-        || host.endsWith('.local')
-        || host === '::1'
-        || host === '::'
-        || /^f[cd][0-9a-f]{0,2}:/.test(host)
-        || /^fe[89ab][0-9a-f]:/.test(host)
-        || host.startsWith('::ffff:127.')
-        || host.startsWith('::ffff:10.')
-        || host.startsWith('::ffff:192.168.')
-        || host === 'metadata.google.internal'
-        || host === '0.0.0.0'
-        || host.startsWith('127.')
-        || host.startsWith('10.')
-        || host.startsWith('192.168.')
-        || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
-        || host === '169.254.169.254';
+    if (!host) return true;
+    try {
+        validatePublicHttpUrl(`https://${hostname.includes(':') && !hostname.startsWith('[') ? `[${hostname}]` : hostname}/`, {
+            allowCustomPorts: false
+        });
+        return false;
+    } catch (_) {
+        return true;
+    }
 }
 
 function assertRemoteImageUrlAllowed(rawUrl = '') {
-    const url = new URL(rawUrl);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        const error = new Error('图片地址不支持');
-        error.statusCode = 400;
-        throw error;
-    }
-    if (isBlockedImportHostname(url.hostname)) {
+    try {
+        return validatePublicHttpUrl(rawUrl, { allowCustomPorts: false });
+    } catch (_) {
         const error = new Error('图片地址不允许访问');
         error.statusCode = 400;
         throw error;
     }
-    return url;
 }
 
-function getImageMimeType(response, url) {
-    const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    if (contentType.startsWith('image/')) return contentType;
+function getImageMimeType(response, url, buffer = null) {
+    const detected = Buffer.isBuffer(buffer) ? detectImageMimeFromMagic(buffer) : '';
+    const contentType = String(response?.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (contentType.startsWith('image/')) return detected || contentType;
+    if (detected) return detected;
 
     const pathname = new URL(url).pathname.toLowerCase();
     if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'image/jpeg';
     if (pathname.endsWith('.webp')) return 'image/webp';
     if (pathname.endsWith('.gif')) return 'image/gif';
     if (pathname.endsWith('.png')) return 'image/png';
-    return 'image/jpeg';
+    return '';
 }
 
 function getImageExtension(mimeType = 'image/jpeg') {
@@ -742,25 +737,19 @@ function getImageExtension(mimeType = 'image/jpeg') {
 }
 
 function isSupportedImageBuffer(buffer = Buffer.alloc(0)) {
-    if (!Buffer.isBuffer(buffer) || buffer.length < 12) return false;
-    const header = buffer.subarray(0, 16);
-    return (header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff)
-        || header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
-        || header.subarray(0, 6).toString('ascii') === 'GIF87a'
-        || header.subarray(0, 6).toString('ascii') === 'GIF89a'
-        || (header.subarray(0, 4).toString('ascii') === 'RIFF' && header.subarray(8, 12).toString('ascii') === 'WEBP')
-        || header.subarray(4, 12).toString('ascii').includes('ftypavif')
-        || header.subarray(4, 12).toString('ascii').includes('ftypavis');
+    return Boolean(detectImageMimeFromMagic(buffer));
 }
 
-function getVideoMimeType(response, url) {
-    const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    if (contentType.startsWith('video/')) return contentType;
+function getVideoMimeType(response, url, buffer = null) {
+    const detected = Buffer.isBuffer(buffer) ? detectVideoMimeFromMagic(buffer) : '';
+    const contentType = String(response?.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (contentType.startsWith('video/')) return detected || contentType;
+    if (detected) return detected;
     const pathname = new URL(url).pathname.toLowerCase();
     if (pathname.endsWith('.webm')) return 'video/webm';
     if (pathname.endsWith('.mov')) return 'video/quicktime';
     if (pathname.endsWith('.m4v')) return 'video/x-m4v';
-    return 'video/mp4';
+    return '';
 }
 
 function getVideoExtension(mimeType = 'video/mp4') {
@@ -772,109 +761,77 @@ function getVideoExtension(mimeType = 'video/mp4') {
 }
 
 function isSupportedVideoBuffer(buffer = Buffer.alloc(0)) {
-    if (!Buffer.isBuffer(buffer) || buffer.length < 12) return false;
-    const header = buffer.subarray(0, 16);
-    return header.subarray(4, 8).toString('ascii') === 'ftyp'
-        || header.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+    return Boolean(detectVideoMimeFromMagic(buffer));
 }
 
 async function downloadRemoteVideo(url, {
     timeoutMs = DEFAULT_VIDEO_TIMEOUT_MS,
-    maxBytes = DEFAULT_MAX_VIDEO_BYTES
+    maxBytes = DEFAULT_MAX_VIDEO_BYTES,
+    fetcher = fetchWithPinnedSsrfGuard
 } = {}) {
-    assertRemoteImageUrlAllowed(url);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        let currentUrl = assertRemoteImageUrlAllowed(url).toString();
-        let response = null;
-        for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
-            response = await fetch(currentUrl, {
-                signal: controller.signal,
-                redirect: 'manual',
-                headers: {
-                    Accept: 'video/mp4,video/webm,video/quicktime,video/*;q=0.9,*/*;q=0.5',
-                    Referer: 'https://www.meigen.ai/',
-                    'User-Agent': 'ZaoyoeGalleryImport/1.0'
-                }
-            });
-            if (![301, 302, 303, 307, 308].includes(response.status)) break;
-            const location = response.headers.get('location');
-            if (!location || redirectCount === 3) throw new Error('视频跳转次数过多');
-            currentUrl = assertRemoteImageUrlAllowed(new URL(location, currentUrl).toString()).toString();
+    const validatedUrl = assertRemoteImageUrlAllowed(url).toString();
+    const response = await fetcher(validatedUrl, {
+        method: 'GET',
+        timeoutMs,
+        maxBytes,
+        maxRedirects: 3,
+        allowCustomPorts: false,
+        allowUnsafeRedirectErrorMessage: '视频跳转次数过多',
+        headers: {
+            Accept: 'video/mp4,video/webm,video/quicktime,video/*;q=0.9,*/*;q=0.5',
+            Referer: 'https://www.meigen.ai/',
+            'User-Agent': 'ZaoyoeGalleryImport/1.0'
         }
-        if (!response.ok) throw new Error(`视频下载失败 (${response.status})`);
-        const contentLength = Number.parseInt(response.headers.get('content-length') || '', 10);
-        if (Number.isFinite(contentLength) && contentLength > maxBytes) throw new Error('视频超过大小限制');
-        const buffer = Buffer.from(await response.arrayBuffer());
-        if (!buffer.length) throw new Error('视频为空');
-        if (buffer.length > maxBytes) throw new Error('视频超过大小限制');
-        if (!isSupportedVideoBuffer(buffer)) throw new Error('视频地址返回的不是受支持的视频文件');
-        return {
-            buffer,
-            mimeType: getVideoMimeType(response, currentUrl),
-            contentHash: `sha256:${crypto.createHash('sha256').update(buffer).digest('hex')}`
-        };
-    } finally {
-        clearTimeout(timer);
-    }
+    });
+    if (!response.ok) throw new Error(`视频下载失败 (${response.status})`);
+    const buffer = Buffer.isBuffer(response.buffer) ? response.buffer : Buffer.from(response.buffer || '');
+    if (!buffer.length) throw new Error('视频为空');
+    if (buffer.length > maxBytes) throw new Error('视频超过大小限制');
+    if (!isSupportedVideoBuffer(buffer)) throw new Error('视频地址返回的不是受支持的视频文件');
+    return {
+        buffer,
+        mimeType: getVideoMimeType(response, response.url || validatedUrl, buffer),
+        contentHash: `sha256:${crypto.createHash('sha256').update(buffer).digest('hex')}`
+    };
 }
 
 async function downloadRemoteImage(url, {
     timeoutMs = DEFAULT_IMAGE_TIMEOUT_MS,
-    maxBytes = DEFAULT_MAX_IMAGE_BYTES
+    maxBytes = DEFAULT_MAX_IMAGE_BYTES,
+    fetcher = fetchWithPinnedSsrfGuard
 } = {}) {
-    assertRemoteImageUrlAllowed(url);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-        let currentUrl = assertRemoteImageUrlAllowed(url).toString();
-        let response = null;
-        for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
-            response = await fetch(currentUrl, {
-                signal: controller.signal,
-                redirect: 'manual',
-                headers: {
-                    Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5',
-                    Referer: 'https://www.meigen.ai/',
-                    'User-Agent': 'ZaoyoeGalleryImport/1.0'
-                }
-            });
-            if (![301, 302, 303, 307, 308].includes(response.status)) break;
-            const location = response.headers.get('location');
-            if (!location || redirectCount === 3) {
-                throw new Error('图片跳转次数过多');
-            }
-            currentUrl = assertRemoteImageUrlAllowed(new URL(location, currentUrl).toString()).toString();
+    const validatedUrl = assertRemoteImageUrlAllowed(url).toString();
+    const response = await fetcher(validatedUrl, {
+        method: 'GET',
+        timeoutMs,
+        maxBytes,
+        maxRedirects: 3,
+        allowCustomPorts: false,
+        allowUnsafeRedirectErrorMessage: '图片跳转次数过多',
+        headers: {
+            Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5',
+            Referer: 'https://www.meigen.ai/',
+            'User-Agent': 'ZaoyoeGalleryImport/1.0'
         }
-        if (!response.ok) {
-            throw new Error(`图片下载失败 (${response.status})`);
-        }
-
-        const contentLength = Number.parseInt(response.headers.get('content-length') || '', 10);
-        if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-            throw new Error('图片超过大小限制');
-        }
-
-        const buffer = Buffer.from(await response.arrayBuffer());
-        if (!buffer.length) {
-            throw new Error('图片为空');
-        }
-        if (buffer.length > maxBytes) {
-            throw new Error('图片超过大小限制');
-        }
-        if (!isSupportedImageBuffer(buffer)) {
-            throw new Error('图片地址返回的不是受支持的图片文件');
-        }
-
-        return {
-            buffer,
-            mimeType: getImageMimeType(response, currentUrl)
-        };
-    } finally {
-        clearTimeout(timer);
+    });
+    if (!response.ok) {
+        throw new Error(`图片下载失败 (${response.status})`);
     }
+    const buffer = Buffer.isBuffer(response.buffer) ? response.buffer : Buffer.from(response.buffer || '');
+    if (!buffer.length) {
+        throw new Error('图片为空');
+    }
+    if (buffer.length > maxBytes) {
+        throw new Error('图片超过大小限制');
+    }
+    if (!isSupportedImageBuffer(buffer)) {
+        throw new Error('图片地址返回的不是受支持的图片文件');
+    }
+
+    return {
+        buffer,
+        mimeType: getImageMimeType(response, response.url || validatedUrl, buffer)
+    };
 }
 
 function createR2Client(config) {

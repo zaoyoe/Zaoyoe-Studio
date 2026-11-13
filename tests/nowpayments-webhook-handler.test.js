@@ -226,6 +226,7 @@ function buildDependencyMocks(state) {
             async rechargePointsForPayment(payload) {
                 state.rechargePayload = payload;
                 return {
+                    data: state.rechargeData || null,
                     error: null
                 };
             }
@@ -687,5 +688,42 @@ test('raw provider and callback payment IDs retain precision beyond Number.MAX_S
         assert.equal(state.queryArgs.paymentId, metadata.payment_id);
         assert.equal(state.paymentOrderPatch.provider_metadata.payment_id, metadata.payment_id);
         assert.equal(state.finalizedEvent.processing_result, 'processed_paid');
+    });
+});
+
+test('late NOWPayments webhook ignores refunded and refund_pending orders without re-crediting or overwriting', async () => {
+    for (const orderPatch of [
+        { status: 'refunded', provider_metadata: { refund_status: 'refunded' } },
+        { status: 'pending', provider_metadata: { refund_status: 'refund_pending' } }
+    ]) {
+        const { state, req, metadata } = receiptBoundaryFixture();
+        state.existingPaymentOrder.status = orderPatch.status;
+        state.existingPaymentOrder.provider_metadata = {
+            ...metadata,
+            ...orderPatch.provider_metadata
+        };
+        await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+            const res = createMockResponse();
+            await createNowpaymentsWebhookHandler({ supabase: createSupabaseMock(state), env: {} })(req, res);
+            assert.equal(res.statusCode, 200);
+            assert.equal(state.rechargePayload, undefined);
+            assert.equal(state.paymentOrderPatch, undefined);
+            assert.equal(state.discountPayload, undefined);
+            assert.equal(state.affiliatePayload, undefined);
+            assert.equal(state.finalizedEvent.processing_result, 'ignored_terminal_refund');
+        });
+    }
+});
+
+test('NOWPayments webhook suppresses discount issuance when rechargePointsForPayment reports deduped true', async () => {
+    const { state, req } = receiptBoundaryFixture();
+    state.rechargeData = { deduped: true };
+    await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+        const res = createMockResponse();
+        await createNowpaymentsWebhookHandler({ supabase: createSupabaseMock(state), env: {} })(req, res);
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.finalizedEvent.processing_result, 'processed_paid');
+        assert.equal(state.discountPayload, undefined);
+        assert.equal(state.affiliatePayload, undefined);
     });
 });

@@ -1,0 +1,57 @@
+name: Supabase Security & Migration Sync Audit
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/ci-audit-supabase-sync.js'
+      - 'scripts/audit-db-security.js'
+      - '.github/workflows/supabase-security-audit.yml'
+  schedule:
+    - cron: '15 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-security-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  migration_and_live_audit:
+    name: Static & Live Supabase Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify static migration security invariants
+        run: npm run audit:migrations
+
+      - name: Run live Supabase catalog, RLS, RPC & migration sync audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::notice ::Skipping live Supabase RPC audit because SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY secrets are not set."
+            node scripts/ci-audit-supabase-sync.js --live --json
+          else
+            node scripts/ci-audit-supabase-sync.js --live --require-live --json
+          fi

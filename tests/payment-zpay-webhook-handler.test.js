@@ -1111,3 +1111,70 @@ test('zpay webhook selects signature fields and deletes prior signature_mismatch
         assert.equal(state.rechargePayload.referenceId, 'zpay_ZP901');
     });
 });
+
+test('late ZPAY webhook ignores refunded and refund_pending orders without re-crediting or overwriting', async () => {
+    for (const orderPatch of [
+        { status: 'refunded', provider_metadata: { refund_status: 'refunded' } },
+        { status: 'pending', provider_metadata: { refund_status: 'refund_pending' } }
+    ]) {
+        const state = {
+            signatureValid: true,
+            existingPaymentOrder: {
+                id: 'po-zpay-term-1',
+                user_id: 'user-term-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPTERM1',
+                site: 'cn',
+                package_name: '测试套餐',
+                expected_amount: 12.34,
+                points_amount: 100,
+                status: orderPatch.status,
+                raw_payload: {},
+                provider_metadata: orderPatch.provider_metadata
+            },
+            queryOrderResult: {
+                supported: true,
+                success: true,
+                providerOrderNo: 'ZPTERM1',
+                tradeNo: 'TRADE-TERM1',
+                paidAmount: 12.34,
+                status: 'paid',
+                statusRaw: 'TRADE_SUCCESS',
+                responsePayload: { code: '1' }
+            }
+        };
+
+        await withZpayWebhookModule(buildDependencyMocks(state), async ({ createZpayWebhookHandler }) => {
+            const handler = createZpayWebhookHandler({
+                supabase: createSupabaseMock(state),
+                env: {
+                    APP_ENV: 'production',
+                    APP_BASE_URL: 'https://www.fatherkey.com',
+                    TRUSTED_PROXY_IPS: '10.0.0.0/8'
+                }
+            });
+            const attachData = JSON.stringify({
+                user_id: 'user-term-1',
+                site: 'cn',
+                expected_amount: 12.34,
+                charge_type: 'package',
+                checkout_session_id: 'checkout-term-1'
+            });
+            const res = createMockResponse();
+            await handler({
+                method: 'GET',
+                url: `/api/payments/zpay/webhook?out_trade_no=ZPTERM1&trade_no=TRADE-TERM1&trade_status=TRADE_SUCCESS&money=12.34&pid=2026041807323142&type=alipay&param=${encodeURIComponent(attachData)}`,
+                headers: {
+                    host: 'www.fatherkey.com',
+                    'x-forwarded-for': '203.0.113.10'
+                }
+            }, res);
+
+            assert.equal(res.statusCode, 200);
+            assert.equal(state.queryCalls, undefined);
+            assert.equal(state.rechargePayload, undefined);
+            assert.equal(state.paymentOrderPatch, undefined);
+            assert.equal(state.finalizedEvent.processing_result, 'ignored_terminal_refund');
+        });
+    }
+});

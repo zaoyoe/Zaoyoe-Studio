@@ -7,7 +7,9 @@
 require('dotenv').config();
 const express = require('express');
 const { createActivationService, errorResponse: activationErrorResponse, isActivationRequest, isActivationJob } = require('./api-handlers/_google-one-activation-runtime');
-const { loadVerifyRuntimeConfig: loadActivationRuntimeConfig } = require('./api-handlers/_verify-provider-runtime');
+const { loadVerifyRuntimeConfig: loadActivationRuntimeConfig, buildVerifyKeyFingerprint } = require('./api-handlers/_verify-provider-runtime');
+const adminSessions = require('../api/_lib/admin-session-store');
+const { getAdminStudioCookiePayload, hasRequiredAdminPermissions } = require('../api/_lib/admin');
 const cors = require('cors');
 const { isTgNowpaymentsWebhookRequest } = require('./tg/raw-body');
 const crypto = require('crypto');
@@ -1766,16 +1768,76 @@ async function requireAuthenticatedUser(req, res) {
     return null;
 }
 
-async function isAdminUser(userId) {
-    const normalizedUserId = String(userId || '').trim();
-    if (!normalizedUserId) return false;
+async function authenticateAdminSessionUser(req, res) {
+    const token = getBearerToken(req);
+    if (token) {
+        const { data, error } = await supabase.auth.getUser(token);
+        if (!error && data?.user) {
+            try {
+                await adminSessions.requireActiveBearerSession(supabase, token, data.user.id);
+                return data.user;
+            } catch (sessionError) {
+                res.status(Number(sessionError?.statusCode) || 401).json({
+                    success: false,
+                    message: sessionError?.message || '管理员登录会话已失效，请重新登录',
+                    code: sessionError?.code || 'admin_session_expired'
+                });
+                return null;
+            }
+        }
+    }
 
+    const cookiePayload = await getAdminStudioCookiePayload(req);
+    if (cookiePayload?.sub && cookiePayload?.sid) {
+        try {
+            await adminSessions.validateStudioSession(supabase, cookiePayload);
+        } catch (sessionError) {
+            res.status(Number(sessionError?.statusCode) || 401).json({
+                success: false,
+                message: sessionError?.message || '管理员会话已失效，请重新登录',
+                code: sessionError?.code || 'admin_session_expired'
+            });
+            return null;
+        }
+
+        if (typeof supabase?.auth?.admin?.getUserById === 'function') {
+            const { data: userData, error: userError } = await supabase.auth.admin.getUserById(cookiePayload.sub);
+            if (!userError && userData?.user) {
+                return userData.user;
+            }
+        }
+    }
+
+    res.status(401).json({
+        success: false,
+        message: '请先登录',
+        code: 'unauthorized'
+    });
+    return null;
+}
+
+async function resolveAdminAccess(userId) {
+    const normalizedUserId = String(userId || '').trim();
+    if (!normalizedUserId) {
+        return { isAdmin: false, isSuperAdmin: false, permissions: [] };
+    }
+
+    let rpcPermissions = [];
     try {
         const { data: permissionData, error: permissionError } = await supabase
             .rpc('get_user_permissions', { p_user_id: normalizedUserId });
 
-        if (!permissionError && (permissionData?.is_admin || permissionData?.is_super_admin)) {
-            return true;
+        if (!permissionError && permissionData) {
+            rpcPermissions = Array.isArray(permissionData.permissions)
+                ? permissionData.permissions
+                : [];
+            if (permissionData.is_admin || permissionData.is_super_admin) {
+                return {
+                    isAdmin: true,
+                    isSuperAdmin: Boolean(permissionData.is_super_admin),
+                    permissions: rpcPermissions
+                };
+            }
         }
     } catch (error) {
         console.warn('[Auth] get_user_permissions check failed:', error.message);
@@ -1791,21 +1853,35 @@ async function isAdminUser(userId) {
     }
 
     const now = Date.now();
-    return (Array.isArray(data) ? data : []).some((role) => {
+    const activeRoles = (Array.isArray(data) ? data : []).filter((role) => {
         if (!role?.expires_at) return true;
         return new Date(role.expires_at).getTime() > now;
     });
+
+    if (activeRoles.length === 0) {
+        return { isAdmin: false, isSuperAdmin: false, permissions: rpcPermissions };
+    }
+
+    const isSuperAdmin = activeRoles.some((role) => String(role?.role_name || '').trim().toLowerCase() === 'super_admin');
+    return {
+        isAdmin: true,
+        isSuperAdmin,
+        permissions: isSuperAdmin ? ['*'] : rpcPermissions
+    };
 }
 
-async function requireAdminUser(req, res) {
-    const user = await requireAuthenticatedUser(req, res);
+async function isAdminUser(userId) {
+    const access = await resolveAdminAccess(userId);
+    return access.isAdmin;
+}
+
+async function requireAdminUser(req, res, options = {}) {
+    const user = await authenticateAdminSessionUser(req, res);
     if (!user) return null;
 
+    let access;
     try {
-        const allowed = await isAdminUser(user.id);
-        if (allowed) {
-            return user;
-        }
+        access = await resolveAdminAccess(user.id);
     } catch (error) {
         console.error('[Auth] Admin permission check error:', error);
         res.status(500).json({
@@ -1816,19 +1892,38 @@ async function requireAdminUser(req, res) {
         return null;
     }
 
-    res.status(403).json({
-        success: false,
-        message: '需要管理员权限',
-        code: 'admin_required'
-    });
-    return null;
+    if (!access.isAdmin) {
+        res.status(403).json({
+            success: false,
+            message: '需要管理员权限',
+            code: 'admin_required'
+        });
+        return null;
+    }
+
+    const hasExplicitPermissionRequirement = Boolean(
+        options?.permission
+        || (Array.isArray(options?.anyOf) && options.anyOf.length > 0)
+        || (Array.isArray(options?.allOf) && options.allOf.length > 0)
+    );
+
+    if (!access.isSuperAdmin && hasExplicitPermissionRequirement && !hasRequiredAdminPermissions(access.permissions, options)) {
+        res.status(403).json({
+            success: false,
+            message: '当前管理员角色缺少执行该操作的权限',
+            code: 'admin_permission_required'
+        });
+        return null;
+    }
+
+    return user;
 }
 
-async function requireAdminOrInternalAccess(req, res) {
-    return requireAdminUser(req, res);
+async function requireAdminOrInternalAccess(req, res, options = {}) {
+    return requireAdminUser(req, res, options);
 }
 
-async function requireAdminOrVerifyMonitorInternalAccess(req, res) {
+async function requireAdminOrVerifyMonitorInternalAccess(req, res, options = {}) {
     if (hasVerifyMonitorInternalAccess(req, process.env)) {
         return {
             id: 'verify-monitor-internal',
@@ -1836,7 +1931,7 @@ async function requireAdminOrVerifyMonitorInternalAccess(req, res) {
         };
     }
 
-    return requireAdminUser(req, res);
+    return requireAdminUser(req, res, options);
 }
 
 async function recordPaymentEvent(eventPayload) {
@@ -5022,7 +5117,7 @@ app.post('/api/verify/action', async (req, res) => {
 // GET /api/quota — Check current API key balance
 // =============================================
 app.get('/api/quota', async (req, res) => {
-    const quotaAccess = await requireAdminOrVerifyMonitorInternalAccess(req, res);
+    const quotaAccess = await requireAdminOrVerifyMonitorInternalAccess(req, res, { permission: 'settings.manage' });
     if (!quotaAccess) return;
 
     try {
@@ -5049,7 +5144,8 @@ app.get('/api/quota', async (req, res) => {
                 key_count: cardCodes.length,
                 healthy_key_count: cardCodes.length,
                 key_states: cardCodes.map((key, index) => ({
-                    api_key: key,
+                    masked_key: maskVerifyCredential(key),
+                    key_fingerprint: buildVerifyKeyFingerprint(key),
                     key_name: `86AI 卡密 #${index + 1}`,
                     balance: null,
                     status: 'configured',
@@ -5091,8 +5187,8 @@ app.get('/api/quota', async (req, res) => {
             const supportsFull = verifySnapshotSupportsTaskType({ key_type: snapshotKeyType }, 'full');
 
             return {
-                api_key: String(snapshot.apiKey || '').trim(),
                 masked_key: maskVerifyCredential(snapshot.apiKey),
+                key_fingerprint: buildVerifyKeyFingerprint(snapshot.apiKey),
                 key_name: String(snapshot.keyName || maskVerifyCredential(snapshot.apiKey)).trim(),
                 provider: config.provider,
                 adapter: config.adapter || config.provider_adapter,
@@ -5149,7 +5245,7 @@ app.get('/api/quota', async (req, res) => {
 // GET /api/queue — Inspect upstream queue status
 // =============================================
 app.get('/api/queue', async (req, res) => {
-    const queueAccess = await requireAdminOrVerifyMonitorInternalAccess(req, res);
+    const queueAccess = await requireAdminOrVerifyMonitorInternalAccess(req, res, { permission: 'settings.manage' });
     if (!queueAccess) return;
 
     try {
@@ -5176,7 +5272,8 @@ app.get('/api/queue', async (req, res) => {
                 key_count: cardCodes.length,
                 healthy_key_count: cardCodes.length,
                 key_states: cardCodes.map((key, index) => ({
-                    api_key: key,
+                    masked_key: maskVerifyCredential(key),
+                    key_fingerprint: buildVerifyKeyFingerprint(key),
                     key_name: `86AI 卡密 #${index + 1}`,
                     balance: null,
                     status: 'configured',
@@ -5213,7 +5310,7 @@ app.get('/api/queue', async (req, res) => {
 // GET /api/admin/network/request-context — Inspect proxy/IP resolution
 // =============================================
 app.get('/api/admin/network/request-context', async (req, res) => {
-    const adminUser = await requireAdminOrInternalAccess(req, res);
+    const adminUser = await requireAdminOrInternalAccess(req, res, { permission: 'settings.manage' });
     if (!adminUser) return;
 
     const appContext = buildRequestNetworkContext(req, {

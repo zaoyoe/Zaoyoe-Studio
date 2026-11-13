@@ -14,6 +14,10 @@ const {
     redactSensitiveText,
     redactSensitiveValue
 } = require('../_ai-shared');
+const {
+    validatePublicHttpUrl,
+    resolvePublicAddresses
+} = require('../../../../api/_lib/remote-http-security');
 
 function normalizeBaseUrl(value) {
     return String(value || '').trim().replace(/\/+$/, '');
@@ -21,8 +25,8 @@ function normalizeBaseUrl(value) {
 
 function isValidHttpUrl(value) {
     try {
-        const parsed = new URL(value);
-        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+        validatePublicHttpUrl(value, { allowCustomPorts: true });
+        return true;
     } catch (_) {
         return false;
     }
@@ -164,14 +168,31 @@ async function runConnectivityProbe({ apiKey, baseUrl, model, apiFormat }) {
         throw error;
     }
 
-    const response = await fetch(upstreamUrl, {
+    let safeUrl;
+    try {
+        safeUrl = validatePublicHttpUrl(upstreamUrl, { allowCustomPorts: true });
+        await resolvePublicAddresses(safeUrl.hostname);
+    } catch (ssrfError) {
+        const error = new Error('Codex upstream 地址不允许访问内网或保留网段');
+        error.statusCode = ssrfError?.statusCode === 502 ? 502 : 400;
+        throw error;
+    }
+
+    const response = await fetch(safeUrl.toString(), {
         method: 'POST',
+        redirect: 'manual',
         headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`
         },
         body: JSON.stringify(buildConnectivityProbeBody(model, apiFormat))
     });
+
+    if (response.status >= 300 && response.status < 400) {
+        const error = new Error('Codex upstream 不允许重定向，请直接填写目标接口地址');
+        error.statusCode = 400;
+        throw error;
+    }
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -182,7 +203,7 @@ async function runConnectivityProbe({ apiKey, baseUrl, model, apiFormat }) {
     }
 
     return {
-        upstreamUrl,
+        upstreamUrl: safeUrl.toString(),
         text: extractText(payload, apiFormat),
         payload
     };
@@ -216,12 +237,16 @@ module.exports = async (req, res) => {
             const apiFormat = normalizeCodexApiFormat(body.apiFormat || 'responses');
 
             if (testOnly) {
-                const resolvedApiKey = apiKey || String(currentConfig.apiKey || '').trim();
+                const normalizedCurrentBaseUrl = normalizeBaseUrl(currentConfig.baseUrl);
+                const baseUrlChanged = Boolean(baseUrl) && (!normalizedCurrentBaseUrl || baseUrl !== normalizedCurrentBaseUrl);
+                const resolvedApiKey = apiKey || (!baseUrlChanged ? String(currentConfig.apiKey || '').trim() : '');
 
                 if (resolvedApiKey.length < 10) {
                     return sendJson(res, 400, {
                         success: false,
-                        message: '请先录入有效的 Codex API Key，再测试连通性'
+                        message: baseUrlChanged
+                            ? '更改 Codex API Base URL 后，请重新录入有效的 Codex API Key 再测试连通性'
+                            : '请先录入有效的 Codex API Key，再测试连通性'
                     });
                 }
 
