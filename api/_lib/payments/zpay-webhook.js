@@ -8,6 +8,9 @@ const {
     sanitizeSite
 } = require('./orders');
 const {
+    runWithPaymentOrderLock
+} = require('./settlement-lock');
+const {
     normalizeZpayPaymentStatus,
     parseZpayParam
 } = require('./zpay');
@@ -182,7 +185,7 @@ async function recordPaymentEvent(supabase, eventPayload) {
     if (normalizedEventKey) {
         const { data: existingEvent, error: existingLookupError } = await supabase
             .from('payment_events')
-            .select('id')
+            .select('id, signature_valid, processing_result')
             .eq('event_key', normalizedEventKey)
             .limit(1);
 
@@ -515,234 +518,276 @@ async function handleZpayWebhook({
         const signatureValid = signatureCheck.valid === true;
         const paymentState = normalizeZpayPaymentStatus(payload.trade_status, payload.status);
         const amount = roundCurrencyAmount(payload.money || 0);
-        const paymentOrder = await loadPaymentOrderSnapshotByProviderOrderNo(supabase, 'zpay', orderNo);
-        const expectedAmount = roundCurrencyAmount(paymentOrder?.expected_amount ?? 0);
-        const amountValid = expectedAmount > 0
-            ? zpayAmountsMatch(paymentOrder?.expected_amount, payload.money)
-            : false;
-        const ownerMatches = !paymentOrder?.user_id
-            || !attachData?.user_id
-            || String(paymentOrder.user_id || '').trim() === String(attachData.user_id || '').trim();
-        let processingResult = paymentState === 'paid' ? 'pending_review' : `ignored_${paymentState}`;
-        let errorMessage = null;
-        let responseStatus = 200;
-        let rechargeBreakdown = null;
-        let queryVerification = null;
-        let verifiedPaidAmount = amount;
+        const lockOutcome = await runWithPaymentOrderLock(
+            orderNo ? `zpay:${orderNo}` : '',
+            async () => {
+                let paymentOrder = await loadPaymentOrderSnapshotByProviderOrderNo(supabase, 'zpay', orderNo);
+                let expectedAmount = roundCurrencyAmount(paymentOrder?.expected_amount ?? 0);
+                let amountValid = expectedAmount > 0
+                    ? zpayAmountsMatch(paymentOrder?.expected_amount, payload.money)
+                    : false;
+                const ownerMatches = !paymentOrder?.user_id
+                    || !attachData?.user_id
+                    || String(paymentOrder.user_id || '').trim() === String(attachData.user_id || '').trim();
+                let processingResult = paymentState === 'paid' ? 'pending_review' : `ignored_${paymentState}`;
+                let errorMessage = null;
+                let responseStatus = 200;
+                let rechargeBreakdown = null;
+                let queryVerification = null;
+                let verifiedPaidAmount = amount;
+                let alreadySettledBeforeWebhook = false;
+                let rechargeDeduped = false;
 
-        if (!signatureValid) {
-            processingResult = 'signature_mismatch';
-            errorMessage = 'signature_mismatch';
-            responseStatus = 401;
-        } else if (paymentState !== 'paid') {
-            processingResult = `ignored_${paymentState}`;
-        } else if (!paymentOrder?.id) {
-            console.warn('[ZPAY] Local payment order was not ready for webhook:', orderNo);
-            await deletePaymentEvent(supabase, eventKey);
-            return sendPlainText(res, 503, 'payment order not ready');
-        } else if (!paymentOrder?.user_id) {
-            processingResult = 'pending_review';
-            errorMessage = 'missing_payment_owner';
-        } else if (!ownerMatches) {
-            processingResult = 'pending_review';
-            errorMessage = 'payment_owner_mismatch';
-        } else if (!amountValid) {
-            processingResult = 'amount_mismatch';
-            errorMessage = `amount_mismatch_expected_${expectedAmount}`;
-        } else {
-            try {
-                queryVerification = await zpayProvider.queryOrder({
-                    runtimeContext,
-                    providerOrderNo: orderNo,
-                    tradeNo
-                });
-            } catch (queryError) {
-                console.warn('[ZPAY] Active order verification failed:', queryError.message);
-                await deletePaymentEvent(supabase, eventKey);
-                return sendPlainText(res, 503, 'query verification unavailable');
-            }
+                if (!signatureValid) {
+                    processingResult = 'signature_mismatch';
+                    errorMessage = 'signature_mismatch';
+                    responseStatus = 401;
+                } else if (paymentState !== 'paid') {
+                    processingResult = `ignored_${paymentState}`;
+                } else if (!paymentOrder?.id) {
+                    console.warn('[ZPAY] Local payment order was not ready for webhook:', orderNo);
+                    await deletePaymentEvent(supabase, eventKey);
+                    return { earlyStatus: 503, earlyBody: 'payment order not ready' };
+                } else if (!paymentOrder?.user_id) {
+                    processingResult = 'pending_review';
+                    errorMessage = 'missing_payment_owner';
+                } else if (!ownerMatches) {
+                    processingResult = 'pending_review';
+                    errorMessage = 'payment_owner_mismatch';
+                } else if (!amountValid) {
+                    processingResult = 'amount_mismatch';
+                    errorMessage = `amount_mismatch_expected_${expectedAmount}`;
+                } else {
+                    try {
+                        queryVerification = await zpayProvider.queryOrder({
+                            runtimeContext,
+                            providerOrderNo: orderNo,
+                            tradeNo
+                        });
+                    } catch (queryError) {
+                        console.warn('[ZPAY] Active order verification failed:', queryError.message);
+                        await deletePaymentEvent(supabase, eventKey);
+                        return { earlyStatus: 503, earlyBody: 'query verification unavailable' };
+                    }
 
-            if (queryVerification?.supported === false || queryVerification?.success !== true) {
-                console.warn('[ZPAY] Active order verification was unavailable:', queryVerification?.message || 'unknown_error');
-                await deletePaymentEvent(supabase, eventKey);
-                return sendPlainText(res, 503, 'query verification unavailable');
-            }
+                    if (queryVerification?.supported === false || queryVerification?.success !== true) {
+                        console.warn('[ZPAY] Active order verification was unavailable:', queryVerification?.message || 'unknown_error');
+                        await deletePaymentEvent(supabase, eventKey);
+                        return { earlyStatus: 503, earlyBody: 'query verification unavailable' };
+                    }
 
-            const queryPaidAmount = roundCurrencyAmount(queryVerification?.paidAmount);
-            const queryAmountValid = expectedAmount > 0
-                ? zpayAmountsMatch(paymentOrder?.expected_amount, queryVerification?.paidAmount)
-                : false;
-            const queryState = String(queryVerification?.status || '').trim().toLowerCase();
-            const queryProviderOrderNo = String(queryVerification?.providerOrderNo || '').trim();
-            const queryTradeNo = String(queryVerification?.tradeNo || '').trim();
+                    const queryPaidAmount = roundCurrencyAmount(queryVerification?.paidAmount);
+                    const queryAmountValid = expectedAmount > 0
+                        ? zpayAmountsMatch(paymentOrder?.expected_amount, queryVerification?.paidAmount)
+                        : false;
+                    const queryState = String(queryVerification?.status || '').trim().toLowerCase();
+                    const queryProviderOrderNo = String(queryVerification?.providerOrderNo || '').trim();
+                    const queryTradeNo = String(queryVerification?.tradeNo || '').trim();
 
-            // Query evidence must be complete in its own right; never fill it from the notification.
-            if (queryVerification?.paidAmount == null || !queryProviderOrderNo || !queryTradeNo) {
-                await deletePaymentEvent(supabase, eventKey);
-                return sendPlainText(res, 503, 'query verification incomplete');
-            }
-            verifiedPaidAmount = queryPaidAmount;
+                    // Query evidence must be complete in its own right; never fill it from the notification.
+                    if (queryVerification?.paidAmount == null || !queryProviderOrderNo || !queryTradeNo) {
+                        await deletePaymentEvent(supabase, eventKey);
+                        return { earlyStatus: 503, earlyBody: 'query verification incomplete' };
+                    }
+                    verifiedPaidAmount = queryPaidAmount;
 
-            if (queryState !== 'paid') {
-                console.warn('[ZPAY] Active order verification is not paid yet:', queryState || 'unknown');
-                await deletePaymentEvent(supabase, eventKey);
-                return sendPlainText(res, 503, 'query verification pending');
-            } else if (queryProviderOrderNo && queryProviderOrderNo !== orderNo) {
-                processingResult = 'pending_review';
-                errorMessage = 'query_order_mismatch';
-            } else if (tradeNo && queryTradeNo && queryTradeNo !== tradeNo) {
-                processingResult = 'pending_review';
-                errorMessage = 'query_trade_mismatch';
-            } else if (!queryAmountValid) {
-                processingResult = 'amount_mismatch';
-                errorMessage = `query_amount_mismatch_expected_${expectedAmount}`;
-            } else {
-            rechargeBreakdown = deriveZpayPointBreakdown(paymentOrder, attachData);
-            const currentOrderStatus = String(paymentOrder.status || '').trim().toLowerCase();
-            if (!['paid', 'redeemed'].includes(currentOrderStatus)) {
-                const { error: rechargeError } = await rechargePointsForPayment({
-                    supabase,
-                    userId: paymentOrder.user_id,
-                    paidPoints: rechargeBreakdown.paidPoints,
-                    bonusPoints: rechargeBreakdown.bonusPoints,
-                    reason: attachData.charge_type === 'custom'
-                        ? 'custom_recharge'
-                        : `易支付充值: ${String(paymentOrder.package_name || '充值订单').trim() || '充值订单'}`,
-                    referenceId: `zpay_${orderNo}`,
-                    site: paymentOrder.site || currentSite
-                });
+                    if (queryState !== 'paid') {
+                        console.warn('[ZPAY] Active order verification is not paid yet:', queryState || 'unknown');
+                        await deletePaymentEvent(supabase, eventKey);
+                        return { earlyStatus: 503, earlyBody: 'query verification pending' };
+                    } else if (queryProviderOrderNo && queryProviderOrderNo !== orderNo) {
+                        processingResult = 'pending_review';
+                        errorMessage = 'query_order_mismatch';
+                    } else if (tradeNo && queryTradeNo && queryTradeNo !== tradeNo) {
+                        processingResult = 'pending_review';
+                        errorMessage = 'query_trade_mismatch';
+                    } else if (!queryAmountValid) {
+                        processingResult = 'amount_mismatch';
+                        errorMessage = `query_amount_mismatch_expected_${expectedAmount}`;
+                    } else {
+                        // Re-read after the external query HTTP call in case another worker settled the order while queryOrder was in flight.
+                        const latestPaymentOrder = (await loadPaymentOrderSnapshotByProviderOrderNo(supabase, 'zpay', orderNo)) || paymentOrder;
+                        paymentOrder = latestPaymentOrder;
+                        expectedAmount = roundCurrencyAmount(paymentOrder?.expected_amount ?? expectedAmount);
+                        amountValid = expectedAmount > 0
+                            ? zpayAmountsMatch(paymentOrder?.expected_amount, queryVerification?.paidAmount)
+                            : false;
 
-                if (rechargeError) {
-                    throw new Error(rechargeError.message || 'Failed to credit ZPAY payment points');
+                        if (!amountValid) {
+                            processingResult = 'amount_mismatch';
+                            errorMessage = `query_amount_mismatch_expected_${expectedAmount}`;
+                        } else {
+                            rechargeBreakdown = deriveZpayPointBreakdown(paymentOrder, attachData);
+                            const currentOrderStatus = String(paymentOrder.status || '').trim().toLowerCase();
+                            alreadySettledBeforeWebhook = ['paid', 'redeemed'].includes(currentOrderStatus);
+                            if (!alreadySettledBeforeWebhook) {
+                                const { data: rechargeData, error: rechargeError } = await rechargePointsForPayment({
+                                    supabase,
+                                    userId: paymentOrder.user_id,
+                                    paidPoints: rechargeBreakdown.paidPoints,
+                                    bonusPoints: rechargeBreakdown.bonusPoints,
+                                    reason: attachData.charge_type === 'custom'
+                                        ? 'custom_recharge'
+                                        : `易支付充值: ${String(paymentOrder.package_name || '充值订单').trim() || '充值订单'}`,
+                                    referenceId: `zpay_${orderNo}`,
+                                    site: paymentOrder.site || currentSite
+                                });
+
+                                if (rechargeError) {
+                                    throw new Error(rechargeError.message || 'Failed to credit ZPAY payment points');
+                                }
+                                rechargeDeduped = rechargeData?.deduped === true;
+                            }
+
+                            processingResult = 'processed_paid';
+                        }
+                    }
                 }
-            }
 
-            processingResult = 'processed_paid';
-            }
-        }
-
-        if (paymentOrder?.id) {
-            const nowIso = new Date().toISOString();
-            const existingMetadata = paymentOrder.provider_metadata && typeof paymentOrder.provider_metadata === 'object'
-                ? paymentOrder.provider_metadata
-                : {};
-            const existingRawPayload = paymentOrder.raw_payload && typeof paymentOrder.raw_payload === 'object'
-                ? paymentOrder.raw_payload
-                : {};
-            const isAmountMismatch = processingResult === 'amount_mismatch';
-            const nextStatus = processingResult === 'processed_paid'
-                ? 'redeemed'
-                : (isAmountMismatch
-                    ? 'amount_mismatch'
-                    : (paymentState === 'paid' && signatureValid ? 'pending_review' : paymentOrder.status));
-
-            const orderPatch = {
-                status: nextStatus,
-                sign_verified: signatureValid ? true : (paymentOrder.sign_verified === true),
-                amount_verified: paymentState === 'paid'
-                    ? (processingResult === 'processed_paid'
-                        ? true
+                if (paymentOrder?.id) {
+                    const nowIso = new Date().toISOString();
+                    const existingMetadata = paymentOrder.provider_metadata && typeof paymentOrder.provider_metadata === 'object'
+                        ? paymentOrder.provider_metadata
+                        : {};
+                    const existingRawPayload = paymentOrder.raw_payload && typeof paymentOrder.raw_payload === 'object'
+                        ? paymentOrder.raw_payload
+                        : {};
+                    const isAmountMismatch = processingResult === 'amount_mismatch';
+                    const nextStatus = processingResult === 'processed_paid'
+                        ? 'redeemed'
                         : (isAmountMismatch
-                            ? false
-                            : (paymentOrder.amount_verified === true || (amountValid && queryVerification?.success === true))))
-                    : paymentOrder.amount_verified === true,
-                paid_amount: paymentState === 'paid'
-                    ? verifiedPaidAmount
-                    : (paymentOrder.paid_amount ?? verifiedPaidAmount),
-                expected_amount: expectedAmount > 0
-                    ? expectedAmount
-                    : paymentOrder.expected_amount,
-                paid_at: processingResult === 'processed_paid'
-                    ? (paymentOrder.paid_at || nowIso)
-                    : paymentOrder.paid_at,
-                verified_at: signatureValid
-                    ? (paymentOrder.verified_at || nowIso)
-                    : paymentOrder.verified_at,
-                claimed_at: processingResult === 'processed_paid'
-                    ? (paymentOrder.claimed_at || nowIso)
-                    : paymentOrder.claimed_at,
-                last_error: errorMessage,
-                raw_payload: mergePaymentObjects(existingRawPayload, {
-                    zpay_webhook: payload,
-                    attach: attachData,
-                    zpay_query: queryVerification?.responsePayload || null
-                }),
-                provider_metadata: mergePaymentObjects(existingMetadata, {
-                    provider_order_no: orderNo,
-                    trade_no: tradeNo || null,
-                    checkout_session_id: paymentOrder.checkout_session_id || attachData.checkout_session_id || null,
-                    checkout_session_key: existingMetadata.checkout_session_key || attachData.checkout_session_key || null,
-                    merchant_pid: String(payload.pid || '').trim() || null,
-                    payment_type: String(payload.type || existingMetadata.payment_type || '').trim() || null,
-                    buyer: String(payload.buyer || '').trim() || null,
-                    payment_status: paymentState,
-                    payment_status_raw: statusRaw || null,
-                    query_trade_no: String(queryVerification?.tradeNo || '').trim() || null,
-                    query_status: String(queryVerification?.status || '').trim() || null,
-                    query_status_raw: String(queryVerification?.statusRaw || '').trim() || null,
-                    query_verified_at: queryVerification ? nowIso : null,
-                    webhook_received_at: nowIso
-                })
-            };
+                            ? 'amount_mismatch'
+                            : (paymentState === 'paid' && signatureValid ? 'pending_review' : paymentOrder.status));
 
-            const { error: orderUpdateError } = await supabase
-                .from('payment_orders')
-                .update(orderPatch)
-                .eq('id', paymentOrder.id);
+                    const orderPatch = {
+                        status: nextStatus,
+                        sign_verified: signatureValid ? true : (paymentOrder.sign_verified === true),
+                        amount_verified: paymentState === 'paid'
+                            ? (processingResult === 'processed_paid'
+                                ? true
+                                : (isAmountMismatch
+                                    ? false
+                                    : (paymentOrder.amount_verified === true || (amountValid && queryVerification?.success === true))))
+                            : paymentOrder.amount_verified === true,
+                        paid_amount: paymentState === 'paid'
+                            ? verifiedPaidAmount
+                            : (paymentOrder.paid_amount ?? verifiedPaidAmount),
+                        expected_amount: expectedAmount > 0
+                            ? expectedAmount
+                            : paymentOrder.expected_amount,
+                        paid_at: processingResult === 'processed_paid'
+                            ? (paymentOrder.paid_at || nowIso)
+                            : paymentOrder.paid_at,
+                        verified_at: signatureValid
+                            ? (paymentOrder.verified_at || nowIso)
+                            : paymentOrder.verified_at,
+                        claimed_at: processingResult === 'processed_paid'
+                            ? (paymentOrder.claimed_at || nowIso)
+                            : paymentOrder.claimed_at,
+                        last_error: errorMessage,
+                        raw_payload: mergePaymentObjects(existingRawPayload, {
+                            zpay_webhook: payload,
+                            attach: attachData,
+                            zpay_query: queryVerification?.responsePayload || null
+                        }),
+                        provider_metadata: mergePaymentObjects(existingMetadata, {
+                            provider_order_no: orderNo,
+                            trade_no: tradeNo || null,
+                            checkout_session_id: paymentOrder.checkout_session_id || attachData.checkout_session_id || null,
+                            checkout_session_key: existingMetadata.checkout_session_key || attachData.checkout_session_key || null,
+                            merchant_pid: String(payload.pid || '').trim() || null,
+                            payment_type: String(payload.type || existingMetadata.payment_type || '').trim() || null,
+                            buyer: String(payload.buyer || '').trim() || null,
+                            payment_status: paymentState,
+                            payment_status_raw: statusRaw || null,
+                            query_trade_no: String(queryVerification?.tradeNo || '').trim() || null,
+                            query_status: String(queryVerification?.status || '').trim() || null,
+                            query_status_raw: String(queryVerification?.statusRaw || '').trim() || null,
+                            query_verified_at: queryVerification ? nowIso : null,
+                            webhook_received_at: nowIso
+                        })
+                    };
 
-            if (orderUpdateError) {
-                throw new Error(orderUpdateError.message || 'Failed to update ZPAY payment order');
-            }
+                    const { error: orderUpdateError } = await supabase
+                        .from('payment_orders')
+                        .update(orderPatch)
+                        .eq('id', paymentOrder.id);
 
-            if (processingResult === 'processed_paid') {
-                try {
-                    await reconcileCheckoutSessionForPaymentOrder({
-                        supabase,
-                        providerKey: 'zpay',
-                        paymentOrderId: paymentOrder.id,
-                        providerOrderNo: orderNo,
-                        userId: paymentOrder.user_id,
-                        site: paymentOrder.site || currentSite,
-                        packageId: paymentOrder.package_id,
-                        packageName: paymentOrder.package_name,
-                        expectedAmount,
-                        paidAmount: verifiedPaidAmount,
-                        pointsAmount: paymentOrder.points_amount,
-                        orderStatus: 'redeemed',
-                        linkedBy: 'zpay_webhook',
-                        allowHeuristic: true,
-                        lookbackMinutes: 1440
-                    });
-                } catch (linkError) {
-                    console.warn('[ZPAY] Failed to link checkout session from webhook:', linkError.message);
+                    if (orderUpdateError) {
+                        throw new Error(orderUpdateError.message || 'Failed to update ZPAY payment order');
+                    }
+
+                    if (processingResult === 'processed_paid') {
+                        try {
+                            await reconcileCheckoutSessionForPaymentOrder({
+                                supabase,
+                                providerKey: 'zpay',
+                                paymentOrderId: paymentOrder.id,
+                                providerOrderNo: orderNo,
+                                userId: paymentOrder.user_id,
+                                site: paymentOrder.site || currentSite,
+                                packageId: paymentOrder.package_id,
+                                packageName: paymentOrder.package_name,
+                                expectedAmount,
+                                paidAmount: verifiedPaidAmount,
+                                pointsAmount: paymentOrder.points_amount,
+                                orderStatus: 'redeemed',
+                                linkedBy: 'zpay_webhook',
+                                allowHeuristic: true,
+                                lookbackMinutes: 1440
+                            });
+                        } catch (linkError) {
+                            console.warn('[ZPAY] Failed to link checkout session from webhook:', linkError.message);
+                        }
+
+                        if (!alreadySettledBeforeWebhook && !rechargeDeduped) {
+                            await maybeIssueRechargeDiscountAssets({
+                                supabase,
+                                userId: paymentOrder.user_id,
+                                site: paymentOrder.site || currentSite,
+                                paidPoints: rechargeBreakdown?.paidPoints || 0,
+                                bonusPoints: rechargeBreakdown?.bonusPoints || 0,
+                                paidAmount: verifiedPaidAmount,
+                                paymentOrderId: paymentOrder.id,
+                                paymentProvider: 'zpay',
+                                paymentOrderNo: orderNo
+                            });
+                            await maybeIssueAffiliateDiscountAssetsForRecharge({
+                                supabase,
+                                site: paymentOrder.site || currentSite,
+                                rechargeReferenceId: `zpay_${orderNo}`
+                            });
+                        }
+
+                        await safeSyncPaymentStatusUserTags(supabase, {
+                            userId: paymentOrder.user_id,
+                            status: 'completed',
+                            site: paymentOrder.site || currentSite || 'cn',
+                            sourceEventId: paymentOrder.id,
+                            sourceModule: 'payments.zpay_webhook'
+                        });
+                    }
                 }
 
-                await maybeIssueRechargeDiscountAssets({
-                    supabase,
-                    userId: paymentOrder.user_id,
-                    site: paymentOrder.site || currentSite,
-                    paidPoints: rechargeBreakdown?.paidPoints || 0,
-                    bonusPoints: rechargeBreakdown?.bonusPoints || 0,
-                    paidAmount: verifiedPaidAmount,
-                    paymentOrderId: paymentOrder.id,
-                    paymentProvider: 'zpay',
-                    paymentOrderNo: orderNo
-                });
-                await maybeIssueAffiliateDiscountAssetsForRecharge({
-                    supabase,
-                    site: paymentOrder.site || currentSite,
-                    rechargeReferenceId: `zpay_${orderNo}`
-                });
-
-                await safeSyncPaymentStatusUserTags(supabase, {
-                    userId: paymentOrder.user_id,
-                    status: 'completed',
-                    site: paymentOrder.site || currentSite || 'cn',
-                    sourceEventId: paymentOrder.id,
-                    sourceModule: 'payments.zpay_webhook'
-                });
+                return {
+                    paymentOrder,
+                    processingResult,
+                    errorMessage,
+                    responseStatus
+                };
             }
+        );
+
+        if (lockOutcome?.earlyStatus) {
+            return sendPlainText(res, lockOutcome.earlyStatus, lockOutcome.earlyBody);
         }
+
+        const {
+            paymentOrder,
+            processingResult,
+            errorMessage,
+            responseStatus
+        } = lockOutcome;
 
         const invalidEventKey = !signatureValid
             ? `invalid:${eventKey}:${crypto.createHash('sha256').update(JSON.stringify(payload || {})).digest('hex').slice(0, 16)}`
