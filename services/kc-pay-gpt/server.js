@@ -4127,6 +4127,8 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                                 jobKey: task.jobKey,
                                 progress: runningProgress,
                                 status: savedProgress.status,
+                                paymentState: savedProgress.paymentState,
+                                recoveryRequired: savedProgress.recoveryRequired,
                                 message: savedProgress.message || '正在开通中',
                                 cdkCode: cdk,
                                 screenshots: liveOutput ? extractTaskMediaFromOutput(liveOutput).screenshots : undefined,
@@ -4136,7 +4138,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     }, async (state, message) => {
                         observedPaymentState = mergePaymentState(observedPaymentState, state);
                         await persistLocal({
-                            status: state === 'unknown' ? 'manual' : 'running',
+                            status: 'running',
                             message: message || (state === 'started' ? '正在提交银行卡支付' : (state === 'succeeded' ? '支付成功，正在确认开通状态' : '支付状态已更新')),
                             cdkCode: cdk,
                             paymentState: state,
@@ -4211,6 +4213,8 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     jobKey: task.jobKey,
                     progress: currentProgress,
                     status: savedAttempt.status,
+                    paymentState: savedAttempt.paymentState,
+                    recoveryRequired: savedAttempt.recoveryRequired,
                     message: savedAttempt.message || '正在开通中',
                     cdkCode: cdk,
                     cardLast4

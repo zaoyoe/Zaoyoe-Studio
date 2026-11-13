@@ -3408,12 +3408,17 @@ async function updateLocalActivationTask(jobKey, input = {}, { finalize = false,
         const confirmedSuccess = (finalize || annotate) && input.status === 'success' && paymentState === 'succeeded';
         const retain = shouldRetainCdk({ paymentState }) || Boolean(row.recovery_required) || Boolean(input.recoveryRequired);
         const recoveryRequired = confirmedSuccess ? false : retain || input.status === 'success';
-        const status = annotate ? input.status : (recoveryRequired ? 'manual' : input.status);
+        // Never flip an in-flight task to terminal 'manual' during intermediate progress writes:
+        // premature 'manual' broadcasts close the client WebSocket mid-charge while Stripe is still
+        // confirming, and hide the row from status='running' startup crash recovery.
+        const status = finalize
+            ? (recoveryRequired ? 'manual' : input.status)
+            : (annotate ? input.status : (row.status === 'manual' ? 'manual' : input.status));
         const released = finalize && status === 'failed' && !recoveryRequired;
         if (released && await getBlockingActivationTask(connection, cdkCode, key)) {
             return { applied: false, released: false, reason: 'OTHER_TASK_REQUIRES_REVIEW' };
         }
-        const message = status === 'manual' && input.status !== 'manual'
+        const message = finalize && status === 'manual' && input.status !== 'manual'
             ? '支付结果或任务状态需人工复核，已保留 CDK 与银行卡' : input.message;
         const updated = await updateTaskLog(key, {
             status, message, cdkCode, paymentState, recoveryRequired,
@@ -3800,12 +3805,33 @@ async function markCardPaymentStarted(cardId, ownerKey) {
 async function completeCardPayment(cardId, ownerKey) {
     const id = requireOwnedAssetId(cardId, ownerKey);
     const result = await runExecute(
-        `UPDATE card_assets SET status = '正常', in_use = 0, locked_at = NULL, locked_by = NULL
-         WHERE id = ? AND is_active = 1 AND status = '支付处理中' AND in_use = 1
+        `UPDATE card_assets
+         SET status = '正常',
+             in_use = 0,
+             locked_at = NULL,
+             locked_by = NULL
+         WHERE ${OWNED_PAYMENT_CARD_SQL.replace("status IN ('正常', '支付处理中')", "status = '支付处理中'")}`,
+        [id, ownerKey]
+    );
+    if (Number(result?.affectedRows || 0) === 1) {
+        return 1;
+    }
+    // If recordCardUsage() auto-froze this card upon reaching max_usage_limit
+    // while the worker still owned its lock, release the lock without
+    // unfreezing the card.
+    const frozenResult = await runExecute(
+        `UPDATE card_assets
+         SET in_use = 0,
+             locked_at = NULL,
+             locked_by = NULL
+         WHERE id = ?
+           AND is_active = 0
+           AND status = '已冻结'
+           AND in_use = 1
            AND CAST(locked_by AS BINARY) = CAST(? AS BINARY)${LEGACY_CARD_FENCE_SQL}`,
         [id, ownerKey]
     );
-    return requireOwnedCardChange(result);
+    return requireOwnedCardChange(frozenResult);
 }
 
 /** Move an unresolved payment's own card to manual review. */
@@ -4017,12 +4043,12 @@ async function recordCardUsage(cardId, ownerKey) {
 
         let autoFrozen = false;
         if (effectiveLimit > 0 && newUsageCount >= effectiveLimit) {
+            // Preserve lock ownership (locked_by / in_use) until completeCardPayment() finishes
+            // billing bookkeeping; clearing locked_by here causes CARD_LOCK_OWNERSHIP_LOST right after payment.
             const [freezeResult] = await connection.query(
                 `UPDATE card_assets
                  SET is_active = 0,
-                     status = '已冻结',
-                     locked_at = NULL,
-                     locked_by = NULL
+                     status = '已冻结'
                  WHERE ${OWNED_PAYMENT_CARD_SQL}`,
                 [id, ownerKey]
             );

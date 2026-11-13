@@ -651,6 +651,11 @@
             box-shadow: var(--shadow-xs);
         }
 
+        .dashboard-banner-content {
+            min-width: 0;
+            flex: 1;
+        }
+
         .dashboard-banner-tag {
             display: inline-flex;
             align-items: center;
@@ -1219,6 +1224,186 @@
             }
             .topbar-mobile-toggle {
                 display: flex;
+            }
+
+            /* Mobile main layout & topbar */
+            .main-content {
+                padding: 16px 14px;
+            }
+            .topbar {
+                padding: 0 14px;
+            }
+            .topbar-breadcrumbs {
+                max-width: 170px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                font-size: 12.5px;
+            }
+
+            /* Dashboard Banner Mobile Responsive */
+            .dashboard-banner {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 16px;
+                padding: 18px 16px;
+            }
+            .dashboard-banner-content {
+                width: 100%;
+                min-width: 0;
+            }
+            .dashboard-banner-title {
+                font-size: 18px;
+                line-height: 1.35;
+                word-break: break-word;
+            }
+            .dashboard-banner-desc {
+                font-size: 12.5px;
+                line-height: 1.55;
+            }
+            .dashboard-banner-actions {
+                width: 100%;
+                flex-wrap: wrap;
+                gap: 8px;
+                justify-content: stretch;
+            }
+            .dashboard-banner-actions .btn {
+                flex: 1 1 calc(50% - 4px);
+                min-width: 90px;
+                justify-content: center;
+                text-align: center;
+                padding: 8px 10px;
+                font-size: 12.5px;
+            }
+            .dashboard-banner-actions .btn:last-child {
+                flex: 1 1 100%;
+            }
+
+            /* Panel styling on mobile */
+            .panel {
+                padding: 18px 16px;
+                border-radius: 12px;
+                margin-bottom: 18px;
+            }
+            .panel-header {
+                gap: 10px;
+                margin-bottom: 14px;
+            }
+            .panel-header > div {
+                width: 100%;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            /* CDK search and filter dropdowns responsive fit */
+            #cdk_search {
+                width: 100% !important;
+                max-width: 100%;
+            }
+            #dropdown_cdk_platform,
+            #dropdown_cdk_plan_type {
+                flex: 1 1 calc(50% - 4px);
+                max-width: 100% !important;
+            }
+
+            /* KPI and Stat Grids */
+            .stat-grid {
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 12px;
+                margin-bottom: 16px;
+            }
+            .stat-card {
+                padding: 14px 16px;
+            }
+            .stat-value {
+                font-size: 22px;
+            }
+
+            /* Shortcuts Grid */
+            .dashboard-shortcuts-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+
+            /* Alert Banner */
+            #card_auto_renew_alert {
+                flex-direction: column !important;
+                align-items: stretch !important;
+                gap: 12px !important;
+                padding: 12px 14px !important;
+            }
+            #card_auto_renew_alert button {
+                width: 100%;
+                justify-content: center;
+            }
+
+            /* Smooth touch scrolling for tables */
+            .table-container,
+            [data-table-scroll],
+            .table-scroll-viewport {
+                -webkit-overflow-scrolling: touch;
+            }
+
+            /* Batch action toolbar */
+            .batch-actions {
+                padding: 8px 10px;
+                gap: 6px;
+            }
+
+            /* Custom dropdown trigger width */
+            .custom-dropdown-trigger {
+                width: 100%;
+            }
+
+            /* iOS form inputs: font-size >= 16px prevents iOS Safari from auto-zooming */
+            .asset-input,
+            input[type="text"],
+            input[type="password"],
+            input[type="number"],
+            select,
+            textarea {
+                font-size: 16px !important;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .stat-grid,
+            .stat-grid-kpi,
+            .stat-grid-sys {
+                grid-template-columns: 1fr;
+            }
+            .main-content {
+                padding: 12px 10px;
+            }
+            .panel {
+                padding: 16px 12px;
+            }
+            .topbar-breadcrumbs span:not(.active):not(:last-child) {
+                display: none;
+            }
+            .topbar-breadcrumbs::before {
+                display: none;
+            }
+            .dashboard-banner-actions .btn {
+                flex: 1 1 100%;
+            }
+            .table-footer {
+                flex-direction: column;
+                align-items: center;
+                gap: 8px;
+            }
+            .pagination {
+                justify-content: center;
+            }
+            .admin-confirm-overlay {
+                padding: 12px;
+            }
+            .admin-confirm-dialog {
+                padding: 18px 14px;
+            }
+            .screenshot-modal {
+                padding: 16px 12px;
+                width: 96vw;
             }
         }
 
@@ -3199,29 +3384,29 @@
                     </div>
                 </div>
 
-                <!-- Mac Touch ID / Passkey 原生指纹 -->
+                <!-- Mac Touch ID / iPhone Face ID / Passkey 原生生物识别 -->
                 <div style="margin-top: 20px; padding: 16px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 12px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
                         <div>
                             <div style="font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px;">
                                 <i data-lucide="fingerprint" style="color: #60a5fa;"></i>
-                                Mac Touch ID / Passkey（生物识别免密验证）
+                                Mac Touch ID / iPhone Face ID / Passkey（生物识别免密验证）
                             </div>
                             <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 4px; line-height: 1.5;">
-                                绑定后，查看卡密凭证、激活码管理或敏感数据时，直接轻触 Mac 键盘指纹即可秒速解锁，无需手动输入密码。
+                                绑定后，查看卡密凭证、激活码管理或敏感数据时，直接轻触 Mac 键盘指纹或 iPhone 面容 (Face ID) 即可秒速解锁，无需手动输入密码。支持同一 Apple ID iCloud 钥匙串自动同步。
                             </div>
                             <div id="webauthn_status_badge" style="margin-top: 8px;">
                                 <span class="status-badge" style="background: rgba(148, 163, 184, 0.15); color: var(--text-dim);">检测中...</span>
                             </div>
                         </div>
-                        <div style="display: flex; gap: 8px; align-items: center;">
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                             <button id="btn_bind_webauthn" type="button" class="btn btn-primary" onclick="bindWebAuthnPasskey()">
                                 <i data-lucide="fingerprint"></i>
-                                <span id="btn_bind_webauthn_text">绑定当前 Mac 指纹</span>
+                                <span id="btn_bind_webauthn_text">绑定指纹 / Face ID</span>
                             </button>
                             <button id="btn_delete_webauthn" type="button" class="btn btn-danger" style="display: none;" onclick="removeWebAuthnPasskey()">
                                 <i data-lucide="trash-2"></i>
-                                解绑指纹
+                                解绑设备
                             </button>
                         </div>
                     </div>
@@ -4983,16 +5168,16 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const res = await authFetch('/api/admin/webauthn/status');
                 const data = await res.json();
                 if (data.success && data.enrolled && data.passkeys && data.passkeys.length > 0) {
-                    const pkName = data.passkeys[0].name || 'Mac Touch ID';
-                    badgeEl.innerHTML = `<span class="status-badge status-success" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3);">✅ 已绑定：${escapeHtml(pkName)}（轻触指纹即可通过验证）</span>`;
-                    if (btnBindText) btnBindText.textContent = '重新录入指纹';
+                    const pkName = data.passkeys[0].name || '生物识别设备';
+                    badgeEl.innerHTML = `<span class="status-badge status-success" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3);">✅ 已绑定：${escapeHtml(pkName)}（轻触指纹或面容即可通过）</span>`;
+                    if (btnBindText) btnBindText.textContent = '重新录入设备凭据';
                     if (btnDelete) {
                         btnDelete.style.display = 'inline-flex';
                         btnDelete.dataset.id = data.passkeys[0].id;
                     }
                 } else {
-                    badgeEl.innerHTML = '<span class="status-badge" style="background: rgba(148, 163, 184, 0.15); color: var(--text-dim);">未绑定（推荐开启 Mac 键盘指纹免密）</span>';
-                    if (btnBindText) btnBindText.textContent = '绑定当前 Mac 指纹';
+                    badgeEl.innerHTML = '<span class="status-badge" style="background: rgba(148, 163, 184, 0.15); color: var(--text-dim);">未绑定（推荐开启 Mac 指纹或 iPhone Face ID 免密）</span>';
+                    if (btnBindText) btnBindText.textContent = '绑定指纹 / Face ID';
                     if (btnDelete) btnDelete.style.display = 'none';
                 }
             } catch (_) {
@@ -5007,12 +5192,15 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     alert('当前浏览器环境不支持 WebAuthn，请使用 Safari 或 Chrome/Edge 浏览器');
                     return;
                 }
-                showMessage('请在 Mac 上轻触键盘右上角的指纹键 (Touch ID)...', 'info');
-                const res = await window.KcAdminSecurity.registerWebAuthn('Mac Touch ID');
-                showMessage(res.message || '🎉 Mac Touch ID 指纹绑定成功！', 'success');
+                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                const isIPhone = /iPhone/i.test(navigator.userAgent);
+                const deviceLabel = isIPhone ? 'iPhone Face ID' : (isMobile ? '移动设备生物识别' : 'Mac Touch ID');
+                showMessage(isMobile ? '请通过 iPhone 面容 (Face ID) / 指纹完成验证...' : '请在 Mac 上轻触键盘指纹键 (Touch ID)...', 'info');
+                const res = await window.KcAdminSecurity.registerWebAuthn(deviceLabel);
+                showMessage(res.message || '🎉 生物识别 Passkey 绑定成功！', 'success');
                 await loadWebAuthnStatus();
             } catch (err) {
-                showMessage(err.message || '指纹绑定失败', 'error');
+                showMessage(err.message || '绑定失败', 'error');
             }
         }
 
@@ -5020,12 +5208,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             const btnDelete = document.getElementById('btn_delete_webauthn');
             const id = btnDelete?.dataset?.id;
             if (!id) return;
-            const ok = await showAdminConfirm('确定解绑当前 Mac Touch ID 指纹吗？解绑后敏感操作将恢复为手动输入密码。', '解绑指纹');
+            const ok = await showAdminConfirm('确定解绑当前生物识别凭据吗？解绑后敏感操作将恢复为手动输入密码。', '解绑设备');
             if (!ok) return;
             try {
                 const res = await authFetch('/api/admin/webauthn/' + encodeURIComponent(id), { method: 'DELETE' });
                 const data = await res.json();
-                showMessage(data.message || (data.success ? '已成功解绑指纹' : '解绑失败'), data.success ? 'success' : 'error');
+                showMessage(data.message || (data.success ? '已成功解绑设备' : '解绑失败'), data.success ? 'success' : 'error');
                 await loadWebAuthnStatus();
             } catch (err) {
                 showMessage(err.message || '解绑失败', 'error');
