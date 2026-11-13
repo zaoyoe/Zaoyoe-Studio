@@ -68,9 +68,9 @@ function uuidv4() {
 }
 
 const SEP = "\u2212"; // U+2212 MINUS SIGN
-const { createChatGptImpitClient, createInMemoryCookieJar } = require("../protocol-http");
+const ANS_SDK_URL = "https://sentinel.openai.com/backend-api/sentinel/sdk.js";
 
-function makeGenerator(ua, cores, language, timezone, screenW, screenH, sdkUrl) {
+function makeGenerator(ua, cores, language, timezone, screenW, screenH) {
   const initialPerformance = 350.0 + Math.random() * 2200.0;
   const sw = Number(screenW) || 1920;
   const sh = Number(screenH) || 1080;
@@ -81,8 +81,7 @@ function makeGenerator(ua, cores, language, timezone, screenW, screenH, sdkUrl) 
     languages: [language || "en-US", "en-US", "en"],
     timezone: timezone || "America/Chicago",
     sid: uuidv4(),
-    heapLimit: 4294705152,
-    sdkUrl: sdkUrl || "https://chatgpt.com/sentinel/20260810913b/sdk.js",
+    heapLimit: 4395630592,
     // 与真实浏览器一致：screen.width + screen.height（指纹数组 [0]）
     screenNum: sw + sh,
     nine: 0,
@@ -131,7 +130,7 @@ function configArray(g) {
     g.heapLimit, // 2
     0, // 3 PoW 计数器
     g.ua, // 4
-    g.sdkUrl, // 5
+    ANS_SDK_URL, // 5
     null, // 6
     g.language, // 7
     g.languages.join(","), // 8
@@ -171,11 +170,10 @@ function solvePoW(g, seed, difficulty) {
   return "gAAAAAB" + ERR_PREFIX + b64Compact(null) + "~S";
 }
 
-function makeFetch(ua, language, acceptLanguage, secChUa, secChUaPlatform, deviceId, cookieHeader, dispatcher, fetchImpl, sentinelOrigin, frameUrl) {
+function makeFetch(ua, language, cookieHeader, dispatcher, fetchImpl, sentinelOrigin, frameUrl) {
   // sdk 里的 fetch 桥到 fetchImpl：改写 URL 到 sentinel.openai.com、补头、走代理。
   // 关键：dispatcher 与 fetchImpl 必须来自同一个 undici 版本，否则 Node 内置 fetch
   // 校验外部 dispatcher 的 Request handler 会报 "invalid onRequestStart method"。
-  const baseLang = String(language || "en-US").split("-")[0] || "en";
   return function (url, opts) {
     opts = opts || {};
     let u = String(url);
@@ -191,14 +189,7 @@ function makeFetch(ua, language, acceptLanguage, secChUa, secChUaPlatform, devic
         referer: frameUrl,
         "user-agent": ua,
         accept: "*/*",
-        "accept-language": acceptLanguage || `${language},${baseLang};q=0.9,en;q=0.8`,
-        ...(secChUa ? { "sec-ch-ua": secChUa } : {}),
-        "sec-ch-ua-mobile": "?0",
-        ...(secChUaPlatform ? { "sec-ch-ua-platform": secChUaPlatform } : {}),
-        "sec-fetch-site": "same-origin",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-dest": "empty",
-        ...(deviceId ? { "oai-device-id": deviceId } : {}),
+        "accept-language": `${language},${language.split("-")[0]};q=0.9,en;q=0.8`,
         ...(cookieHeader ? { cookie: cookieHeader } : {}),
       },
       opts.headers || {}
@@ -430,44 +421,30 @@ async function handleRequest(raw) {
   const version = args.version || "20260219f9f6";
   const pageUrl = args.pageUrl || "https://auth.openai.com/about-you";
   const language = args.language || "en-US";
-  const acceptLanguage = args.acceptLanguage || "";
   const timezone = args.timezone || "America/Chicago";
   const cookieHeader = args.cookieHeader || "";
   const sentinelOrigin = args.sentinelOrigin || "https://chatgpt.com";
   // 指纹档案驱动（与请求 UA/平台/屏幕一致，避免哨兵身份与请求身份打架）
   const platform = args.platform || "Win32";
   const platformLabel = args.platformLabel || "Windows";
-  const secChUa = args.secChUa || "";
-  const secChUaPlatform = args.secChUaPlatform || `"${platformLabel}"`;
   const screenW = Number(args.screenW) || 1920;
   const screenH = Number(args.screenH) || 1080;
   const availH = Number(args.availH) || (screenH - 48);
   const maxTouch = args.maxTouchPoints ? 1 : 0;
   const frameUrl = `${sentinelOrigin}/backend-api/sentinel/frame.html?sv=${version}`;
 
-  // 优先使用 impit (Chrome TLS 指纹 + CORS 头清理 + 共享 CookieJar)，与 session-auth / payments/checkout 保持同一条传输指纹；
-  // 无 impit 时退回 npm undici；SOCKS 代理走 Python curl_cffi。
-  const cookieJar = createInMemoryCookieJar(cookieHeader);
-  let impitClient = null;
-  if (!proxy || /^https?:/i.test(proxy)) {
-    impitClient = createChatGptImpitClient({
-      userAgent: ua,
-      proxyUrl: proxy || "",
-      timeoutMs: 25000,
-      cookieJar,
-    });
-  }
-
+  // fetch + ProxyAgent 必须同源（同一 undici 版本）。优先用 npm undici；
+  // 无代理且 undici 缺失时退回 Node 内置全局 fetch。
   let undici = null;
   try {
     undici = require("undici");
   } catch (_) {}
 
+  // 代理（undici ProxyAgent）——与注册同 IP 命中 /sentinel/req。
+  // 注意：undici 不会自动解析 URL 里的 user:pass@，必须显式给 Proxy-Authorization token。
   let dispatcher = null;
-  let fetchImpl = impitClient
-    ? (u, fopts) => impitClient.fetch(u, fopts)
-    : (undici && undici.fetch ? undici.fetch : fetch);
-  if (proxy && !impitClient) {
+  let fetchImpl = undici && undici.fetch ? undici.fetch : fetch;
+  if (proxy) {
     if (undici && /^https?:/i.test(proxy)) {
       try {
         const pu = new URL(proxy);
@@ -493,7 +470,6 @@ async function handleRequest(raw) {
 
   // Node 的 crypto/navigator/performance/self 是只读全局，会和 bootstrap 的赋值冲突。
   // 用独立 vm 沙箱（全新 global），只注入 sdk 实际需要的 host 能力。
-  const baseLang = String(language).split("-")[0] || "en";
   const sandbox = {
     console,
     setTimeout,
@@ -504,10 +480,6 @@ async function handleRequest(raw) {
     fetch: makeFetch(
       ua,
       language,
-      acceptLanguage,
-      secChUa,
-      secChUaPlatform,
-      deviceId,
       cookieHeader,
       dispatcher,
       fetchImpl,
@@ -527,14 +499,12 @@ async function handleRequest(raw) {
     __SEED_DID_KEY__: "oai-did",
     __SEED_DID_VAL__: deviceId,
     __PAGE_URL__: pageUrl,
-    __FLOW__: flow,
     __LANGUAGE__: language,
-    __LANGUAGES__: [...new Set([language, baseLang, "en-US", "en"].filter(Boolean))],
+    __LANGUAGES__: [language, "en-US", "en"],
     __TIMEZONE__: timezone,
     __COOKIE_HEADER__: cookieHeader,
     __PLATFORM__: platform,
     __PLATFORM_LABEL__: platformLabel,
-    __SEC_CH_UA__: secChUa,
     __SCREEN_W__: screenW,
     __SCREEN_H__: screenH,
     __AVAIL_H__: availH,
@@ -577,16 +547,14 @@ async function handleRequest(raw) {
     return JSON.stringify({ error: "driver 无 c", soErr: rd.soErr || "", raw: String(rawDriver).slice(0, 300) });
   }
 
-  let p = (typeof rd.p === "string" && rd.p.startsWith("gAAAAAB")) ? rd.p : "";
-  if (!p) {
-    const g = makeGenerator(ua, cores, language, timezone, screenW, screenH, `${sentinelOrigin}/sentinel/${version}/sdk.js`);
-    if (rd.powReq && rd.seed) {
-      p = solvePoW(g, rd.seed, rd.diff);
-    } else {
-      const data0 = configArray(g);
-      data0[3] = 1;
-      p = "gAAAAAB" + b64Compact(data0) + "~S";
-    }
+  const g = makeGenerator(ua, cores, language, timezone, screenW, screenH);
+  let p;
+  if (rd.powReq && rd.seed) {
+    p = solvePoW(g, rd.seed, rd.diff);
+  } else {
+    const data0 = configArray(g);
+    data0[3] = 1;
+    p = "gAAAAAB" + b64Compact(data0) + "~S";
   }
 
   const mainTok = JSON.stringify({ p, t: rd.t || "", c: rd.c, id: deviceId, flow });

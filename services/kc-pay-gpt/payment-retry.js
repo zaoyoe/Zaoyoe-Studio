@@ -481,7 +481,6 @@ async function executePaymentWithRetry(page, options) {
                             cookieHeader: options.cookieHeader || '',
                             deviceId: options.deviceId || '',
                             userAgent: options.userAgent || '',
-                            region: region || '',
                             protocolOnly,
                             onPaymentAttemptStarted: async () => {
                                 await beginPaymentSubmission('正在提交银行卡支付 (Stripe 纯协议直充)');

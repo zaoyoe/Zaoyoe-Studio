@@ -18,17 +18,6 @@ try{
  }
 }catch(e){soErr=""+(e&&e.stack||e);}
 var pw=(cr&&cr.proofofwork)||{};
-var solvedP="";
-try{
- if(pw.required&&pw.seed){
-   solvedP=await E.getEnforcementToken(cr,{forceSync:true});
- }else if(typeof E._generateAnswerSync==="function"){
-   var _ans=E._generateAnswerSync(String(Math.random()),"0");
-   if(_ans&&(!E.errorPrefix||String(_ans).indexOf(E.errorPrefix)===-1)){
-     solvedP="gAAAAAB"+_ans;
-   }
- }
-}catch(_){}
-return JSON.stringify({p:solvedP||"",t:tf||"",so:so||"",c:cr.token,seed:pw.seed||"",diff:pw.difficulty||"",powReq:!!pw.required,soErr:soErr});
+return JSON.stringify({t:tf||"",so:so||"",c:cr.token,seed:pw.seed||"",diff:pw.difficulty||"",powReq:!!pw.required,soErr:soErr});
 }
 ,t}({})

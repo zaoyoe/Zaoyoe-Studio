@@ -121,22 +121,20 @@ async function cancelChatGptAutoRenewProtocol(options = {}) {
     const pollIntervalMs = Math.max(50, Number(options.pollIntervalMs ?? 1500));
     const proxyStr = String(options.proxy || '').trim();
 
-    const { getChatGptProtocolProfile, buildChatGptBrowserHeaders } = require('./region-config');
-    const { createChatGptImpitClient, createInMemoryCookieJar } = require('./protocol-http');
-    const protocolProfile = getChatGptProtocolProfile(options.region || 'US', { userAgent: options.userAgent });
-    const cookieJar = createInMemoryCookieJar(options.cookieHeader || '');
-
     let impitClient = null;
     let undiciFetch = null;
     let dispatcher = undefined;
 
     if (typeof options.fetchImpl !== 'function') {
-        impitClient = createChatGptImpitClient({
-            userAgent: protocolProfile.userAgent,
-            proxyUrl: proxyStr,
-            timeoutMs,
-            cookieJar
-        });
+        try {
+            const { Impit } = require('impit');
+            impitClient = new Impit({
+                browser: 'chrome',
+                proxyUrl: proxyStr || undefined,
+                ignoreTlsErrors: true,
+                timeout: timeoutMs
+            });
+        } catch (_) {}
 
         if (!impitClient) {
             const undici = require('undici');
@@ -154,15 +152,19 @@ async function cancelChatGptAutoRenewProtocol(options = {}) {
             : undiciFetch(url, { ...init, dispatcher });
     };
 
-    const headers = buildChatGptBrowserHeaders(protocolProfile, {
+    const headers = {
         'Authorization': `Bearer ${activeToken}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Origin': 'https://chatgpt.com',
         'Referer': 'https://chatgpt.com/',
-        'oai-language': protocolProfile.language || 'en-US',
+        'User-Agent': options.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+        'sec-ch-ua': '"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'oai-language': 'en-US',
         ...(options.deviceId ? { 'oai-device-id': options.deviceId } : {})
-    });
+    };
 
     const refreshTokenIfExpired = async () => {
         if (!options.cookieHeader) return null;

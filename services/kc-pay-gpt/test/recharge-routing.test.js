@@ -9,7 +9,7 @@ import { validateOutsourceConfig, canonicalizeOutsourcePlan } from '../gpt-outso
 import { validateCdkPlan } from '../cdk-plan-catalog.js';
 import * as sessions from '../session-auth.js';
 import * as safety from '../task-safety.js';
-import { getPlatformForPlan, getRegionConfig, getRegionBrowserProfile, getChatGptProtocolProfile } from '../region-config.js';
+import { getPlatformForPlan, getRegionConfig, getRegionBrowserProfile } from '../region-config.js';
 import { formatTaskErrorMessage } from '../public/task-messages.js';
 import { reportTaskFailure } from '../task-diagnostics.js';
 import { fingerprintSessionPayload } from '../session-security.js';
@@ -225,7 +225,7 @@ async function workerHarness(fixture, { mismatch = false, apiError = null, boots
     if (bootstrapError) methods[`bootstrap${fixture.platform === 'grok' ? 'Grok' : fixture.platform === 'claude' ? 'Claude' : 'ChatGpt'}Session`].mockRejectedValue(bootstrapError);
     const dependencies = {
         './payment-retry': methods, './pricing-checkout': methods, './chatgpt': { ...methods, ...require('../chatgpt') },
-        './region-config': { getRegionConfig, getRegionBrowserProfile, getChatGptProtocolProfile }, './session-auth': methods, './chatgpt-cancel-auto-renew': methods, './claude-auth': methods,
+        './region-config': { getRegionConfig, getRegionBrowserProfile }, './session-auth': methods, './chatgpt-cancel-auto-renew': methods, './claude-auth': methods,
         './pricing-checkout-claude': methods, './claude-cancel-auto-renew': methods,
         './grok-auth': methods, './pricing-checkout-grok': methods, './grok-cancel-auto-renew': methods,
         './public/grok-plan-catalog': require('../public/grok-plan-catalog'), './grok-commerce': methods, './cdk-plan-catalog': { validateCdkPlan },
