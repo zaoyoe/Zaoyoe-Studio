@@ -4,7 +4,8 @@ const crypto = require('crypto');
 const querystring = require('querystring');
 const axios = require('axios');
 const { mintSentinelToken } = require('./sentinel/sentinel-client');
-const { getChatGptProtocolProfile, buildChatGptBrowserHeaders } = require('./region-config');
+const { getChatGptProtocolProfile, buildChatGptBrowserHeaders, DEFAULT_CHATGPT_USER_AGENT } = require('./region-config');
+const { createChatGptImpitClient, createInMemoryCookieJar } = require('./protocol-http');
 const { substituteProxySession, resetActiveProxyTunnels } = require('./playwright-proxy');
 const { registerStripeDeviceFingerprint } = require('./stripe-device-fingerprint');
 
@@ -16,8 +17,8 @@ const {
 
 const V_HOSTED = '2020-08-27;custom_checkout_beta=v1';
 const DEFAULT_OPENAI_PK = 'pk_live_51HOrSwC6h1nxGoI3lTAgRjYVrz4dU3fVOabyCcKR3pbEJguCVAlqCxdxCUvoRh1XWwRacViovU3kLKvpkjh7IqkW00iXQsjo3n';
-const DEFAULT_STRIPE_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
-const DEFAULT_STRIPE_SEC_CH_UA = '"Not.A/Brand";v="99", "Chromium";v="136", "Google Chrome";v="136"';
+const DEFAULT_STRIPE_CHROME_UA = DEFAULT_CHATGPT_USER_AGENT;
+const DEFAULT_STRIPE_SEC_CH_UA = getChatGptProtocolProfile('US').secChUa;
 const EXPLICIT_STRIPE_DECLINE_CODES = ALL_EXPLICIT_STRIPE_DECLINE_CODES;
 
 function isSuccessfulHttp(response) {
@@ -143,45 +144,38 @@ function buildStripeBrowserHeaders(origin = 'https://js.stripe.com', userAgent =
  */
 async function postStripeFormChromeTls(url, bodyObj, headers, proxy = '', maxRetries = 3) {
     const bodyStr = typeof bodyObj === 'string' ? bodyObj : querystring.stringify(bodyObj);
-    let ImpitClass = null;
-    try {
-        ({ Impit: ImpitClass } = require('impit'));
-    } catch (_) {}
-
-    if (ImpitClass) {
-        let currentProxy = String(proxy || '').trim();
-        let lastErr = null;
-        for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
-            try {
-                const client = new ImpitClass({
-                    browser: 'chrome',
-                    proxyUrl: currentProxy || undefined,
-                    ignoreTlsErrors: true,
-                    timeout: 25000
-                });
-                const res = await client.fetch(url, {
-                    method: 'POST',
-                    headers,
-                    body: bodyStr
-                });
-                const rawText = await res.text();
-                let data = {};
-                try { data = JSON.parse(rawText); } catch (_) {}
-                return { status: res.status, ok: res.status === 200, data, rawText };
-            } catch (err) {
-                lastErr = err;
-                if (attempt >= maxRetries || !currentProxy) break;
-                const nextProxy = substituteProxySession(currentProxy);
-                if (nextProxy && nextProxy !== currentProxy) {
-                    currentProxy = nextProxy;
-                    try { resetActiveProxyTunnels(); } catch (_) {}
-                }
-                await new Promise((r) => setTimeout(r, 400));
+    let currentProxy = String(proxy || '').trim();
+    let lastErr = null;
+    for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+        const client = createChatGptImpitClient({
+            userAgent: headers?.['User-Agent'] || headers?.['user-agent'] || DEFAULT_STRIPE_CHROME_UA,
+            proxyUrl: currentProxy,
+            timeoutMs: 25000
+        });
+        if (!client) break;
+        try {
+            const res = await client.fetch(url, {
+                method: 'POST',
+                headers,
+                body: bodyStr
+            });
+            const rawText = await res.text();
+            let data = {};
+            try { data = JSON.parse(rawText); } catch (_) {}
+            return { status: res.status, ok: res.status === 200, data, rawText };
+        } catch (err) {
+            lastErr = err;
+            if (attempt >= maxRetries || !currentProxy) break;
+            const nextProxy = substituteProxySession(currentProxy);
+            if (nextProxy && nextProxy !== currentProxy) {
+                currentProxy = nextProxy;
+                try { resetActiveProxyTunnels(); } catch (_) {}
             }
+            await new Promise((r) => setTimeout(r, 400));
         }
-        if (lastErr && !proxy) {
-            // Fall through to executeWithProxyRetry fallback if impit failed locally
-        }
+    }
+    if (lastErr && !proxy) {
+        // Fall through to executeWithProxyRetry fallback if impit failed locally
     }
 
     const res = await executeWithProxyRetry(async (client) => {
@@ -721,45 +715,40 @@ async function syncCheckoutBillingTax({
  * 使用 Chrome BoringSSL TLS 指纹 (impit) 向 chatgpt.com 发送 JSON POST，规避 Node OpenSSL JA3/JA4 触发 Cloudflare 403
  */
 async function postChatGptChromeTls(url, bodyObj, headers, proxy = '', maxRetries = 2) {
-    let ImpitClass = null;
-    try {
-        ({ Impit: ImpitClass } = require('impit'));
-    } catch (_) {}
-
-    if (ImpitClass) {
-        let currentProxy = String(proxy || '').trim();
-        let lastErr = null;
-        const bodyStr = JSON.stringify(bodyObj);
-        for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
-            try {
-                const client = new ImpitClass({
-                    browser: 'chrome',
-                    proxyUrl: currentProxy || undefined,
-                    ignoreTlsErrors: true,
-                    timeout: 25000
-                });
-                const res = await client.fetch(url, {
-                    method: 'POST',
-                    headers,
-                    body: bodyStr
-                });
-                const rawText = await res.text();
-                let data = {};
-                try { data = JSON.parse(rawText); } catch (_) {}
-                return { status: res.status, ok: res.status === 200, data, rawText };
-            } catch (err) {
-                lastErr = err;
-                if (attempt >= maxRetries) break;
-                const nextProxy = currentProxy ? substituteProxySession(currentProxy) : '';
-                if (nextProxy && nextProxy !== currentProxy) {
-                    currentProxy = nextProxy;
-                }
-                try { resetActiveProxyTunnels(); } catch (_) {}
-                await new Promise((r) => setTimeout(r, 350));
+    let currentProxy = String(proxy || '').trim();
+    let lastErr = null;
+    const bodyStr = JSON.stringify(bodyObj);
+    const cookieJar = createInMemoryCookieJar(headers?.Cookie || headers?.cookie || '');
+    for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+        const client = createChatGptImpitClient({
+            userAgent: headers?.['User-Agent'] || headers?.['user-agent'] || DEFAULT_CHATGPT_USER_AGENT,
+            proxyUrl: currentProxy,
+            timeoutMs: 25000,
+            cookieJar
+        });
+        if (!client) break;
+        try {
+            const res = await client.fetch(url, {
+                method: 'POST',
+                headers,
+                body: bodyStr
+            });
+            const rawText = await res.text();
+            let data = {};
+            try { data = JSON.parse(rawText); } catch (_) {}
+            return { status: res.status, ok: res.status === 200, data, rawText };
+        } catch (err) {
+            lastErr = err;
+            if (attempt >= maxRetries) break;
+            const nextProxy = currentProxy ? substituteProxySession(currentProxy) : '';
+            if (nextProxy && nextProxy !== currentProxy) {
+                currentProxy = nextProxy;
             }
+            try { resetActiveProxyTunnels(); } catch (_) {}
+            await new Promise((r) => setTimeout(r, 350));
         }
-        if (lastErr) throw lastErr;
     }
+    if (lastErr) throw lastErr;
 
     const nodeRes = await executeWithProxyRetry(async (client) => {
         return await client.post(url, bodyObj, {

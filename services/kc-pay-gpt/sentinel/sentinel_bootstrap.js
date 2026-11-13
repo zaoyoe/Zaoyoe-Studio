@@ -155,9 +155,27 @@
   navigator.mediaCapabilities = { decodingInfo: function () { return Promise.resolve({ supported: true, smooth: true, powerEfficient: true }); } };
   (function () {
     var m = String(g.__UA__ || "").match(/Chrome\/(\d+)\./);
-    var ver = m ? m[1] : "136";
+    var ver = m ? m[1] : "151";
     var plat = (g.__PLATFORM_LABEL__ || "Windows");
-    navigator.userAgentData = { brands: [{ brand: "Google Chrome", version: ver }, { brand: "Chromium", version: ver }, { brand: "Not.A/Brand", version: "99" }], mobile: false, platform: plat, getHighEntropyValues: function () { return Promise.resolve({ platform: plat, platformVersion: "10.0.0", fullVersionList: [{ brand: "Google Chrome", version: ver }, { brand: "Chromium", version: ver }, { brand: "Not.A/Brand", version: "99" }] }); } };
+    var brands = [];
+    var rawSecChUa = String(g.__SEC_CH_UA__ || "").trim();
+    if (rawSecChUa) {
+      var re = /"([^"]+)"\s*;\s*v="([^"]+)"/g;
+      var match;
+      while ((match = re.exec(rawSecChUa)) !== null) {
+        brands.push({ brand: match[1], version: match[2] });
+      }
+    }
+    if (!brands.length) {
+      brands = ver === "147"
+        ? [{ brand: "Not)A;Brand", version: "8" }, { brand: "Chromium", version: ver }, { brand: "Google Chrome", version: ver }]
+        : [{ brand: "Not=A?Brand", version: "99" }, { brand: "Google Chrome", version: ver }, { brand: "Chromium", version: ver }];
+    }
+    var fullVersionList = brands.map(function (b) {
+      return { brand: b.brand, version: (b.brand === "Chromium" || b.brand === "Google Chrome") ? (ver + ".0.0.0") : (b.version + ".0.0.0") };
+    });
+    var platVer = plat === "Windows" ? "15.0.0" : (plat === "macOS" ? "14.5.0" : "");
+    navigator.userAgentData = { brands: brands, mobile: false, platform: plat, getHighEntropyValues: function () { return Promise.resolve({ platform: plat, platformVersion: platVer, fullVersionList: fullVersionList }); } };
   })();
   navigator.scheduling = { isInputPending: function () { return false; } };
   navigator.ink = { requestPresenter: noopPromise };
@@ -256,7 +274,23 @@
   // ---- document（sdk 读 scripts / documentElement / cookie / keys / body 文本量测指纹）----
   var sdkScript = { src: g.__SDK_URL__, getAttribute: function () { return null; }, type: "text/javascript" };
   var docElement = { getAttribute: function () { return null; }, tagName: "HTML", lang: g.__LANGUAGE__ || "en-US" };
-  var _cookie = g.__COOKIE_HEADER__ || ((g.__SEED_DID_KEY__ && g.__SEED_DID_VAL__) ? (g.__SEED_DID_KEY__ + "=" + g.__SEED_DID_VAL__) : "");
+  var _rawCookie = String(g.__COOKIE_HEADER__ || ((g.__SEED_DID_KEY__ && g.__SEED_DID_VAL__) ? (g.__SEED_DID_KEY__ + "=" + g.__SEED_DID_VAL__) : ""));
+  var _cookie = _rawCookie
+    .split(";")
+    .map(function (part) { return part.trim(); })
+    .filter(function (part) {
+      if (!part) return false;
+      var eq = part.indexOf("=");
+      if (eq <= 0) return false;
+      var name = part.slice(0, eq).trim();
+      if (/^__(?:Secure|Host)-(?:next-auth|authjs)\./i.test(name)) return false;
+      if (/^(?:_puid|__cf_bm|cf_clearance|_cfuvid|oai-sc)$/i.test(name)) return false;
+      return true;
+    })
+    .join("; ");
+  if (!_cookie && g.__SEED_DID_KEY__ && g.__SEED_DID_VAL__) {
+    _cookie = g.__SEED_DID_KEY__ + "=" + g.__SEED_DID_VAL__;
+  }
 
   // 可写 style 壳：collector 的文本指纹会 Reflect.set(style, "fontFamily"/"fontSize"/... )
   function makeStyle() {
@@ -413,18 +447,20 @@
   // 不读到 undefined 且产出结构完整的 so-token。
   (function () {
     var nowP = (g.performance && g.performance.now) ? g.performance.now() : 1500;
-    var t0 = nowP - 8085.5;              // 进页到采集约 8 秒
-    // keydown 事件序列（输入姓名 "Anna Wilson" + 生日 ~ 12 次按键）
+    var isCheckoutFlow = /chatgpt_checkout|checkout|payment|upgrade/i.test(String(g.__FLOW__ || ""))
+      || (/chatgpt\.com/i.test(_pageUrl) && !/auth\.openai\.com|about-you/i.test(_pageUrl));
+    var t0 = nowP - (isCheckoutFlow ? 4650.5 : 8085.5);
     var kd = [];
-    var keys = ["A","n","n","a"," ","W","i","l","s","o","n","2"];
-    var kt = t0 + 1200;
-    for (var i = 0; i < keys.length; i++) {
-      kt += 140 + Math.random() * 90;
-      kd.push({ ctrlKey: false, metaKey: false, altKey: false, shiftKey: (i === 0 || i === 5), key: keys[i], type: "keydown", t: kt });
+    if (!isCheckoutFlow) {
+      var keys = ["A","n","n","a"," ","W","i","l","s","o","n","2"];
+      var kt = t0 + 1200;
+      for (var i = 0; i < keys.length; i++) {
+        kt += 140 + Math.random() * 90;
+        kd.push({ ctrlKey: false, metaKey: false, altKey: false, shiftKey: (i === 0 || i === 5), key: keys[i], type: "keydown", t: kt });
+      }
     }
-    // pointermove 事件序列（鼠标移动，累计路径长度）
     var pm = [];
-    var px = 640, py = 360, pt = t0 + 300, htot = 0, pcnt = 0;
+    var px = isCheckoutFlow ? 780 : 640, py = isCheckoutFlow ? 410 : 360, pt = t0 + 300, htot = 0, pcnt = 0;
     for (var j = 0; j < 30; j++) {
       var dx = (Math.random() - 0.5) * 40, dy = (Math.random() - 0.5) * 30;
       px += dx; py += dy; pt += 60 + Math.random() * 80;
@@ -439,7 +475,7 @@
     g.__oai_so_s = 0;
     g.__oai_so_k = kd.length;   // 按键计数
     g.__oai_so_kp = 0;
-    g.__oai_so_we = 0;          // wheel 事件数
+    g.__oai_so_we = isCheckoutFlow ? 2 : 0;
     g.__oai_so_wb = 0;
     g.__oai_so_wl = 0;
     g.__oai_so_fs = 0;
@@ -453,18 +489,18 @@
     g.__oai_so_hc = pcnt;       // hypot 计数
     g.__oai_so_bc = 2;          // click 计数
     g.__oai_so_bm = 0;
-    g.__oai_so_ss = 0;          // scroll 累加
+    g.__oai_so_ss = isCheckoutFlow ? 240 : 0;
     g.__oai_so_ss2 = 0;
-    g.__oai_so_sn = 0;          // scroll 计数
+    g.__oai_so_sn = isCheckoutFlow ? 2 : 0;
     g.__oai_so_cs = 0;          // click 累加
     g.__oai_so_cs2 = 0;
     g.__oai_so_cn = 2;          // click 计数
-    g.__oai_so_st = 0;          // scrollTop
+    g.__oai_so_st = isCheckoutFlow ? 120 : 0;
     g.__oai_so_sw = 0;
     g.__oai_so_sp = 0;
     g.__oai_so_spt = 0;
-    g.__oai_so_sx0 = 640;
-    g.__oai_so_sy0 = 360;
+    g.__oai_so_sx0 = isCheckoutFlow ? 780 : 640;
+    g.__oai_so_sy0 = isCheckoutFlow ? 410 : 360;
     g.__oai_so_lx = Math.round(px);
     g.__oai_so_ly = Math.round(py);
   })();

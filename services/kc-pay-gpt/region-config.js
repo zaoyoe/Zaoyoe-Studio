@@ -155,7 +155,7 @@ function getRegionBrowserProfile(regionCode) {
 }
 
 const DEFAULT_CHATGPT_USER_AGENT =
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36';
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36';
 
 function buildAcceptLanguageHeader(language) {
     const primary = String(language || 'en-US').trim() || 'en-US';
@@ -179,7 +179,7 @@ function getChatGptProtocolProfile(regionCode, overrides = {}) {
     const resolvedRegion = getRegionConfig(code) ? code : DEFAULT_REGION;
     const userAgent = String(overrides.userAgent || DEFAULT_CHATGPT_USER_AGENT).trim() || DEFAULT_CHATGPT_USER_AGENT;
     const chromeMatch = userAgent.match(/Chrome\/(\d+)/i);
-    const chromeMajor = chromeMatch ? chromeMatch[1] : '147';
+    const chromeMajor = chromeMatch ? chromeMatch[1] : '151';
 
     let platform = 'Win32';
     let platformLabel = 'Windows';
@@ -201,9 +201,10 @@ function getChatGptProtocolProfile(regionCode, overrides = {}) {
     const language = String(overrides.language || cfg.locale || 'en-US').trim() || 'en-US';
     const acceptLanguage = String(overrides.acceptLanguage || buildAcceptLanguageHeader(language)).trim();
     const timezone = String(overrides.timezone || cfg.timezone || 'Asia/Manila').trim() || 'Asia/Manila';
-    const secChUa = String(
-        overrides.secChUa || `"Not)A;Brand";v="8", "Chromium";v="${chromeMajor}", "Google Chrome";v="${chromeMajor}"`
-    ).trim();
+    const defaultSecChUa = chromeMajor === '147'
+        ? `"Not)A;Brand";v="8", "Chromium";v="${chromeMajor}", "Google Chrome";v="${chromeMajor}"`
+        : `"Not=A?Brand";v="99", "Google Chrome";v="${chromeMajor}", "Chromium";v="${chromeMajor}"`;
+    const secChUa = String(overrides.secChUa || defaultSecChUa).trim();
 
     const baseLang = language.split('-')[0].toLowerCase();
     const languages = Array.from(new Set([
@@ -235,7 +236,11 @@ function buildChatGptBrowserHeaders(profile, extraHeaders = {}) {
         'Accept-Language': resolved.acceptLanguage,
         'sec-ch-ua': resolved.secChUa,
         'sec-ch-ua-mobile': resolved.secChUaMobile || '?0',
-        'sec-ch-ua-platform': resolved.secChUaPlatform
+        'sec-ch-ua-platform': resolved.secChUaPlatform,
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-dest': 'empty',
+        'priority': 'u=1, i'
     };
     const result = { ...base };
     const lowerMap = new Map(Object.keys(result).map(k => [k.toLowerCase(), k]));

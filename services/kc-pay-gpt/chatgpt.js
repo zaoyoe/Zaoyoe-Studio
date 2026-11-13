@@ -296,16 +296,14 @@ class ChatGPTService {
                 const timeoutMs = Number(options.timeoutMs || 25000);
                 const fullHeaders = buildChatGptBrowserHeaders(protocolProfile, requestHeaders);
                 const bodyStr = JSON.stringify(payload);
-                let impitClient = null;
-                try {
-                    const { Impit } = require('impit');
-                    impitClient = new Impit({
-                        browser: 'chrome',
-                        proxyUrl: proxyStr || undefined,
-                        ignoreTlsErrors: true,
-                        timeout: timeoutMs
-                    });
-                } catch (_) {}
+                const { createChatGptImpitClient, createInMemoryCookieJar } = require('./protocol-http');
+                const cookieJar = options.cookieJar || createInMemoryCookieJar(fullHeaders.Cookie || fullHeaders.cookie || '');
+                const impitClient = createChatGptImpitClient({
+                    userAgent: protocolProfile.userAgent,
+                    proxyUrl: proxyStr,
+                    timeoutMs,
+                    cookieJar
+                });
 
                 if (impitClient) {
                     let lastErr = null;
@@ -630,7 +628,11 @@ async function openApiCheckout(page, { accessToken, planType, country, currency,
         if (sentinel?.sentinelSoToken) {
             extraHeaders['openai-sentinel-so-token'] = sentinel.sentinelSoToken;
         }
-        console.log('⚡ [Sentinel] ✅ 风控令牌签发成功，已注入 Checkout 请求头');
+        if (sentinel?.sentinelToken) {
+            console.log('⚡ [Sentinel] ✅ 风控令牌签发成功，已注入 Checkout 请求头');
+        } else {
+            console.warn('⚠️ [Sentinel] 未获取到有效风控令牌，将不带 Sentinel 头尝试发包');
+        }
     } catch (sentinelErr) {
         console.warn('⚠️ [Sentinel] 风控令牌签发跳过/异常 (尝试原生发包):', sentinelErr.message);
     }
