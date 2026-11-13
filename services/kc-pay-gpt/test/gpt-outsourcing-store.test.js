@@ -14,13 +14,15 @@ const binding = { attemptId: 'attempt-1', clientRef: 'ref-1', idempotencyKey: 'i
 // This stateful client is entirely offline. Evaluate the actual CommonJS store
 // to exercise transactions, immutable bindings and resource ownership guards.
 function harness({ envelope = null, newOwner = false, cardOwner = 'gptapi_job-1', dailyCount = 0,
+    usageCount = 0, maxUsageLimit = null,
     configRows = [{ config_key: 'gpt_api_plan_key', config_value: 'plus' }] } = {}) {
     const state = {
         task: { id: 10, job_key: 'job-1', cdk_code: 'CDK-1', execution_mode: 'third_party_api', status: 'running',
             progress: 20, payment_state: 'not_started', recovery_required: 0, gpt_api_raw: envelope ? JSON.stringify(envelope) : null },
         cdk: { cdk_code: 'CDK-1', used_at: '2026-10-01T00:00:00Z', is_active: 1 },
         card: { id: 7, card_number: '4242424242424242', card_expiry: '12/30', card_cvc: '123',
-            card_holder: 'Test', usage_count: 0, daily_usage_count: dailyCount,
+            card_holder: 'Test', usage_count: usageCount, max_usage_limit: maxUsageLimit, is_active: 1, status: '正常',
+            daily_usage_count: dailyCount,
             daily_usage_reset_at: new Date().toISOString(), in_use: envelope?.attempt?.cardAssetId ? 1 : 0, locked_by: cardOwner },
         usageWrites: 0, releases: 0
     };
@@ -45,7 +47,10 @@ function harness({ envelope = null, newOwner = false, cardOwner = 'gptapi_job-1'
         if (/UPDATE cdk_codes SET used_at = NULL/.test(sql)) { state.cdk.used_at = null; return [{ affectedRows: 1 }]; }
         if (/UPDATE cdk_codes SET used_at = COALESCE/.test(sql)) { state.cdk.used_at ||= 'now'; return [{ affectedRows: 1 }]; }
         if (/UPDATE card_assets SET daily_usage_count/.test(sql)) {
-            state.usageWrites++; state.card.daily_usage_count = params[0]; state.card.usage_count++; return [{ affectedRows: 1 }];
+            state.usageWrites++; state.card.daily_usage_count = params[0]; state.card.usage_count++;
+            if (params[3] === 1) state.card.is_active = 0;
+            if (params[4] === 1) state.card.status = '已冻结';
+            return [{ affectedRows: 1 }];
         }
         if (/UPDATE card_assets SET in_use = 0/.test(sql)) {
             expect(sql).toContain('AND locked_by = ?');
@@ -54,6 +59,10 @@ function harness({ envelope = null, newOwner = false, cardOwner = 'gptapi_job-1'
         if (/UPDATE task_logs SET status/.test(sql)) {
             state.task.status = params[0]; state.task.message = params[1]; state.task.payment_state = params[3];
             state.task.recovery_required = params[4]; return [{ affectedRows: 1 }];
+        }
+        if (/SELECT config_value FROM app_config WHERE config_key = 'card_max_usage_limit'/.test(sql)) {
+            const found = configRows.find(row => row.config_key === 'card_max_usage_limit');
+            return [found ? [clone(found)] : []];
         }
         if (/SELECT config_key/.test(sql)) return [clone(configRows)];
         if (/SELECT raw_output, failure_screenshots, execution_mode/.test(sql)) return [[clone(state.task)]];
@@ -186,6 +195,37 @@ describe('durable outsourced GPT order storage', () => {
         await expect(h.store.saveGptApiAttempt('job-1', { state: 'polling', recoveryRequired: true })).rejects.toMatchObject({ code: 'GPT_API_SETTLEMENT_CONFLICT' });
         const finishingQuery = h.query.mock.calls.find(([sql]) => sql.includes('session_payload_encrypted = CASE'))[0];
         expect(finishingQuery).toContain('THEN NULL ELSE session_payload_encrypted');
+    });
+
+    it('auto-freezes card_assets instead of daily cooldown when third_party_api settlement hits card or global usage limit', async () => {
+        const cardLimitHarness = await reserved(harness({ dailyCount: 2, usageCount: 4, maxUsageLimit: 5 }));
+        const frozenCardResult = await cardLimitHarness.store.finalizeGptApiAttempt('job-1', {
+            outcome: 'success',
+            record: { state: 'finished' },
+            message: '成功'
+        });
+        expect(frozenCardResult.cardUsage).toEqual({ dailyUsageCount: 3, cooledDown: false, autoFrozen: true });
+        expect(cardLimitHarness.state.card.is_active).toBe(0);
+        expect(cardLimitHarness.state.card.status).toBe('已冻结');
+        expect(cardLimitHarness.state.card.in_use).toBe(0);
+
+        const globalLimitHarness = await reserved(harness({
+            dailyCount: 0,
+            usageCount: 2,
+            maxUsageLimit: null,
+            configRows: [
+                { config_key: 'gpt_api_plan_key', config_value: 'plus' },
+                { config_key: 'card_max_usage_limit', config_value: '3' }
+            ]
+        }));
+        const frozenGlobalResult = await globalLimitHarness.store.finalizeGptApiAttempt('job-1', {
+            outcome: 'success',
+            record: { state: 'finished' },
+            message: '成功'
+        });
+        expect(frozenGlobalResult.cardUsage).toEqual({ dailyUsageCount: 1, cooledDown: false, autoFrozen: true });
+        expect(globalLimitHarness.state.card.is_active).toBe(0);
+        expect(globalLimitHarness.state.card.status).toBe('已冻结');
     });
 
     it('confirmed no charge returns only the correlated CDK and card', async () => {

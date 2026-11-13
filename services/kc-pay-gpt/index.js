@@ -331,6 +331,9 @@ async function run() {
     const billingCurrency = regionCfg ? regionCfg.currency : 'USD';
 
     let realUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36';
+    const protocolProfile = typeof getChatGptProtocolProfile === 'function'
+        ? getChatGptProtocolProfile(paymentRegion, { userAgent: realUserAgent })
+        : null;
     const ensureBrowserReady = async (reason = '') => {
         if (context && page && (typeof page.isClosed !== 'function' || !page.isClosed())) {
             return { browserSession, browser, context, page, realUserAgent };
@@ -818,6 +821,12 @@ async function run() {
             console.log(`✅ [系统] 代理连接成功! 代理公网 IP: ${ipMasked}`);
             regionVerified = true;
 
+            const preparedProtocolCtx = typeof prepareChatGptProtocolContext === 'function'
+                ? prepareChatGptProtocolContext(sessionRaw)
+                : null;
+            const preDeviceId = preparedProtocolCtx?.deviceId || '';
+            const preCookieHeader = preparedProtocolCtx?.cookieHeader || '';
+
             // ⚡ 性能优化 (方案2)：在协议代理核验通过后，立即后台并行启动 Sentinel PoW 计算，
             // 与下面的 verifyChatGptSessionProtocol (约 3~5s) 彻底重叠，消除后续收银台创建时的串行算力等待！
             let sentinelPromise = null;
@@ -827,6 +836,17 @@ async function run() {
                     console.log('⚡ [Sentinel] 正在后台并行预签发风控令牌 (PoW)...');
                     sentinelPromise = mintSentinelToken({
                         flow: 'chatgpt_checkout',
+                        deviceId: preDeviceId,
+                        cookieHeader: preCookieHeader,
+                        userAgent: protocolProfile?.userAgent || realUserAgent,
+                        region: paymentRegion,
+                        language: protocolProfile?.language || browserProfile?.locale,
+                        acceptLanguage: protocolProfile?.acceptLanguage,
+                        timezone: protocolProfile?.timezone || browserProfile?.timezoneId,
+                        platform: protocolProfile?.platform,
+                        platformLabel: protocolProfile?.platformLabel,
+                        secChUa: protocolProfile?.secChUa,
+                        secChUaPlatform: protocolProfile?.secChUaPlatform,
                         proxy: proxyUrl,
                         pageUrl: 'https://chatgpt.com/',
                         timeoutMs: 6000
@@ -839,7 +859,16 @@ async function run() {
                 }
             }
 
-            const sessionProtoRes = await verifyChatGptSessionProtocol(sessionRaw, { proxy: proxyUrl, timeoutMs: 7000 });
+            const sessionProtoRes = await verifyChatGptSessionProtocol(sessionRaw, {
+                proxy: proxyUrl,
+                timeoutMs: 7000,
+                deviceId: preDeviceId || undefined,
+                region: paymentRegion,
+                userAgent: protocolProfile?.userAgent || realUserAgent,
+                language: protocolProfile?.language || browserProfile?.locale,
+                acceptLanguage: protocolProfile?.acceptLanguage,
+                timezone: protocolProfile?.timezone || browserProfile?.timezoneId
+            });
 
             if (sessionProtoRes?.ok) {
                 loginInfo = sessionProtoRes;
@@ -867,8 +896,13 @@ async function run() {
                         verifyPage: false,
                         proxy: proxyUrl,
                         sentinelPromise,
-                        cookieHeader: loginInfo.cookieHeader,
-                        deviceId: loginInfo.deviceId
+                        cookieHeader: loginInfo.cookieHeader || preCookieHeader,
+                        deviceId: loginInfo.deviceId || preDeviceId,
+                        userAgent: loginInfo.userAgent || protocolProfile?.userAgent || realUserAgent,
+                        region: paymentRegion,
+                        language: protocolProfile?.language || browserProfile?.locale,
+                        acceptLanguage: protocolProfile?.acceptLanguage,
+                        timezone: protocolProfile?.timezone || browserProfile?.timezoneId
                     });
                     checkoutOpened = true;
                     console.log('⚡ [极速通道] ✅ API 创建收银台会话成功，已跳过定价页');
@@ -1081,6 +1115,7 @@ async function run() {
             accessToken: loginInfo?.accessToken || loginInfo?.session?.accessToken || CONFIG.chatgptToken,
             cookieHeader: loginInfo?.cookieHeader || '',
             deviceId: loginInfo?.deviceId || '',
+            userAgent: loginInfo?.userAgent || protocolProfile?.userAgent || realUserAgent,
             proxy: proxyUrl,
             grokAccount: platform === 'grok' ? loginInfo : null,
             grokCheckout: platform === 'grok' ? checkoutResult : null,
@@ -1099,7 +1134,12 @@ async function run() {
                         verifyPage: false,
                         proxy: proxyUrl,
                         cookieHeader: loginInfo?.cookieHeader || '',
-                        deviceId: loginInfo?.deviceId || ''
+                        deviceId: loginInfo?.deviceId || '',
+                        userAgent: loginInfo?.userAgent || protocolProfile?.userAgent || realUserAgent,
+                        region: paymentRegion,
+                        language: protocolProfile?.language || browserProfile?.locale,
+                        acceptLanguage: protocolProfile?.acceptLanguage,
+                        timezone: protocolProfile?.timezone || browserProfile?.timezoneId
                     });
                 }
                 return null;

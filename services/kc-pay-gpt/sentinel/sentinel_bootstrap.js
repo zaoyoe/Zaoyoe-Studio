@@ -363,7 +363,7 @@
   g.indexedDB = { open: function () { return { result: null, onerror: null, onsuccess: null }; }, databases: function () { return Promise.resolve([]); } };
   g.speechSynthesis = { getVoices: function () { return []; }, speak: function () {}, cancel: function () {}, pause: function () {}, resume: function () {} };
   g.visualViewport = { width: 1920, height: 945, offsetLeft: 0, offsetTop: 0, scale: 1, pageLeft: 0, pageTop: 0, addEventListener: function () {} };
-  g.origin = "https://auth.openai.com";
+  g.origin = _parsedPageUrl.origin;
   g.isSecureContext = true;
   g.crossOriginIsolated = false;
   g.originAgentCluster = false;

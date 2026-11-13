@@ -454,6 +454,9 @@
                     minKeyboardViewportHeight = viewportHeight;
                 }
                 keyboardLayoutOpen = true;
+                if (pageShell && pageShell.style.animation !== 'none') {
+                    pageShell.style.animation = 'none';
+                }
                 document.documentElement.style.setProperty('--kc-keyboard-viewport-height', `${Math.round(viewportHeight)}px`);
                 document.body.classList.add('keyboard-open');
                 if (!keyboardClosingPending) {

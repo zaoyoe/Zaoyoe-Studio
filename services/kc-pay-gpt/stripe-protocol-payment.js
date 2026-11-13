@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const querystring = require('querystring');
 const axios = require('axios');
 const { mintSentinelToken } = require('./sentinel/sentinel-client');
+const { getChatGptProtocolProfile, buildChatGptBrowserHeaders } = require('./region-config');
 const { substituteProxySession, resetActiveProxyTunnels } = require('./playwright-proxy');
 const { registerStripeDeviceFingerprint } = require('./stripe-device-fingerprint');
 
@@ -1392,6 +1393,7 @@ async function executeStripeProtocolPayment({
     cookieHeader = '',
     deviceId = '',
     userAgent = '',
+    region = '',
     protocolOnly = true,
     attemptId = createProtocolAttemptId()
 }) {
@@ -1416,20 +1418,18 @@ async function executeStripeProtocolPayment({
 
     const cardLast4 = String(card.number || card.card_number || '').slice(-4);
     const checkoutUrl = `https://chatgpt.com/checkout/openai_llc/${sessionId}`;
-    const baseHeaders = {
+    const resolvedRegion = String(region || ({ PHP: 'PH', EGP: 'EG', CLP: 'CL', SGD: 'SG', MYR: 'MY', USD: 'US' }[String(currency || '').toUpperCase()] || 'PH')).toUpperCase();
+    const protocolProfile = getChatGptProtocolProfile(resolvedRegion, { userAgent });
+    const baseHeaders = buildChatGptBrowserHeaders(protocolProfile, {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Origin': 'https://chatgpt.com',
         'Referer': checkoutUrl,
         'x-openai-session-id': sessionId,
-        'User-Agent': userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="147", "Google Chrome";v="147"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
         ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
         ...(deviceId ? { 'oai-device-id': deviceId } : {})
-    };
+    });
     const protocolPage = protocolOnly ? null : page;
     const confirmationTokenHash = (ctoken) => hashProtocolValue(ctoken);
 
@@ -1539,7 +1539,16 @@ async function executeStripeProtocolPayment({
             flow: 'checkout_session_approval',
             pageUrl: checkoutUrl,
             deviceId: deviceId || undefined,
-            userAgent: userAgent || undefined,
+            cookieHeader: cookieHeader || '',
+            userAgent: protocolProfile.userAgent,
+            region: resolvedRegion,
+            language: protocolProfile.language,
+            acceptLanguage: protocolProfile.acceptLanguage,
+            timezone: protocolProfile.timezone,
+            platform: protocolProfile.platform,
+            platformLabel: protocolProfile.platformLabel,
+            secChUa: protocolProfile.secChUa,
+            secChUaPlatform: protocolProfile.secChUaPlatform,
             proxy: proxy || '',
             timeoutMs: 15000
         }) || {};

@@ -154,6 +154,103 @@ function getRegionBrowserProfile(regionCode) {
     };
 }
 
+const DEFAULT_CHATGPT_USER_AGENT =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36';
+
+function buildAcceptLanguageHeader(language) {
+    const primary = String(language || 'en-US').trim() || 'en-US';
+    const base = primary.split('-')[0].toLowerCase();
+    if (primary.toLowerCase() === 'en-us') {
+        return 'en-US,en;q=0.9';
+    }
+    const parts = [primary];
+    if (base === 'en') {
+        parts.push('en-US;q=0.9', 'en;q=0.8');
+    } else {
+        if (base && base !== primary.toLowerCase()) parts.push(`${base};q=0.9`);
+        parts.push('en-US;q=0.8', 'en;q=0.7');
+    }
+    return parts.join(',');
+}
+
+function getChatGptProtocolProfile(regionCode, overrides = {}) {
+    const code = String(regionCode || DEFAULT_REGION).trim().toUpperCase();
+    const cfg = getRegionConfig(code) || REGION_CONFIG[DEFAULT_REGION];
+    const resolvedRegion = getRegionConfig(code) ? code : DEFAULT_REGION;
+    const userAgent = String(overrides.userAgent || DEFAULT_CHATGPT_USER_AGENT).trim() || DEFAULT_CHATGPT_USER_AGENT;
+    const chromeMatch = userAgent.match(/Chrome\/(\d+)/i);
+    const chromeMajor = chromeMatch ? chromeMatch[1] : '147';
+
+    let platform = 'Win32';
+    let platformLabel = 'Windows';
+    let secChUaPlatform = '"Windows"';
+    if (/Macintosh|Mac OS X/i.test(userAgent)) {
+        platform = 'MacIntel';
+        platformLabel = 'macOS';
+        secChUaPlatform = '"macOS"';
+    } else if (/Linux/i.test(userAgent)) {
+        platform = 'Linux x86_64';
+        platformLabel = 'Linux';
+        secChUaPlatform = '"Linux"';
+    }
+
+    if (overrides.platform) platform = String(overrides.platform).trim();
+    if (overrides.platformLabel) platformLabel = String(overrides.platformLabel).trim();
+    if (overrides.secChUaPlatform) secChUaPlatform = String(overrides.secChUaPlatform).trim();
+
+    const language = String(overrides.language || cfg.locale || 'en-US').trim() || 'en-US';
+    const acceptLanguage = String(overrides.acceptLanguage || buildAcceptLanguageHeader(language)).trim();
+    const timezone = String(overrides.timezone || cfg.timezone || 'Asia/Manila').trim() || 'Asia/Manila';
+    const secChUa = String(
+        overrides.secChUa || `"Not)A;Brand";v="8", "Chromium";v="${chromeMajor}", "Google Chrome";v="${chromeMajor}"`
+    ).trim();
+
+    const baseLang = language.split('-')[0].toLowerCase();
+    const languages = Array.from(new Set([
+        language,
+        ...(baseLang === 'en' ? ['en-US', 'en'] : [baseLang, 'en-US', 'en'].filter(Boolean))
+    ]));
+
+    return {
+        region: resolvedRegion,
+        userAgent,
+        platform,
+        platformLabel,
+        language,
+        languages,
+        acceptLanguage,
+        timezone,
+        secChUa,
+        secChUaMobile: '?0',
+        secChUaPlatform
+    };
+}
+
+function buildChatGptBrowserHeaders(profile, extraHeaders = {}) {
+    const resolved = profile && profile.userAgent
+        ? profile
+        : getChatGptProtocolProfile(DEFAULT_REGION);
+    const base = {
+        'User-Agent': resolved.userAgent,
+        'Accept-Language': resolved.acceptLanguage,
+        'sec-ch-ua': resolved.secChUa,
+        'sec-ch-ua-mobile': resolved.secChUaMobile || '?0',
+        'sec-ch-ua-platform': resolved.secChUaPlatform
+    };
+    const result = { ...base };
+    const lowerMap = new Map(Object.keys(result).map(k => [k.toLowerCase(), k]));
+    for (const [k, v] of Object.entries(extraHeaders || {})) {
+        if (v === undefined) continue;
+        const existingKey = lowerMap.get(k.toLowerCase());
+        if (existingKey && existingKey !== k) {
+            delete result[existingKey];
+        }
+        result[k] = v;
+        lowerMap.set(k.toLowerCase(), k);
+    }
+    return result;
+}
+
 function getPlanTypeLabel(planType) {
     const key = String(planType || '').toLowerCase();
     if (PLAN_TYPE_LABELS[key]) {
@@ -171,6 +268,7 @@ module.exports = {
     REGION_CONFIG,
     SUPPORTED_REGIONS,
     DEFAULT_REGION,
+    DEFAULT_CHATGPT_USER_AGENT,
     PLATFORM_CONFIG,
     PLAN_TYPE_LABELS,
     getPlatformForPlan,
@@ -178,5 +276,7 @@ module.exports = {
     getRegionConfig,
     getRegionBilling,
     getRegionBrowserProfile,
+    getChatGptProtocolProfile,
+    buildChatGptBrowserHeaders,
     getPlanTypeLabel
 };

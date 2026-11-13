@@ -55,7 +55,7 @@ async function fixture(options = {}) {
                 : url.pathname === '/api/cdk/query'
                     ? { success: true, data: { status: '未使用', platform: 'chatgpt', plan_type: 'plus' } }
                     : url.pathname === '/api/run-process'
-                        ? { success: true, jobKey: 'offline-job' }
+                        ? { success: true, jobKey: 'offline-job', taskAccessToken: 'offline-task-access-token' }
                         : { success: true, handled: true, email: 'offline@example.test' };
             return route.fulfill({ json: response });
         }
@@ -382,7 +382,7 @@ describe('restored recharge user interactions with all external effects mocked',
             await f.page.locator('#queryInput').fill(cdk);
             await f.page.locator('#queryBtn').click();
             await f.page.waitForFunction(() => document.querySelector('#statusMessage').textContent.includes('未使用'));
-            expect(f.requests.some(r => r.url === '/api/cdk/query' && r.method === 'GET')).toBe(true);
+            expect(f.requests.some(r => r.url === '/api/cdk/query' && r.method === 'POST')).toBe(true);
             await f.page.locator('[data-tab="redeem"]').click();
             await f.page.waitForFunction(() => !document.querySelector('#tabStage').classList.contains('is-switching'));
             await f.page.locator('#backToStep1').click();

@@ -91,7 +91,7 @@ describe('checkout failures before payment submission', () => {
         expect(classifyGrokFailure(message, 'started')).toBeNull();
         expect(shouldRetainCdk({ executionMode: 'local_card_pool', paymentState: 'unknown' })).toBe(true);
     });
-    const codes = ['HTTP_ERROR', 'UNUSUAL_ACTIVITY', 'NETWORK_ERROR', 'NO_REQUEST', 'REQUEST_PENDING', 'NAVIGATION_TIMEOUT', 'AUTH_REQUIRED', 'PAGE_ERROR', 'PAGE_CLOSED'];
+    const codes = ['HTTP_ERROR', 'NETWORK_ERROR', 'NO_REQUEST', 'REQUEST_PENDING', 'NAVIGATION_TIMEOUT', 'AUTH_REQUIRED', 'PAGE_ERROR', 'PAGE_CLOSED'];
     it.each(codes)('classifies CHECKOUT_%s as not submitted without destroying payment resources', code => {
         const message = `Checkout 创建失败 [CHECKOUT_${code}]`;
         expect(classifyCheckoutFailure(message, 'not_started')).toEqual({
@@ -99,6 +99,21 @@ describe('checkout failures before payment submission', () => {
             deletePhone: false, deleteCard: false, paymentState: 'not_started'
         });
         expect(classifyCheckoutFailure(message, null)).toMatchObject({ paymentState: 'not_started' });
+    });
+
+    it('allows proxy retry for CHECKOUT_UNUSUAL_ACTIVITY only before payment submission', () => {
+        const message = 'Checkout 创建接口返回 HTTP 400：Our systems have detected unusual activity. [CHECKOUT_UNUSUAL_ACTIVITY]';
+        expect(classifyCheckoutFailure(message, 'not_started')).toMatchObject({
+            status: 'retry', shouldRetry: true, exhaustedMessage: message,
+            reachedPayment: false, deletePhone: false, deleteCard: false, paymentState: 'not_started'
+        });
+        expect(classifyCheckoutFailure(message, null)).toMatchObject({
+            status: 'retry', shouldRetry: true, paymentState: 'not_started'
+        });
+        expect(classifyCheckoutFailure(message, 'declined')).toMatchObject({
+            status: 'failed', shouldRetry: false, paymentState: 'not_started'
+        });
+        for (const state of ['started', 'unknown', 'succeeded']) expect(classifyCheckoutFailure(message, state)).toBeNull();
     });
 
     it.each([

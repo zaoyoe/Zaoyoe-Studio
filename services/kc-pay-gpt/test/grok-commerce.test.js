@@ -468,7 +468,7 @@ describe('Commerce request correlation and single submission', () => {
             ...q.session.data,checkoutSession:{...q.session.data.checkoutSession,token:'unrelated-session'}
         });
         await page.send('GetCartForSession',q.cart.request,q.cart.data);
-        expect(()=>observer.contract()).toThrow('GROK_COMMERCE_UNCONFIRMED');
+        expect(()=>observer.contract()).toThrow('GROK_SESSION_TOKEN_MISMATCH');
         observer.dispose();
     });
     it('retains the bound cart subject on repeated creation of the same session', async () => {

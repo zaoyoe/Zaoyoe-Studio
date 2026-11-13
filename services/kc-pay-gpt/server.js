@@ -3999,7 +3999,7 @@ async function recoverGptOutsourcingAttempts() {
     } finally { outsourceRecoveryRunning = false; }
 }
 
-function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clientIp, sessionCooldownScopeKey }) {
+function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clientIp }) {
     (async () => {
         const checkoutScript = path.join(__dirname, 'index.js');
         let finalRun = null;
@@ -4165,18 +4165,6 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                     mergePaymentState(run.analysis.paymentState || 'not_started', outputPaymentEvidence(run.output))
                 );
                 observedPaymentState = mergePaymentState(observedPaymentState, attemptPaymentState);
-                if (task.executionMode === 'local_card_pool'
-                    && platform === 'chatgpt'
-                    && sessionCooldownScopeKey
-                    && attemptPaymentState === 'not_started'
-                    && /\[CHECKOUT_UNUSUAL_ACTIVITY\]/.test(run.output)) {
-                    try {
-                        await store.setActivationAttemptCooldown('chatgpt_ua', sessionCooldownScopeKey, 10);
-                        logTask(task.jobKey, 'ChatGPT Session 因 Checkout unusual activity 进入 10 分钟冷却', 'warn');
-                    } catch (error) {
-                        logTask(task.jobKey, `ChatGPT Session 冷却写入失败: ${redactSensitiveText(error.message)}`, 'warn');
-                    }
-                }
                 if (attemptPaymentState) {
                     await persistLocal({
                         status: 'running',
@@ -4523,16 +4511,6 @@ async function handleActivationRequest(req, res) {
         const gptApiConfig = platform === 'chatgpt' ? await store.getGptApiConfig() : { enabled: false };
         const useGptApi = platform === 'chatgpt' && gptApiConfig.enabled;
         const executionMode = useGptApi ? 'third_party_api' : 'local_card_pool';
-        let sessionCooldownScopeKey = null;
-        if (platform === 'chatgpt' && executionMode === 'local_card_pool') {
-            sessionCooldownScopeKey = fingerprintSessionPayload(token);
-            const sessionLimit = await store.getActivationAttemptLimit('chatgpt_ua', sessionCooldownScopeKey);
-            const sessionCooldownMinutes = getRemainingCooldownMinutes(sessionLimit?.cooldown_until);
-            if (sessionCooldownMinutes > 0) {
-                return rejectActivation(403, 'SESSION_CHECKOUT_COOLDOWN',
-                    `该 ChatGPT Session 最近触发安全风控，请冷却 ${sessionCooldownMinutes} 分钟后再试`);
-            }
-        }
 
         // Validate the selected outsourced channel before locking the CDK or
         // creating a task. An enabled but incomplete channel must fail closed;
@@ -4607,7 +4585,7 @@ async function handleActivationRequest(req, res) {
                 console.error(`[GPT API Worker] ${task.jobKey}:`, error);
             });
         } else {
-            spawnActivationWorker({ task, token, sessionRaw: storedSession, cdk, cdkDetails, clientIp, sessionCooldownScopeKey });
+            spawnActivationWorker({ task, token, sessionRaw: storedSession, cdk, cdkDetails, clientIp });
         }
 
         return res.json({

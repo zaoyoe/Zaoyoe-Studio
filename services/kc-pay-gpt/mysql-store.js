@@ -3972,6 +3972,23 @@ async function setCardFrozen(cardId, freeze = true) {
  * @param {number} cardId - 卡片 ID
  * @returns {{ dailyUsageCount: number, cooledDown: boolean, autoFrozen: boolean, usageCount: number, maxUsageLimit: number }}
  */
+async function resolveEffectiveCardMaxUsageLimit(connection, cardRow = {}) {
+    let globalLimit = 0;
+    try {
+        const [cfgRows] = await connection.query(
+            `SELECT config_value FROM app_config WHERE config_key = 'card_max_usage_limit' LIMIT 1`
+        );
+        if (cfgRows && cfgRows.length) {
+            globalLimit = Math.max(0, parseInt(cfgRows[0].config_value, 10) || 0);
+        }
+    } catch (_) {}
+
+    const cardLimit = cardRow.max_usage_limit !== null && cardRow.max_usage_limit !== undefined
+        ? Number(cardRow.max_usage_limit)
+        : null;
+    return cardLimit !== null && cardLimit > 0 ? cardLimit : globalLimit;
+}
+
 async function recordCardUsage(cardId, ownerKey) {
     const id = requireOwnedAssetId(cardId, ownerKey);
 
@@ -4026,20 +4043,7 @@ async function recordCardUsage(cardId, ownerKey) {
         }
 
         // 检查全局/单卡最大使用次数限制（达到后自动冻结）
-        let globalLimit = 0;
-        try {
-            const [cfgRows] = await connection.query(
-                `SELECT config_value FROM app_config WHERE config_key = 'card_max_usage_limit' LIMIT 1`
-            );
-            if (cfgRows && cfgRows.length) {
-                globalLimit = Math.max(0, parseInt(cfgRows[0].config_value, 10) || 0);
-            }
-        } catch (_) {}
-
-        const cardLimit = row.max_usage_limit !== null && row.max_usage_limit !== undefined
-            ? Number(row.max_usage_limit)
-            : null;
-        const effectiveLimit = cardLimit !== null && cardLimit > 0 ? cardLimit : globalLimit;
+        const effectiveLimit = await resolveEffectiveCardMaxUsageLimit(connection, row);
 
         let autoFrozen = false;
         if (effectiveLimit > 0 && newUsageCount >= effectiveLimit) {
@@ -4784,12 +4788,25 @@ async function finalizeGptApiAttempt(jobKey, { outcome, record = {}, message = '
                     const resetAt = card.daily_usage_reset_at ? new Date(card.daily_usage_reset_at) : null;
                     const reset = !resetAt || resetAt < new Date(now.getTime() - 24 * 60 * 60 * 1000);
                     const dailyUsageCount = reset ? 1 : Number(card.daily_usage_count || 0) + 1;
+                    const newUsageCount = Number(card.usage_count || 0) + 1;
+                    const effectiveLimit = await resolveEffectiveCardMaxUsageLimit(connection, card);
+                    const autoFrozen = effectiveLimit > 0 && newUsageCount >= effectiveLimit;
+                    const cooledDown = !autoFrozen && dailyUsageCount >= 3;
                     const [usage] = await connection.query(
                         `UPDATE card_assets SET daily_usage_count = ?, daily_usage_reset_at = ?, usage_count = usage_count + 1,
-                         last_used_at = NOW(), cooldown_until = CASE WHEN ? THEN GREATEST(COALESCE(cooldown_until, NOW()), DATE_ADD(NOW(), INTERVAL 24 HOUR)) ELSE cooldown_until END WHERE id = ? AND locked_by = ? AND in_use = 1${LEGACY_CARD_FENCE_SQL}`,
-                        [dailyUsageCount, reset ? now : resetAt, dailyUsageCount >= 3 ? 1 : 0, card.id, `gptapi_${jobKey}`]);
+                         last_used_at = NOW(), cooldown_until = CASE WHEN ? THEN GREATEST(COALESCE(cooldown_until, NOW()), DATE_ADD(NOW(), INTERVAL 24 HOUR)) ELSE cooldown_until END,
+                         is_active = CASE WHEN ? THEN 0 ELSE is_active END, status = CASE WHEN ? THEN '已冻结' ELSE status END WHERE id = ? AND locked_by = ? AND in_use = 1${LEGACY_CARD_FENCE_SQL}`,
+                        [dailyUsageCount, reset ? now : resetAt, cooledDown ? 1 : 0, autoFrozen ? 1 : 0, autoFrozen ? 1 : 0, card.id, `gptapi_${jobKey}`]);
                     requireOwnedCardChange(usage);
-                    cardUsage = { dailyUsageCount, cooledDown: dailyUsageCount >= 3 };
+                    if (autoFrozen) {
+                        const last4 = String(card.card_number || '').slice(-4) || String(card.id);
+                        console.log(`[CardPool] 银行卡 ...${last4} 外包渠道扣款成功次数达到上限 (${newUsageCount}/${effectiveLimit})，已自动冻结`);
+                    }
+                    cardUsage = {
+                        dailyUsageCount,
+                        cooledDown,
+                        ...(autoFrozen ? { autoFrozen: true } : {})
+                    };
                 }
             }
             if (card) {

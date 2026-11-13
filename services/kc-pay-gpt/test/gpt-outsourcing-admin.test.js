@@ -248,7 +248,7 @@ describe('GPT outsourcing server route contract', () => {
         expect(start).toBeGreaterThan(server.indexOf("app.use('/api/admin', authenticateAdmin)"));
         vm.runInNewContext(server.slice(start, end), context);
         expect(routes.get('GET /api/admin/gpt-api')).toEqual([outsourceAdmin.getConfig]);
-        expect(routes.get('POST /api/admin/gpt-api')).toEqual([outsourceAdmin.saveConfig]);
+        expect(routes.get('POST /api/admin/gpt-api')).toEqual([requireSecondaryAuth, outsourceAdmin.saveConfig]);
         expect(routes.get('POST /api/admin/gpt-api/test')).toEqual([outsourceAdmin.test]);
         expect(routes.get('GET /api/admin/gpt-api/status')).toEqual([outsourceAdmin.status]);
         expect(routes.get('GET /api/admin/gpt-api/orders')).toEqual([outsourceAdmin.orders]);
@@ -256,14 +256,20 @@ describe('GPT outsourcing server route contract', () => {
         expect(routes.get('POST /api/admin/gpt-api/orders/:jobKey/credentials')).toEqual([requireSecondaryAuth, outsourceAdmin.credentials]);
     });
 
-    it('keeps the existing secondary-auth compatibility wrapper as a pass-through', async () => {
-        const store = { getConfig: vi.fn() };
+    it('enforces secondary auth in createRequireSecondaryAuth rather than passing through', async () => {
+        const store = { getConfig: vi.fn(), getAdminAuthConfig: vi.fn() };
         const ready = vi.fn();
         const next = vi.fn();
-        const req = {};
-        await adminAuth.createRequireSecondaryAuth(store, ready)(req, {}, next);
-        expect(next).toHaveBeenCalledOnce();
-        expect(req.secondaryAuth).toEqual({ bypassed: true });
+        const res = {
+            setHeader: vi.fn(),
+            status: vi.fn(() => res),
+            json: vi.fn(() => res)
+        };
+        await adminAuth.createRequireSecondaryAuth(store, ready)({ headers: {} }, res, next);
+        expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, code: 'STEP_UP_REQUIRED' }));
+        expect(next).not.toHaveBeenCalled();
         expect(store.getConfig).not.toHaveBeenCalled();
         expect(ready).not.toHaveBeenCalled();
     });
