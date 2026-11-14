@@ -48,4 +48,29 @@ describe('Session encryption and redaction', () => {
         expect(output).not.toContain('eyJhbGciOiJIUzI1NiJ9.abcdefghijklmnop.qwertyuiop');
         expect(output).not.toContain('4242 4242 4242 4242');
     });
+
+    it.each([
+        'http://127.0.0.1:19222',
+        'https://example.test:443/status',
+        '[Proxy/relay/connect] {"target":"chatgpt","upstreamStatus":400}',
+        'timestamp:17 transport:impit step:session'
+    ])('preserves diagnostic addresses and metadata: %s', input => {
+        expect(redactSensitiveText(input)).toBe(input);
+    });
+
+    it.each(['p', 'proof', 'sentinel_token', 'pow-token'])('redacts the complete %s field at a field boundary', key => {
+        for (const input of [`${key}:private-proof`, `failure {"${key}":"private-proof","attempt":1}`]) {
+            const output = redactSensitiveText(input);
+            expect(output).not.toContain('private-proof');
+            expect(output).toContain('[SENTINEL_PROOF_REDACTED]');
+        }
+    });
+
+    it('redacts Sentinel proof fields and standalone encrypted proof values', () => {
+        const proof = `gAAAA${'proof-value_0123456789/'.repeat(4)}`;
+        const output = redactSensitiveText(`Sentinel error: {"p":"${proof}","flow":"chatgpt_checkout"} ${proof}`);
+        expect(output).not.toContain(proof);
+        expect(output.match(/SENTINEL_PROOF_REDACTED/g)).toHaveLength(2);
+        expect(output).toContain('chatgpt_checkout');
+    });
 });

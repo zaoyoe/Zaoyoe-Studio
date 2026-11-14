@@ -11,7 +11,7 @@ import * as sessions from '../session-auth.js';
 import * as safety from '../task-safety.js';
 import { getPlatformForPlan, getRegionConfig, getRegionBrowserProfile } from '../region-config.js';
 import { formatTaskErrorMessage } from '../public/task-messages.js';
-import { reportTaskFailure } from '../task-diagnostics.js';
+import { reportTaskFailure, buildAttemptDiagnostic, summarizeFailedAttempts } from '../task-diagnostics.js';
 import { fingerprintSessionPayload } from '../session-security.js';
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -204,7 +204,7 @@ describe('actual activation request platform routing with a mock store', () => {
     });
 });
 
-async function workerHarness(fixture, { mismatch = false, apiError = null, bootstrapError = null, checkoutMode = 'auto', fastProtocol = 'false', protocolCapabilities = true, protocolSessionOk = true, protocolRegionOk = true, contextCloseError = null } = {}) {
+async function workerHarness(fixture, { mismatch = false, apiError = null, bootstrapError = null, checkoutMode = 'auto', fastProtocol = 'false', protocolCapabilities = true, protocolSessionOk = true, protocolRegionOk = true, withProxy = false, contextCloseError = null } = {}) {
     const page = { on() {}, url: () => 'https://fixture.test/checkout', isClosed: () => false };
     const context = { newPage: async () => page, addInitScript: async () => {}, close: vi.fn(async () => { if (contextCloseError) throw contextCloseError; }) };
     const closeTaskBrowser = vi.fn(async () => {});
@@ -231,10 +231,11 @@ async function workerHarness(fixture, { mismatch = false, apiError = null, boots
         './public/grok-plan-catalog': require('../public/grok-plan-catalog'), './grok-commerce': methods, './cdk-plan-catalog': { validateCdkPlan },
         './mysql-store': { getPaymentRegion: async () => 'PH', verifyCdkDetails: async () => ({ payment_region: 'US', plan_type: mismatch ? 'plus' : fixture.planType, platform: mismatch ? 'chatgpt' : fixture.platform }) },
         './browser-runtime': { connectTaskBrowser: async () => ({ browser: { newContext: async () => context }, realUserAgent: 'Chrome/147.0' }), applyCdpEnv() {}, closeTaskBrowser },
-        './playwright-proxy': { preparePlaywrightProxy: async () => ({ cleanup: proxyCleanup, proxyConfig: null }) },
+        './playwright-proxy': { preparePlaywrightProxy: async () => ({ cleanup: proxyCleanup, proxyConfig: withProxy ? { server: 'http://127.0.0.1:52582' } : null }) },
         './proxy-preflight': { checkProxyAndRegionProtocol: vi.fn(async (_proxy, region) => protocolRegionOk ? { ip: '192.0.2.1', actualRegion: region } : null), checkProxyConnectivity: vi.fn(), checkProxyAndRegionFast: vi.fn(async () => null), checkEgressRegion: vi.fn(async (_context, expectedRegion) => ({
             expectedRegion, actualRegion: expectedRegion
         })) }, './task-diagnostics': { captureDiagnosticScreenshot: async () => null },
+        './session-security': require('../session-security'),
         fs: { mkdirSync() {} }, path
     };
     // Methods must replace real checkout functions: every external action remains a mock.
@@ -245,7 +246,7 @@ async function workerHarness(fixture, { mismatch = false, apiError = null, boots
         module, process, __dirname: root, console: { log() {}, warn() {}, error() {} },
         require: key => { if (!(key in dependencies)) throw new Error(`Unexpected dependency: ${key}`); return dependencies[key]; }
     });
-    await module.exports.run(); return { methods, process, context, closeTaskBrowser, proxyCleanup };
+    await module.exports.run(); return { methods, preflight: dependencies['./proxy-preflight'], process, context, closeTaskBrowser, proxyCleanup };
 }
 
 describe('real worker entry uses restored platform modules without network or payment', () => {
@@ -274,12 +275,17 @@ describe('real worker entry uses restored platform modules without network or pa
         expect(h.methods.openPricingCheckout).toHaveBeenCalledOnce();
         expect(h.methods.executePaymentWithRetry).toHaveBeenCalledOnce();
     });
-    it.each(['false', '0'])('uses protocol preparation and browser confirmation when FAST_PROTOCOL_ENABLED=%s', async fastProtocol => {
+    it.each(['false', '0'])('uses protocol preparation and browser in-page confirmation when FAST_PROTOCOL_ENABLED=%s', async fastProtocol => {
         const h = await workerHarness(fixtures[2], { fastProtocol });
         expect(h.methods.verifyChatGptSessionProtocol).toHaveBeenCalledOnce();
         expect(h.methods.bootstrapChatGptSession).not.toHaveBeenCalled();
         expect(h.methods.openApiCheckout).toHaveBeenCalledOnce();
-        expect(h.methods.openApiCheckout.mock.calls[0][0]).toBeNull();
+        expect(h.methods.openApiCheckout.mock.calls[0][0]).toBeTruthy();
+        expect(h.methods.openApiCheckout.mock.calls[0][1]).toMatchObject({
+            inPageFetch: true,
+            allowOutOfBrowserSentinelFallback: false,
+            verifyPage: true
+        });
         expect(h.methods.openPricingCheckout).not.toHaveBeenCalled();
         expect(h.methods.executePaymentWithRetry).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ protocolOnly: false, fastProtocol: false }));
     });
@@ -290,6 +296,7 @@ describe('real worker entry uses restored platform modules without network or pa
     it('keeps successful protocol preparation free of browser work in pure protocol mode', async () => {
         const h = await workerHarness(fixtures[2], { fastProtocol: 'true' });
         expect(h.methods.openApiCheckout).toHaveBeenCalledOnce();
+        expect(h.methods.openApiCheckout.mock.calls[0][0]).toBeNull();
         expect(h.methods.installChatGptSession).not.toHaveBeenCalled();
         expect(h.methods.executePaymentWithRetry).toHaveBeenCalledWith(null, expect.objectContaining({ protocolOnly: true, fastProtocol: true }));
         expect(h.context.close).not.toHaveBeenCalled();
@@ -312,20 +319,44 @@ describe('real worker entry uses restored platform modules without network or pa
     ])('stops hybrid preparation failure without payment or browser fallback: %j', async options => {
         const h = await workerHarness(fixtures[2], options);
         expect(h.methods.openApiCheckout).not.toHaveBeenCalled();
-        expect(h.methods.installChatGptSession).not.toHaveBeenCalled();
+        expect(h.methods.openPricingCheckout).not.toHaveBeenCalled();
+        if (options.protocolRegionOk === false) {
+            expect(h.methods.installChatGptSession).not.toHaveBeenCalled();
+        }
         expect(h.methods.executePaymentWithRetry).not.toHaveBeenCalled();
     });
-    it.each(['CHECKOUT_UNUSUAL_ACTIVITY', 'ACCOUNT_ALREADY_SUBSCRIBED', 'CHECKOUT_AUTH_ERROR'])('stops hybrid API %s without UI fallback', async code => {
+    it.each(['ACCOUNT_ALREADY_SUBSCRIBED', 'CHECKOUT_AUTH_ERROR'])('stops hybrid API %s without UI fallback', async code => {
         const h = await workerHarness(fixtures[2], { apiError: Object.assign(new Error(`offline ${code}`), { code }) });
         expect(h.methods.openApiCheckout).toHaveBeenCalledOnce();
         expect(h.methods.openPricingCheckout).not.toHaveBeenCalled();
         expect(h.methods.executePaymentWithRetry).not.toHaveBeenCalled();
+    });
+    it('falls back to UI Checkout in hybrid mode when API receives CHECKOUT_UNUSUAL_ACTIVITY', async () => {
+        const h = await workerHarness(fixtures[2], { apiError: Object.assign(new Error('offline CHECKOUT_UNUSUAL_ACTIVITY'), { code: 'CHECKOUT_UNUSUAL_ACTIVITY' }) });
+        expect(h.methods.openApiCheckout).toHaveBeenCalledOnce();
+        expect(h.methods.openPricingCheckout).toHaveBeenCalledOnce();
+        expect(h.methods.executePaymentWithRetry).toHaveBeenCalledOnce();
     });
     it('keeps real recharge directly on UI Checkout when CHECKOUT_MODE=ui', async () => {
         const h = await workerHarness(fixtures[2], { checkoutMode: 'ui' });
         expect(h.methods.openApiCheckout).not.toHaveBeenCalled();
         expect(h.methods.openPricingCheckout).toHaveBeenCalledOnce();
         expect(h.methods.executePaymentWithRetry).toHaveBeenCalledOnce();
+        expect(h.methods.installChatGptSession).toHaveBeenCalledWith(expect.anything(), fixtures[2].credential, expect.objectContaining({
+            skipOnlineProbeWhenFresh: true
+        }));
+    });
+    it('prefers protocol preflight over slow browser request.get when proxy relay is active in UI mode', async () => {
+        const h = await workerHarness(fixtures[2], { checkoutMode: 'ui', withProxy: true, protocolRegionOk: true });
+        expect(h.preflight.checkProxyAndRegionProtocol).toHaveBeenCalledWith('http://127.0.0.1:52582', 'US', { probeTimeoutMs: 6500 });
+        expect(h.preflight.checkProxyAndRegionFast).not.toHaveBeenCalled();
+        expect(h.preflight.checkProxyConnectivity).not.toHaveBeenCalled();
+        expect(h.preflight.checkEgressRegion).not.toHaveBeenCalled();
+    });
+    it('falls back to browser preflight when protocol preflight returns null in UI mode', async () => {
+        const h = await workerHarness(fixtures[2], { checkoutMode: 'ui', withProxy: true, protocolRegionOk: false });
+        expect(h.preflight.checkProxyAndRegionProtocol).toHaveBeenCalledWith('http://127.0.0.1:52582', 'US', { probeTimeoutMs: 6500 });
+        expect(h.preflight.checkProxyAndRegionFast).toHaveBeenCalledWith(expect.anything(), 'US', { probeTimeoutMs: 5000 });
     });
     it('stops a tampered task plan before installing credentials or opening checkout', async () => {
         const h = await workerHarness(fixtures[0], { mismatch: true });
@@ -371,7 +402,10 @@ function spawnHarness({ state = 'not_started', failPersist = false, failAt = 0, 
             await Promise.resolve();
             savedState = safety.mergePaymentState(savedState, input.paymentState);
             const confirmed = (options.finalize || options.annotate) && input.status === 'success' && savedState === 'succeeded';
-            const recoveryRequired = !confirmed && (safety.shouldRetainCdk({ paymentState: savedState }) || !!input.recoveryRequired);
+            const confirmedDecline = savedState === 'declined' && input.recoveryRequired === false;
+            const recoveryRequired = (confirmed || (options.finalize && confirmedDecline))
+                ? false
+                : (!confirmedDecline && safety.shouldRetainCdk({ paymentState: savedState })) || !!input.recoveryRequired;
             const status = options.finalize
                 ? (recoveryRequired ? 'manual' : input.status)
                 : input.status;
@@ -392,7 +426,7 @@ function spawnHarness({ state = 'not_started', failPersist = false, failAt = 0, 
     let runtimeEnv;
     const sandbox = { ...safety, ...sessions, path, __dirname: root, process: { env: { CHATGPT_TOKEN: 'unrelated-token' } },
         require: id => (id === './playwright-proxy' ? { alignProxyRegion: p => p } : require(id)),
-        store, buildActivationCredentialEnv, getPlatformForPlan, reportTaskFailure, redactSensitiveText: s => s,
+        store, buildActivationCredentialEnv, getPlatformForPlan, reportTaskFailure, buildAttemptDiagnostic, summarizeFailedAttempts, redactSensitiveText: s => s,
         MAX_PROCESS_ATTEMPTS: 2, normalizeTaskProgress: p => p, logTask() {},
         broadcastToTask: vi.fn((_key, value) => { events.push({ type: 'broadcast', value }); }),
         notifyTaskOutcome: vi.fn(value => { events.push({ type: 'notify', value }); }),
@@ -460,7 +494,7 @@ describe('server dispatch and interruption preserve payment resources', () => {
         const h = await spawnHarness({ platform: 'chatgpt', runOutput: '[CHECKOUT_UNUSUAL_ACTIVITY]', sessionCooldownScopeKey: 'a'.repeat(64) });
         expect(h.store.setActivationAttemptCooldown).not.toHaveBeenCalled();
     });
-    it('retries once with a fresh proxy after CHECKOUT_UNUSUAL_ACTIVITY before payment starts, then settles failed without cooldown', async () => {
+    it('settles an unusual-activity refusal after one attempt and preserves the cause', async () => {
         const retryResult = () => ({
             output: '[CHECKOUT_UNUSUAL_ACTIVITY]',
             analysis: safety.classifyCheckoutFailure(
@@ -475,17 +509,53 @@ describe('server dispatch and interruption preserve payment resources', () => {
             useRealFinalize: true,
             sessionCooldownScopeKey: 'b'.repeat(64)
         });
-        expect(h.runtimeEnvs.map(env => env.PROXY)).toEqual(['http://p1:8000', 'http://p2:8000']);
-        expect(h.store.releaseCardsByOwner).toHaveBeenCalledTimes(2);
+        expect(h.runtimeEnvs.map(env => env.PROXY)).toEqual(['http://p1:8000']);
+        expect(h.store.releaseCardsByOwner).toHaveBeenCalledOnce();
         expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith(
             'fixture-job',
-            expect.objectContaining({ status: 'failed', paymentState: 'not_started' }),
+            expect.objectContaining({ status: 'failed', paymentState: 'not_started',
+                message: expect.stringContaining('[CHECKOUT_UNUSUAL_ACTIVITY]'),
+                rawOutput: expect.stringContaining('[Attempt/diagnostic]') }),
             { finalize: true }
         );
         const savedFinal = h.events.find(event => event.type === 'saved' && event.options.finalize);
         expect(savedFinal?.result).toMatchObject({ applied: true, status: 'failed', released: true, recoveryRequired: false });
         expect(h.store.markCdkUnused).not.toHaveBeenCalled();
         expect(h.store.setActivationAttemptCooldown).not.toHaveBeenCalled();
+    });
+    it('keeps both prepayment failure causes in the final result and durable attempt history', async () => {
+        const messages = [
+            '代理连接暂时异常 [PROXY_PREFLIGHT_NETWORK]',
+            '代理认证失败 [PROXY_PREFLIGHT_AUTH]'
+        ];
+        const h = await spawnHarness({ platform: 'chatgpt', useRealFinalize: true,
+            runSequence: messages.map(message => ({ output: `❌ [运行时错误]: ${message}`,
+                code: 1, analysis: safety.classifyProxyPreflightFailure(message, 'not_started') })) });
+        expect(h.runtimeEnvs).toHaveLength(2);
+        const finalWrite = h.events.find(event => event.type === 'write' && event.options.finalize).input;
+        expect(finalWrite).toMatchObject({ status: 'failed', paymentState: 'not_started' });
+        expect(finalWrite.message).toContain('首次：[PROXY_PREFLIGHT_NETWORK]');
+        expect(finalWrite.message).toContain('最后（第2次）：[PROXY_PREFLIGHT_AUTH]');
+        expect(finalWrite.rawOutput).toContain('"attempt":1');
+        expect(finalWrite.rawOutput).toContain('"attempt":2');
+        expect(finalWrite.rawOutput).toContain('"exitCode":1');
+    });
+    it.each(['success', 'manual'])('keeps the final %s outcome after an earlier retryable network failure', async status => {
+        const firstMessage = '代理连接暂时异常 [PROXY_PREFLIGHT_NETWORK]';
+        const paymentState = status === 'success' ? 'succeeded' : 'unknown';
+        const h = await spawnHarness({ platform: 'chatgpt', useRealFinalize: true,
+            runSequence: [
+                { output: firstMessage, analysis: safety.classifyProxyPreflightFailure(firstMessage, 'not_started') },
+                { output: `PAYMENT_STATE:${paymentState}`, analysis: { status, message: status,
+                    paymentState, shouldRetry: false } }
+            ] });
+        const finalWrite = h.events.find(event => event.type === 'write' && event.options.finalize).input;
+        expect(finalWrite.status).toBe(status);
+        expect(finalWrite.paymentState).toBe(paymentState);
+        expect(finalWrite.message).not.toContain('首次');
+        expect(finalWrite.message).toContain(status === 'success' ? '充值成功' : '请勿重复充值');
+        const finalized = h.events.find(event => event.type === 'saved' && event.options.finalize).result;
+        expect(finalized.released).toBe(false);
     });
     it('keeps worker exception details out of the saved and reported public message', async () => {
         const h = await spawnHarness({ workerError: 'offline internal diagnostic: synthetic-secret-fixture' });
@@ -553,11 +623,46 @@ describe('server dispatch and interruption preserve payment resources', () => {
         expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
         expect(h.sandbox.broadcastToTask).toHaveBeenCalledWith('fixture-job', expect.objectContaining({ type: 'status', status: 'manual' }));
     });
-    it('preserves a started marker even when a single output chunk ends with declined', async () => {
-        const h = await spawnHarness({ state: 'declined', runOutput: 'PAYMENT_STATE:started\nPAYMENT_STATE:declined' });
-        expect(h.store.releaseCardsByOwner).not.toHaveBeenCalled();
+    it('converges started->declined to declined, rolls back the CDK, and preserves the sanitized decline reason', async () => {
+        const declineOutput = 'PAYMENT_STATE:started\nPAYMENT_STATE:declined\n❌ [支付失败] 1 张卡均被拒 (...8043): Your card number is incorrect. [incorrect_number] (stripe_card_declined)';
+        const h = await spawnHarness({
+            state: 'declined',
+            paymentSequence: ['started', 'declined'],
+            runSequence: [{
+                output: declineOutput,
+                analysis: {
+                    status: 'failed',
+                    message: '1 张卡均被拒 (...8043): Your card number is incorrect. [incorrect_number]',
+                    paymentState: 'declined',
+                    recoveryRequired: false,
+                    shouldRetry: false
+                }
+            }]
+        });
+        expect(h.store.releaseCardsByOwner).toHaveBeenCalledWith('fixture-job');
         expect(h.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
-            expect.objectContaining({ paymentState: 'started' }), { finalize: true });
+            expect.objectContaining({ status: 'failed', paymentState: 'declined', recoveryRequired: false }), { finalize: true });
+        const finalSaved = h.events.filter(event => event.type === 'saved' && event.options.finalize).at(-1).result;
+        expect(finalSaved.released).toBe(true);
+        const status = h.events.filter(event => event.type === 'broadcast' && event.value.type === 'status').at(-1).value;
+        expect(status.message).toContain('Your card number is incorrect.');
+    });
+    it('keeps started or unknown protected when an ambiguous or trailing start follows an earlier decline', async () => {
+        const trailingStart = await spawnHarness({
+            state: 'started',
+            runOutput: 'PAYMENT_STATE:started\nPAYMENT_STATE:declined\nPAYMENT_STATE:started'
+        });
+        expect(trailingStart.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        expect(trailingStart.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
+            expect.objectContaining({ status: 'manual', paymentState: 'started', recoveryRequired: true }), { finalize: true });
+
+        const priorUnknown = await spawnHarness({
+            state: 'unknown',
+            runOutput: 'PAYMENT_STATE:unknown\nPAYMENT_STATE:declined'
+        });
+        expect(priorUnknown.store.releaseCardsByOwner).not.toHaveBeenCalled();
+        expect(priorUnknown.store.updateLocalActivationTask).toHaveBeenLastCalledWith('fixture-job',
+            expect.objectContaining({ status: 'manual', paymentState: 'unknown', recoveryRequired: true }), { finalize: true });
     });
     it('retains assets when legacy output reports an unknown payment without a state marker', async () => {
         const h = await spawnHarness({ state: 'not_started', runOutput: '支付结果未知，请人工复核' });

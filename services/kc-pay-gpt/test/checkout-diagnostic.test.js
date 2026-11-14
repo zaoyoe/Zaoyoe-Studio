@@ -135,6 +135,7 @@ async function runDiagnostic(fixture, { mode = 'checkout', apiError, inspectionC
             if (cancelDuringScreenshot) signalHandlers.get('SIGTERM')?.();
             return null;
         } },
+        './session-security': require('../session-security'),
         './checkout-diagnostic': { ...domain, createDiagnosticReporter: input => domain.createDiagnosticReporter(input, line => output.push(line)) },
         './checkout-diagnostic-inspection': methods, fs: { mkdirSync() {} }, path
     };

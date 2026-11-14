@@ -8,19 +8,26 @@ const challenges = new Map();
 const webauthnChallenges = new Map();
 const digest = value => crypto.createHash('sha256').update(String(value || '')).digest('hex');
 const failure = (res, status, message, code) => res.status(status).json({ success: false, message, code });
+function rateLimitFailure(res, rate) {
+    const retryAfterSec = Math.max(1, Number(rate.retryAfterSec) || 60);
+    res.setHeader('Retry-After', String(retryAfterSec));
+    return failure(res, 429, `验证过于频繁，请 ${retryAfterSec} 秒后再试`, 'STEP_UP_RATE_LIMITED');
+}
 
 function createAdminSecurity({ store, ensureStoreReady, sendTelegramLoginCode }) {
     async function challenge(req, res) {
         const meta = auth.getClientMeta(req);
-        if (!auth.checkLoginRateLimit(`${meta.ip}:step-up`).allowed) return failure(res, 429, '验证过于频繁，请稍后重试');
         try {
             await ensureStoreReady();
             const config = await store.getAdminAuthConfig();
             if (config.passwordVersion !== req.admin.pv) return failure(res, 403, '登录状态已变更');
+            const passwordRate = auth.checkLoginRateLimit(`${meta.ip}:step-up-password`);
+            if (!passwordRate.allowed) return rateLimitFailure(res, passwordRate);
             const password = req.body?.password;
             if (typeof password !== 'string' || password.length > 1024 || !auth.verifyPassword(password, config.passwordHash)) {
                 return failure(res, 401, '登录密码错误');
             }
+            auth.clearLoginAttempts(passwordRate.key);
             const methods = auth.resolveLogin2faMethods(config, await store.getTelegramConfig());
             // A configured factor must never silently disappear from the step-up policy.
             if (config.totpEnabled && !config.totpSecret) return failure(res, 503, '验证配置异常');
@@ -46,6 +53,9 @@ function createAdminSecurity({ store, ensureStoreReady, sendTelegramLoginCode })
         const meta = auth.getClientMeta(req);
         if (!item || item.exp <= Date.now() || item.attempts >= 5
             || item.binding !== digest(req.adminToken) || item.ip !== meta.ip) return failure(res, 403, '验证已过期，请重新验证');
+        const factorRate = item.method === 'totp' || item.method === 'telegram'
+            ? auth.checkLoginRateLimit(`${meta.ip}:step-up-factor`) : null;
+        if (factorRate && !factorRate.allowed) return rateLimitFailure(res, factorRate);
         item.attempts += 1; // Reserved before any await; concurrent guesses share the budget.
         try {
             const config = await store.getAdminAuthConfig();
@@ -57,6 +67,7 @@ function createAdminSecurity({ store, ensureStoreReady, sendTelegramLoginCode })
             // Consume atomically after the async read: only one concurrent verifier may issue a proof.
             if (challenges.get(id) !== item || item.exp <= Date.now()) return failure(res, 403, '验证已使用或过期');
             challenges.delete(id);
+            if (factorRate) auth.clearLoginAttempts(factorRate.key);
             const issued = auth.issueSecondaryToken(config.passwordVersion, meta.ip, req.adminToken);
             res.setHeader('Cache-Control', 'no-store');
             return res.json({ success: true, secondaryToken: issued.token, expiresAt: issued.payload.exp });
@@ -169,7 +180,6 @@ function createAdminSecurity({ store, ensureStoreReady, sendTelegramLoginCode })
     }
     async function webauthnChallenge(req, res) {
         const meta = auth.getClientMeta(req);
-        if (!auth.checkLoginRateLimit(`${meta.ip}:step-up`).allowed) return failure(res, 429, '验证过于频繁，请稍后重试');
         try {
             await ensureStoreReady();
             const config = await store.getAdminAuthConfig();
@@ -208,6 +218,8 @@ function createAdminSecurity({ store, ensureStoreReady, sendTelegramLoginCode })
             || item.binding !== digest(req.adminToken) || item.ip !== meta.ip) {
             return failure(res, 403, '验证已过期，请重新验证');
         }
+        const rate = auth.checkLoginRateLimit(`${meta.ip}:step-up-passkey`);
+        if (!rate.allowed) return rateLimitFailure(res, rate);
         item.attempts += 1;
         try {
             await ensureStoreReady();
@@ -230,6 +242,7 @@ function createAdminSecurity({ store, ensureStoreReady, sendTelegramLoginCode })
             });
 
             webauthnChallenges.delete(challenge);
+            auth.clearLoginAttempts(rate.key);
             const issued = auth.issueSecondaryToken(config.passwordVersion, meta.ip, req.adminToken);
             res.setHeader('Cache-Control', 'no-store');
             return res.json({ success: true, secondaryToken: issued.token, expiresAt: issued.payload.exp });

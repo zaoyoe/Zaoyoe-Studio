@@ -340,13 +340,20 @@ async function switchToPersonalPlans(page) {
 async function pricingSurfaceState(surface) {
     return surface.evaluate((root) => {
         const shown = (node) => Boolean(node.getClientRects().length) && getComputedStyle(node).visibility !== 'hidden';
+        if (root.matches('[role="dialog"]') && /your session has expired|please log in again|session expired/i.test(root.textContent || '')) {
+            return { identified: false, ready: false, loading: false };
+        }
+        const excludedSelector = '[data-message-author-role], nav, aside, [role="navigation"], [data-testid*="sidebar" i], [data-testid*="profile" i], [data-testid*="user-menu" i]';
         const nodes = [...root.querySelectorAll('h1,h2,h3,h4,[role="heading"],button,[role="button"],[role="tab"],[role="radio"],select')]
-            .filter((node) => shown(node) && !node.closest('[data-message-author-role]')
+            .filter((node) => shown(node) && !node.closest(excludedSelector)
                 && (root.matches('[role="dialog"]') || !node.closest('[role="dialog"]')));
         const labels = nodes.map((node) => (node.textContent || '').replace(/\s+/g, ' ').trim());
         const planTitle = nodes.some((node, i) => node.matches('h1,h2,h3,h4,[role="heading"]')
             && /^(?:ChatGPT\s+)?(?:Free|Go|Plus|Pro|Business)$/i.test(labels[i]))
             || [...root.querySelectorAll('*')].some((el) => shown(el) && el.children.length === 0
+                && !el.closest(excludedSelector)
+                && !el.closest('button, [role="button"], [aria-haspopup]')
+                && (root.matches('[role="dialog"]') || !el.closest('[role="dialog"]'))
                 && /^(?:ChatGPT\s+)?(?:Free|Go|Plus|Pro|Business)$/i.test((el.textContent || '').trim()));
         const pricingTitle = nodes.some((node, i) => node.matches('h1,h2,h3,h4,[role="heading"]')
             && /^(?:Upgrade your plan|Choose your plan|Choose a plan|See all plans|All plans|Plans & pricing|Try Plus free.*|Try [A-Za-z]+ free.*|升级套餐|选择套餐)$/i.test(labels[i]));
@@ -1540,7 +1547,7 @@ async function readCheckoutSuccessUrl(response, { timeout = 1500 } = {}) {
                 if (apiUrl.startsWith('http')) return apiUrl;
                 const sessionId = data.checkout_session_id
                     || data.session_id
-                    || JSON.stringify(data).match(/cs_(?:live|test)_[A-Za-z0-9]+/)?.[0];
+                    || JSON.stringify(data).match(/(?:cs_(?:live|test)_|oaics_)[A-Za-z0-9_]+/)?.[0];
                 if (sessionId) {
                     return `https://chatgpt.com/checkout/openai_llc/${sessionId}`;
                 }
@@ -2041,6 +2048,7 @@ module.exports = {
     PRICING_URL,
     waitForPricingContentReady,
     ensurePricingDialogVisible,
+    isPricingDialogVisible,
     observeCheckout,
     isCheckoutDestination,
     openPricingCheckout,

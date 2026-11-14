@@ -57,8 +57,29 @@ function harness({ cdk = {}, tasks = [], fail = '', commit = '', encryptionError
         if (/INSERT INTO task_logs/.test(sql)) {
             if (fail === 'insert') throw new Error('offline INSERT failure');
             const id = Math.max(0, ...state.tasks.map(row => row.id)) + 1;
-            state.tasks.push(safeTask({ id, job_key: params[0], token_preview: params[1], session_payload_encrypted: params[2],
-                session_fingerprint: params[3], execution_mode: params[4], cdk_code: params[5], status: params[8], payment_state: params[12] }));
+            const colsMatch = sql.match(/INSERT INTO task_logs\s*\(([\s\S]*?)\)\s*VALUES\s*\(([\s\S]*?)\)/i);
+            const rowValues = {};
+            if (colsMatch) {
+                const colNames = colsMatch[1].split(',').map(s => s.trim());
+                const valExprs = colsMatch[2].split(',').map(s => s.trim());
+                let pIdx = 0;
+                colNames.forEach((col, idx) => {
+                    if (valExprs[idx] === '?') rowValues[col] = params[pIdx++];
+                });
+            }
+            state.tasks.push(safeTask({
+                id,
+                job_key: rowValues.job_key ?? params[0],
+                token_preview: rowValues.token_preview ?? params[1],
+                session_payload_encrypted: rowValues.session_payload_encrypted ?? params[2],
+                session_fingerprint: rowValues.session_fingerprint ?? params[3],
+                execution_mode: rowValues.execution_mode ?? params[4],
+                cdk_code: rowValues.cdk_code ?? params[5],
+                platform: rowValues.platform,
+                plan_type: rowValues.plan_type,
+                status: rowValues.status ?? params[8],
+                payment_state: rowValues.payment_state ?? params[12]
+            }));
             return { affectedRows: 1, insertId: id };
         }
         if (/UPDATE task_logs SET status = 'failed'/.test(sql)) {

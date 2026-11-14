@@ -688,6 +688,7 @@ async function executePaymentWithRetry(page, options) {
                                 paymentRegion: region,
                                 paymentCurrency: currency,
                                 grokCheckout: options.grokCheckout,
+                                checkoutReadyVerified: Boolean(options.checkoutReadyVerified),
                                 onPaymentAttemptStarted: async () => {
                                     await beginPaymentSubmission('正在提交银行卡支付');
                                 }
@@ -932,6 +933,9 @@ async function executePaymentWithRetry(page, options) {
     const summary = declinedLast4s.length
         ? `${declinedLast4s.length} 张卡均被拒 (...${declinedLast4s.join(', ...')})${lastError ? `: ${lastError}` : ''}`
         : (lastError || '支付失败');
+    const resolvedPaymentState = declinedLast4s.length > 0 && !['started', 'unknown', 'succeeded'].includes(lastPersistedPaymentState)
+        ? 'declined'
+        : lastPersistedPaymentState;
     return {
         success: false,
         error: summary,
@@ -939,6 +943,7 @@ async function executePaymentWithRetry(page, options) {
         manualIntervention: true,
         screenshots,
         cardsDeclined: declinedLast4s.length,
+        paymentState: resolvedPaymentState,
         ...lastPaymentCorrelation
     };
 }

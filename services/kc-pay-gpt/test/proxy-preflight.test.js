@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { chromium } from 'playwright';
-import { parseProbeIp, parseNetworkRegion, checkProxyConnectivity, checkEgressRegion } from '../proxy-preflight.js';
+import { parseProbeIp, parseNetworkRegion, checkProxyConnectivity, checkEgressRegion, checkProxyAndRegionFast } from '../proxy-preflight.js';
 import { classifyProxyPreflightFailure } from '../task-safety.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -160,6 +160,18 @@ describe('server preflight retry safety', () => {
         const result = analyze(errorOutput);
         expect(result).toMatchObject({ shouldRetry: true, status: 'retry', paymentState: 'not_started', reachedPayment: false });
     });
+    it('preserves the explicit upstream refusal and stops retries before payment', () => {
+        const message = 'Checkout 创建接口返回 HTTP 400：Our systems have detected unusual activity. Please try again later. [CHECKOUT_UNUSUAL_ACTIVITY]';
+        expect(analyze(`❌ [运行时错误]: ${message}`)).toMatchObject({
+            status: 'failed', message, shouldRetry: false, paymentState: 'not_started',
+            reachedPayment: false, deletePhone: false, deleteCard: false
+        });
+    });
+    it.each(['started', 'unknown'])('preserves pending payment %s despite an upstream refusal', state => {
+        expect(analyze(`PAYMENT_STATE:${state}\n❌ [运行时错误]: Checkout 创建接口返回 HTTP 400 [CHECKOUT_UNUSUAL_ACTIVITY]`))
+            .toMatchObject({ status: 'manual', shouldRetry: false, paymentState: state,
+                reachedPayment: true, deletePhone: false, deleteCard: false });
+    });
     it.each(['AUTH', 'CERTIFICATE'])('does not retry preflight %s configuration problems', code => {
         expect(classifyProxyPreflightFailure(`error [PROXY_PREFLIGHT_${code}]`, null)).toMatchObject({ shouldRetry: false });
     });
@@ -202,5 +214,11 @@ describe('real Chromium fallback on offline routed IP pages', () => {
             expect(context.pages()).toHaveLength(0);
             expect(fs.readdirSync(dir)).toHaveLength(0);
         } finally { await context.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+    });
+    it('gives the fast combined region probe a 6500ms default timeout to avoid unnecessary double probing', async () => {
+        const get = vi.fn(async () => response('ip=203.0.113.5\nloc=PH\n', 200));
+        const res = await checkProxyAndRegionFast({ request: { get } }, 'PH', { log: vi.fn() });
+        expect(res).toMatchObject({ ip: '203.0.113.5', actualRegion: 'PH', fastPath: true });
+        expect(get).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ timeout: 6500 }));
     });
 });

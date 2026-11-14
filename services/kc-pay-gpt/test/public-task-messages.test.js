@@ -35,8 +35,33 @@ describe('public task error boundary', () => {
         expect(formatTaskErrorMessage('failed', message)).toBe(ALREADY_SUBSCRIBED);
         expect(formatTaskErrorMessage('failed', formatTaskErrorMessage('failed', message))).toBe(ALREADY_SUBSCRIBED);
     });
-    it('preserves the requested decline copy and strips the last four digits', () => {
+    it('formats explicit declines in plain Chinese without card last4, prefixes, English glosses, or code tags', () => {
         expect(formatTaskErrorMessage('manual', '支付卡被官方系统拒付 (尾号 ...2226) (Card Declined)')).toBe(CARD_DECLINED);
+
+        const englishDecline = formatTaskErrorMessage('failed', '1 张卡均被拒 (...8043): Your card number is incorrect. [incorrect_number]', { paymentState: 'declined' });
+        expect(englishDecline).toBe('支付卡被官方系统拒付：卡号无效或不正确（卡密未使用）');
+        expect(englishDecline).not.toMatch(/8043|incorrect_number|Your card/i);
+        expect(formatTaskErrorMessage('failed', englishDecline, { paymentState: 'declined' })).toBe(englishDecline);
+
+        const mixedDecline = formatTaskErrorMessage(
+            'failed',
+            '1 张卡均被拒 (...8043): 银行卡被拒绝: 卡号无效或不正确 (incorrect card number) [incorrect_number]',
+            { paymentState: 'declined' }
+        );
+        expect(mixedDecline).toBe('支付卡被官方系统拒付：卡号无效或不正确（卡密未使用）');
+        expect(mixedDecline).not.toMatch(/银行卡被拒绝|incorrect card number|incorrect_number|\[|\]/);
+
+        expect(formatTaskErrorMessage(
+            'failed',
+            '支付失败 (000001): 卡内余额不足 (insufficient funds) [insufficient_funds]',
+            { paymentState: 'declined' }
+        )).toBe('支付卡被官方系统拒付：卡内余额不足（卡密未使用）');
+
+        expect(formatTaskErrorMessage(
+            'failed',
+            '1 张卡均被拒 (...8043): Your card was declined. [card_declined]',
+            { paymentState: 'declined' }
+        )).toBe(CARD_DECLINED);
     });
     it.each(['started', 'unknown', 'succeeded'])('prioritizes actual payment activity %s over all failure reasons', paymentState => {
         for (const message of ['token_expired', 'card_declined', 'locator.click timeout']) {
@@ -99,6 +124,8 @@ describe('actual server task delivery with a mock store', () => {
             .toMatchObject({ status: 'failed', shouldRetry: false, deleteCard: false, paymentState: 'not_started' });
         expect(context.analyzeProcessOutput('PAYMENT_STATE:unknown\n❌ [运行时错误]: token_expired [CHECKOUT_AUTH_ERROR]', false))
             .toMatchObject({ status: 'manual', recoveryRequired: true, paymentState: 'unknown' });
+        expect(context.analyzeProcessOutput('PAYMENT_STATE:started\nPAYMENT_STATE:declined\n❌ [支付失败] 1 张卡均被拒 (...8043): Your card number is incorrect. [incorrect_number] (stripe_card_declined)', false))
+            .toMatchObject({ status: 'failed', recoveryRequired: false, paymentState: 'declined', message: '1 张卡均被拒 (...8043): Your card number is incorrect. [incorrect_number]' });
     });
     it.each(['配置套餐', '定价页', 'https://chatgpt.com/#pricing'])('does not treat %s as reaching payment', marker => {
         const context = { ...safety };

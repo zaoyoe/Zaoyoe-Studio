@@ -2491,6 +2491,116 @@ button.is-loading .btn-text {
     color: #059669 !important;
 }
 
+.query-history-section {
+    border-top: 1px solid var(--divider);
+    padding: 12px 0 8px;
+}
+
+.query-history-header {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--muted);
+    margin-bottom: 8px;
+}
+
+.query-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.query-history-item {
+    padding: 9px 11px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--divider);
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+.query-history-top {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 5px;
+}
+
+.query-history-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.query-history-badge.is-success {
+    background: rgba(16, 185, 129, 0.16);
+    color: #34d399;
+}
+
+.query-history-badge.is-failed {
+    background: rgba(239, 68, 68, 0.16);
+    color: #f87171;
+}
+
+.query-history-badge.is-warning {
+    background: rgba(245, 158, 11, 0.16);
+    color: #fbbf24;
+}
+
+.query-history-badge.is-processing {
+    background: rgba(59, 130, 246, 0.16);
+    color: #60a5fa;
+}
+
+.query-history-plan {
+    color: var(--ink);
+    font-weight: 600;
+}
+
+.query-history-time {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 11px;
+    font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+}
+
+.query-history-meta {
+    color: var(--muted);
+    word-break: break-all;
+}
+
+.query-history-meta code {
+    color: var(--ink);
+    font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+}
+
+.query-history-reason {
+    margin-top: 3px;
+    color: var(--text-secondary);
+    word-break: break-word;
+}
+
+[data-theme="light"] .query-history-item {
+    background: rgba(15, 23, 42, 0.03);
+}
+
+[data-theme="light"] .query-history-badge.is-success {
+    color: #059669;
+}
+
+[data-theme="light"] .query-history-badge.is-failed {
+    color: #dc2626;
+}
+
+[data-theme="light"] .query-history-badge.is-warning {
+    color: #d97706;
+}
+
 /* ============ 常见问题折叠面板 (FAQ) ============ */
 .faq-panel {
     margin-top: 26px;

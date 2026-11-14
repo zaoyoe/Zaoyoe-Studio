@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium } from 'playwright';
 import {
     clickPlanUpgrade,
+    isPricingDialogVisible,
     pageShowsTargetRegionPricing,
     selectPricingRegion,
     switchToPersonalPlans,
@@ -619,6 +620,26 @@ describe('ChatGPT Pro usage tier mapping and checkout card selection', () => {
         expect(result.tier).toBe('more');
         expect(result.clicked).toBe(true);
         expect(await page.locator('#due-price').textContent()).toBe('$200.00');
+        await page.close();
+    });
+
+    it('does not treat a sidebar Free profile badge or expired-session dialog as an open pricing dialog', async () => {
+        const page = await newPage(`
+            <nav>
+                <button data-testid="accounts-profile-button">
+                    <div>fjiv vid</div>
+                    <div>Free</div>
+                </button>
+            </nav>
+            <main><div>Something went wrong loading your account</div></main>
+            <div role="dialog">
+                <h2>Your session has expired</h2>
+                <p>Please log in again to continue using the app.</p>
+                <button>Log in</button>
+            </div>
+        `);
+
+        expect(await isPricingDialogVisible(page)).toBe(false);
         await page.close();
     });
 });

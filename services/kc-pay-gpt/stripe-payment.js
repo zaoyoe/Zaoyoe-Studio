@@ -1246,29 +1246,33 @@ async function completeStripeCardPayment(page, cardInfo, address, options = {}) 
             }
         } else {
             console.log('[Stripe] Step 0: 等待 Checkout 支付页就绪...');
-            const captchaClear = await clearHumanVerification(page, {
-                phase: 'pre-fill-card',
-                ...(grokCheckout ? { useVisualSolver: false } : {}),
-                maxWaitMs: Number(process.env.CAPTCHA_CLEAR_TIMEOUT_MS || 90000),
-                maxBypassRounds: 3,
-                requireCheckoutReady: true,
-                checkoutReadyWaitMs: Number(process.env.CHECKOUT_READY_WAIT_MS || 45000)
-            });
-            if (!captchaClear.cleared) {
-                const screenshotPath = await saveDebugScreenshot(page, captchaClear.checkoutNotReady ? 'checkout_not_ready' : 'captcha_before_card_fill');
-                if (captchaClear.checkoutNotReady) {
+            if (options.checkoutReadyVerified && openAiCheckout) {
+                console.log('[Stripe] ⚡ 复用 API 建单阶段已确认的页面就绪状态，跳过重复前置等待');
+            } else {
+                const captchaClear = await clearHumanVerification(page, {
+                    phase: 'pre-fill-card',
+                    ...(grokCheckout ? { useVisualSolver: false } : {}),
+                    maxWaitMs: Number(process.env.CAPTCHA_CLEAR_TIMEOUT_MS || 90000),
+                    maxBypassRounds: 3,
+                    requireCheckoutReady: true,
+                    checkoutReadyWaitMs: Number(process.env.CHECKOUT_READY_WAIT_MS || 45000)
+                });
+                if (!captchaClear.cleared) {
+                    const screenshotPath = await saveDebugScreenshot(page, captchaClear.checkoutNotReady ? 'checkout_not_ready' : 'captcha_before_card_fill');
+                    if (captchaClear.checkoutNotReady) {
+                        return {
+                            success: false,
+                            error: 'Checkout 支付表单未能加载',
+                            screenshot: screenshotPath
+                        };
+                    }
                     return {
                         success: false,
-                        error: 'Checkout 支付表单未能加载',
-                        screenshot: screenshotPath
+                        error: buildCaptchaRequiredError(),
+                        screenshot: screenshotPath,
+                        captchaRequired: true
                     };
                 }
-                return {
-                    success: false,
-                    error: buildCaptchaRequiredError(),
-                    screenshot: screenshotPath,
-                    captchaRequired: true
-                };
             }
             await prepareCheckoutCardSection(page);
             await page.waitForTimeout(100);

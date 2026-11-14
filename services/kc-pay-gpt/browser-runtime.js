@@ -64,10 +64,21 @@ async function connectTaskBrowser(options = {}) {
     const mode = resolveBrowserRuntimeMode(env);
 
     if (mode === 'pool') {
-        return connectPoolBrowser({
-            poolCdpUrl: env.BROWSER_POOL_CDP_URL,
-            poolSlotId: env.BROWSER_POOL_SLOT
-        });
+        try {
+            return await connectPoolBrowser({
+                poolCdpUrl: env.BROWSER_POOL_CDP_URL,
+                poolSlotId: env.BROWSER_POOL_SLOT
+            });
+        } catch (poolError) {
+            console.warn(`⚠️ [Browser/pool] 接入池槽位失败 (${poolError?.message || poolError})，自动回退独立启动 Chromium...`);
+            const fallbackPort = String(await allocateFreePort());
+            return connectStandaloneBrowser({
+                proxyConfig: options.proxyConfig,
+                headful: options.headful,
+                chromiumChannel: options.chromiumChannel || env.CHROMIUM_CHANNEL,
+                cdpPort: fallbackPort
+            });
+        }
     }
 
     return connectStandaloneBrowser({

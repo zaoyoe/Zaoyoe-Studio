@@ -68,6 +68,11 @@ function redactSensitiveText(value) {
     text = text.replace(/(\b(?:authorization)\s*[:=]\s*)([^\r\n]+)/gi, '$1[REDACTED]');
     text = text.replace(/(\b(?:cookie|set-cookie)\s*[:=]\s*)([^\r\n]+)/gi, '$1[REDACTED]');
     text = text.replace(
+        /((?:^|[\s{,])["']?(?:p|proof|sentinel[_-]?token|pow[_-]?token)["']?\s*:\s*["']?)[^"'\s,}]+/gi,
+        '$1[SENTINEL_PROOF_REDACTED]'
+    );
+    text = text.replace(/\bgAAAA[A-Za-z0-9_+/=-]{24,}/g, '[SENTINEL_PROOF_REDACTED]');
+    text = text.replace(
         /(["']?(?:access[_-]?token|id[_-]?token|refresh[_-]?token|session[_-]?token|chatgpt_token|chatgpt_session_json)["']?\s*[:=]\s*["']?)([^\s,"'};]+(?:\s[^\n,"'}]*)?)/gi,
         '$1[REDACTED]'
     );

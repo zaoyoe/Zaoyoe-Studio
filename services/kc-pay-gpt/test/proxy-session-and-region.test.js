@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { PassThrough } from 'node:stream';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { matchProxyRegion, substituteProxySession as poolSubstituteSession, alignProxyRegion as poolAlignRegion } from '../proxy-pool.js';
 import { attachTunnelWatchdog, preparePlaywrightProxy, resetActiveProxyTunnels, substituteProxySession as playwrightSubstituteSession, alignProxyRegion as playwrightAlignRegion } from '../playwright-proxy.js';
 
@@ -144,4 +144,38 @@ describe('proxy session routing, region matching, and resilient CONNECT relay', 
             await new Promise(resolve => targetServer.close(resolve));
         }
     });
+
+    it.each([[400, 400, 1], [401, 407, 1], [403, 403, 1], [407, 407, 1], [429, 429, 1], [502, 502, 3]])(
+        'preserves upstream CONNECT %s as %s with %s attempts and safe diagnostics', async (upstreamStatus, clientStatus, attempts) => {
+            const log = vi.fn();
+            let connectAttempts = 0;
+            const upstreamProxy = http.createServer();
+            upstreamProxy.on('connect', (_req, socket) => {
+                connectAttempts += 1;
+                socket.end(`HTTP/1.1 ${upstreamStatus} ${http.STATUS_CODES[upstreamStatus]}\r\n\r\n`);
+            });
+            await new Promise(resolve => upstreamProxy.listen(0, '127.0.0.1', resolve));
+            const { proxyConfig, cleanup } = await preparePlaywrightProxy(
+                `http://private-user:private-password@127.0.0.1:${upstreamProxy.address().port}`, { log });
+            try {
+                const relayUrl = new URL(proxyConfig.server);
+                const status = await new Promise((resolve, reject) => {
+                    const req = http.request({ hostname: relayUrl.hostname, port: relayUrl.port,
+                        method: 'CONNECT', path: 'chatgpt.com:443' });
+                    req.on('connect', (res, socket) => { socket.destroy(); resolve(res.statusCode); });
+                    req.on('error', reject);
+                    req.end();
+                });
+                expect(status).toBe(clientStatus);
+                expect(connectAttempts).toBe(attempts);
+                const diagnostics = log.mock.calls.map(([line]) => JSON.parse(line.slice('[Proxy/relay/connect] '.length)));
+                expect(diagnostics).toHaveLength(attempts);
+                expect(diagnostics.at(-1)).toMatchObject({ target: 'chatgpt', attempt: attempts,
+                    maxAttempts: 3, upstreamStatus, result: [401, 407].includes(upstreamStatus) ? 'proxy_auth' : 'upstream_http' });
+                expect(JSON.stringify(diagnostics)).not.toMatch(/private-|127\.0\.0\.1|chatgpt\.com|Basic/);
+            } finally {
+                await cleanup();
+                await new Promise(resolve => upstreamProxy.close(resolve));
+            }
+        });
 });

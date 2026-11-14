@@ -114,12 +114,27 @@
         proofTimer = setTimeout(() => { proof = null; }, Math.max(0, data.expiresAt - Date.now()));
         return true;
     }
+    function formatWebAuthnDomainError(error) {
+        const host = typeof window !== 'undefined' ? String(window.location?.hostname || '').trim() : '';
+        const port = typeof window !== 'undefined' && window.location?.port ? `:${window.location.port}` : '';
+        const isIpHost = /^(\d{1,3}\.){3}\d{1,3}$/.test(host) || host.includes(':');
+        if (isIpHost) {
+            const targetHint = (host === '127.0.0.1' || host === '0.0.0.0' || host === '::1' || host === '[::1]')
+                ? `请改用 http://localhost${port} 打开后台后再绑定指纹`
+                : '请改用 HTTPS 域名（本地开发用 localhost）打开后台后再绑定指纹';
+            return new Error(`WebAuthn 不支持 IP 地址（${host}），${targetHint}`);
+        }
+        return error;
+    }
+
     async function registerWebAuthn(name = 'Mac Touch ID') {
         const token = activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('admin_token') : null);
         if (!token) throw new Error('未登录');
         if (typeof window === 'undefined' || !window.PublicKeyCredential || !navigator.credentials) {
             throw new Error('当前浏览器不支持 WebAuthn / Passkey 指纹认证');
         }
+        const domainCheckError = formatWebAuthnDomainError(null);
+        if (domainCheckError) throw domainCheckError;
 
         const optRes = await requestJson('/api/admin/webauthn/register-options', {}, token);
         if (!optRes.success || !optRes.options) throw new Error('获取注册选项失败');
@@ -139,7 +154,16 @@
             attestation: opts.attestation || 'none'
         };
 
-        const credential = await navigator.credentials.create({ publicKey });
+        let credential;
+        try {
+            credential = await navigator.credentials.create({ publicKey });
+        } catch (err) {
+            if (/invalid domain/i.test(String(err?.message || ''))) {
+                const formatted = formatWebAuthnDomainError(err);
+                throw formatted || new Error('当前访问域名不符合 WebAuthn 安全要求（请使用 localhost 或 HTTPS 域名）');
+            }
+            throw err;
+        }
         if (!credential) throw new Error('指纹注册已取消');
 
         let publicKeySpki = '';

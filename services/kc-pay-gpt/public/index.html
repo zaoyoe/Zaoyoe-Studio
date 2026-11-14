@@ -1363,6 +1363,136 @@
             });
         });
 
+        function createQuerySummaryRow(labelText, valueNodeOrText, { valueClass = '' } = {}) {
+            const row = document.createElement('div');
+            row.className = 'query-row';
+            const label = document.createElement('span');
+            label.textContent = labelText;
+            const strong = document.createElement('strong');
+            if (valueClass) strong.className = valueClass;
+            if (valueNodeOrText instanceof Node) {
+                strong.appendChild(valueNodeOrText);
+            } else {
+                strong.textContent = String(valueNodeOrText ?? '');
+            }
+            row.appendChild(label);
+            row.appendChild(strong);
+            return row;
+        }
+
+        function formatQueryRecordStatus(status) {
+            if (status === 'success') return { label: '开通成功', cls: 'is-success' };
+            if (status === 'running') return { label: '开通中', cls: 'is-processing' };
+            if (status === 'manual') return { label: '需人工复核', cls: 'is-warning' };
+            return { label: '开通失败', cls: 'is-failed' };
+        }
+
+        function buildQueryResultCard(info) {
+            const payload = info || {};
+            const statusText = String(payload.status || (payload.usedAt ? '已使用' : '未使用'));
+            const isProcessing = statusText === '开通中';
+            const isUsed = statusText === '已使用';
+            const statusClass = isProcessing ? 'processing' : (isUsed ? 'used' : 'unused');
+
+            const platformIcons = { chatgpt: '⚡ ChatGPT', claude: '🤖 Claude', grok: '🚀 Grok' };
+            const platformKey = String(payload.platform || currentPlatform).toLowerCase();
+            const platformName = platformIcons[platformKey] || (payload.platform ? String(payload.platform).toUpperCase() : 'ChatGPT');
+            const planLabel = payload.plan_label || resolveClientPlanLabel(payload.plan_type) || currentPlanLabel || '标准版';
+            const boundAccount = String(payload.boundAccount || '').trim();
+
+            const card = document.createElement('div');
+            card.className = 'query-result-card';
+
+            card.appendChild(createQuerySummaryRow('所属业务', `${platformName} · ${planLabel}`, { valueClass: 'query-business-tag' }));
+            card.appendChild(createQuerySummaryRow('当前状态', statusText, { valueClass: `status-${statusClass}` }));
+
+            if (isUsed) {
+                let accountNodeOrText = boundAccount;
+                if (!boundAccount) {
+                    const emptySpan = document.createElement('span');
+                    emptySpan.style.color = 'var(--muted)';
+                    emptySpan.style.fontWeight = 'normal';
+                    emptySpan.textContent = '暂无记录';
+                    accountNodeOrText = emptySpan;
+                }
+                const accountRow = createQuerySummaryRow('开通账号', accountNodeOrText, { valueClass: 'query-bound-account' });
+                accountRow.querySelector('strong').title = boundAccount || '暂无记录';
+                card.appendChild(accountRow);
+                if (payload.usedAt) {
+                    card.appendChild(createQuerySummaryRow('使用时间', payload.usedAt));
+                }
+            } else if (isProcessing && boundAccount) {
+                const accountRow = createQuerySummaryRow('开通账号', boundAccount, { valueClass: 'query-bound-account' });
+                accountRow.querySelector('strong').title = boundAccount;
+                card.appendChild(accountRow);
+            }
+
+            const records = Array.isArray(payload.records) ? payload.records : [];
+            if (records.length > 0) {
+                const historySection = document.createElement('div');
+                historySection.className = 'query-history-section';
+
+                const header = document.createElement('div');
+                header.className = 'query-history-header';
+                header.textContent = `使用记录（最近 ${records.length} 次）`;
+                historySection.appendChild(header);
+
+                const list = document.createElement('div');
+                list.className = 'query-history-list';
+
+                records.forEach((record) => {
+                    const item = document.createElement('div');
+                    item.className = 'query-history-item';
+
+                    const top = document.createElement('div');
+                    top.className = 'query-history-top';
+
+                    const badge = document.createElement('span');
+                    const statusMeta = formatQueryRecordStatus(record.status);
+                    badge.className = `query-history-badge ${statusMeta.cls}`;
+                    badge.textContent = statusMeta.label;
+                    top.appendChild(badge);
+
+                    const recPlatformKey = String(record.platform || platformKey).toLowerCase();
+                    const recPlatformName = platformIcons[recPlatformKey] || (record.platform ? String(record.platform).toUpperCase() : platformName);
+                    const recPlanLabel = record.planLabel || resolveClientPlanLabel(record.planType) || planLabel;
+                    const planTag = document.createElement('span');
+                    planTag.className = 'query-history-plan';
+                    planTag.textContent = `${recPlatformName} · ${recPlanLabel}`;
+                    top.appendChild(planTag);
+
+                    const timeEl = document.createElement('span');
+                    timeEl.className = 'query-history-time';
+                    timeEl.textContent = record.createdAt || record.finishedAt || '-';
+                    top.appendChild(timeEl);
+
+                    item.appendChild(top);
+
+                    const accountMeta = document.createElement('div');
+                    accountMeta.className = 'query-history-meta';
+                    const accountLabel = document.createElement('span');
+                    accountLabel.textContent = '目标账号：';
+                    const accountVal = document.createElement('code');
+                    accountVal.textContent = record.account || '未记录';
+                    accountMeta.appendChild(accountLabel);
+                    accountMeta.appendChild(accountVal);
+                    item.appendChild(accountMeta);
+
+                    const reasonEl = document.createElement('div');
+                    reasonEl.className = 'query-history-reason';
+                    reasonEl.textContent = record.reason || (record.status === 'success' ? '开通成功' : '充值失败');
+                    item.appendChild(reasonEl);
+
+                    list.appendChild(item);
+                });
+
+                historySection.appendChild(list);
+                card.appendChild(historySection);
+            }
+
+            return card;
+        }
+
         queryBtn.addEventListener('click', async () => {
             const cdk = queryInput.value.trim();
             if (!cdk) return showCapsule('请输入激活码', 'error');
@@ -1377,38 +1507,14 @@
                     const statusText = String(data.data.status || (data.data.usedAt ? '已使用' : '未使用'));
                     const isProcessing = statusText === '开通中';
                     const isUsed = statusText === '已使用';
-                    const statusClass = isProcessing ? 'processing' : (isUsed ? 'used' : 'unused');
-
-                    const platformIcons = { chatgpt: '⚡ ChatGPT', claude: '🤖 Claude', grok: '🚀 Grok' };
                     const platformKey = String(data.data.platform || currentPlatform).toLowerCase();
-                    const platformName = platformIcons[platformKey] || (data.data.platform ? data.data.platform.toUpperCase() : 'ChatGPT');
-                    const planLabel = data.data.plan_label || resolveClientPlanLabel(data.data.plan_type) || currentPlanLabel || '标准版';
-                    const boundAccount = String(data.data.boundAccount || '').trim();
 
                     if (['chatgpt', 'claude', 'grok'].includes(platformKey)) {
                         setPlatform(platformKey);
                     }
 
-                    const resultHtml = `
-                        <div class="query-result-card">
-                            <div class="query-row"><span>所属业务</span><strong class="query-business-tag">${platformName} · ${escapeHtml(planLabel)}</strong></div>
-                            <div class="query-row"><span>当前状态</span><strong class="status-${statusClass}">${statusText}</strong></div>
-                            ${isUsed ? `
-                                <div class="query-row">
-                                    <span>开通账号</span>
-                                    <strong class="query-bound-account" title="${escapeHtml(boundAccount || '暂无记录')}">${boundAccount ? escapeHtml(boundAccount) : '<span style="color:var(--muted);font-weight:normal;">暂无记录</span>'}</strong>
-                                </div>
-                                ${data.data.usedAt ? `<div class="query-row"><span>使用时间</span><strong>${data.data.usedAt}</strong></div>` : ''}
-                            ` : ''}
-                            ${isProcessing && boundAccount ? `
-                                <div class="query-row">
-                                    <span>开通账号</span>
-                                    <strong class="query-bound-account" title="${escapeHtml(boundAccount)}">${escapeHtml(boundAccount)}</strong>
-                                </div>
-                            ` : ''}
-                        </div>
-                    `;
-                    showStatus(resultHtml, isUsed ? 'error' : (isProcessing ? 'warning' : 'success'));
+                    const cardNode = buildQueryResultCard(data.data);
+                    showStatusNode(cardNode, isUsed ? 'error' : (isProcessing ? 'warning' : 'success'));
                 } else {
                     showStatus(data.message, 'error');
                 }
@@ -3336,6 +3442,21 @@
         function showStatus(message, type = 'error') {
             statusMsg.textContent = String(message ?? '');
             statusMsg.style.whiteSpace = 'pre-line';
+            let statusClass = 'status-error';
+            if (type === 'success') statusClass = 'status-success';
+            else if (type === 'warning' || type === 'manual') statusClass = 'status-warning';
+            statusMsg.className = `status-message ${statusClass}`;
+
+            lockShellTopPosition();
+            morphCardHeight(() => {
+                statusMsg.style.display = 'block';
+            });
+        }
+
+        function showStatusNode(node, type = 'error') {
+            statusMsg.textContent = '';
+            statusMsg.style.whiteSpace = 'normal';
+            if (node) statusMsg.appendChild(node);
             let statusClass = 'status-error';
             if (type === 'success') statusClass = 'status-success';
             else if (type === 'warning' || type === 'manual') statusClass = 'status-warning';

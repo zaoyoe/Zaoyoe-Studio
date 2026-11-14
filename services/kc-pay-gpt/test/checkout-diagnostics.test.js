@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-    summarizeCheckoutErrorBody, summarizeCheckoutRequest, readCheckoutErrorDetail,
+    summarizeCheckoutResponseMetadata, summarizeCheckoutErrorBody, summarizeCheckoutRequest, readCheckoutErrorDetail,
     isCheckoutUnusualActivityError, buildCheckoutHttpFailure
 } from '../checkout-diagnostics.js';
 
@@ -181,5 +181,27 @@ describe('bounded response body reads', () => {
         vi.useFakeTimers();
         expect(await readCheckoutErrorDetail(response('{"message":"Invalid plan"}'))).toBe('Invalid plan');
         expect(vi.getTimerCount()).toBe(0);
+    });
+});
+
+
+describe('allowlisted checkout response metadata', () => {
+    const allowed = { 'content-type': 'application/json; charset=utf-8',
+        'x-request-id': '4acdb0c0-9768-430d-8c94-08a34c6fc602', 'cf-ray': '1234567890abcdef-MNL' };
+    it.each(['object', 'headers'])('supports %s headers while excluding secrets and unknown fields', kind => {
+        const headers = { ...allowed, 'set-cookie': 'session=private-cookie', authorization: 'Bearer private-token',
+            'x-private-header': 'private-data' };
+        const input = kind === 'object' ? { headers: () => headers } : { headers: new Headers(headers) };
+        expect(summarizeCheckoutResponseMetadata(input)).toEqual({ contentType: 'application/json',
+            requestId: allowed['x-request-id'], cfRay: allowed['cf-ray'] });
+    });
+    it('drops malformed correlation headers and arbitrary content type values', () => {
+        expect(summarizeCheckoutResponseMetadata({ headers: () => ({ 'content-type': 'private-value',
+            'x-request-id': 'Bearer private-token', 'cf-ray': 'private-query?token=private-token' }) }))
+            .toEqual({ contentType: 'other' });
+    });
+    it('keeps diagnostics optional when response headers cannot be read', () => {
+        expect(summarizeCheckoutResponseMetadata({ headers: () => { throw new Error('offline read failure'); } }))
+            .toEqual({ contentType: 'unknown' });
     });
 });

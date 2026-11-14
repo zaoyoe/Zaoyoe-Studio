@@ -44,10 +44,15 @@ describe('payment and recovery safety decisions', () => {
         expect(classifyPaymentResult({ submitted: false, previousState: 'not_started', captchaRequired: true, error })).toBe('not_started');
     });
 
-    it('never allows payment state to move backwards', () => {
+    it('never allows payment state to move backwards except explicit started->declined convergence', () => {
         expect(mergePaymentState('started', 'not_started')).toBe('started');
+        expect(mergePaymentState('started', 'declined')).toBe('declined');
+        expect(mergePaymentState('declined', 'started')).toBe('started');
+        expect(mergePaymentState('declined', 'not_started')).toBe('declined');
         expect(mergePaymentState('unknown', 'declined')).toBe('unknown');
+        expect(mergePaymentState('unknown', 'started')).toBe('unknown');
         expect(mergePaymentState('succeeded', 'failed')).toBe('succeeded');
+        expect(mergePaymentState('succeeded', 'declined')).toBe('succeeded');
         expect(mergePaymentState('not_started', 'started')).toBe('started');
         expect(mergePaymentState('started', 'unknown')).toBe('unknown');
     });
@@ -101,14 +106,14 @@ describe('checkout failures before payment submission', () => {
         expect(classifyCheckoutFailure(message, null)).toMatchObject({ paymentState: 'not_started' });
     });
 
-    it('allows proxy retry for CHECKOUT_UNUSUAL_ACTIVITY only before payment submission', () => {
+    it('stops CHECKOUT_UNUSUAL_ACTIVITY without retrying an explicit upstream refusal', () => {
         const message = 'Checkout 创建接口返回 HTTP 400：Our systems have detected unusual activity. [CHECKOUT_UNUSUAL_ACTIVITY]';
         expect(classifyCheckoutFailure(message, 'not_started')).toMatchObject({
-            status: 'retry', shouldRetry: true, exhaustedMessage: message,
+            status: 'failed', shouldRetry: false, message,
             reachedPayment: false, deletePhone: false, deleteCard: false, paymentState: 'not_started'
         });
         expect(classifyCheckoutFailure(message, null)).toMatchObject({
-            status: 'retry', shouldRetry: true, paymentState: 'not_started'
+            status: 'failed', shouldRetry: false, message, paymentState: 'not_started'
         });
         expect(classifyCheckoutFailure(message, 'declined')).toMatchObject({
             status: 'failed', shouldRetry: false, paymentState: 'not_started'

@@ -3,11 +3,12 @@ const { openPricingCheckout } = require('./pricing-checkout');
 const { openApiCheckout, isBillingCountryMismatchError, shouldFallbackToPricingCheckout } = require('./chatgpt');
 const store = require('./mysql-store');
 const { getRegionConfig, getRegionBrowserProfile } = require('./region-config');
-const { installChatGptSession, bootstrapChatGptSession, extractEmailFromSession, verifyChatGptSessionProtocol } = require('./session-auth');
+const { installChatGptSession, bootstrapChatGptSession, extractEmailFromSession, verifyChatGptSessionProtocol, resolveSessionDeviceId, resolveSessionCookieHeader } = require('./session-auth');
 const { connectTaskBrowser, applyCdpEnv, closeTaskBrowser } = require('./browser-runtime');
 const { preparePlaywrightProxy } = require('./playwright-proxy');
 const { checkProxyConnectivity, checkEgressRegion, checkProxyAndRegionFast, checkProxyAndRegionProtocol } = require('./proxy-preflight');
 const { captureDiagnosticScreenshot } = require('./task-diagnostics');
+const { redactSensitiveText } = require('./session-security');
 const { injectClaudeSession, bootstrapClaudeSession } = require('./claude-auth');
 const { openClaudeCheckout } = require('./pricing-checkout-claude');
 const { cancelClaudeAutoRenew } = require('./claude-cancel-auto-renew');
@@ -288,7 +289,7 @@ async function run() {
     assertDiagnosticActive();
 
     if (proxyConfig) {
-        console.log(`🌐 [系统] 代理已配置${preparedProxy.relayed ? '（SOCKS→本地 HTTP 中继）' : ''}`);
+        console.log(`🌐 [系统] 代理已配置${preparedProxy.relayed ? '（已接入本地 HTTP 中继）' : ''}`);
     }
 
     let cdkPaymentRegion = '';
@@ -649,7 +650,7 @@ async function run() {
                 }
                 console.warn(`⚠️ [Browser/ReqFailed] ${req.method()} ${url.slice(0, 120)}: ${errText || 'failed'}`);
             });
-            page.on('response', (resp) => {
+            page.on('response', async (resp) => {
                 const status = resp.status();
                 const url = resp.url();
                 if (status === 402 && (url.includes('stripe.com') || url.includes('payment_intents'))) {
@@ -659,6 +660,24 @@ async function run() {
                     return;
                 }
                 if (status >= 400 && !url.includes('telemetry') && !url.includes('sentry') && !url.includes('datadog') && !url.includes('/api/auth/current_account')) {
+                    if ((status === 401 || status === 403) && (url.includes('/backend-api/') || url.includes('/api/auth/'))) {
+                        const reqHeaders = resp.request().headers();
+                        const hasAuth = Boolean(reqHeaders.authorization || reqHeaders.Authorization);
+                        let errCode = '';
+                        try {
+                            const body = await resp.text();
+                            if (body && body.length <= 8192) {
+                                const parsed = JSON.parse(body);
+                                const rawCode = parsed?.detail?.code || parsed?.error?.code
+                                    || (typeof parsed?.detail === 'string' ? parsed.detail : '')
+                                    || (typeof parsed?.error === 'string' ? parsed.error : '');
+                                errCode = redactSensitiveText(String(rawCode || '')).slice(0, 60);
+                            }
+                        } catch (_) {}
+                        const suffix = `hasAuth=${hasAuth}${errCode ? ` code=${errCode}` : ''}`;
+                        console.warn(`⚠️ [Browser/HTTP${status}] ${url.slice(0, 120)} (${suffix})`);
+                        return;
+                    }
                     console.warn(`⚠️ [Browser/HTTP${status}] ${url.slice(0, 120)}`);
                 }
             });
@@ -705,12 +724,30 @@ async function run() {
                 diagnostic?.check('proxy', '代理连通性', 'running');
                 console.log('正在检查代理连通性...');
                 let fastPreflight = null;
-                try {
-                    if (typeof checkProxyAndRegionFast === 'function') {
-                        fastPreflight = await checkProxyAndRegionFast(context, paymentRegion);
+                let fastPreflightSource = 'browser';
+                if (proxyUrl && typeof checkProxyAndRegionProtocol === 'function') {
+                    try {
+                        fastPreflight = await checkProxyAndRegionProtocol(proxyUrl, paymentRegion, { probeTimeoutMs: 6500 });
+                        if (fastPreflight?.ip && fastPreflight?.actualRegion) {
+                            fastPreflightSource = 'protocol';
+                        }
+                    } catch (err) {
+                        if (err?.code === 'PAYMENT_REGION_NETWORK_MISMATCH' || err?.code === 'PROXY_PREFLIGHT_AUTH') {
+                            throw err;
+                        }
                     }
-                } catch (err) {
-                    if (err?.code === 'PAYMENT_REGION_NETWORK_MISMATCH') throw err;
+                }
+                if (!fastPreflight?.ip || !fastPreflight?.actualRegion) {
+                    try {
+                        if (typeof checkProxyAndRegionFast === 'function') {
+                            fastPreflight = await checkProxyAndRegionFast(context, paymentRegion, {
+                                probeTimeoutMs: (proxyUrl && typeof checkProxyAndRegionProtocol === 'function') ? 5000 : 6500
+                            });
+                            fastPreflightSource = 'browser';
+                        }
+                    } catch (err) {
+                        if (err?.code === 'PAYMENT_REGION_NETWORK_MISMATCH') throw err;
+                    }
                 }
 
                 if (fastPreflight?.ip && fastPreflight?.actualRegion) {
@@ -718,7 +755,12 @@ async function run() {
                     const ipMasked = ip.includes(':') ? '[IPv6 已隐藏]'
                         : ip.replace(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/, '***.***.$3.$4');
                     console.log(`✅ [系统] 代理连接成功! 代理公网 IP: ${ipMasked}`);
-                    diagnostic?.check('proxy', '代理连通性', 'passed', '已通过当前浏览器通道核验');
+                    diagnostic?.check(
+                        'proxy',
+                        '代理连通性',
+                        'passed',
+                        fastPreflightSource === 'protocol' ? '已通过代理中继协议通道核验' : '已通过当前浏览器通道核验'
+                    );
                     diagnostic?.check('network-region', '支付出口地区', 'passed', `已确认出口地区为 ${paymentRegion}`);
                     regionVerified = true;
                 } else {
@@ -743,6 +785,8 @@ async function run() {
         let checkoutPipelinePrewarmed = false;
         const prewarmCheckoutPipeline = async (targetPage) => {
             if (checkoutPipelinePrewarmed || !targetPage || targetPage.isClosed()) return;
+            const currentUrl = typeof targetPage.url === 'function' ? String(targetPage.url() || '') : '';
+            if (/^https?:\/\//i.test(currentUrl)) return;
             checkoutPipelinePrewarmed = true;
             try {
                 console.log('⚡ [网络预热] 正在并行预热收银台底层链路 (DNS prefetch + TLS preconnect + Stripe SDK)...');
@@ -765,21 +809,32 @@ async function run() {
             } catch (_) {}
         };
 
-        const ensureChatGptBrowserPage = async (reason = '') => {
+        const ensureChatGptBrowserPage = async (reason = '', options = {}) => {
             await ensureBrowserReady(reason || '按需懒加载唤醒 Chromium 浏览器收银台');
             if (!chatgptBrowserSessionInstalled && context) {
                 const sessionRaw = CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
                 await installChatGptSession(context, sessionRaw, {
                     skipOnlineProbe: true,
                     cookieVerified: true,
-                    deviceId: loginInfo?.deviceId,
-                    cookieHeader: loginInfo?.cookieHeader,
+                    deviceId: options.deviceId || loginInfo?.deviceId,
+                    cookieHeader: options.cookieHeader || loginInfo?.cookieHeader,
                     accessToken: loginInfo?.accessToken,
                     sessionData: loginInfo?.session
                 });
                 chatgptBrowserSessionInstalled = true;
             }
-            if (page && !page.isClosed()) {
+            if (options.navigateToOrigin && page && !page.isClosed() && typeof page.goto === 'function') {
+                const currentUrl = typeof page.url === 'function' ? String(page.url() || '') : '';
+                if (!/^https:\/\/chatgpt\.com/i.test(currentUrl)) {
+                    await page.goto('https://chatgpt.com/#pricing', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch((err) => {
+                        console.warn(`[Browser/Warmup] 预热打开 chatgpt.com/#pricing 轻微异常 (非阻塞): ${err?.message || err}`);
+                    });
+                }
+                if (typeof page.evaluate === 'function') {
+                    const { ensureInPageSentinelSdk } = require('./sentinel/sentinel-client');
+                    ensureInPageSentinelSdk(page, 8000).catch(() => false);
+                }
+            } else if (page && !page.isClosed()) {
                 prewarmCheckoutPipeline(page).catch(() => {});
             }
             return page;
@@ -795,12 +850,12 @@ async function run() {
             const sessionRaw = CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
 
             console.log('正在检查代理连通性...');
-            const proxyProtoRes = await checkProxyAndRegionProtocol(proxyUrl, paymentRegion, { probeTimeoutMs: 3500 }).catch((err) => {
+            const proxyProtoRes = await checkProxyAndRegionProtocol(proxyUrl, paymentRegion, { probeTimeoutMs: 6500 }).catch((err) => {
                 if (err?.code === 'PAYMENT_REGION_NETWORK_MISMATCH' || String(err?.code || '').startsWith('PROXY_PREFLIGHT_')) {
                     throw err;
                 }
                 throw Object.assign(
-                    new Error(`纯协议代理探针请求异常 (${err?.message || 'timeout'}) [PROXY_PREFLIGHT_NETWORK]`),
+                    new Error('纯协议代理探针请求异常，请查看代理预检诊断日志 [PROXY_PREFLIGHT_NETWORK]'),
                     { code: 'PROXY_PREFLIGHT_NETWORK', cause: err }
                 );
             });
@@ -820,26 +875,67 @@ async function run() {
 
             // ⚡ 性能优化 (方案2)：在协议代理核验通过后，立即后台并行启动 Sentinel PoW 计算，
             // 与下面的 verifyChatGptSessionProtocol (约 3~5s) 彻底重叠，消除后续收银台创建时的串行算力等待！
+            const preResolvedDeviceId = typeof resolveSessionDeviceId === 'function'
+                ? resolveSessionDeviceId(sessionRaw)
+                : undefined;
+            const preResolvedCookieHeader = typeof resolveSessionCookieHeader === 'function'
+                ? resolveSessionCookieHeader(sessionRaw, { deviceId: preResolvedDeviceId })
+                : '';
+            const useInPageHybridCheckout = !protocolOnlyMode && platform === 'chatgpt';
             let sentinelPromise = null;
-            if (platform === 'chatgpt') {
+            let browserWarmupPromise = null;
+            if (useInPageHybridCheckout) {
+                // 方案 1：仅用纯协议确认代理/地区后，先在真实 Chromium 打开 chatgpt.com 同源页并预加载 /backend-api/sentinel/sdk.js，
+                // 再由同一真实浏览器上下文发同源 fetch 核验 Session/订阅与创建 Checkout，完全避免跨 OS/TLS 指纹割裂。
+                await ensureChatGptBrowserPage('加载真实 ChatGPT 同源页面与实时风控 SDK', {
+                    navigateToOrigin: true,
+                    deviceId: preResolvedDeviceId,
+                    cookieHeader: preResolvedCookieHeader
+                }).catch((err) => {
+                    console.warn(`[Browser/Prewarm] 浏览器预热轻微异常 (非阻塞): ${err?.message || err}`);
+                    return null;
+                });
+            } else if (platform === 'chatgpt') {
                 try {
                     const { mintSentinelToken } = require('./sentinel/sentinel-client');
                     console.log('⚡ [Sentinel] 正在后台并行预签发风控令牌 (PoW)...');
                     sentinelPromise = mintSentinelToken({
                         flow: 'chatgpt_checkout',
                         proxy: proxyUrl,
+                        country: billingCountry,
+                        cookieHeader: preResolvedCookieHeader,
                         pageUrl: 'https://chatgpt.com/',
+                        deviceId: preResolvedDeviceId,
                         timeoutMs: 6000
                     }).catch((err) => {
-                        console.warn(`[Sentinel] 前置并行签发异常 (非阻塞): ${err?.message || err}`);
+                        console.warn(`[Sentinel] 前置并行签发异常 (非阻塞): ${redactSensitiveText(err?.message || err)}`);
                         return null;
                     });
                 } catch (loadErr) {
-                    console.warn(`[Sentinel] 模块加载跳过: ${loadErr?.message || loadErr}`);
+                    console.warn(`[Sentinel] 模块加载跳过: ${redactSensitiveText(loadErr?.message || loadErr)}`);
                 }
             }
 
-            const sessionProtoRes = await verifyChatGptSessionProtocol(sessionRaw, { proxy: proxyUrl, timeoutMs: 7000 });
+            let inPageSentinelPromise = null;
+            if (useInPageHybridCheckout && page && !page.isClosed?.() && typeof page.evaluate === 'function') {
+                try {
+                    const { mintInPageSentinelToken } = require('./sentinel/sentinel-client');
+                    if (typeof mintInPageSentinelToken === 'function') {
+                        console.log('⚡ [Sentinel] 已与 Session 核验并发启动页面实时风控令牌签发...');
+                        inPageSentinelPromise = mintInPageSentinelToken(page, 'chatgpt_checkout', {
+                            waitForSdkMs: 6500,
+                            tokenTimeoutMs: 7000
+                        }).catch(() => null);
+                    }
+                } catch (_) {}
+            }
+
+            const sessionProtoRes = await verifyChatGptSessionProtocol(sessionRaw, {
+                proxy: proxyUrl,
+                timeoutMs: 7000,
+                deviceId: preResolvedDeviceId,
+                page: useInPageHybridCheckout ? page : undefined
+            });
 
             if (sessionProtoRes?.ok) {
                 loginInfo = sessionProtoRes;
@@ -847,28 +943,30 @@ async function run() {
                     console.log(`[Info] 账号邮箱: ${loginInfo.email}`);
                 }
 
-                // 并行预热浏览器收银台环境，重叠 PoW 签发与 API Checkout 耗时
-                let browserPrewarmPromise = null;
-                if (!protocolOnlyMode && platform === 'chatgpt') {
-                    browserPrewarmPromise = ensureChatGptBrowserPage('并行预热 Chromium 浏览器收银台环境').catch((err) => {
-                        console.warn(`[Browser/Prewarm] 浏览器并行预热轻微异常 (非阻塞): ${err?.message || err}`);
-                    });
+                if (browserWarmupPromise) {
+                    await browserWarmupPromise;
                 }
 
                 try {
-                    console.log('⚡ [极速通道] 正在通过 API 创建 Stripe 收银台...');
+                    console.log(useInPageHybridCheckout
+                        ? '⚡ [极速通道] 正在通过真浏览器同源页面 API 创建 Stripe 收银台...'
+                        : '⚡ [极速通道] 正在通过 API 创建 Stripe 收银台...');
                     apiCheckoutAttempted = true;
-                    checkoutResult = await openApiCheckout(null, {
+                    checkoutResult = await openApiCheckout(useInPageHybridCheckout ? page : null, {
                         accessToken: loginInfo.accessToken || loginInfo.session?.accessToken || CONFIG.chatgptToken,
                         planType,
                         country: billingCountry,
                         currency: billingCurrency,
                         planNameOverride,
-                        verifyPage: false,
+                        verifyPage: useInPageHybridCheckout,
                         proxy: proxyUrl,
                         sentinelPromise,
+                        inPageSentinelPromise,
                         cookieHeader: loginInfo.cookieHeader,
-                        deviceId: loginInfo.deviceId
+                        deviceId: loginInfo.deviceId || preResolvedDeviceId,
+                        accountId: loginInfo.accountId,
+                        inPageFetch: useInPageHybridCheckout,
+                        allowOutOfBrowserSentinelFallback: !useInPageHybridCheckout
                     });
                     checkoutOpened = true;
                     console.log('⚡ [极速通道] ✅ API 创建收银台会话成功，已跳过定价页');
@@ -879,11 +977,10 @@ async function run() {
                     }
                     console.log('🧭 [智能回退] API 创建失败，转入定价页；不重复创建 API 会话');
                 }
-
-                if (browserPrewarmPromise) {
-                    await browserPrewarmPromise;
-                }
             } else {
+                if (browserWarmupPromise) {
+                    await browserWarmupPromise.catch(() => null);
+                }
                 throw Object.assign(
                     new Error(`纯协议 Session 鉴权未确认 (${sessionProtoRes?.error || 'unknown'})，已停止且不启动浏览器 [PROTOCOL_PREREQUISITE_FAILED]`),
                     { code: 'PROTOCOL_PREREQUISITE_FAILED' }
@@ -891,7 +988,7 @@ async function run() {
             }
         }
 
-        if (checkoutOpened && !protocolOnlyMode) {
+        if (checkoutOpened && !protocolOnlyMode && !chatgptBrowserSessionInstalled) {
             await ensureChatGptBrowserPage('协议 Checkout 已就绪，浏览器接管付款');
         }
 
@@ -954,6 +1051,7 @@ async function run() {
                     const sessionRaw = CONFIG.chatgptSessionJson || CONFIG.chatgptToken;
                     const installResult = await installChatGptSession(context, sessionRaw, {
                         skipOnlineProbe: Boolean(loginInfo?.email),
+                        skipOnlineProbeWhenFresh: true,
                         cookieVerified: Boolean(loginInfo?.email),
                         deviceId: loginInfo?.deviceId,
                         cookieHeader: loginInfo?.cookieHeader
@@ -1078,6 +1176,7 @@ async function run() {
             email: email || loginInfo?.email,
             stripeSessionId,
             checkoutUrl: checkoutResult?.checkoutUrl,
+            checkoutReadyVerified: Boolean(checkoutResult?.checkoutReadyVerified),
             accessToken: loginInfo?.accessToken || loginInfo?.session?.accessToken || CONFIG.chatgptToken,
             cookieHeader: loginInfo?.cookieHeader || '',
             deviceId: loginInfo?.deviceId || '',
@@ -1176,8 +1275,9 @@ async function run() {
             for (const screenshotPath of paymentResult.screenshots || []) {
                 console.log(`FAILURE_SCREENSHOT: ${screenshotPath}`);
             }
-            console.error(`❌ [支付失败] ${errorMsg} (manual_intervention)`);
-            throw new Error(`支付失败 (manual_intervention): ${errorMsg}`);
+            const failureTag = paymentResult.paymentState === 'declined' ? 'stripe_card_declined' : 'manual_intervention';
+            console.error(`❌ [支付失败] ${errorMsg} (${failureTag})`);
+            throw new Error(`支付失败 (${failureTag}): ${errorMsg}`);
         }
 
     } catch (e) {

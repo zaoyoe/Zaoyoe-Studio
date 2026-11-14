@@ -260,4 +260,87 @@ describe('subscription eligibility and active subscription protection', () => {
         expect(result.hasActive).toBe(false);
         expect(result.isExpired).toBe(true);
     });
+
+    it('preserves existing SPA Authorization headers when sessionToken cookies are active', async () => {
+        const staleToken = jwt({ exp: 9999999999, ver: 'stale' });
+        const freshSpaToken = jwt({ exp: 9999999999, ver: 'fresh-spa' });
+        let catchAllHandler = null;
+        const storedCookies = [];
+        const context = {
+            addCookies: vi.fn(async (items = []) => { storedCookies.push(...items); }),
+            cookies: vi.fn(async () => storedCookies),
+            addInitScript: vi.fn(async () => {}),
+            route: vi.fn(async (pattern, fn) => {
+                if (pattern === '**/*') catchAllHandler = fn;
+            })
+        };
+
+        await withoutSessionEnv(() => installChatGptSession(context, JSON.stringify({
+            user: { id: 'user-offline', email: 'offline@example.test' },
+            accessToken: staleToken,
+            sessionToken: 'offline-session-cookie'
+        }), { skipOnlineProbe: true, cookieVerified: true }));
+
+        expect(typeof catchAllHandler).toBe('function');
+
+        const bareContinue = vi.fn(async () => {});
+        await catchAllHandler({
+            request: () => ({
+                url: () => 'https://chatgpt.com/backend-api/me',
+                resourceType: () => 'fetch',
+                headers: () => ({ accept: 'application/json' })
+            }),
+            continue: bareContinue
+        });
+        expect(bareContinue).toHaveBeenCalledWith({
+            headers: expect.objectContaining({ authorization: `Bearer ${staleToken}` })
+        });
+
+        const spaContinue = vi.fn(async () => {});
+        await catchAllHandler({
+            request: () => ({
+                url: () => 'https://chatgpt.com/backend-api/me',
+                resourceType: () => 'fetch',
+                headers: () => ({ accept: 'application/json', authorization: `Bearer ${freshSpaToken}` })
+            }),
+            continue: spaContinue
+        });
+        expect(spaContinue).toHaveBeenCalledWith();
+    });
+    it('skips redundant online cookie probe when local token is fresh and skipOnlineProbeWhenFresh is enabled', async () => {
+        const { context } = await fixture({
+            sessionApi: { user: { id: 'user-offline', email: 'offline@example.test' }, accessToken: jwt({ exp: 9999999999 }) }
+        });
+        const newPageSpy = vi.spyOn(context, 'newPage');
+        const installed = await withoutSessionEnv(() => installChatGptSession(context, JSON.stringify({
+            user: { id: 'user-offline', email: 'offline@example.test' },
+            accessToken: jwt({ exp: 9999999999 }),
+            sessionToken: 'offline-session-cookie'
+        }), { skipOnlineProbeWhenFresh: true }));
+
+        expect(newPageSpy).not.toHaveBeenCalled();
+        expect(installed.hasSessionToken).toBe(true);
+        expect(installed.cookieVerified).toBe(false);
+    });
+    it('still probes /api/auth/session under skipOnlineProbeWhenFresh when pasted accessToken is expired', async () => {
+        const freshToken = jwt({ exp: 9999999999 });
+        const { context } = await fixture({
+            sessionApi: {
+                user: { id: 'user-offline', email: 'offline@example.test' },
+                accessToken: freshToken,
+                expires: '2099-01-01T00:00:00.000Z'
+            }
+        });
+        const newPageSpy = vi.spyOn(context, 'newPage');
+        const installed = await withoutSessionEnv(() => installChatGptSession(context, JSON.stringify({
+            user: { id: 'user-offline', email: 'offline@example.test' },
+            accessToken: jwt({ exp: 1 }),
+            expires: '2000-01-01T00:00:00.000Z',
+            sessionToken: 'offline-session-cookie'
+        }), { skipOnlineProbeWhenFresh: true }));
+
+        expect(newPageSpy).toHaveBeenCalledOnce();
+        expect(installed.cookieVerified).toBe(true);
+        expect(installed.sessionData.accessToken).toBe(freshToken);
+    });
 });
