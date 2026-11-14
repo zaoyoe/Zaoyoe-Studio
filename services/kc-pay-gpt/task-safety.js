@@ -68,7 +68,12 @@ const PAYMENT_STATE_RANK = Object.freeze({
 function mergePaymentState(previousState, nextState) {
     const previous = normalizePaymentState(previousState);
     const next = normalizePaymentState(nextState);
-    // 终态不可被低优先级状态覆盖；started/unknown 也不能回退到未提交或拒付。
+    // succeeded 为绝对终态；unknown 仅允许向 succeeded 收敛（防止未知扣款结果被回退覆盖）。
+    // 明确收到上游拒卡（declined）时，允许从 started 收敛为 declined；若多卡重试开启下一笔付款，declined 也可推进到 started/unknown/succeeded。
+    if (previous === 'succeeded') return 'succeeded';
+    if (previous === 'unknown') return next === 'succeeded' ? 'succeeded' : 'unknown';
+    if (previous === 'started' && next === 'declined') return 'declined';
+    if (previous === 'declined' && ['started', 'unknown', 'succeeded'].includes(next)) return next;
     return PAYMENT_STATE_RANK[next] >= PAYMENT_STATE_RANK[previous] ? next : previous;
 }
 
@@ -118,19 +123,7 @@ function classifyCheckoutFailure(message, paymentState) {
     if (paymentState != null && !['not_started', 'declined'].includes(normalizePaymentState(paymentState))) return null;
     const code = String(message || '').match(/\[(CHECKOUT_(?:HTTP_ERROR|UNUSUAL_ACTIVITY|NETWORK_ERROR|NO_REQUEST|REQUEST_PENDING|NAVIGATION_TIMEOUT|NAVIGATION_FAILED|AUTH_REQUIRED|PAGE_ERROR|PAGE_CLOSED|PAGE_UNAVAILABLE|RENDER_TIMEOUT|RESOURCE_TIMEOUT|SESSION_FAILED|CURRENCY_UNCONFIRMED|AMOUNT_UNCONFIRMED|AMOUNT_MISMATCH)|PAYMENT_(?:REGION_NETWORK_MISMATCH|REGION_UNCONFIRMED|CURRENCY_MISMATCH)|NETWORK_REGION_UNCONFIRMED|CDK_PAYMENT_REGION_MISMATCH|BILLING_TAX_NOT_REMOVED|PRICING_REGION_UNCONFIRMED)\]\s*$/)?.[1];
     if (!code) return null;
-    const normalizedState = paymentState == null ? 'not_started' : normalizePaymentState(paymentState);
-    if (code === 'CHECKOUT_UNUSUAL_ACTIVITY' && normalizedState === 'not_started') {
-        return {
-            status: 'retry',
-            message: 'OpenAI 接口风控拦截 (unusual activity)，正在切换代理重试',
-            exhaustedMessage: message,
-            reachedPayment: false,
-            shouldRetry: true,
-            deletePhone: false,
-            deleteCard: false,
-            paymentState: 'not_started'
-        };
-    }
+    // An explicit upstream refusal is terminal for this task; do not repeat it with another proxy.
     return {
         status: 'failed',
         message,

@@ -70,7 +70,7 @@ function uuidv4() {
 const SEP = "\u2212"; // U+2212 MINUS SIGN
 const ANS_SDK_URL = "https://sentinel.openai.com/backend-api/sentinel/sdk.js";
 
-function makeGenerator(ua, cores, language, timezone, screenW, screenH) {
+function makeGenerator(ua, cores, language, timezone, screenW, screenH, sdkUrl) {
   const initialPerformance = 350.0 + Math.random() * 2200.0;
   const sw = Number(screenW) || 1920;
   const sh = Number(screenH) || 1080;
@@ -91,6 +91,7 @@ function makeGenerator(ua, cores, language, timezone, screenW, screenH) {
     probeNav: "getBattery" + SEP + "function getBattery() { [native code] }",
     reactKey: "location",
     eventName: "onbeforeunload",
+    sdkUrl: sdkUrl || ANS_SDK_URL,
   };
 }
 
@@ -130,7 +131,7 @@ function configArray(g) {
     g.heapLimit, // 2
     0, // 3 PoW 计数器
     g.ua, // 4
-    ANS_SDK_URL, // 5
+    g.sdkUrl || ANS_SDK_URL, // 5
     null, // 6
     g.language, // 7
     g.languages.join(","), // 8
@@ -419,9 +420,9 @@ async function handleRequest(raw) {
   const flow = args.flow || "oauth_create_account";
   const proxy = args.proxy || "";
   const version = args.version || "20260219f9f6";
-  const pageUrl = args.pageUrl || "https://auth.openai.com/about-you";
+  const pageUrl = args.pageUrl || "https://chatgpt.com/";
   const language = args.language || "en-US";
-  const timezone = args.timezone || "America/Chicago";
+  const timezone = args.timezone || "America/Los_Angeles";
   const cookieHeader = args.cookieHeader || "";
   const sentinelOrigin = args.sentinelOrigin || "https://chatgpt.com";
   // 指纹档案驱动（与请求 UA/平台/屏幕一致，避免哨兵身份与请求身份打架）
@@ -500,7 +501,7 @@ async function handleRequest(raw) {
     __SEED_DID_VAL__: deviceId,
     __PAGE_URL__: pageUrl,
     __LANGUAGE__: language,
-    __LANGUAGES__: [language, "en-US", "en"],
+    __LANGUAGES__: Array.from(new Set([language, "en-US", "en"].filter(Boolean))),
     __TIMEZONE__: timezone,
     __COOKIE_HEADER__: cookieHeader,
     __PLATFORM__: platform,
@@ -543,11 +544,20 @@ async function handleRequest(raw) {
     return JSON.stringify({ error: "driver decode: " + e.message, raw: String(rawDriver).slice(0, 300) });
   }
 
+  let telemetry = "[1,null]";
+  try {
+    if (typeof SDK.timing === "function") {
+      const timingVal = await Promise.resolve(SDK.timing());
+      if (timingVal) telemetry = String(timingVal);
+    }
+  } catch (_) {}
+
   if (!rd.c) {
     return JSON.stringify({ error: "driver 无 c", soErr: rd.soErr || "", raw: String(rawDriver).slice(0, 300) });
   }
 
-  const g = makeGenerator(ua, cores, language, timezone, screenW, screenH);
+  const sdkUrl = `${sentinelOrigin}/sentinel/${version}/sdk.js`;
+  const g = makeGenerator(ua, cores, language, timezone, screenW, screenH, sdkUrl);
   let p;
   if (rd.powReq && rd.seed) {
     p = solvePoW(g, rd.seed, rd.diff);
@@ -566,6 +576,7 @@ async function handleRequest(raw) {
   const out = JSON.stringify({
     main: mainTok,
     so,
+    telemetry,
     soErr: rd.soErr || "",
     powReq: !!rd.powReq,
     hasT: !!rd.t,

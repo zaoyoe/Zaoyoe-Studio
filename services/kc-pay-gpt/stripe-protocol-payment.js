@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const querystring = require('querystring');
 const axios = require('axios');
-const { mintSentinelToken } = require('./sentinel/sentinel-client');
+const { mintSentinelToken, mintInPageSentinelToken } = require('./sentinel/sentinel-client');
 const { substituteProxySession, resetActiveProxyTunnels } = require('./playwright-proxy');
 const { registerStripeDeviceFingerprint } = require('./stripe-device-fingerprint');
 
@@ -569,9 +569,7 @@ async function syncCheckoutBillingTax({
     };
 
     const taxHeaders = {
-        ...targetHeaders,
-        'x-openai-target-path': '/backend-api/payments/checkout/taxes',
-        'x-openai-target-route': '/backend-api/payments/checkout/taxes'
+        ...targetHeaders
     };
 
     const updateTaxIdBody = {
@@ -580,9 +578,7 @@ async function syncCheckoutBillingTax({
     };
 
     const updateTaxIdHeaders = {
-        ...targetHeaders,
-        'x-openai-target-path': '/backend-api/payments/checkout/update_tax_id',
-        'x-openai-target-route': '/backend-api/payments/checkout/update_tax_id'
+        ...targetHeaders
     };
 
     console.log(`⚡ [协议支付] 正在向 ChatGPT 同步免税账单地址 (国家=${billingCountry}, 州=${taxBody.billing_address.state || 'Oregon'}, 币种=${taxBody.currency})...`);
@@ -789,12 +785,13 @@ async function postConfirmRequest({
 }) {
     const confirmBody = {
         checkout_session_id: sessionId,
-        confirmation_token: ctoken,
         confirm_token: ctoken,
         selected_payment_method_type: 'card'
     };
     if (saveChoice !== null && saveChoice !== undefined) {
-        confirmBody.save_payment_method_for_reuse = saveChoice ? 'true' : 'false';
+        confirmBody.save_payment_method_for_reuse = typeof saveChoice === 'string'
+            ? saveChoice
+            : (saveChoice ? 'save_default' : 'control');
     }
 
     // 优先通过 page.evaluate 发送同源 confirm，兼具原生浏览器 Cookie、TLS 指纹和最高信任度
@@ -805,6 +802,7 @@ async function postConfirmRequest({
                     method: 'POST',
                     headers,
                     credentials: 'include',
+                    referrerPolicy: 'same-origin',
                     body: JSON.stringify(bodyObj)
                 });
                 const bodyText = await res.text();
@@ -1427,8 +1425,9 @@ async function executeStripeProtocolPayment({
         'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="147", "Google Chrome";v="147"',
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"Windows"',
+        'oai-language': 'en-US',
         ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
-        ...(deviceId ? { 'oai-device-id': deviceId } : {})
+        ...(deviceId ? { 'oai-device-id': deviceId, 'oai-did': deviceId } : {})
     };
     const protocolPage = protocolOnly ? null : page;
     const confirmationTokenHash = (ctoken) => hashProtocolValue(ctoken);
@@ -1535,14 +1534,21 @@ async function executeStripeProtocolPayment({
     // 2. 税区完成后再签发本 attempt 的结算风控令牌。
     let sentinelTokens = {};
     try {
-        sentinelTokens = await mintSentinelToken({
-            flow: 'checkout_session_approval',
-            pageUrl: checkoutUrl,
-            deviceId: deviceId || undefined,
-            userAgent: userAgent || undefined,
-            proxy: proxy || '',
-            timeoutMs: 15000
-        }) || {};
+        if (!protocolOnly && typeof mintInPageSentinelToken === 'function') {
+            sentinelTokens = (await mintInPageSentinelToken(page, 'checkout_session_approval')) || {};
+        }
+        if (!sentinelTokens?.sentinelToken) {
+            sentinelTokens = await mintSentinelToken({
+                flow: 'checkout_session_approval',
+                pageUrl: checkoutUrl,
+                country: billing?.country || 'PH',
+                cookieHeader: cookieHeader || '',
+                deviceId: deviceId || undefined,
+                userAgent: userAgent || undefined,
+                proxy: proxy || '',
+                timeoutMs: 15000
+            }) || {};
+        }
         console.log('⚡ [协议支付] ✅ Checkout 结算风控令牌已就绪');
     } catch (sentinelErr) {
         // Sentinel 是结算安全凭证；不把失败伪装成银行拒卡，也不继续提交银行卡确认。
@@ -1553,9 +1559,7 @@ async function executeStripeProtocolPayment({
 
     const targetHeaders = {
         ...baseHeaders,
-        'x-openai-target-path': '/backend-api/payments/checkout/confirm',
-        'x-openai-target-route': '/backend-api/payments/checkout/confirm',
-        ...(sentinelTokens.sentinelToken ? { 'openai-sentinel-token': sentinelTokens.sentinelToken } : {}),
+        ...(sentinelTokens.sentinelToken ? { 'openai-sentinel-token': sentinelTokens.sentinelToken, 'oai-telemetry': sentinelTokens.telemetry || '[1,null]' } : {}),
         ...(sentinelTokens.sentinelSoToken ? { 'openai-sentinel-so-token': sentinelTokens.sentinelSoToken } : {})
     };
 
@@ -1665,7 +1669,7 @@ async function executeStripeProtocolPayment({
         return text.includes('save_choice') || text.includes('save choice');
     };
     if (needsSaveChoice(confirmResult)) {
-        for (const choice of [true, false]) {
+        for (const choice of ['control', 'save_default']) {
             confirmResult = await postConfirmRequest({
                 page: protocolPage,
                 sessionId,

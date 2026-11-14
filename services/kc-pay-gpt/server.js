@@ -31,7 +31,7 @@ const { fingerprintSessionPayload, redactSensitiveText } = require('./session-se
 const { issueTaskAccessToken, verifyTaskAccessToken } = require('./task-access');
 const { formatTaskErrorMessage, publicTaskUpdate } = require('./public/task-messages');
 const { resolveActivationInput, buildActivationCredentialEnv } = require('./activation-routing');
-const { reportTaskFailure } = require('./task-diagnostics');
+const { reportTaskFailure, buildAttemptDiagnostic, summarizeFailedAttempts } = require('./task-diagnostics');
 const { validateCdkPlan } = require('./cdk-plan-catalog');
 const { parseCardImportText } = require('./card-parser');
 const { resolveDiagnosticInput, getDiagnosticCatalog, parseDiagnosticOutput, buildDiagnosticRuntimeEnv } = require('./checkout-diagnostic');
@@ -980,7 +980,7 @@ function extractRuntimeErrorMessage(output) {
     const lines = String(output || '').split('\n').map((line) => line.trim()).filter(Boolean);
     for (let i = lines.length - 1; i >= 0; i -= 1) {
         const match = lines[i].match(/❌ \[(?:运行时错误|支付失败)\]\s*:?\s*(.+)/);
-        if (match) return match[1].replace(/\s*\(manual_intervention\)\s*$/, '').trim();
+        if (match) return match[1].replace(/\s*\((?:manual_intervention|stripe_card_declined)\)\s*$/, '').trim();
         if (lines[i].startsWith('Error:')) return lines[i].replace(/^Error:\s*/, '');
     }
     return '';
@@ -1212,13 +1212,33 @@ function analyzeProcessOutput(output, timedOut) {
         || normalized.includes('支付失败 (stripe_redirect_failed)')
         || normalized.includes('支付失败 (stripe_redirect_canceled)')
         || normalized.includes('支付失败 (stripe_card_declined)')) {
+        const isConfirmedDecline = paymentState === 'declined';
         return {
-            status: 'manual',
-            message: '银行卡被拒绝或 Stripe 驳回，请查看截图后人工处理',
+            status: isConfirmedDecline ? 'failed' : 'manual',
+            message: runtimeError || '银行卡被拒绝或 Stripe 驳回，请查看截图后人工处理',
             reachedPayment: true,
             shouldRetry: false,
             deletePhone: false,
-            deleteCard: true
+            deleteCard: true,
+            ...(isConfirmedDecline ? { paymentState: 'declined', recoveryRequired: false } : {})
+        };
+    }
+
+    if (paymentState === 'declined' && (
+        normalized.includes('卡均被拒')
+        || normalized.includes('拒绝')
+        || normalized.includes('被拒')
+        || /declined|incorrect_number|insufficient_funds|do_not_honor/i.test(normalized)
+    )) {
+        return {
+            status: 'failed',
+            message: runtimeError || '支付卡被官方系统拒付，卡密已退回为未使用',
+            reachedPayment: true,
+            shouldRetry: false,
+            deletePhone: false,
+            deleteCard: true,
+            paymentState: 'declined',
+            recoveryRequired: false
         };
     }
 
@@ -1480,7 +1500,7 @@ function runCheckoutScript(jobKey, scriptPath, env, attempt = 1, onProgress = nu
             return;
         }
         logTask(jobKey, `启动子进程 attempt=${attempt} script=${scriptPath}`);
-        const child = spawn('node', [scriptPath], {
+        const child = spawn(process.execPath, [scriptPath], {
             env: { ...env, KC_INTERNAL_CAPTCHA_TOKEN: internalCaptchaToken, PORT: String(PORT) },
             windowsHide: true
         });
@@ -3587,6 +3607,26 @@ app.get('/api/admin/cdks', requireSecondaryAuth, async (req, res) => {
     }
 });
 
+app.get('/api/admin/cdks/:cdk/records', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const cdk = String(req.params.cdk || '').trim();
+        if (!cdk) {
+            return res.status(400).json({ success: false, message: '请提供卡密' });
+        }
+        const rawRecords = await store.getCdkUsageRecords(cdk, { limit: 100 });
+        const records = rawRecords.map((entry) => ({
+            ...entry,
+            plan_label: typeof getPlanTypeLabel === 'function'
+                ? getPlanTypeLabel(entry.plan_type || 'plus')
+                : (entry.plan_type || 'plus')
+        }));
+        res.json({ success: true, cdk, records });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 app.post('/api/admin/cdks/generate', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
@@ -3656,6 +3696,22 @@ app.post('/api/admin/cdks/:cdk/ship', requireSecondaryAuth, async (req, res) => 
             return res.status(404).json({ success: false, message: 'CDK 不存在' });
         }
         res.json({ success: true, message: 'CDK 已标记出库' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.post('/api/admin/cdks/:cdk/reset', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const result = await store.resetCdkToUnused(req.params.cdk);
+        if (!result?.ok) {
+            return res.status(result?.status || 400).json({
+                success: false,
+                message: result?.message || '重置失败'
+            });
+        }
+        res.json({ success: true, message: result.message || 'CDK 已重置为未使用状态' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -4004,6 +4060,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
         const checkoutScript = path.join(__dirname, 'index.js');
         let finalRun = null;
         const allOutputs = [];
+        const attemptDiagnostics = [];
         let settlementClosed = false;
         let persistenceUncertain = false;
         let pendingUpdates = Promise.resolve();
@@ -4056,6 +4113,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
 
         try {
             for (let attempt = 1; attempt <= MAX_PROCESS_ATTEMPTS; attempt += 1) {
+                const attemptStartedAt = Date.now();
                 logTask(task.jobKey, `开始第 ${attempt}/${MAX_PROCESS_ATTEMPTS} 次尝试`);
 
                 const attemptProgress = normalizeTaskProgress(attempt > 1 ? 1 : 8, 'running', lastProgress);
@@ -4159,11 +4217,16 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 });
 
                 const cardLast4 = extractCardLast4FromOutput(run.output);
-                allOutputs.push(`===== ATTEMPT ${attempt}${cardLast4 ? ` | CARD ${cardLast4}` : ''} =====\n${run.output}`);
-                finalRun = { ...run, output: allOutputs.join('\n\n') };
                 const attemptPaymentState = normalizePaymentState(
                     mergePaymentState(run.analysis.paymentState || 'not_started', outputPaymentEvidence(run.output))
                 );
+                const diagnostic = buildAttemptDiagnostic({ attempt, elapsedMs: Date.now() - attemptStartedAt,
+                    analysis: run.analysis, paymentState: attemptPaymentState, exitCode: run.code, timedOut: run.timedOut });
+                attemptDiagnostics.push(diagnostic);
+                const diagnosticLine = `[Attempt/diagnostic] ${JSON.stringify(diagnostic)}`;
+                logTask(task.jobKey, diagnosticLine);
+                allOutputs.push(`===== ATTEMPT ${attempt}${cardLast4 ? ` | CARD ${cardLast4}` : ''} =====\n${run.output}\n${diagnosticLine}`);
+                finalRun = { ...run, output: allOutputs.join('\n\n') };
                 observedPaymentState = mergePaymentState(observedPaymentState, attemptPaymentState);
                 if (attemptPaymentState) {
                     await persistLocal({
@@ -4223,7 +4286,7 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 outputPaymentState, normalizedAnalysis?.paymentState || 'not_started'));
             let finalStatus = ['started', 'unknown'].includes(finalPaymentState)
                 ? 'manual' : (normalizedAnalysis?.status || 'failed');
-            let finalMessage = normalizedAnalysis?.message || null;
+            let finalMessage = summarizeFailedAttempts(attemptDiagnostics, normalizedAnalysis, finalPaymentState);
             observedPaymentState = mergePaymentState(observedPaymentState, finalPaymentState);
 
             const finalProgress = normalizeTaskProgress(finalStatus === 'success' ? 100 : lastProgress, finalStatus, lastProgress);
@@ -4555,6 +4618,8 @@ async function handleActivationRequest(req, res) {
             tokenPreview,
             sessionPayload: storedSession,
             cdkCode: cdk,
+            platform,
+            planType,
             phone: null,
             cardLast4: null,
             progress: 8,
@@ -4840,15 +4905,66 @@ app.post('/api/cdk/query', async (req, res) => {
         }
 
         const runningTask = await store.getRunningTaskByCdk(cdk);
+        const usageRows = typeof store.getCdkUsageRecords === 'function'
+            ? (await store.getCdkUsageRecords(cdk, { limit: 20 })) || []
+            : [];
         const cdkStatus = runningTask
             ? '开通中'
             : (cdkData.used_at ? '已使用' : '未使用');
+
+        const planType = cdkData.plan_type || 'plus';
+        const platform = cdkData.platform
+            || (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(planType) : 'chatgpt')
+            || 'chatgpt';
+        const planLabel = typeof getPlanTypeLabel === 'function' ? getPlanTypeLabel(planType) : planType;
+        const records = usageRows.map((entry) => {
+            const entryPlanType = entry.plan_type || planType;
+            const entryPlatform = entry.platform
+                || (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(entryPlanType) : platform)
+                || platform;
+            const entryPlanLabel = typeof getPlanTypeLabel === 'function' ? getPlanTypeLabel(entryPlanType) : entryPlanType;
+            const entryStatus = entry.status || 'failed';
+            const entryReason = entryStatus === 'success'
+                ? '开通成功'
+                : (entryStatus === 'running'
+                    ? '正在开通中'
+                    : formatTaskErrorMessage(entryStatus, entry.message, {
+                        paymentState: entry.payment_state,
+                        recoveryRequired: Boolean(entry.recovery_required)
+                    }));
+            return {
+                jobKey: entry.job_key || null,
+                account: String(entry.account || '').trim(),
+                platform: entryPlatform,
+                planType: entryPlanType,
+                planLabel: entryPlanLabel,
+                status: entryStatus,
+                paymentState: entry.payment_state || 'not_started',
+                reason: entryReason,
+                createdAt: entry.created_at || null,
+                finishedAt: entry.finished_at || entry.updated_at || null
+            };
+        });
+        const succeededRecord = records.find((item) => item.status === 'success' && item.account);
+        const runningRecord = records.find((item) => item.status === 'running' && item.account);
+        const boundAccount = String(
+            runningTask?.token_preview
+            || runningRecord?.account
+            || succeededRecord?.account
+            || (cdkData.used_at ? records.find((item) => item.account)?.account : '')
+            || ''
+        ).trim();
 
         res.json({
             success: true,
             data: {
                 status: cdkStatus,
                 type: cdkData.type || '自助',
+                platform,
+                plan_type: planType,
+                plan_label: planLabel,
+                boundAccount,
+                records,
                 createdAt: cdkData.created_at,
                 jobKey: runningTask?.job_key || null,
                 taskAccessToken: runningTask ? issueTaskAccessToken(runningTask.job_key) : null,

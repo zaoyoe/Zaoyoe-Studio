@@ -53,7 +53,28 @@ async function fixture(options = {}) {
             const response = url.pathname === '/api/verify-cdk'
                 ? { success: true, data: { platform: options.platform || 'chatgpt', plan_type: options.plan || 'plus', plan_label: options.label || 'ChatGPT Plus', ...options.verify } }
                 : url.pathname === '/api/cdk/query'
-                    ? { success: true, data: { status: '未使用', platform: 'chatgpt', plan_type: 'plus' } }
+                    ? {
+                        success: true,
+                        data: {
+                            status: '未使用',
+                            platform: 'chatgpt',
+                            plan_type: 'plus',
+                            plan_label: 'ChatGPT Plus',
+                            boundAccount: '',
+                            records: options.queryRecords || [
+                                {
+                                    account: 'offline@example.test',
+                                    platform: 'chatgpt',
+                                    planType: 'plus',
+                                    planLabel: 'ChatGPT Plus',
+                                    status: 'failed',
+                                    paymentState: 'declined',
+                                    reason: '支付卡被官方系统拒付：Your card number is incorrect. [incorrect_number]（卡密未使用）',
+                                    createdAt: '2026-11-14 20:07:25'
+                                }
+                            ]
+                        }
+                    }
                     : url.pathname === '/api/run-process'
                         ? { success: true, jobKey: 'offline-job', taskAccessToken: 'offline-task-access-token' }
                         : { success: true, handled: true, email: 'offline@example.test' };
@@ -382,6 +403,10 @@ describe('restored recharge user interactions with all external effects mocked',
             await f.page.locator('#queryInput').fill(cdk);
             await f.page.locator('#queryBtn').click();
             await f.page.waitForFunction(() => document.querySelector('#statusMessage').textContent.includes('未使用'));
+            expect(await f.page.locator('#statusMessage .query-result-card').count()).toBe(1);
+            expect(await f.page.locator('#statusMessage').textContent()).not.toContain('<div class=');
+            expect(await f.page.locator('#statusMessage .query-history-item').textContent()).toContain('offline@example.test');
+            expect(await f.page.locator('#statusMessage .query-history-reason').textContent()).toContain('incorrect_number');
             expect(f.requests.some(r => r.url === '/api/cdk/query' && r.method === 'POST')).toBe(true);
             await f.page.locator('[data-tab="redeem"]').click();
             await f.page.waitForFunction(() => !document.querySelector('#tabStage').classList.contains('is-switching'));

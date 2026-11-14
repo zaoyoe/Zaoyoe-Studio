@@ -1,5 +1,6 @@
 'use strict';
 
+const net = require('net');
 const http = require('http');
 const https = require('https');
 const ProxyChain = require('proxy-chain');
@@ -159,6 +160,175 @@ function attachTunnelWatchdog(sourceSocket, targetSocket, handshakeTimeoutMs = 2
     targetSocket.once('error', cleanupPair);
 }
 
+function parseTargetHostPort(targetHostPort) {
+    const raw = String(targetHostPort || '').trim();
+    const ipv6Match = raw.match(/^\[([^\]]+)\](?::(\d+))?$/);
+    if (ipv6Match) {
+        return { host: ipv6Match[1], port: Number(ipv6Match[2] || 443) };
+    }
+    const lastColon = raw.lastIndexOf(':');
+    if (lastColon > 0) {
+        const maybePort = Number(raw.slice(lastColon + 1));
+        if (Number.isInteger(maybePort) && maybePort > 0 && maybePort <= 65535) {
+            return { host: raw.slice(0, lastColon), port: maybePort };
+        }
+    }
+    return { host: raw, port: 443 };
+}
+
+function connectUpstreamSocks5(parsedProxy, targetHostPort, connectTimeoutMs = 10000) {
+    return new Promise((resolve, reject) => {
+        const { host, port } = parseTargetHostPort(targetHostPort);
+        const hostBuf = Buffer.from(host, 'utf8');
+        if (!host || hostBuf.length > 255) {
+            reject(new Error('SOCKS5 invalid target host'));
+            return;
+        }
+        const username = parsedProxy.username ? decodeURIComponent(parsedProxy.username) : '';
+        const password = parsedProxy.password ? decodeURIComponent(parsedProxy.password) : '';
+        const uBuf = Buffer.from(username, 'utf8');
+        const pBuf = Buffer.from(password, 'utf8');
+        const hasAuth = Boolean(username || password);
+        if (uBuf.length > 255 || pBuf.length > 255) {
+            reject(new Error('SOCKS5 credentials exceed 255 bytes'));
+            return;
+        }
+
+        const socket = net.connect({
+            host: parsedProxy.hostname,
+            port: Number(parsedProxy.port || 1080)
+        });
+        let settled = false;
+        let stage = 'greeting';
+        let buf = Buffer.alloc(0);
+
+        const cleanup = () => {
+            clearTimeout(timer);
+            socket.off('connect', onConnect);
+            socket.off('data', onData);
+            socket.off('error', onError);
+            socket.off('close', onClose);
+        };
+        const finishError = (err) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            try { socket.destroy(); } catch (_) {}
+            reject(err);
+        };
+        const finishSuccess = (head) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve({ res: { statusCode: 200 }, targetSocket: socket, head });
+        };
+
+        const timer = setTimeout(() => {
+            finishError(new Error('SOCKS5 CONNECT timeout'));
+        }, connectTimeoutMs);
+        timer.unref?.();
+
+        const sendConnect = () => {
+            stage = 'connect';
+            const portBuf = Buffer.from([(port >> 8) & 0xff, port & 0xff]);
+            socket.write(Buffer.concat([
+                Buffer.from([0x05, 0x01, 0x00, 0x03, hostBuf.length]),
+                hostBuf,
+                portBuf
+            ]));
+        };
+
+        const onConnect = () => {
+            socket.write(hasAuth
+                ? Buffer.from([0x05, 0x02, 0x00, 0x02])
+                : Buffer.from([0x05, 0x01, 0x00]));
+        };
+
+        const onData = (chunk) => {
+            if (settled) return;
+            buf = Buffer.concat([buf, chunk]);
+            while (!settled) {
+                if (stage === 'greeting') {
+                    if (buf.length < 2) return;
+                    if (buf[0] !== 0x05) {
+                        finishError(new Error(`SOCKS5 invalid greeting version ${buf[0]}`));
+                        return;
+                    }
+                    const method = buf[1];
+                    buf = buf.subarray(2);
+                    if (method === 0x02) {
+                        if (!hasAuth) {
+                            finishError(new Error('SOCKS5 server requested auth without credentials'));
+                            return;
+                        }
+                        stage = 'auth';
+                        socket.write(Buffer.concat([
+                            Buffer.from([0x01, uBuf.length]),
+                            uBuf,
+                            Buffer.from([pBuf.length]),
+                            pBuf
+                        ]));
+                        continue;
+                    }
+                    if (method === 0x00) {
+                        sendConnect();
+                        continue;
+                    }
+                    finishError(new Error(`SOCKS5 unsupported auth method ${method}`));
+                    return;
+                }
+                if (stage === 'auth') {
+                    if (buf.length < 2) return;
+                    const authOk = buf[0] === 0x01 && buf[1] === 0x00;
+                    buf = buf.subarray(2);
+                    if (!authOk) {
+                        finishError(new Error('SOCKS5 authentication failed'));
+                        return;
+                    }
+                    sendConnect();
+                    continue;
+                }
+                if (stage === 'connect') {
+                    if (buf.length < 4) return;
+                    if (buf[0] !== 0x05) {
+                        finishError(new Error(`SOCKS5 invalid reply version ${buf[0]}`));
+                        return;
+                    }
+                    if (buf[1] !== 0x00) {
+                        finishError(new Error(`SOCKS5 CONNECT rejected (rep=${buf[1]})`));
+                        return;
+                    }
+                    const atyp = buf[3];
+                    let needed = 0;
+                    if (atyp === 0x01) {
+                        needed = 10;
+                    } else if (atyp === 0x03) {
+                        if (buf.length < 5) return;
+                        needed = 4 + 1 + buf[4] + 2;
+                    } else if (atyp === 0x04) {
+                        needed = 22;
+                    } else {
+                        finishError(new Error(`SOCKS5 unsupported address type ${atyp}`));
+                        return;
+                    }
+                    if (buf.length < needed) return;
+                    const head = buf.subarray(needed);
+                    finishSuccess(head);
+                    return;
+                }
+            }
+        };
+
+        const onError = (err) => finishError(err);
+        const onClose = () => finishError(new Error('SOCKS5 connection closed before handshake completed'));
+
+        socket.on('connect', onConnect);
+        socket.on('data', onData);
+        socket.on('error', onError);
+        socket.on('close', onClose);
+    });
+}
+
 function connectUpstreamWithRetry(parsedProxy, targetHostPort, options = {}) {
     const maxAttempts = options.maxAttempts ?? 3;
     const connectTimeoutMs = options.connectTimeoutMs ?? 10000;
@@ -166,12 +336,47 @@ function connectUpstreamWithRetry(parsedProxy, targetHostPort, options = {}) {
         ? `Basic ${Buffer.from(`${decodeURIComponent(parsedProxy.username)}:${decodeURIComponent(parsedProxy.password)}`).toString('base64')}`
         : '';
     const requestModule = parsedProxy.protocol === 'https:' ? https : http;
+    const targetHost = String(targetHostPort || '').toLowerCase().replace(/:\d+$/, '');
+    const target = targetHost === 'chatgpt.com' ? 'chatgpt'
+        : targetHost === 'www.cloudflare.com' ? 'cloudflare' : 'other';
+    const logResult = (attempt, start, upstreamStatus, result) => {
+        try {
+            (options.log || console.log)(`[Proxy/relay/connect] ${JSON.stringify({
+                target, attempt, maxAttempts, upstreamStatus, result, elapsedMs: Date.now() - start
+            })}`);
+        } catch (_) { /* optional diagnostics must not change tunnel handling */ }
+    };
 
     return new Promise((resolve, reject) => {
         let attempt = 0;
         const tryOnce = () => {
             attempt += 1;
+            const start = Date.now();
             let settled = false;
+
+            if (parsedProxy._preferSocks5) {
+                connectUpstreamSocks5(parsedProxy, targetHostPort, connectTimeoutMs)
+                    .then((result) => {
+                        if (settled) {
+                            try { result.targetSocket?.destroy(); } catch (_) {}
+                            return;
+                        }
+                        settled = true;
+                        logResult(attempt, start, 200, 'ok');
+                        resolve(result);
+                    })
+                    .catch((sockErr) => {
+                        if (settled) return;
+                        settled = true;
+                        logResult(attempt, start, null, /timeout|timed out/i.test(sockErr?.message || '') ? 'timeout' : 'connection');
+                        if (attempt < maxAttempts) {
+                            return tryOnce();
+                        }
+                        reject(sockErr);
+                    });
+                return;
+            }
+
             const req = requestModule.request({
                 protocol: parsedProxy.protocol,
                 hostname: parsedProxy.hostname,
@@ -188,6 +393,7 @@ function connectUpstreamWithRetry(parsedProxy, targetHostPort, options = {}) {
             const timer = setTimeout(() => {
                 if (settled) return;
                 settled = true;
+                logResult(attempt, start, null, 'timeout');
                 try { req.destroy(); } catch (_) {}
                 if (attempt < maxAttempts) {
                     return tryOnce();
@@ -204,23 +410,47 @@ function connectUpstreamWithRetry(parsedProxy, targetHostPort, options = {}) {
                 }
                 if (res.statusCode === 200) {
                     settled = true;
+                    logResult(attempt, start, res.statusCode, 'ok');
                     resolve({ res, targetSocket, head });
                     return;
                 }
                 try { targetSocket.destroy(); } catch (_) {}
-                // 住宅代理随机出口节点握手失败常返回 502/503，自动重试切换新节点
-                if (attempt < maxAttempts && res.statusCode !== 407 && res.statusCode !== 401) {
+                logResult(attempt, start, res.statusCode,
+                    [401, 407, 597].includes(res.statusCode) ? 'proxy_auth' : 'upstream_http');
+                // Retry only transient gateway failures within the existing connection budget.
+                if (attempt < maxAttempts && [500, 502, 503, 504].includes(res.statusCode)) {
                     settled = true;
                     return tryOnce();
                 }
                 settled = true;
-                reject(new Error(`Upstream CONNECT HTTP ${res.statusCode}`));
+                reject(Object.assign(new Error(`Upstream CONNECT HTTP ${res.statusCode}`), {
+                    upstreamStatus: res.statusCode
+                }));
             });
 
             req.once('error', (err) => {
                 clearTimeout(timer);
                 if (settled) return;
                 settled = true;
+                const canFallbackSocks5 = parsedProxy.protocol === 'http:'
+                    && (err?.code === 'ECONNRESET' || /socket hang up/i.test(err?.message || ''));
+                if (canFallbackSocks5) {
+                    connectUpstreamSocks5(parsedProxy, targetHostPort, connectTimeoutMs)
+                        .then((result) => {
+                            parsedProxy._preferSocks5 = true;
+                            logResult(attempt, start, 200, 'ok');
+                            resolve(result);
+                        })
+                        .catch(() => {
+                            logResult(attempt, start, null, /timeout|timed out/i.test(err?.message || '') ? 'timeout' : 'connection');
+                            if (attempt < maxAttempts) {
+                                return tryOnce();
+                            }
+                            reject(err);
+                        });
+                    return;
+                }
+                logResult(attempt, start, null, /timeout|timed out/i.test(err?.message || '') ? 'timeout' : 'connection');
                 if (attempt < maxAttempts) {
                     return tryOnce();
                 }
@@ -233,7 +463,7 @@ function connectUpstreamWithRetry(parsedProxy, targetHostPort, options = {}) {
     });
 }
 
-async function createResilientHttpProxyRelay(parsedProxy, stdUrl) {
+async function createResilientHttpProxyRelay(parsedProxy, options = {}) {
     const authHeader = (parsedProxy.username || parsedProxy.password)
         ? `Basic ${Buffer.from(`${decodeURIComponent(parsedProxy.username)}:${decodeURIComponent(parsedProxy.password)}`).toString('base64')}`
         : '';
@@ -267,7 +497,7 @@ async function createResilientHttpProxyRelay(parsedProxy, stdUrl) {
     server.on('connect', async (req, sourceSocket, head) => {
         sourceSocket.on('error', () => {});
         try {
-            const { targetSocket, head: targetHead } = await connectUpstreamWithRetry(parsedProxy, req.url);
+            const { targetSocket, head: targetHead } = await connectUpstreamWithRetry(parsedProxy, req.url, { log: options.log });
             if (sourceSocket.destroyed || !sourceSocket.writable) {
                 try { targetSocket.destroy(); } catch (_) {}
                 return;
@@ -289,10 +519,14 @@ async function createResilientHttpProxyRelay(parsedProxy, stdUrl) {
             attachTunnelWatchdog(sourceSocket, targetSocket, 25000);
             sourceSocket.pipe(targetSocket);
             targetSocket.pipe(sourceSocket);
-        } catch (_) {
+        } catch (error) {
             if (!sourceSocket.destroyed && sourceSocket.writable) {
                 try {
-                    sourceSocket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+                    const upstreamStatus = error?.upstreamStatus;
+                    const status = [401, 407, 597].includes(upstreamStatus) ? 407
+                        : Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599
+                            ? upstreamStatus : 502;
+                    sourceSocket.end(`HTTP/1.1 ${status} ${http.STATUS_CODES[status] || 'Proxy Error'}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
                 } catch (_) {
                     try { sourceSocket.destroy(); } catch (__) {}
                 }
@@ -353,7 +587,7 @@ async function preparePlaywrightProxy(proxyValue, options = {}) {
     if (hasAuth) {
         if (!isSocksProtocol(parsed.protocol)) {
             try {
-                const relay = await createResilientHttpProxyRelay(parsed, stdUrl);
+                const relay = await createResilientHttpProxyRelay(parsed, options);
                 console.log(`🌐 [系统] HTTP 认证代理已转为本地稳定 HTTP 中继: ${maskProxyUrl(relay.localProxyUrl)}`);
                 return {
                     proxyConfig: { server: relay.localProxyUrl },

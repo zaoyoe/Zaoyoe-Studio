@@ -60,12 +60,15 @@ describe('ChatGPT execution mode resolution & fallback guard', () => {
         expect(shouldFallbackToPricingCheckout(recoverableError, { checkoutMode: 'spa' })).toBe(true);
     });
 
-    it('blocks fallback when error indicates unusual activity or auth expired across all modes', () => {
+    it('allows browser-capable fallback on unusual activity while blocking strict api fallback and auth failures across all modes', () => {
         const unusualError = Object.assign(new Error('unusual activity'), { code: 'CHECKOUT_UNUSUAL_ACTIVITY' });
         const authError = Object.assign(new Error('token expired'), { code: 'CHATGPT_SESSION_EXPIRED' });
 
+        expect(shouldFallbackToPricingCheckout(unusualError, { checkoutMode: 'api' })).toBe(false);
+        expect(shouldFallbackToPricingCheckout(authError, { checkoutMode: 'api' })).toBe(false);
+
         for (const mode of ['browser', 'spa', 'auto', 'hybrid']) {
-            expect(shouldFallbackToPricingCheckout(unusualError, { checkoutMode: mode })).toBe(false);
+            expect(shouldFallbackToPricingCheckout(unusualError, { checkoutMode: mode })).toBe(true);
             expect(shouldFallbackToPricingCheckout(authError, { checkoutMode: mode })).toBe(false);
         }
     });

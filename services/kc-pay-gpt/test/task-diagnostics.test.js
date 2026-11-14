@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { normalizeTaskLogText, captureDiagnosticScreenshot, reportTaskFailure } from '../task-diagnostics.js';
+import { normalizeTaskLogText, buildAttemptDiagnostic, summarizeFailedAttempts, captureDiagnosticScreenshot, reportTaskFailure } from '../task-diagnostics.js';
 
 describe('failure diagnostics preserve original errors', () => {
     it('fits Unicode into the existing message column and retains full detail', () => {
@@ -57,5 +57,41 @@ describe('failure diagnostics preserve original errors', () => {
     it('returns the saved screenshot path on success', async () => {
         const screenshot = vi.fn().mockResolvedValue(Buffer.from('test'));
         expect(await captureDiagnosticScreenshot({ isClosed: () => false, screenshot }, '/tmp/offline.png')).toBe('/tmp/offline.png');
+    });
+});
+
+
+describe('attempt diagnostics and settlement messages', () => {
+    const failure = (attempt, message) => buildAttemptDiagnostic({ attempt, elapsedMs: 120.8, exitCode: 1,
+        analysis: { status: 'retry', message, shouldRetry: true, paymentState: 'not_started' } });
+    it('records only safe metadata and redacts before shortening the original cause', () => {
+        const diagnostic = failure(1, 'HTTP 400 email=fixture@example.test cvv=123 ' +
+            'Bearer fictional-token https://private-user:private-password@proxy.example ' +
+            'PAYMENT_STATE:succeeded ' + '🙂'.repeat(800) + ' [CHECKOUT_UNUSUAL_ACTIVITY]');
+        expect(diagnostic).toMatchObject({ attempt: 1, elapsedMs: 121, exitCode: 1, timedOut: false,
+            status: 'retry', paymentState: 'not_started', shouldRetry: true, errorCode: 'CHECKOUT_UNUSUAL_ACTIVITY' });
+        expect(Array.from(diagnostic.failure)).toHaveLength(700);
+        expect(JSON.stringify(diagnostic)).not.toMatch(/fixture@|123|fictional-token|private-user|private-password|proxy\.example|PAYMENT_STATE/);
+    });
+    it('retains the first and last error codes within the existing message column', () => {
+        const attempts = [failure(1, '创建收银台遭到拒绝🙂'.repeat(80) + ' [CHECKOUT_UNUSUAL_ACTIVITY]'),
+            failure(2, '代理未确认目标地区🙂'.repeat(80) + ' [PROXY_PREFLIGHT_NETWORK]')];
+        const summary = summarizeFailedAttempts(attempts, { status: 'failed', message: attempts[1].failure }, 'not_started');
+        expect(summary).toContain('首次：[CHECKOUT_UNUSUAL_ACTIVITY]');
+        expect(summary).toContain('最后（第2次）：[PROXY_PREFLIGHT_NETWORK]');
+        expect(Array.from(summary).length).toBeLessThanOrEqual(255);
+        expect(summary).not.toMatch(/[\uD800-\uDBFF]$/);
+    });
+    it.each(['started', 'unknown', 'succeeded'])('never overwrites a %s payment conclusion', paymentState => {
+        const attempts = [failure(1, 'first'), failure(2, 'last')];
+        expect(summarizeFailedAttempts(attempts, { status: 'failed', message: '保留资产，请勿重复充值' }, paymentState))
+            .toBe('保留资产，请勿重复充值');
+    });
+    it.each(['success', 'manual'])('never overwrites %s status even if its payment field is absent', status => {
+        expect(summarizeFailedAttempts([failure(1, 'first'), failure(2, 'last')], { status, message: '原始结论' }, 'not_started')).toBe('原始结论');
+    });
+    it('leaves a single refusal message intact', () => {
+        const message = '请稍后再试 [CHECKOUT_UNUSUAL_ACTIVITY]';
+        expect(summarizeFailedAttempts([failure(1, message)], { status: 'failed', message }, 'not_started')).toBe(message);
     });
 });

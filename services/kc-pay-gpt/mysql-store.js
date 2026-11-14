@@ -1004,7 +1004,7 @@ async function getAdminData() {
             maintenance_mode_drain: String(configMap.maintenance_mode_drain || '0') === '1',
             fast_protocol_enabled: parseBooleanConfig(
                 configMap.fast_protocol_enabled ?? process.env.FAST_PROTOCOL_ENABLED,
-                true
+                false
             ),
             email_source: ['random', 'pool', 'inbox'].includes(String(configMap.email_source || ''))
                 ? String(configMap.email_source)
@@ -1284,31 +1284,116 @@ async function listCdks() {
     );
     const runningSet = new Set(runningRows.map((row) => String(row.cdk_code || '').trim()).filter(Boolean));
 
+    const usageRows = await runQuery(
+        `SELECT l.cdk_code, l.job_key, l.token_preview, l.platform, l.plan_type,
+                l.status, l.message, l.payment_state, l.card_last4, l.created_at, l.finished_at
+         FROM task_logs l
+         INNER JOIN cdk_codes c ON l.cdk_code = c.cdk_code
+         WHERE c.is_active = 1
+           AND (c.type = '自助' OR c.type IS NULL OR c.type = '')
+           AND COALESCE(l.execution_mode, '') <> 'checkout_diagnostic'
+         ORDER BY l.created_at DESC, l.id DESC`
+    );
+    const usageSummaryMap = new Map();
+    for (const usage of usageRows) {
+        const key = String(usage.cdk_code || '').trim();
+        if (!key) continue;
+        let summary = usageSummaryMap.get(key);
+        if (!summary) {
+            summary = {
+                usage_count: 0,
+                last_task_status: usage.status || null,
+                last_task_message: usage.message || '',
+                last_payment_state: usage.payment_state || 'not_started',
+                last_account: usage.token_preview || '',
+                last_platform: usage.platform || null,
+                last_plan_type: usage.plan_type || null,
+                last_task_at: usage.created_at
+                    ? new Date(usage.created_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+                    : null
+            };
+            usageSummaryMap.set(key, summary);
+        }
+        summary.usage_count += 1;
+    }
+
+    return rows.map((row) => {
+        const key = String(row.cdk_code || '').trim();
+        const usage = usageSummaryMap.get(key);
+        return {
+            code: row.cdk_code,
+            status: runningSet.has(key)
+                ? 'processing'
+                : (row.used_at ? 'used' : 'unused'),
+            type: row.type || '自助',
+            plan_type: row.plan_type || 'plus',
+            platform: row.platform || (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(row.plan_type) : 'chatgpt'),
+            payment_region: row.payment_region ? String(row.payment_region).toUpperCase() : null,
+            shipped: Boolean(row.shipped_at),
+            shipped_at: row.shipped_at
+                ? new Date(row.shipped_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+                : null,
+            used_at: row.used_at
+                ? new Date(row.used_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+                : null,
+            created_at: row.created_at
+                ? new Date(row.created_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+                : null,
+            session_preview: row.session_preview || null,
+            session_job_key: row.session_job_key || null,
+            card_last4: row.card_last4 || (row.card_number ? String(row.card_number).slice(-4) : null),
+            card_number: row.card_number || null,
+            auto_renew_status: row.auto_renew_status || null,
+            auto_renew_message: row.auto_renew_message || null,
+            usage_count: usage ? usage.usage_count : 0,
+            last_task_status: usage ? usage.last_task_status : null,
+            last_task_message: usage ? usage.last_task_message : '',
+            last_payment_state: usage ? usage.last_payment_state : null,
+            last_account: usage ? usage.last_account : '',
+            last_platform: usage ? usage.last_platform : null,
+            last_plan_type: usage ? usage.last_plan_type : null,
+            last_task_at: usage ? usage.last_task_at : null
+        };
+    });
+}
+
+async function getCdkUsageRecords(cdk, { limit = 50 } = {}) {
+    const safeCdk = String(cdk || '').trim();
+    if (!safeCdk) return [];
+    const safeLimit = Math.max(1, Math.min(Math.trunc(Number(limit) || 50), 200));
+    const rows = await runQuery(
+        `SELECT job_key, cdk_code, token_preview, platform, plan_type, status, message,
+                payment_state, recovery_required, card_last4, execution_mode, auto_renew_status,
+                created_at, finished_at, updated_at
+         FROM task_logs
+         WHERE cdk_code = ?
+           AND COALESCE(execution_mode, '') <> 'checkout_diagnostic'
+         ORDER BY created_at DESC, id DESC
+         LIMIT ?`,
+        [safeCdk, safeLimit]
+    );
     return rows.map((row) => ({
-        code: row.cdk_code,
-        status: runningSet.has(String(row.cdk_code || '').trim())
-            ? 'processing'
-            : (row.used_at ? 'used' : 'unused'),
-        type: row.type || '自助',
+        job_key: row.job_key,
+        cdk_code: row.cdk_code,
+        account: String(row.token_preview || '').trim(),
+        platform: row.platform || 'chatgpt',
         plan_type: row.plan_type || 'plus',
-        platform: row.platform || (typeof getPlatformForPlan === 'function' ? getPlatformForPlan(row.plan_type) : 'chatgpt'),
-        payment_region: row.payment_region ? String(row.payment_region).toUpperCase() : null,
-        shipped: Boolean(row.shipped_at),
-        shipped_at: row.shipped_at
-            ? new Date(row.shipped_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
-            : null,
-        used_at: row.used_at
-            ? new Date(row.used_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
-            : null,
+        status: row.status || 'running',
+        message: row.message || '',
+        payment_state: row.payment_state || 'not_started',
+        recovery_required: Boolean(row.recovery_required),
+        card_last4: row.card_last4 || null,
+        execution_mode: row.execution_mode || 'legacy_unknown',
+        auto_renew_status: row.auto_renew_status || 'not_applicable',
         created_at: row.created_at
             ? new Date(row.created_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
             : null,
-        session_preview: row.session_preview || null,
-        session_job_key: row.session_job_key || null,
-        card_last4: row.card_last4 || (row.card_number ? String(row.card_number).slice(-4) : null),
-        card_number: row.card_number || null,
-        auto_renew_status: row.auto_renew_status || null,
-        auto_renew_message: row.auto_renew_message || null
+        finished_at: row.finished_at
+            ? new Date(row.finished_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+            : null,
+        updated_at: row.updated_at
+            ? new Date(row.updated_at).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+            : null
     }));
 }
 
@@ -1604,6 +1689,43 @@ async function markCdkUnused(cdk) {
            )`,
         [String(cdk)]
     );
+}
+
+async function resetCdkToUnused(cdk) {
+    const code = String(cdk || '').trim();
+    if (!code) {
+        return { ok: false, status: 400, message: '请提供卡密' };
+    }
+    const existing = await verifyCdkDetails(code);
+    if (!existing) {
+        return { ok: false, status: 404, message: 'CDK 不存在' };
+    }
+    const runningTask = await getRunningTaskByCdk(code);
+    if (runningTask) {
+        return { ok: false, status: 409, message: '该 CDK 当前有任务正在运行，无法重置' };
+    }
+    const unsettledThirdParty = await runQuery(
+        `SELECT provider_task.job_key
+         FROM task_logs provider_task
+         WHERE provider_task.cdk_code = ?
+           AND (provider_task.execution_mode = 'third_party_api' OR provider_task.gpt_api_order_id IS NOT NULL OR provider_task.gpt_api_task_id IS NOT NULL)
+           AND ${GPT_API_UNSETTLED_TASK_SQL}
+         LIMIT 1`,
+        [code]
+    );
+    if (unsettledThirdParty.length > 0) {
+        return { ok: false, status: 409, message: '该 CDK 关联的第三方订单尚未结清，暂不允许重置' };
+    }
+    await runExecute(
+        `UPDATE cdk_codes
+         SET used_at = NULL,
+             fail_count = 0,
+             cooldown_until = NULL
+         WHERE cdk_code = ?
+           AND is_active = 1`,
+        [code]
+    );
+    return { ok: true, status: 200, message: 'CDK 已重置为未使用状态' };
 }
 
 async function deletePhoneAsset(phone) {
@@ -2419,9 +2541,9 @@ const FAST_PROTOCOL_CONFIG_KEY = 'fast_protocol_enabled';
 async function getFastProtocolEnabled() {
     const fromDb = await getAppConfigValue(FAST_PROTOCOL_CONFIG_KEY, '');
     if (fromDb !== '') {
-        return parseBooleanConfig(fromDb, true);
+        return parseBooleanConfig(fromDb, false);
     }
-    return parseBooleanConfig(process.env.FAST_PROTOCOL_ENABLED, true);
+    return parseBooleanConfig(process.env.FAST_PROTOCOL_ENABLED, false);
 }
 
 async function setFastProtocolEnabled(enabled) {
@@ -3112,7 +3234,7 @@ async function updateAdminPassword(password) {
     };
 }
 
-async function createTaskLog({ tokenPreview, sessionPayload, cdkCode, phone, cardLast4, status, progress = 0, paymentState = 'not_started', executionMode = 'legacy_unknown' }, options = {}) {
+async function createTaskLog({ tokenPreview, sessionPayload, cdkCode, phone, cardLast4, status, progress = 0, paymentState = 'not_started', executionMode = 'legacy_unknown', platform = 'chatgpt', planType = 'plus' }, options = {}) {
     const now = new Date();
     const displayTime = now.toLocaleString('zh-CN', { hour12: false });
     const jobKey = crypto.randomBytes(24).toString('base64url');
@@ -3123,9 +3245,9 @@ async function createTaskLog({ tokenPreview, sessionPayload, cdkCode, phone, car
     await runExecute(
         `INSERT INTO task_logs (job_key, token_preview, session_payload, session_payload_encrypted, session_fingerprint,
                 execution_mode,
-                cdk_code, phone, card_last4, status, message, progress, display_time, raw_output,
+                cdk_code, phone, card_last4, platform, plan_type, status, message, progress, display_time, raw_output,
                 payment_state, started_at, last_heartbeat_at)
-         VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+         VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
             jobKey,
             String(tokenPreview),
@@ -3135,6 +3257,8 @@ async function createTaskLog({ tokenPreview, sessionPayload, cdkCode, phone, car
             cdkCode || null,
             phone || null,
             cardLast4 || null,
+            String(platform || 'chatgpt'),
+            String(planType || 'plus'),
             String(status),
             message,
             Number(progress || 0),
@@ -3201,7 +3325,13 @@ async function createActivationTask({ expectedCdk, ...input }) {
         if (consumed.affectedRows !== 1) {
             throw activationAdmissionError('CDK_LOCK_UNAVAILABLE', 'CDK 不可用或正在被他人使用');
         }
-        const task = await createTaskLog({ ...input, status: 'running', paymentState: 'not_started' }, { connection });
+        const task = await createTaskLog({
+            ...input,
+            platform: input.platform || cdk.platform || 'chatgpt',
+            planType: input.planType || cdk.plan_type || 'plus',
+            status: 'running',
+            paymentState: 'not_started'
+        }, { connection });
         return { ...task, created: true };
     });
 }
@@ -3406,8 +3536,14 @@ async function updateLocalActivationTask(jobKey, input = {}, { finalize = false,
         const paymentState = mergePaymentState(row.payment_state,
             Object.prototype.hasOwnProperty.call(input, 'paymentState') ? normalizePaymentState(input.paymentState) : row.payment_state);
         const confirmedSuccess = (finalize || annotate) && input.status === 'success' && paymentState === 'succeeded';
-        const retain = shouldRetainCdk({ paymentState }) || Boolean(row.recovery_required) || Boolean(input.recoveryRequired);
-        const recoveryRequired = confirmedSuccess ? false : retain || input.status === 'success';
+        const confirmedDecline = paymentState === 'declined' && input.recoveryRequired === false
+            && ['not_started', 'started', 'declined'].includes(normalizePaymentState(row.payment_state));
+        const retain = shouldRetainCdk({ paymentState })
+            || (!confirmedDecline && Boolean(row.recovery_required))
+            || Boolean(input.recoveryRequired);
+        const recoveryRequired = (confirmedSuccess || (finalize && confirmedDecline))
+            ? false
+            : retain || input.status === 'success';
         // Never flip an in-flight task to terminal 'manual' during intermediate progress writes:
         // premature 'manual' broadcasts close the client WebSocket mid-charge while Stripe is still
         // confirming, and hide the row from status='running' startup crash recovery.
@@ -4898,6 +5034,7 @@ module.exports = {
     verifyCdkDetails,
     markCdkUsed,
     markCdkUnused,
+    resetCdkToUnused,
     recordCdkFailure,
     resetCdkFailure,
     getActivationAttemptLimit,
@@ -4965,6 +5102,7 @@ module.exports = {
     getBillingOverviewStats,
     getTaskStatus,
     getRunningTaskByCdk,
+    getCdkUsageRecords,
     updateTaskLog,
     updateLocalActivationTask,
     listRecentGptApiOrders,

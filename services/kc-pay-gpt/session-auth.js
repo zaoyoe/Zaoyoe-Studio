@@ -18,6 +18,7 @@ const {
 } = require('./auth-page-detect');
 const { assertLocalSessionFresh, verifyChatGptAccessToken, assertChatGptAccountEligible, buildChatGptAuthError } = require('./chatgpt-auth-state');
 const { handleStaticAssetCache } = require('./static-asset-cache');
+const { probeFailureKind, proxyConnectStatus } = require('./proxy-preflight');
 
 function decodeJwtPayload(token) {
     const parts = String(token || '').split('.');
@@ -297,6 +298,112 @@ async function injectChatGptCookies(context, cookieSpecs) {
     };
 }
 
+function deriveDeterministicDeviceId(seed) {
+    const normalizedSeed = String(seed || '').trim();
+    const bytes = new Array(16);
+    if (normalizedSeed) {
+        let h1 = 0x811c9dc5;
+        let h2 = 0x9e3779b1;
+        let h3 = 0x85ebca77;
+        let h4 = 0xc2b2ae3d;
+        for (let i = 0; i < normalizedSeed.length; i += 1) {
+            const ch = normalizedSeed.charCodeAt(i);
+            h1 = Math.imul(h1 ^ ch, 0x01000193) >>> 0;
+            h2 = Math.imul(h2 ^ ((ch + i) & 0xff), 0x85ebca6b) >>> 0;
+            h3 = Math.imul(h3 ^ (ch + (h1 & 0xff)), 0xc2b2ae35) >>> 0;
+            h4 = Math.imul(h4 ^ (ch + (h2 & 0xff)), 0x27d4eb2f) >>> 0;
+        }
+        const words = [h1, h2, h3, h4];
+        for (let w = 0; w < 4; w += 1) {
+            let word = words[w];
+            word ^= word >>> 16;
+            word = Math.imul(word, 0x85ebca6b) >>> 0;
+            word ^= word >>> 13;
+            word = Math.imul(word, 0xc2b2ae35) >>> 0;
+            word ^= word >>> 16;
+            bytes[w * 4] = (word >>> 24) & 0xff;
+            bytes[w * 4 + 1] = (word >>> 16) & 0xff;
+            bytes[w * 4 + 2] = (word >>> 8) & 0xff;
+            bytes[w * 4 + 3] = word & 0xff;
+        }
+    } else {
+        for (let i = 0; i < 16; i += 1) {
+            bytes[i] = Math.floor(Math.random() * 256) & 0xff;
+        }
+    }
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+function findDeviceIdInSources(sessionData, sessionJson, extraOptions = {}) {
+    const directCandidates = [
+        extraOptions?.deviceId,
+        extraOptions?.device_id,
+        extraOptions?.['oai-did'],
+        sessionData?.deviceId,
+        sessionData?.device_id,
+        sessionData?.['oai-did'],
+        sessionJson?.deviceId,
+        sessionJson?.device_id,
+        sessionJson?.['oai-did']
+    ];
+    for (const candidate of directCandidates) {
+        const val = String(candidate || '').trim();
+        if (val) return val;
+    }
+
+    for (const list of [sessionJson?.cookies, sessionData?.cookies]) {
+        if (!Array.isArray(list)) continue;
+        const found = list.find((c) => String(c?.name || '').trim() === 'oai-did' && String(c?.value || '').trim());
+        if (found) return String(found.value).trim();
+    }
+
+    for (const header of [
+        extraOptions?.cookieHeader,
+        sessionData?.cookieHeader,
+        sessionData?.cookie_header,
+        sessionJson?.cookieHeader,
+        sessionJson?.cookie_header
+    ]) {
+        const pair = parseCookieHeader(header).find((p) => p.name === 'oai-did');
+        if (pair?.value) return pair.value;
+    }
+
+    return '';
+}
+
+function resolveSessionDeviceId(raw, extraOptions = {}) {
+    const resolved = (raw && typeof raw === 'object' && !Array.isArray(raw))
+        ? { accessToken: raw.accessToken || raw.access_token || '', sessionJson: raw, sessionData: raw }
+        : resolveSessionInput(raw);
+    const sessionData = resolved?.sessionData || null;
+    const sessionJson = resolved?.sessionJson || null;
+    const existing = findDeviceIdInSources(sessionData, sessionJson, extraOptions);
+    if (existing) {
+        return existing;
+    }
+    const seed = String(
+        sessionData?.user?.id
+        || sessionJson?.user?.id
+        || sessionData?.user?.email
+        || sessionJson?.user?.email
+        || resolved?.accessToken
+        || (typeof raw === 'string' ? raw : '')
+    ).trim();
+    return deriveDeterministicDeviceId(seed);
+}
+
+function resolveSessionCookieHeader(raw, extraOptions = {}) {
+    const resolved = (raw && typeof raw === 'object' && !Array.isArray(raw))
+        ? { accessToken: raw.accessToken || raw.access_token || '', sessionJson: raw, sessionData: raw }
+        : resolveSessionInput(raw);
+    if (!resolved) return '';
+    const cookieSpecs = collectCookieSpecs(resolved.sessionData, resolved.sessionJson, { ...extraOptions, silent: true });
+    return cookieSpecs.map((c) => `${c.name}=${c.value}`).join('; ');
+}
+
 function collectCookieSpecs(sessionData, sessionJson, extraOptions = {}) {
     const specs = [];
     const seen = new Set();
@@ -351,7 +458,7 @@ function collectCookieSpecs(sessionData, sessionJson, extraOptions = {}) {
 
     if (sessionToken && !hasExportedSessionToken) {
         const chunks = expandSessionTokenCookies(sessionToken);
-        if (chunks.length > 1) {
+        if (chunks.length > 1 && !extraOptions?.silent) {
             console.log(`[Session] session-token 长度 ${sessionToken.length}，按 NextAuth 分 ${chunks.length} 块注入`);
         }
         for (const chunk of chunks) {
@@ -369,9 +476,22 @@ function collectCookieSpecs(sessionData, sessionJson, extraOptions = {}) {
         push('__Host-next-auth.csrf-token', csrfToken);
     }
 
-    const deviceId = String(extraOptions?.deviceId || sessionData?.deviceId || sessionData?.device_id || sessionData?.['oai-did'] || '').trim();
+    const existingDidCookie = specs.find((c) => c.name === 'oai-did')?.value;
+    const deviceId = String(
+        existingDidCookie
+        || findDeviceIdInSources(sessionData, sessionJson, extraOptions)
+        || deriveDeterministicDeviceId(
+            sessionData?.user?.id
+            || sessionJson?.user?.id
+            || sessionData?.user?.email
+            || sessionJson?.user?.email
+            || sessionData?.accessToken
+            || sessionJson?.accessToken
+            || ''
+        )
+    ).trim();
     if (deviceId && !seenNames.has('oai-did')) {
-        push('oai-did', deviceId);
+        push('oai-did', deviceId, { httpOnly: false });
     }
 
     return specs;
@@ -547,7 +667,14 @@ async function installChatGptSession(context, sessionRaw, options = {}) {
     }
 
     let cookieVerified = Boolean(options.cookieVerified);
-    if (injectResult.hasSessionToken && !options.skipOnlineProbe) {
+    let localSessionFresh = false;
+    try {
+        assertLocalSessionFresh(accessToken, cookieVerified ? { expires: sessionData.expires } : sessionJson);
+        localSessionFresh = true;
+    } catch {}
+    const shouldSkipOnlineProbe = Boolean(options.skipOnlineProbe)
+        || (Boolean(options.skipOnlineProbeWhenFresh) && localSessionFresh);
+    if (injectResult.hasSessionToken && !shouldSkipOnlineProbe) {
         const apiCheck = await verifyRealSessionApi(context);
         if (apiCheck.expired) throw buildChatGptAuthError();
         if (apiCheck.ok) {
@@ -633,6 +760,7 @@ async function installChatGptSession(context, sessionRaw, options = {}) {
         await context.addInitScript((payload) => {
             try {
                 window.__CHATGPT_BOOTSTRAP_SESSION__ = payload;
+                localStorage.setItem('oai/apps/chat/bootstrap-session', JSON.stringify(payload));
             } catch (_) { /* ignore */ }
         }, sessionData);
     }
@@ -677,13 +805,26 @@ async function installChatGptSession(context, sessionRaw, options = {}) {
             await route.continue();
             return;
         }
-        if (url.includes('auth.openai.com') || url.includes('chatgpt.com')) {
-            await route.continue({
-                headers: {
-                    ...route.request().headers(),
-                    Authorization: `Bearer ${accessToken}`
-                }
-            });
+        if ((url.includes('chatgpt.com/backend-api/') && !url.includes('/backend-anon/')) || url.includes('auth.openai.com/api/')) {
+            const reqHeaders = { ...route.request().headers() };
+            const existingAuth = reqHeaders.authorization || reqHeaders.Authorization;
+            if (!injectResult.hasSessionToken || !existingAuth) {
+                delete reqHeaders.Authorization;
+                reqHeaders.authorization = `Bearer ${accessToken}`;
+                await route.continue({
+                    headers: reqHeaders
+                });
+                return;
+            }
+            if (reqHeaders.Authorization && !reqHeaders.authorization) {
+                reqHeaders.authorization = reqHeaders.Authorization;
+                delete reqHeaders.Authorization;
+                await route.continue({
+                    headers: reqHeaders
+                });
+                return;
+            }
+            await route.continue();
             return;
         }
         await route.continue();
@@ -980,31 +1121,38 @@ async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
     const cookieHeader = cookieSpecs.map((c) => `${c.name}=${c.value}`).join('; ');
     const deviceId = String(
         cookieSpecs.find((c) => c.name === 'oai-did')?.value
-        || sessionData?.deviceId
-        || sessionData?.device_id
-        || sessionData?.['oai-did']
+        || resolveSessionDeviceId(sessionRaw, options)
         || ''
     ).trim();
     const hasSessionCookie = hasStoredSessionToken(cookieSpecs);
 
     const proxyStr = String(options.proxy || '').trim();
     const timeoutMs = Number(options.timeoutMs || 10000);
-    const userAgent = options.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36';
+    const userAgent = options.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
+    const browserPage = (
+        options.page
+        && !options.page.isClosed?.()
+        && typeof options.page.evaluate === 'function'
+        && typeof options.page.url === 'function'
+        && /^https:\/\/chatgpt\.com/i.test(String(options.page.url() || ''))
+    ) ? options.page : null;
 
     let impitClient = null;
-    try {
-        const { Impit } = require('impit');
-        impitClient = new Impit({
-            browser: 'chrome',
-            proxyUrl: proxyStr || undefined,
-            ignoreTlsErrors: true,
-            timeout: timeoutMs
-        });
-    } catch (_) {}
+    if (!browserPage) {
+        try {
+            const { Impit } = require('impit');
+            impitClient = new Impit({
+                browser: 'chrome',
+                proxyUrl: proxyStr || undefined,
+                ignoreTlsErrors: true,
+                timeout: timeoutMs
+            });
+        } catch (_) {}
+    }
 
     let undiciFetch = null;
     let dispatcher = undefined;
-    if (!impitClient) {
+    if (!browserPage && !impitClient) {
         const undici = require('undici');
         undiciFetch = undici.fetch;
         dispatcher = proxyStr ? new undici.ProxyAgent(proxyStr) : undefined;
@@ -1016,41 +1164,116 @@ async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
         'User-Agent': userAgent,
         'Referer': 'https://chatgpt.com/',
         'Origin': 'https://chatgpt.com',
-        'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="147", "Google Chrome";v="147"',
+        'sec-ch-ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"Windows"',
         ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
         ...(deviceId ? { 'oai-device-id': deviceId } : {})
     });
 
+    const filterBrowserFetchHeaders = (rawHeaders = {}) => {
+        const clean = {};
+        for (const [k, v] of Object.entries(rawHeaders || {})) {
+            if (v == null || v === '') continue;
+            const lower = k.toLowerCase();
+            if (lower === 'cookie' || lower === 'user-agent' || lower === 'referer' || lower === 'origin' || lower.startsWith('sec-')) {
+                continue;
+            }
+            clean[k] = String(v);
+        }
+        return clean;
+    };
+
     const fetchJson = async (url, customHeaders = null) => {
         const reqHeaders = customHeaders || buildHeaders(accessToken);
+        const endpoint = url === 'https://chatgpt.com/backend-api/me' ? 'identity'
+            : url.startsWith('https://chatgpt.com/backend-api/accounts/check/') ? 'subscription' : 'session_refresh';
         for (let attempt = 1; attempt <= 2; attempt += 1) {
+            const start = Date.now();
+            const diagnostic = {
+                endpoint,
+                transport: browserPage ? 'browser_fetch' : (impitClient ? 'impit' : 'undici'),
+                attempt,
+                timeoutMs,
+                httpStatus: null,
+                connectStatus: null,
+                result: 'connection'
+            };
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), timeoutMs);
             try {
-                const resp = impitClient
-                    ? await impitClient.fetch(url, { method: 'GET', headers: reqHeaders })
-                    : await undiciFetch(url, {
-                        method: 'GET',
-                        headers: reqHeaders,
-                        dispatcher,
-                        signal: controller.signal
-                    });
-                const text = await resp.text();
+                let statusCode = 0;
+                let text = '';
+                if (browserPage) {
+                    const browserHeaders = filterBrowserFetchHeaders(reqHeaders);
+                    const fetchEval = browserPage.evaluate(async ({ targetUrl, headers, budgetMs }) => {
+                        const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+                        const t = ctrl ? setTimeout(() => ctrl.abort(), budgetMs) : null;
+                        try {
+                            const r = await fetch(targetUrl, {
+                                method: 'GET',
+                                credentials: 'include',
+                                referrerPolicy: 'same-origin',
+                                headers,
+                                signal: ctrl ? ctrl.signal : undefined
+                            });
+                            const body = await r.text().catch(() => '');
+                            return { ok: true, status: r.status, text: body };
+                        } catch (err) {
+                            return { ok: false, error: String(err?.message || err || 'browser fetch failed') };
+                        } finally {
+                            if (t) clearTimeout(t);
+                        }
+                    }, { targetUrl: url, headers: browserHeaders, budgetMs: timeoutMs });
+                    const evalRes = await Promise.race([
+                        fetchEval,
+                        new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: 'browser fetch timed out' }), timeoutMs + 1500))
+                    ]);
+                    if (!evalRes?.ok) {
+                        throw new Error(evalRes?.error || 'browser fetch failed');
+                    }
+                    statusCode = Number(evalRes.status || 0);
+                    text = String(evalRes.text || '');
+                } else {
+                    const resp = impitClient
+                        ? await impitClient.fetch(url, { method: 'GET', headers: reqHeaders })
+                        : await undiciFetch(url, {
+                            method: 'GET',
+                            headers: reqHeaders,
+                            dispatcher,
+                            signal: controller.signal
+                        });
+                    statusCode = resp.status;
+                    text = await resp.text();
+                }
+                diagnostic.httpStatus = statusCode;
                 let data = null;
                 try {
                     if (text.length <= 65536) data = JSON.parse(text);
                 } catch (_) {}
-                return { status: resp.status, text, data };
+                diagnostic.result = statusCode === 200 ? (data ? 'json_response' : 'invalid_json') : 'http_error';
+                return { status: statusCode, text, data };
             } catch (err) {
-                if (attempt < 2) {
+                const kind = probeFailureKind(err);
+                const connectStatus = proxyConnectStatus(err);
+                diagnostic.connectStatus = connectStatus;
+                diagnostic.result = kind;
+                if (attempt < 2 && !['proxy_auth', 'certificate'].includes(kind)
+                    && !(connectStatus >= 400 && connectStatus < 500)) {
                     await new Promise((r) => setTimeout(r, 300));
                     continue;
                 }
-                return { status: 0, text: '', data: null, error: err.message };
+                const detail = connectStatus ? `代理 CONNECT 隧道建立失败 (HTTP ${connectStatus})`
+                    : kind === 'proxy_auth' ? '代理认证失败'
+                        : kind === 'certificate' ? '代理连接证书校验失败'
+                            : kind === 'timeout' ? '核验请求超时'
+                                : kind === 'tls_protocol' ? 'TLS 连接失败' : '核验网络连接失败';
+                return { status: 0, text: '', data: null, error: detail, failureKind: kind, connectStatus };
             } finally {
                 clearTimeout(timer);
+                try {
+                    (options.log || console.log)(`[Session/http] ${JSON.stringify({ ...diagnostic, elapsedMs: Date.now() - start })}`);
+                } catch (_) { /* optional diagnostics must not change authentication */ }
             }
         }
     };
@@ -1166,13 +1389,18 @@ async function verifyChatGptSessionProtocol(sessionRaw, options = {}) {
             };
         }
 
-        const status = meRes.status !== 200 ? meRes.status : accRes.status;
-        const isChallenge = status === 403 || /just a moment|cloudflare|challenge/i.test(`${meRes.text} ${accRes.text}`);
+        const failed = [meRes, accRes].find(res => res.status && res.status !== 200)
+            || [meRes, accRes].find(res => res.status !== 200) || meRes;
+        const status = failed.status;
+        const isChallenge = [meRes, accRes].some(res => res.status === 403)
+            || /just a moment|cloudflare|challenge/i.test(`${meRes.text} ${accRes.text}`);
         return {
             ok: false,
             challenge: isChallenge,
             status,
-            error: meRes.error || accRes.error || `HTTP ${status}`,
+            error: failed.error || (status === 200 ? '官方核验接口未返回完整身份或订阅数据 (HTTP 200)' : `HTTP ${status}`),
+            failureKind: failed.failureKind || (isChallenge ? 'challenge' : 'http_response'),
+            connectStatus: failed.connectStatus || null,
             email,
             accessToken: activeToken,
             session: activeSessionData,
@@ -1200,6 +1428,8 @@ module.exports = {
     extractSessionPreview,
     extractEmailFromSession,
     buildSessionPayload,
+    resolveSessionDeviceId,
+    resolveSessionCookieHeader,
     isLoginRedirectUrl,
     isHardLoginRedirectUrl,
     isCheckoutPageUrl,

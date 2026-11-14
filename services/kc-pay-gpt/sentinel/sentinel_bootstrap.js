@@ -65,35 +65,66 @@
 
   // ---- Date 覆写：输出与当前出口国家一致的时区 ----
   var _DateToString = Date.prototype.toString;
+  var _DateToTimeString = Date.prototype.toTimeString;
+  var _DateGetTimezoneOffset = Date.prototype.getTimezoneOffset;
+  function _getTzOffsetMinutes(timezone, ts) {
+    var source = new Date(ts);
+    var parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(source).reduce(function (out, part) {
+      if (part.type !== "literal") out[part.type] = Number(part.value);
+      return out;
+    }, {});
+    var localAsUtc = Date.UTC(
+      parts.year, parts.month - 1, parts.day,
+      parts.hour, parts.minute, parts.second
+    );
+    return Math.round((localAsUtc - source.getTime()) / 60000);
+  }
+  function _formatTzParts(source, timezone) {
+    var ts = source.getTime();
+    if (!Number.isFinite(ts)) return null;
+    var offsetMinutes = _getTzOffsetMinutes(timezone, ts);
+    var d = new Date(ts + offsetMinutes * 60000);
+    var wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+    var mo = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()];
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    var sign = offsetMinutes >= 0 ? "+" : "-";
+    var offset = Math.abs(offsetMinutes);
+    var datePart = wd + " " + mo + " " + p(d.getUTCDate()) + " " + d.getUTCFullYear();
+    var timePart = p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) + ":" + p(d.getUTCSeconds()) +
+      " GMT" + sign + p(Math.floor(offset / 60)) + p(offset % 60) + " (" + timezone + ")";
+    return { datePart: datePart, timePart: timePart, offsetMinutes: offsetMinutes };
+  }
   Date.prototype.toString = function () {
     try {
-      var timezone = g.__TIMEZONE__ || "America/Chicago";
-      var source = new Date(this.getTime());
-      var parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: timezone,
-        year: "numeric", month: "2-digit", day: "2-digit",
-        hour: "2-digit", minute: "2-digit", second: "2-digit",
-        hourCycle: "h23"
-      }).formatToParts(source).reduce(function (out, part) {
-        if (part.type !== "literal") out[part.type] = Number(part.value);
-        return out;
-      }, {});
-      var localAsUtc = Date.UTC(
-        parts.year, parts.month - 1, parts.day,
-        parts.hour, parts.minute, parts.second
-      );
-      var offsetMinutes = Math.round((localAsUtc - source.getTime()) / 60000);
-      var d = new Date(source.getTime() + offsetMinutes * 60000);
-      var wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
-      var mo = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()];
-      function p(n) { return (n < 10 ? "0" : "") + n; }
-      var sign = offsetMinutes >= 0 ? "+" : "-";
-      var offset = Math.abs(offsetMinutes);
-      return wd + " " + mo + " " + p(d.getUTCDate()) + " " + d.getUTCFullYear() +
-        " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) + ":" + p(d.getUTCSeconds()) +
-        " GMT" + sign + p(Math.floor(offset / 60)) + p(offset % 60) + " (" + timezone + ")";
+      var timezone = g.__TIMEZONE__ || "America/Los_Angeles";
+      var formatted = _formatTzParts(this, timezone);
+      return formatted ? (formatted.datePart + " " + formatted.timePart) : _DateToString.call(this);
     } catch (e) {
       return _DateToString.call(this);
+    }
+  };
+  Date.prototype.toTimeString = function () {
+    try {
+      var timezone = g.__TIMEZONE__ || "America/Los_Angeles";
+      var formatted = _formatTzParts(this, timezone);
+      return formatted ? formatted.timePart : _DateToTimeString.call(this);
+    } catch (e) {
+      return _DateToTimeString.call(this);
+    }
+  };
+  Date.prototype.getTimezoneOffset = function () {
+    try {
+      var timezone = g.__TIMEZONE__ || "America/Los_Angeles";
+      var ts = this.getTime();
+      if (!Number.isFinite(ts)) return _DateGetTimezoneOffset.call(this);
+      return -_getTzOffsetMinutes(timezone, ts);
+    } catch (e) {
+      return _DateGetTimezoneOffset.call(this);
     }
   };
 
@@ -183,10 +214,9 @@
   g.navigator.maxTouchPoints = (g.__MAX_TOUCH__ || 0);
 
   // ---- history / location ----
-  // collector 会记录当前页 URL 作为指纹熵。真实注册流在 /about-you 页触发 create_account
-  // 的 sentinel；Go 侧可用 __PAGE_URL__ 按具体 flow 覆写，默认对齐 about-you。
+  // collector 会记录当前页 URL 作为指纹熵。
   g.history = { length: 2, scrollRestoration: "auto", state: null };
-  var _pageUrl = g.__PAGE_URL__ || "https://auth.openai.com/about-you";
+  var _pageUrl = g.__PAGE_URL__ || "https://chatgpt.com/";
   var _parsedPageUrl = new URL(_pageUrl);
   g.location = {
     href: _pageUrl, origin: _parsedPageUrl.origin,
@@ -363,7 +393,7 @@
   g.indexedDB = { open: function () { return { result: null, onerror: null, onsuccess: null }; }, databases: function () { return Promise.resolve([]); } };
   g.speechSynthesis = { getVoices: function () { return []; }, speak: function () {}, cancel: function () {}, pause: function () {}, resume: function () {} };
   g.visualViewport = { width: 1920, height: 945, offsetLeft: 0, offsetTop: 0, scale: 1, pageLeft: 0, pageTop: 0, addEventListener: function () {} };
-  g.origin = "https://auth.openai.com";
+  g.origin = _parsedPageUrl.origin || "https://chatgpt.com";
   g.isSecureContext = true;
   g.crossOriginIsolated = false;
   g.originAgentCluster = false;

@@ -12,7 +12,7 @@ describe('checkout API rejection handling', () => {
         const post = vi.fn().mockResolvedValue({ status: () => 401, text: async () => JSON.stringify({ error: { code: 'token_expired', message: 'Your authentication token has expired.' } }) });
         const page = { context: () => ({ request: { post } }), goto: vi.fn() };
         let failure;
-        try { await openApiCheckout(page, { accessToken: 'offline', planType: 'go', country: 'US', currency: 'USD' }); } catch (error) { failure = error; }
+        try { await openApiCheckout(page, { accessToken: 'offline', planType: 'go', country: 'US', currency: 'USD', sentinelPromise: Promise.resolve({ sentinelToken: 'offline-sentinel' }) }); } catch (error) { failure = error; }
         expect(failure).toMatchObject({ code: 'CHECKOUT_AUTH_ERROR', httpStatus: 401 });
         expect(shouldFallbackToPricingCheckout(failure, { checkoutMode })).toBe(false);
         expect(post).toHaveBeenCalledOnce();
@@ -30,7 +30,8 @@ describe('checkout API rejection handling', () => {
 
         await expect(openApiCheckout(page, {
             accessToken: 'session-token-for-test',
-            planType: 'plus', country: 'PH', currency: 'PHP', verifyPage: true
+            planType: 'plus', country: 'PH', currency: 'PHP', verifyPage: true,
+            sentinelPromise: Promise.resolve({ sentinelToken: 'offline-sentinel' })
         })).rejects.toMatchObject({
             code: 'CHECKOUT_UNUSUAL_ACTIVITY',
             httpStatus: 400,

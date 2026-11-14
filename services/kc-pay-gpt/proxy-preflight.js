@@ -42,13 +42,20 @@ async function checkProxyAndRegionProtocol(proxyUrl, expectedRegion, options = {
     const urls = options.url
         ? [options.url]
         : [REGION_PROBE_URL, 'https://chatgpt.com/cdn-cgi/trace'];
-    const timeoutMs = options.probeTimeoutMs ?? 4500;
+    const timeoutMs = options.probeTimeoutMs ?? 6500;
 
     try {
-        for (const url of urls) {
+        for (const [index, url] of urls.entries()) {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), timeoutMs);
             const probeStart = Date.now();
+            const diagnostic = {
+                probe: index + 1, total: urls.length,
+                endpoint: url === REGION_PROBE_URL ? 'cloudflare_trace'
+                    : url === 'https://chatgpt.com/cdn-cgi/trace' ? 'chatgpt_trace' : 'custom_trace',
+                timeoutMs, expectedRegion: expected, actualRegion: null,
+                httpStatus: null, contentType: 'unknown', result: 'connection'
+            };
             try {
                 const resp = await undiciFetch(url, {
                     method: 'GET',
@@ -60,41 +67,59 @@ async function checkProxyAndRegionProtocol(proxyUrl, expectedRegion, options = {
                     }
                 });
                 const probeRttMs = Date.now() - probeStart;
+                diagnostic.httpStatus = resp.status;
+                try {
+                    const type = String(resp.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+                    diagnostic.contentType = !type ? 'unknown' : ['text/plain', 'text/html', 'application/json'].includes(type) ? type : 'other';
+                } catch (_) { /* optional metadata must not change region verification */ }
                 if ([407, 597].includes(resp.status)) {
+                    diagnostic.result = 'proxy_auth';
                     throw preflightError('proxy_auth');
                 }
-                if (resp.ok) {
-                    const text = await resp.text();
-                    const { ip, loc } = parseTraceEgress(text);
-                    if (ip && loc) {
-                        if (loc !== expected) {
-                            throw networkRegionError('PAYMENT_REGION_NETWORK_MISMATCH',
-                                `当前网络出口地区 ${loc} 与卡密支付地区 ${expected} 不一致，已停止支付`);
-                        }
-                        const maxLatencyMs = options.maxLatencyMs ?? (process.env.PROXY_MAX_LATENCY_MS ? Number(process.env.PROXY_MAX_LATENCY_MS) : 1500);
-                        if (probeRttMs > maxLatencyMs && !options.skipLatencyGate && process.env.NODE_ENV !== 'test') {
-                            (options.log || console.warn)(`⚠️ [Network/region] 代理出口 RTT 延迟过高 (${probeRttMs}ms > ${maxLatencyMs}ms)，自动判定节点劣化并换新 [PROXY_PREFLIGHT_HIGH_LATENCY]`);
-                            throw Object.assign(
-                                new Error(`代理出口 RTT 延迟过高 (${probeRttMs}ms) [PROXY_PREFLIGHT_NETWORK]`),
-                                { code: 'PROXY_PREFLIGHT_NETWORK', latencyMs: probeRttMs }
-                            );
-                        }
-                        (options.log || console.log)(`[Network/region] 协议出口地区核验通过: ${loc} (RTT: ${probeRttMs}ms)`);
-                        return { ip, actualRegion: loc, expectedRegion: expected, transport: 'protocol', fastPath: true, rttMs: probeRttMs };
-                    }
+                if (!resp.ok) {
+                    diagnostic.result = 'http_error';
+                    continue;
                 }
+                const { ip, loc } = parseTraceEgress(await resp.text());
+                diagnostic.actualRegion = loc;
+                if (!ip || !loc) {
+                    diagnostic.result = !ip && !loc ? 'invalid_trace' : !ip ? 'invalid_ip' : 'missing_region';
+                    continue;
+                }
+                if (loc !== expected) {
+                    diagnostic.result = 'region_mismatch';
+                    throw networkRegionError('PAYMENT_REGION_NETWORK_MISMATCH',
+                        `当前网络出口地区 ${loc} 与卡密支付地区 ${expected} 不一致，已停止支付`);
+                }
+                const maxLatencyMs = options.maxLatencyMs ?? (process.env.PROXY_MAX_LATENCY_MS ? Number(process.env.PROXY_MAX_LATENCY_MS) : 6000);
+                if (probeRttMs > maxLatencyMs && !options.skipLatencyGate && process.env.NODE_ENV !== 'test') {
+                    diagnostic.result = 'high_latency';
+                    (options.log || console.warn)(`⚠️ [Network/region] 代理地区探针请求耗时过长 (${probeRttMs}ms > ${maxLatencyMs}ms)，本次预检停止 [PROXY_PREFLIGHT_HIGH_LATENCY]`);
+                    throw Object.assign(
+                        new Error(`代理地区探针请求耗时过长 (${probeRttMs}ms) [PROXY_PREFLIGHT_NETWORK]`),
+                        { code: 'PROXY_PREFLIGHT_NETWORK', latencyMs: probeRttMs }
+                    );
+                }
+                diagnostic.result = 'ok';
+                (options.log || console.log)(`[Network/region] 协议出口地区核验通过: ${loc} (请求至响应头: ${probeRttMs}ms)`);
+                return { ip, actualRegion: loc, expectedRegion: expected, transport: 'protocol', fastPath: true, rttMs: probeRttMs };
             } catch (err) {
                 if (err?.code === 'PAYMENT_REGION_NETWORK_MISMATCH'
                     || err?.code === 'NETWORK_REGION_UNCONFIRMED'
                     || String(err?.code || '').startsWith('PROXY_PREFLIGHT_')) {
                     throw err;
                 }
-                const kind = probeFailureKind(err);
+                const kind = controller.signal.aborted ? 'timeout' : probeFailureKind(err);
+                diagnostic.result = kind;
                 if (kind === 'proxy_auth' || kind === 'certificate') {
                     throw preflightError(kind);
                 }
             } finally {
                 clearTimeout(timer);
+                // Never log raw endpoints, response bodies, proxy URLs, or exception messages.
+                try {
+                    (options.log || console.log)(`[Proxy/preflight/protocol] ${JSON.stringify({ ...diagnostic, elapsedMs: Date.now() - probeStart })}`);
+                } catch (_) { /* logging must not change the preflight result */ }
             }
         }
     } finally {
@@ -115,7 +140,7 @@ async function checkProxyAndRegionFast(context, expectedRegion, options = {}) {
         let resp;
         try {
             resp = await context.request.get(options.url || REGION_PROBE_URL, {
-                timeout: options.probeTimeoutMs ?? 3500,
+                timeout: options.probeTimeoutMs ?? 6500,
                 maxRetries: 0,
                 maxRedirects: 0
             });
@@ -229,12 +254,28 @@ async function checkEgressRegion(context, expectedRegion, options = {}) {
     }
 }
 
+function proxyConnectStatus(error) {
+    for (let current = error, depth = 0; current && depth < 4; current = current.cause, depth += 1) {
+        const match = String(current.message || '').match(/\b(?:Upstream CONNECT HTTP|Proxy rejected the CONNECT tunnel with status code)\s+(\d{3})\b/i);
+        if (match) return Number(match[1]);
+    }
+    return null;
+}
+
 function probeFailureKind(error) {
-    const value = String(error?.message || error || '');
+    // Undici often wraps the useful network code in `cause` behind 'fetch failed'.
+    const parts = [];
+    for (let current = error, depth = 0; current && depth < 4; current = current.cause, depth += 1) {
+        parts.push(String(current.code || ''), String(current.name || ''), String(current.message || current));
+    }
+    const value = parts.join(' ');
+    const connectStatus = proxyConnectStatus(error);
+    if ([401, 407, 597].includes(connectStatus)) return 'proxy_auth';
+    if (connectStatus) return 'proxy_connect';
     if (/407|597|ERR_PROXY_AUTH|proxy authentication/i.test(value)) return 'proxy_auth';
     if (/EPROTO|wrong version number|ERR_SSL_PROTOCOL_ERROR/i.test(value)) return 'tls_protocol';
-    if (/timeout|timed out/i.test(value)) return 'timeout';
-    if (/ERR_CERT|CERT_|certificate/i.test(value)) return 'certificate';
+    if (/timeout|timed out|UND_ERR_(?:CONNECT|HEADERS|BODY)_TIMEOUT|AbortError/i.test(value)) return 'timeout';
+    if (/ERR_CERT|CERT_|certificate|SELF_SIGNED|UNABLE_TO_VERIFY/i.test(value)) return 'certificate';
     return 'connection';
 }
 
@@ -311,4 +352,4 @@ async function checkProxyConnectivity(context, options = {}) {
     throw preflightError(kind);
 }
 
-module.exports = { parseProbeIp, parseNetworkRegion, parseTraceEgress, probeFailureKind, checkProxyConnectivity, checkEgressRegion, checkProxyAndRegionFast, checkProxyAndRegionProtocol };
+module.exports = { parseProbeIp, parseNetworkRegion, parseTraceEgress, proxyConnectStatus, probeFailureKind, checkProxyConnectivity, checkEgressRegion, checkProxyAndRegionFast, checkProxyAndRegionProtocol };

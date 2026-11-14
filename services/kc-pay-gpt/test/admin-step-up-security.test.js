@@ -100,6 +100,75 @@ describe('KC second factor challenge consumption and configuration policy', () =
         const result = await h.invoke('verify', { challengeId: c.value.challengeId }); expect(result.value.success).toBe(true);
         expect(h.auth.verifySecondaryToken(result.value.secondaryToken).binding).toBe(crypto.createHash('sha256').update('offline-login-token').digest('hex'));
     });
+    it('does not lock out repeated successful step-up verifications', async () => {
+        const h = harness();
+        for (let i = 0; i < 10; i++) {
+            const c = await challenge(h);
+            expect(c.statusCode).toBe(200);
+            const result = await h.invoke('verify', { challengeId: c.value.challengeId });
+            expect(result.value.success).toBe(true);
+        }
+    });
+    it('continues to lock repeated incorrect step-up passwords and reports the wait', async () => {
+        const h = harness();
+        for (let i = 0; i < 5; i++) expect((await h.invoke('challenge', { password: 'wrong' })).statusCode).toBe(401);
+        const result = await h.invoke('challenge', { password: PASSWORD });
+        expect(result.statusCode).toBe(429);
+        expect(result.value.code).toBe('STEP_UP_RATE_LIMITED');
+        expect(result.headers['Retry-After']).toBe('1800');
+    });
+    it('does not let valid passwords reset repeated second-factor failures', async () => {
+        const h = harness(); Object.assign(h.config, { login2faMode: 'totp', totpEnabled: true, totpSecret: FIXTURE_SEED });
+        const validCode = totp(FIXTURE_SEED, h.clock.now), wrongCode = validCode === '000000' ? '000001' : '000000';
+        for (let i = 0; i < 5; i++) {
+            const c = await challenge(h);
+            expect(c.statusCode).toBe(200);
+            expect((await h.invoke('verify', { challengeId: c.value.challengeId, code: wrongCode })).statusCode).toBe(403);
+        }
+        const c = await challenge(h);
+        expect(c.statusCode).toBe(200);
+        const result = await h.invoke('verify', { challengeId: c.value.challengeId, code: wrongCode });
+        expect(result.statusCode).toBe(429);
+        expect(result.value.code).toBe('STEP_UP_RATE_LIMITED');
+    });
+    it('clears earlier second-factor failures after a successful verification', async () => {
+        const h = harness(); Object.assign(h.config, { login2faMode: 'totp', totpEnabled: true, totpSecret: FIXTURE_SEED });
+        const validCode = totp(FIXTURE_SEED, h.clock.now), wrongCode = validCode === '000000' ? '000001' : '000000';
+        for (let round = 0; round < 2; round++) {
+            const c = await challenge(h);
+            expect(c.statusCode).toBe(200);
+            for (let i = 0; i < 4; i++) {
+                expect((await h.invoke('verify', { challengeId: c.value.challengeId, code: wrongCode })).statusCode).toBe(403);
+            }
+            const result = await h.invoke('verify', { challengeId: c.value.challengeId, code: validCode });
+            expect(result.statusCode).toBe(200);
+            expect(result.value.success).toBe(true);
+        }
+    });
+    it('shares the second-factor budget across concurrent challenges from the same address', async () => {
+        const h = harness(); Object.assign(h.config, { login2faMode: 'totp', totpEnabled: true, totpSecret: FIXTURE_SEED });
+        const validCode = totp(FIXTURE_SEED, h.clock.now), wrongCode = validCode === '000000' ? '000001' : '000000';
+        const pending = [];
+        for (let i = 0; i < 6; i++) pending.push((await challenge(h)).value.challengeId);
+        const gate = deferred();
+        h.store.getAdminAuthConfig.mockClear();
+        h.store.getAdminAuthConfig.mockReturnValue(gate.promise);
+        const attempts = pending.map(challengeId => h.invoke('verify', { challengeId, code: wrongCode }));
+        expect(h.store.getAdminAuthConfig).toHaveBeenCalledTimes(5);
+        gate.resolve({ ...h.config });
+        const results = await Promise.all(attempts);
+        expect(results.map(result => result.statusCode)).toEqual([403, 403, 403, 403, 403, 429]);
+        expect(results[5].value.code).toBe('STEP_UP_RATE_LIMITED');
+        expect(results[5].headers['Retry-After']).toBe('1800');
+    });
+    it('does not count automatic Passkey probes when no credential is enrolled', async () => {
+        const h = harness();
+        for (let i = 0; i < 10; i++) {
+            const result = await h.invoke('webauthnChallenge');
+            expect(result.statusCode).toBe(400);
+            expect(result.value.code).toBe('NO_PASSKEY');
+        }
+    });
     it('uses the configured TOTP factor and verifies an actual RFC-compatible code', async () => {
         const h = harness(); Object.assign(h.config, { login2faMode: 'totp', totpEnabled: true, totpSecret: FIXTURE_SEED });
         const c = await challenge(h); expect(c.value.method).toBe('totp');

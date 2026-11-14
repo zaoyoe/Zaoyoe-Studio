@@ -22,6 +22,26 @@ function safeDiagnosticText(value) {
         .trim();
 }
 
+// Only allow diagnostic headers; never serialize the response or its full headers.
+function summarizeCheckoutResponseMetadata(response) {
+    try {
+        const headers = typeof response?.headers === 'function' ? response.headers() : response?.headers;
+        const read = name => {
+            try { return typeof headers?.get === 'function' ? headers.get(name) : headers?.[name]; }
+            catch (_) { return null; }
+        };
+        const type = String(read('content-type') || '').split(';')[0].trim().toLowerCase();
+        const metadata = {
+            contentType: !type ? 'unknown' : ['application/json', 'application/problem+json', 'text/plain', 'text/html'].includes(type) ? type : 'other'
+        };
+        const requestId = read('x-request-id');
+        if (typeof requestId === 'string' && /^(?:[a-f0-9-]{16,80}|req_[A-Za-z0-9]{16,64})$/i.test(requestId)) metadata.requestId = requestId;
+        const cfRay = read('cf-ray');
+        if (typeof cfRay === 'string' && /^[a-f0-9]{16,32}(?:-[A-Z]{3})?$/i.test(cfRay)) metadata.cfRay = cfRay;
+        return metadata;
+    } catch (_) { return { contentType: 'unknown' }; }
+}
+
 function summarizeCheckoutErrorBody(bodyText, contentType = '') {
     const text = String(bodyText || '');
     if (Buffer.byteLength(text, 'utf8') > MAX_BODY_BYTES) return '错误响应过大，未记录响应内容';
@@ -117,6 +137,7 @@ function buildCheckoutHttpFailure(status, detail = '', requestSummary = '') {
 }
 
 module.exports = {
+    safeDiagnosticText, summarizeCheckoutResponseMetadata,
     summarizeCheckoutErrorBody, summarizeCheckoutRequest, readCheckoutErrorDetail,
     isCheckoutUnusualActivityError, buildCheckoutHttpFailure
 };
