@@ -76,7 +76,10 @@ async function runDbSecurityAudit({
     let anon = anonSupabase;
     try {
         if (!admin && url && env.SUPABASE_SERVICE_ROLE_KEY) admin = buildClient(url, env.SUPABASE_SERVICE_ROLE_KEY);
-        const key = env.SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        const key = env.SUPABASE_ANON_KEY
+            || env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+            || env.SUPABASE_PUBLISHABLE_KEY
+            || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
         if (!anon && url && key) anon = buildClient(url, key);
     } catch (_) { issue('client_initialization_failed', 'Audit client initialization failed'); }
 
