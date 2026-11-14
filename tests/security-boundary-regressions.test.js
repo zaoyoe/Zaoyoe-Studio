@@ -248,6 +248,22 @@ test('database audit timeouts and client initialization errors cannot become PAS
     assert.equal(timedOut.status, 'INCOMPLETE');
     const missing = await runDbSecurityAudit({ env: {} });
     assert.equal(missing.status, 'INCOMPLETE');
+    const seenKeys = [];
+    const publishable = await runDbSecurityAudit({
+        env: {
+            SUPABASE_URL: 'https://test.invalid',
+            SUPABASE_SERVICE_ROLE_KEY: 'srv-key',
+            SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test'
+        },
+        clientFactory(_url, key) {
+            seenKeys.push(key);
+            if (key === 'srv-key') return auditClients().adminSupabase;
+            return auditClients().anonSupabase;
+        }
+    });
+    assert.equal(publishable.status, 'PASS');
+    assert.equal(publishable.passed, true);
+    assert.deepEqual(seenKeys, ['srv-key', 'sb_publishable_test']);
     const initialization = await runDbSecurityAudit({ env: { SUPABASE_URL: 'https://test.invalid', SUPABASE_SERVICE_ROLE_KEY: 'test-key' }, clientFactory() { throw new Error('secret-init-error'); } });
     assert.equal(initialization.status, 'INCOMPLETE');
     assert.ok(!JSON.stringify(initialization).includes('secret-init-error'));
